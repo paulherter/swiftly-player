@@ -64,7 +64,7 @@ extension App {
     private func spurablageSichern() { _ = Self.spurablage.synchronize() }
 
     private func spurprotokoll(_ text: String) {
-        print("[Spuren] \(text)")
+        Protokoll.schreib("[Spuren] \(text)")
         fflush(nil)
     }
 

@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -10,9 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -33,6 +33,7 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.Seerrkachel as SeerrTreffer
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.alsJson
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,8 +62,8 @@ fun Seerrkachel(treffer: SeerrTreffer, modifier: Modifier = Modifier, tun: () ->
                     Row(Modifier.align(Alignment.BottomStart).padding(6.dp).clip(CircleShape).background(Seerrmarke.farbe(treffer.stand))
                             .padding(horizontal = if (kurz != null) 8.dp else 6.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Seerrmarke.symbol(treffer.stand), contentDescription = null, tint = Stil.grund, modifier = Modifier.size(12.dp))
-                        kurz?.let { Text(it, style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold), color = Stil.grund) }
+                        Symbol(Seerrmarke.symbol(treffer.stand), 10.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
+                        kurz?.let { Text(it, style = TvStil.plakette.copy(letterSpacing = 0.sp), color = Stil.grund) }
                     }
                 }
             }
@@ -87,6 +88,8 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     var verbindet by remember { mutableStateOf(false) }
     var fehler by remember { mutableStateOf<String?>(null) }
     var traegt by remember { mutableStateOf<Boolean?>(null) }
+    /** „Erweitert" — eigene Header fuer einen Dienst vor Seerr; sie liegen danach im Zugang. */
+    val koepfe = de.paulherter.swiftly.rememberKopfzeilen()
     val lauf = rememberCoroutineScope()
     val verbunden = app.seerrVerbunden.value
     LaunchedEffect(verbunden) {
@@ -97,7 +100,7 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         verbindet = true; fehler = null
         lauf.launch {
             try {
-                app.seerrMerken(withContext(Dispatchers.IO) { app.kern.seerrVerbinden(adresse, benutzer, passwort).await() })
+                app.seerrMerken(withContext(Dispatchers.IO) { app.kern.seerrVerbinden(adresse, benutzer, passwort, koepfe.alsJson()).await() })
                 passwort = ""
             } catch (x: CancellationException) { throw x } catch (x: Exception) { fehler = fehlertext(app, x) }
             verbindet = false
@@ -122,6 +125,7 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
                     TvFeld(benutzer, { benutzer = it }, uebersetzt("Benutzername"), Modifier.fillMaxWidth())
                     TvFeld(passwort, { passwort = it }, uebersetzt("Passwort"), Modifier.fillMaxWidth(),
                            geheim = true, imeAction = ImeAction.Done, tastaturAktion = { verbinden() })
+                    TvErweitert(koepfe)
                 }
                 if (adresse.isNotBlank() && benutzer.isNotBlank() && passwort.isNotBlank()) {
                     TvKnopf(uebersetzt(if (verbindet) "Verbinde…" else "Verbinden"), modifier = Modifier.padding(top = 18.dp)) { verbinden() }
@@ -214,24 +218,17 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
                 Box(Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf).fillMaxWidth().height(306.5.dp)) {
                 Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
                     Kopfauskunft(k.titel, null, nebenzeile, null, null, d?.feldText("beschreibung")) {
-                        val farbe = Seerrmarke.farbe(stand)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(10.dp))
-                            Text(Seerrmarke.wort(stand), style = TvStil.koerper.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium), color = farbe, maxLines = 1)
-                        }
+                        // Stand und Bewertung in derselben Huelle wie Direct Play (Vorlage 2a24f67a).
                         // 0 heisst bei TMDB „keine Bewertung", nicht null Sterne.
-                        d?.feldZahl("bewertung")?.takeIf { it > 0 }?.let { b ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
-                                Icon(Icons.Filled.Star, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.8f), modifier = Modifier.size(10.dp))
-                                Text(String.format(Locale.getDefault(), "%.1f", b), style = TvStil.koerper.copy(fontSize = 12.sp), color = Stil.schrift.copy(alpha = 0.8f), maxLines = 1)
-                            }
-                        }
+                        TvBelegzeile(direktplay = false, hinweis = null,
+                                     bewertung = d?.feldZahl("bewertung")?.takeIf { it > 0 }, freigabe = null,
+                                     eigen = Triple(Seerrmarke.symbol(stand), Seerrmarke.wort(stand), Seerrmarke.farbe(stand)))
                     }
                     Row(Modifier.padding(top = 18.dp)) {
                         when {
                             angefragt -> Text(uebersetzt("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."), style = TvStil.koerper, color = Stil.schriftLeise)
                             anfragbar -> TvKnopf(uebersetzt(when { laeuft -> "Wird angefragt…"; bestaetigt -> "Wirklich anfragen?"; else -> "Anfragen" }),
-                                    Icons.Filled.Add, Modifier.focusRequester(haupt)) {
+                                    Zeichen.Plus, Modifier.focusRequester(haupt)) {
                                 when { k.istSerie -> staffelblatt(); bestaetigt -> anfragen(emptyList()); else -> bestaetigt = true }
                             }
                             else -> Text(Seerrmarke.hinweis(stand), style = TvStil.koerper, color = Stil.schriftLeise)

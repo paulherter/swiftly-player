@@ -226,7 +226,18 @@ struct HauptView: View {
         .task { await model.downloadsNachziehen() }
         // Sonst bleibt der Socket offen, wenn die Ansicht weicht — etwa beim
         // Abmelden, wo `RootView` auf den Anmeldebildschirm wechselt.
-        .onDisappear { Task { await model.fernsteuerungBeenden() } }
+        //
+        // **Aber nicht, weil der Player darüber liegt.** Auf dem iPhone zeigt
+        // UIKit den Player im eigenen Rahmen (`Playerrahmen`, `.fullScreen`),
+        // und damit verschwindet diese Ansicht für SwiftUI. Bis 23.09. ging
+        // dabei der Socket zu: ohne ihn führt der Server die Sitzung nicht
+        // mehr als steuerbar, und die anderen Geräte sahen das iPhone genau
+        // während der Wiedergabe gar nicht oder als „spielt nichts" — kein
+        // „Hier weiterschauen". Auf dem iPad (`fullScreenCover`) trat das nie auf.
+        .onDisappear {
+            guard Playerrahmen.aktiv == nil else { return }
+            Task { await model.fernsteuerungBeenden() }
+        }
         .onChange(of: bereich) { alt, neu in
             besucht.insert(neu)
             if alt != .suche { vorigerBereich = alt }
@@ -319,6 +330,10 @@ extension View {
             .navigationDestination(for: Item.self) { item in
                 if item.type == "Series" {
                     SeriesDetailView(model: model, serie: item)
+                } else if item.type == "BoxSet" {
+                    // Eine Sammlung aus Suche oder Merkliste: ohne Bereich,
+                    // also alles, was in ihr steht.
+                    SammlungView(model: model, sammlung: item, art: nil)
                 } else if item.type == "Episode" {
                     // Folgen bekommen keine eigene Seite — sie führen auf ihre
                     // Staffel. Eine Seite nur für eine Folge trägt nichts, was
@@ -327,6 +342,9 @@ extension View {
                 } else {
                     ItemDetailView(model: model, item: item)
                 }
+            }
+            .navigationDestination(for: SammlungRoute.self) { route in
+                SammlungView(model: model, sammlung: route.sammlung, art: route.art)
             }
             .navigationDestination(for: MerklisteRoute.self) { _ in
                 MerklisteView(model: model)
@@ -345,6 +363,9 @@ extension View {
             }
             .navigationDestination(for: SeerrRoute.self) { _ in
                 SeerrEinstellungenView(model: model, seerr: model.seerr)
+            }
+            .navigationDestination(for: TraktRoute.self) { _ in
+                TraktEinstellungenView(trakt: model.trakt)
             }
             .navigationDestination(for: WiedergabeRoute.self) { _ in
                 WiedergabeEinstellungenView(model: model)
@@ -417,7 +438,12 @@ struct BibliothekView: View {
     /// Ein Server kann mehrere Filmbibliotheken haben — im TestFlight eine
     /// auf einer externen Platte und eine lokale. Vorher nahm die Ansicht
     /// stumm die erste, und die zweite war nicht erreichbar.
-    @State private var gewaehlt: Item?
+    ///
+    /// **Seit dem 22.09.2026 mehr als eine Bibliothek:** oben „Alle",
+    /// darunter „Sammlungen", dann die Bibliotheken — die Regel steht in
+    /// ``Bereichsangebot``. Wer nur eine Film- und eine Serienbibliothek und
+    /// keine Sammlungen hat, bekommt kein Menü und sieht alles wie vorher.
+    @State private var wahl: Bereichswahl = .alle
     @State private var bibliothekslisteOffen = false
 
     @Environment(\.breit) private var breit
@@ -460,34 +486,24 @@ struct BibliothekView: View {
         // geprüften Stand war er unverändert da.
         // **Ohne `if` — der Behaelter bleibt, das Blatt gattert sich selbst.**
         // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
-        .overlay(alignment: .topTrailing) {
-                Auswahlblatt(offen: $filterlisteOffen,
-                             titel: "Filtern",
-                             eintraege: filter,
-                             beschriftung: { $0.beschriftung },
-                             istGewaehlt: { $0 == stand.filter },
-                             waehlen: { stand.filter = $0 })
-        }
-        .overlay(alignment: .topTrailing) {
-                Auswahlblatt(offen: $sortierlisteOffen,
-                             titel: "Sortieren",
-                             eintraege: Sortierung.allCases,
-                             beschriftung: { $0.beschriftung },
-                             istGewaehlt: { $0 == stand.sortierung },
-                             waehlen: { stand.sortierung = $0 })
-        }
+        .regalblaetter(stand: stand, filter: filter,
+                       filterOffen: $filterlisteOffen, sortierungOffen: $sortierlisteOffen)
+        // Kein `Menu` — E4 im Register. Dasselbe `Auswahlblatt` wie bei der
+        // Sortierung; die Rubrik „Bibliotheken" trennt die Bibliotheken von
+        // „Alle" und „Sammlungen", die keine sind.
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $bibliothekslisteOffen,
-                             titel: "Bibliothek",
-                             eintraege: auswahl,
-                             beschriftung: { $0.name },
-                             istGewaehlt: { $0.id == gewaehlt?.id },
-                             waehlen: { bib in
-                                 guard bib.id != gewaehlt?.id else { return }
-                                 model.bibliothekWaehlen(bib, art: art)
-                                 gewaehlt = bib
+                             titel: titel,
+                             eintraege: angebot.eintraege,
+                             beschriftung: { beschriftung($0) },
+                             istGewaehlt: { $0 == wahl },
+                             waehlen: { neu in
+                                 guard neu != wahl else { return }
+                                 model.bereichWaehlen(neu, art: art)
+                                 wahl = neu
                                  Task { await laden() }
-                             })
+                             },
+                             rubrik: { $0 == angebot.ersteBibliothek ? "Bibliotheken" : nil })
         }
         // **Die Bibliothek gehoert nicht in die Kennung.**
         //
@@ -522,10 +538,14 @@ struct BibliothekView: View {
         //
         // Ueber die Kennungen und nicht ueber die Anzahl: verschwindet eine
         // Bibliothek und kommt eine neue dazu, bleibt die Anzahl gleich.
-        .onChange(of: auswahl.map(\.id)) { _, _ in
-            guard gewaehlt == nil || !auswahl.contains(where: { $0.id == gewaehlt?.id })
-            else { return }
-            gewaehlt = model.gewaehlteBibliothek(art: art)
+        //
+        // Dasselbe gilt für Sammlungen und gemischte Bibliotheken: sie kommen
+        // aus `angebotLaden()` nach. Ändert sich damit, was „Alle" liest oder
+        // was gewählt sein darf, wird neu geladen.
+        .onChange(of: angebotskennung) { _, _ in
+            let neu = model.bereichswahl(art: art)
+            guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
+            wahl = neu
             Task { await laden() }
         }
     }
@@ -540,7 +560,7 @@ struct BibliothekView: View {
                 // das Raster schon in seiner Form — die Seite ist dann leer,
                 // nicht am Warten. Ueberblendet wird, sobald die Titel da
                 // sind.
-                if stand.items.isEmpty, stand.laedt {
+                if stand.items.isEmpty, stand.laedt, wahl != .sammlungen {
                     Rasterplatzhalter(spalten: anzahl)
                         .padding(.horizontal, Stil.rand(breit: breit))
                         .padding(.top, 8)
@@ -548,28 +568,33 @@ struct BibliothekView: View {
                 }
 
                 LazyVGrid(columns: spalten(anzahl), alignment: .leading, spacing: 20) {
+                    if wahl == .sammlungen {
+                        sammlungskacheln
+                    } else {
                     ForEach(stand.items) { item in
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, breite: nil)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                         // Nachladen, sobald die drittletzte Reihe auftaucht —
                         // dann steht der Nachschub schon, bevor man unten
                         // ankommt.
                         .onAppear {
-                            guard stand.loestNachladenAus(item.id, spalten: anzahl) else { return }
-                            Task { await stand.nachladen(model, art: art, bibliothek: gewaehlt) }
+                            guard stand.loestNachladenAus(item.id, spalten: anzahl),
+                                  let quelle else { return }
+                            Task { await stand.nachladen(model, aus: quelle) }
                         }
+                    }
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 8)
-                .opacity(stand.items.isEmpty ? 0 : 1)
+                .opacity(stand.items.isEmpty && wahl != .sammlungen ? 0 : 1)
 
                 // **Kein Ring beim Nachladen.** Die naechste Reihe kommt
                 // ohnehin von selbst; ein Ring darunter sagt nur, dass
                 // gerade etwas laeuft, und genau das soll man nicht merken.
-                if stand.nochMehrDa {
+                if stand.nochMehrDa, wahl != .sammlungen {
                     Rasterplatzhalter(spalten: anzahl, reihen: 1)
                         .padding(.horizontal, Stil.rand(breit: breit))
                         .padding(.top, 20)
@@ -579,18 +604,58 @@ struct BibliothekView: View {
             .animation(Stil.einblenden, value: stand.items.isEmpty)
             // Null im Ruhezustand: `contentOffset` beginnt bei minus dem
             // oberen Rand, den `contentMargins` gesetzt hat.
-            .onScrollGeometryChange(for: CGFloat.self) {
-                $0.contentOffset.y + $0.contentInsets.top
+            // **Der rohe Versatz, nicht der um den Sicherheitsrand bereinigte.**
+            //
+            // Hier stand `contentOffset.y + contentInsets.top`, und das war
+            // richtig, solange der Kopf immer gleich hoch war. Seit die
+            // Wertreihe beim Scrollen zuklappt, ist er es nicht mehr — und
+            // damit misst die Zeile ihr eigenes Ergebnis: Kopf schrumpft um
+            // zehn, Sicherheitsrand schrumpft um zehn, der gemessene Versatz
+            // faellt um zehn zurueck auf null, Kopf waechst wieder. Ein
+            // Zweitakter, der nie zur Ruhe kommt.
+            //
+            // **Die Summe ist schon der Scrollweg.** Gemessen am 22.09.:
+            //
+            //     rand 130,8  versatz −130,3  ->  Summe 0,5
+            //     rand 115,0  versatz −114,7  ->  Summe 0,3
+            //
+            // Dazwischen ist die Wertreihe von 28 auf 44 Punkt zugeklappt.
+            // Der obere Rand faellt dabei um 15,8 — und der rohe Versatz
+            // steigt um genau 15,6. **Beide wandern gemeinsam:** die
+            // Scrollflaeche haelt den Inhalt fest, wenn sich ihr Rand aendert.
+            // Die Summe bleibt davon unberuehrt und misst allein, was der
+            // Finger getan hat.
+            //
+            // Drei Anlaeufe sind an der gegenteiligen Annahme gescheitert —
+            // der Rand schrumpfe, der Versatz bleibe stehen, also muesse man
+            // das Eingeklappte wieder draufrechnen. Genau dieses Draufrechnen
+            // war der Fehler: es zaehlte den Weg ein zweites Mal, in jedem
+            // Bild, und die Reihe klappte von selbst zu, ohne dass jemand
+            // gescrollt hat. Zwei Vermutungen ueber die Ursache und eine
+            // Messung: die Messung hat es in zwei Minuten entschieden.
+            .onScrollGeometryChange(for: CGPoint.self) {
+                CGPoint(x: $0.contentInsets.top, y: $0.contentOffset.y)
             } action: { _, neu in
-                // **Nur solange dieser Bereich vorn ist.**
-                //
-                // Waehrend des Wechsels rechnet die Scrollflaeche ihre
-                // Geometrie neu, und dabei kommen Zwischenstaende heraus:
-                // Versatz null, oberer Einzug schon gesetzt — daraus wird
-                // rechnerisch ein voll gescrollter Kopf, also eine deckende
-                // schwarze Leiste, fuer ein, zwei Bilder. Genau die hat
+                // Waehrend des Bereichswechsels rechnet die Scrollflaeche
+                // ihre Geometrie neu; erst wenn dieser Bereich vorn ist, ist
+                // die Messung etwas wert.
                 guard bereichAktiv else { return }
-                versatz = neu
+                // **Der eine Zwischenstand, der auch dann noch kommt.**
+                //
+                // Die Messung zeigt, wie ein echter Wert aussieht: der rohe
+                // Versatz ist **minus** dem oberen Rand (−130,3 bei Rand
+                // 130,8), die Summe also nahe null. Waehrend die Flaeche ihre
+                // Geometrie neu rechnet, meldet sie dagegen einmal Versatz
+                // null bei schon gesetztem Rand — daraus wird rechnerisch die
+                // ganze Kopfhoehe, die Reihe klappt fuer ein, zwei Bilder zu
+                // und wieder auf, und genau das ruckelt mitten im Aufziehen.
+                //
+                // Echt vorkommen kann die Paarung nur an einer Stelle: wenn
+                // man zufaellig um exakt die Randhoehe gescrollt hat. Dort
+                // kostet ein uebersprungenes Bild nichts, das naechste kommt
+                // sofort.
+                guard !(abs(neu.y) < 1 && neu.x > 1) else { return }
+                versatz = neu.y + neu.x
             }
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
@@ -620,15 +685,18 @@ struct BibliothekView: View {
             .safeAreaInset(edge: .top, spacing: 0) { kopf }
 
 
-            if stand.gestoert {
+            if wahl == .sammlungen {
+                // Die Liste steht schon im Speicher: „Sammlungen" gibt es im
+                // Menü nur, wenn es welche gibt. Kein Laden, kein Leer.
+            } else if stand.gestoert {
                 // Derselbe Text wie auf der Startseite, samt Serveradresse.
                 // Vorher stand hier „Hier ist noch nichts" — dieselbe Ursache,
                 // zwei Diagnosen, und die falsche schickt einen zum Server
                 // statt zum Netz.
                 Leerzustand(
                     symbol: "externaldrive.badge.xmark",
-                    kopfzeile: "Kein Kontakt zum Server",
-                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) hat nicht geantwortet. Läuft der Server, und bist du im selben Netz?",
+                    kopfzeile: "Server ist abgetaucht",
+                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
                     hauptknopf: ("Erneut versuchen", { Task { await laden() } }))
                     .padding(.bottom, Stil.leisteHoehe)
             } else if stand.items.isEmpty, !stand.laedt {
@@ -655,8 +723,17 @@ struct BibliothekView: View {
 
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
+            // Kein Abstand im Stapel: die 14 zwischen Titel und Wertreihe
+            // traegt `Wertreihe` selbst, damit sie mit ihr verschwinden.
+            VStack(alignment: .leading, spacing: 0) {
+                // **Mittig, nicht oben.** Solange unter dem Titel noch der
+                // Servername stand, war `.top` richtig: der Block war zwei
+                // Zeilen hoch, und die Zeichen rechts sollten an der ersten
+                // haengen. Ohne die zweite Zeile sitzt der Titel damit oben und
+                // die Zeichen daneben tiefer — auf verschiedenen Linien. Paul
+                // am 21.09.: „die sind nicht auf der gleichen Linie wie das
+                // Profilbild".
+                HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 3) {
                         // **Nur ab zwei Bibliotheken ein Menü.**
                         //
@@ -664,38 +741,41 @@ struct BibliothekView: View {
                         // das Gleiche wie vorher: eine Überschrift, kein
                         // Zeichen, kein Tippziel. Ein Umschalter, der nichts
                         // umzuschalten hat, ist eine Frage ohne Antwort.
-                        if auswahl.count > 1 {
+                        if angebot.istMenue {
                             // Kein `Menu` — E4 im Register. Dasselbe
                             // `Auswahlblatt` wie bei der Sortierung, und es
                             // nimmt die Beschriftung als `String`, was hier
                             // nötig ist: Bibliotheksnamen kommen vom Server.
+                            //
+                            // **„Alle" heißt einfach „Filme".** Der Titel sagt,
+                            // wo man ist; „Alle Filme" steht nur im Menü.
                             Button { bibliothekslisteOffen = true } label: {
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                    Text(gewaehlt?.name ?? "")
-                                        .font(Stil.titelGross).tracking(-0.6)
+                                    Group {
+                                        if wahl == .alle { Text(titel) }
+                                        else { Text(verbatim: beschriftung(wahl)) }
+                                    }
+                                        .font(Stil.titelGross).tracking(Stil.sperrungTitel)
                                     Image(systemName: "chevron.down")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(Stil.listentitel)
                                         .foregroundStyle(Stil.schriftLeise)
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                         } else {
-                            Text(titel).font(Stil.titelGross).tracking(-0.6)
+                            Text(titel).font(Stil.titelGross).tracking(Stil.sperrungTitel)
                         }
 
-                        // **Wo bin ich hier eigentlich?**
+                        // **Kein Servername unter dem Titel.**
                         //
-                        // Der Servername stand auf keiner einzigen Seite —
-                        // man musste ins Profil, um es zu sehen. Bei mehreren
-                        // Konten auf einem Gerät ist das keine Kleinigkeit,
-                        // sondern der Unterschied zwischen zwei Bibliotheken,
-                        // die gleich heissen.
-                        if let server = model.serverName, !server.isEmpty {
-                            Text(verbatim: server)
-                                .font(.system(size: 13))
-                                .foregroundStyle(Stil.schriftSehrLeise)
-                                .lineLimit(1)
-                        }
+                        // Er stand hier, damit man bei zwei Konten die
+                        // Bibliotheken unterscheiden kann. Am Geraet kostet die
+                        // Zeile aber mehr, als sie bringt: sie drueckt die
+                        // Filterpillen und das Raster nach unten, und der
+                        // Seitentitel bekommt einen Unterbau, den keine andere
+                        // Wurzelseite hat. Wer wissen will, auf welchem Server
+                        // er ist, findet es im Profil — dort steht es ohnehin.
+                        // Paul am 21.09. am Geraet.
                     }
                     Spacer(minLength: 0)
                     // **Breit steht die Zahl hier oben, nicht in der
@@ -704,8 +784,8 @@ struct BibliothekView: View {
                     // Sortierchips noch etwas, und die zwei Zwischenraeume
                     // teilten sich den Platz zu gleichen Teilen: die Chips
                     // landeten in der Mitte statt rechts.
-                    if breit, stand.gesamt > 0 {
-                        Zaehlmarke(anzahl: stand.gesamt)
+                    if breit, gezeigt > 0 {
+                        Zaehlmarke(anzahl: gezeigt)
                     }
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
@@ -721,85 +801,102 @@ struct BibliothekView: View {
                 }
                 .foregroundStyle(Stil.schrift)
 
-                steuerzeile
+                // **Breit bleibt sie stehen.** Dort sind es Chips statt
+                // Pillen, sie stehen in einer Seitenleiste-Komposition mit
+                // viel Platz, und der Kopf nimmt keine halbe Kachelreihe weg.
+                // Das Zuklappen loest ein Problem, das es breit nicht gibt.
+                Regalsteuerung(stand: stand, filter: filter,
+                               filterOffen: $filterlisteOffen,
+                               sortierungOffen: $sortierlisteOffen,
+                               versatz: versatz,
+                               nurAnzahl: wahl == .sammlungen ? sammlungsliste.count : nil)
             }
         }
     }
 
-    /// **Werte, keine Möglichkeiten.**
-    ///
-    /// Hier stand eine waagerecht scrollende Reihe Filterchips plus eine
-    /// Sortierpille: drei Wörter, von denen eines leuchtet, und man muss die
-    /// Farbe deuten, um den Zustand zu lesen. Dazu trug der aktive Chip
-    /// Akzent und die Pille daneben nicht — zwei Fragen, zwei Grammatiken.
-    ///
-    /// Jetzt zwei Pillen, die ihren **Wert** zeigen, und rechts die Anzahl.
-    /// Der Preis ist ehrlich: filtern kostet zwei Tipp statt einem. Dafür
-    /// passt die Zeile auf jedes iPhone, egal wie viele Filter dazukommen,
-    /// und die Ausblendmaske am rechten Rand fällt ersatzlos weg.
-    ///
-    /// **Breit bleibt es offen.** Dort ist Platz, und ein Blatt für etwas,
-    /// das daneben hinpasst, ist ein Umweg — dieselbe Begründung wie vorher.
-    @ViewBuilder
-    private var steuerzeile: some View {
-        HStack(spacing: 8) {
-            if breit {
-                ForEach(filter) { f in
-                    Wahlchip(text: f.beschriftung, an: stand.filter == f) {
-                        stand.filter = f
-                    }
-                }
-                // **Die Sortierung steht rechts aussen** — wie auf dem Mac,
-                // wo dasselbe Fenster dieselbe Breite hat. Sie stand hier
-                // unmittelbar hinter den Filtern, durch ein Zeichen getrennt;
-                // zwei Fassungen derselben Reihe auf zwei Geraeten, die sonst
-                // gleich aussehen. Hochkant bleibt es bei den Pillen, dort
-                // ist der Platz nicht da.
-                Spacer(minLength: 12)
-                ForEach(Sortierung.allCases) { s in
-                    Wahlchip(text: s.beschriftung,
-                             symbol: s == stand.sortierung ? "line.3.horizontal.decrease" : nil,
-                             an: stand.sortierung == s) {
-                        stand.sortierung = s
-                    }
-                }
-            } else {
-                Wertpille(symbol: "line.3.horizontal.decrease",
-                          text: stand.filter.beschriftung) { filterlisteOffen = true }
-                Wertpille(symbol: "arrow.up.arrow.down",
-                          text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
-
-                Spacer(minLength: 8)
-
-                // Erst wenn wir sie kennen. Eine Null, die noch keine ist,
-                // wäre eine falsche Auskunft.
-                if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
-            }
-        }
-    }
+    // Die Steuerzeile steht in `Regalsteuerung` (Sammlungsseite.swift) —
+    // die Sammlungsseite braucht dieselbe.
 
     private func laden() async {
         if model.views.isEmpty { await model.loadViews() }
-        // **Die gemerkte Bibliothek gehört einem Konto.**
-        //
-        // `gewaehlt` hält ein `Item` mit einer Kennung, die der Server dem
-        // *vorigen* Konto herausgegeben hat. `quelle(_:art:bibliothek:)` nimmt
-        // eine genannte Bibliothek unbesehen — die Abfrage ginge also mit dem
-        // neuen Merkmal auf eine fremde Kennung.
-        //
-        // Dass zwei Konten dieselben Bibliotheken sehen, ist keine Zusicherung
-        // des Servers, sondern der Normalfall bei Wer den Zugriff einschränkt
-        // — der eigentliche Grund für ein zweites Konto, bekommt hier eine
-        // leere Seite.
-        //
-        // `veraltet` beantwortet genau diese Frage und steht schon im Modell.
-        if stand.veraltet(model) { gewaehlt = nil }
-        if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
-        await stand.laden(model, art: art, bibliothek: gewaehlt)
+        // Sammlungen und gemischte Bibliotheken kommen nebenher: die Seite
+        // wartet nicht auf sie. Treffen sie ein, meldet `angebotskennung`
+        // es, und die Wahl wird neu geprüft.
+        Task { await model.angebotLaden() }
+        // **Die gemerkte Wahl gehört einem Konto.** Sie wird bei jedem Laden
+        // gegen das Angebot des angemeldeten Kontos geprüft; eine Bibliothek
+        // des vorigen Kontos gibt es darin nicht, und die Seite fällt auf
+        // „Alle" zurück, statt eine fremde Kennung abzufragen.
+        wahl = model.bereichswahl(art: art)
+        guard wahl != .sammlungen else { return }
+        geladeneQuelle = quelle?.schluessel
+        await stand.laden(model, aus: quelle)
     }
 
-    /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menü.
-    private var auswahl: [Item] { model.bibliotheken(art: art) }
+    /// Was der Titel zur Wahl anbietet. Ab zwei Einträgen wird er zum Menü.
+    private var angebot: Bereichsangebot { model.bereichsangebot(art: art) }
+
+    /// Ändert sich das, wird die Wahl neu geprüft — über die Kennungen und
+    /// nicht über die Anzahl: verschwindet eine Bibliothek und kommt eine
+    /// neue dazu, bleibt die Anzahl gleich.
+    private var angebotskennung: String {
+        angebot.eintraege.map(\.merkwert).joined(separator: ",") + "|"
+            + angebot.alleQuellen.joined(separator: "+")
+    }
+
+    /// Woraus das Raster liest. `nil`: in diesem Bereich gibt es nichts.
+    private var quelle: Regalquelle? {
+        switch wahl {
+        case .alle:
+            // Aus einer Bibliothek wie vor dem Umbau; aus mehreren gesiebt,
+            // je Titel einmal (``Titelsieb``).
+            angebot.hatBestand
+                ? Regalquelle(eltern: angebot.alleAus, art: art,
+                              nurAus: angebot.alleAus == nil ? angebot.alleQuellen : [])
+                : nil
+        case .bibliothek(let id):
+            Regalquelle(eltern: id, art: art)
+        case .sammlungen:
+            nil
+        }
+    }
+    @State private var geladeneQuelle: String?
+
+    private var sammlungsliste: [Sammlung] {
+        model.sammlungsverzeichnis?.sammlungen(art: art) ?? []
+    }
+
+    /// Was die Zählmarke zeigt.
+    private var gezeigt: Int { wahl == .sammlungen ? sammlungsliste.count : stand.gesamt }
+
+    /// **Sammlungen im selben Raster, mit derselben Kachel.** Unter dem
+    /// Namen steht statt des Jahres, wie viele Filme bzw. Serien darin sind.
+    @ViewBuilder
+    private var sammlungskacheln: some View {
+        ForEach(sammlungsliste) { sammlung in
+            NavigationLink(value: SammlungRoute(sammlung: sammlung.item, art: art)) {
+                PosterTile(model: model, item: sammlung.item, breite: nil,
+                           auskunft: anzahltext(sammlung.anzahl(art: art)),
+                           mosaikQuelle: (sammlung, art))
+            }
+            .buttonStyle(Stil.Druckknopf())
+        }
+    }
+
+    private func anzahltext(_ n: Int) -> String {
+        Sammlung.anzahltext(art: art, anzahl: n)
+    }
+
+    private func beschriftung(_ w: Bereichswahl) -> String {
+        switch w {
+        case .alle:
+            art == "tvshows" ? String(localized: "Alle Serien") : String(localized: "Alle Filme")
+        case .sammlungen:
+            String(localized: "Sammlungen")
+        case .bibliothek(let id):
+            angebot.bibliothek(id)?.name ?? ""
+        }
+    }
 }
 
 // MARK: - Umweg von einer Folge auf ihre Serie

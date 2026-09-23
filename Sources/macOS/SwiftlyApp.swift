@@ -28,6 +28,9 @@ struct SwiftlyApp: App {
         // Der Blick auf die eigene Arbeit — siehe `Fensterabzug`. Nur im
         // Entwicklerbau, und nur ein Takt, der auf eine Datei sieht.
         Fensterabzug.lauschen()
+        // Eine gemessene Scrollfahrt, wenn die Umgebung sie anfordert —
+        // siehe `Scrollprobe`. Ohne die Variable passiert nichts.
+        Scrollprobe.starten()
         #endif
     }
 
@@ -99,10 +102,16 @@ struct Menueleiste: Commands {
             Kommandoknopf("Einstellungen…", .einstellungen, ",")
         }
 
+        // **Alle Bereiche, nicht drei von sechs.** Die Seitenleiste kennt
+        // sechs; das Menü bot Start, Filme, Serien und Suchen. Merkliste und
+        // Downloads waren ohne Maus nur durch Tabben erreichbar — und einen
+        // sichtbaren Fokus gab es bis heute auch nicht.
         CommandMenu(Text("Gehe zu")) {
-            Kommandoknopf("Start",  .start,  "1")
-            Kommandoknopf("Filme",  .filme,  "2")
-            Kommandoknopf("Serien", .serien, "3")
+            Kommandoknopf("Start",     .start,     "1")
+            Kommandoknopf("Filme",     .filme,     "2")
+            Kommandoknopf("Serien",    .serien,    "3")
+            Kommandoknopf("Merkliste", .merkliste, "4")
+            Kommandoknopf("Downloads", .downloads, "5")
             Divider()
             Kommandoknopf("Suchen", .suche,  "f")
             Divider()
@@ -114,7 +123,7 @@ struct Menueleiste: Commands {
 /// Was die Menüleiste auslösen kann. Absichtlich klein: jeder Fall hat eine
 /// sichtbare Entsprechung in der Oberfläche.
 enum Kommando: String {
-    case start, filme, serien, suche, zurueck, einstellungen
+    case start, filme, serien, merkliste, downloads, suche, zurueck, einstellungen
 }
 
 /// Ein Menüeintrag, der sein Kommando als Nachricht schickt.

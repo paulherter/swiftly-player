@@ -10,11 +10,21 @@ import VLCKit
 /// titelsicheren der ganzen App (`Stil.randSeite`, `Stil.randOben`), damit
 /// Titel und Folgenkacheln auf einer Linie stehen.
 enum Playermass {
-    static let titel = Font.system(size: 57, weight: .bold)
-    static let meta = Font.system(size: 31)
-    static let zeit: CGFloat = 28
+    /// **Die Leiter der App, nicht eine eigene.**
+    ///
+    /// Hier standen 57, 31, 28 und 32 — Werte aus Apples tvOS-Rampe, die auf
+    /// keiner unserer Stufen liegen. Am iPhone ist derselbe Schritt am 21.09.
+    /// gegangen worden; die Begruendung steht in `iOS/PlayerEbenen.swift`.
+    ///
+    /// Der Titel ueber dem Bild **ist** der Seitentitel (BRAND 2), also 56
+    /// Bold. Die Angabenzeile ist eine Angabe (24), die Laufzeit steht auf
+    /// dem Kacheltitel (26) — die kleinste Stufe, die ueber Bild aus drei
+    /// Metern noch sicher lesbar ist.
+    static let titel = Stil.titelGross
+    static let meta = Stil.klein
+    static let zeit: CGFloat = 26
     /// Die Zielzeit unter dem Vorschaubild beim Spulen.
-    static let vorschauZeit: CGFloat = 32
+    static let vorschauZeit: CGFloat = 30
     /// Grund der Leiste, wie im Entwurf und im `Zeitregler` des iPhones.
     static let leisteGrund = Color.white.opacity(0.28)
     /// Zwischen Titel und Metazeile beziehungsweise Staffelpille.
@@ -76,8 +86,10 @@ private struct SymbolknopfStil: ButtonStyle {
                 .foregroundStyle(fokus ? Stil.grund : Stil.schrift)
                 .frame(width: Playermass.knopf, height: Playermass.knopf)
                 .background(fokus ? Color.white : .clear,
-                            in: RoundedRectangle(cornerRadius: Stil.ecke))
-                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? 1.04 : 1))
+                            in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                // 88 × 88, also die kleine Stufe: 1,04 waeren hier drei
+                // Punkte gewesen, und das Zeichen steht frei ueber dem Bild.
+                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? Stil.fokusLupeKlein : 1))
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }
@@ -121,7 +133,10 @@ private struct Wahlspalte<Inhalt: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(titel)
-                .font(.system(size: 44, weight: .bold))
+                // Unterseitentitel aus der Leiter. Der Grad stimmte, das
+                // Gewicht nicht: Bold steht genau einmal, am Seitentitel.
+                .font(Stil.unterseitentitel)
+                .tracking(Stil.sperrungUnterseite)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 .padding(.horizontal, 26)
@@ -174,7 +189,7 @@ private struct Ebenenzeile: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 36, weight: gewaehlt ? .semibold : .regular))
+            .font(.system(size: 30, weight: gewaehlt ? .semibold : .regular))
             .foregroundStyle(gewaehlt || fokus ? Stil.schrift : Stil.schriftLeise)
             .padding(.horizontal, 26)
             .padding(.vertical, 18)
@@ -404,11 +419,15 @@ struct FolgenEbene: View {
     /// aufgerufen, sobald der Player eine Folge zeigt.
     static func vorladen(model: AppModel, item: Item) async {
         guard let serieID = item.seriesId, let serie = Item.vorlaeufigeSerie(zu: item) else { return }
-        let staffeln = await model.staffeln(serie)
-        guard !staffeln.isEmpty else { return }
+        // **Ein gescheiterter Abruf kommt nicht in den Speicher.** `staffeln`
+        // und `folgen` geben seit dem 21.09.2026 `nil` zurueck, wenn der
+        // Server geschwiegen hat. Frueher stand dann eine leere Liste im
+        // `Serienspeicher`, und die naechste Ansicht hielt sie fuer die
+        // Wahrheit — ein zwischengespeicherter Netzfehler.
+        guard let staffeln = await model.staffeln(serie), !staffeln.isEmpty else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.staffeln = staffeln }
         guard let staffel = passendeStaffel(zu: item, in: staffeln) else { return }
-        let folgen = await model.folgen(serie: serieID, staffel: staffel.id)
+        guard let folgen = await model.folgen(serie: serieID, staffel: staffel.id) else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.folgen[staffel.id] = folgen }
     }
 
@@ -421,6 +440,7 @@ struct FolgenEbene: View {
                     // blendet nicht mit.
                     Text(verbatim: titel)
                         .font(Playermass.titel)
+                        .tracking(Stil.sperrungTitel)
                         .lineLimit(1)
                         .hidden()
                         .accessibilityHidden(true)
@@ -499,8 +519,8 @@ struct FolgenEbene: View {
     /// Erst was der Speicher hat (steht schon aus `init`), dann frisch vom Server.
     private func laden() async {
         guard let serie = Item.vorlaeufigeSerie(zu: item) else { return }
-        let frisch = await model.staffeln(serie)
-        guard !frisch.isEmpty else { return }
+        // `nil` heisst gestoert: dann bleibt stehen, was der Speicher hatte.
+        guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
             gewaehlteStaffel = Self.passendeStaffel(zu: item, in: frisch)
@@ -524,7 +544,9 @@ struct FolgenEbene: View {
     private func folgenLaden(staffelGewechselt: Bool = false) async {
         guard let serie = item.seriesId else { return }
         let staffel = gewaehlteStaffel?.id
-        let geladen = await model.folgen(serie: serie, staffel: staffel)
+        // Gescheitert heisst: die Liste bleibt, wie sie war. Sie leer zu
+        // setzen hiesse behaupten, die Staffel habe keine Folgen.
+        guard let geladen = await model.folgen(serie: serie, staffel: staffel) else { return }
         // Wer inzwischen eine andere Staffel gewählt hat, bekommt deren Folgen.
         guard staffel == gewaehlteStaffel?.id else { return }
         if staffelGewechselt {

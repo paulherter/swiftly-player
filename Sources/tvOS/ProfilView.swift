@@ -23,9 +23,13 @@ struct ProfilView: View {
     @State private var kontoAufnehmen = false
     /// Ein zweiter Jellyfin — Adresse, dann Quick Connect.
     @State private var serverAufnehmen = false
+    /// Eigene Header des aktiven Servers (Issue #4).
+    @State private var eigeneKoepfe = false
     /// Seerr anbinden — als eigene Seite ueber allem: drei Felder und eine
     /// Bildschirmtastatur brauchen den Platz, den eine Zeile nicht hat.
     @State private var seerrOffen = false
+    /// Trakt verbinden — Code und QR-Code brauchen dieselbe ganze Seite.
+    @State private var traktOffen = false
     @State private var gemeinschaftsziel: Gemeinschaftsziel?
 
     /// **Erst ansehen, dann hineingehen.** Wandert der Fokus links durch die
@@ -47,6 +51,10 @@ struct ProfilView: View {
 
     /// Alle Genres, die der Server kennt — für „Genre hinzufügen".
     @State private var alleGattungen: [String] = []
+    /// **„Keins offen" war eine Luege, wenn der Server nicht geantwortet
+    /// hatte.** In eine Einstellungszeile passt kein ganzseitiger Hinweis, in
+    /// ihren Wert aber sehr wohl derselbe Wortlaut wie ueberall sonst.
+    @State private var gattungenGestoert = false
 
     private var freieGattungen: [String] {
         alleGattungen.filter { !model.startGenres.contains($0) }
@@ -106,28 +114,40 @@ struct ProfilView: View {
             .defaultFocus($links, bereich)
             // Einmal je Besuch: die Liste der Genres des Servers, für
             // „Genre hinzufügen".
-            .task { alleGattungen = await model.gattungen() }
+            .task {
+                let geholt = await model.gattungen()
+                gattungenGestoert = geholt == nil
+                if let geholt { alleGattungen = geholt }
+            }
     }
 
     private var seite: some View {
         VStack(alignment: .leading, spacing: 0) {
             // **Kein Kopf über den Spalten.** Hier stand das Konto groß über
-            // der ganzen Breite — Name, Server, Fassung. Es steht jetzt als
-            // Karte links über den Bereichen: links liegt, was man wählt
-            // (wer, und welcher Bereich), rechts, was man einstellt. Die
-            // rechte Spalte beginnt dadurch oben, und alle acht Zeilen von
-            // „Wiedergabe" stehen ohne Scrollen da. Entschieden am 11.09.2026.
+            // der ganzen Breite — Name, Server, Fassung. Es steht jetzt
+            // links über den Bereichen: links liegt, was man wählt (wer, und
+            // welcher Bereich), rechts, was man einstellt. Die rechte Spalte
+            // beginnt dadurch oben, und alle acht Zeilen von „Wiedergabe"
+            // stehen ohne Scrollen da. Entschieden am 11.09.2026.
             HStack(alignment: .top, spacing: 72) {
                 VStack(alignment: .leading, spacing: 0) {
-                    kontokarte
-                        .padding(.bottom, 40)
+                    kontoblock
+                    // **Eine Linie statt eines zweiten Kastens.**
+                    //
+                    // Sie sagt, wo „wer" aufhoert und „wo" anfaengt. Ein
+                    // Kasten haette dasselbe gesagt — und dabei so
+                    // ausgesehen wie die Liste darunter und die Karte
+                    // rechts.
+                    Blattlinie()
+                        .padding(.leading, 26)
+                        .padding(.vertical, 32)
                     Gruppentitel(text: "Bereiche")
                     ForEach(Bereichswahl.allCases) { b in
                         Button(b.name) {
                             bereich = b
                             hineingehen()
                         }
-                        .buttonStyle(BereichsStil(an: bereich == b))
+                        .buttonStyle(BereichsStil(an: bereich == b, ruht: drin))
                         .focused($links, equals: b)
                     }
                 }
@@ -183,9 +203,9 @@ struct ProfilView: View {
                             // und die Karte haette keinen Grund mehr.
                             VStack(alignment: .leading, spacing: 0) { zeilen }
                                 .padding(10)
-                                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel))
+                                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
                                 .background(Stil.flaeche,
-                                            in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
+                                            in: RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
                         }
                     }
                     .scrollIndicators(.hidden)
@@ -209,6 +229,17 @@ struct ProfilView: View {
                     drin = false
                     links = bereich
                 }
+                // **Das Netz unter dem Sprung nach rechts.**
+                //
+                // `hineingehen` setzt den Fokus einen Lauf spaeter, weil die
+                // Spalte im selben Lauf noch gesperrt ist. Kommt sie einen
+                // Lauf spaeter noch immer nicht zum Zug, faengt das hier ab:
+                // `onChange` laeuft, wenn der neue Zustand steht, und setzt
+                // nach, falls rechts noch nichts den Fokus hat. Zweimal
+                // dasselbe zu setzen schadet nicht.
+                .onChange(of: drin) { _, jetzt in
+                    if jetzt, rechts == nil { rechts = .oben }
+                }
                 .animation(.easeInOut(duration: 0.2), value: drin)
             }
         }
@@ -231,11 +262,17 @@ struct ProfilView: View {
         .fullScreenCover(isPresented: $kontoAufnehmen) {
             QuickConnectView(model: model) { kontoAufnehmen = false }
         }
+        .fullScreenCover(isPresented: $eigeneKoepfe) {
+            TVEigeneKoepfeSeite(model: model) { eigeneKoepfe = false }
+        }
         .fullScreenCover(isPresented: $serverAufnehmen) {
             ServerAufnahmeView(model: model) { serverAufnehmen = false }
         }
         .fullScreenCover(isPresented: $seerrOffen) {
             SeerrAnbindenView(model: model, seerr: model.seerr) { seerrOffen = false }
+        }
+        .fullScreenCover(isPresented: $traktOffen) {
+            TraktAnbindenView(trakt: model.trakt) { traktOffen = false }
         }
         .fullScreenCover(item: $gemeinschaftsziel) { ziel in
             Codeblatt(ziel: ziel) { gemeinschaftsziel = nil }
@@ -253,20 +290,35 @@ struct ProfilView: View {
 
     // MARK: Konto
 
-    /// **Wer angemeldet ist, als Karte über den Bereichen.**
+    /// **Wer angemeldet ist — ohne Kasten drumherum.**
     ///
-    /// Dieselbe Kontokarte wie auf iPhone, iPad und Mac — Bild, Name, Server
-    /// —, nur hochkant in der Breite der Spalte. Unter der Linie die anderen
-    /// Konten und das Plus: „Weiteres Konto hinzufügen" stand als Zeile im
-    /// Bereich Konto und steht jetzt dort, wo die Konten stehen.
-    private var kontokarte: some View {
+    /// Es war eine Karte: `Stil.flaeche`, `eckeKachel`, 32 Innenabstand —
+    /// genau die Fuellung, die Ecke und der Abstand der Einstellungskarte
+    /// rechts, und direkt darueber die Bereichsliste, deren gewaehlter
+    /// Eintrag ebenfalls ein gefuellter, gerundeter Kasten ist. Drei
+    /// gefuellte Kaesten in einem Bild fuer drei verschiedene Dinge: wer du
+    /// bist, wo du bist, was du einstellst. Paul am 23.09.: die Kachel
+    /// gehoert nicht zu den Bereichen, sieht aber so aus, als gehoere sie
+    /// dazu.
+    ///
+    /// **Nicht alles ist eine Karte** (BRAND 4). Die Liste rechts ist eine —
+    /// sie ist der Gegenstand, an dem man arbeitet, und jetzt der einzige
+    /// gefuellte Kasten der Seite. Links steht dasselbe frei auf dem Grund,
+    /// auf derselben Kante wie „Bereiche" und die Bereichsnamen: 26. Was die
+    /// Karte an Zusammenhalt gab, tragen jetzt Abstand und eine Linie.
+    ///
+    /// **Das Profil bleibt der erste Griff.** Wer die Einstellungen oeffnet,
+    /// will meistens das Konto wechseln — deshalb steht der Kontenstreifen
+    /// weiter ganz oben und nicht im Bereich „Konto".
+    private var kontoblock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Profilzeichen(name: model.session?.userName ?? "?",
                           bild: model.benutzerbildURL(),
                           groesse: 84)
             Text(model.session?.userName ?? "—")
-                .font(.system(size: 40, weight: .bold))
-                .tracking(-0.8)
+                // Reihenueberschrift aus der Leiter; 40 Bold stand daneben.
+                .font(Stil.reihe)
+                .tracking(Stil.sperrungReihe)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 .padding(.top, 18)
@@ -276,13 +328,15 @@ struct ProfilView: View {
                 .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)
                 .padding(.top, 4)
-            Rectangle().fill(Stil.linie).frame(height: 2)
-                .padding(.vertical, 24)
+            // Die Linie, die hier stand, trennte innerhalb der Karte den
+            // Namen von den Konten. Ohne Karte waere sie die zweite in einer
+            // Spalte, die nur eine braucht — und die eine steht weiter
+            // unten, vor „Bereiche". Die Konten gehoeren zum Namen darueber.
             Kontenstreifen(model: model) { kontoAufnehmen = true }
+                .padding(.top, 28)
         }
-        .padding(32)
+        .padding(.leading, 26)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
     }
 
     private var serverzeile: String {
@@ -300,11 +354,24 @@ struct ProfilView: View {
             // Fassungen.
             let frei = model.umwandelnErlaubt
             let directPlay = model.immerDirectPlay || !frei
+            // **Der Anker haengt an der obersten Zeile, die auch zu
+            // haben ist.**
+            //
+            // Er hing fest an dieser hier — und genau sie ist gesperrt,
+            // wenn der Server das Umwandeln verbietet. Ein Fokus auf etwas
+            // Gesperrtes geht ins Leere, also blieb er links stehen: OK auf
+            // „Wiedergabe" tat nichts Sichtbares, waehrend es in allen
+            // sieben anderen Bereichen ging. Deren oberste Zeile ist nie
+            // gesperrt.
+            //
+            // Ist sie es hier, ruecken Direct Play und Bitrate zusammen aus
+            // (`directPlay` ist dann fest an) und „Puffer" ist die erste
+            // Zeile, die man anfassen kann.
             Schalterzeile(titel: "Immer Direct Play", an: directPlay) {
                 model.immerDirectPlay.toggle()
             }
             .disabled(!frei)
-            .focused($rechts, equals: .oben)
+            .focused($rechts, equals: frei ? .oben : .weiter)
             Trennlinie()
             wertzeile("Höchste Bitrate", wert: Bitrate.text(model.bitratenGrenze),
                       eintraege: Bitrate.stufen, beschriftung: { Bitrate.text($0.wert) },
@@ -324,6 +391,7 @@ struct ProfilView: View {
                       eintraege: Pufferstufe.allCases, beschriftung: \.name,
                       an: { $0 == model.pufferstufe },
                       waehlen: { model.pufferstufe = $0 })
+            .focused($rechts, equals: frei ? .weiter : .oben)
             Trennlinie()
             Schalterzeile(titel: "Untertitel automatisch", an: model.untertitelAutomatisch) {
                 model.untertitelAutomatisch.toggle()
@@ -431,7 +499,9 @@ struct ProfilView: View {
             }
             Trennlinie()
             wertzeile("Genre hinzufügen",
-                      wert: freieGattungen.isEmpty ? String(localized: "Keins offen") : "",
+                      wert: gattungenGestoert && alleGattungen.isEmpty
+                            ? String(localized: "Server ist abgetaucht")
+                            : (freieGattungen.isEmpty ? String(localized: "Keins offen") : ""),
                       eintraege: freieGattungen.map { Gattungswahl(name: $0) },
                       beschriftung: \.name,
                       an: { _ in false },
@@ -450,6 +520,19 @@ struct ProfilView: View {
                 seerrOffen = true
             }
             .focused($rechts, equals: .oben)
+            // **Eine Zeile, nicht zwei wie bei Seerr.** Zweimal „Anbinden"
+            // untereinander liesse offen, welcher Dienst gemeint ist; hier
+            // steht der Name vorn und der Stand dahinter. Nur mit
+            // Zugangsdaten im Bau (`TraktZugang`).
+            if model.trakt.verfuegbar {
+                Trennlinie()
+                Handlungszeile(name: "Trakt",
+                               wert: model.trakt.verbunden
+                                   ? (model.trakt.benutzer ?? String(localized: "Verbunden"))
+                                   : String(localized: "Nicht verbunden")) {
+                    traktOffen = true
+                }
+            }
 
         case .gemeinschaft:
             // **Als Code, nicht als Link** — der Fernseher hat keinen Browser.
@@ -473,6 +556,9 @@ struct ProfilView: View {
             // **Mehrere Server, seit dem 12.09.2026.** Vorher hielt der Bund
             // genau einen, und diese Zeile gab es gar nicht.
             Handlungszeile(titel: "Server hinzufügen") { serverAufnehmen = true }
+            Trennlinie()
+            // Für Server hinter einem Dienst wie Cloudflare Access (Issue #4).
+            Handlungszeile(titel: "Eigene Header") { eigeneKoepfe = true }
             Trennlinie()
             Handlungszeile(titel: "Verbindung prüfen") {
                 Task { pruefung = await model.verbindungPruefen() }
@@ -549,6 +635,10 @@ struct ProfilView: View {
                             }
                         }
                         .buttonStyle(ZeilenStil())
+                        // Der `checkmark` sagt, was gilt — als Zeichen ohne
+                        // Beschriftung sagt er VoiceOver nichts. Das Merkmal
+                        // gehoert an den Knopf.
+                        .accessibilityAddTraits(an(eintrag) ? [.isButton, .isSelected] : .isButton)
                     }
                 }
                 .padding(.leading, 26)
@@ -567,24 +657,40 @@ struct ProfilView: View {
 /// ruhige Fläche — dieselbe Regel wie überall.
 struct BereichsStil: ButtonStyle {
     let an: Bool
+    /// **Gewaehlt, aber abgegeben.** Wer OK drueckt, arbeitet rechts; der
+    /// Bereich links ist dann nicht mehr das, was man gerade tut, sondern
+    /// nur noch die Auskunft, woher man kam. Trug er weiter den Akzent,
+    /// standen beide Spalten gleich laut da und es sah aus, als sei links
+    /// noch etwas offen.
+    var ruht = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration, an: an)
+        Inhalt(configuration: configuration, an: an, ruht: ruht)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         let an: Bool
+        let ruht: Bool
         @Environment(\.isFocused) private var fokus
 
         var body: some View {
             configuration.label
-                .font(.system(size: 31, weight: an || fokus ? .semibold : .medium))
-                .foregroundStyle(an ? Stil.akzent : Stil.schrift)
+                // **Das Gewicht bleibt.** Grau wird die Farbe, nicht die
+                // Stelle: wo man war, soll man beim Zurueckgehen wiederfinden
+                // — und ein Gewichtswechsel verschoebe ausserdem die Zeile.
+                // **Gewaehlt ist hier Akzentschrift und Toenung — und
+                // VoiceOver sieht beides nicht.** Die Hauptnavigation der
+                // Einstellungen sagte ihre Wahl nur ueber Farbe; ohne diese
+                // Angabe klingt der offene Bereich wie jeder andere. Der
+                // Filterchip und `LeistenStil` machen es schon so.
+                .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
+                .font(.system(size: 30, weight: an || fokus ? .semibold : .medium))
+                .foregroundStyle(schriftfarbe)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 26)
                 .frame(height: Stil.zeilenHoehe)
-                .background(grund, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                .background(grund, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
@@ -594,10 +700,18 @@ struct BereichsStil: ButtonStyle {
         /// man stand. Jetzt trägt der Akzent Schrift und Tönung wie in der
         /// Seitenleiste von iPad und Mac, der Fokus die helle Fläche, und
         /// beides zusammen die kräftigere Tönung.
+        private var schriftfarbe: Color {
+            guard an else { return Stil.schrift }
+            return ruht ? Stil.schriftLeise : Stil.akzent
+        }
+
         private var grund: Color {
             switch (an, fokus) {
             case (true, true):   Stil.akzent.opacity(0.26)
-            case (true, false):  Stil.akzent.opacity(0.15)
+            // Abgegeben: die ruhige Flaeche statt der Toenung. Die Zeile
+            // bleibt als Ort erkennbar, hoert aber auf, nach vorn zu
+            // draengen.
+            case (true, false):  ruht ? Stil.flaeche : Stil.akzent.opacity(0.15)
             case (false, true):  Stil.fokusflaeche
             case (false, false): .clear
             }
@@ -612,7 +726,7 @@ struct Anzeigezeile: View {
 
     var body: some View {
         HStack(spacing: 24) {
-            Text(titel).font(.system(size: 31, weight: .medium))
+            Text(titel).font(.system(size: 30, weight: .medium))
             Spacer(minLength: 40)
             Text(wert).font(Stil.knopf).foregroundStyle(Stil.schriftLeise)
         }
@@ -631,6 +745,11 @@ struct Handlungszeile: View {
     var wert: String?
     var aufgeklappt = false
     let aktion: () -> Void
+    /// **Gesperrt heisst gedaempft — auch rechts.** `ZeilenStil` daempft die
+    /// Beschriftung, Wert und Pfeil setzten ihre Farbe selbst und blieben
+    /// heller stehen als der Titel: die Bitratenzeile sah bei „Immer Direct
+    /// Play" halb bedienbar aus, und der Wert war lauter als sein Name.
+    @Environment(\.isEnabled) private var bedienbar
 
     var body: some View {
         Button(action: aktion) {
@@ -638,14 +757,22 @@ struct Handlungszeile: View {
                 if let name { Text(verbatim: name) } else { Text(titel) }
                 Spacer(minLength: 40)
                 if let wert {
-                    Text(wert).foregroundStyle(Stil.schriftLeise)
+                    Text(wert)
+                        .foregroundStyle(bedienbar ? Stil.schriftLeise
+                                                   : Stil.schriftSehrLeise)
                     Image(systemName: aufgeklappt ? "chevron.up" : "chevron.down")
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(Stil.schriftSehrLeise)
+                        .opacity(bedienbar ? 1 : 0.5)
                 }
             }
         }
         .buttonStyle(ZeilenStil())
+        // Der Pfeil sagt, ob die Auswahl offen ist; VoiceOver sieht ihn
+        // nicht. Nur wo es etwas aufzuklappen gibt — ohne Wert ist die Zeile
+        // eine gewoehnliche Handlung.
+        .accessibilityHint(wert == nil ? Text("")
+                           : (aufgeklappt ? Text("Zuklappen") : Text("Aufklappen")))
     }
 }
 
@@ -716,11 +843,15 @@ struct Reihenzeile: View {
         Button(action: tun) {
             Image(systemName: symbol)
                 .font(.system(size: 26, weight: .semibold))
-                .frame(width: 56, height: 56)
         }
-        .buttonStyle(.card)
+        // **Nicht `.buttonStyle(.card)`.** Apples Karte bringt Schatten,
+        // Parallaxe und ein Aufblitzen mit — `tvOS/Stil.swift` schliesst sie
+        // gleich im Kopf aus, und hier stand sie trotzdem. `KnopfStil` traegt
+        // dieselben drei Zustaende wie jeder andere Knopf der App, den
+        // gesperrten eingeschlossen: gedaempfte Schrift auf ruhiger Flaeche
+        // statt einer durchscheinenden Karte.
+        .buttonStyle(KnopfStil(nurSymbol: true, hoehe: 56))
         .disabled(!an)
-        .opacity(an ? 1 : 0.3)
         .accessibilityLabel(symbol == "chevron.up" ? Text("Nach oben") : Text("Nach unten"))
     }
 }
@@ -745,18 +876,39 @@ struct Gattungswahl: Identifiable {
 /// Der Schalter selbst — nur Anzeige, gedrückt wird die Zeile.
 struct Schalter: View {
     let an: Bool
+    /// **Gesperrt heisst gedaempft, auch hier.** `ZeilenStil` daempft die
+    /// Schrift, der Schalter daneben blieb in vollem Akzent stehen — die
+    /// Zeile sah damit halb bedienbar aus. Der Zustand kommt aus der
+    /// Umgebung, damit das `.disabled` der Aufrufstelle reicht und keine
+    /// zweite Angabe danebensteht, die auseinanderlaufen kann.
+    @Environment(\.isEnabled) private var bedienbar
 
     var body: some View {
         ZStack(alignment: an ? .trailing : .leading) {
             Capsule()
-                .fill(an ? Stil.akzent : Color.white.opacity(0.16))
+                .fill(spur)
                 .frame(width: 84, height: 50)
             Circle()
-                .fill(an ? Stil.grund : Color.white)
+                .fill(griff)
                 .frame(width: 40, height: 40)
                 .padding(.horizontal, 5)
         }
-        .animation(.easeInOut(duration: 0.15), value: an)
+        .animation(bedienbar ? .easeInOut(duration: 0.15) : nil, value: an)
+    }
+
+    /// Gedaempft, nicht durchscheinend: der Schalter behaelt seine Stellung
+    /// — man sieht weiter, ob er an ist, nur nicht mehr, dass man ihn
+    /// umlegen koennte.
+    private var spur: Color {
+        guard bedienbar else {
+            return an ? Stil.akzent.opacity(0.35) : Color.white.opacity(0.08)
+        }
+        return an ? Stil.akzent : Color.white.opacity(0.16)
+    }
+
+    private var griff: Color {
+        guard bedienbar else { return Color.white.opacity(0.35) }
+        return an ? Stil.grund : Color.white
     }
 }
 
@@ -840,8 +992,12 @@ private struct KontostreifenStil: ButtonStyle {
                         .opacity(fokus ? 1 : 0)
                 }
                 .frame(width: groesse, height: groesse)
-                .scaleEffect(fokus ? 1.12 : 1)
-                .shadow(color: .black.opacity(fokus ? 0.55 : 0), radius: 14, y: 8)
+                // Kein Schatten — siehe `PlayerScreen`. Die Lupe sagt es.
+                //
+                // 1,12 stand hier, 1,10 am `ProfilStil` daneben — zwei Werte
+                // fuer denselben 60 Punkt grossen Kreis. Jetzt beide die kleine
+                // Stufe.
+                .scaleEffect(fokus ? Stil.fokusLupeKlein : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }

@@ -96,17 +96,27 @@ struct PersonenTests {
     @Test("Doppelte Kennungen fallen weg")
     func ohneDoppelte() async throws {
         let titel = await (await spyClient()).titel(person: "p1")
-        #expect(titel.map(\.id) == ["a", "b"])
+        #expect(titel?.map(\.id) == ["a", "b"])
     }
 
-    /// Die Seite steht auch ohne Reihe: Name und Bild kommen vom Aufrufer.
-    @Test("Ein stummer Server ergibt eine leere Liste, keine Ausnahme")
+    /// **Der Unterschied, um den es geht.** Ein stummer Server ergibt `nil`,
+    /// nicht `[]` — sonst zeigt die Personenseite „Von … liegt hier nichts",
+    /// obwohl sie nie eine Antwort bekommen hat.
+    @Test("Ein stummer Server ergibt nil, keine leere Liste")
     func serverStumm() async throws {
         Spy.body = Data("kein JSON".utf8)
         defer {
             Spy.body = Data(#"{"Items":[],"TotalRecordCount":0}"#.utf8)
         }
         let titel = await (await spyClient()).titel(person: "p1")
-        #expect(titel.isEmpty)
+        #expect(titel == nil)
+    }
+
+    /// Die Gegenprobe: eine echte leere Antwort bleibt `[]`.
+    @Test("Eine leere Antwort bleibt eine leere Liste")
+    func wirklichLeer() async throws {
+        Spy.body = Data(#"{"Items":[],"TotalRecordCount":0}"#.utf8)
+        let titel = await (await spyClient()).titel(person: "p1")
+        #expect(titel?.isEmpty == true)
     }
 }

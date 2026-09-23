@@ -12,7 +12,7 @@ import JellyfinKit
 ///
 /// - Das Bild auf **einen** Punkt verkleinern — das ist der Mittelwert.
 /// - Daraus Farbton und Sättigung nehmen, die Sättigung auf **0,45** deckeln
-///   und die Helligkeit auf **0,26** setzen. Der Ton soll den Grund
+///   und die Helligkeit auf **0,146** setzen (seit 22.09., vorher 0,26). Der Ton soll den Grund
 ///   einfärben, nicht ersetzen; 26 % liegt nah an `grund` (5 %), bleibt aber
 ///   erkennbar warm oder kalt.
 ///
@@ -77,7 +77,11 @@ enum Bildfarbe {
 
         return ausHSB(farbton: farbton,
                       saettigung: min(spanne / hoch, 0.45),
-                      helligkeit: 0.26)
+                      // **Nie heller als `flaeche`** (Mac 08187533): 0,26
+                      // lag ueber `erhoeht`, und die Aktionsknoepfe standen
+                      // auf ihrer eigenen Farbe. 14,6 % ist der groesste
+                      // Wert, bei dem die Toenung unter `flaeche` bleibt.
+                      helligkeit: 0.146)
     }
 
     private static func ausHSB(farbton: Double, saettigung: Double,
@@ -143,15 +147,14 @@ enum Tonblatt {
             "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
         }
         let blatt = """
-        /* **Ein Anstrich für die ganze Seite.** Ton über die Höhe der
-           Kopfzone, dann 260 Punkte nach `grund` — dieselbe Länge wie auf dem
-           Mac. Zwei Kästen mit demselben Ton haben eine Kante dazwischen, und
-           die scheint auf einem halben Bildpunkt durch; einer hat keine. */
+        /* **Ein Anstrich für die ganze Seite. Der Ton endet mit dem
+           Heldbild** (Mac e836d519): oben voll, bei `heldHoehe` ist er
+           `grund`. Er lief 260 Punkt weiter, und die Knopfreihe neben dem
+           Abspielknopf stand damit mitten im farbigen Auslauf. */
         .swiftly-seitenton {
             background-color: \(Stil.grund);
             background-image: linear-gradient(to bottom,
-                \(t(1)) 0px, \(t(1)) \(Stil.heldHoehe)px,
-                \(Stil.grund) \(Stil.heldHoehe + 260)px);
+                \(t(1)) 0px, \(Stil.grund) \(Stil.heldHoehe)px);
             background-repeat: no-repeat;
         }
         """

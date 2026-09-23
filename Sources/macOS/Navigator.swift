@@ -122,10 +122,19 @@ enum Seitenziel: Hashable, Identifiable {
     case titel(Item)
     /// **Eine Bibliothek als eigene Seite.**
     ///
-    /// Fuer die Sammlungen neben Filme und Serien. Sie schalten den
-    /// Filme-Bereich ausdruecklich **nicht** um Vorher taten sie genau das,
-    /// und dann stand ueber "Filmabend" die Ueberschrift "Filme".
+    /// **Nicht mehr in Gebrauch.** Seit dem 23.09.2026 stehen die übrigen
+    /// Bibliotheken im Titelmenü von Filme und Serien, nicht mehr in der
+    /// Seitenleiste; der Fall bleibt nur stehen, damit ein alter,
+    /// wiederhergestellter Stapel nicht bricht.
     case bibliothek(Item)
+    /// **Eine Sammlung** — aus dem Titelmenü („Sammlungen") oder aus „Teil
+    /// der Sammlung" auf der Filmseite. Anders als eine Bibliothek eine
+    /// Unterseite mit Pfeil, wie auf dem iPhone. `art`: ihre Filme oder ihre
+    /// Serien; `nil`: alles, was in ihr steht.
+    case sammlung(Item, art: String?)
+    /// **Eine geladene Serie** — aus den Downloads, ohne Server: alles kommt
+    /// von der Platte.
+    case downloadserie(String, titel: String)
     /// **Nicht mehr in Gebrauch.** Die Merkliste ist seit dem 06.09.2026 ein
     /// eigener Bereich in der Leiste; der Fall bleibt nur stehen, damit ein
     /// alter, wiederhergestellter Stapel nicht bricht.
@@ -135,6 +144,8 @@ enum Seitenziel: Hashable, Identifiable {
     case merkliste
     /// Seerr anbinden — eine Zugabe, deshalb hinter den Einstellungen.
     case seerr
+    /// Trakt verbinden — wie Seerr hinter den Einstellungen.
+    case trakt
     /// Ein Titel, den der eigene Server nicht hat — aus der Suche.
     case seerrTitel(Seerrtreffer)
     /// Eine Person aus der Besetzung — was es von ihr gibt.
@@ -159,8 +170,11 @@ enum Seitenziel: Hashable, Identifiable {
         switch self {
         case let .titel(item):  "titel-\(item.id)"
         case let .bibliothek(b): "bibliothek-\(b.id)"
+        case let .sammlung(s, art): "sammlung-\(s.id)-\(art ?? "")"
+        case let .downloadserie(id, _): "downloadserie-\(id)"
         case .merkliste:        "merkliste"
         case .seerr:            "seerr"
+        case .trakt:            "trakt"
         case let .seerrTitel(t): "seerr-\(t.art)-\(t.id)"
         case let .person(p, _): "person-\(p.id)"
         case let .gattung(name): "gattung-\(name)"
@@ -184,13 +198,13 @@ enum Seitenziel: Hashable, Identifiable {
     /// nimmt sie wieder weg.
     var imKontozweig: Bool {
         switch self {
-        case .profil, .einstellungen, .wiedergabe, .seerr, .darstellung,
+        case .profil, .einstellungen, .wiedergabe, .seerr, .trakt, .darstellung,
              .genrewahl, .quickConnect, .kontoHinzufuegen, .serverHinzufuegen: true
         // **Die Personenseite gehoert zum Bereich, nicht zum Konto.** Man
         // kommt aus einem Titel dorthin und will von dort weiter in den
         // naechsten — sie liegt im selben Zweig wie die Seite, die sie
         // geoeffnet hat. Dasselbe gilt fuer ein Genre.
-        case .titel, .bibliothek, .merkliste, .seerrTitel, .person, .gattung: false
+        case .titel, .bibliothek, .sammlung, .downloadserie, .merkliste, .seerrTitel, .person, .gattung: false
         }
     }
 

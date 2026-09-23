@@ -1,5 +1,19 @@
 package de.paulherter.swiftly
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -39,11 +53,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,12 +65,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -70,7 +80,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
+import de.paulherter.swiftly.gemeinsam.Hauptknopf
+import de.paulherter.swiftly.gemeinsam.StillerKnopf
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.State
@@ -100,11 +113,15 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
  */
 val LocalBereichsmass = staticCompositionLocalOf<Animatable<Float, AnimationVector1D>?> { null }
 
-/** `bereichsinhalt()` — waechst von unten, damit die sichtbare Unterkante stehen bleibt. */
+/**
+ * `bereichsinhalt()` — **Anker oben** (`scaleEffect(anchor: .top)`, BAUTEILE 7). Unten verankert
+ * wanderte die obere Kante, und dort liegt der Kopfverlauf; darunter klaffte dann fuer zwei
+ * Zehntelsekunden der blanke Grund.
+ */
 fun Modifier.bereichsinhalt(): Modifier = composed {
     val mass = LocalBereichsmass.current
     if (mass == null) Modifier
-    else Modifier.graphicsLayer { val m = mass.value; scaleX = m; scaleY = m; transformOrigin = TransformOrigin(0.5f, 1f) }
+    else Modifier.graphicsLayer { val m = mass.value; scaleX = m; scaleY = m; transformOrigin = TransformOrigin(0.5f, 0f) }
 }
 
 /**
@@ -147,8 +164,26 @@ fun rememberRuck(): (Ruck) -> Unit {
     }
 }
 
-/** Antippen ohne Welle — auf iOS sind die Knoepfe `.plain`. */
+/**
+ * Vorlage: `Stil.Druckknopf` — **jeder Knopf gibt nach**: Massstab 0,97 und Deckkraft 0,85, der
+ * Druck sofort, das Loslassen 0,12 s `easeOut`. Keine Welle: die ist Material, nicht diese App.
+ * Bei reduzierter Bewegung bleibt nur die Deckkraft.
+ */
 fun Modifier.antippen(tun: () -> Unit): Modifier = composed {
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val druck = remember { Animatable(0f) }
+    LaunchedEffect(gedrueckt) { if (gedrueckt) druck.snapTo(1f) else druck.animateTo(0f, Bewegung.loslassen()) }
+    val ruhig = bewegungReduziert()
+    graphicsLayer {
+        val d = druck.value
+        if (!ruhig) { val m = 1f - (1f - Bewegung.DRUCKMASS) * d; scaleX = m; scaleY = m }
+        alpha = 1f - 0.15f * d
+    }.clickable(quelle, null, onClick = tun)
+}
+
+/** Ein Tipp ohne jede Rueckmeldung — fuer Flaechen, die kein Knopf sind (Schleier, Bildflaeche). */
+fun Modifier.tippen(tun: () -> Unit): Modifier = composed {
     clickable(remember { MutableInteractionSource() }, null, onClick = tun)
 }
 
@@ -175,18 +210,83 @@ fun KopfUndInhalt(kopf: @Composable () -> Unit, inhalt: @Composable (kopfhoehe: 
     }
 }
 
+/**
+ * Vorlage: `Kopfverlauf` in `Stil.swift` — **dunkel, kein Schein.** Oben kraeftig, unten weich, neun
+ * Stuetzpunkte, damit der Abfall nirgends knickt; er reicht 17 unter den Kopf hinaus. Einen farbigen
+ * Schein gibt es nicht mehr, er ist bewusst gefallen.
+ */
+fun DrawScope.kopfverlauf(deckung: Float) {
+    if (deckung <= 0f) return
+    val g = Stil.grund
+    drawRect(Brush.verticalGradient(
+        0f to g.copy(alpha = 0.98f), 0.30f to g.copy(alpha = 0.94f), 0.48f to g.copy(alpha = 0.85f),
+        0.62f to g.copy(alpha = 0.70f), 0.73f to g.copy(alpha = 0.52f), 0.82f to g.copy(alpha = 0.34f),
+        0.89f to g.copy(alpha = 0.19f), 0.95f to g.copy(alpha = 0.09f), 1f to g.copy(alpha = 0f),
+        startY = 0f, endY = size.height + 17.dp.toPx()),
+        size = Size(size.width, size.height + 17.dp.toPx()), alpha = deckung)
+}
+
+/**
+ * Vorlage: `Unschaerfekopf(versatz:)` in `Stil.swift` — der Kopf einer Wurzelseite. **Der Inhalt
+ * laeuft darunter durch**, und der `kopfverlauf` zieht erst auf, wenn wirklich etwas darunter liegt:
+ * ueber die ersten 30 Punkt Weg. Im Ruhezustand deckt er nichts ab, er waere reine Zierde. Keine
+ * Haarlinie: der Verlauf laeuft gegen den Grund aus und hat keine Kante, die verdeckt werden muesste.
+ *
+ * Seitenrand 18, unten 12 — der Kopf endet dort, wo die Scrollflaeche anfaengt.
+ */
+@Composable
+fun Wurzelkopf(versatz: () -> Float, modifier: Modifier = Modifier, rand: Boolean = true, inhalt: @Composable ColumnScope.() -> Unit) {
+    Column(modifier.fillMaxWidth()
+            .drawBehind { kopfverlauf((versatz() / 30f).coerceIn(0f, 1f)) }
+            .statusBarsPadding()
+            .then(if (rand) Modifier.padding(horizontal = Stil.randAbstand) else Modifier)
+            .padding(bottom = 12.dp), content = inhalt)
+}
+
+/**
+ * Vorlage: `Wertreihe` in `Stil.swift` — „Alle" und „A–Z" **gehen beim Scrollen weg, statt
+ * mitzuscrollen**, und zwar **nur ueber die Deckkraft, nie ueber die Hoehe.**
+ *
+ * Auf dem iPhone hat genau dieses Element vier Anlaeufe gekostet: die Reihe sitzt im Kopf, der
+ * Kopf bestimmt, wo die Scrollflaeche anfaengt, und eine Hoehenaenderung aendert den Versatz, der
+ * sie steuert — eine Rueckkopplung, die Standbilder und Springen erzeugt (BAUTEILE 10). Deshalb
+ * behaelt sie ihren Platz und blendet ueber 44 Punkt Weg aus (30 Pillenhoehe + 14 Abstand).
+ * Halb zu nimmt sie keinen Tipp mehr an — ein Blatt aus einer verschwindenden Zeile ist eine Falle.
+ */
+@Composable
+fun Wertreihe(versatz: () -> Float, modifier: Modifier = Modifier, inhalt: @Composable RowScope.() -> Unit) {
+    val zu by remember { derivedStateOf { versatz() / Stil.wertreihenWeg.value >= 0.5f } }
+    Row(modifier.fillMaxWidth().padding(top = 14.dp)
+            .graphicsLayer { alpha = 1f - (versatz() / Stil.wertreihenWeg.value).coerceIn(0f, 1f) }
+            .then(if (zu) Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
+                awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
+            } else Modifier),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), content = inhalt)
+}
+
+/** Vorlage: `Zaehlmarke` — 13 Medium, tabellarische Ziffern, `schriftSehrLeise`. */
+@Composable
+fun Zaehlmarke(anzahl: Int) {
+    Text(java.text.NumberFormat.getInstance().format(anzahl), style = Stil.kachel.copy(fontFeatureSettings = "tnum"),
+         color = Stil.schriftSehrLeise, modifier = Modifier.semantics { contentDescription = uebersetzt("%lld Titel", anzahl) })
+}
+
 /** Vorlage: `Kopfziele` in `Stil.swift` — Merkliste und Profil, je 44, auf jeder Hauptseite gleich. */
 @Composable
-fun Kopfziele(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
-    Row {
+fun Kopfziele(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, vorn: @Composable () -> Unit = {}) {
+    // `vorn`: was nur eine Seite hat (Bearbeiten auf Downloads) — links vom Rest, weil es kommt und geht.
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Uebernahmezeichen(app)
+        vorn()
         // Gefuellt, aber kein Zustand: hier ist das Lesezeichen ein Ziel, keine Markierung.
         Box(Modifier.size(44.dp).antippen { oeffnen(Ziel("merkliste", uebersetzt("Merkliste"), "Merkliste")) },
             contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Bookmark, contentDescription = uebersetzt("Merkliste"), tint = Stil.schrift, modifier = Modifier.size(20.dp))
+            Symbol(Zeichen.LesezeichenVoll, 20.dp, farbe = Stil.schrift, beschreibung = uebersetzt("Merkliste"))
         }
-        Box(Modifier.size(44.dp).antippen { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {
-            Profilbild(app, 32.dp)
+        // `Profilziel`: das Zeichen 34 in 44 Trefferflaeche, um 7 nach aussen gerueckt, damit der Kreis
+        // buendig an der Kante steht und nicht die Trefferflaeche.
+        Box(Modifier.offset(x = 7.dp).size(44.dp).antippen { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {
+            Profilbild(app, 34.dp)
         }
     }
 }
@@ -200,6 +300,7 @@ fun Profilbild(app: SwiftlyAnwendung, groesse: Dp) {
         modifier = Modifier.size(groesse).clip(CircleShape),
         error = {
             Box(Modifier.fillMaxSize().background(Stil.erhoeht), contentAlignment = Alignment.Center) {
+                // Buchstabe = Groesse × 0,38 Semibold (BAUTEILE 6, `Profilzeichen`).
                 Text(app.benutzername().take(1).uppercase(), color = Stil.schrift,
                      style = TextStyle(fontSize = (groesse.value * 0.38f).sp, fontWeight = FontWeight.SemiBold))
             }
@@ -207,22 +308,40 @@ fun Profilbild(app: SwiftlyAnwendung, groesse: Dp) {
     )
 }
 
-/** Der Balken unten im Bild — 4 hoch, Akzent auf 25 % Weiss. */
+/**
+ * Der Balken unten im Bild — buendig an der Unterkante, 4 hoch, eckig.
+ *
+ * **Die Spur ist weiss 30 %, nicht 25** (BRAND 7): gelesen heisst eine dunkle Spur „hier
+ * fehlt etwas", eine helle „so lang ist das Ganze, und so weit bist du". 30 ist als
+ * *Flaeche* erlaubt und gewollt; als Schriftfarbe waere derselbe Wert verboten (2,67:1).
+ */
 @Composable
-fun Fortschrittsbalken(anteil: Double, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = 0.25f))) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(anteil.toFloat().coerceIn(0f, 1f)).background(Stil.akzent))
+fun Fortschrittsbalken(anteil: Double, modifier: Modifier = Modifier,
+                       /**
+                        * **Kapsel, wo er frei in einer Zeile steht** — in der Downloadliste. Auf einer
+                        * Kachel bleibt er eckig: dort bildet er die Kante des Bildes. Der gefuellte Teil
+                        * ist selbst eine Kapsel, sonst endet er innen gerade.
+                        */
+                       rund: Boolean = false) {
+    val form = if (rund) CircleShape else RectangleShape
+    Box(modifier.fillMaxWidth().height(4.dp).clip(form).background(Color.White.copy(alpha = 0.30f))) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(anteil.toFloat().coerceIn(0f, 1f)).clip(form).background(Stil.akzent))
     }
 }
 
 /** Vorlage: `Wertpille` in `Stil.swift` — zeigt den **Wert**, nicht die Moeglichkeiten. */
 @Composable
-fun Wertpille(symbol: ImageVector, text: String, tun: () -> Unit) {
-    Row(Modifier.height(30.dp).clip(CircleShape).background(Stil.erhoeht).border(1.dp, Stil.rand, CircleShape)
+fun Wertpille(symbol: Zeichen, text: String, tun: () -> Unit) {
+    // **Fuellung ohne Rand, und `flaeche` statt `erhoeht`.** Sie trugen als einzige Knoepfe
+    // der App eine Umrandung und sahen deshalb aus wie eine fremde Sorte — Paul am 21.09. zu
+    // „Alle" und „A–Z": „die sehen optisch so anders aus, die haben so eine Umrandung, die
+    // sonst nichts hat." `erhoeht` ist das, was **auf** einer Flaeche liegt; die Pille liegt
+    // auf der Seite. `minHeight`, damit wachsende Systemschrift den Text nicht abschneidet.
+    Row(Modifier.heightIn(min = Stil.pillenHoehe).clip(CircleShape).background(Stil.flaeche)
             .antippen(tun).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Icon(symbol, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(14.dp))
-        Text(text, style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = Stil.schrift)
+        Symbol(symbol, 12.dp, farbe = Stil.schriftLeise, staerke = Staerke.Mittel)
+        Text(text, style = Stil.kachel, color = Stil.schrift)
     }
 }
 
@@ -238,7 +357,7 @@ fun Kachelplakette(marke: String, zahl: Int, modifier: Modifier = Modifier) {
     Row(modifier.padding(6.dp).clip(form).background(Stil.grund.copy(alpha = 0.78f)).border(1.dp, Stil.rand, form)
             .padding(horizontal = if (wortlaut == null) 5.dp else 6.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        if (marke == "gesehen") Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.schrift, modifier = Modifier.size(11.dp))
+        if (marke == "gesehen") Symbol(Zeichen.Haken, 10.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
         wortlaut?.let { Text(it, style = Stil.plakette, color = Stil.schrift) }
     }
 }
@@ -250,8 +369,16 @@ fun Kachelplakette(marke: String, zahl: Int, modifier: Modifier = Modifier) {
 val LocalLadepuls = compositionLocalOf<State<Float>?> { null }
 
 @Composable
-fun Ladepuls(): State<Float> = rememberInfiniteTransition(label = "laden").animateFloat(
-    0.5f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hell")
+fun Ladepuls(): State<Float> {
+    // **„Bewegung reduzieren" haelt eine Endlosschleife nicht an.** Android setzt bei
+    // ausgeschalteten Animationen die Dauer aller Compose-Animationen auf null — fuer eine
+    // einmalige Bewegung ist das richtig, eine Schleife mit Dauer 0 pulst danach nur hart
+    // weiter. Also wird hier gefragt, wie `Stil.bewegungReduziert` auf Apple gefragt wird, und
+    // der Platzhalter steht still bei voller Deckung.
+    if (bewegungReduziert()) return remember { mutableFloatStateOf(1f) }
+    return rememberInfiniteTransition(label = "laden").animateFloat(
+        0.5f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hell")
+}
 
 /** Vorlage: `Ladefeld` — atmet zwischen halber und voller Deckung, 0,9 s, im gemeinsamen Takt. */
 @Composable
@@ -272,33 +399,93 @@ fun Kachelplatzhalter() {
     }
 }
 
-/** Vorlage: `Leerzustand` in `Stil.swift` — Kreis mit Zeichen, Kopfzeile, Text, ein Knopf. */
+/**
+ * Vorlage: `Leerzustand` in `Sources/Shared/Stil.swift`.
+ *
+ * **Die Abstaende stehen in der Vorlage, nicht im Gefuehl:** Zeichen 44 im Kreis von 78 ·
+ * 22 · Kopfzeile 20 Semibold mit `sperrungReihe` · 7 · Text 15 `schriftLeise`, hoechstens
+ * 262 breit · 24 · Hauptknopf · 16 · stiller Knopf. Knoepfe **untereinander**.
+ *
+ * Vier Dinge standen hier anders und sind nachgezogen (BRAND 5/7):
+ * - Der Kreis trug einen Rand. Keine gezeichneten Kanten.
+ * - Das Zeichen war 32 statt 44 — „eine Groesse fuer beide, sonst sind es zwei Leerzustaende".
+ * - Kopfzeile 19 und Text 14 stehen in **keiner** Leiter; es sind 20 und 15.
+ * - Der Hauptknopf war eine **Akzentkapsel**. Der Akzent traegt nie eine Flaeche, und die
+ *   eine gefuellte Flaeche der Seite ist weiss mit dunkler Schrift. Er ist jetzt der
+ *   geteilte `Hauptknopf`, nur so breit wie sein Text: eine Stoerung ist kein Formular.
+ *
+ * `laedt` laesst das Zeichen atmen — fuer „wird gerade versucht". Kein Ring: das Zeichen
+ * sagt weiter, worum es geht. **Bei reduzierter Bewegung faellt das Atmen weg**; Android
+ * setzt nur *einmalige* Animationen auf null, eine Endlosschleife laeuft sonst weiter.
+ *
+ * **Ein Leerzustand bekommt nur dann einen Knopf, wenn es etwas zu tun gibt.**
+ */
 @Composable
-fun Leerzustand(symbol: ImageVector, kopfzeile: String, text: String,
+fun Leerzustand(symbol: Zeichen, kopfzeile: String, text: String, laedt: Boolean = false,
                 hauptknopf: Pair<String, () -> Unit>? = null, stillerKnopf: Pair<String, () -> Unit>? = null) {
     // Erscheint mit Deckkraft und aus 0,97 — `.opacity.combined(with: .scale(0.97))`.
     val ein = remember { Animatable(0f) }
     LaunchedEffect(Unit) { ein.animateTo(1f, Bewegung.einblenden()) }
+    val ruhig = bewegungReduziert()
+    val atem = if (laedt && !ruhig) LocalLadepuls.current?.value ?: 1f else 1f
     Column(Modifier.fillMaxSize().graphicsLayer { alpha = ein.value; val m = 0.97f + 0.03f * ein.value; scaleX = m; scaleY = m }
-               .padding(horizontal = Stil.randAbstand),
+               .padding(horizontal = 34.dp),
            horizontalAlignment = Alignment.CenterHorizontally,
-           verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
-        Box(Modifier.size(78.dp).clip(CircleShape).background(Stil.flaeche).border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape),
+           verticalArrangement = Arrangement.Center) {
+        Box(Modifier.size(Stil.kreisLeer).clip(CircleShape).background(Stil.flaeche),
             contentAlignment = Alignment.Center) {
-            Icon(symbol, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(32.dp))
+            Symbol(symbol, 44.dp, Modifier.graphicsLayer { alpha = atem }, farbe = Stil.schriftLeise)
         }
-        Text(kopfzeile, style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp), color = Stil.schrift)
-        Text(text, style = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center),
+        Text(kopfzeile, style = Stil.reihe, color = Stil.schrift, modifier = Modifier.padding(top = 22.dp, bottom = 7.dp))
+        Text(text, style = Stil.koerper.copy(lineHeight = 21.sp, textAlign = TextAlign.Center),
              color = Stil.schriftLeise, modifier = Modifier.widthIn(max = 262.dp))
-        // Mittig und nur so breit wie der Text — eine Stoerung ist kein Formular.
         hauptknopf?.let { (titel, tun) ->
-            Text(titel, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = Stil.grund,
-                 modifier = Modifier.clip(CircleShape).background(Stil.akzent).antippen(tun).padding(horizontal = 22.dp, vertical = 12.dp))
+            Hauptknopf(titel, dehnt = false, modifier = Modifier.padding(top = 24.dp), aktion = tun)
         }
         stillerKnopf?.let { (titel, tun) ->
-            Text(titel, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium), color = Stil.schriftLeise,
-                 modifier = Modifier.clip(CircleShape).antippen(tun).padding(horizontal = 16.dp, vertical = 10.dp))
+            StillerKnopf(titel, modifier = Modifier.padding(top = if (hauptknopf == null) 24.dp else 16.dp), aktion = tun)
         }
+    }
+}
+
+/**
+ * **Ein gestoerter Abschnitt *innerhalb* einer Seite.** Vorlage: `Stoerhinweis` in
+ * `Sources/Shared/Stil.swift`.
+ *
+ * Das Gegenstueck zum ganzseitigen `Leerzustand`: dort steht „hier liegt nichts", hier
+ * steht „ich weiss es nicht, der Server hat nicht geantwortet". Ein Serverfehler darf
+ * nicht als „hier ist nichts" erscheinen — und wo nur die Folgenliste oder die
+ * Aehnlichen-Reihe nicht geantwortet hat, steht der Rest der Seite ja da.
+ *
+ * **Der Wortlaut ist derselbe wie im Leerzustand** — dieselben zwei Katalogschluessel, nur
+ * kleiner gesetzt, weil hier der Seitenkopf schon steht. Ein zweiter Wortlaut fuer dieselbe
+ * Lage waere eine zweite Antwort auf dieselbe Frage.
+ *
+ * `adresse`: wer nicht geantwortet hat. Ohne Angabe der eigene Jellyfin; auf einer
+ * Seerr-Seite steht dort Seerr — die falsche Adresse waere eine falsche Fehlersuche.
+ *
+ * `erneut`: **nur, wo es etwas zu wiederholen gibt.** Laedt der Abschnitt mit der ganzen
+ * Seite neu, fehlt der Knopf — einer, der die Seite zweimal laedt, ist schlechter als keiner.
+ *
+ * `abstandOben` ist 40 unter einem Leerhinweis und **0 unter einer Reihenueberschrift**,
+ * die ihren Abstand schon mitbringt.
+ */
+@Composable
+fun Stoerhinweis(adresse: String?, modifier: Modifier = Modifier, abstandOben: Dp = 40.dp,
+                 erneut: (() -> Unit)? = null) {
+    Column(modifier.fillMaxWidth().padding(top = abstandOben, start = 34.dp, end = 34.dp),
+           horizontalAlignment = Alignment.CenterHorizontally) {
+        // Das einzige Zeichen der App in 30 — der Grad steht in keiner Leiter und ist aus
+        // der Vorlage uebernommen, damit derselbe Hinweis auf allen Plattformen gleich
+        // aussieht (BAUTEILE 9, Punkt 3: gemeldet, nicht hier entschieden).
+        Symbol(Zeichen.ServerWeg, 30.dp, farbe = Stil.schriftLeise)
+        Text(uebersetzt("Server ist abgetaucht"), style = Stil.rubrikGross, color = Stil.schrift,
+             modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+        Text(uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        adresse ?: uebersetzt("Der Server")),
+             style = Stil.klein.copy(fontSize = 14.sp, lineHeight = 16.sp, textAlign = TextAlign.Center),
+             color = Stil.schriftSehrLeise, modifier = Modifier.widthIn(max = 262.dp))
+        erneut?.let { StillerKnopf(uebersetzt("Erneut versuchen"), Modifier.padding(top = 10.dp), it) }
     }
 }
 
@@ -309,7 +496,7 @@ fun Leerzustand(symbol: ImageVector, kopfzeile: String, text: String,
  * Die Farbe dahinter erscheint erst beim Ziehen, sonst blitzt sie beim Aufbau der Liste.
  */
 @Composable
-fun Wischzeile(symbol: ImageVector, text: String, farbe: Color = Stil.akzent, tun: () -> Unit, inhalt: @Composable () -> Unit) {
+fun Wischzeile(symbol: Zeichen, text: String, farbe: Color = Stil.akzent, tun: () -> Unit, inhalt: @Composable () -> Unit) {
     val dichte = LocalDensity.current
     val feld = with(dichte) { 96.dp.toPx() }
     val schwelle = with(dichte) { 168.dp.toPx() }
@@ -318,10 +505,10 @@ fun Wischzeile(symbol: ImageVector, text: String, farbe: Color = Stil.akzent, tu
     Box(Modifier.fillMaxWidth()) {
         Box(Modifier.matchParentSize().graphicsLayer { alpha = if (weg.value < -0.5f) 1f else 0f }.background(farbe)) {
             Column(Modifier.align(Alignment.CenterEnd).width(96.dp).fillMaxHeight()
-                    .antippen { lauf.launch { weg.snapTo(0f) }; tun() },
+                    .tippen { lauf.launch { weg.snapTo(0f) }; tun() },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(symbol, contentDescription = null, tint = Stil.grund, modifier = Modifier.size(20.dp))
-                Text(text, style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium), color = Stil.grund)
+                Symbol(symbol, 17.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
+                Text(text, style = Stil.klein.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium), color = Stil.grund)
             }
         }
         Box(Modifier.graphicsLayer { translationX = weg.value }.background(Stil.grund)
@@ -341,20 +528,29 @@ fun Wischzeile(symbol: ImageVector, text: String, farbe: Color = Stil.akzent, tu
 
 // MARK: Blatt
 
-data class Wahl(val wert: String, val text: String)
+/** `neben`: die Angabe hinter dem Text in 12 — „· 10 Folgen" im Staffelblatt von Seerr. */
+data class Wahl(val wert: String, val text: String, val neben: String? = null)
 
 /** Was ein `Auswahlblatt` zeigt. `waehlen` bekommt den `wert` des Eintrags. */
 class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: String?,
                   /** Zeichen je `wert` — das `Handlungsblatt` auf iOS; ohne sie das `Auswahlblatt`. */
-                  val symbole: Map<String, ImageVector> = emptyMap(),
+                  val symbole: Map<String, Zeichen> = emptyMap(),
                   /** Mehrfachauswahl mit Anfangsmenge — dann schliesst ein Tipp nicht, der Fuss bestaetigt. */
                   val mehrfach: Set<String>? = null,
                   /** Zeilen, die nicht waehlbar sind, mit ihrem Grund („vorhanden"). Ein toter Haken waere schlimmer als keiner. */
                   val gesperrt: Map<String, String> = emptyMap(),
+                  /** Handlungen in `warnung` — `Titelhandlung.warnend` („Entfernen", „Alles entfernen"). */
+                  val warnend: Set<String> = emptySet(),
                   val abschlussText: (Int) -> String = { "" },
                   val abschluss: ((Set<String>) -> Unit)? = null,
                   /** Eigener Inhalt statt der Zeilen — das Ladeblatt hat Werte und Knoepfe, keine Wahl. */
                   val inhalt: (@Composable ColumnScope.(schliessen: () -> Unit) -> Unit)? = null,
+                  /**
+                   * **Eine Rubrik vor einem Eintrag** (`wert` → Ueberschrift) — Trennstrich, darunter die
+                   * Ueberschrift. Im Titelmenue von Filme und Serien steht so „Bibliotheken" ueber den
+                   * Bibliotheken, abgesetzt von „Alle" und „Sammlungen", die keine sind (`Auswahlblatt.rubrik`).
+                   */
+                  val rubriken: Map<String, String> = emptyMap(),
                   val waehlen: (String) -> Unit)
 
 /**
@@ -383,7 +579,7 @@ fun Blattauflage(app: SwiftlyAnwendung) {
         // Deckkraft in der Grafikebene — neu komponiert wird nur, wenn der Schleier kommt oder geht.
         if (schleierDa) Box(Modifier.fillMaxSize()
             .graphicsLayer { alpha = schleier * (1f - (zug.value / hoehe).coerceIn(0f, 1f)) }
-            .background(Color.Black).antippen(schliessen))
+            .background(Color.Black).tippen(schliessen))
         AnimatedVisibility(offen, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(Bewegung.blatt()) { it },
             exit = slideOutVertically(Bewegung.blatt()) { it }) {
@@ -402,7 +598,9 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
     var hoehe by remember { mutableIntStateOf(1) }
     val roh = remember { floatArrayOf(0f) }
     var auswahl by remember(w) { mutableStateOf(w.mehrfach) }
-    val oben = RoundedCornerShape(topStart = Stil.eckeFlaeche, topEnd = Stil.eckeFlaeche)
+    // **Ecke 28 (`eckeBlatt`), nicht 16.** Ein Blatt von unten ist die groesste Rundung der
+    // Leiter; `eckeFlaeche` gehoert der Tafel im Bild.
+    val oben = RoundedCornerShape(topStart = Stil.eckeBlatt, topEnd = Stil.eckeBlatt)
     Column(Modifier.fillMaxWidth()
         .onSizeChanged { hoehe = it.height; hoeheMelden(it.height) }
         .graphicsLayer { translationY = zug.value }
@@ -426,54 +624,119 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
             })
         .navigationBarsPadding()) {
         Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).size(36.dp, 5.dp)
-            .clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
-        Text(w.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
+            .clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
+        // **Rubrik 17 Semibold, oben 5 / unten 14, und ohne Linie darunter** (BAUTEILE 6).
+        // Der Strich stand da und trennte die Rubrik von ihren eigenen Zeilen.
+        Text(w.titel, style = Stil.rubrikGross,
              color = Stil.schrift, maxLines = 1,
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 5.dp, bottom = 14.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
         val eigen = w.inhalt
-        if (eigen != null) eigen(schliessen) else {
-        // So hoch wie die Eintraege, hoechstens 340.
-        Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
-            w.eintraege.forEach { e ->
-                val grund = w.gesperrt[e.wert]
-                val an = auswahl?.contains(e.wert) == true
-                Row(Modifier.fillMaxWidth().height(50.dp)
-                        .then(if (grund != null) Modifier else Modifier.druckzeile {
-                            val menge = auswahl
-                            if (menge != null) auswahl = if (an) menge - e.wert else menge + e.wert
-                            else { schliessen(); w.waehlen(e.wert) }
-                        })
-                        .padding(horizontal = Stil.randAbstand),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    w.symbole[e.wert]?.let {
-                        Icon(it, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(20.dp).height(17.dp))
-                        Spacer(Modifier.width(14.dp))
-                    }
-                    Text(e.text, style = TextStyle(fontSize = 16.sp), color = if (grund != null) Stil.schriftLeise else Stil.schrift, modifier = Modifier.weight(1f))
-                    when {
-                        grund != null -> Text(grund, style = TextStyle(fontSize = 14.sp), color = Stil.schriftSehrLeise)
-                        auswahl != null -> Icon(if (an) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank, contentDescription = null,
-                                                tint = if (an) Stil.akzent else Stil.schriftSehrLeise, modifier = Modifier.size(20.dp))
-                        e.wert == w.gewaehlt -> Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
-                    }
+        when {
+            eigen != null -> eigen(schliessen)
+            w.mehrfach != null -> Staffelwahl(w, auswahl.orEmpty(), { auswahl = it }, schliessen)
+            w.symbole.isNotEmpty() -> Handlungen(w, schliessen)
+            else -> Auswahlzeilen(w, schliessen)
+        }
+    }
+}
+
+/** Die Abbrechen-Zeile am Fuss eines Blatts — `Blattabbruch`: 15 Medium `schriftLeise`, ≥ 54. */
+@Composable
+private fun Blattabbruch(schliessen: () -> Unit) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 54.dp).druckzeile(schliessen), contentAlignment = Alignment.Center) {
+        Text(uebersetzt("Abbrechen"), style = Stil.knopftext, color = Stil.schriftLeise)
+    }
+}
+
+/** `Blattlinie` — **durchgehend**, von Kartenrand zu Kartenrand. */
+@Composable
+internal fun Blattlinie() = Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+
+/**
+ * Vorlage: `Auswahlblatt` in `Stil.swift`. **Der Haken steht links und ist immer da** — als Platz,
+ * auch wenn er nichts zeigt, sonst ruecken die Beschriftungen, sobald sich die Wahl aendert.
+ * Gewaehlt heisst volles Weiss und Semifett, nicht Akzent: „das hier ist es" ist Rangfolge, kein
+ * Zustand. 17 auf ≥ 52, **ohne Linien zwischen den Zeilen**, hoechstens 340 hoch, dann Abbrechen.
+ */
+@Composable
+private fun Auswahlzeilen(w: Blattwunsch, schliessen: () -> Unit) {
+    Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
+        w.eintraege.forEach { e ->
+            w.rubriken[e.wert]?.let { ueber ->
+                // `Trennlinie` (ab dem Rand eingerueckt), darunter die Rubrik: 11 Semibold gesperrt in
+                // Versalien, `schriftSehrLeise`, oben `kachelAbstand`, unten 4.
+                Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
+                Text(ueber.uppercase(), style = Stil.gruppe, color = Stil.schriftSehrLeise,
+                     modifier = Modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand)
+                         .padding(top = Stil.kachelAbstand, bottom = 4.dp).semantics { heading() })
+            }
+            val an = e.wert == w.gewaehlt
+            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).druckzeile { schliessen(); w.waehlen(e.wert) }
+                    .padding(horizontal = Stil.randAbstand),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
+                    if (an) Symbol(Zeichen.Haken, 17.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
                 }
-                // Mit Zeichen beginnt die Linie hinter ihnen — `trennEinzug`.
-                Box(Modifier.padding(start = if (w.symbole.isEmpty()) 0.dp else Stil.randAbstand + 34.dp)
-                    .fillMaxWidth().height(1.dp).background(Stil.linie))
+                Text(e.text, style = Stil.rubrikGross.copy(fontWeight = if (an) FontWeight.SemiBold else FontWeight.Normal, letterSpacing = 0.sp),
+                     color = if (an) Stil.schrift else Stil.schriftLeise, modifier = Modifier.weight(1f))
             }
         }
-        val abschluss = w.abschluss
-        if (abschluss != null) {
-            val menge = auswahl.orEmpty()
-            Text(w.abschlussText(menge.size), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
-                 color = if (menge.isEmpty()) Stil.schriftSehrLeise else Stil.akzent,
-                 modifier = Modifier.fillMaxWidth().then(if (menge.isEmpty()) Modifier else Modifier.druckzeile { schliessen(); abschluss(menge) })
-                     .padding(vertical = 17.dp))
-        } else {
-            Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
-                 color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().druckzeile(schliessen).padding(vertical = 17.dp))
+    }
+    Blattabbruch(schliessen)
+}
+
+/**
+ * Vorlage: `Handlungsblatt` in `Stil.swift` — jede Zeile loest etwas aus und das Blatt schliesst.
+ * Zeichen 17 in 20 Breite, 14 zum Text, Text 17, `warnung` fuer warnende Handlungen. Linien
+ * **zwischen** den Zeilen und eine ueber Abbrechen.
+ */
+@Composable
+private fun Handlungen(w: Blattwunsch, schliessen: () -> Unit) {
+    w.eintraege.forEachIndexed { i, e ->
+        if (i > 0) Blattlinie()
+        val farbe = if (e.wert in w.warnend) Stil.warnung else Stil.schrift
+        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).druckzeile { schliessen(); w.waehlen(e.wert) }
+                .padding(horizontal = Stil.randAbstand),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.width(Stil.zeichenSpalte), contentAlignment = Alignment.Center) {
+                w.symbole[e.wert]?.let { Symbol(it, 17.dp, farbe = farbe) }
+            }
+            Text(e.text, style = Stil.rubrikGross.copy(fontWeight = FontWeight.Normal, letterSpacing = 0.sp), color = farbe,
+                 modifier = Modifier.weight(1f))
         }
+    }
+    Blattlinie()
+    Blattabbruch(schliessen)
+}
+
+/**
+ * Vorlage: `staffelblatt` in `SeerrDetailView.swift` — Kaestchen rechts, Zeilen 15 auf ≥ 50 ohne
+ * Linien, hoechstens 320 hoch; darunter eine durchgehende Linie und der Bestaetigungsknopf,
+ * 15 Semibold auf ≥ 54, im Akzent, sobald etwas gewaehlt ist.
+ */
+@Composable
+private fun Staffelwahl(w: Blattwunsch, menge: Set<String>, setzen: (Set<String>) -> Unit, schliessen: () -> Unit) {
+    Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+        w.eintraege.forEach { e ->
+            val grund = w.gesperrt[e.wert]
+            val an = e.wert in menge
+            Row(Modifier.fillMaxWidth().heightIn(min = 50.dp)
+                    .then(if (grund != null) Modifier else Modifier.druckzeile { setzen(if (an) menge - e.wert else menge + e.wert) })
+                    .padding(horizontal = Stil.randAbstand),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(e.text, style = Stil.koerper, color = if (grund == null) Stil.schrift else Stil.schriftSehrLeise)
+                e.neben?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise) }
+                Spacer(Modifier.weight(1f).widthIn(min = 8.dp))
+                if (grund != null) Text(grund, style = Stil.klein, color = Stil.schriftSehrLeise)
+                else Symbol(if (an) Zeichen.KaestchenVoll else Zeichen.Kaestchen, 17.dp, farbe = if (an) Stil.akzent else Stil.schriftSehrLeise)
+            }
         }
+    }
+    Blattlinie()
+    val abschluss = w.abschluss
+    Box(Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            .then(if (menge.isEmpty() || abschluss == null) Modifier else Modifier.druckzeile { schliessen(); abschluss(menge) }),
+        contentAlignment = Alignment.Center) {
+        Text(w.abschlussText(menge.size), style = Stil.listentitel, color = if (menge.isEmpty()) Stil.schriftSehrLeise else Stil.akzent)
     }
 }

@@ -240,7 +240,30 @@ struct PlayerScreen: View {
                     .opacity(steuerungDa && offeneEbene == nil ? 1 : 0)
                     .animation(steuerungDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
                                value: steuerungDa)
+            }
 
+            // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt
+            // keine Klicks. **Direkt auf dem Film** (Paul, 22.09.2026): über
+            // der Abdunklung, unter Titel, Knöpfen und Leiste und damit auch
+            // unter den Ebenen. **Es gleitet mit der Steuerung** (Paul,
+            // 22.09.2026): offen unter der Titelzeile, zu an den oberen Rand,
+            // wo sie stand. Bewegung statt Blende, dieselbe Kurve wie die
+            // Steuerung; mit reduzierter Bewegung springt es. Ausserhalb von
+            // `schirmWeg`, damit es wie bisher schon beim Laden steht.
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche)
+                    .padding(.leading, mass.seite)
+                    .padding(.top, mass.oben + mass.knopf + Stil.kachelAbstand)
+                    .offset(y: steuerungDa && offeneEbene == nil ? 0 : -(mass.knopf + Stil.kachelAbstand))
+                    .animation(Stil.bewegungReduziert ? nil
+                               : steuerungDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                               value: steuerungDa && offeneEbene == nil)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
+            if schirmWeg {
                 Group {
                     mittelsteuerung
                         .opacity(amRegler ? 0 : 1)
@@ -259,33 +282,33 @@ struct PlayerScreen: View {
 
             // **Die Überspringen-Pille — an derselben Stelle, ob die
             // Steuerung offen ist oder nicht** (wie iOS, Paul 17.09.2026); der
-            // Fuß hält ihr nur den Platz frei.
-            if angebotDa {
+            // Fuß hält ihr nur den Platz frei. Überspringen steht sechs
+            // Sekunden von selbst, danach nur mit der Steuerung
+            // (`Angebotsebene.knopfdauer`) — auch mit der, die der Zeiger holt.
+            //
+            // **Weich weg, nicht zack weg** — wie auf dem iPhone (c9298dd5):
+            // das Entfernen aus dem Baum lief trotz Transition hart. Die Pille
+            // bleibt im Baum, solange es ein Angebot gibt, und kommt und geht
+            // über die Deckkraft. `disabled`, damit eine unsichtbare Pille
+            // weder Klick noch Tastaturfokus nimmt.
+            if angebot.sichtbar {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
                         angebotsknopf
+                            .disabled(!angebotDa)
                     }
                 }
                 .padding(.horizontal, mass.seite)
                 .padding(.bottom, mass.unten + mass.leiste + mass.ueberLeiste)
+                .opacity(angebotDa ? 1 : 0)
+                .allowsHitTesting(angebotDa)
+                .accessibilityHidden(!angebotDa)
+                .animation(angebotDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                           value: angebotDa)
                 .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.18)),
                                         removal: .opacity.animation(.easeInOut(duration: 0.34))))
-            }
-
-            // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt
-            // keine Klicks. Über der Steuerung, aber **unter den Ebenen**:
-            // wer Folgen oder Einstellungen aufmacht, will die sehen, nicht
-            // das Schild.
-            if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche)
-                    .padding(.leading, Stil.randAbstand)
-                    .padding(.top, mass.oben + mass.knopf + 6)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-                    .zIndex(4)
             }
 
             if let offeneEbene {
@@ -498,7 +521,7 @@ struct PlayerScreen: View {
         let da = (steuerungDa && offeneEbene == nil) || offeneEbene == .folgen
         return HStack(alignment: .top, spacing: 12) {
             Text(verbatim: titelzeile)
-                .font(.system(size: mass.titel, weight: .bold))
+                .font(.system(size: mass.titel, weight: .semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -520,7 +543,7 @@ struct PlayerScreen: View {
                 // Nur Platzhalter: gezeigt wird der Titel von
                 // `stehenderTitel`, der bei offener Folgenebene stehen bleibt.
                 Text(verbatim: titelzeile)
-                    .font(.system(size: mass.titel, weight: .bold))
+                    .font(.system(size: mass.titel, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -550,7 +573,10 @@ struct PlayerScreen: View {
             // noch dem Überspringen-Knopf in die Quere.
             if let hinweis {
                 Text(verbatim: hinweis)
-                    .font(.caption2).foregroundStyle(.white.opacity(0.85))
+                    // `.caption2` sind 11 Regular — 11 steht nur als
+                    // Semibold in der Leiter; ein Satz ist eine Angabe,
+                    // also 12.
+                    .font(Stil.klein).foregroundStyle(Stil.schrift)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, mass.seite)
                     .offset(y: 22)
@@ -700,7 +726,8 @@ struct PlayerScreen: View {
     @discardableResult
     private func angebotNachziehen(vergangen: Double) -> Bool {
         guard !wechselt else { return false }
-        let fertig = ebene.takt(angebot: angebot,
+        var neu = ebene
+        let fertig = neu.takt(angebot: angebot,
                           karteFaellig: Abschnittslogik.karteFaellig(position: stand.position,
                                                                      dauer: stand.dauer,
                                                                      abschnitte: abschnitte,
@@ -708,6 +735,14 @@ struct PlayerScreen: View {
                           laeuft: stand.laeuft && schirmWeg && !amRegler,
                           vergangen: vergangen,
                           countdown: Abschnittslogik.countdown(position: stand.position, dauer: stand.dauer))
+        // Blendet der Überspringen-Knopf von selbst aus (`knopfdauer`), soll
+        // er so weich gehen, wie er kam: der Takt läuft ohne Animation, also
+        // den Wechsel der Sichtbarkeit hier ausdrücklich animieren.
+        if neu.anzeige.sichtbar != ebene.anzeige.sichtbar {
+            withAnimation(.smooth(duration: 0.34)) { ebene = neu }
+        } else {
+            ebene = neu
+        }
         fuellungStellen()
         return fertig
     }
@@ -1188,12 +1223,15 @@ struct Sprungknopf: View {
                 .foregroundStyle(Stil.schrift)
                 // Diskreter Effekt aus SF Symbols: spielt einmal ab und
                 // geht von selbst in die Ruhelage zurück.
-                .symbolEffect(.bounce, options: .speed(1.7), value: takt)
+                // Kein Huepfen bei reduzierter Bewegung — daneben wird die
+                // Einstellung fuer den Massstab schon abgefragt.
+                .symbolEffect(.bounce, options: .speed(1.7),
+                              value: Stil.bewegungReduziert ? 0 : takt)
                 .frame(width: gross * 1.8, height: gross * 1.8)
                 .scaleEffect(schwebt ? 1.06 : 1)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
         .accessibilityLabel(Text(beschriftung))
@@ -1257,7 +1295,9 @@ private struct Zeitregler: View {
             let dicke: CGFloat = zieht ? 6 : 4
             let anteil = anzeigeAnteil
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.28)).frame(height: dicke)
+                // Dieselbe helle Spur wie auf dem iPhone. Weiss mit 28 %
+                // steht in BRAND 1 unter den gerechnet zu schwachen Werten.
+                Capsule().fill(Color.white.opacity(0.18)).frame(height: dicke)
                 Capsule().fill(.white)  // Akzent nur am Griff, wie auf iOS und tvOS
                     .frame(width: raum.size.width * anteil, height: dicke)
                 if zieht {
@@ -1336,12 +1376,17 @@ private struct Zeitregler: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: box, height: hoehe)
-                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke))
-                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
-                            .strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke,
+                                                    style: .continuous))
+                        // `rand` ist der Token fuer die wenigen Stellen, die
+                        // wirklich eine Kante brauchen — ein Vorschaubild
+                        // ueber bewegtem Bild ist eine davon.
+                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke,
+                                                  style: .continuous)
+                            .strokeBorder(Stil.rand, lineWidth: 1))
                 }
                 Text(Spielzeit.text(stelle))
-                    .font(.system(size: mass.zeit, weight: .bold).monospacedDigit())
+                    .font(.system(size: mass.zeit, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.white)
             }
             .fixedSize()
@@ -1373,12 +1418,13 @@ private struct Angebotsknopf: View {
                     Image(systemName: "forward.end.fill")
                     Text(verbatim: angebot.beschriftung)
                 }
-                .font(.system(size: 15, weight: .bold))
+                .font(Stil.listentitel)
                 .padding(.horizontal, 18)
                 .frame(height: 40)
                 .background {
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: Stil.eckeFeld).fill(.white)
+                        RoundedRectangle(cornerRadius: Stil.eckeFeld,
+                                         style: .continuous).fill(.white)
                         if let fuellung {
                             TimelineView(.animation) { zeit in
                                 GeometryReader { g in
@@ -1389,10 +1435,11 @@ private struct Angebotsknopf: View {
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
+                    .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld,
+                                                style: .continuous))
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckknopf())
             .foregroundStyle(Self.dunkel)
             .fixedSize()
             .accessibilityLabel(Text(verbatim: angebot.beschriftung))
@@ -1421,10 +1468,21 @@ final class Fensterhalter {
     /// noch kein Fenster gab, und danach rief es niemand mehr.
     func uebernehme(_ neues: NSWindow?) {
         guard fenster !== neues else { return }
+        // Der Stand **vor** dem Player, einmal gemerkt — siehe `aufraeumen`.
+        if vollbildVorher == nil, let neues {
+            vollbildVorher = neues.styleMask.contains(.fullScreen)
+        }
         fenster = neues
         vollbildBeobachten()
         ampelNachziehen()
     }
+
+    /// War das Fenster schon im Vollbild, als der Player aufging?
+    ///
+    /// `nil`, bis das Fenster da ist. Gemerkt wird der Stand, nicht der Weg
+    /// hinein: ob der Knopf im Kopf, die Taste F oder die gruene Ampel das
+    /// Vollbild eingeschaltet hat, spielt fuer den Rueckweg keine Rolle.
+    @ObservationIgnored private var vollbildVorher: Bool?
 
     @ObservationIgnored private var vollbildwache: [NSObjectProtocol] = []
 
@@ -1603,6 +1661,19 @@ final class Fensterhalter {
     /// Hauptfenster ohne Lampen und über allen anderen stehen.
     func aufraeumen() {
         if istKlein { istKlein = false; kleinAnwenden(false) }
+        // **Die App verlaesst den Player so, wie sie ihn betreten hat.**
+        //
+        // Das kleine Fenster nahm der Player schon immer zurueck, das
+        // Vollbild nicht. Wer im Player auf Vollbild ging und ihn dann
+        // schloss, stand mit der ganzen App im Vollbild. Paul am 22.09.:
+        // „Im Normalfall sollte die App dann wieder zurueck zu dem Stand
+        // gehen, wo sie vorher war."
+        //
+        // Nur zurueck, wenn der Player es war: lief die App schon vorher im
+        // Vollbild, bleibt sie dort — das hat jemand bewusst so eingestellt.
+        if istVollbild, vollbildVorher == false {
+            fenster?.toggleFullScreen(nil)
+        }
         setzePlayer(false)
     }
 }
@@ -1650,8 +1721,9 @@ private struct Sprungmarke: View {
         VStack(spacing: 6) {
             Image(systemName: richtung < 0 ? "gobackward" : "goforward")
                 .font(.system(size: 32, weight: .medium))
-                .symbolEffect(.bounce, options: .speed(1.7), value: gedreht)
-            Text(verbatim: "\(sekunden) s").font(.footnote.weight(.medium))
+                .symbolEffect(.bounce, options: .speed(1.7),
+                              value: Stil.bewegungReduziert ? false : gedreht)
+            Text(verbatim: "\(sekunden) s").font(Stil.kachel)
         }
         .foregroundStyle(.white)
         .frame(width: 108, height: 108)

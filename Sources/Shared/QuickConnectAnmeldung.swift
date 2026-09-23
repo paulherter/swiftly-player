@@ -49,7 +49,10 @@ struct QuickConnectAnmeldung: View {
                     } else if let fehler = stand.fehler {
                         Text(fehler)
                             .font(Stil.koerper)
-                            .foregroundStyle(Stil.warnung)
+                            // `fehler`, nicht `warnung`: der Code kam nicht
+                            // zustande. `warnung` heisst „etwas wartet auf
+                            // jemanden" — hier wartet nichts mehr.
+                            .foregroundStyle(Stil.fehler)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else {
@@ -109,12 +112,16 @@ struct QuickConnectAnmeldung: View {
                     Color.clear.frame(width: 6)
                 }
                 Text(String(paar.element))
-                    .font(.system(size: 28, weight: .semibold))
+                    // Der Grad kommt aus der Leiter, das Gewicht nicht: 28 ist
+                    // die Stufe des Seitentitels, und Bold steht genau einmal
+                    // — am Titel. Der Code ist die Hauptsache der Seite, aber
+                    // kein Titel. Vorher `.system(size: 28, weight: .semibold)`.
+                    .font(Stil.titelGross)
+                    .fontWeight(.semibold)
                     .monospacedDigit()
                     .foregroundStyle(Stil.schrift)
                     .frame(width: 46, height: 60)
-                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
-                    .overlay { RoundedRectangle(cornerRadius: Stil.eckeFeld).strokeBorder(Stil.rand) }
+                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity)
@@ -126,7 +133,9 @@ struct QuickConnectAnmeldung: View {
         HStack(spacing: 9) {
             Circle().fill(Stil.akzent).frame(width: 8, height: 8)
             Text("Warte auf Freigabe · noch \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
-                .font(.system(size: 14))
+                // 12 Regular aus der Leiter; 13 Regular steht dort nicht.
+                // Vorher 13.
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
         }
         .frame(maxWidth: .infinity)
@@ -147,11 +156,14 @@ struct QuickConnectAnmeldung: View {
     private func schritt(_ zahl: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text("\(zahl)")
-                .font(.system(size: 14))
+                // 12 Regular aus der Leiter, wie die Schrittzeile daneben.
+                // Vorher 13.
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .frame(width: 20, alignment: .leading)
             Text(text)
-                .font(.system(size: 14))
+                // 12 Regular aus der Leiter. Vorher 13.
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
                 .lineSpacing(2)
         }

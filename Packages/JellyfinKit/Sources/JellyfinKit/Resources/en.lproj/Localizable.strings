@@ -99,3 +99,4 @@
 "Die verschlüsselte Verbindung kam nicht zustande." = "The encrypted connection could not be established.";
 "Die Verbindung zum Server hat nicht geklappt." = "The connection to the server failed.";
 "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password.";
+"Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein." = "There's a sign-in page in front of the server, such as Cloudflare Access or Authelia. Add the headers it asks for under “Advanced”.";

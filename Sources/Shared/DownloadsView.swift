@@ -19,6 +19,13 @@ import SwiftUI
 struct Downloadring: View {
     /// `nil` heisst: dieser Titel liegt nicht auf dem Gerät.
     let posten: Downloadposten?
+    /// Der geschaetzte Stand zwischen zwei Meldungen — derselbe Wert wie
+    /// Zahl und Balken daneben. Ohne ihn der gemeldete.
+    var anteilJetzt: Double? = nil
+    /// **28 in einer Zeile, 22 in einem Feld** — und das sind nicht zwei Masse
+    /// fuer dieselbe Sache, sondern dieselbe Regel: das Zeichen waechst mit dem
+    /// Ding, in dem es sitzt. Die Zeile ist 65 hoch, das Feld der Aktionsreihe
+    /// 48; 28 zu 65 und 22 zu 48 sind dasselbe Verhaeltnis.
     var mass: CGFloat = 28
     let tippen: () -> Void
 
@@ -40,7 +47,7 @@ struct Downloadring: View {
                 .frame(width: max(mass, 44), height: max(mass, 44))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         .accessibilityLabel(Text(ansage))
     }
 
@@ -55,10 +62,10 @@ struct Downloadring: View {
                                       style: StrokeStyle(lineWidth: 2, dash: [3, 4]))
                 bild("pause.fill", 11, Stil.schriftSehrLeise)
             case .laedt:
-                bogen(anteil: posten?.anteil ?? 0, farbe: Stil.akzent)
+                bogen(anteil: anteilJetzt ?? posten?.anteil ?? 0, farbe: Stil.akzent)
                 // Das Quadrat ist Halt, nicht Abbruch — ein Kreuz hiesse
                 // wegwerfen, und weggeworfen wird hier nichts.
-                RoundedRectangle(cornerRadius: 1.5)
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(Stil.akzent)
                     .frame(width: mass * 0.32, height: mass * 0.32)
             case .angehalten:
@@ -78,8 +85,11 @@ struct Downloadring: View {
                 Circle().fill(Stil.akzent)
                 bild("arrow.down", 13, Stil.grund)
             case .fehler:
-                Circle().strokeBorder(Stil.warnung, lineWidth: 2)
-                bild("exclamationmark", 13, Stil.warnung)
+                // `fehler`, nicht `warnung`: ein abgebrochener Download ist
+                // schiefgegangen. Das Zeichen bleibt, damit es nicht allein an
+                // der Farbe haengt.
+                Circle().strokeBorder(Stil.fehler, lineWidth: 2)
+                bild("exclamationmark", 13, Stil.fehler)
             }
         }
         .frame(width: mass, height: mass)
@@ -88,7 +98,20 @@ struct Downloadring: View {
 
     private func bogen(anteil: Double, farbe: Color) -> some View {
         ZStack {
-            Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 2)
+            // **Dieselbe Spur wie im `Fortschrittsbalken`** — und das war sie
+            // einen Tag lang nicht.
+            //
+            // Hier stand `grund` mit 0,78, mit dem Vermerk „derselbe Ton wie
+            // im Fortschrittsbalken, damit Ring und Balken dasselbe sagen".
+            // Genau der wurde am 22.09. hell (weiss 30 %), und diese Stelle
+            // ist stehen geblieben: zwei Fortschrittsanzeiger derselben App,
+            // auf **demselben Bildschirm** — der Ring in der Zeile, der
+            // Balken darunter —, einer dunkel und einer hell. Der Vermerk
+            // behauptete dabei weiter Gleichheit.
+            //
+            // Der Grund fuers Helle steht beim `Fortschrittsbalken`: die Spur
+            // ist die Laenge des Ganzen, nicht der fehlende Rest.
+            Circle().strokeBorder(Color.white.opacity(0.30), lineWidth: 2)
             Circle()
                 .trim(from: 0, to: max(0.02, anteil))
                 .stroke(farbe, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -173,17 +196,29 @@ struct Downloadfeld: View {
                     // Dieselbe Unterscheidung wie am Ring: gefuellt heisst
                     // geladen, und es bleibt ein Pfeil. Der Haken daneben in
                     // derselben Reihe heisst „gesehen".
+                    // 19 Medium stand in keiner Leiter; 17 Semibold ist die
+                    // Stufe darunter und die, die es wirklich gibt.
                     Image(systemName: posten == nil ? "arrow.down" : "arrow.down.circle.fill")
-                        .font(.system(size: 19, weight: .medium))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(posten == nil ? Stil.schrift : Stil.akzent)
                 }
             }
             .frame(maxWidth: dehnt ? .infinity : nil)
-            .frame(width: dehnt ? nil : 56, height: 44)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+            // **48 und 48, wie der Nachbar.**
+            //
+            // Es stand auf 56 breit und 44 hoch, mit Rand, waehrend
+            // `Aktionsknopf` unmittelbar daneben 48 im Quadrat ohne Rand
+            // traegt. Drei Unterschiede in einer Reihe, in der alle Felder
+            // dasselbe tun sollen. Der Vermerk, der hier stand, hat die
+            // Kopplung sogar benannt — „bis er nachzieht, sieht man den
+            // Unterschied" —, nur ist der Nachbar laengst nachgezogen und
+            // dieses Feld stehen geblieben. Paul am 21.09.: „der Download-
+            // Button auf der Filmseite ist noch falsch."
+            .frame(width: dehnt ? nil : 48, height: 48)
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         .accessibilityLabel(Text("Laden"))
         .accessibilityAddTraits(posten == nil ? .isButton : [.isButton, .isSelected])
     }
@@ -207,48 +242,115 @@ struct Downloadzeile: View {
     var starten: (() -> Void)?
 
     private var verwaltung: Downloadverwaltung { model.downloads }
+    /// Haelt den Schaetzer ueber die Neuzeichnungen; beobachtet wird er nicht,
+    /// die Zeitleiste fragt ihn je Bild.
+    @State private var schaetzer = Schaetzerhalter()
 
+    /// **Waehrend geladen wird, zaehlt die Zeile je Bild weiter.**
+    ///
+    /// Die Verwaltung meldet hoechstens einmal je Sekunde; dazwischen rechnet
+    /// `Fortschrittsschaetzer` im Tempo der letzten Sekunden weiter, wie es
+    /// App Store und Musik tun. Zahl, Balken und Ring lesen **denselben**
+    /// Wert — vorher sprang die Zahl stueckweise, und Balken und Ring
+    /// liefen ihr je nach Animation voraus oder hinterher. 30 Bilder je
+    /// Sekunde reichen fuer einen Balken; mehr kostet nur Akku.
+    ///
+    /// **Geschaetzt wird nur, solange wirklich Byte kommen.** Angehalten,
+    /// wartend, fehlgeschlagen oder ohne Netz steht die Zahl sofort — und
+    /// zwar dort, wo sie stand, nicht auf der letzten Meldung, die dahinter
+    /// liegen kann.
     var body: some View {
+        Group {
+            if kommtWas {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { takt in
+                    zeile(geladen: schaetzer.s.wert(um: takt.date))
+                }
+            } else if posten.stand == .angehalten || posten.stand == .laedt {
+                zeile(geladen: max(schaetzer.s.wert(um: Date()), posten.geladen))
+            } else {
+                zeile(geladen: posten.geladen)
+            }
+        }
+        .onChange(of: posten.geladen, initial: true) { _, neu in
+            schaetzer.s.melden(neu, gesamt: posten.bytes, um: Date())
+            if !kommtWas { schaetzer.s.anhalten() }
+        }
+        .onChange(of: kommtWas) { _, an in
+            if !an { schaetzer.s.anhalten() }
+        }
+    }
+
+    private var kommtWas: Bool {
+        gruppe == nil && posten.stand == .laedt && !verwaltung.keinNetz
+    }
+
+    private func anteil(_ geladen: Int64) -> Double? {
+        posten.bytes > 0 ? Double(geladen) / Double(posten.bytes) : posten.anteil
+    }
+
+    private func zeile(geladen: Int64) -> some View {
         HStack(spacing: 12) {
             if bearbeiten {
+                // 21 war ein Einzelfall zwischen den Stufen; 20 Semibold ist
+                // die Reihenueberschrift und damit die naechste echte.
                 Image(systemName: gewaehlt ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 21))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(gewaehlt ? Stil.akzent : Stil.schriftSehrLeise)
-                    .transition(.opacity)
+                    // **Der Kreis kommt von links herein und schiebt die
+                    // Zeile vor sich her.** Mit `.opacity` stand er sofort
+                    // in voller Breite da, und die Zeile rueckte nur um das,
+                    // was die Blende noch uebrig liess. Bei reduzierter
+                    // Bewegung bleibt es eine Blende.
+                    .transition(Stil.bewegungReduziert
+                                ? .opacity
+                                : .move(edge: .leading).combined(with: .opacity))
             }
 
             Netzbild(url: bildadresse, zeichen: quer ? "tv" : "film")
-                .frame(width: quer ? 104 : 64, height: quer ? 59 : 96)
-                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel))
+                // 116 x 65 statt 104 x 59: dasselbe Standbild wie in der
+                // Folgenliste der Serienseite. Zwei Maße fuer dieselbe Rolle
+                // waren der Fehler.
+                .frame(width: quer ? 116 : 64, height: quer ? 65 : 96)
+                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
+                // Eine Zeile traegt Semibold, nicht Medium — Medium gehoert
+                // dem Titel unter einem Plakat. Der Token haelt beides
+                // zusammen, damit es nicht wieder auseinanderlaeuft.
                 Text(verbatim: gruppe?.titel ?? posten.titel)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(Stil.listentitel)
                     .lineLimit(1)
-                Text(verbatim: unterzeile)
-                    .font(.system(size: 12.5))
+                // 12,5 war eine halbe Stufe zwischen zwei ganzen; die Angabe
+                // unter einem Titel ist 12 Regular.
+                Text(verbatim: unterzeile(geladen))
+                    // **Tabellarisch.** „1,4 GB · 42 Min." steht in einer
+                    // Liste untereinander, und BRAND 2 nennt Laufzeiten und
+                    // Groessen ausdruecklich: gleich breite Ziffern, sonst
+                    // wandern die Komma- und Punktstellen von Zeile zu Zeile.
+                    .font(Stil.klein.monospacedDigit())
                     .foregroundStyle(unterfarbe)
                     .lineLimit(1)
-                if let anteil = posten.anteil, posten.stand == .laedt || posten.stand == .angehalten {
-                    Fortschrittsbalken(anteil: anteil)
+                if let anteil = anteil(geladen), posten.stand == .laedt || posten.stand == .angehalten {
+                    Fortschrittsbalken(anteil: anteil, rund: true)
                         .padding(.top, 5)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if gruppe != nil {
+                // 14 steht in keiner Leiter — ein Winkel ist 13 Semibold.
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Stil.schriftSehrLeise)
             } else if !bearbeiten {
-                Downloadring(posten: posten) {
+                Downloadring(posten: posten, anteilJetzt: anteil(geladen)) {
                     ringGetippt(posten, verwaltung) {}
                 }
             }
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .animation(Stil.einblenden, value: bearbeiten)
+        .animation(Stil.blattbewegung, value: bearbeiten)
         // **Die Geste darf es nur im Auswahlmodus geben.**
         //
         // Hier stand sie fest, mit einem `if bearbeiten` im Rumpf — und ein
@@ -279,7 +381,7 @@ struct Downloadzeile: View {
     /// Unterscheidung wie in der Folgenliste der Serienseite.
     private var quer: Bool { gruppe == nil && posten.art == .folge }
 
-    private var unterzeile: String {
+    private func unterzeile(_ geladen: Int64) -> String {
         if let g = gruppe {
             let bytes = g.folgen.reduce(Int64(0)) { $0 + $1.bytes }
             return String(localized: "\(g.folgen.count) Folgen") + " · "
@@ -293,9 +395,13 @@ struct Downloadzeile: View {
         }
         switch posten.stand {
         case .laedt:
-            teile = [Downloadregeln.groesse(posten.geladen) + " "
-                     + String(localized: "von") + " "
-                     + Downloadregeln.groesse(posten.bytes)]
+            // **Feste Einheit, feste Stellen.** `groesse` wechselte mitten
+            // im Laden von „845 MB" auf „1 GB" und „1,01 GB" — Komma rein,
+            // Komma raus, und die Zeile wurde bei jedem Schritt anders breit.
+            // Am schlimmsten bei der ersten Folge, die unter einem Gigabyte
+            // anfaengt. Die Gesamtgroesse gibt die Einheit vor.
+            let f = Downloadregeln.fortschritt(geladen: geladen, von: posten.bytes)
+            teile = [String(localized: "\(f.geladen) von \(f.gesamt)")]
         case .wartet:
             teile.append(String(localized: "wartet"))
         case .angehalten:
@@ -317,8 +423,11 @@ struct Downloadzeile: View {
     private var unterfarbe: Color {
         switch posten.stand {
         case .laedt:  Stil.akzent
-        case .fehler: Stil.warnung
-        default:      Stil.schriftLeise
+        case .fehler: Stil.fehler
+        // Ruhend ist die Unterzeile eine Angabe, keine Beschreibung: vorher
+        // `schriftLeise`, und damit stand sie fast so laut da wie der Titel
+        // darueber.
+        default:      Stil.schriftSehrLeise
         }
     }
 }
@@ -333,15 +442,37 @@ private struct Auswahltipp: ViewModifier {
     let tun: () -> Void
 
     func body(content: Content) -> some View {
-        if an {
-            // **Knopf statt Tippgeste**, damit die Zeile beim Druck antwortet
-            // und nicht erst beim Loslassen.
-            Button(action: tun) { content }
-                .buttonStyle(Stil.Druckzeile())
-        } else {
-            content
-        }
+        // **Immer ein Knopf, nur ohne Handlung, wenn keiner gebraucht
+        // wird.** Hier stand ein `if an` um den Knopf: schaltete Bearbeiten
+        // eine ladende Zeile von „ohne" auf „mit", war sie fuer SwiftUI eine
+        // andere Ansicht — sie blendete ueber und rutschte verspaetet nach,
+        // waehrend die uebrigen glitten. Ein innerer Knopf (der Ring) bekommt
+        // seinen Tipp weiter selbst.
+        //
+        // **Ohne graue Flaeche.** `Druckzeile` legte Grau hinter die Zeile;
+        // hier tippt man nur, um zu waehlen oder abzuspielen. Der Inhalt
+        // dunkelt kurz ab — das reicht als Antwort.
+        Button { if an { tun() } } label: { content }
+            .buttonStyle(Abdunkeln(an: an))
+            .accessibilityRemoveTraits(an ? [] : .isButton)
     }
+
+}
+
+private struct Abdunkeln: ButtonStyle {
+    var an = true
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(an && configuration.isPressed ? 0.6 : 1)
+            .animation(Stil.druckkurve(configuration.isPressed),
+                       value: configuration.isPressed)
+    }
+}
+
+/// Eine Huelle, damit der Schaetzer die Neuzeichnungen ueberlebt, ohne dass
+/// jede Schaetzung eine neue auslöst.
+private final class Schaetzerhalter {
+    var s = Fortschrittsschaetzer()
 }
 
 // MARK: - Die Seite
@@ -354,6 +485,7 @@ struct DownloadsView: View {
     @State private var bearbeiten = false
     @State private var gewaehlt: Set<String> = []
     @State private var loeschblatt = false
+    @State private var offeneSerie: DownloadserieRoute?
 
     private var verwaltung: Downloadverwaltung { model.downloads }
 
@@ -371,7 +503,15 @@ struct DownloadsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if !laufend.isEmpty {
+                        // **Der Rand wird zurueckgerechnet, nicht addiert.**
+                        //
+                        // `Gruppentitel` bringt `randAbstand` selbst mit, und
+                        // der `VStack` unten legt noch einmal `rand(breit:)`
+                        // darum: die Ueberschrift stand sichtbar 18 Punkt
+                        // weiter innen als ihre eigene Liste. So macht es
+                        // `Einstellungsgruppe` schon, Zeichen fuer Zeichen.
                         Gruppentitel(text: verwaltung.keinNetz ? "Wartet auf Netz" : "Lädt gerade")
+                            .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
                             .padding(.top, 4)
                         // **Auch was laeuft, laesst sich entfernen.**
                         //
@@ -385,16 +525,21 @@ struct DownloadsView: View {
                             Downloadzeile(model: model, posten: p,
                                           bearbeiten: bearbeiten,
                                           gewaehlt: bindung(fuer: [p.id]))
-                            if p.id != laufend.last?.id { Trennlinie() }
+                            // Keine Trennlinie: die Zeile traegt ein Bild,
+                            // und das trennt schon. Steht in BRAND.md,
+                            // Abschnitt 7, „Die Zeile mit Bild".
                         }
                     }
 
                     if !fertige.isEmpty {
-                        Gruppentitel(text: "Auf dem Gerät")
-                            .padding(.top, laufend.isEmpty ? 4 : 26)
+                        // **Keine Ueberschrift ueber dem Geladenen.** Hier
+                        // stand „Auf dem Gerät" — auf der Downloadseite ist
+                        // alles auf dem Geraet, der Satz sagte nichts. Der
+                        // Abstand zu „Lädt gerade" darueber bleibt.
+                        Color.clear.frame(height: laufend.isEmpty ? 4 : 26)
                         ForEach(fertige) { g in
                             zeileFuer(g)
-                            if g.id != fertige.last?.id { Trennlinie() }
+
                         }
                     }
                 }
@@ -439,12 +584,24 @@ struct DownloadsView: View {
                 // stattdessen, **wo** der Anfang ist.
                 Leerzustand(symbol: "arrow.down.circle",
                             kopfzeile: "Noch nichts geladen",
-                            text: "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.")
+                            text: "Lad was runter, bevor der Zug ins Funkloch fährt.")
+                    // **Die Navileiste abrechnen**, wie auf der
+                    // Bibliotheksseite: der Block sitzt mittig im ganzen
+                    // Fenster, und schmal liegen die unteren 54 Punkt davon
+                    // unter der Leiste.
+                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
                     // Das Wann zum Wie aus `Leerzustand`.
                     .animation(Stil.einblenden, value: verwaltung.posten.isEmpty)
+                    // Zieht beim Bereichswechsel mit heran, wie die
+                    // Scrollflaeche darunter — ohne eigenen Grund, sonst
+                    // deckte er den Kopf zu.
+                    .bereichsmitzug()
             }
         }
         .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
+        .navigationDestination(item: $offeneSerie) { route in
+            DownloadserieView(model: model, route: route)
+        }
         #if os(iOS)
         .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
@@ -475,18 +632,16 @@ struct DownloadsView: View {
                           gewaehlt: bindung(fuer: [p.id]),
                           starten: p.stand == .fertig ? { spiele(p) } : nil)
         case let .serie(id, titel, folgen):
-            if bearbeiten {
-                Downloadzeile(model: model, posten: folgen[0],
-                              gruppe: (titel, folgen), bearbeiten: true,
-                              gewaehlt: bindung(fuer: folgen.map(\.id)))
-            } else {
-                NavigationLink(value: DownloadserieRoute(serienId: id, titel: titel)) {
-                    Downloadzeile(model: model, posten: folgen[0],
-                                  gruppe: (titel, folgen),
-                                  gewaehlt: .constant(false))
-                }
-                .buttonStyle(.plain)
-            }
+            // **Eine Zeile in beiden Lagen, kein Tausch.** Hier stand ein
+            // `NavigationLink` ausserhalb und eine zweite Zeile im
+            // Bearbeiten — fuer SwiftUI zwei verschiedene Ansichten, also
+            // blendete die Serienzeile beim Umschalten ueber, statt zu
+            // gleiten. Jetzt dieselbe Zeile; der Weg zur Serie geht ueber
+            // `offeneSerie`.
+            Downloadzeile(model: model, posten: folgen[0],
+                          gruppe: (titel, folgen), bearbeiten: bearbeiten,
+                          gewaehlt: bindung(fuer: folgen.map(\.id)),
+                          starten: { offeneSerie = DownloadserieRoute(serienId: id, titel: titel) })
         }
     }
 
@@ -512,28 +667,26 @@ struct DownloadsView: View {
         }
     }
 
-    private var loeschtitel: String {
-        let bytes = verwaltung.posten.filter { gewaehlt.contains($0.id) }
-            .reduce(Int64(0)) { $0 + $1.bytes }
-        return String(localized: "\(gewaehlt.count) entfernen")
-            + " · " + Downloadregeln.groesse(bytes)
-    }
+    private var loeschtitel: String { Loeschleiste.titel(gewaehlt, in: verwaltung) }
 
     // MARK: Kopf
 
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 0) {
+                // Mittig, nicht oben — siehe HauptView: ohne die Zeile unter
+                // dem Titel liegt `.top` daneben.
+                HStack(alignment: .center, spacing: 0) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Downloads").font(Stil.titelGross).tracking(-0.6)
-                        // **Der Tag, für den das Ganze gebaut ist.** Ohne Netz
-                        // wechselt die Zeile auf Warnfarbe und sagt eine
-                        // nützliche Zahl, nicht das Wort „offline".
-                        Text(verbatim: belegungszeile)
-                            .font(.system(size: 13))
-                            .foregroundStyle(verwaltung.keinNetz ? Stil.warnung : Stil.schriftSehrLeise)
-                            .lineLimit(1)
+                        Text("Downloads").font(Stil.titelGross).tracking(Stil.sperrungTitel)
+                        // **Keine Zeile unter dem Titel.**
+                        //
+                        // Hier stand die Belegung — Titelzahl, Groesse, freier
+                        // Platz. Dieselbe Auskunft steht am Speicherbalken
+                        // weiter unten, und ein Seitentitel mit Unterbau sieht
+                        // anders aus als jede andere Wurzelseite. Ohne Netz
+                        // sagt das der Leerzustand beziehungsweise die
+                        // Zustandszeile an der Zeile selbst. Paul am 21.09.
                     }
                     Spacer(minLength: 0)
                     // **Bearbeiten gibt es breit wie schmal.**
@@ -562,36 +715,10 @@ struct DownloadsView: View {
     @ViewBuilder
     private var bearbeitenknopf: some View {
         if !verwaltung.posten.isEmpty {
-            Button {
-                withAnimation(Stil.einblenden) {
-                    bearbeiten.toggle()
-                    if !bearbeiten { gewaehlt = [] }
-                }
-            } label: {
-                Image(systemName: bearbeiten ? "xmark" : "pencil")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(bearbeiten ? Stil.akzent : Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Bearbeiten"))
+            Bearbeitenknopf(bearbeiten: $bearbeiten, gewaehlt: $gewaehlt)
         }
     }
 
-    private var belegungszeile: String {
-        let b = Downloadregeln.belegung(verwaltung.posten)
-        if verwaltung.keinNetz {
-            return String(localized: "Kein Netz") + " · "
-                + String(localized: "\(b.anzahl) Titel spielbar")
-        }
-        guard b.anzahl > 0 || !laufend.isEmpty else {
-            return String(localized: "Nichts auf dem Gerät")
-        }
-        return String(localized: "\(b.anzahl) Titel") + " · "
-            + Downloadregeln.groesse(b.bytes) + " · "
-            + Downloadregeln.groesse(verwaltung.frei) + " " + String(localized: "frei")
-    }
 
     /// **Statt einer Obergrenze.** H7: eine Grenze, die man nicht selbst
     /// gesetzt hat, ärgert genau dann, wenn man sie braucht. Ein Balken sagt
@@ -603,7 +730,11 @@ struct DownloadsView: View {
         return GeometryReader { r in
             HStack(spacing: 0) {
                 Stil.akzent.frame(width: r.size.width * unser / ganz)
-                Color.white.opacity(0.22).frame(width: r.size.width * frei / ganz)
+                // Das freie Stueck war weiss 0,22 — ein roher Wert und ein
+                // zweiter Farbton neben dem Akzent. `erhoeht` ist die Flaeche,
+                // die es dafuer gibt, und sie liegt richtig herum: heller als
+                // der Grund, leiser als der eigene Anteil.
+                Stil.erhoeht.frame(width: r.size.width * frei / ganz)
                 Color.clear
             }
         }
@@ -623,14 +754,59 @@ struct DownloadsView: View {
     /// Aufräumen den Bereich wechseln will, soll das können, ohne erst den
     /// Auswahlmodus zu verlassen.
     private var loeschleiste: some View {
-        Button { loeschblatt = true } label: {
-            Text(verbatim: loeschtitel)
+        Loeschleiste(titel: loeschtitel, aktiv: !gewaehlt.isEmpty) { loeschblatt = true }
+    }
+}
+
+/// Stift und Kreuz oben rechts — auf der Downloadliste und auf der Seite
+/// einer geladenen Serie derselbe Knopf.
+struct Bearbeitenknopf: View {
+    @Binding var bearbeiten: Bool
+    @Binding var gewaehlt: Set<String>
+
+    var body: some View {
+        Button {
+            // Dieselbe Kurve wie die Blaetter: die Zeilen gleiten.
+            withAnimation(Stil.blattbewegung) {
+                bearbeiten.toggle()
+                if !bearbeiten { gewaehlt = [] }
+            }
+        } label: {
+            // 18 Medium war die dritte Groesse fuer dasselbe Zeichen auf
+            // dieser Seite; 17 Semibold ist die Stufe der Leiter.
+            Image(systemName: bearbeiten ? "xmark" : "pencil")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(bearbeiten ? Stil.akzent : Stil.schrift)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(HauptknopfStil(dehnt: true))
-        .disabled(gewaehlt.isEmpty)
-        .padding(.horizontal, Stil.rand(breit: breit))
-        .padding(.bottom, breit ? 8 : Stil.leisteHoehe + 8)
-        .background(Stil.grund.ignoresSafeArea())
+        .buttonStyle(Stil.Druckknopf())
+        .accessibilityLabel(Text("Bearbeiten"))
+    }
+}
+
+/// **Über der Bereichsleiste, nicht darunter** — siehe `DownloadsView`.
+struct Loeschleiste: View {
+    @Environment(\.breit) private var breit
+    let titel: String
+    let aktiv: Bool
+    let tun: () -> Void
+
+    var body: some View {
+        Button(action: tun) { Text(verbatim: titel) }
+            .buttonStyle(HauptknopfStil(dehnt: true))
+            .disabled(!aktiv)
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.bottom, breit ? 8 : Stil.leisteHoehe + 8)
+            .background(Stil.grund.ignoresSafeArea())
+    }
+
+    /// „3 entfernen · 7,42 GB".
+    static func titel(_ gewaehlt: Set<String>, in verwaltung: Downloadverwaltung) -> String {
+        let bytes = verwaltung.posten.filter { gewaehlt.contains($0.id) }
+            .reduce(Int64(0)) { $0 + $1.bytes }
+        return String(localized: "\(gewaehlt.count) entfernen")
+            + " · " + Downloadregeln.groesse(bytes)
     }
 }
 
@@ -641,16 +817,35 @@ struct DownloadserieRoute: Hashable {
     let titel: String
 }
 
+/// **Die Serie auf dem Geraet, als Detailseite.**
+///
+/// Hier stand eine blosse Liste unter Serienname und „N Folgen · X GB".
+/// Paul wollte, was der Rest der App hat: oben das grosse Bild, der Name,
+/// ein Abspielknopf, darunter die Folgen nach Staffel. Gebaut aus den
+/// Bausteinen der Serienseite (`Heldbild`, `Heldauslauf`, `HauptknopfStil`,
+/// `Detailkopfleser`) — keine eigene Gestaltung.
+///
+/// **Alles von der Platte.** Wer hier steht, hat womoeglich kein Netz: das
+/// Bild ist das gesicherte Querbild der naechsten Folge, sonst das Plakat
+/// der Serie, und erst danach eine Serveradresse. Der Knopf spielt die
+/// Datei ueber `model.plan`, das die Platte zuerst nimmt (H8).
 struct DownloadserieView: View {
     let model: AppModel
     let route: DownloadserieRoute
 
     @Environment(\.dismiss) private var schliessen
-
     @Environment(\.breit) private var breit
-    @State private var versatz: CGFloat = 0
-
+    /// Siehe `SeriesDetailView.weg` — als `@State`-Zahl baute jeder
+    /// Scrollschritt die Seite neu.
+    @State private var weg = Scrollweg()
     @State private var abspielen: Abspielwunsch?
+    @State private var bearbeiten = false
+    @State private var gewaehlt: Set<String> = []
+    @State private var loeschblatt = false
+    @Environment(\.displayScale) private var pixelmass
+    @State private var seitenbreite: CGFloat = 0
+    /// Das nachgeholte Kopfbild, sobald es liegt.
+    @State private var nachgeholt: URL?
 
     private func spiele(_ p: Downloadposten) {
         Task {
@@ -665,40 +860,108 @@ struct DownloadserieView: View {
             .sorted { ($0.staffel ?? 0, $0.folge ?? 0) < ($1.staffel ?? 0, $1.folge ?? 0) }
     }
 
+    /// Nach Staffel, in der Reihenfolge der Staffeln.
+    private var staffeln: [(nummer: Int?, folgen: [Downloadposten])] {
+        var reihe: [Int?] = []
+        var je: [Int?: [Downloadposten]] = [:]
+        for p in folgen {
+            if je[p.staffel] == nil { reihe.append(p.staffel) }
+            je[p.staffel, default: []].append(p)
+        }
+        return reihe.map { ($0, je[$0] ?? []) }
+    }
+
+    private var naechste: Downloadposten? { Downloadregeln.naechsteFolge(aus: folgen) }
+
+    /// **Zuerst das grosse Kopfbild der Serie** — seit dem 22.09. laedt es
+    /// mit dem ersten Download in Bildschirmaufloesung mit. Davor stand hier
+    /// das Querbild der Folge (220 hoch) oder das Plakat (300 hoch), beide
+    /// fuer Zeilen gemessen und im Kopf sichtbar weich.
+    private var kopfbild: URL? {
+        guard let p = naechste ?? folgen.first else { return nil }
+        if let gross = nachgeholt ?? model.downloads.kopfbild(serie: route.serienId, konto: p.konto) {
+            return gross
+        }
+        return model.downloads.bild(fuer: p)
+            ?? model.downloads.bild(fuer: p, alsGruppe: true)
+            ?? model.plakatURL(itemID: p.serienId ?? p.id)
+    }
+
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             Stil.grund.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(folgen) { p in
-                        Downloadzeile(model: model, posten: p, gewaehlt: .constant(false),
-                                      starten: p.stand == .fertig ? { spiele(p) } : nil)
-                        if p.id != folgen.last?.id { Trennlinie() }
+                    // **Breit derselbe Kopf wie auf der Serienseite** —
+                    // `Heldkopf` mit Plakat neben Name und Knopf. Ein 300
+                    // Punkt hoher Streifen über die ganze iPad-Breite ist
+                    // kein Heldbild mehr; die Begründung steht dort.
+                    if breit {
+                        Heldkopf(bild: kopfbild, poster: plakat,
+                                 titel: route.titel, nebenzeile: angabe) {
+                            hauptknopf
+                        }
+                        Color.clear.frame(height: 22)
+                    } else {
+                    Heldbild(url: kopfbild)
+                        .overlay(alignment: .bottom) { Heldauslauf() }
+                        .overlay(alignment: .bottomLeading) { titelblock }
+
+                    hauptknopf
+                        .padding(.horizontal, Stil.rand(breit: breit))
+                        .padding(.top, 14)
+                        .padding(.bottom, 22)
+                    }
+
+                    ForEach(staffeln, id: \.nummer) { staffel in
+                        if let n = staffel.nummer {
+                            Gruppentitel(text: "Staffel \(n)")
+                                .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
+                                .padding(.top, 6)
+                        }
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(staffel.folgen) { p in folgenzeile(p) }
+                        }
+                        .padding(.bottom, 16)
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            .onScrollGeometryChange(for: CGFloat.self) {
-                $0.contentOffset.y + $0.contentInsets.top
-            } action: { _, neu in versatz = neu }
-            // Auch hier als Sicherheitsrand statt als Auflage — siehe
-            // `HauptView`.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Unschaerfekopf(versatz: versatz) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Unterseitenkopf(titel: route.titel,
-                                        zurueck: { schliessen() }) { EmptyView() }
-                            .padding(.horizontal, -Stil.rand(breit: breit))
-                        Text(verbatim: String(localized: "\(folgen.count) Folgen") + " · "
-                             + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes }))
-                            .font(.system(size: 13))
-                            .foregroundStyle(Stil.schriftSehrLeise)
-                    }
-                }
+            .coordinateSpace(.named("blatt"))
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
+                weg.setzen(neu)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { seitenbreite = $0 }
+            .ignoresSafeArea(edges: .top)
+
+            Detailkopfleser(titel: route.titel, weg: weg, zurueck: { schliessen() }) {
+                Bearbeitenknopf(bearbeiten: $bearbeiten, gewaehlt: $gewaehlt)
             }
         }
+        .task(id: seitenbreite > 0) { await kopfbildNachholen() }
+        .safeAreaInset(edge: .bottom) {
+            if bearbeiten {
+                Loeschleiste(titel: Loeschleiste.titel(gewaehlt, in: model.downloads),
+                             aktiv: !gewaehlt.isEmpty) { loeschblatt = true }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            Handlungsblatt(offen: $loeschblatt,
+                           titel: Loeschleiste.titel(gewaehlt, in: model.downloads),
+                           handlungen: [
+                Titelhandlung(symbol: "trash", text: "Entfernen", warnend: true) {
+                    entfernen(Array(gewaehlt))
+                    gewaehlt = []
+                    withAnimation(Stil.blattbewegung) { bearbeiten = false }
+                }
+            ])
+        }
+        // **Die letzte Folge weg, die Seite weg.** Eine Serienseite ohne
+        // Folgen hat nichts mehr zu zeigen; zurueck in die Liste.
+        .onChange(of: folgen.isEmpty) { _, leer in if leer { schliessen() } }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
@@ -707,5 +970,98 @@ struct DownloadserieView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
+    }
+
+    /// **Drei Wege zum Entfernen, wie in iOS ueblich.** Paul fand den Ring
+    /// an jeder Folge nicht als Loeschweg — er ist keiner, er haelt an und
+    /// setzt fort. Jetzt: nach links wischen, lange druecken, oder oben
+    /// Bearbeiten mit Auswahlkreisen und dem Knopf unten, wie in der Liste.
+    ///
+    /// Die Wischzeile laeuft ueber die volle Breite, damit das Rot bis an
+    /// den Rand geht; den Seitenrand traegt die Zeile selbst. Getippt wird
+    /// in der Zeile (`starten`, im Bearbeiten die Auswahl) — die Wischzeile
+    /// selbst tut beim Tippen nichts.
+    private func folgenzeile(_ p: Downloadposten) -> some View {
+        Wischzeile(symbol: "trash", beschriftung: "Entfernen", farbe: Stil.fehler,
+                   aktion: { entfernen([p.id]) }, tippen: {}) {
+            Downloadzeile(model: model, posten: p, bearbeiten: bearbeiten,
+                          gewaehlt: Binding(
+                            get: { gewaehlt.contains(p.id) },
+                            set: { an in if an { gewaehlt.insert(p.id) } else { gewaehlt.remove(p.id) } }),
+                          starten: p.stand == .fertig ? { spiele(p) } : nil)
+                .padding(.horizontal, Stil.rand(breit: breit))
+        }
+        .contextMenu {
+            Button(role: .destructive) { entfernen([p.id]) } label: {
+                Label("Download entfernen", systemImage: "trash")
+            }
+        }
+    }
+
+    private func entfernen(_ ids: [String]) {
+        withAnimation(Stil.einblenden) { model.downloads.entfernen(ids) }
+    }
+
+    /// **Downloads von vorher haben kein grosses Kopfbild** — mit Netz wird
+    /// es hier einmal nachgeholt. Ohne Netz scheitert die Abfrage still, und
+    /// es bleibt beim Bild von der Platte.
+    private func kopfbildNachholen() async {
+        guard seitenbreite > 0, let p = folgen.first,
+              model.downloads.kopfbild(serie: route.serienId, konto: p.konto) == nil,
+              let serie = await model.item(id: route.serienId) else { return }
+        // Breit ist der Kopf mindestens `heldHoeheBreit` hoch.
+        let punkte = max(seitenbreite, (breit ? Stil.heldHoeheBreit : Stil.heldHoehe) * 16 / 9)
+        guard let adresse = model.kopfbildURL(for: serie,
+                                              breite: Int((punkte * pixelmass).rounded(.up)))
+        else { return }
+        nachgeholt = await model.downloads.kopfbildNachholen(serie: route.serienId,
+                                                             konto: p.konto, von: adresse)
+    }
+
+    /// „12 Folgen · 18,4 GB".
+    private var angabe: String {
+        String(localized: "\(folgen.count) Folgen") + " · "
+            + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes })
+    }
+
+    /// Das Plakat der Serie von der Platte — für den breiten Kopf.
+    private var plakat: URL? {
+        guard let p = folgen.first else { return nil }
+        return model.downloads.bild(fuer: p, alsGruppe: true)
+            ?? model.plakatURL(itemID: p.serienId ?? p.id)
+    }
+
+    /// Name und Angabe unten auf dem Bild — wie auf der Serienseite.
+    private var titelblock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: route.titel)
+                .font(Stil.titel)
+                .tracking(Stil.sperrungTitel)
+                .foregroundStyle(Stil.schrift)
+            Text(verbatim: angabe)
+                .font(Stil.klein)
+                .monospacedDigit()
+                .foregroundStyle(Stil.schriftLeise)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.bottom, 16)
+    }
+
+    /// **Die naechste ungesehene Folge**, sonst von vorn — die Regel steht
+    /// in `Downloadregeln.naechsteFolge`. Beschriftet wie auf der
+    /// Serienseite („Abspielen S2 F6").
+    private var hauptknopf: some View {
+        Button {
+            if let naechste { spiele(naechste) }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill").font(.system(size: 15))
+                    .accessibilityHidden(true)
+                Text(verbatim: Item.serienknopf(folge: naechste?.alsItem, laedt: false))
+            }
+        }
+        .buttonStyle(HauptknopfStil(dehnt: !breit))
+        .disabled(naechste == nil)
     }
 }

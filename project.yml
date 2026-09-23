@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "11"
+    CURRENT_PROJECT_VERSION: "13"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -264,6 +264,8 @@ targets:
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Discordanzeiger.swift
+      # Trakt: Schluesselbund, Anmeldezustand, die Aufrufe aus AppModel.
+      - path: Sources/Shared/Traktkonto.swift
       - path: Sources/Shared/Startseitenmodell.swift
       # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
       - path: Sources/Shared/Seerrmodell.swift
@@ -287,6 +289,7 @@ targets:
       # seit es auch einen AppKit-Arm gibt.
       - path: Sources/Shared/Basisansicht.swift
       - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/Netzprobe.swift
       # Vorschaubilder beim Spulen: Holen und Zwischenspeicher der
       # Trickplay-Blaetter, geteilt mit iPhone und Mac.
       - path: Sources/Shared/Trickplaybilder.swift
@@ -540,6 +543,8 @@ targets:
       # mischt und leitet macOS selbst.
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Discordanzeiger.swift
+      # Trakt: Schluesselbund, Anmeldezustand, die Aufrufe aus AppModel.
+      - path: Sources/Shared/Traktkonto.swift
       # Der Namensgeber für UIView beziehungsweise NSView. Ohne ihn stünde
       # der Player zweimal da.
       - path: Sources/Shared/Basisansicht.swift
@@ -548,6 +553,10 @@ targets:
       # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
       # ohnehin nicht, siehe die Messung in CLAUDE.md.
       - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/Netzprobe.swift
+      # „Protokoll teilen" im Profil — die Datei; geteilt wird mit dem
+      # Teilen-Menü des Mac (ProfilView).
+      - path: Sources/Shared/Protokollteilen.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
       # Der Code-Weg beim Aufnehmen eines weiteren Kontos: Code holen,

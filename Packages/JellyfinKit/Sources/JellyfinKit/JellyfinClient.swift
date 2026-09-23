@@ -199,6 +199,10 @@ public actor JellyfinClient {
 
         var req = URLRequest(url: url)
         req.httpMethod = method
+        // **Zuerst die eigenen Köpfe, dann unsere.** Die gesperrten Namen
+        // kommen ohnehin nicht durch (``Eigenkoepfe/bereinigt(_:)``); die
+        // Reihenfolge sorgt dafür, dass es auch so bliebe, wenn doch.
+        req.eigeneKoepfeSetzen()
         req.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
@@ -220,12 +224,21 @@ public actor JellyfinClient {
             throw JellyfinError.transport("Keine HTTP-Antwort.")
         }
         guard (200..<300).contains(http.statusCode) else {
+            // Ein Vorposten, der ohne Umleitung gleich ablehnt (Cloudflare
+            // Access antwortet so auf Aufrufe ohne Browser), schickt dazu
+            // seine Seite mit. Jellyfin selbst lehnt nie mit HTML ab.
+            if [401, 403].contains(http.statusCode), Eigenkoepfe.anmeldeseite(http) {
+                throw JellyfinError.transport(Eigenkoepfe.anmeldeseiteText)
+            }
             throw JellyfinError.http(status: http.statusCode,
                                      body: String(data: data.prefix(400), encoding: .utf8))
         }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
+            // HTML statt JSON heisst: ein Vorposten hat geantwortet, nicht
+            // Jellyfin — siehe ``Eigenkoepfe/anmeldeseite(_:)``.
+            if Eigenkoepfe.anmeldeseite(http) { throw JellyfinError.transport(Eigenkoepfe.anmeldeseiteText) }
             throw JellyfinError.decoding(String(describing: error))
         }
     }
@@ -343,9 +356,14 @@ public actor JellyfinClient {
     }
 
     /// Die Bibliotheken des Nutzers (Filme, Serien, Musik …).
-    public func userViews() async throws -> [Item] {
+    ///
+    /// - Parameter verborgene: Auch die, die der Nutzer in Jellyfin aus
+    ///   „Meine Medien" genommen hat.
+    public func userViews(verborgene: Bool = false) async throws -> [Item] {
         let s = try requireSession()
-        let req = try request("UserViews", query: [.init(name: "userId", value: s.userID)])
+        var query: [URLQueryItem] = [.init(name: "userId", value: s.userID)]
+        if verborgene { query.append(.init(name: "includeHidden", value: "true")) }
+        let req = try request("UserViews", query: query)
         return try await send(req, as: ItemsResponse.self).items
     }
 
@@ -397,7 +415,9 @@ public actor JellyfinClient {
             // Antwort — für eine Ansicht, die davon Name, Jahr und Poster
             // zeigt. Die Detailseite holt den Titel ohnehin frisch über
             // `item(id:)`, und dort stehen beide drin.
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
+            // `ProviderIds`, weil ``Titelsieb`` daran erkennt, dass zwei
+            // Einträge derselbe Film sind — klein, eine Handvoll Nummern.
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
@@ -424,6 +444,61 @@ public actor JellyfinClient {
             query.append(.init(name: "IsPlayed", value: istGesehen ? "true" : "false"))
         }
         return try await send(try request("Items", query: query), as: ItemsResponse.self)
+    }
+
+    /// Wie viele Titel dieser Gattungen unter einem Ordner liegen — ohne sie
+    /// zu holen. Ein Titel kommt mit, weil `Limit=0` nicht auf jedem Server
+    /// „keinen" heißt; gebraucht wird nur `TotalRecordCount`.
+    public func anzahl(parentID: String, typen: [String]) async throws -> Int {
+        let s = try requireSession()
+        let req = try request("Items", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "ParentId", value: parentID),
+            .init(name: "IncludeItemTypes", value: typen.joined(separator: ",")),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "Limit", value: "1"),
+            .init(name: "EnableImages", value: "false"),
+            .init(name: "EnableUserData", value: "false"),
+        ])
+        return try await send(req, as: ItemsResponse.self).totalRecordCount
+    }
+
+    /// Alles einer Gattung aus einer Bibliothek — nur Kennung, Name, Jahr und
+    /// Anbieternummern, ohne Bilder und Nutzerdaten. Für ``Titelsieb``.
+    public func titelkennungen(parentID: String, typen: [String],
+                               filters: [String] = [], istGesehen: Bool? = nil) async throws -> [Item] {
+        let s = try requireSession()
+        var query: [URLQueryItem] = [
+            .init(name: "userId", value: s.userID),
+            .init(name: "ParentId", value: parentID),
+            .init(name: "IncludeItemTypes", value: typen.joined(separator: ",")),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "Fields", value: "ProviderIds"),
+            .init(name: "EnableImages", value: "false"),
+            .init(name: "EnableUserData", value: "false"),
+        ]
+        if !filters.isEmpty { query.append(.init(name: "Filters", value: filters.joined(separator: ","))) }
+        if let istGesehen { query.append(.init(name: "IsPlayed", value: istGesehen ? "true" : "false")) }
+        return try await send(try request("Items", query: query), as: ItemsResponse.self).items
+    }
+
+    /// Was in einer Sammlung steht — nur Kennung und Gattung.
+    ///
+    /// **Nicht rekursiv:** die Titel einer Sammlung sind verknüpft, die erste
+    /// Ebene ist genau ihr Inhalt. Ohne Bilder und Nutzerdaten, weil das
+    /// Verzeichnis nur die Mitgliedschaft braucht; die Plakate holt die
+    /// Seite, die sie zeigt.
+    public func sammlungsmitglieder(_ sammlung: String) async throws -> [Item] {
+        let s = try requireSession()
+        let req = try request("Items", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "ParentId", value: sammlung),
+            .init(name: "IncludeItemTypes", value: "Movie,Series"),
+            .init(name: "Limit", value: "2000"),
+            .init(name: "EnableImages", value: "false"),
+            .init(name: "EnableUserData", value: "false"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items
     }
 
     /// Fragt den Server, wie er diesen Titel ausliefern würde.
@@ -509,14 +584,23 @@ public actor JellyfinClient {
         return try await send(req, as: ItemsResponse.self).items.map(\.name)
     }
 
-    /// Ähnliche Titel.
-    public func aehnliche(itemID: String, limit: Int = 12) async throws -> [Item] {
+    /// Ähnliche Titel — je Titel einmal, und nie der Titel selbst.
+    ///
+    /// Liegt derselbe Film in zwei Bibliotheken (Hardlinks), führt Jellyfin
+    /// ihn mit zwei Kennungen, und `Similar` lieferte beide — oder die Kopie
+    /// des gerade offenen Films. Deshalb doppelt so viele holen und nach
+    /// ``Listenregeln/jeTitelEinmal(_:zeigen:)`` zusammenfassen.
+    public func aehnliche(itemID: String, zu vorlage: Item? = nil, limit: Int = 12) async throws -> [Item] {
         let s = try requireSession()
         let req = try request("Items/\(itemID)/Similar", query: [
             .init(name: "userId", value: s.userID),
-            .init(name: "limit", value: String(limit)),
+            .init(name: "limit", value: String(limit * 2)),
+            .init(name: "Fields", value: "ProviderIds"),
         ])
-        return try await send(req, as: ItemsResponse.self).items
+        let roh = try await send(req, as: ItemsResponse.self).items
+        let eigener = vorlage.map(Listenregeln.titelschluessel)
+        let ohneSelbst = roh.filter { $0.id != itemID && Listenregeln.titelschluessel($0) != eigener }
+        return Listenregeln.jeTitelEinmal(ohneSelbst, zeigen: limit)
     }
 
     /// Extras — Featurettes, Making-of, Szenen.
@@ -697,28 +781,61 @@ public actor JellyfinClient {
         return try await send(req, as: ItemsResponse.self).items
     }
 
-    /// Zuletzt Hinzugefügtes. Ohne `parentID` über alle Bibliotheken.
+    /// **Was zuletzt dazugekommen ist — über den gewöhnlichen Items-Endpunkt.**
     ///
-    /// Achtung: dieser Endpunkt liefert ein nacktes Array, keinen
-    /// ItemsResponse-Umschlag wie die übrigen.
-    /// Neu dazugekommen, neueste zuerst.
+    /// Hier stand `Items/Latest`. Der Endpunkt beantwortet eine andere Frage
+    /// als die, die auf der Startseite steht: er blendet **Gesehenes aus**,
+    /// sobald im Jellyfin-Konto „Gesehene Titel in ‚Neueste Medien‘
+    /// ausblenden" an ist — und das ist die Vorgabe des Servers. Am 21.09.2026
+    /// gemeldet: „Alle, die ich schon gesehen habe, werden nicht angezeigt."
     ///
-    /// `gruppieren: false` liefert die einzelnen Folgen statt der Serie. Nur
-    /// so stehen Datum und Staffelnummer in der Antwort — zusammengefasst
-    /// nennt der Server bloß die Serie und die Zahl der neuen Folgen.
-    public func latest(parentID: String? = nil, limit: Int = 20,
-                       gruppieren: Bool = true) async throws -> [Item] {
+    /// **Und das ist nicht unsere Frage.** „Zuletzt hinzugefügt" beantwortet
+    /// „was ist neu auf meinem Server", nicht „was habe ich noch nicht
+    /// gesehen" — dafür gibt es „Weiterschauen" und „Nächste Folge". Ein Film,
+    /// der vorgestern dazukam und den man gestern gesehen hat, gehört in diese
+    /// Reihe.
+    ///
+    /// **Abschalten lässt sich die Vorfilterung an `Items/Latest` nicht.**
+    /// `IsPlayed` ist dort ein `Bool?`: `true` heißt nur Gesehenes, `false`
+    /// nur Ungesehenes, weggelassen heißt „wie im Konto eingestellt". Es gibt
+    /// keinen Wert für „beides". Der Weg über `Items` kennt diese
+    /// Vorfilterung gar nicht — ein Sortierfeld statt einer Sonderregel.
+    ///
+    /// Zwei Eigenschaften bleiben dabei erhalten, und beide sind der Grund für
+    /// die Gestalt dieser Abfrage:
+    ///
+    /// - **`IncludeItemTypes=Movie,Episode`, nicht `Series`.** Eine Folge
+    ///   trägt `ParentIndexNumber`, `IndexNumber`, `SeriesId` und
+    ///   `SeriesName`; eine Serie trägt das alles nicht. Nur deshalb kann
+    ///   unter der Kachel „Staffel 20" stehen und in der Detailzeile
+    ///   „S6 • E5". Zusammengefasst zur Serie nennt der Server bloß die Zahl
+    ///   der neuen Folgen — genau die Einschränkung, die schon am alten
+    ///   `GroupItems` hing. Die Aufzählung ist außerdem nötig, damit aus einer
+    ///   Serienbibliothek nicht Serien **und** Staffeln **und** Folgen
+    ///   dreifach zurückkommen.
+    /// - **Zusammengefasst wird hier, nicht auf dem Server**
+    ///   (``zuletztHinzugefuegt(in:holen:zeigen:)``): eine Zeile je Serie,
+    ///   mit ihrer neuesten Folge.
+    ///
+    /// `IsVirtualItem=false` hält Folgen heraus, die der Server nur aus dem
+    /// Verzeichnis kennt und zu denen keine Datei liegt — dieselbe
+    /// Überlegung wie bei ``folgeNach(itemID:seriesID:)``.
+    ///
+    /// Ohne `parentID` über alle Bibliotheken.
+    public func neuDazugekommen(parentID: String? = nil, limit: Int = 20) async throws -> [Item] {
         let s = try requireSession()
         var query: [URLQueryItem] = [
             .init(name: "userId", value: s.userID),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "GroupItems", value: gruppieren ? "true" : "false"),
-            // ChildCount ausdrücklich anfordern — ohne das fehlt die Zahl der
-            // neuen Folgen in der Antwort.
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ChildCount"),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "SortBy", value: "DateCreated"),
+            .init(name: "SortOrder", value: "Descending"),
+            .init(name: "IncludeItemTypes", value: "Movie,Episode"),
+            .init(name: "IsVirtualItem", value: "false"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
-        return try await send(try request("Items/Latest", query: query), as: [Item].self)
+        return try await send(try request("Items", query: query), as: ItemsResponse.self).items
     }
 
     /// Fragt den Server und baut daraus direkt den Plan für den Player.
@@ -862,7 +979,7 @@ public actor JellyfinClient {
     public func trickplayBlatt(itemID: String, mediaSourceID: String?, breite: Int, blatt: Int) async -> Data? {
         guard let url = trickplayURL(itemID: itemID, mediaSourceID: mediaSourceID,
                                      breite: breite, blatt: blatt),
-              let (daten, antwort) = try? await urlSession.data(for: URLRequest(url: url)),
+              let (daten, antwort) = try? await urlSession.data(for: .mitEigenenKoepfen(url)),
               let http = antwort as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
         return daten
@@ -1044,3 +1161,4 @@ extension JellyfinError {
         return .http(status: status, body: rumpf)
     }
 }
+

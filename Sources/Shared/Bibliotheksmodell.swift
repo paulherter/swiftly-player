@@ -78,7 +78,18 @@ final class Bibliotheksmodell {
     var kennung: String { "\(sortierung.rawValue)|\(filter.rawValue)" }
 
     /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
-    var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
+    var nochMehrDa: Bool {
+        sieb == nil ? Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt)
+                    : Listenregeln.nochMehrDa(geladen: rohVersatz, gesamt: rohGesamt)
+    }
+
+    /// **Aus mehreren Bibliotheken wird gesiebt** (``Titelsieb``). Dann
+    /// blättert die Seite in der Antwort des Servers, nicht in dem, was
+    /// stehen blieb: `rohVersatz` ist, wie weit der Server schon geliefert
+    /// hat, `rohGesamt`, wie viel er hat.
+    private var sieb: Titelsieb?
+    private var rohVersatz = 0
+    private var rohGesamt = 0
 
     /// Ob diese Kachel das Nachladen auslöst — jede der letzten drei Reihen,
     /// siehe `Listenregeln.imNachladebereich`.
@@ -104,9 +115,17 @@ final class Bibliotheksmodell {
 
     func laden(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
         laedt = items.isEmpty
+        let bib = await quelle(model, art: art, bibliothek: bibliothek)
+        await laden(model, aus: bib.map { Regalquelle(eltern: $0.id, art: art ?? $0.collectionType) })
+    }
+
+    /// Dasselbe mit fertiger Quelle — „Alle" quer über die Bibliotheken oder
+    /// eine Sammlung. `nil` heißt: in diesem Bereich gibt es nichts.
+    func laden(_ model: AppModel, aus quelle: Regalquelle?) async {
+        laedt = items.isEmpty
         gestoert = false
         fuerKonto = model.kontowechsel
-        guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else {
+        guard let quelle else {
             // Zwei Faelle sehen hier gleich aus: ein Server ohne Bibliothek
             // dieser Gattung, und einer, der gar nicht geantwortet hat.
             // Unterscheidbar daran, ob ueberhaupt Bibliotheken bekannt sind.
@@ -114,12 +133,17 @@ final class Bibliotheksmodell {
             laedt = false
             return
         }
-        if let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
-                                         sortierung: sortierung,
+        if quelle.siebt {
+            await gesiebtLaden(model, aus: quelle)
+            laedt = false
+            return
+        }
+        sieb = nil
+        if let seite = await model.items(aus: quelle, sortierung: sortierung,
                                          filter: filter, ab: 0) {
             // Beim Zurückkommen von einer Detailseite läuft das hier erneut —
             // und darf nicht auf die erste Seite kürzen, siehe `auffrischen`.
-            let fuer = "\(bib.id)|\(kennung)|\(fuerKonto)"
+            let fuer = "\(quelle.schluessel)|\(kennung)|\(fuerKonto)"
             items = geladenFuer == fuer
                 ? Listenregeln.auffrischen(seite.titel, in: items,
                                            gesamtVorher: gesamt, gesamtJetzt: seite.gesamt)
@@ -142,6 +166,12 @@ final class Bibliotheksmodell {
     }
 
     func nachladen(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
+        guard !veraltet(model), nochMehrDa, !laedtNach, !laedt else { return }
+        guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
+        await nachladen(model, aus: Regalquelle(eltern: bib.id, art: art ?? bib.collectionType))
+    }
+
+    func nachladen(_ model: AppModel, aus quelle: Regalquelle) async {
         // **Nach einem Kontowechsel wird nicht angehängt.** Was dasteht,
         // gehört dem vorigen Konto; die zweite Seite käme vom neuen, und
         // beides zusammen ergäbe eine Sammlung, die es nirgends gibt. Wer
@@ -152,10 +182,18 @@ final class Bibliotheksmodell {
         // Nachladebereichs gleichzeitig durch.
         laedtNach = true
         defer { laedtNach = false }
-        guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
         let vorher = geladenFuer
-        guard let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
-                                            sortierung: sortierung,
+        if quelle.siebt, var s = sieb {
+            guard let (neu, versatz, roh) = await fuellen(model, aus: quelle, sieb: &s,
+                                                          ab: rohVersatz, erste: AppModel.seitengroesse),
+                  geladenFuer == vorher else { return }
+            sieb = s
+            items = Listenregeln.anhaengen(neu, an: items)
+            rohVersatz = versatz
+            rohGesamt = roh
+            return
+        }
+        guard let seite = await model.items(aus: quelle, sortierung: sortierung,
                                             filter: filter, ab: items.count)
         else { return }
         // Wurde inzwischen umsortiert oder gefiltert, gehört die Seite zu
@@ -163,5 +201,53 @@ final class Bibliotheksmodell {
         guard geladenFuer == vorher else { return }
         items = Listenregeln.anhaengen(seite.titel, an: items)
         gesamt = seite.gesamt
+    }
+
+    // MARK: Gesiebt
+
+    /// Erste Seite aus mehreren Bibliotheken. Beim Zurückkommen von einer
+    /// Detailseite wird so weit neu geholt, wie schon geblättert war — in
+    /// einem Zug, damit die Liste nicht auf die erste Seite schrumpft und der
+    /// Fortschritt der Kacheln trotzdem frisch ist.
+    private func gesiebtLaden(_ model: AppModel, aus quelle: Regalquelle) async {
+        let fuer = "\(quelle.schluessel)|\(kennung)|\(fuerKonto)"
+        guard var neuesSieb = await model.titelsieb(quelle, filter: filter) else {
+            if !Task.isCancelled { gestoert = items.isEmpty }
+            return
+        }
+        let erste = max(AppModel.seitengroesse, geladenFuer == fuer ? rohVersatz : 0)
+        guard let (neu, versatz, roh) = await fuellen(model, aus: quelle, sieb: &neuesSieb,
+                                                      ab: 0, erste: erste) else {
+            if !Task.isCancelled { gestoert = items.isEmpty }
+            return
+        }
+        sieb = neuesSieb
+        items = neu
+        rohVersatz = versatz
+        rohGesamt = roh
+        gesamt = neuesSieb.gesamt
+        geladenFuer = fuer
+    }
+
+    /// Holt Seiten, bis etwas stehen bleibt. Eine Seite kann fast ganz aus
+    /// Doppeln bestehen — dann erschiene keine neue Kachel, an der das
+    /// nächste Nachladen hängen könnte, und die Liste bliebe stehen.
+    private func fuellen(_ model: AppModel, aus quelle: Regalquelle, sieb: inout Titelsieb,
+                         ab start: Int, erste: Int) async -> ([Item], Int, Int)? {
+        var neu: [Item] = []
+        var versatz = start
+        var roh = 0
+        var anzahl = erste
+        repeat {
+            guard let seite = await model.items(aus: quelle, sortierung: sortierung,
+                                                filter: filter, ab: versatz, anzahl: anzahl)
+            else { return nil }
+            neu += sieb.sieben(seite.titel)
+            versatz += seite.titel.count
+            roh = seite.gesamt
+            anzahl = AppModel.seitengroesse
+            if seite.titel.isEmpty { break }
+        } while neu.count < AppModel.seitengroesse / 2 && versatz < roh
+        return (neu, versatz, roh)
     }
 }

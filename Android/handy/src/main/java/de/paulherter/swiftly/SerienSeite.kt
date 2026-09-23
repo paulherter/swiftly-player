@@ -1,5 +1,10 @@
 package de.paulherter.swiftly
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -16,9 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -131,6 +133,9 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     /** Von Hand gewaehlt — dann korrigiert kein Neuladen die Staffel mehr. */
     var selbstGewaehlt by remember(ziel.id) { mutableStateOf(false) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>?>(null) }
+    var aehnlicheGestoert by remember(ziel.id) { mutableStateOf(false) }
+    var folgenLaedt by remember(ziel.id) { mutableStateOf(false) }
+    var folgenGestoert by remember(ziel.id) { mutableStateOf(false) }
     var gemerkt by remember(ziel.id) { mutableStateOf(serie?.gemerkt ?: false) }
     var gesehen by remember(ziel.id) { mutableStateOf(serie?.gesehen ?: false) }
     var reiter by rememberSaveable(ziel.id) { mutableIntStateOf(0) }
@@ -143,11 +148,15 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     val ruck = rememberRuck()
 
     suspend fun folgenLaden(serieId: String, staffelId: String) {
+        folgenLaedt = true
         try {
             val neu = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, staffelId).await() })
             app.folgenSpeicher[staffelId] = neu
             if (staffel == staffelId) folgen = neu
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            folgenGestoert = false
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {
+            if (staffel == staffelId) folgenGestoert = true
+        } finally { folgenLaedt = false }
     }
 
     suspend fun planLaden(folgeId: String) {
@@ -206,7 +215,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         try {
             val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(id).await() })
             aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            aehnlicheGestoert = false
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { aehnlicheGestoert = true }
     }
 
     val scroll = rememberScrollState()
@@ -227,6 +237,14 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         }
     }
 
+    fun trailerStarten() {
+        val adresse = s?.trailer
+        val ging = adresse != null && runCatching {
+            kontext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(adresse)))
+        }.isSuccess
+        if (!ging) meldung = uebersetzt("Für diesen Titel liegt kein Trailer vor.")
+    }
+
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Held(s?.kopfbild, name, s?.nebenzeile.orEmpty())
@@ -237,43 +255,62 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
 
                 // Immer genau ein Knopf. Waehrend des Ladens sieht er bereit aus und sagt „Lädt…";
                 // gesperrt erst, wenn feststeht, dass es keine Folge gibt. Der Player folgt.
+                // Knopf und Aktionsreihe als ein Block: 8 zwischen ihnen, 14 zu allem anderen.
+                Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Spielknopf(Icons.Filled.PlayArrow, s?.knopftext ?: uebersetzt("Lädt…"),
+                    Spielknopf(Zeichen.Abspielen, s?.knopftext ?: uebersetzt("Lädt…"),
                                an = s == null || s.stand != null, haupt = true) {
                         s?.stand?.let { st -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(st.id, st.ab) }
                     }
-                    s?.stand?.restzeit?.let { Text(it, style = TextStyle(fontSize = 11.sp), color = Stil.schriftLeise) }
+                    s?.stand?.restzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise) }
                     s?.stand?.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.clip(RoundedCornerShape(2.dp))) }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Aktionsknopf(if (gemerkt) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, uebersetzt("Merkliste"), gemerkt) {
+                    Aktionsknopf(if (gemerkt) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen, uebersetzt("Merkliste"), gemerkt) {
                         umschalten(!gemerkt, { gemerkt = it }) { id, an -> app.kern.merken(id, an).await() }
                     }
-                    Aktionsknopf(Icons.Outlined.Movie, uebersetzt("Trailer"), false) {
-                        val adresse = s?.trailer
-                        val ging = adresse != null && runCatching {
-                            kontext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(adresse)))
-                        }.isSuccess
-                        if (!ging) meldung = uebersetzt("Für diesen Titel liegt kein Trailer vor.")
+                    // **Laden steht in der Reihe, nicht in einem versteckten Chip** — zwischen Merken
+                    // und Gesehen, und immer ueber die Ladeauswahl, auch bei einer Staffel: einzelne
+                    // Folgen waehlen soll man immer koennen. Der Trailer weicht dafuer ins Mehr-Blatt.
+                    // Sind Downloads aus, behaelt er seinen Platz.
+                    if (app.einstellungen.downloadKnopfZeigen) {
+                        Aktionsknopf(Zeichen.PfeilRunter, uebersetzt("Laden"), false) {
+                            s?.let { ladeauswahlZeigen(app, it.id, it.name, it.staffeln) }
+                        }
+                    } else {
+                        Aktionsknopf(Zeichen.Film, uebersetzt("Trailer"), false) { trailerStarten() }
                     }
-                    Aktionsknopf(if (gesehen) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline, uebersetzt("Gesehen"), gesehen) {
+                    Aktionsknopf(if (gesehen) Zeichen.HakenKreisVoll else Zeichen.HakenKreis, uebersetzt("Gesehen"), gesehen) {
                         umschalten(!gesehen, { gesehen = it }) { id, an -> app.kern.gesehen(id, an).await() }
                     }
-                    Aktionsknopf(Icons.Filled.MoreHoriz, uebersetzt("Mehr"), false) {
+                    Aktionsknopf(Zeichen.Mehr, uebersetzt("Mehr"), false) {
                         val gewaehlteStaffel = s?.staffeln?.firstOrNull { it.id == staffel }
-                        // `Titelhandlungen.fuerSerie` — „Nächste Folge abspielen" folgt mit der Fernsteuerung.
+                        // `Titelhandlungen.fuerSerie`.
                         val eintraege = buildList {
-                            s?.stand?.let { add(Wahl("vonvorn", uebersetzt("Folge von vorn abspielen"))) }
+                            // Der Trailer, wenn Laden seinen Platz in der Reihe hat — nicht zweimal.
+                            if (app.einstellungen.downloadKnopfZeigen) add(Wahl("trailer", uebersetzt("Trailer")))
+                            s?.stand?.let {
+                                add(Wahl("vonvorn", uebersetzt("Folge von vorn abspielen")))
+                                add(Wahl("naechste", uebersetzt("Nächste Folge abspielen")))
+                            }
                             gewaehlteStaffel?.let { add(Wahl("staffel", uebersetzt("%@ als gesehen", it.name))) }
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         val kuerzel = s?.stand?.let { st -> if (st.staffel != null && st.folge != null) " · S${st.staffel} E${st.folge}" else "" }.orEmpty()
                         app.blatt.value = Blattwunsch(name + kuerzel, eintraege, null,
-                            mapOf("vonvorn" to Icons.Filled.Replay, "staffel" to Icons.Filled.CheckCircleOutline, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("trailer" to Zeichen.Film, "vonvorn" to Zeichen.Zurueckspulen, "naechste" to Zeichen.Ueberspringen, "staffel" to Zeichen.HakenKreis,
+                                  "metadaten" to Zeichen.Neuladen)) { wahl ->
                             bereich.launch {
                                 when (wahl) {
+                                    "trailer" -> trailerStarten()
                                     "vonvorn" -> s?.stand?.let { st -> app.spiel.value = Abspielwunsch(st.id, null) }
+                                    // Ohne naechste Folge wird gemeldet, nicht still nichts getan.
+                                    "naechste" -> s?.stand?.let { st ->
+                                        val danach = withContext(Dispatchers.IO) { app.kern.folgeDanach(st.id, s.id).await() }
+                                        if (danach.isNotEmpty()) app.spiel.value = Abspielwunsch(danach, null)
+                                        else meldung = uebersetzt("Danach kommt nichts mehr.")
+                                    }
                                     "staffel" -> gewaehlteStaffel?.let { st ->
                                         val grund = withContext(Dispatchers.IO) { app.kern.gesehen(st.id, true).await() }
                                         if (grund.isNotEmpty()) meldung = fehlertext(grund)
@@ -289,6 +326,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                         }
                     }
                 }
+                }
                 s?.beschreibung?.let { Klapptext(it) }
             }
 
@@ -298,7 +336,6 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             Crossfade(reiter, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
                     0 -> Column {
-                        Box {
                         Staffelkopf(s?.staffeln.orEmpty(), staffel, listeOffen, { listeOffen = it }) { neu ->
                             selbstGewaehlt = true
                             if (neu != staffel) {
@@ -307,18 +344,16 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                                 s?.id?.let { id -> bereich.launch { folgenLaden(id, neu) } }
                             }
                         }
-                        if (app.einstellungen.downloadKnopfZeigen && folgen.isNotEmpty()) {
-                            StaffelLaden(app, folgen.map { it.id }, s?.staffeln?.firstOrNull { it.id == staffel }?.name ?: s?.name.orEmpty(),
-                                         Modifier.align(Alignment.CenterEnd).padding(end = Stil.randAbstand))
-                        }
-                        }
+                        // Keine Linien zwischen den Folgen: das Bild traegt die Zeile, 12 oben und unten.
+                        if (folgenGestoert) Stoerhinweis(app.serveradresse(), erneut = { s?.id?.let { id -> staffel?.let { st -> bereich.launch { folgenLaden(id, st) } } } })
+                        else if (folgen.isEmpty() && folgenLaedt) Folgenplatzhalter(3)
+                        else if (folgen.isEmpty() && s != null && s.staffeln.isNotEmpty()) Leerhinweis(uebersetzt("Keine Folgen in dieser Staffel"))
                         folgen.forEachIndexed { i, f ->
-                            if (i > 0) Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
                             // Wischen schaltet gesehen — `Wischzeile` mit Haken oder Rueckpfeil.
                             key(f.id) {
-                                Wischzeile(if (f.gesehen) Icons.Filled.Undo else Icons.Filled.Check,
+                                Wischzeile(if (f.gesehen) Zeichen.Rueckgaengig else Zeichen.Haken,
                                            uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
-                                    Folgenzeile(f, if (app.einstellungen.downloadKnopfZeigen) folgenring(app, f.id, f.titel) else null) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                                    Folgenzeile(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         }
@@ -334,7 +369,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                     }
                     else -> {
                         val liste = aehnliche
-                        if (liste != null && liste.isEmpty()) Leerhinweis(uebersetzt("Nichts Ähnliches gefunden."))
+                        if (aehnlicheGestoert && liste.isNullOrEmpty()) Stoerhinweis(app.serveradresse())
+                        else if (liste != null && liste.isEmpty()) Leerhinweis(uebersetzt("Nichts Ähnliches gefunden."))
                         else Raster(liste.orEmpty(), spalten = { Stil.spalten(it) }, abstand = 12) { k ->
                             RasterKachelAnsicht(k) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
                         }
@@ -358,11 +394,15 @@ private fun Reiter(titel: List<String>, gewaehlt: Int, waehlen: (Int) -> Unit) {
         Row(Modifier.padding(horizontal = Stil.randAbstand), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
             titel.forEachIndexed { i, t ->
                 val an = i == gewaehlt
-                Text(t, style = TextStyle(fontSize = 15.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Normal),
+                // **Gewaehlt heisst Weiss, kein Gewichtswechsel** (BRAND 5): Semibold ist breiter
+                // als Regular, und in einer **waagerechten** Reihe verschiebt sich dadurch jeder
+                // Nachbar rechts davon. Der Akzentstrich darunter bleibt — er traegt Zustand.
+                Text(t, style = Stil.listentitel,
                      color = if (an) Stil.schrift else Stil.schriftLeise,
                      modifier = Modifier.antippen { waehlen(i) }
                          .drawBehind {
-                             if (an) drawRect(Stil.akzent, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
+                             // Weiss, nicht Akzent: gewaehlt ist Rangfolge, kein Zustand.
+                             if (an) drawRect(Stil.schrift, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
                          }
                          .padding(bottom = 11.dp))
             }
@@ -384,44 +424,46 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
     val geschlossenUm = remember { longArrayOf(0L) }
     // **Kompakt** in der Folgenebene des Players (Vorlage `Aufklappliste(schrift: meta + 1, hoehe: 28)`):
     // an Stelle der Metazeile, ohne eigenen Rand — den gibt der Ebenenkopf.
+    // `Aufklappliste(alsFeld:)`: auf der Serienseite ein Feld — 34 hoch, `flaeche`, Ecke 8, 11 innen,
+    // 15 Semibold; im Player ohne Flaeche, 28 hoch, in der Metaschrift.
+    val hoehe = if (kompakt) 28.dp else 34.dp
     Box(if (kompakt) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
-        Row(Modifier.height(if (kompakt) 28.dp else 36.dp).antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) },
+        Row(Modifier.antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) }
+                .height(hoehe)
+                .then(if (kompakt) Modifier else Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(Stil.flaeche).padding(horizontal = 11.dp)),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"),
-                 style = if (kompakt) TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold) else Stil.reihe.copy(letterSpacing = (-0.3).sp),
+                 style = if (kompakt) Stil.klein.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold) else Stil.listentitel,
                  color = Stil.schrift)
-            if (mehrere && kompakt) Icon(androidx.compose.ui.res.painterResource(R.drawable.player_pfeil), contentDescription = uebersetzt("Öffnet die Auswahl"),
-                                         tint = Stil.schriftLeise, modifier = Modifier.graphicsLayer { rotationZ = drehung })
-            else if (mehrere) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = uebersetzt("Öffnet die Auswahl"),
-                              tint = Stil.schriftLeise, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = drehung })
+            if (mehrere) Symbol(Zeichen.WinkelRunter, 11.dp, Modifier.graphicsLayer { rotationZ = drehung },
+                                farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Öffnet die Auswahl"))
         }
-        // **Ueber den Folgen, nicht zwischen ihnen.** Als Kind dieser Kopfzeile wuchs sie mit auf —
-        // `offset` verschiebt nur das Zeichnen, nicht den Platz — und schob die Folgen beim Oeffnen
-        // herunter. Auf iOS liegt die Liste als Auflage darueber. Ein Popup hat in der Seite keine
-        // Hoehe und bleibt antippbar; eine Zeichnung ausserhalb der Kopfzeile bekaeme keine Tipps.
+        // **Ueber den Folgen, nicht zwischen ihnen.** Ein Popup hat in der Seite keine Hoehe und bleibt
+        // antippbar; eine Zeichnung ausserhalb der Kopfzeile bekaeme keine Tipps.
         val zustand = remember { MutableTransitionState(false) }
         zustand.targetState = offen
         if (zustand.currentState || zustand.targetState) {
             val dichte = LocalDensity.current
-            // 16 Rand im Popup, damit der Schatten Platz hat; die Liste selbst sitzt 44 unter der Pille.
+            // 16 Rand im Popup fuer die Bewegung; die Liste sitzt 6 unter dem Feld.
             val rand = with(dichte) { 16.dp.roundToPx() }
-            val unten = with(dichte) { (if (kompakt) 34.dp else 44.dp).roundToPx() }
+            val unten = with(dichte) { (hoehe + 6.dp).roundToPx() }
             Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { geschlossenUm[0] = android.os.SystemClock.uptimeMillis(); setzeOffen(false) },
                   properties = PopupProperties(focusable = false)) {
                 AnimatedVisibility(zustand, Modifier.padding(16.dp),
                     enter = fadeIn(Bewegung.sprung()) + scaleIn(Bewegung.sprung(), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
                     exit = fadeOut(Bewegung.sprung()) + scaleOut(Bewegung.sprung(), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
-                val form = RoundedCornerShape(Stil.eckeFlaeche)
-                Column(Modifier.width(200.dp).shadow(16.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
-                    .clip(form).background(Stil.flaeche)) {
+                // **So breit wie der laengste Name, mindestens 180** — fest 200 liess rechts eine Luecke.
+                // Ecke 10, keine Schatten.
+                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche)) {
                     staffeln.forEach { st ->
                         val an = st.id == gewaehlt
-                        Row(Modifier.fillMaxWidth().druckzeile { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Box(Modifier.width(14.dp)) {
-                                if (an) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(14.dp))
+                        // Haken links, immer als Platz da; gewaehlt Weiss, sonst leise — 15 Semibold, 14/9 innen.
+                        Row(Modifier.fillMaxWidth().druckzeile { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
+                                if (an) Symbol(Zeichen.Haken, 15.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
                             }
-                            Text(st.name, style = TextStyle(fontSize = 15.sp), color = if (an) Stil.schrift else Stil.schrift.copy(alpha = 0.75f))
+                            Text(st.name, style = Stil.listentitel, color = if (an) Stil.schrift else Stil.schriftLeise, maxLines = 1)
                         }
                     }
                 }
@@ -440,20 +482,25 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
 internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
     Row(Modifier.fillMaxWidth().druckzeile(tun).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
+        Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)
+                .alpha(if (f.gesehen) 0.45f else 1f)) {
             AsyncImage(model = f.bild, contentDescription = null, contentScale = ContentScale.Crop,
-                       modifier = Modifier.fillMaxSize().alpha(if (f.gesehen) 0.45f else 1f))
-            f.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
+                       modifier = Modifier.fillMaxSize())
+            // Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
+            if (!f.gesehen) f.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
             if (f.gesehen) {
-                Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.72f)),
+                // 0,78 wie jede andere dunkle Scheibe auf einem Bild.
+                Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.78f)),
                     contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Check, contentDescription = uebersetzt("Gesehen"), tint = Stil.schrift, modifier = Modifier.size(11.dp))
+                    Symbol(Zeichen.Haken, 10.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Gesehen"))
                 }
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(f.titel, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
-                 color = if (f.gesehen) Stil.schriftLeise else Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Zeile mit Bild: Titel 15 Semibold, Unterzeile 12 (BAUTEILE 6).
+            // **Einzeilig** — zwei Zeilen liessen die Zeilen einer Staffel verschieden hoch enden.
+            Text(f.titel, style = Stil.listentitel,
+                 color = if (f.gesehen) Stil.schriftLeise else Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
             f.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
         }
         ende?.let { Box(Modifier.align(Alignment.CenterVertically)) { it() } }
@@ -470,6 +517,22 @@ private fun <T> Raster(eintraege: List<T>, spalten: (Float) -> Int, abstand: Int
                 Row(horizontalArrangement = Arrangement.spacedBy(abstand.dp)) {
                     reihe.forEach { Box(Modifier.weight(1f)) { zelle(it) } }
                     repeat(anzahl - reihe.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+/** Vorlage: Platzhalter der Folgenliste — Bild 132 × 74, zwei Balken 170 × 13 und 80 × 11, senkrecht 10. */
+@Composable
+internal fun Folgenplatzhalter(anzahl: Int) {
+    Column(Modifier.padding(horizontal = Stil.randAbstand)) {
+        repeat(anzahl) {
+            Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Ladefeld(Modifier.size(132.dp, 74.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Ladefeld(Modifier.size(170.dp, 13.dp), 3.dp)
+                    Ladefeld(Modifier.size(80.dp, 11.dp), 3.dp)
                 }
             }
         }

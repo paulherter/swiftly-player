@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Playersymbol, eigene Zeichnung im Stil von Material Symbols Rounded (runde Enden und Ecken),
-     Masse nach dem SF-Symbol auf iOS. Breite/Hoehe = Glyphengroesse in dp. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="21dp" android:height="21dp" android:viewportWidth="21" android:viewportHeight="21">
-    <path android:strokeColor="#FFFFFFFF" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:strokeWidth="1.75"
-        android:pathData="M4.3,7.4 H16.7 A3.4,3.4 0 0 1 20.1,10.8 V16.7 A3.4,3.4 0 0 1 16.7,20.1 H4.3 A3.4,3.4 0 0 1 0.9,16.7 V10.8 A3.4,3.4 0 0 1 4.3,7.4 Z M3.6,4.2 H17.4 M6.4,1.0 H14.6" />
-</vector>

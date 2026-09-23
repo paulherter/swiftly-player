@@ -57,9 +57,10 @@ struct Seerrkachel: View {
         if treffer.stand != .da {
             HStack(spacing: 4) {
                 Image(systemName: treffer.stand.symbol)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(Stil.plakette)
                 if let wort = treffer.stand.kurzwort {
-                    Text(verbatim: wort).font(.system(size: 11, weight: .semibold))
+                    Text(verbatim: wort).font(Stil.plakette)
+                        .tracking(Stil.plaketteSperrung)
                 }
             }
             .foregroundStyle(Stil.grund)
@@ -82,6 +83,11 @@ struct SeerrDetailView: View {
 
     @State private var stand: Seerrstand
     @State private var detail: Seerrdetail?
+    /// **Der Unterschied, den die Seite nicht kannte.** `detail` blieb bei
+    /// einem stummen Jellyseerr auf `nil`, und Beschreibung, Staffeln,
+    /// Besetzung und Ähnliches verschwanden wortlos — die Seite sah aus wie
+    /// ein Titel, ueber den es nichts zu sagen gibt.
+    @State private var detailGestoert = false
     @State private var laeuft = false
     @State private var angefragt = false
     @State private var fehler: String?
@@ -127,6 +133,14 @@ struct SeerrDetailView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     besetzung
                     aehnliches
+                    if detailGestoert {
+                        // Seerrs Adresse, nicht die des eigenen Servers: der
+                        // laeuft, sonst waere man nicht auf dieser Seite.
+                        Stoerhinweis(model: model,
+                                     erneut: { Task { await detailLaden() } },
+                                     abstandOben: 0,
+                                     adresse: model.seerr.adresse)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
@@ -135,7 +149,7 @@ struct SeerrDetailView: View {
             }
         }
         .scrollIndicators(.never)
-        .ohneKanteneffekt()
+        .seitenscrollen()
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
         // **Der Verlauf aus dem Bild — er fehlte hier ganz.**
@@ -172,7 +186,7 @@ struct SeerrDetailView: View {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            withAnimation(Stil.zeitSprung) { staffelnOffen = false }
+                            withAnimation(Stil.sprung) { staffelnOffen = false }
                         }
                     staffelliste
                         .padding(.leading, Stil.randAbstand)
@@ -188,7 +202,13 @@ struct SeerrDetailView: View {
             Detailkopf(titel: treffer.titel, stand: kopfstand, zurueck: zurueck)
         }
         .task { await farbe.laden(treffer.kulisse(breite: 780)) }
-        .task { detail = await model.seerr.detail(treffer) }
+        .task { await detailLaden() }
+    }
+
+    private func detailLaden() async {
+        let geholt = await model.seerr.detail(treffer)
+        detailGestoert = geholt == nil
+        if let geholt { detail = geholt }
     }
 
     /// **Woertlich der Aufbau von `Heldenkopf` in `DetailView`.**
@@ -219,8 +239,8 @@ struct SeerrDetailView: View {
         ZStack(alignment: .topLeading) {
             // **Der Titel kommt von TMDB und ist kein Schluessel.**
             Text(verbatim: treffer.titel)
-                .font(.system(size: 34, weight: .bold))
-                .tracking(-0.8)
+                .font(Stil.titelGross)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
@@ -235,7 +255,7 @@ struct SeerrDetailView: View {
             Text(verbatim: detail?.beschreibung ?? "")
                 .font(Stil.koerper)
                 .lineSpacing(3)
-                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .frame(width: 640, height: 66, alignment: .topLeading)
@@ -255,25 +275,27 @@ struct SeerrDetailView: View {
     /// Beleg. Hier ist der Beleg der Stand.
     private var angabenReihe: some View {
         HStack(spacing: 14) {
+            // Angabe: 12, wie nebenan auf der echten Detailseite. Die „13
+            // ohne Rolle" der Seerr-Nebenzeile steht in BAUTEILE 9.21.
             Text(verbatim: nebenzeile)
-                .font(.system(size: 14))
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
             if let bewertung = detail?.bewertung {
                 HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 10))
+                    Image(systemName: "star.fill").font(.system(size: 11))
                     // `String(format:)` wie nebenan — die echte Seite zeigt
                     // „8.4", hier stand „8,4". Zwei Schreibweisen derselben
                     // Zahl auf zwei Seiten.
                     Text(verbatim: String(format: "%.1f", bewertung))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Stil.kachel)
                 }
                 .foregroundStyle(Stil.schriftLeise)
             }
             HStack(spacing: 6) {
                 Image(systemName: stand.symbol)
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(.system(size: 11, weight: .semibold))
                 Text(stand.wort)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Stil.kachel)
             }
             .foregroundStyle(stand.farbe)
             Spacer(minLength: 0)
@@ -307,19 +329,19 @@ struct SeerrDetailView: View {
     private var belegzeile: some View {
         HStack(spacing: 16) {
             HStack(spacing: 6) {
-                Image(systemName: stand.symbol).font(.system(size: 12, weight: .heavy))
-                Text(verbatim: stand.wort).font(.system(size: 14, weight: .medium))
+                Image(systemName: stand.symbol).font(.system(size: 11, weight: .semibold))
+                Text(verbatim: stand.wort).font(Stil.kachel)
             }
             .foregroundStyle(stand.farbe)
 
             if let b = detail?.bewertung, b > 0 {
                 HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 12))
+                    Image(systemName: "star.fill").font(.system(size: 11))
                     Text(verbatim: String(format: "%.1f", b)
                             .replacingOccurrences(of: ".", with: ","))
-                        .font(.system(size: 14))
+                        .font(Stil.kachel)
                 }
-                .foregroundStyle(Stil.schrift.opacity(0.8))
+                .foregroundStyle(Stil.schriftLeise)
             }
         }
     }
@@ -374,7 +396,7 @@ struct SeerrDetailView: View {
             // wer nur nachsehen wollte, welche Staffeln es gibt, fragte die
             // ganze Serie an.
             guard staffelnOffen else {
-                withAnimation(Stil.zeitSprung) { staffelnOffen = true }
+                withAnimation(Stil.sprung) { staffelnOffen = true }
                 return
             }
             guard !gewaehlt.isEmpty else { return }
@@ -400,7 +422,10 @@ struct SeerrDetailView: View {
                         Image(systemName: st.stand.anfragbar
                               ? (gewaehlt.contains(st.nummer) ? "checkmark.square.fill" : "square")
                               : "checkmark.circle")
-                            .font(.system(size: 15))
+                            .font(Stil.listentitel)
+                            // Mehrfachhaken: dort ist das Angekreuztsein der
+                            // Zustand der Sache selbst (BRAND 1, zweite
+                            // Ausnahme), also traegt er den Akzent.
                             .foregroundStyle(gewaehlt.contains(st.nummer) ? Stil.akzent
                                                                           : Stil.schriftSehrLeise)
                         Text("Staffel \(st.nummer)")
@@ -417,7 +442,7 @@ struct SeerrDetailView: View {
                     .frame(height: 38)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckknopf())
             }
           }
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listenhoehe = $0 }
@@ -437,10 +462,13 @@ struct SeerrDetailView: View {
         // der Server. `Der Chef` hat neun, `Perry Mason` neun.
         .frame(maxWidth: 320, alignment: .leading)
         .frame(height: min(max(listenhoehe, 38), 380))
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
-        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand))
-        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        // Kein Schatten — nirgends (BRAND 4). Flaeche und die eine Kante
+        // trennen die Tafel vom Grund.
+        .background {
+            let form = RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous)
+            form.fill(Stil.erhoeht).overlay { form.strokeBorder(Stil.rand) }
+        }
+        .transition(.aufklappen(von: .topLeading))
     }
 
     @ViewBuilder
@@ -451,10 +479,8 @@ struct SeerrDetailView: View {
             // Baustein selbst nimmt `[Person]` vom eigenen Server; hier
             // kommen die Koepfe von TMDB. Alles andere ist gleich: 14 Punkt
             // Abstand, 16 halbfett, dieselbe Blaetterreihe.
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Besetzung")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+            VStack(alignment: .leading, spacing: 12) {
+                Reihentitel(text: "Besetzung")
                 Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
                     ForEach(leute.prefix(12)) { person in
                         Kopfbild(name: person.name, rolle: person.rolle,
@@ -472,16 +498,14 @@ struct SeerrDetailView: View {
             // Aufbau von `Titelreihe` — dieselbe Ueberschrift, derselbe
             // Abstand, dieselbe Blaetterreihe. Nur die Kachel ist eine
             // andere, weil der Titel hier noch nicht auf dem Server liegt.
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Ähnliche Titel")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+            VStack(alignment: .leading, spacing: 12) {
+                Reihentitel(text: "Ähnliche Titel")
                 Blätterreihe(rand: 0) {
                     ForEach(andere) { t in
                         Button { navigator.oeffne(.seerrTitel(t), in: bereich) } label: {
                             Seerrkachel(treffer: t)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
             }
@@ -493,9 +517,10 @@ struct SeerrDetailView: View {
             .font(Stil.koerper)
             .foregroundStyle(Stil.schriftLeise)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 520, alignment: .leading)
+            .frame(maxWidth: Stil.formularbreite, alignment: .leading)
             .padding(.vertical, 13).padding(.horizontal, 14)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+            .background(Stil.flaeche,
+                        in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
     }
 
     private func anfragen() async {

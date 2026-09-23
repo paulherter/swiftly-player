@@ -60,10 +60,23 @@ extension Seerrstand {
 
     /// Die Farbe, auf beiden Flaechen dieselbe: auf der Seite die Schrift,
     /// auf der Kachel die Fuellung der Marke.
+    /// **Zwei Farben statt vier.** Hier standen ein eigenes Bernstein und ein
+    /// eigenes Blau, die in keiner Tokendatei vorkamen — Seerr war die einzige
+    /// Ecke der App mit eigener Farbwelt.
+    ///
+    /// Jetzt: `warnung` fuer das eine, wo jemand handeln muss, `akzent` fuer
+    /// alles, was laeuft, und `schriftLeise` fuer den Normalfall. Dass
+    /// „angefragt" und „teilweise vorhanden" beide tuerkis sind, ist kein
+    /// Verlust — sie tragen verschiedene Zeichen, und Zustand wird ueber die
+    /// Form unterschieden, nicht ueber eine zweite Farbe.
+    ///
+    /// „Auf deinem Server" ist gar kein Zustand, sondern der Normalfall, und
+    /// traegt deshalb keine Farbe mehr.
     var farbe: Color {
         switch self {
-        case .wartetAufFreigabe: Color(red: 0.85, green: 0.60, blue: 0.17)
-        case .laedt: Color(red: 0.29, green: 0.56, blue: 0.85)
+        case .wartetAufFreigabe: Stil.warnung
+        case .da: Stil.schrift
+        case .offen, .geloescht: Stil.schriftLeise
         default: Stil.akzent
         }
     }

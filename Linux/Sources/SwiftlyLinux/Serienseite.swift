@@ -162,12 +162,25 @@ extension App {
             // Beides nebenher: der Stand haengt nicht an den Staffeln.
             async let staffelnRoh = try? await client.staffeln(seriesID: serie.id)
             async let standRoh = brauchtStand ? await client.standInSerie(serie.id) : nil
-            let staffeln = await staffelnRoh ?? []
+            // **`nil` heisst gestoert, `[]` wirklich leer** (a2bb95bd) — und
+            // ein gescheiterter Abruf wird nicht gemerkt (4fffc63c).
+            let geholt = await staffelnRoh
+            let staffeln = geholt ?? []
             let stand = await standRoh
             let gewaehlt = Staffelwahlregel.waehle(aus: staffeln, hinweisID: id,
                                                    hinweisNummer: nummer, stand: stand)
             aufHauptfaden {
                 defer { losgelassen(kiste) }
+                guard geholt != nil else {
+                    leeren(kiste.widget)
+                    anhaengen(kiste.widget, self.stoerhinweis { [weak self] in
+                        guard let self, let raum = kiste.widget else { return }
+                        leeren(raum)
+                        anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
+                        self.staffelnLaden(serie, in: raum)
+                    })
+                    return
+                }
                 self.staffelspeicher[serie.id] = staffeln
                 self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget,
                                     gewaehlt: gewaehlt)
@@ -179,7 +192,7 @@ extension App {
                                 gewaehlt: Item?) {
         leeren(raum)
         guard !staffeln.isEmpty else {
-            anhaengen(raum, beschriftung(uebersetzt("Keine Staffeln gefunden."), stil: "swiftly-koerper"))
+            anhaengen(raum, leerhinweis(uebersetzt("Keine Folgen")))
             return
         }
         // **Welche Staffel dasteht, entscheidet der Weg auf die Seite** (A10).
@@ -212,7 +225,7 @@ extension App {
         // Die Beschriftung bleibt auch bei einer Staffel stehen — nur der
         // Winkel faellt weg, weil es nichts zu waehlen gibt.
         gtk_widget_set_visible(pille, staffeln.isEmpty ? 0 : 1)
-        gtk_widget_set_visible(pillenwinkel, staffeln.count > 1 ? 1 : 0)
+        gtk_image_set_pixel_size(OpaquePointer(pillenwinkel), 11)
 
         let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
 
@@ -244,7 +257,11 @@ extension App {
         // `SLIDE_DOWN` ist das nächstliegende Gegenstück.
         let aufklapp: Widget! = gtk_revealer_new()
         gtk_revealer_set_transition_type(alsAufklapp(aufklapp),
-                                         GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN)
+                                         // **Waechst aus dem Knopf** (Mac
+                                         // 51c9c8a8): Einblenden plus das
+                                         // Aufklappen im Stilblatt, kein
+                                         // Herunterfahren.
+                                         GTK_REVEALER_TRANSITION_TYPE_CROSSFADE)
         gtk_revealer_set_transition_duration(alsAufklapp(aufklapp), 220)
         gtk_revealer_set_child(alsAufklapp(aufklapp), liste)
         gtk_widget_set_margin_top(aufklapp, 8)
@@ -268,6 +285,7 @@ extension App {
                 for (kennung, w) in zeilen {
                     self.staffelzeileMalen(w, gewaehlt: kennung == staffel.id)
                 }
+                gtk_widget_remove_css_class(liste, "swiftly-offen")
                 gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), 0)
                 gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel), "pan-down-symbolic")
                 self.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
@@ -277,41 +295,25 @@ extension App {
         }
 
         beiSignal(pille, "clicked") {
-            guard staffeln.count > 1 else { return }
+            // Auch bei einer einzigen Staffel oeffnet sie: der Chip sagt, welche
+            // Staffel man sieht (Mac 91e2475a).
             let offen = gtk_revealer_get_reveal_child(alsAufklapp(aufklapp)) == 0
+            // Die Klasse stoesst das Aufklappen im Stilblatt an.
+            if offen { gtk_widget_add_css_class(liste, "swiftly-offen") }
+            else { gtk_widget_remove_css_class(liste, "swiftly-offen") }
             gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), offen ? 1 : 0)
             gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel),
                                          offen ? "pan-up-symbolic" : "pan-down-symbolic")
         }
 
-        // **„Staffel laden" steht daneben** (`SerienView.swift:317-322`):
-        // dieselbe Hoehe, dieselbe Form, rechts vom Wahlchip. Er fehlte auf
-        // Linux ganz — wer eine Staffel mitnehmen wollte, musste jede Folge
-        // einzeln anstossen. Ist sie schon vollstaendig da, steht dort
-        // nichts: ein Knopf, der nichts mehr tut, ist schlechter als keiner.
-        let wahlreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
-        gtk_widget_set_margin_start(wahlreihe, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(wahlreihe, Int32(Stil.randAbstand))
-        // 18 unter der Wahl, wie `SerienView.swift:324`.
-        gtk_widget_set_margin_bottom(wahlreihe, 18)
-        anhaengen(wahlreihe, wahlblock)
-        anhaengen(wahlreihe, luftQuer())
-        // **Gebaut wird er am Schalter, gezeigt am Recht.** Das Recht kommt
-        // nebenher vom Server; ist die Seite schon offen, wenn die Antwort
-        // eintrifft, blendet `staffelladeknopfMalen` ihn nachtraeglich aus.
-        if downloadsAn {
-            let laden = chip(uebersetzt("Staffel laden"), symbol: "folder-download-symbolic")
-            gtk_widget_set_valign(laden, GTK_ALIGN_START)
-            gtk_widget_set_visible(laden, 0)
-            staffelladeknopf = laden
-            beiSignal(laden, "clicked") { [weak self] in
-                guard let self else { return }
-                self.staffelLaden(self.staffelfolgen)
-                self.staffelladeknopfMalen()
-            }
-            anhaengen(wahlreihe, laden)
-        }
-        anhaengen(raum, wahlreihe)
+        // **Die Staffelwahl steht allein und linksbuendig** (Mac 1bf1685f):
+        // der Chip „Staffel laden" ist weg, und mit ihm die Reihe, die ihn
+        // neben der Wahl hielt. Geladen wird ueber den Knopf in der
+        // Knopfreihe (``ladeauswahlZeigen(_:an:)``). 18 unter der Wahl.
+        staffelladeknopf = nil
+        gtk_widget_set_margin_start(wahlblock, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_bottom(wahlblock, 18)
+        anhaengen(raum, wahlblock)
         anhaengen(raum, folgenraum)
         if let jetzt = wahl.jetzt {
             folgenLaden(serie: serie, staffel: jetzt, in: folgenraum)
@@ -376,10 +378,20 @@ extension App {
         anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
         let kiste = gehalten(raum)
         Task.detached { [self] in
-            let folgen = (try? await client.folgen(seriesID: serie.id,
-                                                   seasonID: staffel.id)) ?? []
+            let geholt = try? await client.folgen(seriesID: serie.id,
+                                                  seasonID: staffel.id)
             nachDemSchub {
                 defer { losgelassen(kiste) }
+                // **Gestoert ist nicht leer** — „Keine Folgen" hiesse hier,
+                // der Server habe keine; er hat nur nicht geantwortet.
+                guard let folgen = geholt else {
+                    leeren(kiste.widget)
+                    self.staffelfolgen = []
+                    anhaengen(kiste.widget, self.stoerhinweis { [weak self] in
+                        self?.folgenLaden(serie: serie, staffel: staffel, in: kiste.widget)
+                    })
+                    return
+                }
                 self.folgenspeicher[staffel.id] = folgen
                 self.folgenZeigen(folgen, in: kiste.widget)
             }
@@ -562,29 +574,10 @@ extension App {
         anhaengen(platz, knopf)
         anhaengen(zeile, platz)
 
-        // **H1 und „Download je Folge".** Auf dem Mac steht neben dem
-        // Gesehen-Knopf ein Downloadring je Folge, sobald Downloads an sind
-        // — und der Grund steht in der Aenderungsliste: eine Anime-Staffel
-        // hat ueber hundert Folgen, und eine ganze Staffel zu laden ist
-        // selten das, was gemeint war. Hier fehlte er ganz; die Serienseite
-        // hatte gar keinen Ladeknopf, weil der in der Knopfreihe nur bei
-        // Filmen steht.
-        var ladeknopf: Widget!
-        if downloadKnopfZeigen {
-            ladeknopf = nebenknopf(ladeknopfsymbol(downloads.posten(fuer: folge.id)),
-                                   name: uebersetzt("Laden"),
-                                   aktiv: downloads.posten(fuer: folge.id)?.stand == .fertig)
-            gtk_widget_set_size_request(ladeknopf, 34, 34)
-            gtk_widget_set_valign(ladeknopf, GTK_ALIGN_START)
-            gtk_widget_set_margin_top(ladeknopf, 2)
-            // **Er steht immer da**, nicht erst beim Ueberfahren. Auf dem Mac
-            // traegt jede Folgenzeile ihren Pfeil sichtbar; versteckt findet
-            // ihn nur, wer weiss, dass er da ist.
-            beiSignal(ladeknopf, "clicked") { [weak self] in
-                self?.ladetafelZeigen(folge, an: ladeknopf)
-            }
-            anhaengen(zeile, ladeknopf)
-        }
+        // **Kein Ladering je Folge mehr** (Mac f4dae47c): er war einer von
+        // drei Wegen zum Laden und der schlechteste — bei fuenfundzwanzig
+        // Folgen fuenfundzwanzig Mal dasselbe. Wer eine einzelne Folge will,
+        // hakt sie in der Ladeauswahl an (Knopf „Laden" in der Knopfreihe).
 
         // **Nach dem Player frischt die Zeile sich selbst auf** — Balken,
         // Haken, Knopf und die Stelle, an der ein Klick startet. Vorher baute
@@ -719,11 +712,23 @@ extension App {
         guard let client else { return }
         let kiste = gehalten(raum)
         Task.detached { [self] in
-            let treffer = (try? await client.aehnliche(itemID: titel.id)) ?? []
+            let geholt = try? await client.aehnliche(itemID: titel.id)
+            let treffer = geholt ?? []
             nachDemSchub {
                 defer { losgelassen(kiste) }
                 let ziel = kiste.widget
                 if leeren_ { leeren(ziel) }
+                // Als Reiter steht dort sonst der ganze Inhalt — ein
+                // gescheiterter Abruf sagt es (Mac 4fffc63c). Als Reihe auf
+                // der Filmseite bleibt der Abschnitt einfach weg, wie dort.
+                if geholt == nil, leeren_ {
+                    anhaengen(ziel, self.stoerhinweis { [weak self] in
+                        guard let self, let raum = kiste.widget else { return }
+                        self.aehnlicheNachladen(titel, in: raum, leeren: true,
+                                                rand: rand, alsRaster: alsRaster)
+                    })
+                    return
+                }
                 guard !treffer.isEmpty else {
                     if leeren_ {
                         // Mittig, mit Zeichen — wie jeder andere Leerzustand.
@@ -735,9 +740,9 @@ extension App {
                         // `mail-archive-symbolic` gibt es dort gar nicht, GTK
                         // zeigte dafuer das Ersatzbild mit rotem
                         // Verbotszeichen. Am Bild gefunden.
-                        anhaengen(ziel, self.leerzustand("mail-inbox-symbolic",
-                                                         uebersetzt("Nichts Ähnliches gefunden."),
-                                                         nil))
+                        // `Leerhinweis`, wie auf dem Mac: ein leerer
+                        // Abschnitt innerhalb der Seite.
+                        anhaengen(ziel, self.leerhinweis(uebersetzt("Nichts Ähnliches gefunden")))
                     }
                     return
                 }
@@ -750,6 +755,9 @@ extension App {
                 } else {
                     anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Ähnliches"), art: .neu,
                                                     items: treffer, rand: rand))
+                    // Ein eigener Platz auf der Filmseite steht bis hier
+                    // unsichtbar, damit er keinen Abstand mitbringt.
+                    gtk_widget_set_visible(ziel, 1)
                 }
             }
         }

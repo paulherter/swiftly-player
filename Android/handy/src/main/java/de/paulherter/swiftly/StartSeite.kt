@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,7 +11,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,9 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,9 +55,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Info
 import de.paulherter.swiftly.kern.Kern
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
@@ -185,9 +181,9 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             Wahl("uebersicht", uebersetzt("Zur Übersicht")),
             Wahl("gesehen", uebersetzt("Als gesehen markieren")),
             Wahl("ungesehen", uebersetzt("Als ungesehen markieren"))), null,
-            mapOf("uebersicht" to androidx.compose.material.icons.Icons.Outlined.Info,
-                  "gesehen" to androidx.compose.material.icons.Icons.Outlined.CheckCircle,
-                  "ungesehen" to androidx.compose.material.icons.Icons.Outlined.VisibilityOff)) { wahl ->
+            mapOf("uebersicht" to Zeichen.Info,
+                  "gesehen" to Zeichen.HakenKreis,
+                  "ungesehen" to Zeichen.Auge)) { wahl ->
             when (wahl) {
                 "uebersicht" -> oeffnen(Ziel(k.id, k.name, k.typ))
                 else -> lauf.launch { withContext(Dispatchers.IO) { app.kern.gesehen(k.id, wahl == "gesehen").await() }; laden() }
@@ -196,7 +192,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     }
     val liste = androidx.compose.foundation.lazy.rememberLazyListState()
     val dichte = androidx.compose.ui.platform.LocalDensity.current
-    // Wie weit gescrollt ist — fuer Farbschein und Kopfverlauf, wie `versatz` auf dem iPhone.
+    // Wie weit gescrollt ist — daran zieht der Kopfverlauf auf, wie `weg.wert` auf dem iPhone.
     val versatz by remember {
         androidx.compose.runtime.derivedStateOf {
             if (liste.firstVisibleItemIndex > 0) 400f
@@ -204,11 +200,11 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         }
     }
 
-    KopfUndInhalt(kopf = { StartKopf(app, oeffnen) }) { kopfDp ->
+    // **Kein Schein.** Hier lag ein farbiger Schein hinter dem Kopf; auf dem iPhone ist er gefallen,
+    // die Startseite traegt denselben dunklen Kopfverlauf wie jede andere Seite — und der zieht erst
+    // auf, wenn darunter etwas durchlaeuft.
+    KopfUndInhalt(kopf = { StartKopf(app, oeffnen) { versatz } }) { kopfDp ->
     Box(Modifier.fillMaxSize()) {
-        // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
-        // statt an seiner Unterkante hart abgeschnitten zu werden.
-        Farbschein({ versatz }, ausgespartOben = kopfDp)
         // **Ziehen laedt neu** (`.refreshable`). Der Kreis erscheint unter dem Kopf, nicht dahinter.
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(zieht, onRefresh = { lauf.launch { zieht = true; laden(); zieht = false } },
             state = ziehstand, modifier = Modifier.fillMaxSize(),
@@ -217,9 +213,27 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     Modifier.align(Alignment.TopCenter).padding(top = kopfDp), containerColor = Stil.erhoeht, color = Stil.akzent)
             }) {
         LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
-                   contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
+                   // `contentMargins(.top, 58)` plus 8: 66 unter dem Statusbereich, der Kopf endet bei 42.
+                   contentPadding = PaddingValues(top = kopfDp + 24.dp, bottom = 12.dp),
                    modifier = Modifier.fillMaxSize().bereichsinhalt()) {
-            fehler?.let { item { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
+            // **Ein Serverfehler ist kein „hier ist nichts", und auch keine Fussnote.**
+            //
+            // Hier stand der Fehlertext als eine leise Zeile in `warnung` ueber einer sonst
+            // leeren Seite: die Startseite sah aus, als waere der Server leer. Vorlage ist
+            // `HomeView.nichtsDa` — die ganze Fläche, die Serverformel, und **zwei** Auswege:
+            // erneut versuchen und den Server wechseln. `warnung` heisst „etwas wartet auf
+            // jemanden"; hier ist etwas schiefgegangen, und das ist `fehler`.
+            //
+            // Stehen schon Reihen da, bleibt es bei der leisen Zeile — dann ist der Inhalt da
+            // und nur das Auffrischen misslungen.
+            if (fehler != null && reihen.isNullOrEmpty()) item(key = "gestoert") {
+                Box(Modifier.fillMaxWidth().height(420.dp)) {
+                    Leerzustand(Zeichen.ServerWeg, uebersetzt("Server ist abgetaucht"),
+                        uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serveradresse()),
+                        hauptknopf = uebersetzt("Erneut versuchen") to { lauf.launch { laden() } },
+                        stillerKnopf = uebersetzt("Server wechseln") to { app.abmelden() })
+                }
+            } else fehler?.let { item { Text(it, color = Stil.fehler, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
             // Platzhalter in der Form der Reihen, dann eine Ueberblendung — kein Ring (`einblenden`).
             if (reihen == null) items(3, key = { "platzhalter$it" }) { i ->
                 Reihenplatzhalter(quer = i == 0, Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Bewegung.einblenden()))
@@ -233,87 +247,27 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             }
         }
         }
-        // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
-        // Kopfhoehe beschnitten — `Farbschein(fenster: .ueberDemVerlauf)` —, dann der Kopf.
-        Box(Modifier.fillMaxWidth().height(kopfDp + 17.dp)
-            .graphicsLayer { alpha = (versatz / 40f).coerceIn(0f, 1f) }
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
-                0f to Stil.grund.copy(alpha = 0.98f), 0.30f to Stil.grund.copy(alpha = 0.94f),
-                0.48f to Stil.grund.copy(alpha = 0.85f), 0.62f to Stil.grund.copy(alpha = 0.70f),
-                0.73f to Stil.grund.copy(alpha = 0.52f), 0.82f to Stil.grund.copy(alpha = 0.34f),
-                0.89f to Stil.grund.copy(alpha = 0.19f), 0.95f to Stil.grund.copy(alpha = 0.09f),
-                1f to Color.Transparent)))
-        Box(Modifier.fillMaxWidth().height(kopfDp).clipToBounds()) { Farbschein({ versatz }) }
     }
     }
 }
 
-/** Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44). */
+/** Vorlage: Kopf in `HomeView` — Wortmarke 30 links, `Kopfziele` rechts, im `Unschaerfekopf`. */
 @Composable
-private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Wortmarke(hoehe = 30.dp)
-        Spacer(Modifier.weight(1f))
-        Kopfziele(app, oeffnen)
-    }
-}
-
-/**
- * Vorlage: `Farbschein` in `HomeView.swift` — zwei weiche Kreise oben, Akzent links
- * (320, 28 %), Kuehl rechts (340, 24 %), 165 hoch nach unten ausgeblendet, wandert beim
- * Scrollen mit. Als radiale Verlaeufe statt `blur(60)`: der Weichzeichner kaeme erst ab Android 12.
- */
-@Composable
-private fun Farbschein(versatz: () -> Float, ausgespartOben: Dp = 0.dp) {
-    val dichte = androidx.compose.ui.platform.LocalDensity.current.density
-    // **Die ganze Flaeche wandert, samt Maske** — wie `.offset(y: -versatz)` am
-    // Ende von `gemalt` auf iOS. Vorher liefen nur die Kreise unter einer stehenden
-    // Maske weg, und der Schein blendete aus, statt nach oben zu rutschen.
-    //
-    // `ausgespartOben` bleibt dagegen fest am Bildschirm: dort liegt die zweite
-    // Kopie ueber dem Kopfverlauf (`hinterDemInhalt` spart auf iOS genau das aus).
-    Box(Modifier.fillMaxWidth().height(260.dp).drawWithContent {
-        clipRect(top = ausgespartOben.toPx()) { this@drawWithContent.drawContent() }
-    }) {
-    androidx.compose.foundation.Canvas(
-        Modifier.fillMaxWidth().height(260.dp)
-            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
-    ) {
-        // **Verschoben wird die Zeichnung, nicht die Ebene.** Eine verschobene Ebene
-        // riss in der auf Kopfhoehe beschnittenen Kopie unten auf — ein leerer
-        // Streifen, durch den der dunkle Kopfverlauf als harte Kante zu sehen war.
-        // Gelesen beim Zeichnen, nicht beim Aufbau — sonst baute jeder Scrollschritt die Startseite neu.
-        val oben = -versatz() * dichte
-        val mitte = size.width / 2
-        fun kreis(farbe: Color, deckung: Float, durchmesser: Float, dx: Float, dy: Float) {
-            val radius = (durchmesser / 2 + 60) * dichte
-            val zentrum = androidx.compose.ui.geometry.Offset(mitte + dx * dichte, oben + (dy + durchmesser / 2) * dichte)
-            drawCircle(
-                brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                    listOf(farbe.copy(alpha = deckung), farbe.copy(alpha = deckung * 0.55f), Color.Transparent),
-                    center = zentrum, radius = radius),
-                radius = radius, center = zentrum)
+private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, versatz: () -> Float) {
+    Wurzelkopf(versatz) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Wortmarke(hoehe = 30.dp)
+            Spacer(Modifier.weight(1f))
+            Kopfziele(app, oeffnen)
         }
-        kreis(Stil.akzent, 0.28f, 320f, -110f, -160f)
-        kreis(Stil.kuehl, 0.24f, 340f, 130f, -180f)
-        // Nach unten ausblenden, wie die Maske ueber 165 Punkt.
-        drawRect(
-            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                0f to Color.White, 0.34f to Color.White.copy(alpha = 0.94f), 0.58f to Color.White.copy(alpha = 0.72f),
-                0.80f to Color.White.copy(alpha = 0.34f), 1f to Color.Transparent,
-                // Die Maske wandert mit den Kreisen; ueber und unter ihr klemmt der
-                // Verlauf auf Weiss bzw. Durchsichtig, also bleibt nichts unmaskiert.
-                startY = oben, endY = oben + 205 * dichte),
-            blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
-    }
     }
 }
 
 @Composable
 private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, halten: ((Kachel) -> Unit)?, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
-        Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
+    // 12 zwischen Titel und Reihe; der Titel traegt die Sperrung seiner Stufe (−0,24).
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(reihe.titel, style = Stil.reihe, color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
@@ -345,7 +299,7 @@ private fun KachelAnsicht(k: Kachel, quer: Boolean, lang: (() -> Unit)? = null, 
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(k.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            k.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise, maxLines = 1) }
+            k.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
         }
     }
 }
@@ -353,8 +307,7 @@ private fun KachelAnsicht(k: Kachel, quer: Boolean, lang: (() -> Unit)? = null, 
 @Composable
 private fun Ersatz(k: Kachel) {
     Box(Modifier.fillMaxSize().background(Stil.flaeche), contentAlignment = Alignment.Center) {
-        Icon(if (k.typ == "Episode" || k.typ == "Series") Icons.Outlined.Tv else Icons.Outlined.Movie,
-             contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(22.dp))
+        Symbol(if (k.typ == "Episode" || k.typ == "Series") Zeichen.Fernseher else Zeichen.Film, 22.dp, farbe = Stil.schriftSehrLeise)
     }
 }
 

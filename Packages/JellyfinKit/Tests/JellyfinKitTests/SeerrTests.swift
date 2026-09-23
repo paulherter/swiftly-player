@@ -430,3 +430,126 @@ struct SeerrAdresseTests {
     Seerr.kekseVergessen(fuer: adresse, sitzung: sitzung)
     #expect(Seerr.keksAusSpeicher(fuer: adresse, sitzung: sitzung) == nil)
 }
+
+// MARK: - Eigene Köpfe vor Seerr (Issue #4)
+
+/// Ein Vorposten vor Seerr — Cloudflare Access, Authelia, Pangolin — lässt
+/// nur durch, wer seine Köpfe mitbringt. **Alle Werte hier sind erfunden.**
+@Suite("Seerr hinter einem Vorposten", .serialized)
+struct SeerrVorpostenTests {
+
+    /// Nimmt jede Anfrage entgegen und antwortet, wie es `antwort` vorgibt.
+    final class Spy: URLProtocol, @unchecked Sendable {
+        nonisolated(unsafe) static var mitgeschnitten: [URLRequest] = []
+        nonisolated(unsafe) static var antwort: (status: Int, kopf: [String: String], rumpf: String) =
+            (200, ["Set-Cookie": "connect.sid=s%3Aneu; Path=/; HttpOnly"], "{}")
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for r: URLRequest) -> URLRequest { r }
+        override func startLoading() {
+            Self.mitgeschnitten.append(request)
+            let a = Self.antwort
+            let http = HTTPURLResponse(url: request.url!, statusCode: a.status,
+                                       httpVersion: nil, headerFields: a.kopf)!
+            client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(a.rumpf.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    private func sitzung() -> URLSession {
+        let k = URLSessionConfiguration.ephemeral
+        k.protocolClasses = [Spy.self]
+        return URLSession(configuration: k)
+    }
+
+    private let adresse = URL(string: "https://seerr.vorposten.test")!
+    private let koepfe = [Eigenkopf(name: "CF-Access-Client-Id", wert: "erfunden.access"),
+                          Eigenkopf(name: "CF-Access-Client-Secret", wert: "auch-erfunden")]
+
+    @Test("Die Anmeldung trägt die eigenen Köpfe, und der Zugang behält sie")
+    func anmeldenSendetKoepfe() async throws {
+        Spy.mitgeschnitten = []
+        Spy.antwort = (200, ["Set-Cookie": "connect.sid=s%3Aneu; Path=/; HttpOnly"], "{}")
+        let zugang = try await SeerrClient.anmelden(an: adresse, benutzer: "jane", passwort: "x",
+                                                    koepfe: koepfe, sitzung: sitzung())
+        let req = try #require(Spy.mitgeschnitten.first)
+        #expect(req.value(forHTTPHeaderField: "CF-Access-Client-Id") == "erfunden.access")
+        #expect(req.value(forHTTPHeaderField: "CF-Access-Client-Secret") == "auch-erfunden")
+        #expect(req.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(zugang.koepfe == koepfe)
+        #expect(zugang.keks == "connect.sid=s%3Aneu")
+    }
+
+    @Test("Jeder spätere Aufruf trägt sie auch — und der Keks bleibt der eigene")
+    func anfrageSendetKoepfe() async throws {
+        Spy.mitgeschnitten = []
+        Spy.antwort = (200, [:], #"{"results":[]}"#)
+        // `Cookie` als eigener Kopf wird gesperrt: er gehört der Sitzung.
+        let zugang = Seerrzugang(adresse: adresse, keks: "connect.sid=s%3Aalt",
+                                 koepfe: koepfe + [Eigenkopf(name: "Cookie", wert: "fremd=1")])
+        _ = await SeerrClient(zugang: zugang, sitzung: sitzung()).suchen("Mentalist")
+        let req = try #require(Spy.mitgeschnitten.first)
+        #expect(req.value(forHTTPHeaderField: "CF-Access-Client-Secret") == "auch-erfunden")
+        #expect(req.value(forHTTPHeaderField: "Cookie") == "connect.sid=s%3Aalt")
+    }
+
+    @Test("Ohne eigene Köpfe geht die Anmeldung hinaus wie immer")
+    func ohneKoepfeUnveraendert() async throws {
+        Spy.mitgeschnitten = []
+        Spy.antwort = (200, ["Set-Cookie": "connect.sid=s%3Aneu; Path=/"], "{}")
+        let zugang = try await SeerrClient.anmelden(an: adresse, benutzer: "jane", passwort: "x",
+                                                    sitzung: sitzung())
+        let req = try #require(Spy.mitgeschnitten.first)
+        #expect(req.value(forHTTPHeaderField: "CF-Access-Client-Id") == nil)
+        #expect(zugang.koepfe.isEmpty)
+    }
+
+    /// Der Fall aus dem Issue: Access leitet um, am Ende steht eine 200 mit
+    /// HTML. Vorher hiess das „Seerr hat keine Sitzung mitgegeben".
+    @Test("Eine Anmeldeseite davor wird als solche gemeldet")
+    func anmeldeseiteWirdErkannt() async throws {
+        Spy.antwort = (200, ["Content-Type": "text/html; charset=utf-8"], "<html>Sign in</html>")
+        do {
+            _ = try await SeerrClient.anmelden(an: adresse, benutzer: "jane", passwort: "x",
+                                               sitzung: sitzung())
+            Issue.record("Die Anmeldung haette scheitern muessen")
+        } catch {
+            #expect(lesbarerFehler(error) == Eigenkoepfe.anmeldeseiteText)
+        }
+    }
+
+    @Test("Ein 404 mit HTML bleibt „kein Seerr unter dieser Adresse“")
+    func vierNullVierBleibt() async throws {
+        Spy.antwort = (404, ["Content-Type": "text/html"], "<html>Not found</html>")
+        do {
+            _ = try await SeerrClient.anmelden(an: adresse, benutzer: "jane", passwort: "x",
+                                               sitzung: sitzung())
+            Issue.record("Die Anmeldung haette scheitern muessen")
+        } catch {
+            #expect(lesbarerFehler(error) != Eigenkoepfe.anmeldeseiteText)
+        }
+    }
+
+    /// **Der teuerste Fehler wäre hier ein stiller:** ein Zugang von vor
+    /// diesem Feld, der nicht mehr lesbar ist, trennte jeden bestehenden
+    /// Nutzer von Seerr.
+    @Test("Ein gespeicherter Zugang ohne Köpfe bleibt lesbar")
+    func alterZugangBleibtLesbar() throws {
+        let alt = Data(#"{"adresse":"https:\/\/seerr.vorposten.test","keks":"connect.sid=s%3Aalt"}"#.utf8)
+        let z = try JSONDecoder().decode(Seerrzugang.self, from: alt)
+        #expect(z.keks == "connect.sid=s%3Aalt")
+        #expect(z.koepfe.isEmpty)
+        // Und ohne Köpfe wird er genauso wieder geschrieben.
+        let neu = try JSONSerialization.jsonObject(with: JSONEncoder().encode(z)) as? [String: Any]
+        #expect(neu?["koepfe"] == nil)
+    }
+
+    @Test("Köpfe überstehen das Ablegen")
+    func koepfeUeberstehenAblage() throws {
+        let z = Seerrzugang(adresse: adresse, keks: "connect.sid=x", koepfe: koepfe)
+        let zurueck = try JSONDecoder().decode(Seerrzugang.self, from: JSONEncoder().encode(z))
+        #expect(zurueck == z)
+    }
+}

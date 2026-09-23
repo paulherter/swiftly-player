@@ -1,6 +1,7 @@
 import CoreGraphics
 import ImageIO
 import JellyfinKit
+import OSLog
 import SwiftUI
 
 /// Ein Bild aus dem Netz — geholt, **abseits des Hauptlaufs entschlüsselt**,
@@ -35,6 +36,10 @@ private struct Bildkiste: @unchecked Sendable { let bild: CGImage }
 @MainActor
 final class Bildspeicher {
     static let geteilt = Bildspeicher()
+    #if DEBUG
+    /// Nur zum Nachmessen; im ausgelieferten Bau gibt es die Zeile nicht.
+    static let bildlog = Logger(subsystem: "de.paulherter.swiftly", category: "bild")
+    #endif
 
     /// Bild und was es im Speicher kostet — Breite mal Hoehe mal vier Byte.
     private struct Eintrag {
@@ -83,6 +88,58 @@ final class Bildspeicher {
     private static let gleichzeitig = 4
     private var imLauf = 0
     private var wartend: [CheckedContinuation<Void, Never>] = []
+
+    // MARK: Die zweite Schleuse — fuer das Wandeln
+    //
+    // **Die erste ordnet die Leitung, diese den Rechner.** Der Einlass wird
+    // absichtlich **vor** dem Wandeln zurueckgegeben („die Schleuse soll die
+    // Leitung ordnen, nicht den Rechner"), und damit war das Wandeln
+    // **unbegrenzt**. Auf einem Treffer in der Ablage wird die erste Schleuse
+    // gar nicht betreten — beim Scrollen ueber schon geholte Kacheln liefen
+    // also beliebig viele Entschluesselungen gleichzeitig.
+    //
+    // Am 22.09.2026 in Pauls Protokoll gemessen, waehrend er selbst scrollte:
+    //
+    //     Bild 27 ms holen, 26 ms wandeln, 600 KB · Primary
+    //     … dieselbe Zeile neunmal hintereinander
+    //
+    // Neun verschiedene Bilder — bei Jellyfin heisst jedes Plakat „Primary" —,
+    // alle zur selben Zeit, alle mit **26 ms**. Dasselbe Bild allein braucht
+    // gemessen 3 bis 12 ms. Die 26 sind also nicht die Arbeit, sondern das
+    // Warten auf einen Kern: neun Aufgaben in `.userInitiated` neben einem
+    // Hauptlauf, der bei 120 Hertz **8,33 ms** je Bild hat. Drei Bilder lang
+    // belegt, neunmal in Folge — das ist, was Paul „extreme Frame-Drops beim
+    // Scrollen" nennt. Und es erklaert, warum ihm die Animationen fluessig
+    // vorkommen: dort wird nichts geladen.
+    //
+    // Zwei und nicht eins: ein einzelner Lauf laesst die uebrigen Kerne
+    // brachliegen, und ein Plakat soll nicht auf sein Vorgaenger warten
+    // muessen. Zwei und nicht acht: dann waere die Grenze wieder keine.
+    private static let gleichzeitigWandeln = 2
+    private var imWandeln = 0
+    private var wartendAufWandeln: [CheckedContinuation<Void, Never>] = []
+    /// Nur fuer die Messung: wie viele gleichzeitig gewandelt haben.
+    private var spitzeWandeln = 0
+
+    private func wandelEinlass() async {
+        if imWandeln < Self.gleichzeitigWandeln {
+            imWandeln += 1
+            spitzeWandeln = max(spitzeWandeln, imWandeln)
+            return
+        }
+        await withCheckedContinuation { (fortsetzung: CheckedContinuation<Void, Never>) in
+            wartendAufWandeln.append(fortsetzung)
+        }
+        spitzeWandeln = max(spitzeWandeln, imWandeln)
+    }
+
+    private func wandelEinlassZurueck() {
+        if wartendAufWandeln.isEmpty {
+            imWandeln -= 1
+        } else {
+            wartendAufWandeln.removeFirst().resume()
+        }
+    }
 
     /// Reihum und der Reihe nach — wer zuerst gefragt hat, kommt zuerst
     /// dran. Die Kacheln fragen von oben nach unten, also laedt auch von
@@ -203,7 +260,23 @@ final class Bildspeicher {
     /// Vorfahrt mehr, sondern die Aufhebung der Schleuse.
     /// `aufGeraet`: das Bild auch auf dem Gerät ablegen und von dort zeigen
     /// — siehe `Geraeteablage`. Nur für Profilbilder.
-    func laden(_ url: URL, vorrang: Bool = false, aufGeraet: Bool = false) async -> Image? {
+    /// **`kante` sagt, wie gross entschluesselt wird.**
+    ///
+    /// Bis zum 22.09. galt fuer jedes Bild dieselbe Kantenlaenge: 1200. Fuer
+    /// das Heldbild ist das richtig, fuer ein Plakat, das 112 Punkt breit
+    /// dasteht, ist es das **Zwoelffache** an Speicher — 800 × 1200 × 4 Byte
+    /// sind 3,8 MB je Kachel statt 0,3.
+    ///
+    /// Solange nur die sichtbaren Reihen ueberhaupt entstanden, ging das
+    /// gerade noch auf. Seit die Startseite alle Reihen traegt, standen
+    /// Dutzende solcher Kacheln zugleich im Speicher — im Protokoll ueber
+    /// sechzig Bilder in einer Sekunde —, und das System hat die App
+    /// abgeschossen (Signal 9).
+    ///
+    /// Wer die Groesse kennt, in der ein Bild dasteht, gibt sie mit. Wer sie
+    /// nicht kennt, bekommt weiter 1200.
+    func laden(_ url: URL, vorrang: Bool = false, aufGeraet: Bool = false,
+               kante gewuenscht: Int? = nil) async -> Image? {
         let merkmal = schluessel(url)
         if let da = bekannt[merkmal] { return da.bild }
         if let lauf = laufend[merkmal] { return await lauf.value?.bild }
@@ -211,7 +284,7 @@ final class Bildspeicher {
         // **Vor dem Abzweig gelesen.** `kantenlaenge` gehört dem Hauptlauf;
         // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
-        let kante = Self.kantenlaenge
+        let kante = min(gewuenscht ?? Self.kantenlaenge, Self.kantenlaenge)
         // Poster und Hintergründe auch auf der Platte — nur mit `tag`, siehe
         // `Bildablage`. Profilbilder haben ihre eigene Ablage.
         let platte = aufGeraet ? nil : Bildablage.name(merkmal)
@@ -233,7 +306,7 @@ final class Bildspeicher {
                 Task.detached(priority: .utility) { await Geraeteablage.auffrischen(url, merkmal) }
             } else {
                 if !vorrang { await einlass(); eingelassen = true }
-                guard let (geholt, antwort) = try? await URLSession.shared.data(from: url) else {
+                guard let (geholt, antwort) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)) else {
                     if eingelassen { einlassZurueck() }
                     return nil
                 }
@@ -251,6 +324,11 @@ final class Bildspeicher {
             // soll die Leitung ordnen, nicht den Rechner; das Wandeln laeuft
             // ohnehin abseits und kostet acht Millisekunden.
             if eingelassen { einlassZurueck() }
+            // **Und jetzt durch die zweite Schleuse.** Siehe dort: das
+            // Wandeln war unbegrenzt, und neun gleichzeitige Laeufe haben den
+            // Hauptlauf beim Scrollen um seinen Takt gebracht.
+            await wandelEinlass()
+            defer { wandelEinlassZurueck() }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
                 let regeln: [CFString: Any] = [
@@ -284,10 +362,19 @@ final class Bildspeicher {
         // `Protokoll.schreib` schreibt nur im Entwicklerbau; in der
         // ausgelieferten Fassung steht die Zeile da und tut nichts.
         if let ergebnis {
-            Protokoll.schreib(String(format: "Bild %.0f ms holen, %.0f ms wandeln, %d KB · %@",
-                                     (ergebnis.holen) * 1000, (ergebnis.wandeln) * 1000,
-                                     ergebnis.byte / 1024,
-                                     merkmal.lastPathComponent))
+            // **Ins vereinheitlichte Protokoll**, nicht nur in die Datei im
+            // Container: die ist von aussen nicht lesbar, und eine Messung,
+            // die niemand lesen kann, ist keine. `%@` traegt den Namen des
+            // Bildes — das ist bei Jellyfin fuer **jedes** Plakat „Primary",
+            // weshalb neun Zeilen gleich aussehen und doch neun Bilder sind.
+            let zeile = String(format: "Bild %.0f ms holen, %.0f ms wandeln, %d KB · gleichzeitig bis %d · %@ · %@",
+                               (ergebnis.holen) * 1000, (ergebnis.wandeln) * 1000,
+                               ergebnis.byte / 1024, spitzeWandeln,
+                               merkmal.lastPathComponent,
+                               merkmal.deletingLastPathComponent()
+                                   .deletingLastPathComponent().lastPathComponent)
+            Protokoll.schreib(zeile)
+            Self.bildlog.notice("\(zeile, privacy: .public)")
         }
         #endif
         if let ergebnis { merken(ergebnis, fuer: merkmal) }
@@ -327,6 +414,20 @@ struct Netzbild: View {
     var zeichen: String?
     /// Laesst die Schleuse aus — fuer das eine grosse Bild einer Seite.
     var vorrang = false
+    /// **Wie gross das Bild dasteht** — damit nicht groesser entschluesselt
+    /// wird als noetig.
+    ///
+    /// Ohne Angabe gilt `Bildspeicher.kantenlaenge`, auf dem Mac **1600**.
+    /// Fuer ein Heldbild ist das richtig, fuer ein Plakat in 150 Punkt Breite
+    /// ist es Speicher und Rechenzeit fuer nichts. Dieselbe Rechnung, die
+    /// `Bild` auf dem iPhone seit dem 22.09. macht — `Netzbild` hatte sie
+    /// nie, und damit hatte der Mac sie nirgends.
+    ///
+    /// Gemessen hat der Server die Plakate ohnehin schon klein geliefert (600
+    /// KB entschluesselt, also rund 300 × 500); die Angabe greift dort also
+    /// kaum. Sie greift bei den grossen: in Pauls Protokoll standen ein
+    /// `Backdrop` mit 792 KB und ein `Primary` mit 1599 KB.
+    var anzeigekante: CGFloat?
 
     @State private var bild: Image?
     @State private var sichtbar = false
@@ -339,11 +440,12 @@ struct Netzbild: View {
     /// Ein nachgereichter Wert kommt zu spät, der leere Durchgang hat dann
     /// schon stattgefunden, und genau der ist das Aufblitzen.
     @MainActor init(url: URL?, art: ContentMode = .fill, zeichen: String? = nil,
-                    vorrang: Bool = false) {
+                    vorrang: Bool = false, anzeigekante: CGFloat? = nil) {
         self.url = url
         self.art = art
         self.zeichen = zeichen
         self.vorrang = vorrang
+        self.anzeigekante = anzeigekante
         let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
         _bild = State(initialValue: sofort)
         _sichtbar = State(initialValue: sofort != nil)
@@ -365,21 +467,28 @@ struct Netzbild: View {
             guard let url else { ohneBild = true; return }
             guard bild == nil else { return }
             ohneBild = false
-            guard let geladen = await Bildspeicher.geteilt.laden(url, vorrang: vorrang) else {
+            // Der Bildschirm hat hoechstens drei Bildpunkte je Punkt; etwas
+            // dazu, damit nichts ausfranst, und mehr braucht niemand.
+            let noetig = anzeigekante.map { Int($0 * 3.2) }
+            guard let geladen = await Bildspeicher.geteilt.laden(url, vorrang: vorrang,
+                                                                kante: noetig) else {
                 ohneBild = true
                 return
             }
             bild = geladen
-            // 220 ms, dieselbe Zeit wie ein Sprung im Player — lang genug,
-            // dass fünfzig Kacheln wie eine Bewegung wirken statt wie fünfzig.
-            // **Feder statt Kurve, und bewusst ohne `Stil`.** Eine feste
-            // Dauer ist nicht unterbrechbar; beim Scrollen durch ein Raster
-            // ist das die am haeufigsten laufende Bewegung der ganzen App.
-            // `Stil.einblenden` waere die richtige Adresse — nur liegt
-            // `Stil.swift` allein im iOS-Ziel, `Netzbild` dagegen in allen
-            // dreien. Ein Verweis dorthin braeche tvOS und macOS. Deshalb
-            // hier dieselbe Federfamilie mit derselben Dauer.
-            withAnimation(.smooth(duration: 0.22)) { sichtbar = true }
+            // **`Stil.einblenden`, und zwar doch.** Hier stand
+            // `.smooth(duration: 0.22)` mit dem Vermerk, ein Verweis auf
+            // `Stil` braeche tvOS und macOS, weil `Stil.swift` allein im
+            // iOS-Ziel liegt. Das trifft auf die *Datei* zu, nicht auf den
+            // Token: `einblenden` steht in allen drei Fassungen von `Stil`,
+            // nachgesehen am 21.09. Der Vermerk hat die Abweichung laenger
+            // geschuetzt, als sie noetig war — und sie war sichtbar: auf einer
+            // Detailseite blendete der Banner (0,22) schneller ein als das
+            // Poster daneben (0,28).
+            //
+            // Mit dem Token nimmt jede Plattform ihre eigene Kurve, und
+            // „Bewegung reduzieren" gilt hier endlich mit.
+            withAnimation(Stil.einblenden) { sichtbar = true }
         }
     }
 }
@@ -422,7 +531,7 @@ enum Geraeteablage {
     /// Frisch vom Server, nur bei einer echten Antwort — eine Fehlerseite soll
     /// kein Profilbild überschreiben.
     static func auffrischen(_ url: URL, _ merkmal: URL) async {
-        guard let (daten, antwort) = try? await URLSession.shared.data(from: url),
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)),
               (antwort as? HTTPURLResponse)?.statusCode == 200 else { return }
         schreiben(daten, merkmal)
     }

@@ -37,21 +37,36 @@ struct EinstellungenView: View {
                 //
                 // Der Zwischenraum ist doppelter Seitenrand: so stehen die
                 // beiden Karten zueinander wie zum Fensterrand.
+                // **Und jede Spalte hoert bei `formularbreite` auf.**
+                //
+                // Sie standen auf `maxWidth: .infinity` in einem Rahmen von
+                // 1366 — also 659 Punkt je Spalte, und darin eine Zeile aus
+                // Zeichen, einem Wort und einem Schalter. Das ist dieselbe
+                // Sache, die Paul auf der Profilseite gesehen hat: lang
+                // gezogen und dabei flach. Eine Liste aus Zeilen ist ein
+                // Formular, nicht Fliesstext.
                 HStack(alignment: .top, spacing: Stil.randAbstand * 2) {
                     VStack(alignment: .leading, spacing: 0) {
                         offline
                         integration
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: Stil.formularbreite, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) {
                         server
+                        // Eigene Header für einen Dienst vor dem Server
+                        // (Issue #4) — zugeklappt unter der Gruppe.
+                        MacEigeneKoepfe(model: model)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: Stil.formularbreite, alignment: .leading)
+                    Spacer(minLength: 0)
                 }
 
+                // Die Fassung ist eine Angabe: 12 in `schriftSehrLeise`.
+                // „Weiss 30 %" traegt gerechnet 2,67:1 und steht in BRAND 1
+                // ausdruecklich unter den verbotenen Werten.
                 Text(verbatim: Fassung.mitUnterbau)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Stil.schrift.opacity(0.3))
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
                     .padding(.top, 26)
             }
             .frame(maxWidth: Stil.einstellungBreite, alignment: .leading)
@@ -68,7 +83,7 @@ struct EinstellungenView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
-        .ohneKanteneffekt()
+        .seitenscrollen()
     }
 
     // **Hier standen `wiedergabe` und `darstellung`.** Sie gehoeren ins
@@ -144,6 +159,16 @@ struct EinstellungenView: View {
                        unter: Text("Anfragen, was noch nicht da ist"),
                        wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil,
                        aktion: { navigator.oeffne(.seerr, in: bereich) })
+            // **Neben Seerr, und nur mit Zugangsdaten im Bau**
+            // (`TraktZugang`) — ohne sie gaebe es einen Knopf, der
+            // garantiert scheitert.
+            if model.trakt.verfuegbar {
+                Blattlinie().padding(.leading, Stil.trennEinzugKarte)
+                Wertezeile(symbol: "checkmark.circle", titel: Text(verbatim: "Trakt"),
+                           unter: Text("Trägt ein, was du schaust"),
+                           wert: model.trakt.verbunden ? String(localized: "Verbunden") : nil,
+                           aktion: { navigator.oeffne(.trakt, in: bereich) })
+            }
             // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen,
             // *wie* etwas abläuft. Diese gibt als einzige der ganzen App
             // etwas **nach draußen**: wer sie anlegt, sagt jedem in seinen
@@ -172,7 +197,7 @@ struct EinstellungenView: View {
             // kommt je ein Bau ohne Sandkasten, kommt die Zeile mit ihm
             // zurück, ohne dass jemand daran denken muss.
             if !imSandkasten {
-                Trennstrich().padding(.leading, 48)
+                Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                 Schalterzeile(symbol: "bubble.left.and.text.bubble.right",
                               titel: Text(verbatim: "Discord"),
                               unter: Text("Zeigt im Profil, was gerade läuft"),
@@ -197,7 +222,7 @@ struct EinstellungenView: View {
             Wertezeile(symbol: "externaldrive.connected.to.line.below",
                        titel: Text(verbatim: model.serverName ?? String(localized: "Server")),
                        wert: model.serverVersion ?? "?")
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Wertezeile(symbol: "wifi", titel: Text("Verbindung prüfen"),
                        unter: pruefung.map { Text(verbatim: $0) },
                        wert: pruefe ? String(localized: "Moment…") : nil,

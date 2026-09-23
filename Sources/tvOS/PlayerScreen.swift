@@ -162,6 +162,9 @@ struct PlayerScreen: View {
     /// in die Einstellungen. Mit den Zielen als Aufzaehlung heisst `nil`
     /// wirklich „nirgends", und nur dann wird eingegriffen.
     @FocusState private var fokus: Fokusziel?
+    /// Wohin der Fokus geht, wenn die Steuerung gleich erscheint — die
+    /// Leiste, ausser „hoch" hat die Knoepfe oben verlangt.
+    @State private var zielBeimZeigen: Fokusziel = .leiste
     /// Beim Verlassen der App wird angehalten — siehe unten.
     @Environment(\.scenePhase) private var phase
 
@@ -197,8 +200,10 @@ struct PlayerScreen: View {
     }
 
     /// **Der Angebotsknopf steht an einer Stelle, egal ob die Steuerung offen
-    /// ist** (wie iOS, Paul 17.09.2026): Überspringen, solange der Abschnitt
-    /// läuft; die Karte bei geschlossener Steuerung, bei offener der normale
+    /// ist** (wie iOS, Paul 17.09.2026): Überspringen die ersten sechs
+    /// Sekunden des Abschnitts, danach nur mit der Steuerung
+    /// (`Angebotsebene.knopfdauer`); blendet er aus, wird `karteDa` falsch
+    /// und der Fokus geht über `onChange(of: karteDa)` an die Ruhe. Die Karte bei geschlossener Steuerung, bei offener der normale
     /// Knopf „Nächste Folge". Die Leiste hält ihm nur den Platz frei.
     /// `karteDa` bleibt die Frage, ob er *ohne* Steuerung dasteht — daran
     /// hängen Fokus und Zurück.
@@ -238,17 +243,27 @@ struct PlayerScreen: View {
             // niemand haelt. Fokussierbar nur dann — sonst nimmt sie ihn der
             // Leiste weg, sobald man sie braucht.
             Color.clear
-                .focusable(ruheDa)
+                // **Und fokussierbar, solange sie ihn hat.** Wurde sie im
+                // selben Zug unfokussierbar, in dem die Steuerung erschien,
+                // und verwarf SwiftUI das Setzen auf die Leiste, sass der
+                // Fokus auf einer Fläche, die keine Befehle mehr bekam:
+                // hoch, links, rechts — nichts (22.09.). So kommt der
+                // nächste Druck wieder hier an und holt die Steuerung.
+                .focusable(ruheDa || fokus == .ruhe)
                 .focused($fokus, equals: .ruhe)
                 // **Hoch führt nach oben.** Der Fokus liegt nach dem Öffnen
                 // noch hier, nicht auf der Leiste; ein Druck nach oben landete
                 // erst auf der Leiste, erst der zweite bei den Knöpfen.
                 .onMoveCommand { richtung in
                     if richtung == .up {
-                        // Erst zeigen, dann den Fokus setzen: auf einen noch
-                        // ausgeblendeten Knopf greift die Zuweisung nicht.
+                        // Das Ziel wird vorgemerkt, gesetzt wird es beim
+                        // Einblenden — siehe `onChange(of: steuerungDa)`.
+                        zielBeimZeigen = .spuren
+                        // Steht sie schon da, weil ein Setzen verworfen
+                        // wurde, gibt es kein Einblenden mehr, das es
+                        // nachholt — dann hier.
+                        if steuerungDa { fokus = .spuren }
                         zeigen()
-                        Task { @MainActor in fokus = .spuren }
                     } else {
                         steuerungWecken()
                     }
@@ -327,30 +342,60 @@ struct PlayerScreen: View {
             }
 
             schleier.opacity(steuerungDa ? 1 : 0)
+
+            // **Das Technikschild.** Eine Auskunft, kein Bedienteil: nimmt
+            // weder Fokus noch Eingaben. **Direkt auf dem Film** (Paul,
+            // 22.09.2026): über dem Schleier, unter Titel, Knöpfen und Leiste
+            // und damit auch unter den Ebenen. **Es gleitet mit der
+            // Steuerung** (Paul, 22.09.2026): offen unter der Titelzeile, zu
+            // an den oberen Rand, wo sie stand. Bewegung statt Blende, dieselbe
+            // Kurve wie die Steuerung; mit reduzierter Bewegung springt es.
+            //
+            // **Ohne `.focusable(false)`.** Das klingt nach „nimmt keinen
+            // Fokus", macht das Schild aber zu einem Fokusteilnehmer, der nie
+            // fokussiert werden kann — und durch den Rahmen bis an alle Ränder
+            // bedeckt er den ganzen Schirm. Die Fokussuche lief dagegen und
+            // fand nichts mehr: bei eingeschaltetem Schild kam man von der
+            // Leiste nicht zu den Knöpfen und zwischen den Knöpfen nicht
+            // weiter (gemessen 22.09. im Simulator, Leiste hoch, Knopf
+            // runter/rechts/links: mit Schild alle vier ohne Ziel, ohne Schild
+            // und nach dem Entfernen alle vier am Ziel). Nicht fokussierbar
+            // ist es ohnehin, es enthält nur Text.
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.randOben + Playermass.knopf + Stil.kachelAbstand)
+                    .offset(y: steuerungDa ? 0 : -(Playermass.knopf + Stil.kachelAbstand))
+                    .animation(Stil.bewegungReduziert ? nil : .easeInOut(duration: 0.2),
+                               value: steuerungDa)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             werkzeuge.opacity(steuerungDa ? 1 : 0)
                 // Unter einer Ebene kein Fokusziel: sonst wandert der Fokus
                 // seitlich aus der Ebene in die unsichtbare Steuerung.
                 .disabled(ebeneOffen)
 
-            if angebotDa {
+            // **Weich weg, nicht zack weg** — wie auf dem iPhone (c9298dd5):
+            // das Entfernen aus dem Baum lief trotz Transition hart. Die Pille
+            // bleibt im Baum, solange es ein Angebot gibt, und kommt und geht
+            // über die Deckkraft. Die Fokussuche überspringt sie unsichtbar
+            // schon selbst (gemessen 22.09., angehalten: Leiste hoch landet
+            // bei den Knöpfen oben, mit und ohne Sperre). **`disabled` an der
+            // Pille selbst** fängt den Rest: hält sie den Fokus noch, nimmt
+            // sie keinen Klick — und `onChange(of: angebotDa)` gibt ihn ab.
+            // Nicht `.focusable(false)` auf der Ebene: die reicht bis an alle
+            // Ränder und sperrte die Fokussuche wie einst das Technikschild.
+            if angebot.sichtbar {
                 angebotsebene
+                    .opacity(angebotDa ? 1 : 0)
+                    .allowsHitTesting(angebotDa)
+                    .accessibilityHidden(!angebotDa)
                     // Dieselbe Blende wie die Steuerung (`.animation` auf `steuerungDa`).
+                    .animation(.easeInOut(duration: 0.2), value: angebotDa)
                     .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-            }
-
-            // **Das Technikschild.** Eine Auskunft, kein Bedienteil: nimmt
-            // weder Fokus noch Eingaben. Über der Steuerung, aber **unter den
-            // Ebenen** — wer Folgen oder Einstellungen aufmacht, will die
-            // sehen, nicht das Schild.
-            if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Stil.randOben)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .allowsHitTesting(false)
-                    .focusable(false)
-                    .transition(.opacity)
-                    .zIndex(4)
             }
 
             // **Die drei Ebenen.** Vollbild über dem Bild, die Steuerung
@@ -368,18 +413,33 @@ struct PlayerScreen: View {
         .overlay(alignment: .bottom) {
             if let hinweis {
                 Text(verbatim: hinweis)
-                    .font(.callout)
+                    // `.callout` ist Apples Stufe, nicht unsere — die Leiter
+                    // kennt sie nicht. Fliesstext, also `Stil.koerper`.
+                    .font(Stil.koerper)
                     .foregroundStyle(Stil.schrift)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
                     .background(.black.opacity(0.6), in: Capsule())
                     .padding(.bottom, Stil.randOben)
                     .allowsHitTesting(false)
-                    .focusable(false)
+                    // Kein `.focusable(false)`: dasselbe wie beim
+                    // Technikschild — es sperrt die Fokussuche über der
+                    // Fläche, und die Leiste liegt direkt darüber.
+                    // Sie steht nur Sekunden und ist nicht fokussierbar —
+                    // ohne die Angabe liest VoiceOver sie nie vor.
+                    .accessibilityAddTraits(.updatesFrequently)
                     .transition(.opacity)
             }
         }
         .animation(Stil.einblenden, value: hinweis)
+        // **Gesagt, nicht nur gezeigt.** „Vorspann uebersprungen" und
+        // „Keine Untertitel" erschienen und verschwanden, ohne dass
+        // VoiceOver etwas davon mitbekam: die Meldung ist nicht
+        // fokussierbar, also faehrt niemand hin.
+        .onChange(of: hinweis) { _, neu in
+            guard let neu else { return }
+            AccessibilityNotification.Announcement(neu).post()
+        }
         .animation(Stil.einblenden, value: technikschild)
         .task(id: technikschild) {
             guard technikschild else { return }
@@ -410,9 +470,38 @@ struct PlayerScreen: View {
         // **Der Fokus wandert mit der Steuerung**, statt mit ihr zu
         // verschwinden. Beim Oeffnen eines Blattes greift die Sperre: dort
         // nimmt das Blatt den Fokus, und wir haetten ihn ihm weggenommen.
+        //
+        // **Und beim Einblenden nachgefasst.** Die Zuweisung faellt in den
+        // Durchlauf, in dem die Steuerung erst fokussierbar wird, und SwiftUI
+        // verwirft sie manchmal — gemessen am 22.09.: der Fokus blieb auf der
+        // Ruhe, die im selben Zug unfokussierbar wurde. Dort sass er fest:
+        // hoch, links und rechts fanden kein Ziel, nichts reagierte. Wie bei
+        // der Einblendung (`karteDa`) wird deshalb nachgesetzt, bis er sitzt.
         .onChange(of: steuerungDa) { _, da in
             guard !ebeneOffen else { return }
-            fokus = da ? .leiste : (karteDa ? .angebot : .ruhe)
+            guard da else { fokus = karteDa ? .angebot : .ruhe; return }
+            let ziel = zielBeimZeigen
+            zielBeimZeigen = .leiste
+            fokus = ziel
+            Task { @MainActor in
+                for warten in [80, 250, 600] {
+                    try? await Task.sleep(for: .milliseconds(warten))
+                    guard steuerungDa, !ebeneOffen else { return }
+                    guard fokus == nil || fokus == .ruhe else { return }
+                    fokus = ziel
+                    Protokoll.schreib("[Fokus] nachgesetzt auf \(ziel) nach \(warten) ms")
+                }
+            }
+        }
+        // **Eine ausgeblendete Pille hält den Fokus nicht.** Sie bleibt
+        // zum weichen Ausblenden im Baum; lag der Fokus auf ihr, blieb er
+        // dort — auf einem Knopf, den niemand sieht (gemessen 22.09. im
+        // Simulator, angehalten: nach dem Ausblenden weiter `.angebot`).
+        // Ohne Steuerung regelt das `onChange(of: karteDa)` darunter, bei
+        // offener geht er auf die Leiste direkt unter der Pille.
+        .onChange(of: angebotDa) { _, da in
+            guard !da, steuerungDa, !ebeneOffen, fokus == .angebot else { return }
+            fokus = .leiste
         }
         // **Die Einblendung nimmt den Fokus, und gibt ihn an die Fläche zurück.**
         //
@@ -614,7 +703,37 @@ struct PlayerScreen: View {
     /// **Reines Schwarz** — `Stil.grund` hob im HDR-Modus des Fernsehers
     /// dunkle Szenen an, siehe `Ebenengrund`.
     private var schleier: some View {
-        Color.black.opacity(0.42)
+        // **Die Flaeche traegt nur die Mitte, die Raender tragen Baender.**
+        //
+        // Hier stand 0,42 flach ueber dem ganzen Bild. Das erkauft Lesbarkeit
+        // an zwei Raendern damit, dass die **Mitte des Films** dunkler wird,
+        // sobald man die Steuerung zeigt — und auf einem Fernseher faellt das
+        // staerker auf als auf einem Telefon. Dieselbe Loesung wie am iPhone:
+        // eine leichte Flaeche fuer das Zeichen in der Mitte, dazu je ein
+        // Verlaufsband oben und unten fuer Titel und Zeitzeile.
+        //
+        // Die Baender sind das Doppelte der iPhone-Masse (400 statt 200, 520
+        // statt 260) — dieselbe Regel wie bei der Schrift.
+        //
+        // Als `overlay` auf der Flaeche zaehlen sie fuer die Groesse nicht
+        // mit; am iPhone hat genau das den Player gesprengt, als sie in einem
+        // Stapel standen.
+        Color.black.opacity(0.30)
+            .overlay(alignment: .top) {
+                LinearGradient(stops: [.init(color: .black.opacity(0.55), location: 0),
+                                       .init(color: .black.opacity(0.55), location: 0.45),
+                                       .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 400)
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(stops: [.init(color: .clear, location: 0),
+                                       .init(color: .black.opacity(0.42), location: 0.55),
+                                       .init(color: .black.opacity(0.62), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 520)
+            }
+            .clipped()
             .ignoresSafeArea()
             .allowsHitTesting(false)
     }
@@ -661,7 +780,10 @@ struct PlayerScreen: View {
                        vor: Double(model.vorSekunden),
                        springen: springen, wecken: zeigen, klick: klick,
                        laeuft: laeuft,
-                       vorschau: { trickplay.bild(bei: $0, model: model) })
+                       vorschau: { trickplay.bild(bei: $0, model: model) },
+                       // Beide Grenzen, nicht nur der Anfang: wo der Vorspann
+                       // anfaengt, sagt nicht, wo er aufhoert.
+                       abschnittsgrenzen: abschnitte.flatMap { [$0.von, $0.bis] })
                 .focused($fokus, equals: .leiste)
                 // Die Leiste ist eine Zeichnung: die Stelle steht nur als
                 // Balkenlaenge da. Ohne Wert bliebe sie stumm.
@@ -681,6 +803,7 @@ struct PlayerScreen: View {
             VStack(alignment: .leading, spacing: Playermass.titelAbstand) {
                 Text(verbatim: titelzeile)
                     .font(Playermass.titel)
+                    .tracking(Stil.sperrungTitel)
                     .lineLimit(1)
                     .hidden()
                     .accessibilityHidden(true)
@@ -733,6 +856,7 @@ struct PlayerScreen: View {
         return HStack(alignment: .top, spacing: 24) {
             Text(verbatim: titelzeile)
                 .font(Playermass.titel)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -804,6 +928,7 @@ struct PlayerScreen: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 angebotspille
+                    .disabled(!angebotDa)
                     .focused($fokus, equals: .angebot)
                     // Ohne Steuerung holt eine Richtungstaste sie, sonst wäre der
                     // Fokus in der Pille gefangen. Eine Karte „Nächste Folge" ist
@@ -1429,7 +1554,8 @@ struct PlayerScreen: View {
     @discardableResult
     private func angebotNachziehen(vergangen: Double) -> Bool {
         guard !wechselt else { return false }
-        let fertig = ebene.takt(angebot: angebot,
+        var neu = ebene
+        let fertig = neu.takt(angebot: angebot,
                           karteFaellig: Abschnittslogik.karteFaellig(position: position, dauer: dauer,
                                                                      abschnitte: abschnitte,
                                                                      hatNaechsteFolge: naechste != nil),
@@ -1438,6 +1564,14 @@ struct PlayerScreen: View {
                           laeuft: laeuft && erstesBildDa && !Bildtakt.schaltetUm,
                           vergangen: vergangen,
                           countdown: Abschnittslogik.countdown(position: position, dauer: dauer))
+        // Blendet der Überspringen-Knopf von selbst aus (`knopfdauer`), soll
+        // er so weich gehen, wie er kam: der Takt läuft ohne Animation, also
+        // den Wechsel der Sichtbarkeit hier ausdrücklich animieren.
+        if neu.anzeige.sichtbar != ebene.anzeige.sichtbar {
+            withAnimation(.smooth(duration: 0.34)) { ebene = neu }
+        } else {
+            ebene = neu
+        }
         fuellungStellen()
         return fertig
     }
@@ -1854,8 +1988,22 @@ struct Zeitleiste: View {
     var laeuft = true
     /// Das Trickplay-Bild zur Stelle, oder `nil`.
     var vorschau: (Double) -> CGImage? = { _ in nil }
+    /// **Die Grenzen der Abschnitte in Sekunden — Kerben auf der Leiste.**
+    ///
+    /// Der Player laedt sie ohnehin, fuer die Ueberspringen-Karte und den
+    /// Countdown; die Leiste wusste nichts davon. Eine Leiste mit Kerben sagt
+    /// in einem Blick, wie der Film gebaut ist — wo der Vorspann endet, wo der
+    /// Abspann anfaengt. Dieselbe Ergaenzung wie am iPhone.
+    var abschnittsgrenzen: [Double] = []
 
     private var spult: Bool { marke != nil }
+
+    /// Die Grenzen als Anteil, ohne die an den beiden Kanten: eine Kerbe
+    /// direkt am Rand liest sich als Ausfransen.
+    private func kerben() -> [Double] {
+        guard dauer > 0 else { return [] }
+        return abschnittsgrenzen.map { $0 / dauer }.filter { $0 > 0.01 && $0 < 0.99 }
+    }
     /// Wohin der Griff zeigt: das Ziel, sonst der Stand.
     private var gezeigt: Double { marke ?? position }
 
@@ -1905,13 +2053,22 @@ struct Zeitleiste: View {
                             .offset(x: breite * min(stand, ziel))
                     }
 
+                    // **Kerben an den Abschnittsgrenzen.** Vier Punkt breit
+                    // — auf drei Meter das Doppelte der iPhone-Kerbe —, in
+                    // `grund`, weil sie sowohl auf der hellen Spur als auch
+                    // auf dem weissen Balken zu sehen sein muessen.
+                    ForEach(kerben(), id: \.self) { stelle in
+                        Rectangle().fill(Stil.grund)
+                            .frame(width: 4, height: balkenHoehe)
+                            .offset(x: breite * stelle - 2)
+                    }
+
                     Circle()
                         .fill(Stil.akzent)
                         .frame(width: griff, height: griff)
                         .scaleEffect(spult ? 1 : 0.4)
                         .opacity(spult ? 1 : 0)
                         .offset(x: breite * ziel - griff / 2)
-                        .shadow(color: .black.opacity(0.5), radius: 10)
                 }
                 .frame(maxHeight: .infinity)
                 .overlay(alignment: .topLeading) {
@@ -1954,12 +2111,12 @@ struct Zeitleiste: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: bildbreite, height: bildhoehe)
-                    .clipShape(RoundedRectangle(cornerRadius: Stil.ecke))
-                    .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
+                    .clipShape(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                         .strokeBorder(.white.opacity(0.35), lineWidth: 2))
             }
             Text(Spielzeit.text(gezeigt))
-                .font(.system(size: Playermass.vorschauZeit, weight: .bold).monospacedDigit())
+                .font(.system(size: Playermass.vorschauZeit, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Stil.schrift)
                 .frame(height: zeitHoehe)
         }
@@ -1988,7 +2145,7 @@ struct PillenStil: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 30, weight: .bold))
+                .font(Stil.knopf)
                 .foregroundStyle(Stil.grund)
                 .padding(.horizontal, 32)
                 .frame(height: 72)
@@ -1997,7 +2154,7 @@ struct PillenStil: ButtonStyle {
                 // Griff der Leiste beim Spulen.
                 .background {
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: Stil.ecke).fill(Stil.schrift)
+                        RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous).fill(Stil.schrift)
                         if let fuellung {
                             TimelineView(.animation) { zeit in
                                 GeometryReader { g in
@@ -2008,11 +2165,13 @@ struct PillenStil: ButtonStyle {
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Stil.ecke))
+                    .clipShape(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                 }
-                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? 1.08 : 1))
-                .shadow(color: .black.opacity(fokus ? 0.5 : 0.25),
-                        radius: fokus ? 26 : 12, y: fokus ? 12 : 4)
+                // **Kein Schatten.** BRAND 4: „Keine Schatten. Nicht am
+                // iPhone, nicht am Fernseher unter der fokussierten Kachel,
+                // nirgends." Lupe und Flaeche leisten es schon; ein weicher
+                // Schatten wird auf drei Meter zu Schlamm.
+                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? Stil.fokusLupe : 1))
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }

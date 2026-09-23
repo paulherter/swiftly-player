@@ -17,6 +17,20 @@ struct RootView: View {
     @State private var discordHinweis = false
 
     var body: some View {
+        #if DEBUG
+        // Die Halbierung: nackte Scrollflaeche statt der App, wenn die
+        // Umgebung sie anfordert. Siehe `NackterVergleich`.
+        if NackterVergleich.angefordert {
+            NackterVergleich()
+        } else {
+            rumpf
+        }
+        #else
+        rumpf
+        #endif
+    }
+
+    private var rumpf: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
             switch model.phase {
@@ -33,6 +47,11 @@ struct RootView: View {
             }
         }
         .background(Fensteranstrich())
+        #if DEBUG
+        // Misst den Bildtakt ins Protokoll — nur im Entwicklerbau, siehe
+        // `Bildtakt`. Eine Ansicht ohne Groesse, die nichts zeichnet.
+        .background(Bildtaktmesser().frame(width: 0, height: 0))
+        #endif
         .animation(Stil.zeitSeite, value: model.phase)
         // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
         // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
@@ -57,12 +76,12 @@ struct RootView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
-                withAnimation(Stil.zeitSprung) { discordHinweis = true }
+                withAnimation(Stil.sprung) { discordHinweis = true }
             }
         }
         .overlay(alignment: .bottomTrailing) {
             if discordHinweis {
-                Discordhinweis { withAnimation(Stil.zeitSprung) { discordHinweis = false } }
+                Discordhinweis { withAnimation(Stil.sprung) { discordHinweis = false } }
                     .padding(Stil.randAbstand)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -83,17 +102,17 @@ struct Discordhinweis: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Swiftly hat einen Discord")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(Stil.listentitel)
                     .foregroundStyle(Stil.schrift)
                 Spacer(minLength: 8)
                 Button(action: schliessen) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Stil.klein.weight(.semibold))
                         .foregroundStyle(Stil.schriftLeise)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckknopf())
                 .accessibilityLabel(Text("Schließen"))
             }
             Text("Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.")
@@ -108,9 +127,11 @@ struct Discordhinweis: View {
         }
         .padding(16)
         .frame(width: 320, alignment: .leading)
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
-        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand, lineWidth: 1))
-        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+        // Kein Schatten — nirgends (BRAND 4).
+        .background {
+            let form = RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous)
+            form.fill(Stil.erhoeht).overlay { form.strokeBorder(Stil.rand, lineWidth: 1) }
+        }
     }
 }
 
@@ -121,6 +142,8 @@ struct Discordhinweis: View {
 struct ServerView: View {
     let model: AppModel
     @State private var adresse = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
     @FocusState private var imFeld: Bool
 
     var body: some View {
@@ -134,16 +157,20 @@ struct ServerView: View {
 
             Eingabezeile(text: $adresse, symbol: "globe",
                          platzhalter: "tv.beispiel.de", abschluss: verbinden)
-                .frame(width: 360)
+                .frame(width: Stil.formularbreite)
                 .padding(.top, 24)
                 .focused($imFeld)
+
+            MacErweitert(zeilen: $koepfe)
+                .frame(width: Stil.formularbreite)
+                .padding(.top, 10)
 
             if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.zweitzeile)
                     .foregroundStyle(Stil.warnung)
                     .multilineTextAlignment(.center)
-                    .frame(width: 360)
+                    .frame(width: Stil.formularbreite)
                     .padding(.top, 12)
             }
 
@@ -159,7 +186,7 @@ struct ServerView: View {
 
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse) }
+        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
     }
 }
 
@@ -181,7 +208,7 @@ struct AnmeldeView: View {
             Wortmarke(hoehe: 44)
 
             Text(serverName)
-                .font(Stil.titel)
+                .font(Stil.unterseitentitel).tracking(Stil.sperrungUnterseite)
                 .foregroundStyle(Stil.schrift)
                 .padding(.top, 34)
             Text(verbatim: "Jellyfin \(version)")
@@ -191,13 +218,13 @@ struct AnmeldeView: View {
 
             Eingabezeile(text: $benutzer, symbol: "person",
                          platzhalter: String(localized: "Benutzername")) { feld = .kennwort }
-                .frame(width: 360)
+                .frame(width: Stil.formularbreite)
                 .padding(.top, 28)
                 .focused($feld, equals: .benutzer)
 
             Eingabezeile(text: $kennwort, symbol: "lock", geheim: true,
                          platzhalter: String(localized: "Passwort"), abschluss: anmelden)
-                .frame(width: 360)
+                .frame(width: Stil.formularbreite)
                 .padding(.top, 10)
                 .focused($feld, equals: .kennwort)
 
@@ -206,7 +233,7 @@ struct AnmeldeView: View {
                     .font(Stil.zweitzeile)
                     .foregroundStyle(Stil.warnung)
                     .multilineTextAlignment(.center)
-                    .frame(width: 360)
+                    .frame(width: Stil.formularbreite)
                     .padding(.top, 12)
             }
 
@@ -242,10 +269,11 @@ struct Eingabezeile: View {
 
     var body: some View {
         HStack(spacing: 9) {
+            // Zeichen 17 in einer 20 breiten Spalte (BAUTEILE 6).
             Image(systemName: symbol)
-                .font(.system(size: 14))
+                .font(Stil.rubrikGross.weight(.regular))
                 .foregroundStyle(Stil.schriftSehrLeise)
-                .frame(width: 17)
+                .frame(width: 20)
 
             Group {
                 if geheim {
@@ -262,10 +290,15 @@ struct Eingabezeile: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
-        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
-            .strokeBorder(drin ? Stil.akzent.opacity(0.5) : Stil.rand, lineWidth: 1))
-        .animation(.easeInOut(duration: 0.15), value: drin)
+        .background(Stil.flaeche,
+                    in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
+        // **Kein Fokusring.** Hier stand ein Akzentrand mit 50 Prozent —
+        // eine rohe Deckkraft, und der Fokus haette allein an der Farbe
+        // gehangen. Jetzt sagt die Strichstaerke, wo man schreibt: 2 statt
+        // 1, gleiche Farbe (BAUTEILE 6).
+        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous)
+            .strokeBorder(Stil.rand, lineWidth: drin ? 2 : 1))
+        .animation(Stil.zeitSchweben, value: drin)
     }
 
     private var platz: Text {

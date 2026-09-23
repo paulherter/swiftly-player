@@ -97,13 +97,9 @@ struct Eingabefeld: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: Stil.ecke)
+            RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                 .fill(fokus ? Color.white : Stil.erhoeht)
-                .overlay {
-                    RoundedRectangle(cornerRadius: Stil.ecke)
-                        .strokeBorder(Stil.rand, lineWidth: 2)
-                        .opacity(fokus ? 0 : 1)
-                }
+
 
             beschriftung
                 .font(Stil.koerper)
@@ -180,6 +176,8 @@ struct Eingabefeld: View {
 struct ServerView: View {
     let model: AppModel
     @State private var adresse = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -201,6 +199,10 @@ struct ServerView: View {
                 .frame(width: 760, alignment: .leading)
                 .padding(.top, 12)
 
+            TVErweitert(zeilen: $koepfe)
+                .frame(width: 760, alignment: .leading)
+                .padding(.top, 24)
+
             Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
                    action: verbinden)
                 .buttonStyle(KnopfStil())
@@ -213,7 +215,8 @@ struct ServerView: View {
             if let fehler = model.errorMessage, model.phase != .connecting {
                 Text(fehler)
                     .font(Stil.koerper)
-                    .foregroundStyle(Stil.warnung)
+                    // `fehler`, nicht `warnung` — siehe `Farben.swift`.
+                    .foregroundStyle(Stil.fehler)
                     .multilineTextAlignment(.center)
                     .frame(width: 900)
                     .padding(.top, 32)
@@ -224,7 +227,7 @@ struct ServerView: View {
 
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse) }
+        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
     }
 }
 
@@ -274,7 +277,8 @@ struct AnmeldeView: View {
             if let fehler = model.errorMessage, !model.isWorking {
                 Text(fehler)
                     .font(Stil.koerper)
-                    .foregroundStyle(Stil.warnung)
+                    // `fehler`, nicht `warnung` — siehe `Farben.swift`.
+                    .foregroundStyle(Stil.fehler)
                     .multilineTextAlignment(.center)
                     .frame(width: 900)
                     .padding(.top, 32)

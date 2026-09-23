@@ -51,11 +51,14 @@ struct KnopfStil: ButtonStyle {
                 .foregroundStyle(vordergrund)
                 .padding(.horizontal, nurSymbol ? 0 : (hoehe < Stil.knopfHoehe ? 28 : 40))
                 .frame(width: nurSymbol ? hoehe : nil, height: hoehe)
-                .background(hintergrund, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                // Fokus hebt die Pille leicht heraus — 1,04, nicht die 1,08
-                // der Kachel. Ein Knopf steht in einer Reihe mit Nachbarn,
-                // die dieselbe Hoehe halten muessen; eine Kachel steht frei.
-                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? 1.04 : 1))
+                .background(hintergrund, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                // Fokus hebt die Pille heraus — dieselbe Stufe wie die
+                // Kachel. Hier stand 1,04 mit der Begruendung, ein Knopf stehe
+                // in einer Reihe mit Nachbarn, die ihre Hoehe halten muessen.
+                // Das stimmt fuer das Layout nicht: `scaleEffect` rechnet nach
+                // dem Setzen und verschiebt keinen Nachbarn. Uebrig blieb ein
+                // Knopf, der sich weniger meldete als alles um ihn herum.
+                .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? Stil.fokusLupe : 1))
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
@@ -127,7 +130,7 @@ struct ReiterStil: ButtonStyle {
                 // sieht Farbe nicht. Ohne diese Angabe klingt der offene
                 // Reiter wie jeder andere.
                 .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
-                .font(.system(size: 31, weight: fokus || gewaehlt ? .semibold : .medium))
+                .font(.system(size: 30, weight: fokus || gewaehlt ? .semibold : .medium))
                 .foregroundStyle(vordergrund)
                 .padding(.horizontal, 26)
                 .padding(.top, 10)
@@ -137,11 +140,11 @@ struct ReiterStil: ButtonStyle {
                 // Aussage wäre eine volle weiße Fläche zu viel Werkzeug.
                 .background {
                     if fokus {
-                        RoundedRectangle(cornerRadius: Stil.ecke)
+                        RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                             .fill(Color.white.opacity(0.08))
                     }
                 }
-                .scaleEffect(fokus ? 1.06 : 1)
+                .scaleEffect(fokus ? Stil.fokusLupe : 1)
                 .overlay(alignment: .bottom) {
                     // Der Akzentstrich kommt unverändert aus `Reiter` in
                     // Stil.swift — dort 2 Punkt, hier 4.
@@ -184,30 +187,51 @@ struct ChipStil: ButtonStyle {
                 // sieht Farbe nicht. Ohne diese Angabe klingt der offene
                 // Reiter wie jeder andere.
                 .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
-                .font(.system(size: 23, weight: an ? .semibold : .regular))
-                .foregroundStyle(an ? Stil.grund : Stil.schrift)
+                // **Ein Gewicht, zwei Fuellungen** — wie auf dem iPhone.
+                //
+                // Gewaehlt war hier `grund` auf weisser Flaeche, also Zeichen
+                // fuer Zeichen der Hauptknopf; auf einer Seite mit mehreren
+                // Chips sind das mehrere vollflaechig gefuellte Gegenstaende,
+                // und BRAND 5 laesst genau einen zu. Der Gewichtswechsel kam
+                // dazu: Semifett ist breiter, und in einer waagerechten Reihe
+                // verschiebt das jeden Nachbarn rechts davon.
+                //
+                // Der Rand faellt mit weg. Eine Flaeche sagt „hier kann man
+                // druecken"; der Fokus sagt den Rest.
+                .font(Stil.kachel)
+                .foregroundStyle(an ? Stil.grund : Stil.schriftLeise)
                 .padding(.horizontal, 22)
                 .frame(height: Stil.chipHoehe)
                 .background(flaeche, in: Capsule())
-                .overlay {
-                    Capsule().strokeBorder(an ? Stil.schrift : Stil.rand, lineWidth: 2)
-                }
-                .scaleEffect(fokus ? 1.06 : 1)
+                .scaleEffect(fokus ? Stil.fokusLupe : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
-        /// **Auswahl ist Weiss, nicht Akzent** — wie auf Mac und iPad.
+        /// **Die Wahl traegt hier den Akzent, und das ist eine Ausnahme.**
         ///
-        /// Hier war sie der Akzent, und damit sah dieselbe Chipreihe auf dem
-        /// Fernseher anders aus als ueberall sonst.
+        /// Erst stand hier `Stil.schrift`, eine weisse Flaeche — richtig,
+        /// solange die Schrift darauf `grund` war. Die Schrift wechselte auf
+        /// Weiss, die Zeile blieb stehen: **weiss auf weiss**, der gewaehlte
+        /// Filter war nicht mehr zu lesen.
         ///
-        /// Es passt auch besser zur Regel: der Akzent traegt Zustand, und
-        /// „dieser Filter gilt gerade" ist eine Auswahl, keine Auszeichnung.
-        /// Fokus bleibt die ruhige Flaeche, und beides zusammen bleibt Weiss,
-        /// weil die Auswahl die staerkere Aussage ist.
+        /// Dann eine Stufe hoeher, `erhoeht` gegen `flaeche`, wie am iPhone.
+        /// Lesbar, aber die beiden Toene liegen #303030 gegen #262626
+        /// auseinander — am Schreibtisch erkennbar, auf drei Meter nicht.
+        /// „Ich koennte dir nicht sagen, dass das an ist."
+        ///
+        /// **Die Entfernung ist der Grund, aus dem der Fernseher abweichen
+        /// darf** (Abschnitt F). Eine Helligkeitsstufe ueberlebt drei Meter
+        /// nicht, ein Farbwechsel schon. Der gewaehlte Chip ist deshalb eine
+        /// Akzentkapsel mit `grund` darauf — 10,8:1, und die Farbe kommt in
+        /// der Reihe sonst nirgends vor.
+        ///
+        /// Dem Fokus nimmt das nichts weg: er ist hier keine weisse Flaeche,
+        /// sondern ein heller Schleier plus 6 Prozent Groesse. Auf dem
+        /// gewaehlten Chip tritt an die Stelle des Schleiers der helle
+        /// Akzent, damit auch er im Fokus aufhellt statt stehen zu bleiben.
         private var flaeche: Color {
-            if an { return Stil.schrift }
-            return fokus ? Stil.fokusflaeche : Stil.erhoeht
+            if an { return fokus ? Stil.akzentHell : Stil.akzent }
+            return fokus ? Stil.fokusflaeche : Stil.flaeche
         }
     }
 }
@@ -223,29 +247,53 @@ struct ChipStil: ButtonStyle {
 /// Mit fester Farbe verschwand er im Sortierknopf auf der weissen
 /// Fokusflaeche.
 struct KapselStil: ButtonStyle {
+    /// **Ein Zeichen vorn statt des Pfeils hinten — wie die `Wertpille` am
+    /// iPhone.** Filter und Sortierung stehen dort als Pille mit Zeichen und
+    /// Wert, ohne Pfeil; der Pfeil gehoert dort nur zur Bibliothekswahl am
+    /// Titel. Paul am 22.09.: „auch mit diesem Symbol, wie auf dem Handy, so
+    /// dass es identisch aussieht." `nil` heisst: der Pfeil wie bisher.
+    var symbol: String? = nil
+    /// Der Pfeil hinten — nach unten, weil die Kapsel etwas aufklappt. Nach
+    /// rechts, wo sie auf eine Seite fuehrt („Teil der Sammlung").
+    var pfeil = "chevron.down"
+
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
+        Inhalt(configuration: configuration, symbol: symbol, pfeil: pfeil)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
+        let symbol: String?
+        let pfeil: String
         @Environment(\.isFocused) private var fokus
 
         var body: some View {
             HStack(spacing: 10) {
+                if let symbol {
+                    // Leiser als der Wert, wie am iPhone (`schriftLeise`
+                    // gegen `schrift`) — ueber Deckkraft, damit es der
+                    // Schrift auch auf der Fokusflaeche folgt.
+                    Image(systemName: symbol)
+                        .font(.system(size: 22, weight: .medium))
+                        .opacity(0.6)
+                }
                 configuration.label
                     .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 18, weight: .bold))
-                    .opacity(0.6)
+                if symbol == nil {
+                    Image(systemName: pfeil)
+                        // Halbfett, nicht fett: Bold steht genau einmal, am
+                        // Seitentitel (BRAND 2).
+                        .font(.system(size: 18, weight: .semibold))
+                        .opacity(0.6)
+                }
             }
-            .font(.system(size: 23, weight: .semibold))
+            // Dieselbe Stufe wie der `ChipStil` daneben — es ist derselbe Chip.
+            .font(Stil.kachel)
             .foregroundStyle(Stil.schrift)
             .padding(.horizontal, 22)
             .frame(height: Stil.chipHoehe)
             .background(fokus ? Stil.fokusflaeche : Stil.erhoeht, in: Capsule())
-            .overlay { Capsule().strokeBorder(Stil.rand, lineWidth: 2) }
-            .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? 1.06 : 1))
+            .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? Stil.fokusLupe : 1))
             .animation(Stil.fokusAnimation, value: fokus)
         }
     }
@@ -273,11 +321,19 @@ struct LeistenStil: ButtonStyle {
             configuration.label
                 .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
                 .foregroundStyle(an ? Stil.grund : Stil.schrift)
-                .background(flaeche, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .scaleEffect(fokus ? 1.03 : 1)
+                .background(flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                // Eine Zeile ueber die ganze Leistenbreite: die breite Stufe.
+                .scaleEffect(fokus ? Stil.fokusLupeBreit : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
+        /// **Hier bleibt die weisse Fuellung**, anders als am Filterchip.
+        ///
+        /// Die Leiste oben ist auf dem Fernseher, was die Leiste unten am
+        /// iPhone ist: die Stelle, an der man sieht, wo man ist. Ihre Schrift
+        /// ist `grund` auf Weiss und damit lesbar — der Fehler von gestern
+        /// betraf allein den Filterchip, dessen Schrift auf Weiss gewechselt
+        /// hat, waehrend seine Flaeche weiss blieb.
         private var flaeche: Color {
             if an { return Stil.schrift }
             return fokus ? Stil.fokusflaeche : .clear
@@ -287,18 +343,29 @@ struct LeistenStil: ButtonStyle {
 
 /// Zeile in einer Auswahlliste — Spurwahl, Einstellungen.
 struct ZeilenStil: ButtonStyle {
+    /// **Eine Nebenhandlung — leiser, aber nur solange sie ruht.**
+    ///
+    /// „Verlauf loeschen" und aehnliche Zeilen faerbten sich bisher an der
+    /// Aufrufstelle grau, und zwar auch im Fokus: auf der Fokusflaeche
+    /// (Weiss 12 %) stand `schriftSehrLeise` dann mit 3,59:1 da —
+    /// ausgerechnet die Zeile, auf der man steht, war die am schlechtesten
+    /// lesbare. Hier gehoert es hin, weil nur der Stil den Fokus kennt.
+    var leise = false
+
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
+        Inhalt(configuration: configuration, leise: leise)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
+        let leise: Bool
         @Environment(\.isFocused) private var fokus
+        @Environment(\.isEnabled) private var freigegeben
 
         var body: some View {
             configuration.label
-                .font(.system(size: 31, weight: fokus ? .semibold : .medium))
-                .foregroundStyle(Stil.schrift)
+                .font(.system(size: 30, weight: fokus ? .semibold : .medium))
+                .foregroundStyle(vordergrund)
                 .padding(.horizontal, 26)
                 .frame(height: Stil.zeilenHoehe)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -312,8 +379,20 @@ struct ZeilenStil: ButtonStyle {
                 // Dieselbe ruhige Flaeche wie ueberall sonst, nicht Weiss.
                 // Weiss bleibt den Handlungsknoepfen vorbehalten.
                 .background(fokus ? Stil.fokusflaeche : Color.clear,
-                            in: RoundedRectangle(cornerRadius: Stil.ecke))
+                            in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                 .animation(Stil.fokusAnimation, value: fokus)
+        }
+
+        /// **Gesperrt heisst gedaempft** — dieselbe Regel wie am `KnopfStil`
+        /// nebenan. Sie fehlte hier: „Immer Direct Play" im Bereich
+        /// Wiedergabe und die Bitratenzeile sind gesperrt, sahen aber aus wie
+        /// jede andere Zeile. Wer sie anfaehrt, bekommt keinen Fokus und
+        /// keine Erklaerung — heute ist genau daran der Startfokus des
+        /// Bereichs ins Leere gesprungen.
+        private var vordergrund: Color {
+            guard freigegeben else { return Stil.schriftSehrLeise }
+            if fokus { return Stil.schrift }
+            return leise ? Stil.schriftLeise : Stil.schrift
         }
     }
 }
@@ -344,13 +423,23 @@ struct Kachelinhalt: View {
     /// **Gesehen: Bild abgedunkelt, Titel leise** — dieselbe Bildsprache wie
     /// die Folgenzeile auf dem iPhone. Der Haken kommt über `marke`.
     var gesehen = false
+    /// **Ein Ersatz fuer das Bild** — nur an einer Sammlung ohne eigenes
+    /// Plakat (`Sammlungsmosaik`). Ueberall sonst `nil`, und hier steht genau
+    /// das Bild wie vorher.
+    var ersatz: AnyView? = nil
 
     private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
     private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+            Group {
+                if let ersatz {
+                    ersatz.frame(width: breite, height: hoehe)
+                } else {
+                    Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+                }
+            }
                 .opacity(gesehen ? 0.45 : 1)
                 .overlay(alignment: .topTrailing) {
                     if let marke { Kachelplakette(marke: marke) }
@@ -445,6 +534,11 @@ struct Kopfleiste: View {
             Wortmarke(hoehe: 48)
 
             HStack(spacing: 8) {
+                // **Die Merkliste ist wieder ein Reiter.** Am 22.09. zog sie
+                // fuer eine Stunde als runder Knopf neben das Profilbild;
+                // zwei Kreise nebeneinander wirkten „ein bisschen matsch",
+                // und Paul hat sie zurueckgeholt. Als Wort in der Leiste
+                // steht sie zwischen den anderen Bereichen, wo man sie sucht.
                 ForEach(Bereich.allCases) { b in
                     Button { bereich = b } label: { Text(b.name) }
                         .buttonStyle(ReiterStil(gewaehlt: bereich == b))
@@ -540,14 +634,14 @@ struct Uebernahmeabzeichen: View {
         var body: some View {
             HStack(spacing: 14) {
                 Image(systemName: sitzung.geraetezeichen)
-                    .font(.system(size: 26, weight: .medium))
+                    .font(Stil.kachel)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Hier weiterschauen")
-                        .font(.system(size: 27, weight: .semibold))
+                        .font(Stil.knopf)
                     if fokus {
                         // Serverdaten, also `String` und nicht `LocalizedStringKey`.
                         Text(sitzung.titelzeile)
-                            .font(.system(size: 21))
+                            .font(Stil.klein)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -565,7 +659,7 @@ struct Uebernahmeabzeichen: View {
 /// **Kühl, wenn es von einem anderen Gerät kommt.** Das Abzeichen stand grau
 /// da, im selben Ton wie „Abbrechen" — dabei sagt es als einziges „woanders
 /// läuft etwas". Seit dem 10.09.2026 trägt das auf allen Fassungen
-/// `Stil.kuehl`.
+/// `Stil.akzent`.
 ///
 /// **Deckend, nicht durchsichtig.** Zuerst lag die Tönung direkt auf dem, was
 /// darunter war — auf dunklem Grund stimmte das, über dem Titelbild der
@@ -594,13 +688,16 @@ struct AbzeichenStil: ButtonStyle {
                 .overlay {
                     Capsule().strokeBorder(.white.opacity(fokus || anderesGeraet ? 0 : 0.18))
                 }
-                .scaleEffect(fokus ? 1.06 : 1)
+                // Die breite Stufe: dieser Stil traegt das Abzeichen ueber dem
+                // Titelbild **und** die 760 Punkt breiten Geraetezeilen. Sechs
+                // Prozent waren dort fuenfundvierzig Punkte.
+                .scaleEffect(fokus ? Stil.fokusLupeBreit : 1)
                 .animation(.easeOut(duration: 0.16), value: fokus)
         }
 
         private var vordergrund: Color {
             if fokus { return Stil.grund }
-            return anderesGeraet ? Stil.kuehl : .white
+            return anderesGeraet ? Stil.akzent : .white
         }
 
         @ViewBuilder
@@ -608,7 +705,7 @@ struct AbzeichenStil: ButtonStyle {
             if fokus {
                 Capsule().fill(.white)
             } else if anderesGeraet {
-                Capsule().fill(Stil.kuehl.opacity(0.18))
+                Capsule().fill(Stil.akzent.opacity(0.18))
                     .background(Stil.grund, in: Capsule())
             } else {
                 Capsule().fill(Stil.erhoeht)
@@ -638,7 +735,9 @@ struct Besetzungskachel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Bild(url: bild, breite: 208, hoehe: 208, ecke: 104)
+            // Halbe Kantenlaenge heisst Kreis — keine Stufe der Eckenleiter,
+            // sondern die Form selbst, wie am iPhone bei `ecke: 38` auf 76.
+            Bild(url: bild, breite: 208, hoehe: 208, ecke: 208 / 2)
 
             Text(name)
                 .font(Stil.kachel)
@@ -661,10 +760,11 @@ struct Besetzungskachel: View {
 
 /// Fokus auf dem Profilbild.
 ///
-/// `KachelStil` allein reicht hier nicht: ×1,08 auf 60 Punkt sind fünf
-/// Punkte, das sieht man aus drei Metern nicht. Ein Bild kann auch nicht
-/// heller werden wie eine Kachel — deshalb hier ein Ring in der Akzentfarbe,
-/// dieselbe Rolle wie überall: er zeigt eine Auswahl.
+/// `KachelStil` allein reicht hier nicht: `fokusLupe` (1,06) auf 60 Punkt sind
+/// vier Punkte, das sieht man aus drei Metern nicht. Deshalb `fokusLupeKlein`
+/// — und weil ein Bild nicht heller werden kann wie eine Kachel, zusätzlich
+/// ein Ring in der Akzentfarbe, dieselbe Rolle wie überall: er zeigt eine
+/// Auswahl.
 struct ProfilStil: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         Inhalt(configuration: configuration)
@@ -683,7 +783,7 @@ struct ProfilStil: ButtonStyle {
                             .padding(-8)
                     }
                 }
-                .scaleEffect(fokus ? 1.10 : 1)
+                .scaleEffect(fokus ? Stil.fokusLupeKlein : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }
@@ -705,6 +805,23 @@ struct ProfilStil: ButtonStyle {
 struct Handlungstafel: View {
     let handlungen: [Titelhandlung]
     @Binding var offen: Bool
+    /// **Welche Zeile gewaehlt ist — sie traegt den Akzent.**
+    ///
+    /// Die Tafeln mit einer Auswahl (Filter, Sortierung, Bibliothek) zeigten
+    /// sie nur ueber das Zeichen: gefuellter Haken gegen leeren Kreis, beide
+    /// in Weiss. Das ist eine Formstufe, und die ueberlebt drei Meter so
+    /// wenig wie eine Helligkeitsstufe — derselbe Grund, aus dem der
+    /// gewaehlte Filterchip den Akzent trug (siehe `ChipStil`). Mit dem Chip
+    /// ist die Wahl in diese Tafel gewandert; der Akzent geht mit.
+    ///
+    /// `nil` heisst: eine Liste von Handlungen, keine Auswahl.
+    var gewaehlt: Int? = nil
+    /// **Eine Rubrik vor einer Zeile** — Trennstrich, darunter die
+    /// Ueberschrift. Im Titelmenue von Filme und Serien steht so
+    /// „Bibliotheken" ueber den einzelnen Bibliotheken, abgesetzt von „Alle"
+    /// und „Sammlungen", die keine sind. Dieselbe Rubrik wie im
+    /// `Auswahlblatt` am iPhone.
+    var rubrik: (Int) -> LocalizedStringKey? = { _ in nil }
 
     /// Der Fokus muss beim Aufklappen hineinwandern. tvOS legt ihn nicht von
     /// selbst um, solange der Auslöser stehen bleibt — und der bleibt.
@@ -713,6 +830,21 @@ struct Handlungstafel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(handlungen.enumerated()), id: \.element.id) { paar in
+                if let ueber = rubrik(paar.offset) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Trennlinie()
+                        Text(ueber)
+                            .font(Stil.gruppe)
+                            .tracking(Stil.sperrungGruppe)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Self.rubrikEinzug)
+                            .padding(.top, Stil.reihenKopfLuft)
+                            .padding(.bottom, 8)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                }
                 Button {
                     // Erst zu, dann tun: mehrere Handlungen öffnen selbst
                     // etwas — ein Blatt über einem offenen Blatt wäre falsch.
@@ -721,6 +853,8 @@ struct Handlungstafel: View {
                 } label: {
                     HStack(spacing: 22) {
                         Image(systemName: paar.element.symbol)
+                            .foregroundStyle(paar.offset == gewaehlt ? Stil.akzent
+                                             : paar.element.warnend ? Stil.warnung : Stil.schrift)
                             .frame(width: 38)
                         paar.element.beschriftung
                         Spacer(minLength: 0)
@@ -728,6 +862,7 @@ struct Handlungstafel: View {
                     .foregroundStyle(paar.element.warnend ? Stil.warnung : Stil.schrift)
                 }
                 .buttonStyle(ZeilenStil())
+                .accessibilityAddTraits(paar.offset == gewaehlt ? .isSelected : [])
                 .focused($erste, equals: paar.offset == 0)
             }
         }
@@ -739,10 +874,13 @@ struct Handlungstafel: View {
         // Beschnitten, damit die oberste und unterste Zeile in der Rundung
         // der Tafel enden statt darueber hinauszustehen.
         .frame(width: Self.breite)
-        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
-        .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
-        .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
+        // **Kein Rand, kein Schatten.** Tiefe kommt aus der
+        // Flaechenhelligkeit — `erhoeht` liegt schon eine Stufe ueber dem
+        // Grund. Der Schatten war mit Radius 40 der groesste der App und
+        // widerspricht BRAND 4 („keine Schatten, nirgends"); auf drei Meter
+        // wird er ohnehin zu Schlamm.
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
         .focusSection()
         .task { erste = true }
         .onExitCommand { offen = false }
@@ -757,6 +895,10 @@ struct Handlungstafel: View {
 
     /// Luft zwischen Ausloeser und Tafel.
     static let luft: CGFloat = 16
+
+    /// Der Einzug der Rubrik — derselbe wie der Text einer Zeile
+    /// (`ZeilenStil`) und die `Trennlinie`, damit alles an einer Kante steht.
+    static let rubrikEinzug: CGFloat = 26
 
     /// **An welcher Kante die Tafel unter ihrem Ausloeser haengt.**
     ///
@@ -881,8 +1023,9 @@ struct Kopfauskunft<Schluss: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
-                .font(.system(size: 60, weight: .bold))
-                .tracking(-1.4)
+                // Seitentitel aus der Leiter; 60 gibt es dort nicht.
+                .font(Stil.titelGross)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 // Ein langer Titel schrumpft, statt die Seite zu verschieben.
@@ -891,9 +1034,12 @@ struct Kopfauskunft<Schluss: View>: View {
 
             if let zweitzeile {
                 Text(zweitzeile)
-                    .font(.system(size: 38, weight: .semibold))
-                    .tracking(-0.3)
-                    .foregroundStyle(Stil.schrift.opacity(0.78))
+                    // Blattrubrik aus der Leiter, und der Ton als Token —
+                    // 78 Prozent Deckkraft aendert ihre Wirkung, sobald etwas
+                    // darunter liegt, und hier liegt ein Heldbild darunter.
+                    .font(Stil.rubrikGross)
+                    .tracking(Stil.sperrungRubrik)
+                    .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(1)
                     .frame(height: 44, alignment: .leading)
                     .padding(.top, 10)
@@ -901,7 +1047,11 @@ struct Kopfauskunft<Schluss: View>: View {
 
             HStack(spacing: 24) {
                 Text(angabenzeile)
-                    .font(.system(size: 29))
+                    // **Eine Angabe, also 24.** Jahr, Laufzeit und Gattung
+                    // stehen in der Leiter auf 12 am iPhone (`Stil.klein`),
+                    // hier auf dem Doppelten. Vorher 29 — eine Zahl aus
+                    // Apples tvOS-Rampe, die auf keiner Stufe liegt.
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schrift.opacity(0.62))
                     .lineLimit(1)
 
@@ -919,7 +1069,7 @@ struct Kopfauskunft<Schluss: View>: View {
             // `<p>` und `&amp;`. Auf drei Meter Entfernung stand das wörtlich
             // im Bild.
             Text(item.beschreibung ?? "")
-                .font(.system(size: 29))
+                .font(Stil.koerper)
                 .lineSpacing(Stil.beschreibungLuft)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
                 // **Immer drei Zeilen**, auch wenn der Folgentitel darueber
@@ -965,12 +1115,12 @@ struct Restzeitmarke: View {
     var body: some View {
         if let rest = item.restzeitText {
             Label(rest, systemImage: "clock")
-                .font(.system(size: 27, weight: .medium))
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.akzent)
                 .lineLimit(1)
         } else if item.istGesehen {
             Label("Gesehen", systemImage: "checkmark")
-                .font(.system(size: 27, weight: .medium))
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.akzent)
                 .lineLimit(1)
         }
@@ -1044,6 +1194,12 @@ struct Kulisse: View {
         ZStack {
             if let bild {
                 bild.resizable().aspectRatio(contentMode: .fill)
+            } else if let url, !Eigenkoepfe.fuer(url).isEmpty {
+                // **Nur hinter einem Vorposten.** `AsyncImage` kann keine
+                // eigenen Header senden (Issue #4); `Netzbild` holt ueber den
+                // `Bildspeicher`, und der kann es. Fuer alle anderen bleibt
+                // es beim Bisherigen.
+                Netzbild(url: url, vorrang: true)
             } else {
                 AsyncImage(url: url) { phase in
                     if case let .success(geladen) = phase {
@@ -1236,12 +1392,12 @@ struct Staffelpille: View {
         Button { offen.toggle() } label: {
             HStack(spacing: 14) {
                 Text(name)
-                    .font(.system(size: 27, weight: .semibold))
+                    .font(Stil.knopf)
                 // Deckkraft statt fester Farbe: der Pfeil erbt die Schrift
                 // des Knopfs. Fest halbweiss verschwand er auf der weissen
                 // Fokusflaeche.
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(Stil.gruppe)
                     .opacity(0.6)
             }
         }
@@ -1285,9 +1441,10 @@ struct TVUebernahmeauswahl: View {
             VStack(spacing: 34) {
                 VStack(spacing: 10) {
                     Text("Wo weiterschauen?")
-                        .font(.system(size: 42, weight: .semibold))
+                        .font(Stil.unterseitentitel)
+                        .tracking(Stil.sperrungUnterseite)
                     Text("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.")
-                        .font(.system(size: 22))
+                        .font(Stil.klein)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -1301,15 +1458,15 @@ struct TVUebernahmeauswahl: View {
                                     .frame(width: 40)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(s.geraetename ?? "Gerät")
-                                        .font(.system(size: 26, weight: .semibold))
+                                        .font(Stil.listentitel)
                                     Text(s.titelzeile)
-                                        .font(.system(size: 20))
+                                        .font(Stil.klein)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                                 Text(Spielzeit.text(s.stand?.stelle ?? 0))
-                                    .font(.system(size: 20).monospacedDigit())
+                                    .font(Stil.klein.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 28)
@@ -1348,10 +1505,18 @@ struct Ladefeld: View {
     @State private var hell = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: ecke)
+        RoundedRectangle(cornerRadius: ecke, style: .continuous)
             .fill(Stil.flaeche)
             .opacity(hell ? 1 : 0.5)
             .onAppear {
+                // **Kein endloses Pulsieren gegen die Systemeinstellung.**
+                // Auf einer leeren Bibliothek pulsiert sonst das ganze
+                // Raster, und `accessibilityHidden` hilft dagegen nicht —
+                // wer die Bewegung nicht sehen will, sieht sie trotzdem.
+                // Die Flaeche steht dann still und hell da; die Form ist die
+                // Aussage, nicht die Bewegung. Die iOS-Fassung macht es
+                // genauso.
+                guard !Stil.bewegungReduziert else { hell = true; return }
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                     hell = true
                 }
@@ -1370,8 +1535,8 @@ struct Kachelplatzhalter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Ladefeld().frame(width: breite, height: hoehe)
-            Ladefeld(ecke: 4).frame(width: breite * 0.8, height: 20).padding(.top, 14)
-            Ladefeld(ecke: 4).frame(width: breite * 0.4, height: 16).padding(.top, 6)
+            Ladefeld(ecke: Stil.eckeBalken).frame(width: breite * 0.8, height: 20).padding(.top, 14)
+            Ladefeld(ecke: Stil.eckeBalken).frame(width: breite * 0.4, height: 16).padding(.top, 6)
         }
         .frame(width: breite, alignment: .leading)
     }
@@ -1401,7 +1566,7 @@ struct Reihenplatzhalter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Ladefeld(ecke: 6).frame(width: 300, height: 30)
+            Ladefeld(ecke: Stil.eckeBalken).frame(width: 300, height: 30)
             HStack(spacing: Stil.kachelAbstand) {
                 ForEach(0 ..< 5, id: \.self) { _ in Kachelplatzhalter(quer: quer) }
             }
@@ -1436,23 +1601,38 @@ struct Kachelplakette: View {
     let marke: Kachelmarke
 
     var body: some View {
-        HStack(spacing: 5) {
+        // **Die Masse des iPhones, verdoppelt** — Zeichen 10, Text
+        // `Stil.plakette`, Innenabstand 5/6 auf 3, Aussenabstand 6. Hier
+        // stand eine halb uebernommene Fassung: 15 fett und 17 halbfett sind
+        // weder iPhone-Stufen noch Fernseherstufen, und der Innenabstand war
+        // nur nach Augenmass vergroessert.
+        HStack(spacing: 6) {
             if marke == .gesehen {
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .bold))
+                Image(systemName: "checkmark").font(Stil.plakette)
             }
             if let text = wortlaut {
-                Text(verbatim: text).font(.system(size: 17, weight: .semibold))
+                // Ohne Sperrung, wie am iPhone: „3 offen" und „2 Staffeln"
+                // sind gewoehnliche Woerter, keine Versalien.
+                Text(verbatim: text).font(Stil.plakette)
             }
         }
         .foregroundStyle(Stil.schrift)
-        .padding(.horizontal, wortlaut == nil ? 9 : 11)
-        .padding(.vertical, 5)
+        .padding(.horizontal, wortlaut == nil ? 10 : 12)
+        .padding(.vertical, 6)
         .background {
-            RoundedRectangle(cornerRadius: 10)
+            // `eckeKlein` (14), nicht `eckeKachel`: die Marke ist rund 36 Punkt
+            // hoch, die Kachel darunter 208 breit — dasselbe Mass waere an ihr
+            // eine ganz andere Rundung. Die 14 stand hier als Zahl und ist
+            // genau die kleine Stufe geworden; am iPhone steht an derselben
+            // Stelle 9 gegen die 10 der Kachel.
+            RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous)
                 .fill(Stil.grund.opacity(0.78))
-                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Stil.rand) }
+                .overlay {
+                    RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous)
+                        .strokeBorder(Stil.rand)
+                }
         }
-        .padding(10)
+        .padding(12)
     }
 
     private var wortlaut: String? {
@@ -1462,5 +1642,42 @@ struct Kachelplakette: View {
         case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
                                       : String(localized: "\(n) Staffeln")
         }
+    }
+}
+
+/// **Der Quick-Connect-Code, ein Feld je Zeichen.**
+///
+/// Stand zweimal in der App, und zwar verschieden: auf der Quick-Connect-Seite
+/// als Felder in 92 Punkt, beim Aufnehmen eines Servers als eine Zeile in 80
+/// mit Sperrung 14. Derselbe Code, dieselbe Aufgabe — jemand tippt ihn auf
+/// einem anderen Geraet ab — und zwei Gestalten.
+///
+/// Die Felder gewinnen, und die Begruendung stand schon da: getrennt gesetzt
+/// verzaehlt man sich beim Abtippen nicht. Das gilt am Fernseher doppelt, weil
+/// man dabei quer durchs Zimmer liest und die Hand am Telefon hat.
+///
+/// 92 Punkt steht bewusst ausserhalb der Schriftleiter. Die Leiter ordnet
+/// Text; hier geht es nicht um eine Stufe im Gefuege, sondern um Lesbarkeit
+/// auf drei Metern — derselbe Grund, aus dem die Leiter auf dem Fernseher
+/// ueberhaupt verdoppelt ist, nur eine Stufe weiter gedacht.
+struct Codefelder: View {
+    let code: String
+
+    var body: some View {
+        HStack(spacing: 20) {
+            ForEach(Array(code.enumerated()), id: \.offset) { paar in
+                Text(String(paar.element))
+                    .font(.system(size: 92, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 120, height: 160)
+                    .background(Stil.erhoeht,
+                                in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+            }
+        }
+        // Ein Code ist eine Zeichenfolge, kein Wort — sonst liest VoiceOver
+        // „ABCD" als Silbe statt als vier Zeichen.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Code"))
+        .accessibilityValue(Text(verbatim: code.map(String.init).joined(separator: " ")))
     }
 }

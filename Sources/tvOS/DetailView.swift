@@ -266,6 +266,11 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 kopf
 
+                // Ueber „Aehnliche Filme": die Sammlung ist die naehere
+                // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                Sammlungsreihe(model: model, titel: item)
+                    .opacity(eingeblendet ? 1 : 0)
+
                 if !aehnliche.isEmpty {
                     reihenabschnitt {
                         Reihentitel(text: "Ähnliche Filme")
@@ -399,13 +404,13 @@ struct DetailView: View {
             // neu dazukommt.
             let neuerTitel = await frischerTitel
             let neuerPlan = await planung
-            let neueAehnliche = await aehnlich
+            let neueAehnliche = (await aehnlich) ?? []
 
             // Der Trailer steht vorn in den Extras: er war einmal eine eigene
             // Pille, und die Knopfreihe des Entwurfs hat dafuer keinen Platz.
             // Ersatzlos streichen waere falsch — ein Trailer ist etwas zum
             // Abspielen, und dafuer gibt es hier ein Regal.
-            var regal = await extra
+            var regal = (await extra) ?? []
             if let vorschau = await vorschau { regal.insert(vorschau, at: 0) }
 
             withAnimation(.easeOut(duration: 0.32)) {

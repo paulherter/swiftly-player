@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseOut
@@ -23,10 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -74,6 +73,12 @@ class Suchstand {
     /** Was Seerr kennt und der eigene Server nicht — erst, wenn der eigene Server geantwortet hat. */
     var seerr by mutableStateOf<List<Seerrkachel>>(emptyList())
     var sucht by mutableStateOf(false)
+    /**
+     * **Der Server hat nicht geantwortet.** Der Fehler wurde verschluckt, und die leere
+     * Trefferliste sagte danach „Keine Treffer fuer …" — die Suche log damit bei jedem
+     * Netzfehler. Vorlage: `SucheView`, die dafuer den `Leerzustand` mit der Serverformel setzt.
+     */
+    var gestoert by mutableStateOf(false)
     /** Im Suchzustand — geht erst mit dem Kreuz neben dem Feld zurueck, nicht mit der Tastatur. */
     var suchmodus by mutableStateOf(false)
     /** Ein zweiter Tipp auf den Reiter — der oeffnet die Tastatur (`reiterNochmal`). */
@@ -84,6 +89,7 @@ class Suchstand {
     suspend fun suchen(app: SwiftlyAnwendung, sauber: String) {
             if (!Kern.suchbegriffTaugt(sauber)) { treffer = emptyList(); seerr = emptyList(); sucht = false; gesucht = sauber; return }
             sucht = true
+            gestoert = false
             delay(300)
             try {
                 val json = withContext(Dispatchers.IO) { app.kern.suche(sauber).await() }
@@ -92,7 +98,11 @@ class Suchstand {
                 // **Nebeneinander, nicht nacheinander** fuer den Nutzer: die eigenen Treffer stehen schon.
                 seerr = if (app.seerrVerbunden.value) seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
                            else emptyList()
-            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {
+                gestoert = true
+                treffer = emptyList()
+                seerr = emptyList()
+            }
             sucht = false
     }
 }
@@ -126,9 +136,12 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(st.nochmal) { if (st.nochmal != gesehen) { gesehen = st.nochmal; fokus.requestFocus() } }
 
     // Mit Verzoegerung, damit nicht jeder Tastendruck eine Anfrage ausloest.
-    LaunchedEffect(st.begriff) {
+    // `wiederholen` ist der Knopf im Stoerhinweis: derselbe Begriff, neuer Versuch — der
+    // Vergleich mit `gesucht` allein wuerde ihn wegwerfen.
+    var wiederholen by remember { mutableIntStateOf(0) }
+    LaunchedEffect(st.begriff, wiederholen) {
         val sauber = st.begriff.trim()
-        if (sauber == st.gesucht) return@LaunchedEffect
+        if (sauber == st.gesucht && !st.gestoert) return@LaunchedEffect
         st.suchen(app, sauber)
     }
 
@@ -147,10 +160,11 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var kopfHoehe by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().background(Stil.grund).statusBarsPadding()) {
         if (kopfDa) {
+            // `Unschaerfekopf` ohne Versatz: die Suche scrollt nicht unter ihm durch. Titel und Zeichen mittig.
             Row(Modifier.fillMaxWidth().onSizeChanged { kopfHoehe = it.height }.graphicsLayer { alpha = 1f - kopfweg.value }
                     .padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
-                verticalAlignment = Alignment.Top) {
-                Text(uebersetzt("Suchen"), style = Stil.titelGross.copy(letterSpacing = (-0.6).sp), color = Stil.schrift,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(uebersetzt("Suchen"), style = Stil.titelGross, color = Stil.schrift,
                      modifier = Modifier.weight(1f))
                 Kopfziele(app, oeffnen)
             }
@@ -178,9 +192,8 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                        fadeOut(tween(90, easing = Bewegung.weich))) {
                 Box(Modifier.padding(start = 12.dp).size(44.dp).antippen { st.begriff = ""; fokusVerwalter.clearFocus(); st.suchmodus = false },
                     contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(Stil.erhoeht), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Close, contentDescription = uebersetzt("Suche schließen"), tint = Stil.schriftLeise,
-                             modifier = Modifier.size(18.dp))
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
+                        Symbol(Zeichen.Kreuz, 15.dp, farbe = Stil.schriftLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Suche schließen"))
                     }
                 }
             }
@@ -205,12 +218,33 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // **Kein Ring:** stehen schon Treffer da, bleiben sie, bis neue kommen.
                     st.sucht && st.treffer.isEmpty() && st.seerr.isEmpty() -> {
                         ganz("abstand") { Spacer(Modifier.height(12.dp)) }
-                        items(anzahl * 2, key = { "platzhalter$it" }) { Box(Modifier.padding(bottom = 16.dp)) { Kachelplatzhalter() } }
+                        items(anzahl * 2, key = { "platzhalter$it" }) { Box(Modifier.padding(bottom = 20.dp)) { Kachelplatzhalter() } }
                     }
-                    // Beide leer, nicht nur die Bibliothek.
-                    st.treffer.isEmpty() && st.seerr.isEmpty() -> ganz("keine") {
-                        Text(uebersetzt("Keine Treffer für „%@“", sauber), style = Stil.koerper.copy(textAlign = TextAlign.Center),
-                             color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().padding(top = 40.dp))
+                    // **Gestoert ist nicht leer.** Vorher stand hier auch bei einem Netzfehler
+                    // „Keine Treffer fuer …" — eine Aussage ueber den Bestand, die niemand
+                    // geprueft hat.
+                    st.gestoert && st.treffer.isEmpty() && st.seerr.isEmpty() -> ganz("gestoert") {
+                        // Die ganze Serverformel, wie auf jeder anderen Seite — oben 24.
+                        Box(Modifier.fillMaxWidth().padding(top = 24.dp).height(360.dp)) {
+                            Leerzustand(Zeichen.ServerWeg, uebersetzt("Server ist abgetaucht"),
+                                uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serveradresse()),
+                                hauptknopf = uebersetzt("Erneut versuchen") to { wiederholen++ })
+                        }
+                    }
+                    // Beide leer, nicht nur die Bibliothek — ein Leerzustand, darunter der Verlauf.
+                    st.treffer.isEmpty() && st.seerr.isEmpty() -> {
+                        ganz("keine") {
+                            Box(Modifier.fillMaxWidth().padding(top = 24.dp).height(300.dp)) {
+                                Leerzustand(Zeichen.Lupe, uebersetzt("Nichts gefunden zu „%@“", sauber),
+                                    uebersetzt("Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."))
+                            }
+                        }
+                        if (verlauf.isNotEmpty()) ganz("verlauf-leer") {
+                            Verlauf(verlauf, loeschen = { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }) { wort ->
+                                st.begriff = wort
+                                fokusVerwalter.clearFocus()
+                            }
+                        }
                     }
                     // **Nach Art gruppiert, wie bei Plex.** Folgen fragt der Server gar nicht erst ab.
                     else -> {
@@ -221,23 +255,29 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         "Filme" to { k: Rasterkachel -> k.typ == "Movie" },
                         "Folgen" to { k: Rasterkachel -> k.typ == "Episode" },
                         "Weiteres" to { k: Rasterkachel -> k.typ !in setOf("Series", "Movie", "Episode") },
-                    ).forEach { (titel, passt) ->
+                    ).filter { (_, passt) -> st.treffer.any(passt) }.forEachIndexed { stelle, (titel, passt) ->
                         val gruppe = st.treffer.filter(passt)
+                        val ersteGruppe = stelle == 0 && !(st.seerr.isNotEmpty() && st.treffer.isNotEmpty())
                         if (gruppe.isNotEmpty()) {
                             ganz("titel-$titel") {
-                                Text(uebersetzt(titel), style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
-                                     color = Stil.schriftLeise, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+                                // Listenzeile, nicht `Stil.gruppe`: darunter stehen Kacheln,
+                                // und eine Versalienzeile waere dort eine dritte Bauart.
+                                // Oben 14 — bei allen ausser der ersten Gruppe stehen davon schon 10 unter
+                                // dem Raster darueber (20 Zeilenabstand statt 10 Rasterende).
+                                Text(uebersetzt(titel), style = Stil.listentitel,
+                                     color = Stil.schriftLeise, modifier = Modifier.padding(top = if (ersteGruppe) 14.dp else 4.dp, bottom = 6.dp))
                             }
                             // Jeder Treffer fuehrt auf seine Seite — nichts spielt direkt aus der Suche (A7).
                             items(gruppe, key = { it.id }) { k ->
-                                RasterKachelAnsicht(k, Modifier.padding(bottom = 16.dp)) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
+                                // 20 wie in Bibliothek, Merkliste und Genre — die schmale Suche stand als einzige auf 16.
+                                RasterKachelAnsicht(k, Modifier.padding(bottom = 20.dp)) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
                             }
                         }
                     }
                     if (st.seerr.isNotEmpty()) {
-                        ganz("block-seerr") { Blocktitel(uebersetzt("Kann angefragt werden"), st.seerr.size, Modifier.padding(top = 8.dp)) }
+                        ganz("block-seerr") { Blocktitel(uebersetzt("Über Seerr anfragen"), st.seerr.size, Modifier.padding(top = 8.dp)) }
                         items(st.seerr, key = { "seerr-" + it.schluessel }) { t ->
-                            SeerrkachelAnsicht(t, Modifier.padding(bottom = 16.dp)) {
+                            SeerrkachelAnsicht(t, Modifier.padding(bottom = 20.dp)) {
                                 app.seerrTreffer[t.schluessel] = t
                                 oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
                             }
@@ -259,25 +299,27 @@ private fun LazyGridScope.ganz(schluessel: String, inhalt: @Composable () -> Uni
 private fun Suchfeld(text: String, aendern: (String) -> Unit, fokus: FocusRequester, modifier: Modifier,
                      amTippen: (Boolean) -> Unit, abschicken: () -> Unit) {
     val tastatur = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    Row(modifier.height(44.dp).clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.flaeche)
+    // 48 wie jedes andere Feld — es stand als einziges auf 44.
+    Row(modifier.heightIn(min = Stil.knopfHoehe).clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.flaeche)
             .clickable(remember { MutableInteractionSource() }, null) { fokus.requestFocus() }
             .padding(start = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(Icons.Filled.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.45f), modifier = Modifier.size(20.dp))
+        Symbol(Zeichen.Lupe, 17.dp, farbe = Stil.schriftSehrLeise)
         Box(Modifier.weight(1f)) {
-            if (text.isEmpty()) Text(uebersetzt("Filme, Serien, Folgen"), style = TextStyle(fontSize = 16.sp), color = Color.White.copy(alpha = 0.38f))
+            if (text.isEmpty()) Text(uebersetzt("Filme, Serien, Folgen"), style = Stil.koerper, color = Stil.schriftSehrLeise)
             BasicTextField(value = text, onValueChange = aendern, singleLine = true,
-                textStyle = TextStyle(fontSize = 16.sp, color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
+                textStyle = Stil.koerper.copy(color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
                 // Wie iOS: Suchen schickt ab **und** schliesst die Tastatur — die Treffer stehen ja schon.
                 keyboardActions = KeyboardActions(onSearch = { abschicken(); tastatur?.hide() }),
                 modifier = Modifier.fillMaxWidth().focusRequester(fokus).onFocusChanged { amTippen(it.isFocused) })
         }
         if (text.isNotEmpty()) {
+            // `xmark.circle.fill` mit Palette: Kreis `schriftSehrLeise`, Kreuz ausgestanzt in `flaeche`.
             Box(Modifier.size(44.dp).antippen { aendern("") }, contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Close, contentDescription = uebersetzt("Eingabe löschen"), tint = Stil.schriftLeise, modifier = Modifier.size(18.dp))
+                Symbol(Zeichen.KreuzKreisVoll, 17.dp, farbe = Stil.schriftSehrLeise, beschreibung = uebersetzt("Eingabe löschen"))
             }
-        } else Spacer(Modifier.width(4.dp))
+        } else Spacer(Modifier.width(14.dp))
     }
 }
 
@@ -285,7 +327,7 @@ private fun Suchfeld(text: String, aendern: (String) -> Unit, fokus: FocusReques
 private fun Leerhinweis() {
     Column(Modifier.fillMaxWidth().padding(top = 70.dp), horizontalAlignment = Alignment.CenterHorizontally,
            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(Icons.Filled.Search, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(38.dp))
+        Symbol(Zeichen.Lupe, 44.dp, farbe = Stil.schriftSehrLeise)
         Text(uebersetzt("Filme, Serien und Folgen durchsuchen"), style = Stil.koerper, color = Stil.schriftLeise)
     }
 }
@@ -294,19 +336,21 @@ private fun Leerhinweis() {
 @Composable
 private fun Verlauf(woerter: List<String>, loeschen: () -> Unit, waehlen: (String) -> Unit) {
     Column {
-        Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(uebersetzt("Zuletzt gesucht").uppercase(),
-                 style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-                 color = Stil.schriftSehrLeise, modifier = Modifier.weight(1f))
-            Text(uebersetzt("Löschen"), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = Stil.schriftSehrLeise,
+        Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.Bottom) {
+            // Rubrik: 20 Semibold in Normalschreibung, `schriftLeise` (BRAND 2). Eine
+            // Suchrubrik hat keine andere Rolle als eine Einstellungsrubrik.
+            Text(uebersetzt("Zuletzt gesucht"),
+                 style = Stil.reihe,
+                 color = Stil.schriftLeise, modifier = Modifier.weight(1f))
+            Text(uebersetzt("Löschen"), style = Stil.kachel, color = Stil.schriftSehrLeise,
                  modifier = Modifier.antippen(loeschen))
         }
         woerter.forEachIndexed { i, wort ->
             if (i > 0) Box(Modifier.padding(start = 34.dp).fillMaxWidth().height(1.dp).background(Stil.linie))
-            Row(Modifier.fillMaxWidth().height(44.dp).druckzeile { waehlen(wort) },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Icon(Icons.Filled.History, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.width(20.dp).height(17.dp))
-                Text(wort, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift,
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).druckzeile { waehlen(wort) },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Symbol(Zeichen.Verlauf, 15.dp, farbe = Stil.schriftSehrLeise) }
+                Text(wort, style = Stil.listentitel, color = Stil.schrift,
                      maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

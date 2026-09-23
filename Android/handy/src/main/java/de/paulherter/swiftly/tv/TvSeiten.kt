@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.graphics.Color as AndroidColor
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.EaseInOut
@@ -20,9 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -37,7 +37,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -146,10 +145,13 @@ private fun TvGrundton(art: String) {
  * bleibt es beim blossen Hinweis, wie in Merkliste und Suche.
  */
 @Composable
-fun TvLeer(kopfzeile: String, text: String, symbol: ImageVector? = null, knopf: Pair<String, () -> Unit>? = null) {
+fun TvLeer(kopfzeile: String, text: String, symbol: Zeichen? = null, knopf: Pair<String, () -> Unit>? = null) {
     Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         symbol?.let {
-            Icon(it, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(38.dp).padding(bottom = 10.dp))
+            // **44, nicht 38** — tvOS setzt 88, hier gilt die Haelfte. Der Grad stand als
+            // einzige Zahl in der Datei neben der Leiter. Kein Kreis darum: den traegt der
+            // Leerzustand am Telefon, tvOS laesst ihn weg, und das bleibt so.
+            Symbol(it, 44.dp, Modifier.padding(bottom = 10.dp), farbe = Stil.schriftSehrLeise)
         }
         Text(kopfzeile, style = TvStil.reihe, color = Stil.schrift)
         Text(text, style = TvStil.koerper, color = Stil.schriftLeise, textAlign = TextAlign.Center,
@@ -161,47 +163,99 @@ fun TvLeer(kopfzeile: String, text: String, symbol: ImageVector? = null, knopf: 
 }
 
 /**
- * Vorlage: `BibliothekView` auf tvOS. **Eine Chipreihe**: die Bibliothek als Kapsel mit Tafel (nur
- * wenn es mehrere gibt), dann die Filter; die Sortierung ist ebenfalls eine Kapsel mit Tafel — vier Chips, von denen immer
- * genau einer an ist, sind eine Auswahl, kein Filter. Kein Kopfblock: eine Bibliothek beschreibt
- * keinen einzelnen Titel.
+ * **Ein Wortlaut fuer „der Server hat nicht geantwortet", nicht dreizehn.** Vorlage:
+ * `Stoerzustand` in `Sources/tvOS/Stil.swift`.
+ *
+ * Genau derselbe `TvLeer`, den Bibliothek, Startseite und Suche schon zeigen — mit der
+ * **Serverformel**: „Server ist abgetaucht" / „‹Adresse› antwortet nicht. Laeuft er noch, oder
+ * haengt das WLAN?" / „Erneut versuchen". Auf Android TV stand dafuer ein eigener Baustein mit
+ * eigenem Wortlaut („Der Server antwortet nicht" / „Prueaf die Verbindung…"), und in Bibliothek,
+ * Merkliste, Suche und Genre stand gar keiner: ein Netzfehler las sich dort als „hier liegt
+ * nichts".
+ *
+ * `adresse` ist wahlweise: auf einer Seerr-Seite hat Jellyseerr geschwiegen, nicht der eigene
+ * Server, und die falsche Adresse im Satz waere die falsche Fehlersuche.
+ *
+ * Das Zeichen ist `CloudOff` statt Apples `externaldrive.badge.xmark` — Android hat kein Symbol
+ * fuer ein externes Laufwerk.
+ */
+@Composable
+fun TvStoerung(app: SwiftlyAnwendung, adresse: String? = null, erneut: (() -> Unit)? = null) {
+    TvLeer(uebersetzt("Server ist abgetaucht"),
+           uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", adresse ?: app.serveradresse()),
+           symbol = Zeichen.ServerWeg,
+           knopf = erneut?.let { uebersetzt("Erneut versuchen") to it })
+}
+
+/**
+ * Vorlage: `BibliothekView` auf tvOS. **Eine Chipreihe**: vorn die Wahl als Kapsel mit Tafel — seit
+ * dem 23.09.2026 das Titelmenue des iPhones: „Alle", „Sammlungen", Strich und Rubrik
+ * „Bibliotheken", dann die Bibliotheken (`Bereichsangebot`, nur ab `istMenue`) —, dann die Filter;
+ * die Sortierung ist ebenfalls eine Kapsel mit Tafel. Die Kapsel nennt den Wert: „Alle Filme",
+ * nicht wie am iPhone nur „Filme" — die Kopfleiste sagt schon, wo man ist.
+ *
+ * **Bei „Sammlungen" nur die Anzahl**: die Liste muss man weder filtern noch umsortieren. Das Gitter
+ * zeigt dann die Sammlungen mit „3 Filme" und, ohne eigenes Bild, dem Mosaik.
  */
 @Composable
 fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffnen: (Ziel) -> Unit) {
     val stand = remember { app.bibliotheken.getOrPut(art) { Bibliotheksstand(art, app.ablage) } }
     val lauf = rememberCoroutineScope()
-    LaunchedEffect(stand.gewaehlt?.id, stand.sortierung, stand.filter) { stand.laden(app.kern) }
-    val fokus = ersterFokus(!stand.laedt)
+    LaunchedEffect(stand.sortierung, stand.filter) { stand.laden(app.kern) }
+    val sammlungen = stand.sammlungenGewaehlt
+    val fokus = ersterFokus(!stand.laedt || sammlungen)
     Box(Modifier.fillMaxSize()) {
         // Je Bereich ein eigener Grundton — Serien im Akzent, Filme in der Komplementaerfarbe.
         // Man sieht am Grund, wo man ist, bevor man die Leiste liest.
         TvGrundton(art)
-        TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {
+        TvRaster(if (sammlungen) emptyList() else stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen,
+                 laedt = stand.laedt && !sammlungen, mitUnterzeile = false, kopf = {
             Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // **Die Bibliothek als Kapsel, nur ab zwei** (D9) — die Namen kommen vom Server
-                    // und stehen wie sie sind. Die Tafel oeffnet wie die der Sortierung; der Fokus
-                    // kehrt ueber `Fokusmerker` auf die Kapsel zurueck.
-                    if (stand.sammlungen.size > 1) {
-                        TvKapsel(stand.gewaehlt?.name ?: "") {
-                            app.blatt.value = Blattwunsch(uebersetzt("Bibliothek"), stand.sammlungen.map { Wahl(it.id, it.name) }, stand.gewaehlt?.id) { id ->
-                                stand.sammlungen.firstOrNull { it.id == id }?.let { if (it.id != stand.gewaehlt?.id) stand.waehlen(it) }
+                    // **Die Wahl als Kapsel, nur wenn es etwas zu waehlen gibt** — die Namen der
+                    // Bibliotheken kommen vom Server und stehen wie sie sind. Die Tafel oeffnet wie die
+                    // der Sortierung; der Fokus kehrt ueber `Fokusmerker` auf die Kapsel zurueck.
+                    if (stand.istMenue) {
+                        TvKapsel(stand.beschriftung(stand.wahl)) {
+                            // Ohne Kopf, wie die `Handlungstafel` des Titelmenues auf tvOS.
+                            app.blatt.value = Blattwunsch("", stand.angebot.map { Wahl(it.wert, stand.beschriftung(it.wert)) },
+                                                          stand.wahl, rubriken = stand.rubriken) { neu ->
+                                if (neu != stand.wahl) {
+                                    stand.waehlen(neu)
+                                    lauf.launch { stand.laden(app.kern) }
+                                }
                             }
                         }
-                        Box(Modifier.size(1.dp, 15.dp).background(Stil.rand))
+                        // Ohne Filter („Sammlungen") trennt der Strich nichts und faellt weg.
+                        if (!sammlungen) Box(Modifier.size(1.dp, 15.dp).background(Stil.rand))
                     }
-                    filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
+                    if (!sammlungen) filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
                     Spacer(Modifier.weight(1f))
-                    if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                    TvKapsel(Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
-                        app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
+                    if (sammlungen) {
+                        if (stand.sammlungsliste.isNotEmpty())
+                            Text(uebersetzt("%lld Sammlungen", stand.sammlungsliste.size), style = TvStil.klein, color = Stil.schriftLeise)
+                    } else {
+                        if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
+                        TvKapsel(Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
+                            app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
+                        }
                     }
                 }
-                if (!stand.laedt && stand.items.isEmpty()) {
+                if (sammlungen) {
+                    // Die Liste steht schon im Speicher: „Sammlungen" gibt es in der Tafel nur, wenn es welche gibt.
+                } else if (stand.gestoert) TvStoerung(app, erneut = { lauf.launch { stand.laden(app.kern) } })
+                else if (!stand.laedt && stand.items.isEmpty()) {
                     if (stand.filter == "alle") TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
-                        symbol = Icons.Filled.Inbox, knopf = uebersetzt("Aktualisieren") to { lauf.launch { stand.laden(app.kern) } })
+                        symbol = Zeichen.Ablage, knopf = uebersetzt("Aktualisieren") to { lauf.launch { stand.laden(app.kern) } })
                     else TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Unter diesem Filter liegt gerade nichts."),
-                        symbol = Icons.Filled.FilterList, knopf = uebersetzt("Filter zurücksetzen") to { stand.filterSetzen("alle") })
+                        symbol = Zeichen.Filter, knopf = uebersetzt("Filter zurücksetzen") to { stand.filterSetzen("alle") })
+                }
+            }
+        }, mehr = {
+            if (sammlungen) items(stand.sammlungsliste.size, key = { "sammlung" + stand.sammlungsliste[it].id }) { i ->
+                val s = stand.sammlungsliste[i]
+                TvSammlungKachel(app, s, art, if (i == 0) Modifier.focusRequester(fokus) else Modifier) {
+                    oeffnen(sammlungsziel(s.id, s.name, art))
                 }
             }
         })
@@ -222,17 +276,18 @@ fun TvMerkliste(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 gattungen.forEach { g -> TvChip(g.text, stand.gattung == g.wert) { stand.gattungSetzen(g.wert) } }
                 Spacer(Modifier.weight(1f))
                 if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp, symbolNachText = true) {
+                TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Zeichen.WinkelRunter, hoehe = TvStil.chipHoehe + 6.dp, symbolNachText = true) {
                     app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
                 }
             }
             // Kein Ausweg-Knopf hier — anders als in der Bibliothek, tvOS' `MerklisteView.leer`
             // hat keinen: es gibt nichts zu aktualisieren oder zurueckzusetzen, nur den Hinweis,
             // wo man Titel hinzufuegt.
-            if (!stand.laedt && stand.items.isEmpty()) {
+            if (stand.gestoert) TvStoerung(app, erneut = { lauf.launch { stand.laden(app.kern) } })
+            else if (!stand.laedt && stand.items.isEmpty()) {
                 TvLeer(uebersetzt("Noch nichts gemerkt"),
                     uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."),
-                    symbol = Icons.Filled.Bookmark)
+                    symbol = Zeichen.LesezeichenVoll)
             }
         }
     })
@@ -257,18 +312,20 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             var imFeld by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 BasicTextField(st.begriff, { st.begriff = it }, singleLine = true,
-                    textStyle = TextStyle(fontSize = 17.sp, color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
+                    textStyle = TvStil.koerper.copy(color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { merken() }),
                     modifier = Modifier.width(460.dp).focusRequester(feld).onFocusChanged { imFeld = it.isFocused },
                     decorationBox = { innen ->
+                        // **Kein Rand, auch nicht im Fokus** — ein Suchfeld ist eine
+                        // gefuellte Kapsel, kein gezeichneter Rahmen, und der Fokus hat mit
+                        // der hellen Flaeche schon seine Anzeige. `flaeche` statt `erhoeht`.
                         Row(Modifier.height(44.dp).clip(RoundedCornerShape(TvStil.ecke))
-                                .background(if (imFeld) TvStil.fokusflaeche else Stil.erhoeht)
-                                .border(1.dp, if (imFeld) Color.White.copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(TvStil.ecke))
+                                .background(if (imFeld) TvStil.fokusflaeche else Stil.flaeche)
                                 .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Search, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(18.dp))
+                            Symbol(Zeichen.Lupe, 15.dp, farbe = Stil.schriftLeise, staerke = Staerke.Mittel)
                             Spacer(Modifier.width(10.dp))
                             Box(Modifier.weight(1f)) {
-                                if (st.begriff.isEmpty()) Text(uebersetzt("Titel, Serie, Person"), style = TextStyle(fontSize = 17.sp), color = Stil.schriftSehrLeise)
+                                if (st.begriff.isEmpty()) Text(uebersetzt("Titel, Serie, Person"), style = TvStil.koerper, color = Stil.schriftSehrLeise)
                                 innen()
                             }
                         }
@@ -276,17 +333,20 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 if (st.gesucht.isNotEmpty() && st.treffer.isNotEmpty()) Text(uebersetzt("%lld Treffer", st.treffer.size), style = TvStil.klein, color = Stil.schriftLeise)
             }
             when {
-                st.begriff.isBlank() && verlauf.isNotEmpty() -> Column(Modifier.padding(top = 20.dp).width(460.dp).clip(RoundedCornerShape(10.dp)).background(Stil.flaeche).padding(6.dp)) {
-                    Text(uebersetzt("Zuletzt gesucht").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-                         color = Stil.schriftSehrLeise, modifier = Modifier.padding(12.dp))
-                    verlauf.forEach { w -> TvZeile(w, Icons.Filled.History) { st.begriff = w } }
+                st.begriff.isBlank() && verlauf.isNotEmpty() -> Column(Modifier.padding(top = 20.dp).width(460.dp).clip(RoundedCornerShape(TvStil.eckeFlaeche)).background(Stil.flaeche).padding(6.dp)) {
+                    Text(uebersetzt("Zuletzt gesucht"), style = TvStil.reihe,
+                         color = Stil.schriftLeise, modifier = Modifier.padding(12.dp))
+                    verlauf.forEach { w -> TvZeile(w, Zeichen.Verlauf) { st.begriff = w } }
                     // Als letzte Zeile in der Karte, nicht als Knopf daneben — sonst eine Fokusfalle.
-                    TvZeile(uebersetzt("Verlauf löschen"), Icons.Filled.Delete) { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }
+                    TvZeile(uebersetzt("Verlauf löschen"), Zeichen.Papierkorb) { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }
                 }
                 !Kern.suchbegriffTaugt(st.begriff.trim()) -> Text(uebersetzt("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."),
                                                                style = TvStil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(top = 20.dp))
+                // **Gestoert ist nicht leer** — sonst sagt die Suche „Nichts gefunden", wenn
+                // in Wahrheit niemand geantwortet hat.
+                st.gestoert -> TvStoerung(app, erneut = { st.begriff = st.begriff + " "; st.begriff = st.begriff.trim() })
                 !st.sucht && st.gesucht.isNotEmpty() && st.treffer.isEmpty() && st.seerr.isEmpty() ->
-                    TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Versuch es mit einem anderen Wort."), symbol = Icons.Outlined.Search)
+                    TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Versuch es mit einem anderen Wort."), symbol = Zeichen.Lupe)
             }
         }
     }, mehr = {

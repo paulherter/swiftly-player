@@ -48,7 +48,7 @@ struct DarstellungView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .ohneKanteneffekt()
+        .seitenscrollen()
     }
 
     // MARK: Allgemein
@@ -75,7 +75,7 @@ struct DarstellungView: View {
         VStack(alignment: .leading, spacing: 0) {
             Einstellungsgruppe(titel: "Reihen") {
                 ForEach(Array(sichtbareReihen.enumerated()), id: \.element) { stelle, reihe in
-                    if stelle > 0 { Trennstrich().padding(.leading, 48) }
+                    if stelle > 0 { Blattlinie().padding(.leading, Stil.trennEinzugKarte) }
                     Wahlzeile(symbol: reihe.symbol, titel: Text(reihe.name),
                               an: Binding(get: { !model.startAus.contains(reihe) },
                                           set: { an in
@@ -100,14 +100,22 @@ struct DarstellungView: View {
     }
 
     /// Die gezogene Reihe rückt an die Stelle der, auf der sie landet.
+    ///
+    /// **Die Zielstelle wird nach dem Herausnehmen gesucht, nicht davor.**
+    /// Vorher stand sie fest, bevor die Reihe aus der Liste kam — und beim
+    /// Ziehen nach unten rutscht durch das Herausnehmen alles um eine Stelle
+    /// vor. Die Reihe landete damit **hinter** der, auf der man sie abgelegt
+    /// hat: aus A auf C wurde B · C · A statt B · A · C. Nach oben stimmte
+    /// es, weil sich dort vor der Zielstelle nichts verschiebt — deshalb
+    /// faellt so ein Fehler beim Ausprobieren leicht durch.
     private func reiheAblegen(_ quelle: String, auf ziel: Startreihe) {
         guard let bewegt = Startreihe(rawValue: quelle), bewegt != ziel else { return }
         var sichtbar = sichtbareReihen
-        guard let von = sichtbar.firstIndex(of: bewegt),
-              let nach = sichtbar.firstIndex(of: ziel) else { return }
+        guard let von = sichtbar.firstIndex(of: bewegt) else { return }
         withAnimation(Stil.einblenden) {
             sichtbar.remove(at: von)
-            sichtbar.insert(bewegt, at: nach)
+            let stelle = sichtbar.firstIndex(of: ziel) ?? sichtbar.endIndex
+            sichtbar.insert(bewegt, at: stelle)
             model.startReihen = sichtbar + model.startReihen.filter { !sichtbar.contains($0) }
         }
     }
@@ -124,11 +132,11 @@ struct DarstellungView: View {
         VStack(alignment: .leading, spacing: 0) {
             Einstellungsgruppe(titel: "Genres") {
                 form("Als eigene Reihen", symbol: "rectangle.grid.1x2", an: !model.genreChips) { model.genreChips = false }
-                Trennstrich().padding(.leading, 48)
+                Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                 form("Als Chips über den Reihen", symbol: "capsule", an: model.genreChips) { model.genreChips = true }
 
                 ForEach(model.startGenres, id: \.self) { name in
-                    Trennstrich().padding(.leading, 48)
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     Genrezeile(name: name) {
                         withAnimation(Stil.einblenden) {
                             model.startGenres.removeAll { $0 == name }
@@ -139,12 +147,12 @@ struct DarstellungView: View {
                     }
                 }
 
-                Trennstrich()
+                Blattlinie()
                 Button { navigator.oeffne(.genrewahl, in: bereich) } label: {
                     Wertezeile(symbol: "plus", titel: Text("Genre hinzufügen"),
                                akzent: true, pfeil: true, schwebbar: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
             }
         }
     }
@@ -182,29 +190,32 @@ private struct Genrezeile: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "tag")
-                .font(.system(size: 15))
+                .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
-                .frame(width: 22)
+                .frame(width: 20)
             // Vom Server, also nicht übersetzt.
             Text(verbatim: name)
-                .font(.system(size: 15))
+                .font(Stil.listentitel)
                 .foregroundStyle(Stil.schrift)
+                // Genrenamen kommen vom Server; die Zeile hat eine feste
+                // Mindesthoehe, ein Umbruch waere darin abgeschnitten.
+                .lineLimit(1)
             Spacer(minLength: 12)
             Button(action: entfernen) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(Stil.klein.weight(.semibold))
                     .foregroundStyle(Stil.schriftLeise)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckzeile())
             .opacity(schwebt ? 1 : 0.35)
             .accessibilityLabel(Text("Entfernen"))
             Griff()
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .background(schwebt ? Stil.schrift.opacity(0.05) : .clear)
+        .background(schwebt ? Stil.schwebeflaeche : .clear)
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
@@ -226,11 +237,11 @@ private struct Wahlzeile: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.system(size: 15))
+                .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
-                .frame(width: 22)
+                .frame(width: 20)
             titel
-                .font(.system(size: 15))
+                .font(Stil.listentitel)
                 .foregroundStyle(Stil.schrift)
             Spacer(minLength: 12)
             Schalter(an: an)
@@ -240,7 +251,7 @@ private struct Wahlzeile: View {
         // **Die ganze Zeile, nicht nur ihr Inhalt.** In Apples Liste blieb
         // die Schwebefläche so breit wie der Text und füllte die Karte nicht.
         .frame(maxWidth: .infinity, minHeight: 44)
-        .background(schwebt ? Stil.schrift.opacity(0.05) : .clear)
+        .background(schwebt ? Stil.schwebeflaeche : .clear)
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
@@ -253,7 +264,7 @@ private struct Wahlzeile: View {
 private struct Griff: View {
     var body: some View {
         Image(systemName: "line.3.horizontal")
-            .font(.system(size: 13, weight: .medium))
+            .font(Stil.kachel)
             .foregroundStyle(Stil.schriftSehrLeise)
             .frame(width: 22, height: 28)
             .accessibilityHidden(true)
@@ -289,9 +300,11 @@ private extension View {
 private struct Fusszeile: View {
     let text: LocalizedStringKey
     var body: some View {
+        // 12 in `schriftSehrLeise` — „weiss 40 %" traegt gerechnet 3,84:1
+        // und ist fuer Text zu wenig (BRAND 1, ausdruecklich verboten).
         Text(text)
-            .font(.system(size: 12))
-            .foregroundStyle(Stil.schrift.opacity(0.4))
+            .font(Stil.klein)
+            .foregroundStyle(Stil.schriftSehrLeise)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 8)
             .padding(.horizontal, 2)
@@ -307,6 +320,9 @@ struct GenrewahlView: View {
 
     @State private var alle: [String] = []
     @State private var geladen = false
+    /// Sonst behauptet die Seite bei jedem Netzfehler, der Server habe keine
+    /// Genres — eine Aussage, die sie gar nicht treffen konnte.
+    @State private var gestoert = false
 
     private var frei: [String] { alle.filter { !model.startGenres.contains($0) } }
 
@@ -315,7 +331,10 @@ struct GenrewahlView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Unterseitenkopf(titel: "Genre hinzufügen", zurueck: zurueck)
 
-                if geladen, frei.isEmpty {
+                if gestoert, alle.isEmpty {
+                    Stoerhinweis(model: model, erneut: { Task { await gattungenLaden() } },
+                                 abstandOben: 22)
+                } else if geladen, frei.isEmpty {
                     Text(alle.isEmpty ? "Auf deinem Server sind keine Genres hinterlegt."
                                       : "Alle Genres stehen schon auf der Startseite.")
                         .font(Stil.koerper)
@@ -324,7 +343,7 @@ struct GenrewahlView: View {
                 } else if !frei.isEmpty {
                     Einstellungsgruppe(titel: "Auf deinem Server") {
                         ForEach(Array(frei.enumerated()), id: \.element) { stelle, name in
-                            if stelle > 0 { Trennstrich().padding(.leading, 48) }
+                            if stelle > 0 { Blattlinie().padding(.leading, Stil.trennEinzugKarte) }
                             Button {
                                 model.startGenres.append(name)
                                 zurueck()
@@ -332,7 +351,7 @@ struct GenrewahlView: View {
                                 Wertezeile(symbol: "tag", titel: Text(verbatim: name),
                                            schwebbar: true)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckzeile())
                         }
                     }
                 }
@@ -344,10 +363,14 @@ struct GenrewahlView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .ohneKanteneffekt()
-        .task {
-            alle = await model.gattungen()
-            geladen = true
-        }
+        .seitenscrollen()
+        .task { await gattungenLaden() }
+    }
+
+    private func gattungenLaden() async {
+        let geholt = await model.gattungen()
+        gestoert = geholt == nil
+        if let geholt { alle = geholt }
+        geladen = true
     }
 }

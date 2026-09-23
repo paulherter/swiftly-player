@@ -105,6 +105,30 @@ extension App {
 
         /// Die Steuerung einblenden — sie geht sonst nach ein paar Sekunden
         /// von selbst weg, und ein Bildschirmabzug bekaeme sie nie zu sehen.
+        /// Die Aktualisierungssuche anstossen, ohne durch die Einstellungen
+        /// zu klicken — nur Windows, dort gibt es die Zeile.
+        case "update":
+            #if os(Windows)
+            aktualisierungSuchen()
+            #else
+            // **Auf Linux ohne Oberflaeche, aber mit derselben Abfrage.**
+            // Den Knopf gibt es hier nicht; die Kette dahinter — GitHub
+            // fragen, die Antwort lesen, den Installer heraussuchen,
+            // vergleichen — ist dieselbe und laesst sich so pruefen, ohne
+            // auf einen Windows-Rechner angewiesen zu sein.
+            Task.detached {
+                do {
+                    if let stand = try await Aktualisierung.suchen() {
+                        Protokoll.schreib("[Update] neuer Stand \(stand.fassung), Bau \(stand.bau.map(String.init) ?? "—"), \(stand.groesse) Bytes, \(stand.adresse.lastPathComponent)")
+                    } else {
+                        Protokoll.schreib("[Update] nichts Neueres (hier \(Fassung.voll))")
+                    }
+                } catch {
+                    Protokoll.schreib("[Update] Abfrage fehlgeschlagen: \(error)")
+                }
+            }
+            #endif
+
         case "steuerung":  steuerungZeigen()
 
         /// Den Player wieder schliessen.
@@ -289,6 +313,15 @@ extension App {
         /// ohne einen fremden Sehstand anzufassen.
         case "dateispielen" where teile.count > 1:
             let pfad = teile[1]
+            // Auch eine Netzadresse: derselbe Weg, aber mit den Netzoptionen
+            // — so laesst sich messen, was ein laufender Strom beim Anhalten
+            // kostet, ohne einen fremden Sehstand anzufassen.
+            if pfad.hasPrefix("http") {
+                Protokoll.schreib("[Pult] dateispielen \(pfad)")
+                let item = Item(id: "probe", name: "Probe", type: "Movie")
+                spielerOeffnen(item, ab: 0, ausDatei: URL(string: pfad)!)
+                break
+            }
             guard FileManager.default.fileExists(atPath: pfad) else {
                 print("[Pult] dateispielen: keine Datei \(pfad)"); fflush(nil); break
             }

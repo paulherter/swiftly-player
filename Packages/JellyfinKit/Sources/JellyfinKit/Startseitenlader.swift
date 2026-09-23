@@ -84,11 +84,11 @@ public enum Startseitenlader {
         async let angefangen = try? quelle.resumeItems(limit: 20)
         async let naechste = try? quelle.nextUp(limit: 20)
         async let gemeinsam = wunsch.getrennt ? nil
-            : quelle.zuletztHinzugefuegt(in: nil, holen: 60, zeigen: 24)
+            : quelle.zuletztHinzugefuegt(in: nil, holen: 200, zeigen: 24)
         async let filme = wunsch.getrennt
-            ? quelle.zuletztHinzugefuegt(in: wunsch.filmBibliothek, holen: 60, zeigen: 24) : nil
+            ? quelle.zuletztHinzugefuegt(in: wunsch.filmBibliothek, holen: 200, zeigen: 24) : nil
         async let serien = wunsch.getrennt
-            ? quelle.zuletztHinzugefuegt(in: wunsch.serienBibliothek, holen: 60, zeigen: 24) : nil
+            ? quelle.zuletztHinzugefuegt(in: wunsch.serienBibliothek, holen: 200, zeigen: 24) : nil
 
         let a = await angefangen
         let schonDa = Set((a ?? wunsch.bisherWeiterschauen).map(\.id))

@@ -1,5 +1,7 @@
 package de.paulherter.swiftly
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +45,7 @@ fun Startvorhang(fertig: () -> Unit) {
     }
     LaunchedEffect(Unit) { delay(3500); rufen() }
     Box(Modifier.fillMaxSize().background(Stil.grund), contentAlignment = Alignment.Center) {
-        LottieAnimation(komposition, { fortschritt }, Modifier.size(440.dp))
+        // Der Vorhang sagt, wer da startet — sonst saesse TalkBack bis zu 3,5 s vor einer stummen Flaeche.
+        LottieAnimation(komposition, { fortschritt }, Modifier.size(440.dp).clearAndSetSemantics { contentDescription = "Swiftly" })
     }
 }

@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -29,10 +32,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,8 +56,10 @@ import kotlinx.coroutines.withContext
 /**
  * Vorlage: `LoginView` in `Sources/Shared/RootView.swift` — Name und Passwort, darunter Quick Connect.
  *
- * `weiteresKonto`: dieselbe Seite fuer ein zweites Konto am verbundenen Server. Unten steht dann
- * „Abbrechen" statt „Anderer Server", und die laufende Sitzung bleibt, bis die neue steht.
+ * `weiteresKonto`: dieselbe Seite fuer ein zweites Konto am verbundenen Server. **Oben der Rueckweg,
+ * unten nichts** — als geschobene Seite hat sie denselben Pfeil wie jede Unterseite, zwei Wege
+ * zurueck waeren einer zu viel. An der Wurzel bleibt unten „Anderer Server". Die laufende Sitzung
+ * bleibt, bis die neue steht.
  */
 @Composable
 fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
@@ -116,39 +117,47 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
                     if (fassung.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(7.dp).background(Stil.akzent, CircleShape))
-                            Text(uebersetzt("Verbunden · Jellyfin %@", fassung), style = Stil.klein.copy(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+                            Text(uebersetzt("Verbunden · Jellyfin %@", fassung), style = Stil.klein, color = Stil.schriftSehrLeise)
                         }
                     }
                     Text(servername, style = Stil.titel, color = Stil.schrift)
                 }
                 if (bekannte.isNotEmpty()) {
                     Column(Modifier.padding(top = 22.dp)) {
-                        Text(uebersetzt("Wer schaut?").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-                             color = Stil.schriftSehrLeise, modifier = Modifier.padding(bottom = 8.dp))
+                        // **Gruppentitel: 20 Semibold in Normalschreibung**, nicht 11 in Versalien
+                        // (BRAND 2). Die Versalienstufe gibt es weiter, sie traegt aber nur noch
+                        // Plaketten. `schriftLeise`, weil die Rubrik den Gegenstand ankuendigt
+                        // und nicht selbst einer ist. Der Abstand darunter waechst mit: 10 statt 8.
+                        Text(uebersetzt("Wer schaut?"), style = Stil.reihe,
+                             color = Stil.schriftLeise, modifier = Modifier.padding(bottom = 10.dp))
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             bekannte.forEach { (_, name, bild) -> Kontozeichen(name, bild, benutzer == name) { benutzer = name } }
                         }
                     }
                 }
                 Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Eingabefeld(benutzer, { benutzer = it }, Icons.Outlined.Person, uebersetzt("Benutzername"))
-                    Eingabefeld(passwort, { passwort = it }, Icons.Outlined.Lock, uebersetzt("Passwort"), geheim = true) { anmelden() }
+                    Eingabefeld(benutzer, { benutzer = it }, Zeichen.Person, uebersetzt("Benutzername"))
+                    Eingabefeld(passwort, { passwort = it }, Zeichen.Schloss, uebersetzt("Passwort"), geheim = true) { anmelden() }
                     Hauptknopf(if (laeuft) uebersetzt("Anmelden…") else uebersetzt("Anmelden"),
                                freigegeben = benutzer.isNotBlank() && !laeuft,
                                modifier = Modifier.padding(top = 10.dp)) { anmelden() }
                     fehler?.let {
-                        Text(it, style = Stil.klein, color = Stil.warnung, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                        // `fehler`, nicht `warnung`: eine abgelehnte Anmeldung ist schiefgegangen.
+                        Text(it, style = Stil.klein, color = Stil.fehler, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                     // Immer da — wie auf iOS, das nicht vorher fragt, ob der Server es kann; sagt er nein,
                     // steht das auf der Quick-Connect-Seite.
                     Oder(Modifier.padding(top = 12.dp))
-                    Nebenknopf(Icons.Outlined.Tv, uebersetzt("Mit Quick Connect anmelden")) { quick = true }
+                    Nebenknopf(Zeichen.Fernseher, uebersetzt("Mit Quick Connect anmelden")) { quick = true }
                 }
             }
         }
-        Text(uebersetzt(if (weiteresKonto) "Abbrechen" else "Anderer Server"), style = Stil.klein.copy(fontSize = 13.sp),
+        // 12 Regular in `schriftSehrLeise`, 22 ueber der Unterkante — nur an der Wurzel.
+        if (weiteresKonto) Box(Modifier.align(Alignment.TopStart).background(Stil.grund)) {
+            Unterseitenkopf(uebersetzt("Konto hinzufügen"), andererServer)
+        } else Text(uebersetzt("Anderer Server"), style = Stil.klein,
              color = Stil.schriftSehrLeise,
-             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp).antippen(andererServer))
+             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp).druckzeile(andererServer))
     }
 }
 
@@ -157,13 +166,17 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
 private fun Kontozeichen(name: String, bild: String?, gewaehlt: Boolean, tun: () -> Unit) {
     Column(Modifier.width(72.dp).antippen(tun), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(60.dp).clip(CircleShape).background(Stil.erhoeht)
-                .border(if (gewaehlt) 2.dp else 1.dp, if (gewaehlt) Stil.akzent else Stil.rand, CircleShape),
+                // Ring: gewaehlt `schrift` 2, hervorgehoben `akzent` 1,5, sonst `rand` 1
+                // (BAUTEILE 6, `Profilzeichen`). Gewaehlt war hier der Akzent — der traegt
+                // Zustand, und „ich bin gemeint" ist Auswahl: die sagt Weiss und Gewicht.
+                .border(if (gewaehlt) 2.dp else 1.dp, if (gewaehlt) Stil.schrift else Stil.rand, CircleShape),
             contentAlignment = Alignment.Center) {
-            Text(name.take(1).uppercase(), style = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
+            // Buchstabe = Kreis × 0,38 (60 × 0,38 = 22,8), nicht eine eigene Zahl.
+            Text(name.take(1).uppercase(), style = TextStyle(fontSize = 22.8.sp, fontWeight = FontWeight.SemiBold),
                  color = if (gewaehlt) Stil.schrift else Stil.schriftLeise)
             if (bild != null) AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
         }
-        Text(name, style = TextStyle(fontSize = 13.sp), color = if (gewaehlt) Stil.schrift else Stil.schriftLeise,
+        Text(name, style = Stil.kachel, color = if (gewaehlt) Stil.schrift else Stil.schriftLeise,
              maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }

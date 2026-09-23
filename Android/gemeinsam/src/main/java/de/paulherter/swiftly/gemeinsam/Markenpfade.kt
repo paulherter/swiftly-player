@@ -8,5 +8,5 @@ object Markenpfade {
     const val rahmenY = -778.0f
     const val rahmenBreite = 3005.0f
     const val rahmenHoehe = 1024.0f
-    const val akzent = 0xFF2FDBC0
+    const val akzent = 0xFF50D5DA
 }

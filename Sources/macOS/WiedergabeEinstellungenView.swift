@@ -52,7 +52,7 @@ struct WiedergabeEinstellungenView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
-        .ohneKanteneffekt()
+        .seitenscrollen()
     }
 
     // MARK: Gruppen
@@ -69,7 +69,7 @@ struct WiedergabeEinstellungenView: View {
                           an: Binding(get: { directPlay },
                                       set: { model.immerDirectPlay = $0 }))
                 .disabled(!frei)
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Wertezeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                        wert: Bitrate.text(model.bitratenGrenze),
                        pfeil: true, aktion: { umschalten(.bitrate) })
@@ -93,7 +93,7 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.name == model.tonSprache },
                            waehlen: { model.tonSprache = $0.wert; schliessen() })
             }
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Wertezeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                        wert: model.untertitelSprache, pfeil: true,
                        aktion: { umschalten(.untertitel) })
@@ -103,7 +103,7 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.name == model.untertitelSprache },
                            waehlen: { model.untertitelSprache = $0.wert; schliessen() })
             }
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Schalterzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                           unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                           an: Binding(get: { model.untertitelAutomatisch },
@@ -119,7 +119,7 @@ struct WiedergabeEinstellungenView: View {
                           titel: Text("Nächste Folge automatisch"),
                           an: Binding(get: { model.naechsteAutomatisch },
                                       set: { model.naechsteAutomatisch = $0 }))
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             // **Der Schalter fuer das Technikschild.**
             //
             // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
@@ -128,7 +128,7 @@ struct WiedergabeEinstellungenView: View {
             Schalterzeile(symbol: "waveform.badge.magnifyingglass",
                           titel: Text("Technische Daten im Player"),
                           an: $technikschild)
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Wertezeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                        wert: "\(model.zurueckSekunden) s", pfeil: true,
                        aktion: { umschalten(.zurueck) })
@@ -137,7 +137,7 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.wert == model.zurueckSekunden },
                            waehlen: { model.zurueckSekunden = $0.wert; schliessen() })
             }
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             Wertezeile(symbol: "goforward", titel: Text("Vorspulen"),
                        wert: "\(model.vorSekunden) s", pfeil: true,
                        aktion: { umschalten(.vor) })
@@ -146,7 +146,7 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.wert == model.vorSekunden },
                            waehlen: { model.vorSekunden = $0.wert; schliessen() })
             }
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             // **Steht bei „Verhalten", nicht bei der Qualität.** Sie ändert
             // nichts am Bild — nur, wie viel Vorrat der Player hält, bevor
             // eine wackelige Leitung durchschlägt. Dieselbe Stelle wie auf
@@ -165,12 +165,12 @@ struct WiedergabeEinstellungenView: View {
 
 
     private func umschalten(_ liste: Liste) {
-        withAnimation(Stil.zeitSprung) {
+        withAnimation(Stil.sprung) {
             offeneListe = offeneListe == liste ? nil : liste
         }
     }
 
     private func schliessen() {
-        withAnimation(Stil.zeitSprung) { offeneListe = nil }
+        withAnimation(Stil.sprung) { offeneListe = nil }
     }
 }

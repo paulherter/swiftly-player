@@ -19,11 +19,17 @@ struct ProfilView: View {
     @Environment(\.breit) private var breit
 
     @State private var kontoAufnehmen = false
+    /// **Die Serveraufnahme als geschobene Seite.**
+    ///
+    /// Das Ziel steht hier und nicht bei den uebrigen in `HauptView`, weil es
+    /// eine Adresse mitbringt und von zwei Stellen dieser Seite ausgeloest
+    /// wird — einmal ohne (neuer Server), einmal mit (weiteres Konto auf
+    /// einem bekannten).
+    @State private var serverZiel: ServerRoute?
+    @State private var protokoll: Protokolldatei?
     /// Jemand hat auf „Server hinzufuegen" getippt — siehe dort.
-    @State private var zweiterServer = false
     /// Ein weiteres Konto auf einem Server, mit dem wir gerade nicht verbunden
     /// sind — aus dem Plus auf dessen Karte.
-    @State private var kontoAufServer: URL?
 
     @Environment(\.openURL) private var oeffnen
 
@@ -42,15 +48,36 @@ struct ProfilView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    Kontokarte(model: model, hinzufuegenAuf: { kontoAufServer = $0 }) { kontoAufnehmen = true }
+                    Kontokarte(model: model,
+                               hinzufuegenAuf: { serverZiel = ServerRoute(voreingestellt: $0) }) {
+                        kontoAufnehmen = true
+                    }
 
-                    Color.clear.frame(height: 20)
+                    // 18 wie zwischen allen anderen Karten dieser Seite —
+                    // hier standen als einziger Abstand 20.
+                    Color.clear.frame(height: 18)
 
                     gruppe {
+                        // **Das Zeichen im Akzent, der Titel nicht.**
+                        //
+                        // Es war einmal ganz im Akzent, dann gar nicht — mit
+                        // der Begruendung, der Akzent sage Zustand und nicht
+                        // Rangfolge. Der Satz stimmt, die Folgerung war zu
+                        // weit: eine Profilseite ohne einen einzigen farbigen
+                        // Punkt liest sich leblos, und Quick Connect ist der
+                        // eine Weg auf dieser Seite, der etwas **tut** —
+                        // alles andere fuehrt weiter oder zeigt an.
+                        //
+                        // Das Zeichen traegt die Farbe, der Titel bleibt
+                        // weiss: so faellt die Zeile auf, ohne eine Rangfolge
+                        // unter Geschwistern zu behaupten. Paul am 22.09.:
+                        // „dadurch wirkt die Seite nicht mehr so extrem
+                        // farblos."
                         Profilzeile(symbol: "rectangle.and.text.magnifyingglass",
                                     titel: "Quick Connect",
                                     unter: "Code vom Fernseher eingeben",
-                                    akzent: true, letzte: true, ziel: QuickConnectRoute())
+                                    zeichenAkzent: true,
+                                    letzte: true, ziel: QuickConnectRoute())
                     }
 
                     Color.clear.frame(height: 18)
@@ -77,10 +104,14 @@ struct ProfilView: View {
                         // Uebernehmen ab, hier sei nichts angeschlossen: der
                         // Kontenbund haelt mehrere Server, und diese Zeile
                         // fuehrt auf die Aufnahme.
+                        // **Geschoben, nicht von unten.** Dieselbe Art Ziel
+                        // wie Quick Connect, Seerr und Einstellungen — eine
+                        // Unterseite, von der man zurueckgeht. Die
+                        // Begruendung steht bei `ServerRoute`.
                         Profilzeile(symbol: "externaldrive.connected.to.line.below",
                                     titel: "Server hinzufügen",
                                     unter: "Ein zweiter Jellyfin, eigene Konten") {
-                            zweiterServer = true
+                            serverZiel = ServerRoute()
                         }
                         // **Trifft nur das aktive Konto.** Sind noch andere
                         // da, schaltet die App auf das naechste um; erst beim
@@ -105,16 +136,25 @@ struct ProfilView: View {
                             oeffnen(Gemeinschaft.discord)
                         }
                         Profilzeile(symbol: "ladybug", titel: "Fehler melden",
-                                    unter: "Auf GitHub, deine App-Version ist schon eingetragen",
-                                    letzte: true) {
+                                    unter: "Auf GitHub, deine App-Version ist schon eingetragen") {
                             oeffnen(Fassung.fehlerMelden)
+                        }
+                        // Neben „Fehler melden", weil es dazugehört: wer
+                        // im Discord einen Fehler meldet, hängt das hier an.
+                        Profilzeile(symbol: "doc.text", titel: "Protokoll teilen",
+                                    unter: "Die letzte Stunde, ohne Zugangsdaten",
+                                    letzte: true) {
+                            protokoll = Protokolldatei.schreiben()
                         }
                     }
 
 
-                    Text(verbatim: Fassung.zeile)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.white.opacity(0.3))
+                    // Derselbe Baustein wie in den Einstellungen und unter
+                    // der Reihenliste. **Fest bleiben auf dieser Seite** die
+                    // Kontostreifen-Kacheln, das Profilzeichen und der
+                    // Quick-Connect-Code: dort steht ein Raster aus
+                    // Punktmassen, das groessere Schrift sprengen wuerde.
+                    Fusszeile(Text(verbatim: Fassung.zeile))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Stil.rand(breit: breit))
                         .padding(.top, 26)
@@ -142,50 +182,23 @@ struct ProfilView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .fullScreenCover(isPresented: $kontoAufnehmen) {
-            // Dieselbe Anmeldung wie beim ersten Konto, nur ohne den Weg zu
-            // einem anderen Server — und sie schliesst sich selbst.
+        .sheet(item: $protokoll) { datei in
+            Teilenblatt(datei: datei.url)
+                .presentationDetents([.medium, .large])
+        }
+        // **Geschoben, wie jede andere Unterseite.** Die Begruendung steht bei
+        // `ServerRoute`.
+        .navigationDestination(item: $serverZiel) { ziel in
+            ServerAufnahmeView(model: model, voreingestellt: ziel.voreingestellt)
+        }
+        // Dieselbe Anmeldung wie beim ersten Konto, nur ohne den Weg zu einem
+        // anderen Server — und ebenfalls geschoben statt von unten.
+        .navigationDestination(isPresented: $kontoAufnehmen) {
             LoginView(model: model,
                       serverName: model.serverName ?? "",
                       version: model.serverVersion ?? "",
-                      weiteresKonto: true) { kontoAufnehmen = false }
+                      weiteresKonto: true)
         }
-        // **Ein zweiter Server** — seit dem 11.09.2026 wirklich. Die laufende
-        // Sitzung bleibt, bis die Anmeldung dort klappt; dann wechselt die App.
-        .fullScreenCover(isPresented: $zweiterServer) {
-            ServerAufnahmeView(model: model) { zweiterServer = false }
-        }
-        .fullScreenCover(isPresented: Binding(get: { kontoAufServer != nil },
-                                              set: { if !$0 { kontoAufServer = nil } })) {
-            ServerAufnahmeView(model: model, voreingestellt: kontoAufServer) { kontoAufServer = nil }
-        }
-    }
-
-    private var bildblock: some View {
-        VStack(spacing: 10) {
-            Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(),
-                          groesse: 84)
-            VStack(spacing: 3) {
-                Text(model.session?.userName ?? "Angemeldet")
-                    .font(.system(size: 22, weight: .semibold))
-                    .tracking(-0.3)
-                    .foregroundStyle(Stil.schrift)
-                Text(untertitel)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 56)
-        .padding(.bottom, 30)
-    }
-
-    private var untertitel: String {
-        var teile: [String] = []
-        if let name = model.serverName { teile.append(name) }
-        if let fassung = model.serverVersion { teile.append("Jellyfin \(fassung)") }
-        return teile.joined(separator: " · ")
     }
 
     /// Eine Gruppe ist seit dem 11.09.2026 eine Karte — siehe ``Karte``.
@@ -226,14 +239,25 @@ struct QuickConnectView: View {
                     .padding(.horizontal, -Stil.rand(breit: breit))
 
                 Text("Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.")
-                    .font(Stil.koerper)
+                    .mitwachsend(15)
                     .lineSpacing(3)
                     .foregroundStyle(Stil.schriftLeise)
                     .padding(.top, 10)
 
+                // **Der Platzhalter war nicht zu lesen.** Weiss 22 Prozent
+                // ergibt auf der Feldflaeche 2,02:1 — gerechnet, nicht
+                // geschaetzt; fuer Text ist 4,5 die Grenze.
+                // `schriftSehrLeise` traegt dort 5,1:1 und bleibt trotzdem
+                // klar leiser als der getippte Code darueber.
+                //
+                // **28, nicht 34.** 34 stand in keiner Stufe. 28 ist die
+                // groesste, die es gibt, und ein sechsstelliger Code ist auf
+                // dieser Seite die Hauptsache — er darf sie tragen. Ohne
+                // Sperrung, weil die Ziffern tabellarisch untereinander
+                // stehen sollen.
                 TextField("", text: $code, prompt: Text("000000")
-                    .foregroundColor(Color.white.opacity(0.22)))
-                    .font(.system(size: 34, weight: .semibold).monospacedDigit())
+                    .foregroundColor(Stil.schriftSehrLeise))
+                    .font(Stil.titelGross.monospacedDigit())
                     .multilineTextAlignment(.center)
                     .textContentType(.oneTimeCode)
                     .keyboardType(.numberPad)
@@ -241,14 +265,25 @@ struct QuickConnectView: View {
                     .focused($imFeld)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity)
-                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                    .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+                    // Ein Feld ist eine Flaeche, die man anfassen kann, und
+                    // traegt denselben Ton wie jede andere: `flaeche`. Die
+                    // eine *gefuellte* Flaeche dieser Seite bleibt der Knopf
+                    // darunter — der traegt den Akzent, nicht diesen Ton.
+                    // `eckeFeld`, nicht `ecke`: das hier ist ein Eingabefeld
+                    // und keine Kachel. 10 stand als Rohmass fuer dieselbe
+                    // Rolle da, fuer die es 12 gibt.
+                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
                     .padding(.top, 26)
 
                 if let meldung {
                     Text(meldung)
-                        .font(.system(size: 13))
-                        .foregroundStyle(geschafft ? Stil.akzent : Stil.warnung)
+                        // 13 Medium: dieselbe Stufe wie der Text unter einem
+                        // Plakat. 13 Regular stand in keiner.
+                        .font(Stil.kachel)
+                        // Geschafft traegt den Akzent, misslungen `fehler`.
+                        // `warnung` stand hier fuer beides Misslungene mit —
+                        // es heisst aber „wartet", nicht „ging schief".
+                        .foregroundStyle(geschafft ? Stil.akzent : Stil.fehler)
                         .padding(.top, 12)
                 }
 
@@ -341,7 +376,7 @@ private struct Kontenstreifen: View {
             beschriftung
         }
         .padding(.top, 56)
-        .padding(.bottom, 30)
+        .padding(.bottom, 32)
         // Nach einem Wechsel wandert die Mitte auf das neue Konto — sonst
         // stünde der Ring beim einen und die große Kachel beim anderen, ohne
         // dass jemand gescrollt hätte.
@@ -416,7 +451,7 @@ private struct Kontenstreifen: View {
             .opacity(verbunden || mittig ? 1 : 0.55)
             .animation(.easeOut(duration: 0.2), value: mittig)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         // E8: eigene Bedienelemente sagen VoiceOver ihren Zustand.
         .accessibilityLabel(verbunden ? Text("\(konto.userName), angemeldet")
                                       : Text("Zu \(konto.userName) wechseln"))
@@ -427,15 +462,19 @@ private struct Kontenstreifen: View {
     /// Sonst widerspräche die Zeile dem, was darüber groß dasteht.
     private var beschriftung: some View {
         let konto = model.konten.first { $0.userID == zentriert } ?? model.session
+        let angemeldet = konto?.userID == model.session?.userID
         return VStack(spacing: 3) {
             Text(konto?.userName ?? "")
-                .font(.system(size: 22, weight: .semibold))
-                .tracking(-0.3)
+                .font(Stil.reihe)
+                .tracking(Stil.sperrungReihe)
                 .foregroundStyle(Stil.schrift)
-            Text(konto?.userID == model.session?.userID
-                 ? "Angemeldet" : "Tippen, um zu wechseln")
-                .font(.system(size: 13))
-                .foregroundStyle(Stil.akzent)
+            // **Weiss statt Akzent.** Beide Zeilen trugen ihn — und
+            // „Tippen, um zu wechseln" ist keine Zustandsaenderung, sondern
+            // eine Ansage. Damit trug der Akzent Rangfolge. Jetzt sagt die
+            // Schriftfarbe, was gilt: gewaehlt ist hell, alles andere leise.
+            Text(angemeldet ? "Angemeldet" : "Tippen, um zu wechseln")
+                .mitwachsend(12)
+                .foregroundStyle(angemeldet ? Stil.schrift : Stil.schriftSehrLeise)
         }
         .padding(.top, 14)
         .animation(.easeOut(duration: 0.2), value: zentriert)
@@ -536,7 +575,9 @@ private struct Kontokarte: View {
         let andere = alle.filter { $0.kontoschluessel != vorn?.kontoschluessel }
         Karte {
             kopfzeile(vorn, aktiv: aktiv, server: server)
-            Trennlinie().padding(.leading, 0)
+            // `.padding(.leading, 0)` stand hier und tat nichts: `Trennlinie`
+            // bringt ihren Einzug selbst mit, eine Null davor nimmt ihn nicht weg.
+            Trennlinie()
             reihe(andere, aktiv: aktiv, server: server)
         }
     }
@@ -549,15 +590,20 @@ private struct Kontokarte: View {
                           groesse: 56,
                           hervorgehoben: aktiv && model.server.count > 1)
             VStack(alignment: .leading, spacing: 2) {
+                // **17, nicht 19.** Zwischen 15 und 20 liegt keine Stufe;
+                // 17 Semibold ist die Blattrubrik, und ihre Sperrung ist
+                // −0,008 em, auf 17 Punkt also −0,14.
                 Text(verbatim: konto?.userName ?? String(localized: "Angemeldet"))
-                    .font(.system(size: 19, weight: .semibold))
-                    .tracking(-0.2)
+                    .font(Stil.rubrikGross)
+                    .tracking(Stil.sperrungRubrik)
                     .foregroundStyle(Stil.schrift)
                 // Name und Fassung kennen wir nur vom Server, mit dem wir
                 // gerade verbunden sind; bei den anderen steht die Adresse.
+                // Der Servername ist eine Angabe: 12 in `schriftSehrLeise`,
+                // so wie auf der Bibliotheksseite. 13 Regular gibt es nicht.
                 Text(verbatim: aktiv ? (model.serverName ?? server?.host() ?? "")
                                      : (server?.host() ?? ""))
-                    .font(.system(size: 13))
+                    .mitwachsend(12)
                     .foregroundStyle(Stil.schriftSehrLeise)
                     .lineLimit(1)
                 // **Die Zeile steht immer, auch ohne Fassung.** Die kommt
@@ -567,14 +613,14 @@ private struct Kontokarte: View {
                 // sprangen nach oben (derselbe Fehler wie auf Android).
                 if aktiv {
                     Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
-                        .font(.system(size: 12))
+                        .mitwachsend(12)
                         .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(1)
                         .opacity(model.serverVersion == nil ? 0 : 1)
                         .accessibilityHidden(model.serverVersion == nil)
                 } else {
                     Text("Antippen zum Wechseln")
-                        .font(.system(size: 12))
+                        .mitwachsend(12)
                         .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(1)
                 }
@@ -585,7 +631,7 @@ private struct Kontokarte: View {
         .contentShape(Rectangle())
         if !aktiv, let konto {
             Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: { inhalt }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
         } else {
             inhalt
         }
@@ -603,7 +649,7 @@ private struct Kontokarte: View {
                                       bild: model.benutzerbildURL(fuer: konto),
                                       groesse: 40)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckknopf())
                     .accessibilityLabel(Text(verbatim: konto.userName))
                 }
                 // **Das Plus steht auf jeder Karte** und legt ein Konto auf
@@ -615,15 +661,24 @@ private struct Kontokarte: View {
                         if aktiv { hinzufuegen() } else if let server { hinzufuegenAuf(server) }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .semibold))
+                            // Aus dem Token, nicht als eigene Zahl: dieselbe
+                            // Stufe wie ein Listenzeilentitel.
+                            .font(Stil.listentitel)
                             .foregroundStyle(Stil.schriftSehrLeise)
+                            // **Der Kreis bleibt 40, das Ziel wird 44.**
+                            // Apples Mindestmass fuer eine Treffflaeche ist
+                            // 44; das Plus lag mit 40 darunter. Der
+                            // gestrichelte Kreis haengt im `.overlay` an den
+                            // inneren 40, damit sich sichtbar nichts aendert.
                             .frame(width: 40, height: 40)
                             .overlay {
                                 Circle().strokeBorder(Stil.rand,
                                                       style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                             }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckknopf())
                     .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
                 }
             }

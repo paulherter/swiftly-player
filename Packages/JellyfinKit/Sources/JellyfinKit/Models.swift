@@ -508,6 +508,7 @@ public struct MediaStream: Codable, Sendable, Equatable {
                 realFrameRate: Double? = nil, averageFrameRate: Double? = nil,
                 videoRangeType: Farbumfang? = nil,
                 colorTransfer: String? = nil, colorPrimaries: String? = nil,
+                dvProfile: Int? = nil, dvBlSignalCompatibilityId: Int? = nil,
                 isForced: Bool? = nil, isExternal: Bool? = nil,
                 title: String? = nil, deliveryUrl: String? = nil) {
         self.title = title; self.deliveryUrl = deliveryUrl
@@ -519,6 +520,8 @@ public struct MediaStream: Codable, Sendable, Equatable {
         self.videoRangeTypeRoh = videoRangeType?.rawValue
         self.colorTransfer = colorTransfer
         self.colorPrimaries = colorPrimaries
+        self.dvProfileRoh = dvProfile.map { Zahlwert(Double($0)) }
+        self.dvKompatibelRoh = dvBlSignalCompatibilityId.map { Zahlwert(Double($0)) }
         self.realFrameRateRoh = Zahlwert(realFrameRate)
         self.averageFrameRateRoh = Zahlwert(averageFrameRate)
     }
@@ -566,6 +569,19 @@ public struct MediaStream: Codable, Sendable, Equatable {
     }
     public let colorTransfer: String?
     public let colorPrimaries: String?
+
+    /// Das Dolby-Vision-Profil (5, 7, 8 …) und die Kompatibilität der
+    /// Basisschicht (bei Profil 8: 1 = HDR10, 2 = SDR, 4 = HLG) — zusammen
+    /// „8.1". Nur für das Technikschild; ``Technikangaben/dynamik(_:)``.
+    ///
+    /// Als ``Zahlwert`` gelesen wie die Bildraten: eine Angabe, die einmal als
+    /// Zeichenkette käme, soll nicht die ganze Spur unlesbar machen.
+    private let dvProfileRoh: Zahlwert?
+    private let dvKompatibelRoh: Zahlwert?
+
+    public var dvProfile: Int? { dvProfileRoh?.wert.map { Int($0) } }
+    public var dvBlSignalCompatibilityId: Int? { dvKompatibelRoh?.wert.map { Int($0) } }
+
     /// Die Bildrate der Spur.
     ///
     /// **Wofuer.** Der Apple TV kann seinen Ausgang auf die Bildrate des
@@ -609,6 +625,8 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case videoRangeTypeRoh = "VideoRangeType"
         case colorTransfer = "ColorTransfer"
         case colorPrimaries = "ColorPrimaries"
+        case dvProfileRoh = "DvProfile"
+        case dvKompatibelRoh = "DvBlSignalCompatibilityId"
         case width = "Width"
         case codec = "Codec"
         case type = "Type"

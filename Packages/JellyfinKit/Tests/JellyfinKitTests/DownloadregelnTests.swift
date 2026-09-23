@@ -89,6 +89,136 @@ struct DownloadregelnTests {
         #expect(a.freiDanach == -Downloadregeln.luft)
     }
 
+    @Test("Der Fuss nennt, was danach frei bleibt, solange es reicht")
+    func fussReicht() {
+        let f = Downloadregeln.fussplatz(fuer: 10_000_000_000, frei: 61_200_000_000)
+        #expect(f == .frei(51_200_000_000))
+    }
+
+    @Test("Der Fuss nennt den Fehlbetrag, die Reserve eingerechnet")
+    func fussZuWenig() {
+        let f = Downloadregeln.fussplatz(fuer: 91_870_000_000, frei: 61_200_000_000)
+        #expect(f == .zuWenig(30_670_000_000 + Downloadregeln.luft))
+    }
+
+    @Test("Fuss und Blatt sind sich einig, auch knapp an der Reserve")
+    func fussWieBlatt() {
+        for frei: Int64 in [9_000_000_000, 10_000_000_000, 10_500_000_000,
+                            11_073_741_824, 12_000_000_000] {
+            let bytes: Int64 = 10_000_000_000
+            let reicht = Downloadregeln.platz(fuer: bytes, frei: frei, vorhanden: []).reicht
+            if case .frei = Downloadregeln.fussplatz(fuer: bytes, frei: frei) {
+                #expect(reicht)
+            } else {
+                #expect(!reicht)
+            }
+        }
+    }
+
+    @Test("Ohne Auswahl fehlt nichts, auch wenn das Geraet fast voll ist")
+    func fussOhneAuswahl() {
+        #expect(Downloadregeln.fussplatz(fuer: 0, frei: 500_000_000) == .frei(500_000_000))
+    }
+
+    @Test("Fortschritt: feste Einheit und Stellen, von der ersten Zahl an")
+    func fortschrittFest() {
+        let de = Locale(identifier: "de_DE")
+        let gesamt: Int64 = 2_310_000_000
+        let werte = [0, 850_000_000, 1_000_000_000, 1_100_000_000, 2_310_000_000]
+            .map { Downloadregeln.fortschritt(geladen: Int64($0), von: gesamt, locale: de) }
+        #expect(werte.map(\.geladen) == ["0,00", "0,85", "1,00", "1,10", "2,31"])
+        #expect(Set(werte.map(\.gesamt)) == ["2,31 GB"])
+        // Unter einem Gigabyte: ganze Megabyte.
+        let klein = Downloadregeln.fortschritt(geladen: 12_345_678, von: 734_000_000, locale: de)
+        #expect(klein.geladen == "12")
+        #expect(klein.gesamt == "734 MB")
+    }
+
+    @Test("Fortschritt erscheint hoechstens einmal je Sekunde")
+    func fortschrittTakt() {
+        let g: Int64 = 2_000_000_000
+        #expect(Downloadregeln.fortschrittZeigen(geladen: 1, gesamt: g, vorher: nil, vergangen: nil))
+        // Genug geladen, aber zu frueh.
+        #expect(!Downloadregeln.fortschrittZeigen(geladen: 500_000_000, gesamt: g,
+                                                   vorher: 0, vergangen: 0.3))
+        // Lange genug, aber kaum etwas dazu.
+        #expect(!Downloadregeln.fortschrittZeigen(geladen: 1_000, gesamt: g,
+                                                   vorher: 0, vergangen: 5))
+        #expect(Downloadregeln.fortschrittZeigen(geladen: 500_000_000, gesamt: g,
+                                                  vorher: 0, vergangen: 1.0))
+        // Neuanfang und Ende kommen immer durch.
+        #expect(Downloadregeln.fortschrittZeigen(geladen: 10, gesamt: g,
+                                                  vorher: 900, vergangen: 0.1))
+        #expect(Downloadregeln.fortschrittZeigen(geladen: g, gesamt: g,
+                                                  vorher: g - 5, vergangen: 0.1))
+    }
+
+    @Test("Der Schaetzer zaehlt zwischen den Meldungen weiter, nie zurueck")
+    func schaetzer() {
+        var s = Fortschrittsschaetzer()
+        let t0 = Date(timeIntervalSince1970: 0)
+        let g: Int64 = 2_000_000_000
+        s.melden(0, gesamt: g, um: t0)
+        s.melden(10_000_000, gesamt: g, um: t0.addingTimeInterval(1))
+        // Zwischen zwei Meldungen: weiter im Tempo, also mehr als gemeldet.
+        let mitte = s.wert(um: t0.addingTimeInterval(1.5))
+        #expect(mitte > 10_000_000 && mitte < 20_000_000)
+        // Die naechste Meldung liegt unter dem Gezeigten: es bleibt stehen.
+        s.melden(12_000_000, gesamt: g, um: t0.addingTimeInterval(2))
+        #expect(s.wert(um: t0.addingTimeInterval(2)) >= mitte)
+        // Nach einer Weile ohne Meldung steht die Zahl.
+        let a = s.wert(um: t0.addingTimeInterval(10))
+        #expect(s.wert(um: t0.addingTimeInterval(20)) == a)
+        // Nie ueber das Ganze.
+        s.melden(g - 1, gesamt: g, um: t0.addingTimeInterval(21))
+        #expect(s.wert(um: t0.addingTimeInterval(23)) <= g)
+    }
+
+    @Test("Angehalten steht die Zahl, und beim Fortsetzen springt sie nicht")
+    func schaetzerPause() {
+        var s = Fortschrittsschaetzer()
+        let t0 = Date(timeIntervalSince1970: 0)
+        let g: Int64 = 2_000_000_000
+        s.melden(0, gesamt: g, um: t0)
+        s.melden(10_000_000, gesamt: g, um: t0.addingTimeInterval(1))
+        let vorPause = s.wert(um: t0.addingTimeInterval(1.5))
+        s.anhalten()
+        #expect(s.wert(um: t0.addingTimeInterval(1.6)) == vorPause)
+        #expect(s.wert(um: t0.addingTimeInterval(60)) == vorPause)
+        // Fortsetzen nach einer Minute: kein Tempo ueber die Pause gerechnet,
+        // die Zahl bleibt, bis die echte sie einholt.
+        s.melden(11_000_000, gesamt: g, um: t0.addingTimeInterval(61))
+        #expect(s.wert(um: t0.addingTimeInterval(61.5)) == vorPause)
+        s.melden(21_000_000, gesamt: g, um: t0.addingTimeInterval(62))
+        #expect(s.wert(um: t0.addingTimeInterval(62.5)) > 21_000_000)
+    }
+
+    @Test("Ein Neuanfang setzt den Schaetzer zurueck")
+    func schaetzerNeu() {
+        var s = Fortschrittsschaetzer()
+        let t0 = Date(timeIntervalSince1970: 0)
+        s.melden(500, gesamt: 1_000, um: t0)
+        _ = s.wert(um: t0)
+        s.melden(100, gesamt: 1_000, um: t0.addingTimeInterval(1))
+        #expect(s.wert(um: t0.addingTimeInterval(1)) == 100)
+    }
+
+    @Test("Abspielen nimmt die erste ungesehene fertige Folge")
+    func naechsteFolge() {
+        let liste = [
+            posten("s2f1", stand: .fertig, art: .folge, staffel: 2, folge: 1),
+            posten("s1f2", stand: .fertig, gesehen: true, art: .folge, staffel: 1, folge: 2),
+            posten("s1f1", stand: .fertig, gesehen: true, art: .folge, staffel: 1, folge: 1),
+            posten("s1f3", stand: .laedt, art: .folge, staffel: 1, folge: 3),
+        ]
+        #expect(Downloadregeln.naechsteFolge(aus: liste)?.id == "s2f1")
+        // Alles gesehen: von vorn.
+        let gesehen = liste.filter { $0.gesehen }
+        #expect(Downloadregeln.naechsteFolge(aus: gesehen)?.id == "s1f1")
+        // Nichts fertig: nichts abzuspielen.
+        #expect(Downloadregeln.naechsteFolge(aus: [liste[3]]) == nil)
+    }
+
     @Test("Gesehenes macht den Weg frei, Ungesehenes nicht")
     func aufraeumenReicht() {
         let vorhanden = [

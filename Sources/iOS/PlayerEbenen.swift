@@ -31,9 +31,23 @@ struct Playermass {
     /// Trefferfläche der Symbolknöpfe.
     let knopf: CGFloat = 44
     var symbol: CGFloat { pad ? 21 : 19 }
-    var titel: CGFloat { pad ? 22 : 19 }
-    var meta: CGFloat { pad ? 15 : 14 }
-    var zeit: CGFloat { pad ? 14 : 13 }
+    /// **Die Leiter der App, nicht eine eigene.**
+    ///
+    /// Hier standen bis zum 21.09. vier Werte, die es in `Stil` nicht gibt:
+    /// Titel 19 am iPhone und 22 am iPad, Angabe 14 und 15, Zeit 13 und 14.
+    /// Der Player war damit der einzige Ort der App mit einer zweiten
+    /// Schriftleiter — und 19 und 14 stehen in keiner von beiden.
+    ///
+    /// Jetzt: Titel = Reihenüberschrift (20), Angabe und Zeit = Angabe (12/13).
+    /// Und **ein** Wert je Rolle statt zwei: die Leiter gilt am iPad 1:1 wie am
+    /// iPhone (BRAND 2, Spaltenkopf „iPhone · iPad · Mac"). Die Maße darüber —
+    /// Rand, Trefferfläche, Symbolgrad — spalten sich weiter, denn die hängen
+    /// am Gerät und nicht an der Schrift.
+    let titel: CGFloat = 20
+    let meta: CGFloat = 12
+    /// Laufzeit links und rechts der Leiste. 13, wie der Kacheltitel — die
+    /// kleinste Stufe, die über Bild noch sicher lesbar ist.
+    let zeit: CGFloat = 13
     /// Abstand der Überspringen-Pille über der Leiste.
     let ueberLeiste: CGFloat = 20
     /// Höhe der Zeitzeile — die Trefferfläche des Reglers.
@@ -60,27 +74,39 @@ struct Symbolknopf: View {
                 .frame(width: mass.knopf, height: mass.knopf)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         .accessibilityLabel(Text(beschriftung))
     }
 }
 
-/// **Grund jeder Ebene:** Weichzeichner und darüber dieselbe Abdunklung wie
-/// im Entwurf, rgba(11,11,13,.72). Nimmt jeden Tipp an, damit darunter nichts
-/// spult.
+/// **Grund jeder Ebene:** reines Schwarz mit 0,72. Nimmt jeden Tipp an, damit
+/// darunter nichts spult.
 private struct Ebenengrund: View {
     var body: some View {
+        // **Weichzeichner und Schwarz darueber — beides.**
+        //
+        // Der Weichzeichner war einen Tag lang weg, mit zwei Begruendungen.
+        // Die eine war falsch: „im Player gilt reines Schwarz" meint den
+        // **Schleier ueber dem laufenden Bild**, wo ein Material ueber HDR
+        // anhebt. Eine Ebene laeuft nicht, sie steht — und hinter ihr soll man
+        // sehen, dass der Film noch da ist. Die andere stimmte: unter 0,72
+        // Schwarz war vom Weichzeichner nichts mehr zu sehen, er kostete nur
+        // Rechenzeit.
+        //
+        // Also beides, mit passenden Anteilen: das Material traegt, und die
+        // Abdunklung darueber ist auf 0,45 zurueck — genug, damit die
+        // Spaltentitel stehen, wenig genug, dass der Weichzeichner sichtbar
+        // wird. Paul am 22.09.: „auf iOS gibt es ja den Blur, den hatten wir
+        // schon, den einfach wieder reinnehmen."
         ZStack {
-            // **Über den Rand hinaus.** Ein Weichzeichner, der am
+            // **Ueber den Rand hinaus.** Ein Weichzeichner, der am
             // Bildschirmrand endet, holt sich dort Leere dazu: die Ecken
-            // blitzten beim Einblenden hell auf. Größer gezogen liegt die
-            // Kante außerhalb des Bildschirms.
-            Rectangle().fill(.ultraThinMaterial)
+            // blitzten beim Einblenden hell auf. Groesser gezogen liegt die
+            // Kante ausserhalb des Bildschirms.
+            Unschaerfe(staerke: 1)
                 .padding(-60)
-            // Reines Schwarz — siehe `Playerschleier`.
-            Color.black.opacity(0.72)
+            Color.black.opacity(0.45)
         }
-        .environment(\.colorScheme, .dark)
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture {}
@@ -116,11 +142,17 @@ private struct Wahlspalte<Inhalt: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(titel)
-                .font(.system(size: mass.pad ? 22 : 19, weight: .bold))
+                // Genau der Grad des Player-Titels — er rechnet mit der
+                // Fenstergröße. Vorher standen dieselben Zahlen von Hand hier
+                // (22/19); eine Rolle mit zwei Quellen läuft irgendwann
+                // auseinander.
+                // Semifett, nicht Bold: 20 ist die Reihenueberschrift, und
+                // Bold steht genau einmal — am Seitentitel (BRAND 2).
+                .font(.system(size: mass.titel, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundStyle(.white)
-                .lineLimit(1)
+                // Vorher rohes `.white`; gelesen wird `schrift`.
+                .foregroundStyle(Stil.schrift)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
                 .accessibilityAddTraits(.isHeader)
@@ -135,7 +167,9 @@ private struct Wahlspalte<Inhalt: View>: View {
     }
 }
 
-/// Haken und Name. Gewählt weiß und halbfett, sonst 62 % Weiß.
+/// Haken und Name. Gewählt `Stil.schrift` und halbfett, sonst
+/// `Stil.schriftLeise`. Hier stand „62 % Weiß" — über einem Bild ist eine
+/// Deckkraft keine Schriftfarbe, sie wird mit der Szene heller und dunkler.
 private struct Ebenenzeile: View {
     let text: String
     let gewaehlt: Bool
@@ -154,7 +188,15 @@ private struct Ebenenzeile: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .font(.system(size: mass.pad ? 17 : 15, weight: gewaehlt ? .semibold : .regular))
+            // **Ein Grad, ein Gewicht.**
+            //
+            // Hier stand `pad ? 17 : 15` und dazu `gewaehlt ? .semibold :
+            // .regular`. Der erste Teil war eine zweite Leiter — 15 ist die
+            // Listenzeile, am iPad wie am iPhone (BRAND 2). Der zweite war
+            // schlimmer: die Spalte ist 210 Punkt breit und die Zeile traegt
+            // `lineLimit(1)`, also **kuerzte ein langer Spurname beim
+            // Auswaehlen mehr als vorher**. Gewaehlt sagt jetzt der Ton.
+            .font(Stil.listentitel)
             .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -162,7 +204,7 @@ private struct Ebenenzeile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(Stil.Druckzeile())
-        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
+        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
         .accessibilityAddTraits(gewaehlt ? .isSelected : [])
     }
 }
@@ -373,11 +415,15 @@ struct FolgenEbene: View {
     /// aufgerufen, sobald der Player eine Folge zeigt.
     static func vorladen(model: AppModel, item: Item) async {
         guard let serieID = item.seriesId, let serie = Item.vorlaeufigeSerie(zu: item) else { return }
-        let staffeln = await model.staffeln(serie)
-        guard !staffeln.isEmpty else { return }
+        // **Ein gescheiterter Abruf kommt nicht in den Speicher.** `staffeln`
+        // und `folgen` geben seit dem 21.09.2026 `nil` zurueck, wenn der
+        // Server geschwiegen hat. Frueher stand dann eine leere Liste im
+        // `Serienspeicher`, und die naechste Ansicht hielt sie fuer die
+        // Wahrheit — ein zwischengespeicherter Netzfehler.
+        guard let staffeln = await model.staffeln(serie), !staffeln.isEmpty else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.staffeln = staffeln }
         guard let staffel = passendeStaffel(zu: item, in: staffeln) else { return }
-        let folgen = await model.folgen(serie: serieID, staffel: staffel.id)
+        guard let folgen = await model.folgen(serie: serieID, staffel: staffel.id) else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.folgen[staffel.id] = folgen }
     }
 
@@ -390,7 +436,7 @@ struct FolgenEbene: View {
                         // Platzhalter: der Titel selbst steht im Player
                         // (`stehenderTitel`) und blendet nicht mit.
                         Text(verbatim: titel)
-                            .font(.system(size: mass.titel, weight: .bold))
+                            .font(.system(size: mass.titel, weight: .semibold))
                             .lineLimit(1)
                             .hidden()
                         if !staffeln.isEmpty {
@@ -405,7 +451,10 @@ struct FolgenEbene: View {
                                           },
                                           offen: $staffellisteOffen,
                                           schrift: .system(size: mass.meta + 1, weight: .semibold),
-                                          hoehe: 28)
+                                          hoehe: 28,
+                                          // Im Player keine Flaeche: sie sitzt dort an
+                                          // Stelle der Metazeile, und die traegt keine.
+                                          alsFeld: false)
                         }
                     }
                 }
@@ -417,10 +466,20 @@ struct FolgenEbene: View {
                         VStack(spacing: 0) {
                             ForEach(folgen) { folge in
                                 Button { starten(folge) } label: {
-                                    Folgenzeile(model: model, folge: folge)
-                                        .background(folge.id == item.id ? Color.white.opacity(0.08) : .clear)
+                                    // Die laufende Folge traegt ein groesseres
+                                    // Bild, keine Flaeche — die lief hier ueber
+                                    // die volle Breite und machte die Dynamic
+                                    // Island sichtbar. Begruendung an
+                                    // `Folgenzeile.laufend`.
+                                    Folgenzeile(model: model, folge: folge,
+                                                laufend: folge.id == item.id)
                                 }
-                                .buttonStyle(.plain)
+                                // Eine Zeile drückt wie eine Zeile: Fläche
+                                // statt Maßstab. Vorher `Druckknopf` — der zog
+                                // das ganze Standbild auf 0,97, und in einer
+                                // Liste sieht das nach Verrutschen aus. So hält
+                                // es auch `Wischzeile` auf der Serienseite.
+                                .buttonStyle(Stil.Druckzeile())
                                 .accessibilityAddTraits(folge.id == item.id ? .isSelected : [])
                                 .id(folge.id)
                                 .transition(.opacity)
@@ -455,8 +514,8 @@ struct FolgenEbene: View {
             gewaehlteStaffel = passendeStaffel(in: gemerkt.staffeln)
             if let id = gewaehlteStaffel?.id, let liste = gemerkt.folgen[id] { folgen = liste }
         }
-        let frisch = await model.staffeln(serie)
-        guard !frisch.isEmpty else { return }
+        // `nil` heisst gestoert: dann bleibt stehen, was der Speicher hatte.
+        guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
             gewaehlteStaffel = passendeStaffel(in: frisch)
@@ -479,12 +538,16 @@ struct FolgenEbene: View {
     private func folgenLaden(staffelGewechselt: Bool = false) async {
         guard let serie = item.seriesId else { return }
         let staffel = gewaehlteStaffel?.id
-        let geladen = await model.folgen(serie: serie, staffel: staffel)
+        // Gescheitert heisst: die Liste bleibt, wie sie war. Sie leer zu
+        // setzen hiesse behaupten, die Staffel habe keine Folgen.
+        guard let geladen = await model.folgen(serie: serie, staffel: staffel) else { return }
         // Wer inzwischen eine andere Staffel gewählt hat, bekommt deren Folgen.
         guard staffel == gewaehlteStaffel?.id else { return }
         if staffelGewechselt {
             // Die neue Staffel blendet ein, statt hart dazustehen.
-            withAnimation(.easeOut(duration: 0.25)) { folgen = geladen }
+            // Inhalt, der ankommt, blendet in 0,28 ein (BRAND 6). Vorher
+            // easeOut 0,25 — dieselbe Absicht, eine eigene Zahl.
+            withAnimation(Stil.einblenden) { folgen = geladen }
         } else {
             folgen = geladen
         }

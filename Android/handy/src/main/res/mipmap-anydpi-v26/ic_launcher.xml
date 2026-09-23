@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Das App-Zeichen. Es fehlte ganz: ohne `android:icon` im Manifest zeigt Android
+     sein eigenes Standardsymbol auf dem Startbildschirm, und genau das war da.
+
+     Nur `anydpi-v26` und keine PNG-Kette: `minSdk` ist 28, adaptive Icons gibt es ab
+     26 — ein Rueckfall waere Ballast fuer Geraete, die diese App nicht laden koennen.
+     Zwei Vektoren statt fuenf Bildgroessen, und das Zeichen bleibt bei jeder
+     Auflaesung scharf. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_hintergrund" />
+    <foreground android:drawable="@drawable/ic_launcher_vordergrund" />
+    <monochrome android:drawable="@drawable/ic_launcher_vordergrund" />
+</adaptive-icon>

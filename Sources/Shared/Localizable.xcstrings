@@ -120,6 +120,23 @@
         }
       }
     },
+    "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn’t answering. Is it still running, or is the Wi-Fi stuck?"
+          }
+        }
+      }
+    },
     "%@ hat nicht geantwortet. Läuft der Server, und bist du im selben Netz?": {
       "extractionState": "manual",
       "localizations": {
@@ -306,6 +323,23 @@
         }
       }
     },
+    "%lld Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld movies"
+          }
+        }
+      }
+    },
     "%lld Folgen": {
       "localizations": {
         "de": {
@@ -485,6 +519,63 @@
           "stringUnit": {
             "state": "translated",
             "value": "Skip back %lld seconds"
+          }
+        }
+      }
+    },
+    "%lld Sammlungen": {
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Sammlung"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Sammlungen"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld collection"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld collections"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld series"
           }
         }
       }
@@ -801,6 +892,23 @@
         }
       }
     },
+    "1 Folge": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Folge"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 episode"
+          }
+        }
+      }
+    },
     "1 Staffel": {
       "extractionState": "manual",
       "localizations": {
@@ -967,6 +1075,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Refresh"
+          }
+        }
+      }
+    },
+    "Alle Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Movies"
+          }
+        }
+      }
+    },
+    "Alle Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Series"
           }
         }
       }
@@ -1474,6 +1616,23 @@
         }
       }
     },
+    "Auf GitHub, deine App-Version ist schon eingetragen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf GitHub, deine App-Version ist schon eingetragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On GitHub, with your app version already filled in"
+          }
+        }
+      }
+    },
     "Auf deinem Server": {
       "extractionState": "manual",
       "localizations": {
@@ -1508,19 +1667,19 @@
         }
       }
     },
-    "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.": {
+    "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."
+            "value": "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your server has no films or shows in this genre right now."
+            "value": "Nothing on your server for that. Sometimes it's just one letter."
           }
         }
       }
@@ -1542,23 +1701,6 @@
         }
       }
     },
-    "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The other device shows a six-digit code. Enter it here and that device signs in with your account."
-          }
-        }
-      }
-    },
     "Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.": {
       "extractionState": "manual",
       "localizations": {
@@ -1572,6 +1714,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Playback stops on the other device and continues here at the same spot."
+          }
+        }
+      }
+    },
+    "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The other device shows a six-digit code. Enter it here and that device signs in with your account."
           }
         }
       }
@@ -1609,23 +1768,6 @@
         }
       }
     },
-    "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can download any movie or show from its page. Downloaded titles play without internet, in original quality."
-          }
-        }
-      }
-    },
     "Auf jeder Film- und Serienseite gibt es einen Knopf zum Laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.": {
       "extractionState": "manual",
       "localizations": {
@@ -1639,6 +1781,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Every movie and show page has a download button. Downloaded titles play without internet, in original quality."
+          }
+        }
+      }
+    },
+    "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can download any movie or show from its page. Downloaded titles play without internet, in original quality."
           }
         }
       }
@@ -1741,6 +1900,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Delivery"
+          }
+        }
+      }
+    },
+    "Auswählen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
           }
         }
       }
@@ -2033,6 +2209,22 @@
         }
       }
     },
+    "Code": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code"
+          }
+        }
+      }
+    },
     "Code eingeben, dann geht es hier von selbst weiter": {
       "extractionState": "manual",
       "localizations": {
@@ -2080,6 +2272,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Container"
+          }
+        }
+      }
+    },
+    "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask questions and report bugs there. New builds show up there first, too."
+          }
+        }
+      }
+    },
+    "Danach %@ frei": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Danach %@ frei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ free afterwards"
           }
         }
       }
@@ -2151,6 +2377,23 @@
         }
       }
     },
+    "Das ist keine gültige Adresse.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das ist keine gültige Adresse."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That isn’t a valid address."
+          }
+        }
+      }
+    },
     "Datei": {
       "extractionState": "manual",
       "localizations": {
@@ -2185,19 +2428,19 @@
         }
       }
     },
-    "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.": {
+    "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."
+            "value": "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Swiftly doesn’t save your password, only the Seerr sign-in."
+            "value": "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password."
           }
         }
       }
@@ -2232,6 +2475,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Your request is with whoever runs the server. There is nothing else for you to do."
+          }
+        }
+      }
+    },
+    "Deine Anmeldung ließ sich nicht speichern.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Anmeldung ließ sich nicht speichern."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your sign-in couldn’t be saved."
+          }
+        }
+      }
+    },
+    "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your sign-in couldn’t be saved. You’ll have to sign in again next time you open the app."
           }
         }
       }
@@ -2388,6 +2665,40 @@
         }
       }
     },
+    "Der Server hat keine Datei zu diesem Titel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat keine Datei zu diesem Titel."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server has no file for this title."
+          }
+        }
+      }
+    },
+    "Der Server hat keine Datei zu dieser Folge.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server hat keine Datei zu dieser Folge."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server has no file for this episode."
+          }
+        }
+      }
+    },
     "Der Server hat mit %lld geantwortet.": {
       "extractionState": "manual",
       "localizations": {
@@ -2439,36 +2750,19 @@
         }
       }
     },
-    "Der Server hat keine Datei zu dieser Folge.": {
+    "Der Server wandelt nie um, es läuft immer die Originaldatei": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Der Server hat keine Datei zu dieser Folge."
+            "value": "Der Server wandelt nie um, es läuft immer die Originaldatei"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The server has no file for this episode."
-          }
-        }
-      }
-    },
-    "Der Server hat keine Datei zu diesem Titel.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server hat keine Datei zu diesem Titel."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server has no file for this title."
+            "value": "The server never converts, you always get the original file"
           }
         }
       }
@@ -2574,40 +2868,6 @@
         }
       }
     },
-    "Dieser Server wandelt nicht um. Es läuft immer die Originaldatei.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieser Server wandelt nicht um. Es läuft immer die Originaldatei."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This server doesn't convert video. The original file always plays."
-          }
-        }
-      }
-    },
-    "Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can only set the maximum bitrate when “Always Direct Play” is off."
-          }
-        }
-      }
-    },
     "Die Datei liess sich nicht ablegen.": {
       "extractionState": "manual",
       "localizations": {
@@ -2642,6 +2902,57 @@
         }
       }
     },
+    "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres come from your server. As rows, each genre gets its own row at the bottom of the home screen, newest titles first. As chips, the genres sit at the top as small buttons, and a click opens the genre. Pick none and your home screen stays as it is."
+          }
+        }
+      }
+    },
+    "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Tipp öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Tipp öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres come from your server. As rows, each genre gets its own row at the bottom of the home screen, newest titles first. As chips, the genres sit at the top as small buttons, and a tap opens the genre. Pick none and your home screen stays as it is."
+          }
+        }
+      }
+    },
+    "Die letzte Stunde, ohne Zugangsdaten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die letzte Stunde, ohne Zugangsdaten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The last hour, without sign-in details"
+          }
+        }
+      }
+    },
     "Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen.": {
       "extractionState": "manual",
       "localizations": {
@@ -2659,19 +2970,19 @@
         }
       }
     },
-    "Das ist keine gültige Adresse.": {
+    "Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Das ist keine gültige Adresse."
+            "value": "Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "That isn’t a valid address."
+            "value": "You can only set the maximum bitrate when “Always Direct Play” is off."
           }
         }
       }
@@ -2688,6 +2999,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "This file"
+          }
+        }
+      }
+    },
+    "Dieser Server wandelt nicht um. Es läuft immer die Originaldatei.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Server wandelt nicht um. Es läuft immer die Originaldatei."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This server doesn't convert video. The original file always plays."
           }
         }
       }
@@ -2743,6 +3071,23 @@
         }
       }
     },
+    "Dieses Video wird im Bild-im-Bild wiedergegeben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Video wird im Bild-im-Bild wiedergegeben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video is playing in Picture in Picture."
+          }
+        }
+      }
+    },
     "Direct Play": {
       "extractionState": "manual",
       "localizations": {
@@ -2760,6 +3105,23 @@
         }
       }
     },
+    "Direct Play · Originalqualität": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct Play · Originalqualität"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct Play · original quality"
+          }
+        }
+      }
+    },
     "Direct Stream": {
       "extractionState": "manual",
       "localizations": {
@@ -2773,6 +3135,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Direct Stream"
+          }
+        }
+      }
+    },
+    "Discord beitreten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord beitreten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join the Discord"
           }
         }
       }
@@ -2807,6 +3186,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Turn downloads off?"
+          }
+        }
+      }
+    },
+    "Downloads warten, bis du im WLAN bist": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads warten, bis du im WLAN bist"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads wait until you’re on Wi-Fi"
           }
         }
       }
@@ -2964,19 +3360,19 @@
         }
       }
     },
-    "Erzwungen": {
+    "Entscheidet, was ein Haken auswählt.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erzwungen"
+            "value": "Entscheidet, was ein Haken auswählt."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Forced"
+            "value": "Decides what a tick selects."
           }
         }
       }
@@ -3015,6 +3411,23 @@
         }
       }
     },
+    "Erzwungen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erzwungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forced"
+          }
+        }
+      }
+    },
     "Extras": {
       "extractionState": "manual",
       "localizations": {
@@ -3045,6 +3458,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version"
+          }
+        }
+      }
+    },
+    "Fehler melden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehler melden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report a bug"
           }
         }
       }
@@ -3179,6 +3609,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Films, series, episodes"
+          }
+        }
+      }
+    },
+    "Filter, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter, %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter, %@"
           }
         }
       }
@@ -3403,6 +3849,23 @@
         }
       }
     },
+    "Fragen stellen und sagen, was fehlt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragen stellen und sagen, was fehlt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask questions and tell me what's missing"
+          }
+        }
+      }
+    },
     "Frei auf dem Gerät": {
       "localizations": {
         "de": {
@@ -3520,6 +3983,23 @@
         }
       }
     },
+    "Ganze Serie": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ganze Serie"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whole series"
+          }
+        }
+      }
+    },
     "Ganzes Bild": {
       "extractionState": "manual",
       "localizations": {
@@ -3550,6 +4030,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kind"
+          }
+        }
+      }
+    },
+    "Gattung, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gattung, %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kind, %@"
           }
         }
       }
@@ -3604,6 +4100,23 @@
         }
       }
     },
+    "Genre entfernen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove genre"
+          }
+        }
+      }
+    },
     "Genre hinzufügen": {
       "extractionState": "manual",
       "localizations": {
@@ -3634,40 +4147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Genres"
-          }
-        }
-      }
-    },
-    "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Genres come from your server. As rows, each genre gets its own row at the bottom of the home screen, newest titles first. As chips, the genres sit at the top as small buttons, and a click opens the genre. Pick none and your home screen stays as it is."
-          }
-        }
-      }
-    },
-    "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Tipp öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Tipp öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Genres come from your server. As rows, each genre gets its own row at the bottom of the home screen, newest titles first. As chips, the genres sit at the top as small buttons, and a tap opens the genre. Pick none and your home screen stays as it is."
           }
         }
       }
@@ -3907,6 +4386,40 @@
         }
       }
     },
+    "Im App Store": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im App Store"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the App Store"
+          }
+        }
+      }
+    },
+    "Im Play Store": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Play Store"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On Google Play"
+          }
+        }
+      }
+    },
     "Immer Direct Play": {
       "extractionState": "manual",
       "localizations": {
@@ -3936,6 +4449,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add to queue"
+          }
+        }
+      }
+    },
+    "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your server has no films or shows in this genre right now."
           }
         }
       }
@@ -4359,6 +4889,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copied"
+          }
+        }
+      }
+    },
+    "Lad was runter, bevor der Zug ins Funkloch fährt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lad was runter, bevor der Zug ins Funkloch fährt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grab something before the train hits the dead zone."
           }
         }
       }
@@ -4973,23 +5520,6 @@
         }
       }
     },
-    "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password."
-          }
-        }
-      }
-    },
     "Nicht angemeldet.": {
       "extractionState": "manual",
       "localizations": {
@@ -5109,6 +5639,40 @@
         }
       }
     },
+    "Nichts gefunden zu „%@“": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts gefunden zu „%@“"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing found for “%@”"
+          }
+        }
+      }
+    },
+    "Nichts gewählt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts gewählt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing selected"
+          }
+        }
+      }
+    },
     "Nichts in diesem Genre": {
       "extractionState": "manual",
       "localizations": {
@@ -5156,23 +5720,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nothing similar found."
-          }
-        }
-      }
-    },
-    "Der Server wandelt nie um, es läuft immer die Originaldatei": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server wandelt nie um, es läuft immer die Originaldatei"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server never converts, you always get the original file"
           }
         }
       }
@@ -5258,6 +5805,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "Try again"
+          }
+        }
+      }
+    },
+    "Nochmal — ab die Post": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal — ab die Post"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap again, off it goes"
+          }
+        }
+      }
+    },
+    "Nochmal, dann frag ich": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal, dann frag ich"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap again and I’ll ask"
+          }
+        }
+      }
+    },
+    "Nochmal, dann läuft’s": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal, dann läuft’s"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap again and it’s on"
+          }
+        }
+      }
+    },
+    "Nochmal, her damit": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal, her damit"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap again, gimme"
+          }
+        }
+      }
+    },
+    "Nur ungesehene": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur ungesehene"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched only"
           }
         }
       }
@@ -5398,23 +6030,6 @@
         }
       }
     },
-    "https:// kannst du weglassen.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "https:// kannst du weglassen."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can leave out https://."
-          }
-        }
-      }
-    },
     "Original": {
       "extractionState": "manual",
       "localizations": {
@@ -5445,6 +6060,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Password"
+          }
+        }
+      }
+    },
+    "Passwort verbergen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passwort verbergen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide password"
+          }
+        }
+      }
+    },
+    "Passwort zeigen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passwort zeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show password"
           }
         }
       }
@@ -5513,6 +6162,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Profile of %@"
+          }
+        }
+      }
+    },
+    "Protokoll teilen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protokoll teilen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share Log"
           }
         }
       }
@@ -5649,6 +6315,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rows"
+          }
+        }
+      }
+    },
+    "Sammlungen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sammlungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collections"
+          }
+        }
+      }
+    },
+    "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the code with your phone to go straight to the review page on the App Store."
+          }
+        }
+      }
+    },
+    "Scann den Code mit dem Handy. Deine App-Version steht dann schon im Issue.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scann den Code mit dem Handy. Deine App-Version steht dann schon im Issue."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the code with your phone. Your app version is already filled in on the issue."
           }
         }
       }
@@ -5822,6 +6539,23 @@
         }
       }
     },
+    "Server ist abgetaucht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server ist abgetaucht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server went dark"
+          }
+        }
+      }
+    },
     "Server wechseln": {
       "extractionState": "manual",
       "localizations": {
@@ -5868,40 +6602,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Session active"
-          }
-        }
-      }
-    },
-    "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your sign-in couldn’t be saved. You’ll have to sign in again next time you open the app."
-          }
-        }
-      }
-    },
-    "Deine Anmeldung ließ sich nicht speichern.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deine Anmeldung ließ sich nicht speichern."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your sign-in couldn’t be saved."
           }
         }
       }
@@ -5953,6 +6653,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "As soon as the server has titles, they will appear here."
+          }
+        }
+      }
+    },
+    "Sobald in dieser Sammlung etwas liegt, taucht es hier auf.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sobald in dieser Sammlung etwas liegt, taucht es hier auf."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As soon as there is something in this collection, it shows up here."
           }
         }
       }
@@ -6412,6 +7129,40 @@
         }
       }
     },
+    "Swiftly bewerten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly bewerten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rate Swiftly"
+          }
+        }
+      }
+    },
+    "Swiftly hat einen Discord": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly hat einen Discord"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly has a Discord"
+          }
+        }
+      }
+    },
     "Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.": {
       "localizations": {
         "de": {
@@ -6424,6 +7175,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly downloads the original file, in the same quality as streaming."
+          }
+        }
+      }
+    },
+    "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly doesn’t save your password, only the Seerr sign-in."
           }
         }
       }
@@ -6495,6 +7263,23 @@
         }
       }
     },
+    "Teil der Sammlung": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teil der Sammlung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Part of the collection"
+          }
+        }
+      }
+    },
     "Teilweise vorhanden": {
       "extractionState": "manual",
       "localizations": {
@@ -6525,6 +7310,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Speed"
+          }
+        }
+      }
+    },
+    "Tippe irgendwo auf das Lesezeichen. Dein Zukunfts-Ich freut sich.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippe irgendwo auf das Lesezeichen. Dein Zukunfts-Ich freut sich."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the bookmark anywhere. Future you says thanks."
           }
         }
       }
@@ -7406,23 +8208,6 @@
         }
       }
     },
-    "Dieses Video wird im Bild-im-Bild wiedergegeben.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dieses Video wird im Bild-im-Bild wiedergegeben."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This video is playing in Picture in Picture."
-          }
-        }
-      }
-    },
     "Wer schaut?": {
       "extractionState": "manual",
       "localizations": {
@@ -7898,6 +8683,23 @@
         }
       }
     },
+    "alles da": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alles da"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "all here"
+          }
+        }
+      }
+    },
     "angefordert %@ Hz": {
       "extractionState": "manual",
       "localizations": {
@@ -8114,6 +8916,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "watched"
+          }
+        }
+      }
+    },
+    "https:// kannst du weglassen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https:// kannst du weglassen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can leave out https://."
           }
         }
       }
@@ -8456,6 +9275,23 @@
         }
       }
     },
+    "wird gelesen …": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wird gelesen …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reading …"
+          }
+        }
+      }
+    },
     "zu spät": {
       "localizations": {
         "de": {
@@ -8589,19 +9425,19 @@
         }
       }
     },
-    "Downloads warten, bis du im WLAN bist": {
+    "Über Seerr anfragen": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloads warten, bis du im WLAN bist"
+            "value": "Über Seerr anfragen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloads wait until you’re on Wi-Fi"
+            "value": "Request via Seerr"
           }
         }
       }
@@ -8623,189 +9459,444 @@
         }
       }
     },
-    "Swiftly bewerten": {
+    "Dynamik": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Swiftly bewerten"
+            "value": "Dynamik"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rate Swiftly"
+            "value": "Range"
           }
         }
       }
     },
-    "Im App Store": {
+    "Erweitert": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Im App Store"
+            "value": "Erweitert"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On the App Store"
+            "value": "Advanced"
           }
         }
       }
     },
-    "Im Play Store": {
+    "Header-Name": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Im Play Store"
+            "value": "Header-Name"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On Google Play"
+            "value": "Header name"
           }
         }
       }
     },
-    "Discord beitreten": {
+    "Wert": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Discord beitreten"
+            "value": "Wert"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Join the Discord"
+            "value": "Value"
           }
         }
       }
     },
-    "Fragen stellen und sagen, was fehlt": {
+    "Header hinzufügen": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fragen stellen und sagen, was fehlt"
+            "value": "Header hinzufügen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask questions and tell me what's missing"
+            "value": "Add header"
           }
         }
       }
     },
-    "Fehler melden": {
+    "Den setzt Swiftly selbst.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fehler melden"
+            "value": "Den setzt Swiftly selbst."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Report a bug"
+            "value": "Swiftly sets this one itself."
           }
         }
       }
     },
-    "Auf GitHub, deine App-Version ist schon eingetragen": {
+    "Eigene Header": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auf GitHub, deine App-Version ist schon eingetragen"
+            "value": "Eigene Header"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On GitHub, with your app version already filled in"
+            "value": "Custom headers"
           }
         }
       }
     },
-    "Swiftly hat einen Discord": {
+    "Für einen Dienst vor dem Server": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Swiftly hat einen Discord"
+            "value": "Für einen Dienst vor dem Server"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Swiftly has a Discord"
+            "value": "For a service in front of the server"
           }
         }
       }
     },
-    "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.": {
+    "Sichern": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst."
+            "value": "Sichern"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask questions and report bugs there. New builds show up there first, too."
+            "value": "Save"
           }
         }
       }
     },
-    "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store.": {
+    "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store."
+            "value": "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scan the code with your phone to go straight to the review page on the App Store."
+            "value": "For a service in front of your server, like Cloudflare Access, Authelia or Pangolin. Swiftly only sends these headers to this address."
           }
         }
       }
     },
-    "Scann den Code mit dem Handy. Deine App-Version steht dann schon im Issue.": {
+    "Trakt": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scann den Code mit dem Handy. Deine App-Version steht dann schon im Issue."
+            "value": "Trakt"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scan the code with your phone. Your app version is already filled in on the issue."
+            "value": "Trakt"
+          }
+        }
+      }
+    },
+    "Trägt ein, was du schaust": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trägt ein, was du schaust"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logs what you watch"
+          }
+        }
+      }
+    },
+    "Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly tells Trakt what you watch. From 80 percent on, the title shows up there as watched."
+          }
+        }
+      }
+    },
+    "Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If your server has the Trakt plugin, you don't need this. Otherwise everything lands on Trakt twice."
+          }
+        }
+      }
+    },
+    "Mit Trakt verbinden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Trakt verbinden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Trakt"
+          }
+        }
+      }
+    },
+    "Hole Code…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hole Code…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting code…"
+          }
+        }
+      }
+    },
+    "Geh auf %@ und gib diesen Code ein.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geh auf %@ und gib diesen Code ein."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to %@ and enter this code."
+          }
+        }
+      }
+    },
+    "Trakt öffnen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt öffnen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Trakt"
+          }
+        }
+      }
+    },
+    "Trakt hat die Verbindung nicht freigegeben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt hat die Verbindung nicht freigegeben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt didn't approve the connection."
+          }
+        }
+      }
+    },
+    "Trakt bremst gerade. Versuch es in ein paar Minuten noch mal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt bremst gerade. Versuch es in ein paar Minuten noch mal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt is holding back right now. Try again in a few minutes."
+          }
+        }
+      }
+    },
+    "Trakt ist gerade nicht erreichbar.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt ist gerade nicht erreichbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach Trakt right now."
+          }
+        }
+      }
+    },
+    "alles gesehen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "alles gesehen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "all watched"
+          }
+        }
+      }
+    },
+    "geladen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "geladen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "downloaded"
+          }
+        }
+      }
+    },
+    "lädt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lädt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "downloading"
+          }
+        }
+      }
+    },
+    "%@ zu wenig": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ zu wenig"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ short"
+          }
+        }
+      }
+    },
+    "Download entfernen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove download"
           }
         }
       }

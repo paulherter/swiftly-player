@@ -13,6 +13,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.alsJson
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,8 @@ fun TvServerAufnahme(app: SwiftlyAnwendung, voreingestellt: String?, zurueck: ()
     var laeuft by remember { mutableStateOf(false) }
     var fehler by remember { mutableStateOf<String?>(null) }
     val lauf = rememberCoroutineScope()
+    /** „Erweitert" — eigene Header fuer einen Dienst vor dem Server. */
+    val koepfe = de.paulherter.swiftly.rememberKopfzeilen()
 
     fun abbrechen() { app.kern.aufnahmeAbbrechen(); zurueck() }
     fun aufnehmen(sitzung: String) { app.kern.aufnahmeAbbrechen(); app.sitzungAufnehmen(sitzung); zurueck() }
@@ -49,7 +52,8 @@ fun TvServerAufnahme(app: SwiftlyAnwendung, voreingestellt: String?, zurueck: ()
         pruefe = true; fehler = null
         lauf.launch {
             try {
-                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.aufnahmeVerbinden(adresse).await() })
+                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.aufnahmeVerbinden(adresse, koepfe.alsJson()).await() })
+                if (koepfe.isNotEmpty()) app.eigeneKoepfeAblegen()
                 server = o.getString("name") to o.getString("version")
             } catch (x: CancellationException) { throw x } catch (x: Exception) { fehler = fehlertext(app, x) }
             pruefe = false
@@ -86,6 +90,7 @@ fun TvServerAufnahme(app: SwiftlyAnwendung, voreingestellt: String?, zurueck: ()
                        imeAction = ImeAction.Go, tastaturAktion = { pruefen() })
                 Text(uebersetzt("https:// kannst du weglassen."), style = TvStil.klein, color = Stil.schriftSehrLeise,
                      modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                TvErweitert(koepfe, modifier = Modifier.padding(top = 14.dp))
                 TvKnopf(uebersetzt(if (pruefe) "Verbinden…" else "Weiter"), freigegeben = adresse.isNotBlank() && !pruefe,
                         modifier = Modifier.padding(top = 20.dp)) { pruefen() }
             } else {

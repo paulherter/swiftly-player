@@ -284,7 +284,7 @@ final class Wiedergabezentrale {
         guard let url else { return }
 
         Task { [weak self] in
-            guard let daten = try? await URLSession.shared.data(from: url).0,
+            guard let daten = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)).0,
                   let bild = Systembild(data: daten) else { return }
             let werk = Self.werkstueck(aus: bild)
             guard let self, self.titelbildFuer == id else { return }

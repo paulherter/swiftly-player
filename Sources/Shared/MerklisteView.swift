@@ -78,7 +78,7 @@ struct MerklisteView: View {
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, breite: nil)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                         .onAppear {
                             guard stand.loestNachladenAus(item.id, spalten: spalten) else { return }
                             Task { await stand.nachladen(model) }
@@ -92,13 +92,58 @@ struct MerklisteView: View {
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
             // Null im Ruhezustand — wie in der Bibliothek.
-            .onScrollGeometryChange(for: CGFloat.self) {
-                $0.contentOffset.y + $0.contentInsets.top
+            // **Der rohe Versatz, nicht der um den Sicherheitsrand bereinigte.**
+            //
+            // Hier stand `contentOffset.y + contentInsets.top`, und das war
+            // richtig, solange der Kopf immer gleich hoch war. Seit die
+            // Wertreihe beim Scrollen zuklappt, ist er es nicht mehr — und
+            // damit misst die Zeile ihr eigenes Ergebnis: Kopf schrumpft um
+            // zehn, Sicherheitsrand schrumpft um zehn, der gemessene Versatz
+            // faellt um zehn zurueck auf null, Kopf waechst wieder. Ein
+            // Zweitakter, der nie zur Ruhe kommt.
+            //
+            // **Die Summe ist schon der Scrollweg.** Gemessen am 22.09.:
+            //
+            //     rand 130,8  versatz −130,3  ->  Summe 0,5
+            //     rand 115,0  versatz −114,7  ->  Summe 0,3
+            //
+            // Dazwischen ist die Wertreihe von 28 auf 44 Punkt zugeklappt.
+            // Der obere Rand faellt dabei um 15,8 — und der rohe Versatz
+            // steigt um genau 15,6. **Beide wandern gemeinsam:** die
+            // Scrollflaeche haelt den Inhalt fest, wenn sich ihr Rand aendert.
+            // Die Summe bleibt davon unberuehrt und misst allein, was der
+            // Finger getan hat.
+            //
+            // Drei Anlaeufe sind an der gegenteiligen Annahme gescheitert —
+            // der Rand schrumpfe, der Versatz bleibe stehen, also muesse man
+            // das Eingeklappte wieder draufrechnen. Genau dieses Draufrechnen
+            // war der Fehler: es zaehlte den Weg ein zweites Mal, in jedem
+            // Bild, und die Reihe klappte von selbst zu, ohne dass jemand
+            // gescrollt hat. Zwei Vermutungen ueber die Ursache und eine
+            // Messung: die Messung hat es in zwei Minuten entschieden.
+            .onScrollGeometryChange(for: CGPoint.self) {
+                CGPoint(x: $0.contentInsets.top, y: $0.contentOffset.y)
             } action: { _, neu in
-                // Wie dort: eine Messung aus dem Hintergrund waere ein
-                // voll gescrollter Kopf fuer ein, zwei Bilder.
+                // Waehrend des Bereichswechsels rechnet die Scrollflaeche
+                // ihre Geometrie neu; erst wenn dieser Bereich vorn ist, ist
+                // die Messung etwas wert.
                 guard bereichAktiv else { return }
-                versatz = neu
+                // **Der eine Zwischenstand, der auch dann noch kommt.**
+                //
+                // Die Messung zeigt, wie ein echter Wert aussieht: der rohe
+                // Versatz ist **minus** dem oberen Rand (−130,3 bei Rand
+                // 130,8), die Summe also nahe null. Waehrend die Flaeche ihre
+                // Geometrie neu rechnet, meldet sie dagegen einmal Versatz
+                // null bei schon gesetztem Rand — daraus wird rechnerisch die
+                // ganze Kopfhoehe, die Reihe klappt fuer ein, zwei Bilder zu
+                // und wieder auf, und genau das ruckelt mitten im Aufziehen.
+                //
+                // Echt vorkommen kann die Paarung nur an einer Stelle: wenn
+                // man zufaellig um exakt die Randhoehe gescrollt hat. Dort
+                // kostet ein uebersprungenes Bild nichts, das naechste kommt
+                // sofort.
+                guard !(abs(neu.y) < 1 && neu.x > 1) else { return }
+                versatz = neu.y + neu.x
             }
             // **Das Heranziehen beim Bereichswechsel — es fehlte hier.**
             //
@@ -116,13 +161,23 @@ struct MerklisteView: View {
             .contentMargins(.bottom, 24, for: .scrollContent)
 
 
-            if stand.items.isEmpty, !stand.laedt {
+            if stand.gestoert, stand.items.isEmpty, !stand.laedt {
+                // Derselbe Text wie in der Bibliothek, samt Serveradresse —
+                // eine Ursache, eine Diagnose. Vorher stand auch hier „Noch
+                // nichts gemerkt", und das ist bei einer vollen Merkliste
+                // schlicht falsch.
+                Leerzustand(
+                    symbol: "externaldrive.badge.xmark",
+                    kopfzeile: "Server ist abgetaucht",
+                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                    hauptknopf: ("Erneut versuchen", { Task { await stand.laden(model) } }))
+            } else if stand.items.isEmpty, !stand.laedt {
                 // **Der Leerzustand sagt, wie man hineinkommt.** Sonst steht
                 // dort eine Sackgasse: eine leere Liste, die nicht verrät,
                 // woher ihr Inhalt käme.
                 Leerzustand(symbol: "bookmark",
                             kopfzeile: "Noch nichts gemerkt",
-                            text: "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.")
+                            text: "Tippe irgendwo auf das Lesezeichen. Dein Zukunfts-Ich freut sich.")
             }
         }
     }
@@ -130,7 +185,15 @@ struct MerklisteView: View {
 
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
-            VStack(alignment: .leading, spacing: 14) {
+            // **Vier, nicht vierzehn.** Der `Unterseitenkopf` bringt unten
+            // schon 18 Punkt mit; zusammen mit 14 standen die Pillen 32 Punkt
+            // unter dem Titel und wirkten abgehaengt. Paul am 21.09.: „viel zu
+            // weit unten". Breit gibt es keinen solchen Unterbau, dort bleibt
+            // es bei 14 — deshalb haengt die Zahl an `breit`.
+            // Eine Zahl fuer „Kopf zu Wertreihe", wie in Bibliothek und
+            // Downloads: 14 — und sie steht seit dem 21.09. in `Wertreihe`,
+            // damit sie mit den Pillen verschwindet.
+            VStack(alignment: .leading, spacing: 0) {
                 // **Breit ist die Merkliste eine Wurzel, schmal ein Weg** —
                 // und die beiden tragen verschiedene Koepfe.
                 //
@@ -152,14 +215,25 @@ struct MerklisteView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Merkliste")
                             .font(Stil.titelGross)
-                            .tracking(-0.6)
+                            .tracking(Stil.sperrungTitel)
                             .foregroundStyle(Stil.schrift)
                         Spacer(minLength: 0)
                         if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
                     }
                 } else {
+                    // **Die Zählmarke steht bei den Pillen, nicht im Kopf.**
+                    //
+                    // Sie war einen Tag lang oben rechts neben „Merkliste" —
+                    // und stand dort auf einer anderen Ebene als die Werte,
+                    // auf die sie sich bezieht. Paul am 21.09.: „die müsste
+                    // rechts von den zwei Buttons sein und nicht von dem
+                    // Namen". Sie zählt, was die zwei Pillen gefiltert haben,
+                    // also gehört sie in deren Zeile.
                     Unterseitenkopf(titel: String(localized: "Merkliste"),
-                                    zurueck: { zurueck() }) { EmptyView() }
+                                    zurueck: { zurueck() },
+                                    // Der Abstand zur Pillenzeile kommt vom
+                                    // Stapel, nicht zweimal.
+                                    unten: 0) { EmptyView() }
                         // Der Kopf bringt seinen eigenen Rand mit; hier steht
                         // er schon in einem.
                         .padding(.horizontal, -Stil.rand(breit: breit))
@@ -173,6 +247,24 @@ struct MerklisteView: View {
                 // Das Zeichen unterscheidet die beiden Pillen: ein Trichter
                 // engt ein, ein Raster waehlt aus — und die Pille der
                 // Bibliothek steht auf der Nachbarseite an derselben Stelle.
+                // Dieselbe Zeile wie in der Bibliothek, dasselbe Verhalten:
+                // schmal klappt sie beim Scrollen zu, breit bleibt sie stehen.
+                // Die Begruendung steht bei `Wertreihe`.
+                pillenzeile
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pillenzeile: some View {
+        if breit {
+            werte.padding(.top, 14)
+        } else {
+            Wertreihe(versatz: versatz) { werte }
+        }
+    }
+
+    private var werte: some View {
                 HStack(spacing: 8) {
                     if breit {
                         ForEach(Merkgattung.allCases) { fall in
@@ -197,12 +289,10 @@ struct MerklisteView: View {
                         Wertpille(symbol: "arrow.up.arrow.down",
                                   text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
 
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 12)
                         if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
                     }
                 }
-            }
-        }
     }
 
     @Environment(\.dismiss) private var schliessen

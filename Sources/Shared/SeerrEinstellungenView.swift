@@ -16,9 +16,16 @@ struct SeerrEinstellungenView: View {
     @State private var adresse = ""
     @State private var benutzer = ""
     @State private var passwort = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor Seerr.
+    @State private var koepfe: [Kopfzeile] = []
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Derselbe Grund wie jede andere Seite. Er war kurz ein eigener
+            // (`gruppengrund`), weil reines Schwarz unter einer Karte die
+            // ganze Strecke auf einmal war; seit der Grund #101010 ist,
+            // betraegt der Sprung ein Fuenftel davon und braucht keine
+            // Ausnahme mehr.
             Stil.grund.ignoresSafeArea()
             VStack(spacing: 0) {
                 // Titel neben dem Pfeil, nicht darunter — siehe
@@ -40,7 +47,10 @@ struct SeerrEinstellungenView: View {
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.")
-                .font(Stil.koerper)
+                // **Mitwachsend, nicht fest** — BRAND.md, Abschnitt 2: Fließtext und
+                // Einstellungen folgen der Systemschrift. Derselbe Grad wie
+                // `Stil.koerper`, nur wächst er mit.
+                .mitwachsend(15)
                 .foregroundStyle(Stil.schriftLeise)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -50,7 +60,10 @@ struct SeerrEinstellungenView: View {
 
             Spacer(minLength: 40)
         }
-        .frame(maxWidth: 520, alignment: .leading)
+        // `formularbreite`, nicht 520: dieselbe Rolle wie Anmeldung und
+        // Serveraufnahme, also dasselbe Mass. 520 war die zweite Antwort auf
+        // „wie breit darf ein Formular werden".
+        .frame(maxWidth: Stil.formularbreite, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: breit ? .center : .leading)
     }
 
@@ -61,7 +74,7 @@ struct SeerrEinstellungenView: View {
             Wertzeile(symbol: "link", titel: Text(verbatim: seerr.adresse ?? ""),
                       wert: seerr.traegt ? String(localized: "Aktiv")
                                          : String(localized: "Sitzung abgelaufen"))
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             // **Kein „Abmelden", sondern „Trennen".** Bei Seerr selbst bleibt
             // alles, wie es ist — es geht nur um diesen einen Zugang hier.
             Wertzeile(symbol: "xmark.circle", titel: Text("Verbindung trennen"),
@@ -86,13 +99,16 @@ struct SeerrEinstellungenView: View {
                             platzhalter: "Benutzername")
                 Eingabefeld(text: $passwort, symbol: "lock",
                             platzhalter: "Passwort", geheim: true)
+                Erweitertbereich(zeilen: $koepfe)
             }
             .padding(.horizontal, Stil.rand(breit: breit))
 
             if let fehler = seerr.fehler {
                 Text(verbatim: fehler)
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.warnung)
+                    .mitwachsend(12)
+                    // Die Anmeldung ist fehlgeschlagen, sie wartet nicht:
+                    // `fehler`. So macht es die Serveranmeldung auch.
+                    .foregroundStyle(Stil.fehler)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Stil.rand(breit: breit))
                     .padding(.top, 14)
@@ -111,13 +127,13 @@ struct SeerrEinstellungenView: View {
                 .padding(.top, 20)
             } else if seerr.meldetAn {
                 Text("Verbinde…")
-                    .font(Stil.koerper).foregroundStyle(Stil.schriftLeise)
+                    .mitwachsend(15).foregroundStyle(Stil.schriftLeise)
                     .padding(.horizontal, Stil.rand(breit: breit))
                     .padding(.top, 20)
             }
 
             Text("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.")
-                .font(Stil.klein)
+                .mitwachsend(12)
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -127,7 +143,8 @@ struct SeerrEinstellungenView: View {
     }
 
     private func verbinden() async {
-        await seerr.verbinden(adresse: adresse, benutzer: benutzer, passwort: passwort)
+        await seerr.verbinden(adresse: adresse, benutzer: benutzer, passwort: passwort,
+                              koepfe: koepfe.koepfe)
         if seerr.verbunden { passwort = "" }
     }
 }

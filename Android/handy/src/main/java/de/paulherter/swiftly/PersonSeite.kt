@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseInOut
@@ -11,8 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -44,12 +45,15 @@ import java.time.format.FormatStyle
 
 /** Antwort von `Kern.person` — Querbilder und Titel stehen dort schon fest. */
 data class Personenstand(val beschreibung: String?, val geboren: String?, val ort: String?, val bild: String?,
-                         val banner: List<String>, val titel: List<Rasterkachel>, val tmdb: Int? = null)
+                         val banner: List<String>, val titel: List<Rasterkachel>, val tmdb: Int? = null,
+                         /** Der Server hat auf die Titelliste nicht geantwortet — nicht „keine Titel". */
+                         val gestoert: Boolean = false)
 
 internal fun personLesen(json: String): Personenstand = JSONObject(json).let { o ->
     Personenstand(o.feldText("beschreibung"), o.feldText("geboren"), o.feldText("ort"), o.feldText("bild"),
                   o.feldTexte("banner"), o.feldListe("titel") { rasterkachelLesen(it) },
-                  if (o.isNull("tmdb")) null else o.getInt("tmdb"))
+                  if (o.isNull("tmdb")) null else o.getInt("tmdb"),
+                  o.optBoolean("gestoert", false))
 }
 
 /** „24. Juni 1962" in der Sprache des Geraets — `Text(datum, format: .date(.long))`. */
@@ -67,7 +71,8 @@ private fun langesDatum(iso: String): String? =
 @Composable
 fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     var stand by remember(ziel.id) { mutableStateOf(app.personenSpeicher[ziel.id]) }
-    LaunchedEffect(ziel.id) {
+    var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    LaunchedEffect(ziel.id, versuch) {
         try {
             val neu = personLesen(withContext(Dispatchers.IO) { app.kern.person(ziel.id).await() })
             stand = neu
@@ -88,10 +93,10 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     val seerrFertig = anfragbar != null || !seerrDa || (s != null && tmdb == null)
     val ein by animateFloatAsState(if (s != null) 1f else 0f, Bewegung.einblenden(), label = "person")
 
-    // Das Banner wechselt weich und langsam zwischen den Querbildern der Titel; eines bleibt stehen.
+    // **Die Bilder wechseln nicht von allein.** Eine Schleife alle sechs Sekunden war die einzige
+    // Stelle, die sich ohne Zutun ruehrte — „nichts bewegt sich dekorativ" — und sie ueberging
+    // „Bewegung reduzieren". Es bleibt beim ersten Bild.
     val banner = s?.banner.orEmpty()
-    var stelle by remember(ziel.id) { mutableIntStateOf(0) }
-    LaunchedEffect(banner.size) { if (banner.size > 1) while (true) { delay(6000); stelle++ } }
     var ganzeBiografie by remember { mutableStateOf(false) }
 
     val scroll = rememberScrollState()
@@ -100,26 +105,19 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
-                Crossfade(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size),
-                          animationSpec = tween(1200, easing = EaseInOut), label = "banner") { url ->
-                    AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                }
+                AsyncImage(model = banner.firstOrNull(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 Heldauslauf(Modifier.align(Alignment.BottomStart))
                 // **Ein Aufbau, nicht zwei:** ein runder Kopf wie die Besetzungskachel.
                 Row(Modifier.align(Alignment.BottomStart).padding(horizontal = Stil.randAbstand).padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SubcomposeAsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche),
-                        error = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(30.dp))
-                            }
-                        })
+                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
+                    AsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche))
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(ziel.name, style = Stil.titel.copy(letterSpacing = (-0.6).sp), color = Stil.schrift,
+                        Text(ziel.name, style = Stil.titel, color = Stil.schrift,
                              maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Column(Modifier.alpha(ein), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            val zeile = TextStyle(fontSize = 14.sp)
+                            // Geburtstag und Ort in 12 — 13 Regular ist keine Stufe.
+                            val zeile = Stil.klein
                             Text(s?.geboren?.let(::langesDatum)?.let { uebersetzt("Geboren %@", it) } ?: " ",
                                  style = zeile, color = Stil.schriftLeise, maxLines = 1)
                             Text(s?.ort ?: " ", style = zeile, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -133,7 +131,7 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             val herkunft = ziel.herkunft
             if (!rolle.isNullOrEmpty() && herkunft != null) {
                 Text(uebersetzt("%@ in %@", rolle, herkunft),
-                     style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium), color = Stil.akzent, maxLines = 2,
+                     style = Stil.kachel, color = Stil.akzent, maxLines = 2,
                      modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp))
             }
 
@@ -144,12 +142,20 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                     Text(text, style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise,
                          maxLines = if (ganzeBiografie) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis,
                          modifier = Modifier.animateContentSize(tween(200, easing = EaseInOut)))
+                    // Dasselbe „Mehr" wie im Klapptext, also derselbe Grad: 13 Medium.
                     Text(uebersetzt(if (ganzeBiografie) "Weniger" else "Mehr"),
-                         style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift,
+                         style = Stil.kachel, color = Stil.schrift,
                          modifier = Modifier.antippen { ganzeBiografie = !ganzeBiografie })
                 }
             }
 
+            // Solange nichts da ist, drei Platzhalter in der Form der Reihe.
+            if (s == null) {
+                Row(Modifier.padding(horizontal = Stil.randAbstand).padding(top = Stil.reihenAbstand),
+                    horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
+                    repeat(3) { Ladefeld(Modifier.size(Stil.kachelBreite, Stil.kachelHoehe)) }
+                }
+            }
             if (s != null) {
                 if (s.titel.isNotEmpty()) {
                     Box(Modifier.alpha(ein)) {
@@ -169,7 +175,13 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                         }
                     }
                 }
-                if (s.titel.isEmpty() && anfragbar.isNullOrEmpty() && seerrFertig) {
+                // **Gestoert ist nicht leer.** „Auf deinem Server gibt es sonst nichts mit …"
+                // ist eine Aussage ueber den Bestand; hat der Server nicht geantwortet, hat sie
+                // niemand geprueft. Der Stoerhinweis nimmt nur diesen Abschnitt, denn Bild, Name
+                // und Biografie stehen ja da.
+                if (s.gestoert && s.titel.isEmpty()) {
+                    Stoerhinweis(app.serveradresse(), Modifier.alpha(ein), abstandOben = 26.dp, erneut = { versuch++ })
+                } else if (s.titel.isEmpty() && anfragbar.isNullOrEmpty() && seerrFertig) {
                     Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name),
                          style = Stil.koerper, color = Stil.schriftLeise,
                          modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp).alpha(ein))

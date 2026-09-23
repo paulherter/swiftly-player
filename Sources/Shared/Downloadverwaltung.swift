@@ -175,7 +175,7 @@ final class Downloadverwaltung {
             try? FileManager.default.createDirectory(at: ziel, withIntermediateDirectories: true)
             var geladen = 0
             for d in dateien {
-                guard let (daten, antwort) = try? await URLSession.shared.data(from: d.adresse),
+                guard let (daten, antwort) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(d.adresse)),
                       (antwort as? HTTPURLResponse)?.statusCode == 200, !daten.isEmpty else { continue }
                 let endung = d.adresse.pathExtension.isEmpty ? "srt" : d.adresse.pathExtension
                 if (try? daten.write(to: ziel.appendingPathComponent("\(d.index).\(endung)"))) != nil {
@@ -222,6 +222,10 @@ final class Downloadverwaltung {
         guard let roh = try? JSONEncoder().encode(alle) else { return }
         try? roh.write(to: Self.verzeichnisdatei, options: .atomic)
     }
+
+    /// Frisch messen, wenn eine Auswahl aufgeht: seit dem Anmelden kann das
+    /// Geraet voller geworden sein, und der Fuss rechnet mit dieser Zahl.
+    func platzAuffrischen() { platzMessen() }
 
     private func platzMessen() {
         // **`…ForImportantUsage` gibt es auf tvOS nicht**, und das ist keine
@@ -280,6 +284,11 @@ final class Downloadverwaltung {
             if let sid = p.serienId, let serie = bilder[sid] {
                 bildSichern(p.konto, sid, von: serie)
             }
+            // Das grosse Kopfbild der Serie, einmal je Serie — `bildSichern`
+            // laedt nicht, was schon liegt.
+            if let sid = p.serienId, let kopf = bilder[Self.kopfschluessel(sid)] {
+                bildSichern(p.konto, sid + "-kopf", von: kopf)
+            }
         }
         sichern()
         takt()
@@ -303,11 +312,35 @@ final class Downloadverwaltung {
         return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
     }
 
+    /// Unter diesem Schluessel reicht die Serienseite das grosse Kopfbild
+    /// in `anstossen(_:bilder:)` herein.
+    static func kopfschluessel(_ serienId: String) -> String { "kopf:" + serienId }
+
+    /// **Das Kopfbild der Serie in Bildschirmaufloesung**, fuer die
+    /// Serienseite in den Downloads. Das Plakat und die Querbilder sind fuer
+    /// Zeilen gemessen (300 und 220 hoch) und standen dort gestreckt und
+    /// weich da.
+    func kopfbild(serie serienId: String, konto: String) -> URL? {
+        let weg = Self.bildweg(konto, serienId + "-kopf")
+        return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
+    }
+
+    /// Fuer Downloads von vorher, die es noch nicht haben: beim naechsten
+    /// Oeffnen mit Netz nachholen. Gibt den Weg zurueck, sobald es liegt.
+    func kopfbildNachholen(serie serienId: String, konto: String, von adresse: URL) async -> URL? {
+        let ziel = Self.bildweg(konto, serienId + "-kopf")
+        guard !FileManager.default.fileExists(atPath: ziel.path) else { return ziel }
+        guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(adresse)),
+              daten.count > 0, (try? daten.write(to: ziel, options: .atomic)) != nil
+        else { return nil }
+        return ziel
+    }
+
     private func bildSichern(_ konto: String, _ kennung: String, von adresse: URL) {
         let ziel = Self.bildweg(konto, kennung)
         guard !FileManager.default.fileExists(atPath: ziel.path) else { return }
         Task {
-            guard let (daten, _) = try? await URLSession.shared.data(from: adresse),
+            guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(adresse)),
                   daten.count > 0 else { return }
             try? daten.write(to: ziel, options: .atomic)
         }
@@ -364,6 +397,7 @@ final class Downloadverwaltung {
             if let sid = p.serienId,
                !posten.contains(where: { $0.id != id && $0.serienId == sid }) {
                 try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid))
+                try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid + "-kopf"))
             }
         }
         posten.removeAll { $0.id == id }
@@ -445,7 +479,9 @@ final class Downloadverwaltung {
         // worden sein — dann faengt hier nichts mehr an.
         guard posten.first(where: { $0.id == p.id })?.stand == .laedt else { return }
         let aufgabe = fortsetzen.map { sitzung.downloadTask(withResumeData: $0) }
-            ?? sitzung.downloadTask(with: adresse)
+            // Mit den eigenen Headern des Servers (Issue #4); ohne Eintrag
+            // dieselbe Anfrage wie vorher. Die Fortsetzdaten tragen sie mit.
+            ?? sitzung.downloadTask(with: .mitEigenenKoepfen(adresse))
         // Der Dateiname reist mit der Aufgabe, weil der Rückruf aus dem
         // System kommt und unsere Liste dort nicht erreichbar ist.
         aufgabe.taskDescription = p.id + "\u{1F}" + p.dateiname
@@ -457,6 +493,8 @@ final class Downloadverwaltung {
 
     /// Zuletzt veroeffentlichter Stand je Download — siehe `fortschritt`.
     @ObservationIgnored private var gemeldet: [String: Int64] = [:]
+    /// Wann zuletzt veroeffentlicht wurde — die Zahl soll zaehlen, nicht zittern.
+    @ObservationIgnored private var gemeldetUm: [String: Date] = [:]
 
     private func fortschritt(_ id: String, geladen: Int64, gesamt: Int64) {
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
@@ -473,10 +511,18 @@ final class Downloadverwaltung {
         // Ein halbes Prozent ist bei einem 28-Punkt-Ring rund ein halbes
         // Pixel Bogen — darunter gibt es nichts zu sehen, und der letzte
         // Schritt auf voll kommt ohnehin ueber `abgeschlossen`.
-        let grenze = max(Int64(1), (gesamt > 0 ? gesamt : posten[i].bytes) / 200)
-        let vorher = gemeldet[id] ?? 0
-        guard geladen - vorher >= grenze || geladen < vorher else { return }
+        //
+        // **Und hoechstens einmal je Sekunde.** Das halbe Prozent allein
+        // liess bei schneller Leitung fuenf und mehr Zahlen je Sekunde durch;
+        // die Unterzeile las sich wie ein Zittern. Die Regel steht im Paket.
+        let jetzt = Date()
+        guard Downloadregeln.fortschrittZeigen(
+            geladen: geladen, gesamt: gesamt > 0 ? gesamt : posten[i].bytes,
+            vorher: gemeldet[id],
+            vergangen: gemeldetUm[id].map { jetzt.timeIntervalSince($0) })
+        else { return }
         gemeldet[id] = geladen
+        gemeldetUm[id] = jetzt
 
         posten[i].geladen = geladen
         // Sagt der Server im Katalog keine Grösse, nimmt der Balken die aus
@@ -498,6 +544,7 @@ final class Downloadverwaltung {
     private func abgeschlossen(_ id: String, gelungen: Bool) {
         aufgaben[id] = nil
         gemeldet[id] = nil
+        gemeldetUm[id] = nil
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
         if gelungen {
             posten[i].stand = .fertig

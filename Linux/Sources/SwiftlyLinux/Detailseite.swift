@@ -207,6 +207,95 @@ extension App {
         }
     }
 
+    private func reihenplatz(in unten: Widget!) -> Widget! {
+        let platz = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
+        gtk_widget_set_visible(platz, 0)
+        anhaengen(unten, platz)
+        return platz
+    }
+
+    /// **„Teil der Sammlung"** — die anderen Titel der Sammlung, in ihrer
+    /// Folge, ueber „Aehnliches": die Sammlung ist die naehere
+    /// Verwandtschaft (Mac `Sammlungsreihe`). Der Kopf oeffnet die
+    /// Sammlungsseite. Hoechstens zwei Reihen; steht ein Film in mehr
+    /// Sammlungen, sind die uebrigen meist automatisch angelegte Doppel.
+    /// Fehlt die Sammlung, fehlt die Reihe — wie bei den Extras.
+    private func sammlungsreihenNachladen(_ titel: Item, in raum: Widget!) {
+        guard let gattung = Bibliotheksgattung.art(zuTyp: titel.type) else { return }
+        let kiste = gehalten(raum)
+        angebotLaden { [weak self] in
+            guard let self, let client = self.client, self.angebotFuer != nil,
+                  let verzeichnis = self.sammlungsverzeichnis
+            else { losgelassen(kiste); return }
+            let sammlungen = Array(verzeichnis.sammlungen(mit: titel).prefix(2))
+            guard !sammlungen.isEmpty else { losgelassen(kiste); return }
+            Task.detached { [self] in
+                var gefunden: [(Sammlung, [Item])] = []
+                for sammlung in sammlungen {
+                    let quelle = Regalquelle(eltern: sammlung.id, art: gattung, sammlung: true)
+                    guard let liste = try? await client.items(parentID: quelle.eltern, limit: 100,
+                                                              sortBy: Sortierung.erscheinung.feld,
+                                                              sortOrder: quelle.richtung(.erscheinung),
+                                                              recursive: quelle.rekursiv,
+                                                              includeItemTypes: quelle.typen).items
+                    else { continue }
+                    let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
+                    if !andere.isEmpty { gefunden.append((sammlung, andere)) }
+                }
+                let reihen = gefunden
+                nachDemSchub {
+                    defer { losgelassen(kiste) }
+                    let gefunden = reihen
+                    guard let ziel = kiste.widget, !gefunden.isEmpty else { return }
+                    for (sammlung, andere) in gefunden {
+                        anhaengen(ziel, self.sammlungsreihe(sammlung, titel: andere, art: gattung))
+                    }
+                    gtk_widget_set_visible(ziel, 1)
+                }
+            }
+        }
+    }
+
+    /// Kopf „Teil der Sammlung" mit Winkel, darunter der Name, dann die Reihe.
+    private func sammlungsreihe(_ sammlung: Sammlung, titel: [Item], art gattung: String) -> Widget! {
+        let reihe = reiheBauen(titel: uebersetzt("Teil der Sammlung"), art: .neu, items: titel)
+        // Die Ueberschrift der Reihe wird zum Knopf: Titel und Winkel, der
+        // Name der Sammlung darunter (Mac: 5 zwischen Titel und Winkel, 2
+        // zwischen den Zeilen, Winkel 13 halbfett, sehr leise, unter dem
+        // Zeiger weiss).
+        guard let ueberschrift = gtk_widget_get_first_child(reihe) else { return reihe }
+        g_object_ref(UnsafeMutableRawPointer(ueberschrift))
+        gtk_box_remove(alsBox(reihe), ueberschrift)
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-sammlungskopf")
+        gtk_widget_set_halign(knopf, GTK_ALIGN_START)
+        gtk_widget_set_margin_start(knopf, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_start(ueberschrift, 0)
+        gtk_widget_set_margin_end(ueberschrift, 0)
+        let spalte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        let oben = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 5)
+        anhaengen(oben, ueberschrift)
+        g_object_unref(UnsafeMutableRawPointer(ueberschrift))
+        let winkel: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(winkel), 13)
+        gtk_widget_set_valign(winkel, GTK_ALIGN_CENTER)
+        anhaengen(oben, winkel)
+        anhaengen(spalte, oben)
+        let name = beschriftung(sammlung.item.name, stil: "swiftly-koerper")
+        gtk_widget_add_css_class(name, "dim-label")
+        gtk_label_set_xalign(OpaquePointer(name), 0)
+        gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
+        anhaengen(spalte, name)
+        gtk_button_set_child(alsKnopf(knopf), spalte)
+        let item = sammlung.item
+        beiSignal(knopf, "clicked") { [weak self] in self?.sammlungOeffnen(item, art: gattung) }
+        gtk_box_prepend(alsBox(reihe), knopf)
+        // Die Reihe hat eine feste Hoehe fuer eine Titelzeile von 24; die
+        // Namenszeile kommt dazu.
+        gtk_widget_set_size_request(reihe, -1, -1)
+        return reihe
+    }
+
     /// **Extras** — Featurettes, entfallene Szenen, Making-of.
     ///
     /// Der Mac hat die Reihe (`DetailView.swift:133`), Linux nicht. Sie ist
@@ -222,6 +311,7 @@ extension App {
                 guard !extras.isEmpty else { return }
                 anhaengen(kiste.widget, self.reiheBauen(titel: uebersetzt("Extras"), art: .neu,
                                                         items: extras))
+                gtk_widget_set_visible(kiste.widget, 1)
             }
         }
     }
@@ -318,8 +408,13 @@ extension App {
             if !titel.darsteller.isEmpty {
                 anhaengen(unten, besetzungsreihe(titel.darsteller, herkunft: titel.name))
             }
-            extrasNachladen(titel, in: unten)
-            aehnlicheNachladen(titel, in: unten)
+            // **Je Reihe ein fester Platz** — Extras, Teil der Sammlung,
+            // Aehnliches, in dieser Folge wie auf dem Mac; welche Antwort
+            // zuerst kommt, aendert die Reihenfolge nicht. Leer steht ein
+            // Platz unsichtbar da und bringt keinen Abstand mit.
+            extrasNachladen(titel, in: reihenplatz(in: unten))
+            sammlungsreihenNachladen(titel, in: reihenplatz(in: unten))
+            aehnlicheNachladen(titel, in: reihenplatz(in: unten))
             // **Der Dateiauszug steht ganz unten, und nur beim Film** — bei
             // einer Serie gibt es keine Datei, nur die ihrer Folgen. Der
             // Raum steht schon, gefüllt wird er, wenn der Plan kommt.
@@ -469,7 +564,10 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_fixed_put(alsFeld2(feld), fach(name, breite: 640, hoehe: 42), 0, 0)
 
-        gtk_fixed_put(alsFeld2(feld), fach(angabenreihe(titel), breite: 640, hoehe: 20),
+        // **26, nicht 20** (Mac 28d314fd): Plakette und Beleg sind 13 Punkt
+        // Schrift mit 4 Punkt Luft oben und unten; in 20 wurden sie oben und
+        // unten beschnitten.
+        gtk_fixed_put(alsFeld2(feld), fach(angabenreihe(titel), breite: 640, hoehe: 26),
                       0, 54)
 
         // **`beschreibung`, nicht `overview`.** Jellyfin liefert HTML — `<br>`
@@ -500,31 +598,35 @@ extension App {
         gtk_widget_add_css_class(zeile, "dim-label")
         anhaengen(reihe, zeile)
 
-        if let bewertung = titel.communityRating {
-            let paar = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 5)
-            let stern: Widget! = gtk_image_new_from_icon_name("starred-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(stern), 10)
-            gtk_widget_add_css_class(stern, "dim-label")
-            anhaengen(paar, stern)
-            let wert = beschriftung(komma(bewertung), stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(wert, "dim-label")
-            anhaengen(paar, wert)
-            gtk_widget_add_css_class(paar, "swiftly-bewertung")
-            gtk_widget_set_valign(paar, GTK_ALIGN_CENTER)
-            anhaengen(reihe, paar)
-        }
-
-        if let freigabe = titel.officialRating { anhaengen(reihe, plakette(freigabe)) }
-
         // **Der Beleg.** Läuft alles verlustfrei, steht „Direct Play" im
         // Akzent, ohne Erklärung (D1). Nur die Abweichung meldet sich lauter,
-        // in Warnorange, mit Grund (D2).
+        // in Warnorange, mit Grund (D2). **Reihenfolge Beleg, Bewertung,
+        // Freigabe** — wie `Belegzeile` und der Mac seit 28d314fd.
         let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
         gtk_widget_set_visible(beleg, 0)
         gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
         gtk_widget_set_valign(beleg, GTK_ALIGN_CENTER)
         anhaengen(reihe, beleg)
         planNachladen(titel, in: beleg)
+
+        // **In derselben Huelle wie Direct Play** (Mac ec0383c8,
+        // `DetailView.swift` `marke`): Stern und Zahl in `schriftLeise`,
+        // Flaeche in 15 Prozent derselben Farbe. Vorher stand die Bewertung
+        // als einzige Angabe der Zeile nackt da.
+        if let bewertung = titel.communityRating {
+            let paar = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+            let stern: Widget! = gtk_image_new_from_icon_name("starred-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(stern), 11)
+            anhaengen(paar, stern)
+            let wert = beschriftung(komma(bewertung), stil: "swiftly-kacheltitel")
+            anhaengen(paar, wert)
+            gtk_widget_add_css_class(paar, "swiftly-belegmarke")
+            gtk_widget_add_css_class(paar, "swiftly-bewertung")
+            gtk_widget_set_valign(paar, GTK_ALIGN_CENTER)
+            anhaengen(reihe, paar)
+        }
+
+        if let freigabe = titel.officialRating { anhaengen(reihe, plakette(freigabe)) }
         return reihe
     }
 
@@ -558,7 +660,7 @@ extension App {
                 gtk_image_set_pixel_size(OpaquePointer(zeichen), 11)
                 anhaengen(ziel, zeichen)
                 let text = beschriftung(plan.isLossless ? "Direct Play" : plan.method.rawValue,
-                                        stil: "swiftly-zweitzeile")
+                                        stil: "swiftly-kacheltitel")
                 anhaengen(ziel, text)
                 gtk_widget_add_css_class(ziel, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
                 gtk_widget_set_visible(ziel, 1)
@@ -719,6 +821,16 @@ extension App {
         // wenn das Konto laden darf (`Downloadrecht`). Wer Downloads nicht
         // eingeschaltet hat, sieht hier nichts davon, dieselbe Regel wie bei
         // Seerr.
+        // **Auch auf der Serienseite** (Mac 25a21b02): „Laden steht in der
+        // Reihe, nicht in einem versteckten Chip." Bei einer Serie oeffnet er
+        // die Auswahl — ganze Serie, Staffel, einzelne Folge.
+        if downloadKnopfZeigen, titel.type == "Series" {
+            let laden = nebenknopf("folder-download-symbolic", name: uebersetzt("Laden"))
+            beiSignal(laden, "clicked") { [weak self] in
+                self?.ladeauswahlZeigen(titel, an: laden)
+            }
+            anhaengen(reihe, laden)
+        }
         if downloadKnopfZeigen, titel.type != "Series" {
             let stand = downloads.posten(fuer: titel.id)
             let symbol = ladeknopfsymbol(stand)
@@ -753,7 +865,9 @@ extension App {
         var gesehen = titel.istGesehen
         let ersteZeile = gesehen ? uebersetzt("Als ungesehen markieren") : uebersetzt("Als gesehen markieren")
 
-        let tafel = tafelOeffnen(an: knopf)
+        // Rechtsbuendig unter dem Knopf, und sie waechst aus der rechten
+        // oberen Ecke — `.aufklappen(von: .topTrailing)` auf dem Mac.
+        let tafel = tafelOeffnen(an: knopf, buendig: GTK_ALIGN_END)
         gtk_popover_set_child(alsTafel(tafel), liste)
 
         anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {

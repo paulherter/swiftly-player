@@ -27,6 +27,10 @@ struct PersonView: View {
     @State private var titel: [Item] = []
     @State private var anfragbar: [Seerrtreffer] = []
     @State private var geladen = false
+    /// **`nil` heisst gestoert.** Vorher stand bei einem stummen Server
+    /// „Auf deinem Server gibt es sonst nichts mit …" — eine Auskunft über
+    /// eine Sammlung, die die Seite nie gesehen hatte.
+    @State private var gestoert = false
     /// Seerr hat geantwortet — erst dann gilt „es gibt sonst nichts".
     @State private var seerrFertig = false
     @State private var ganzeBiografie = false
@@ -68,7 +72,7 @@ struct PersonView: View {
                 // sie mittig: der Inhalt stand links aus dem Bild und rutschte
                 // beim Laden an seinen Platz.
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 30)
+                .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
@@ -84,16 +88,17 @@ struct PersonView: View {
         .background(WischZurueck())
         #endif
         .task(id: person.id) { await laden() }
-        .task(id: banner.count) {
-            // Weich wechseln, und langsam genug, dass man hinsieht, bevor es
-            // weitergeht. Mit einem Bild gibt es nichts zu wechseln.
-            guard banner.count > 1 else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(6))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 1.2)) { bannerStelle += 1 }
-            }
-        }
+        // **Die Bilder wechseln nicht mehr von allein.**
+        //
+        // Hier lief eine Schleife: alle sechs Sekunden das naechste Banner, mit
+        // 1,2 Sekunden Ueberblendung, solange die Seite offen war. Das ist die
+        // einzige Stelle der App, die sich ohne Zutun geruehrt hat — und
+        // Abschnitt 6 der Vorlage schliesst dauernde Bewegung aus: „Nichts
+        // bewegt sich dekorativ." Sie hat ausserdem „Bewegung reduzieren"
+        // ignoriert, also genau die Einstellung uebergangen, die es dafuer gibt.
+        //
+        // Es bleibt beim ersten Bild. Wer mehr sehen will, sieht die
+        // Filmografie darunter — dafuer ist die Seite da.
     }
 
     // MARK: Kopf
@@ -114,7 +119,7 @@ struct PersonView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: person.name)
                         .font(Stil.titel)
-                        .tracking(-0.6)
+                        .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
                         .lineLimit(2)
                     // **Die zwei Zeilen haben ihren Platz von Anfang an** und
@@ -124,7 +129,10 @@ struct PersonView: View {
                         Text(verbatim: geburtszeile ?? " ")
                         Text(verbatim: ort ?? " ")
                     }
-                    .font(.system(size: 14))
+                    // Geburtstag und Ort sind eine Angabe, und die steht in
+                    // der Leiter auf 12 — so wie die Nebenzeile unter jedem
+                    // Heldbild. 13 Regular ist keine Stufe.
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(1)
                     .opacity(geladen ? 1 : 0)
@@ -153,7 +161,8 @@ struct PersonView: View {
     private var rollenzeile: some View {
         if let rolle = person.role, !rolle.isEmpty, let herkunft = route.herkunft {
             Text("\(rolle) in \(herkunft)")
-                .font(.system(size: 14, weight: .medium))
+                // 13 Medium ist `Stil.kachel` — hier stand die Zahl.
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.akzent)
                 .lineLimit(2)
         }
@@ -176,8 +185,10 @@ struct PersonView: View {
                 } label: {
                     Text(ganzeBiografie ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 14, weight: .semibold))
+                .buttonStyle(Stil.Druckknopf())
+                // Dasselbe „Mehr" wie in `Klapptext`, also derselbe Grad: 13
+                // Medium. Semibold auf 13 steht in keiner Stufe.
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.schrift)
             }
             .padding(.top, 14)
@@ -189,9 +200,22 @@ struct PersonView: View {
 
     @ViewBuilder
     private var reihen: some View {
-        // Wie auf der Detailseite: die Reihen stehen da, wenn sie da sind —
-        // ohne Platzhalter, der beim Eintreffen ausgetauscht wird.
-        if geladen {
+        // **Bis zum 21.09.2026 stand hier vor `geladen` nichts.** Wer eine
+        // Person öffnete, sah Name und Bild und darunter eine leere Fläche —
+        // beim Laden, bei einer Person ohne Titel und bei einem stummen
+        // Server dieselbe. Drei Lagen, ein Bild.
+        if !geladen {
+            HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 3, id: \.self) { _ in
+                    Ladefeld()
+                        .frame(width: Stil.reihenBreite(breit: breit),
+                               height: Stil.reihenHoehe(breit: breit))
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.top, Stil.reihenAbstand)
+            .transition(.opacity)
+        } else {
             if !titel.isEmpty {
                 Abschnitt(titel: "Auf deinem Server") {
                     HStack(alignment: .top, spacing: Stil.kachelAbstand) {
@@ -199,7 +223,7 @@ struct PersonView: View {
                             NavigationLink(value: item) {
                                 PosterTile(model: model, item: item)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                         }
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
@@ -213,14 +237,19 @@ struct PersonView: View {
                             NavigationLink(value: t) {
                                 Seerrkachel(treffer: t, breite: Stil.kachelBreite)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                         }
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
                 }
                 .transition(.opacity)
             }
-            if titel.isEmpty, anfragbar.isEmpty, seerrFertig {
+            if gestoert, titel.isEmpty {
+                // Auf Seerr wird nicht gewartet: was der eigene Server sagt,
+                // ist die Hauptauskunft dieser Seite.
+                Stoerhinweis(model: model, erneut: { Task { await laden() } },
+                             abstandOben: 26)
+            } else if titel.isEmpty, anfragbar.isEmpty, seerrFertig {
                 Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.schriftLeise)
@@ -241,7 +270,9 @@ struct PersonView: View {
         async let eigene = model.titel(person: person.id)
         let a = await model.item(id: person.id)
         async let fremde = filmografie(tmdb: a?.tmdbKennung)
-        let b = await eigene
+        let geholt = await eigene
+        // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
+        let b = geholt ?? titel
 
         // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
         // Banner, was der erste als Ersatz hergibt.
@@ -254,6 +285,7 @@ struct PersonView: View {
         // hält ihre Breite, was neu ist, blendet an seinem Platz ein.
         withAnimation(Stil.einblenden) {
             auskunft = a
+            gestoert = geholt == nil
             titel = b
             banner = bilder
             geladen = true

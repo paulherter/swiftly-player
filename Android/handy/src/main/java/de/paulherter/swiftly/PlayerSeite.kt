@@ -1,7 +1,9 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.app.Activity
-import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.scaleIn
@@ -26,7 +28,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Constraints
@@ -55,9 +56,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -90,8 +88,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -102,7 +98,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -117,6 +112,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import de.paulherter.swiftly.gemeinsam.Bewegung
+import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
@@ -150,6 +146,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontFamily
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.layout.Layout
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -171,7 +171,9 @@ data class Spielplan(val url: String, val lossless: Boolean, val methode: String
                      val itemId: String = "", val episode: Boolean = false, val serieId: String? = null,
                      val staffelId: String? = null,
                      val kopfzeile: String = "", val staffelNr: Int? = null, val folgeNr: Int? = null,
-                     val nebenzeile: String? = null)
+                     val nebenzeile: String? = null,
+                     /** Abschnittsgrenzen in Sekunden — Kerben im Zeitregler. */
+                     val marken: List<Double> = emptyList())
 
 /** Handwahl je Serie oder Film — dieselben Schluessel wie `Spurgedaechtnis` im Paket. */
 private const val TON_JE_TITEL = "tonJeTitel"
@@ -188,7 +190,8 @@ internal fun spielplanLesen(json: String) = JSONObject(json).let { o ->
               o.optString("kopfzeile"),
               if (o.isNull("staffelNr")) null else o.optInt("staffelNr"),
               if (o.isNull("folgeNr")) null else o.optInt("folgeNr"),
-              o.optString("nebenzeile").takeIf { !o.isNull("nebenzeile") })
+              o.optString("nebenzeile").takeIf { !o.isNull("nebenzeile") },
+              o.optJSONArray("marken")?.let { a -> (0 until a.length()).map { a.getDouble(it) } }.orEmpty())
 }
 
 /** Trickplay-Angaben zur laufenden Wiedergabe — Rechnung wie `Trickplay` im Paket (Vorlage iOS). */
@@ -266,7 +269,9 @@ class Spielwerk(
     private val lauf: CoroutineScope,
     private val ruck: (Ruck) -> Unit = {},
 ) {
-    val vlc = LibVLC(kontext, arrayListOf("--no-drop-late-frames", "--no-skip-frames"))
+    // Eigene Zertifizierungsstellen des Nutzers: GnuTLS liest sonst nur den Systemspeicher (`Zertifikate`).
+    val vlc = LibVLC(kontext, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") +
+        listOfNotNull(Zertifikate.ordner?.let { "--gnutls-dir-trust=$it" })))
     val spieler = MediaPlayer(vlc)
     val sitzung = MediaSession(kontext, "Swiftly")
 
@@ -288,14 +293,15 @@ class Spielwerk(
     var countdownLaenge by mutableDoubleStateOf(7.0); private set
     /**
      * Setzt die Oberflaeche mit der **gewollten** Sichtbarkeit der Steuerung (`Angebotsebene.steuerung`):
-     * Oeffnen sagt die Karte „Naechste Folge" ab, Auf und Zu schickt den Ueberspringen-Knopf in die Steuerung.
+     * Oeffnen sagt die Karte „Naechste Folge" ab. „Intro ueberspringen" steht sechs Sekunden Laufzeit ohne
+     * Steuerung da, danach nur noch mit ihr (VERHALTEN B6a) — die Einblendung kommt deshalb sofort zurueck,
+     * nicht erst mit dem naechsten Takt. Auf dem Fernseher geht der Fokus dann an die Ruheflaeche (`TvPlayer`).
      */
     fun steuerungGeaendert(offen: Boolean) {
-        app.kern.steuerungGeaendert(offen)
-        if (offen && einblendung == "karte") einblendung = "nichts"
+        einblendung = app.kern.steuerungGeaendert(offen)
     }
     var hinweis by mutableStateOf<String?>(null)
-    var technikFest by mutableStateOf<List<Pair<String, String>>>(emptyList()); private set
+    var technikFest by mutableStateOf<List<Technikzeile>>(emptyList()); private set
     var technikLive by mutableStateOf<JSONObject?>(null); private set
     var bildfuellend by mutableStateOf(app.ablage.merkwert("bildfuellend") == "1"); private set
     /**
@@ -331,7 +337,11 @@ class Spielwerk(
         trickplayAngabe = null
         trickplayBlaetter.clear()
         trickplayUnterwegs.clear()
-        val gelesen = trickplayangabeLesen(withContext(Dispatchers.IO) { app.kern.trickplayAngabe().await() })
+        val roh = withContext(Dispatchers.IO) { app.kern.trickplayAngabe().await() }
+        val gelesen = trickplayangabeLesen(roh)
+        // Wie `Trickplaybilder.laden` auf iOS: eine Zeile je Titel — ohne sie war auf dem Geraet nicht
+        // zu sagen, ob der Server keins hat oder die Vorschau nur nicht ankommt.
+        Protokoll.schreib("[Trickplay] " + (gelesen?.let { "${it.breite}px, ${it.anzahl} Bilder, alle ${it.intervall} ms" } ?: "keins"))
         trickplayAngabe = gelesen
     }
 
@@ -353,6 +363,7 @@ class Spielwerk(
                     as? SuccessResult)?.image?.toBitmap()
             }.getOrNull()
             trickplayUnterwegs.remove(nummer)
+            if (bild == null) Protokoll.schreib("[Trickplay] Blatt $nummer kam nicht (Adresse ${adresse.isNotEmpty()})")
             if (bild != null) {
                 trickplayBlaetter[nummer] = bild
                 if (trickplayBlaetter.size > 6) trickplayBlaetter.remove(trickplayBlaetter.keys.first())
@@ -372,6 +383,7 @@ class Spielwerk(
     val vorS: Int get() = app.einstellungen.vorSekunden
 
     fun installiereEreignisListener() {
+        netzBeobachten()
         spieler.setEventListener { e ->
             when (e.type) {
                 // **Pause und Weiter melden, wenn VLC sie meldet** — nicht im Druck, da stand noch der
@@ -383,8 +395,14 @@ class Spielwerk(
                 MediaPlayer.Event.Stopped -> laeuft = false
                 MediaPlayer.Event.Vout -> if (e.voutCount > 0) zeigtBild[0] = true
                 MediaPlayer.Event.Buffering -> puffert = e.buffering < 100f
-                MediaPlayer.Event.EndReached -> { laeuft = false; ende[0] = true }
-                MediaPlayer.Event.EncounteredError -> hinweis = uebersetzt("Die Folge konnte nicht geladen werden.")
+                // **Ein Abriss sieht aus wie ein Filmende** (Vorlage `zustandGewechselt` auf iOS): liegt die
+                // letzte gute Stelle deutlich vor dem Schluss, war es kein Ende, sondern ein toter Strom.
+                MediaPlayer.Event.EndReached -> { laeuft = false; if (!abriss("Ende")) ende[0] = true }
+                MediaPlayer.Event.EncounteredError -> {
+                    // Vor dem ersten Bild zeigt die Oberflaeche weiter „laedt" — wenigstens das Protokoll soll es sagen.
+                    if (!bildFrei) Protokoll.schreib("[VLC] Fehler vor dem ersten Bild")
+                    if (!abriss("Fehler")) hinweis = uebersetzt("Die Folge konnte nicht geladen werden.")
+                }
                 MediaPlayer.Event.ESAdded -> if (e.esChangedType == IMedia.Track.Type.Text) untertitelspurNeu(e.esChangedID)
             }
         }
@@ -400,6 +418,7 @@ class Spielwerk(
 
     /** VLC und die Zeichenflaeche abbauen — Gegenstueck zu `installiereEreignisListener`. */
     fun aufraeumen() {
+        netzAbmelden()
         if (!beendet[0]) app.wiedergabeBeenden((spieler.time / 1000.0).coerceAtLeast(0.0))
         spieler.stop()
         spieler.detachViews()
@@ -469,8 +488,23 @@ class Spielwerk(
         ende[0] = false
         position = ab ?: 0.0
         ab?.takeIf { it > 1 }?.let { app.kern.wiedergabeStelle(it) }
+        stromwachtZuruecksetzen()
+        stelltWiederHer = false
+        wartetAufNetz = false
+        letzteGuteStelle = ab ?: 0.0
+        medienOeffnen(neu.url, ab)
+    }
+
+    /** Das Medium bauen und abspielen — beim Start und beim Neuaufbau nach einem Abriss (`neuVerbinden`). */
+    private fun medienOeffnen(url: String, ab: Double?) {
         dateienVorbereiten()
-        val media = Media(vlc, Uri.parse(neu.url))
+        // Hinter einem Vorposten holt der Weiterleiter (OkHttp) den Strom mit den eigenen Headern
+        // (Issue #4); libVLC kann keine senden. Ohne Header bleibt die Adresse, wie sie ist.
+        val vlcAdresse = Stromweiterleiter.gemeinsam.adresse(url)
+        if (vlcAdresse != url) Protokoll.schreib("[VLC] Strom ueber den Weiterleiter")
+        // Nebenher, ohne darauf zu warten: wie das Geraet den Server erreicht. Nur fuers Protokoll (`Netzprobe`).
+        Netzprobe.starten(kontext, url)
+        val media = Media(vlc, Uri.parse(vlcAdresse))
         // Faellt die Verbindung kurz aus, faengt VLC sie wieder auf, statt das Ende zu melden.
         media.addOption(":http-reconnect")
         // **Einsteigen mit `:start-time`.** Auf iOS verworfen, weil VLCKit 4 damit die Zeitleiste
@@ -638,7 +672,186 @@ class Spielwerk(
         }
     }
 
+    // MARK: Stromwacht — Vorlage `VLCPlayer.swift` (iOS/tvOS): Netzwechsel und Haenger.
+    // `:http-reconnect` greift nur, wenn die Verbindung abbricht. Steht sie, und es kommt nur nichts mehr,
+    // wartet libVLC beliebig lange; reisst sie ab, meldet es ein Filmende, und der Player ging zu oder
+    // schaltete in die naechste Folge. Die Schwellen entscheidet `Stromwacht` im Paket (ueber den Kern).
+
+    /**
+     * **Der Strom wird gerade neu aufgebaut** (iOS `stelltWiederHer`). Die Oberflaeche zeigt dann
+     * „Verbindung unterbrochen", und der Takt meldet die letzte gute Stelle statt VLCs Zeit — die steht
+     * nach einem Abriss auf dem Filmende.
+     */
+    var stelltWiederHer by mutableStateOf(false); private set
+    private var letzteGuteStelle = 0.0
+    private var stromStehtSeit: Long? = null
+    private var stromLetzteZeit = -1L
+    private var stromGelesen = 0L
+    private var stromPufferWuchs = 0L
+    private var letzteBilder = -1L
+    private var bilderStehenSeit: Long? = null
+    private var letzterSprung = 0L
+    private var letzterNeuaufbau = 0L
+    private var letzterRat = ""
+    private var spurenNachAufbau = false
+    private var netzErreichbar = true
+    private var wartetAufNetz = false
+    private var netzwechselSeit: Long? = null
+    private var letztesNetz: android.net.Network? = null
+    private var netzRueckruf: android.net.ConnectivityManager.NetworkCallback? = null
+
+    private fun stromwachtZuruecksetzen() {
+        stromStehtSeit = null; stromLetzteZeit = -1; stromGelesen = 0; stromPufferWuchs = SystemClock.elapsedRealtime()
+        letzteBilder = -1; bilderStehenSeit = null; letzterRat = ""
+    }
+
+    private fun vonDerPlatte() = plan?.url?.startsWith("file:") != false
+
+    /**
+     * **Wohin das Netz geht** (iOS `NWPathMonitor` → `streckeGewechselt`). Ein Wechsel wird nur vermerkt:
+     * ein voller Puffer spielt weiter, eingegriffen wird erst, wenn das Bild wirklich steht. War die
+     * Wiedergabe schon ohne Netz stehen geblieben, wird sofort nachgeholt.
+     */
+    private fun netzBeobachten() {
+        if (netzRueckruf != null) return
+        val verwaltung = kontext.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return
+        val rueckruf = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(netz: android.net.Network) { lauf.launch { netzDa(netz) } }
+            override fun onLost(netz: android.net.Network) { lauf.launch { netzWeg(netz) } }
+        }
+        if (runCatching { verwaltung.registerDefaultNetworkCallback(rueckruf) }.isSuccess) netzRueckruf = rueckruf
+    }
+
+    private fun netzAbmelden() {
+        val rueckruf = netzRueckruf ?: return
+        netzRueckruf = null
+        runCatching { (kontext.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)?.unregisterNetworkCallback(rueckruf) }
+    }
+
+    private fun netzDa(netz: android.net.Network) {
+        val vorher = letztesNetz
+        letztesNetz = netz
+        netzErreichbar = true
+        if (wartetAufNetz) {
+            Protokoll.schreib("[Netz] wieder da → nachholen")
+            wartetAufNetz = false
+            neuVerbinden("Netz zurueck")
+            return
+        }
+        if (vorher == null || vorher == netz) return
+        netzwechselSeit = SystemClock.elapsedRealtime()
+        Protokoll.schreib("[Netz] Wechsel — Puffer laeuft weiter")
+    }
+
+    private fun netzWeg(netz: android.net.Network) {
+        if (letztesNetz != null && netz != letztesNetz) return
+        netzErreichbar = false
+        if (letzteGuteStelle > 1 && !vonDerPlatte()) wartetAufNetz = true
+        Protokoll.schreib("[Netz] kein Weg mehr — vorgemerkt bei ${letzteGuteStelle.toInt()} s")
+    }
+
+    private fun rat(stillstand: Long, jetzt: Long) = Kern.stromwachtRat(stillstand / 1000.0,
+        netzwechselSeit?.let { (jetzt - it) / 1000.0 } ?: -1.0, false,
+        (jetzt - letzterSprung) / 1000.0, (jetzt - stromPufferWuchs) / 1000.0)
+
+    /**
+     * Einmal je Takt (iOS `stillstandPruefen` + `bildfluss`): steht die Uhr, obwohl VLC spielt — oder
+     * laeuft sie, aber es kommt kein neues Bild —, fragt es `Stromwacht`, ob neu aufgebaut wird.
+     */
+    private fun stromPruefen() {
+        // Vor dem ersten Bild steuert der Strom noch seine Startstelle an — das ist kein Haenger (iOS `erstStelle`).
+        if (beendet[0] || wechselt || vonDerPlatte() || !bildFrei || !spieler.isPlaying) { stromStehtSeit = null; return }
+        val t = spieler.time
+        val jetzt = SystemClock.elapsedRealtime()
+        val medium = spieler.media
+        val werte = medium?.stats
+        medium?.release()
+        // Waechst der Puffer, lebt der Strom. VLC zaehlt in `int`; vorzeichenlos gelesen.
+        val gelesen = werte?.let { it.readBytes.toLong() and 0xFFFFFFFFL } ?: 0L
+        if (gelesen > stromGelesen) stromPufferWuchs = jetzt
+        stromGelesen = gelesen
+
+        if (t == stromLetzteZeit || t <= 0) {
+            val seit = stromStehtSeit ?: jetzt.also { stromStehtSeit = it }
+            val r = rat(jetzt - seit, jetzt)
+            if (r != letzterRat && r != "nochNicht") Protokoll.schreib("[Netz] Bild steht seit ${(jetzt - seit) / 1000} s → $r")
+            letzterRat = r
+            if (r == "neuVerbinden") neuVerbinden("Bild steht seit ${(jetzt - seit) / 1000} s")
+            return
+        }
+        // Die Uhr laeuft wieder: ein Neuaufbau ist geglueckt.
+        if (stelltWiederHer && stromLetzteZeit > 0) {
+            stelltWiederHer = false
+            Protokoll.schreib("[Netz] wiederhergestellt bei ${t / 1000} s")
+            if (spurenNachAufbau && spieler.audioTracksCount > 0) { spurenNachAufbau = false; sprachenAnwenden() }
+        }
+        stromLetzteZeit = t
+        stromStehtSeit = null
+        letzterRat = ""
+        // **Die Uhr laeuft — aber kommt auch ein Bild?** (iOS `bildfluss`, am 05.09.2026 gemessen: 76 s
+        // eingefrorenes Bild bei laufender Uhr.)
+        val bilder = werte?.let { it.displayedPictures.toLong() and 0xFFFFFFFFL } ?: -1L
+        if (Kern.stromwachtBilderStehen(letzteBilder, bilder)) { if (bilderStehenSeit == null) bilderStehenSeit = jetzt } else bilderStehenSeit = null
+        letzteBilder = bilder
+        bilderStehenSeit?.let { seit ->
+            if (rat(jetzt - seit, jetzt) == "neuVerbinden") {
+                bilderStehenSeit = null
+                neuVerbinden("kein neues Bild seit ${(jetzt - seit) / 1000} s, Uhr laeuft weiter")
+                return
+            }
+        }
+        // Nur mitschreiben, was plausibel ist: nach einem Abriss stuende hier sonst das Filmende.
+        val stelle = t / 1000.0
+        if (!stelltWiederHer && (dauer <= 0 || stelle < dauer - 1)) letzteGuteStelle = stelle
+    }
+
+    /** VLC meldet Ende oder Fehler — `true`, wenn es ein Abriss war und neu aufgebaut wird. */
+    private fun abriss(zustand: String): Boolean {
+        if (beendet[0] || wechselt || vonDerPlatte() || !bildFrei || letzteGuteStelle <= 1) return false
+        val frisch = netzwechselSeit?.let { SystemClock.elapsedRealtime() - it < Kern.stromwachtNetzwechselFrist() * 1000 } ?: false
+        if (!(if (dauer > 0) letzteGuteStelle < dauer - 10 else frisch)) return false
+        Protokoll.schreib("[Netz] Zustand $zustand: Strom tot bei ${letzteGuteStelle.toInt()} s von ${dauer.toInt()} s")
+        lauf.launch { neuVerbinden("Strom abgerissen") }
+        return true
+    }
+
+    /**
+     * **Strom neu aufmachen und an die letzte gute Stelle springen** (iOS `neuVerbinden`). Ohne Netz nur
+     * vormerken — `netzDa` holt es nach. Nach einem Wechsel meldet Android mehrfach; die Sperrfrist von
+     * 5 s verhindert, dass der Strom in Schleife neu aufgebaut wird und nie fertig.
+     */
+    private fun neuVerbinden(grund: String) {
+        val p = plan ?: return
+        if (beendet[0] || wechselt || vonDerPlatte() || letzteGuteStelle <= 1) return
+        // Schon hier: die Oberflaeche sagt, was los ist, und der Takt haelt die gute Stelle.
+        stelltWiederHer = true
+        if (!netzErreichbar) {
+            wartetAufNetz = true
+            Protokoll.schreib("[Netz] $grund, aber kein Netz — vorgemerkt bei ${letzteGuteStelle.toInt()} s")
+            return
+        }
+        val jetzt = SystemClock.elapsedRealtime()
+        val warten = 5000 - (jetzt - letzterNeuaufbau)
+        if (warten > 0) {
+            // Nach einem Ende oder Fehler spielt VLC nicht mehr, die Wacht schlaegt also nicht noch einmal
+            // an — ohne diesen zweiten Anlauf bliebe der Hinweis fuer immer stehen.
+            if (!spieler.isPlaying) lauf.launch { delay(warten); if (stelltWiederHer && !spieler.isPlaying) neuVerbinden(grund) }
+            return
+        }
+        letzterNeuaufbau = jetzt
+        Protokoll.schreib("[Netz] $grund → Strom neu aufbauen bei ${letzteGuteStelle.toInt()} s")
+        stromwachtZuruecksetzen()
+        ende[0] = false
+        // Die Spurwahl nach `Spurregel` noch einmal, sobald der neue Strom laeuft — sonst bringt er VLCs
+        // eigene Vorauswahl mit, und abgeschaltete Untertitel gingen von selbst wieder an (iOS 18.09.2026).
+        spurenNachAufbau = true
+        spieler.stop()
+        app.kern.wiedergabeStelle(letzteGuteStelle)
+        medienOeffnen(p.url, letzteGuteStelle)
+    }
+
     fun springe(ziel: Double) {
+        letzterSprung = SystemClock.elapsedRealtime()
         val z = if (dauer > 0) ziel.coerceIn(0.0, dauer) else ziel.coerceAtLeast(0.0)
         spieler.time = (z * 1000).toLong()
         position = z
@@ -732,8 +945,8 @@ class Spielwerk(
         if (d == null) return
         spurenVorDatei = spieler.spuTracks?.map { it.id }?.toSet().orEmpty()
         dateiSeit = SystemClock.elapsedRealtime()
-        val gehaengt = spieler.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(d.adresse), false)
-        android.util.Log.i("Swiftly", "[Spuren] Datei ${d.index} angehaengt $gehaengt, Merkmal ${d.merkmal}")
+        val gehaengt = spieler.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(Stromweiterleiter.gemeinsam.adresse(d.adresse)), false)
+        Protokoll.schreib("[Spuren] Datei ${d.index} angehaengt $gehaengt, Merkmal ${d.merkmal}")
         if (!gehaengt) naechsteDatei()
     }
 
@@ -741,7 +954,7 @@ class Spielwerk(
         val d = dateiLaedt
         if (d != null && id >= 0 && id !in spurenVorDatei && id !in dateispuren) {
             dateispuren[id] = "${d.merkmal}/spu/${dateispuren.values.count { it.startsWith(d.merkmal) }}"
-            android.util.Log.i("Swiftly", "[Spuren] Datei ${d.index} ist Spur $id")
+            Protokoll.schreib("[Spuren] Datei ${d.index} ist Spur $id")
             naechsteDatei()
         }
         if (!spurenGewaehlt) return
@@ -753,7 +966,7 @@ class Spielwerk(
     /** Kommt die Spur einer Datei nicht (Datei kaputt, Server weg), die naechste versuchen. */
     private fun dateiFrist() {
         if (dateiLaedt != null && SystemClock.elapsedRealtime() - dateiSeit > 8000) {
-            android.util.Log.i("Swiftly", "[Spuren] Datei ${dateiLaedt?.index} kam nicht")
+            Protokoll.schreib("[Spuren] Datei ${dateiLaedt?.index} kam nicht")
             naechsteDatei()
         }
     }
@@ -824,9 +1037,9 @@ class Spielwerk(
     /** Nur zaehlen, solange jemand hinsieht — derselbe Takt wie `Wiedergabetakt`, aus demselben Grund. */
     suspend fun technikschildTakt(aktiv: Boolean) {
         if (!aktiv || plan == null) { technikLive = null; return }
-        technikFest = JSONArray(app.kern.technikFest()).let { a ->
+        technikFest = JSONArray(app.kern.technikFest(app.einstellungen.technikschildMessen)).let { a ->
             (0 until a.length()).map { a.getJSONObject(it).let { o ->
-                (o.feldText("schluessel")?.let { k -> uebersetzt(k) + " " }.orEmpty() + o.getString("text")) to o.getString("art")
+                Technikzeile(o.feldText("schluessel")?.let { k -> uebersetzt(k) }, o.getString("text"), o.getString("art"), o.optBoolean("kopf"))
             } }
         }
         while (true) {
@@ -870,7 +1083,7 @@ class Spielwerk(
             // sie nach dem Abspielen verzoegert an und zaehlte ungleichmaessig.
             nurZeit = !nurZeit
             if (nurZeit) {
-                if (!wechselt && bildFrei) {
+                if (!wechselt && bildFrei && !stelltWiederHer) {
                     val z = app.kern.anzeigeZeit((spieler.time / 1000.0).coerceAtLeast(0.0), amSchieben)
                     if (z >= 0 && !amSchieben) position = z
                 }
@@ -899,16 +1112,19 @@ class Spielwerk(
             app.protokollSchreiben()
             // Waehrend des Wechsels schweigt der Takt; die Zeit des alten Stroms gehoerte sonst schon der neuen Folge.
             if (wechselt) continue
+            stromPruefen()
             val laenge = (spieler.length / 1000.0).coerceAtLeast(0.0)
+            // Waehrend des Neuaufbaus die letzte gute Stelle, nicht VLCs Zeit: beim Abriss springt die aufs Ende.
+            val gemeldet = if (stelltWiederHer) letzteGuteStelle else (spieler.time / 1000.0).coerceAtLeast(0.0)
             val antwort = JSONObject(app.kern.wiedergabeTakt(
-                laenge, (spieler.time / 1000.0).coerceAtLeast(0.0), zeigtBild[0], spieler.isPlaying,
+                if (stelltWiederHer) maxOf(laenge, dauer) else laenge, gemeldet, zeigtBild[0], spieler.isPlaying,
                 spieler.audioTracksCount > 0, amSchieben))
             if (antwort.optBoolean("ladeschirmWeg")) bildFrei = true
             if (antwort.optBoolean("spurenAnwenden")) sprachenAnwenden()
             dateiFrist()
             // Nach einem Sprung liefert der Kern die Zielstelle, bis VLC dort ist.
             if (!amSchieben && antwort.has("position")) position = antwort.getDouble("position")
-            dauer = laenge
+            if (!stelltWiederHer || laenge > 0) dauer = laenge
             sitzungMelden()
             if (antwort.has("angebot")) angebotUebernehmen(antwort)
             // Ob automatisch, entscheidet der Kern (Karte mit Abspann, nicht abgesagt).
@@ -1095,7 +1311,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             }) {
             // Wo der Pause-Knopf sitzt, haelt ein Tipp auch dann an, wenn er ausgeblendet ist. Liegt unter der
             // Steuerung: ist die sichtbar, faengt der echte Knopf den Tipp ab.
-            if (werk.bildFrei && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { werk.umschalten() })
+            if (werk.bildFrei && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).tippen { werk.umschalten() })
         }
 
         // **Startschleier** — schwarz, bis VLC das erste Bild hat; Schliessen geht schon vorher, an der Stelle
@@ -1104,18 +1320,49 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 val h = werk.hinweis
                 if (h == null) Lader(Modifier.align(Alignment.Center))
-                else Text(h, style = TextStyle(fontSize = 15.sp, textAlign = TextAlign.Center), color = Stil.schriftLeise,
+                else Text(h, style = Stil.koerper.copy(textAlign = TextAlign.Center), color = Stil.schriftLeise,
                           modifier = Modifier.align(Alignment.Center).padding(horizontal = 48.dp))
                 Row(Modifier.fillMaxWidth().padding(start = rand.seite, end = rand.seite, top = rand.oben)
                         .padding(horizontal = Playermass.seite).padding(top = Playermass.oben),
                     horizontalArrangement = Arrangement.End) {
-                    Symbolknopf(R.drawable.player_x, uebersetzt("Player schließen")) { werk.beenden(schliessen) }
+                    Symbolknopf(Zeichen.Kreuz, uebersetzt("Player schließen")) { werk.beenden(schliessen) }
                 }
+            }
+        }
+
+        // **Verbindung unterbrochen** (Vorlage `verbindungsHinweis` auf iOS) — kein Fehler, sondern ein
+        // Zwischenstand, deshalb ruhig und ohne Knopf. Sobald der Strom wieder laeuft, geht er von selbst.
+        AnimatedVisibility(werk.stelltWiederHer && werk.bildFrei && !imKleinenFenster, Modifier.align(Alignment.Center),
+                           enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+            Column(Modifier.clip(RoundedCornerShape(Stil.ecke)).background(Color.Black.copy(alpha = 0.7f))
+                    .padding(horizontal = 22.dp, vertical = 18.dp).clearAndSetSemantics {},
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Lader(groesse = 26.dp, staerke = 2.5.dp)
+                Text(uebersetzt("Verbindung unterbrochen"), style = Stil.listentitel, color = Stil.schrift)
+                Text(uebersetzt("Läuft weiter, sobald das Netz zurück ist."), style = Stil.klein, color = Stil.schriftLeise)
             }
         }
 
         // `Playerschleier` — flach, reines Schwarz 42 % (iOS d75c1c7: `Stil.grund` hob HDR-Video an).
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = schleierDeckung.coerceIn(0f, 1f) }.background(Color.Black.copy(alpha = 0.42f)))
+
+        // **Das Technikschild.** Eine Auskunft, kein Bedienteil. **Direkt auf dem Film** (Vorlage c85ea8bf):
+        // ueber dem Schleier, damit es lesbar bleibt, aber unter Titel, Knoepfen und Leiste — und damit auch
+        // unter den Ebenen. **Es gleitet mit der Steuerung** (71832e36): offen steht es unter der Titelzeile,
+        // zu rueckt es an den oberen Rand, wo sie stand. Bewegung statt Blende, dieselbe Kurve wie die
+        // Steuerung; mit reduzierter Bewegung springt es.
+        if (app.einstellungen.technikschild && !imKleinenFenster && werk.technikFest.isNotEmpty()) {
+            val reduziert = bewegungReduziert()
+            val hoch by animateFloatAsState(if (steuerungDa) 0f else 1f,
+                if (reduziert) snap() else blendkurve(steuerungDa, ebeneOffen), label = "technikschild")
+            val weg = with(LocalDensity.current) { (Playermass.knopf + Stil.kachelAbstand).toPx() }
+            Box(Modifier.fillMaxSize()
+                    .padding(start = rand.seite + Playermass.seite, top = rand.oben + Playermass.oben + Playermass.knopf + Stil.kachelAbstand)
+                    .offset { IntOffset(0, -(hoch * weg).roundToInt()) }) {
+                Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
+                              app.einstellungen.technikschildMessen, fern = false)
+            }
+        }
 
         // **Die Steuerung bleibt stehen und blendet nur ihre Deckkraft** — Vorlage `.opacity(steuerungDa ? 1 : 0)`
         // statt `if`. Vorher wurde sie bei jedem Tipp ein- und ausgehaengt; der Titel darueber sprang hart,
@@ -1140,7 +1387,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                             meta?.let { Text(it, style = metaStil, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                               modifier = Modifier.weight(1f, fill = false)) }
                             if (plan != null && !plan.lossless) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(painterResource(R.drawable.player_warnung), contentDescription = null, tint = Stil.warnung)
+                                Symbol(Zeichen.Warnung, 12.dp, farbe = Stil.warnung)
                                 Text(plan.methode, style = metaStil, color = Stil.warnung, maxLines = 1)
                             }
                         }
@@ -1150,13 +1397,13 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                                 ebeneOeffnen) { werk.beenden(schliessen) }
                 }
                 werk.hinweis?.let {
-                    Text(it, style = TextStyle(fontSize = 11.sp, textAlign = TextAlign.Center), color = Color.White.copy(alpha = 0.85f),
+                    Text(it, style = Stil.klein.copy(textAlign = TextAlign.Center), color = Stil.schriftLeise,
                          modifier = Modifier.fillMaxWidth().padding(horizontal = Playermass.seite).padding(top = 10.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 // **Die Leiste ueber die volle Breite**, Zeit links, Restzeit rechts (Vorlage `fuss`).
                 Box(Modifier.fillMaxWidth().height(Playermass.leiste).padding(horizontal = Playermass.seite)) {
-                    Zeitzeile(werk.position, werk.dauer, werk.amSchieben, aktiv, { werk.trickplayBild(it) },
+                    Zeitzeile(werk.position, werk.dauer, werk.amSchieben, aktiv, werk.plan?.marken.orEmpty(), { werk.trickplayBild(it) },
                               { werk.amSchieben = it; beruehrt++ }) { werk.springe(it) }
                 }
             }
@@ -1197,12 +1444,6 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
         // Waehrend des Folgenwechsels laeuft die alte Folge weiter — der Ring sagt, dass etwas kommt.
         if (werk.bildFrei && werk.wechselt) Lader(Modifier.align(Alignment.Center))
-
-        // **Das Technikschild.** Ueber der Steuerung, aber unter den Ebenen (Vorlage: `zIndex(4)`).
-        if (app.einstellungen.technikschild && !imKleinenFenster && werk.technikFest.isNotEmpty()) {
-            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
-                Modifier.align(Alignment.TopStart).zIndex(4f).padding(start = rand.seite + Stil.randAbstand, top = rand.oben + 12.dp))
-        }
 
         // **Die drei Ebenen** — Vollbild ueber dem Video, blenden 0,2 s easeOut; die Steuerung darunter weicht
         // im selben Takt (`blendkurve`, iOS cb6af09).
@@ -1253,8 +1494,14 @@ private object Playermass {
     val leiste = 44.dp
 }
 
-private val titelStil = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold)
-private val metaStil = TextStyle(fontSize = 14.sp)
+/**
+ * **Der Player steht auf derselben Leiter wie der Rest.** Er fuehrte eine zweite (19 Bold /
+ * 14 / 13) — auf Apple ist die am 21.09. eingesammelt worden, hier bis jetzt nicht. Titel 20,
+ * Angabe 12, Zeit 13 (BAUTEILE 8). **Bold gibt es nur am Seitentitel**, und der Titel im
+ * Player ist eine Leistenzeile, kein Seitentitel.
+ */
+private val titelStil = Stil.reihe
+private val metaStil = Stil.klein
 
 /**
  * **Der sichere Bereich des Players** — was auf iOS nach `.ignoresSafeArea(edges: mass.obenUebergehen)` bleibt.
@@ -1325,10 +1572,10 @@ private fun Modifier.huepfen(takt: Int): Modifier = composed {
 
 /** Einer der Symbolknoepfe oben rechts — im Player wie auf den Ebenen (`Symbolknopf`): 44 Trefferflaeche, weiss. */
 @Composable
-private fun Symbolknopf(@DrawableRes symbol: Int, beschreibung: String, aktiv: Boolean = true, tun: () -> Unit) {
+private fun Symbolknopf(symbol: Zeichen, beschreibung: String, aktiv: Boolean = true, tun: () -> Unit) {
     Box(Modifier.size(Playermass.knopf).symboldruck(aktiv, beschreibung, tun), contentAlignment = Alignment.Center) {
-        // Die Groesse steht im Zeichen selbst (Glyphengroesse des SF-Symbols bei 19 pt).
-        Icon(painterResource(symbol), contentDescription = null, tint = Color.White)
+        // `mass.symbol`: 19 Medium, weiss.
+        Symbol(symbol, 19.dp, farbe = Color.White, staerke = Staerke.Mittel)
     }
 }
 
@@ -1336,10 +1583,10 @@ private fun Symbolknopf(@DrawableRes symbol: Int, beschreibung: String, aktiv: B
 @Composable
 private fun Symbolreihe(hatFolgen: Boolean, aktiv: Boolean, modifier: Modifier, oeffnen: (String) -> Unit, schliessen: () -> Unit) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        Symbolknopf(R.drawable.player_untertitel, uebersetzt("Audio & Untertitel"), aktiv) { oeffnen("spuren") }
-        if (hatFolgen) Symbolknopf(R.drawable.player_folgen, uebersetzt("Folgen"), aktiv) { oeffnen("folgen") }
-        Symbolknopf(R.drawable.player_regler, uebersetzt("Einstellungen"), aktiv) { oeffnen("einstellungen") }
-        Symbolknopf(R.drawable.player_x, uebersetzt("Player schließen"), aktiv) { schliessen() }
+        Symbolknopf(Zeichen.Untertitel, uebersetzt("Audio & Untertitel"), aktiv) { oeffnen("spuren") }
+        if (hatFolgen) Symbolknopf(Zeichen.Stapel, uebersetzt("Folgen"), aktiv) { oeffnen("folgen") }
+        Symbolknopf(Zeichen.Regler, uebersetzt("Einstellungen"), aktiv) { oeffnen("einstellungen") }
+        Symbolknopf(Zeichen.Kreuz, uebersetzt("Player schließen"), aktiv) { schliessen() }
     }
 }
 
@@ -1365,13 +1612,14 @@ private fun Mittelsteuerung(laeuft: Boolean, zurueckS: Int, vorS: Int, taktZurue
 
 @Composable
 private fun Spulknopf(zurueck: Boolean, sekunden: Int, takt: Int, schmal: Boolean, aktiv: Boolean, beschreibung: String, tun: () -> Unit) {
-    // `gobackward.10` bei 30 pt (schmal 24): der Kreis so gross wie die Schrift, die Zahl gut ein Drittel davon.
+    // `gobackward.10` bei 30 pt (schmal 24), Medium. Material hat den Pfeilkreis mit Zahl nur fuer 5, 10
+    // und 30 Sekunden — deshalb fuer jede Spanne derselbe leere Kreis mit eigener Ziffer darin, damit
+    // 15 nicht anders aussieht als 10.
     val glyphe = if (schmal) 24.dp else 30.dp
     val ziffer = with(LocalDensity.current) { (glyphe * 0.37f).toSp() }
     Box(Modifier.size(if (schmal) 40.dp else 46.dp).symboldruck(aktiv, beschreibung, tun), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(glyphe).huepfen(takt), contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.player_zurueck), contentDescription = null, tint = Color.White,
-                 modifier = Modifier.fillMaxSize().graphicsLayer { if (!zurueck) scaleX = -1f })
+        Box(Modifier.huepfen(takt), contentAlignment = Alignment.Center) {
+            Symbol(if (zurueck) Zeichen.Zurueckspulen else Zeichen.Vorspulen, glyphe, farbe = Color.White, staerke = Staerke.Mittel)
             // Der Kreis sitzt 4 % unter der Mitte des Zeichens (Pfeilspitze oben).
             Text("$sekunden", style = TextStyle(fontSize = ziffer, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum",
                                                 letterSpacing = (-0.2).sp),
@@ -1391,10 +1639,8 @@ private fun Pauseknopf(laeuft: Boolean, schmal: Boolean, aktiv: Boolean, tun: ()
                 (fadeIn(tween(90)) + scaleIn(spring(dampingRatio = 0.8f, stiffness = 900f), initialScale = 0.5f)) togetherWith
                     (fadeOut(tween(60)) + scaleOut(tween(60), targetScale = 0.5f)) using SizeTransform(clip = false)
             }) { an ->
-            if (an) Icon(painterResource(R.drawable.player_pause), contentDescription = null, tint = Color.White,
-                         modifier = Modifier.size(29.dp * skala, 35.dp * skala))
-            else Icon(painterResource(R.drawable.player_play), contentDescription = null, tint = Color.White,
-                      modifier = Modifier.size(31.dp * skala, 35.dp * skala))
+            // `pause.fill` / `play.fill`, 48 (schmal 36) Medium.
+            Symbol(if (an) Zeichen.Pause else Zeichen.Abspielen, 48.dp * skala, farbe = Color.White, staerke = Staerke.Mittel)
         }
     }
 }
@@ -1406,9 +1652,9 @@ private fun Sprungmarke(richtung: Int, sekunden: Int) {
     LaunchedEffect(Unit) { gedreht = 1 }
     Column(Modifier.size(108.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(painterResource(R.drawable.player_zurueck), contentDescription = null, tint = Color.White,
-             modifier = Modifier.size(32.dp).huepfen(gedreht).graphicsLayer { if (richtung > 0) scaleX = -1f })
-        Text(uebersetzt("%lld s", sekunden), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = Color.White)
+        Symbol(if (richtung > 0) Zeichen.Vorspulen else Zeichen.Zurueckspulen, 32.dp, Modifier.huepfen(gedreht),
+               farbe = Color.White, staerke = Staerke.Mittel)
+        Text(uebersetzt("%lld s", sekunden), style = Stil.kachel, color = Color.White)
     }
 }
 
@@ -1431,12 +1677,12 @@ private fun Lader(modifier: Modifier = Modifier, groesse: Dp = 34.dp, staerke: D
  * mit Zeit, knapp ueber der Trefferflaeche und ueber dem Griff.
  */
 @Composable
-private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean,
+private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean, marken: List<Double>,
                       vorschau: (Double) -> android.graphics.Bitmap?,
                       schieben: (Boolean) -> Unit, springen: (Double) -> Unit) {
     var ziel by remember { mutableStateOf<Double?>(null) }
     val gezeigt = ziel ?: position
-    val ziffern = TextStyle(fontSize = 13.sp, fontFeatureSettings = "tnum")
+    val ziffern = Stil.kachel.copy(fontWeight = FontWeight.Normal, fontFeatureSettings = "tnum")
     val dicke by animateDpAsState(if (amSchieben) 6.dp else 4.dp, Bewegung.umschalten(), label = "spur")
     val griffSkala by animateFloatAsState(if (amSchieben) 1f else 0.4f, Bewegung.umschalten(), label = "griffSkala")
     val griffDeckung by animateFloatAsState(if (amSchieben) 1f else 0f, Bewegung.umschalten(), label = "griffDeckung")
@@ -1483,8 +1729,14 @@ private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, akti
             val anteil = if (dauer > 0) (gezeigt / dauer).toFloat().coerceIn(0f, 1f) else 0f
             val breite = maxWidth
             val spur = Modifier.height(dicke).clip(CircleShape)
-            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.28f)))
+            // Spur weiss 18 %.
+            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.18f)))
             Box(Modifier.width(breite * anteil).then(spur).background(Color.White))
+            // **Kerben an den Abschnittsgrenzen**, 2 breit in `grund` — wo der Vorspann anfaengt, sagt
+            // allein noch nicht, wo er aufhoert, und genau das will man sehen, bevor man greift.
+            if (dauer > 0) marken.map { (it / dauer).toFloat() }.filter { it > 0.01f && it < 0.99f }.forEach { stelle ->
+                Box(Modifier.offset(x = breite * stelle - 1.dp).width(2.dp).height(dicke).background(Stil.grund))
+            }
             Box(Modifier.offset(x = breite * anteil - 9.dp).size(18.dp)
                 .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
                 .clip(CircleShape).background(Stil.akzent))
@@ -1505,9 +1757,11 @@ private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, akti
                     bild?.let {
                         Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
                             modifier = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(Stil.ecke))
-                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(Stil.ecke)))
+                                .border(1.dp, Stil.rand, RoundedCornerShape(Stil.ecke)))
                     }
-                    Text(zeitText(gezeigt), style = ziffern.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                    // Semibold, nicht Bold; auf eigener Kapsel, weil hier kein Schleier liegt.
+                    Text(zeitText(gezeigt), style = ziffern.copy(fontWeight = FontWeight.SemiBold), color = Stil.schrift,
+                         modifier = Modifier.clip(CircleShape).background(Stil.grund.copy(alpha = 0.82f)).padding(horizontal = 8.dp, vertical = 3.dp))
                 }
             }
         }
@@ -1536,7 +1790,7 @@ private fun Ebenenkopf(schliessen: () -> Unit, links: @Composable () -> Unit = {
     Row(Modifier.fillMaxWidth().padding(horizontal = Playermass.seite).padding(top = Playermass.oben), verticalAlignment = Alignment.Top) {
         Box(Modifier.weight(1f)) { links() }
         Spacer(Modifier.width(12.dp))
-        Symbolknopf(R.drawable.player_x, uebersetzt("Schließen"), tun = schliessen)
+        Symbolknopf(Zeichen.Kreuz, uebersetzt("Schließen"), tun = schliessen)
     }
 }
 
@@ -1572,10 +1826,11 @@ private fun Ebenenzeile(text: String, gewaehlt: Boolean, tun: () -> Unit) {
             .semantics { selected = gewaehlt }.padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
-            Icon(painterResource(R.drawable.player_haken), contentDescription = null, tint = Stil.schrift,
-                 modifier = Modifier.size(13.dp).alpha(if (gewaehlt) 1f else 0f))
+            Symbol(Zeichen.Haken, 14.dp, Modifier.alpha(if (gewaehlt) 1f else 0f), farbe = Stil.schrift, staerke = Staerke.Halbfett)
         }
-        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = if (gewaehlt) FontWeight.SemiBold else FontWeight.Normal),
+        // **Gewaehlt heisst Weiss, kein Gewichtswechsel** (BRAND 5) — der Haken links sagt
+        // es schon, und in einer Spalte mit `maxLines(1)` kuerzte Semibold sogar mehr als Regular.
+        Text(text, style = Stil.koerper,
              color = if (gewaehlt) Stil.schrift else Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1765,8 +2020,9 @@ fun Angebotspille(art: String, text: String, anteil: Double?, sekunden: Int?, we
             }
             .padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(R.drawable.player_ueberspringen), contentDescription = null, tint = Stil.grund)
-        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold), color = Stil.grund, maxLines = 1)
+        Symbol(Zeichen.Ueberspringen, 15.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
+        // Halbfett, nicht fett: drei Schnitte, und Bold steht nur am Seitentitel (BRAND 2).
+        Text(text, style = Stil.listentitel, color = Stil.grund, maxLines = 1)
     }
 }
 
@@ -1790,46 +2046,118 @@ fun durchgehendeFuellung(anteil: Double?, laeuft: Boolean, laenge: Double): Floa
     return wert.value
 }
 
+/** Eine feste Zeile des Technikschilds aus `Kern.technikFest` — Name leise, Wert hell; `kopf` ist die Auslieferung. */
+data class Technikzeile(val name: String?, val text: String, val art: String, val kopf: Boolean)
+
 /**
- * Vorlage: `Technikschild` — oben links, unter dem Kopf, nie antippbar. Fast deckend statt
- * durchscheinend: lesbar ueber bewegtem Bild geht vor. Die Schwellen sind die von iOS: Bildrate
- * mehr als zwei unter Soll, Lauf unter 97 %, Vorrat unter zwei Sekunden, jeder Verlust.
+ * **Das Technikschild** — Vorlage `Technikschild` in Sources/Shared. Oben links, nimmt nichts an.
+ *
+ * **Nur, was ein Zuschauer wissen will** (22.09.2026, „viel zu riesig"): Auslieferung, Grund, Bild, Ton,
+ * Untertitel, Datei und Puffer sind Kernzeilen und stehen immer; die Verlustzeile nur, wenn etwas verloren
+ * ging. Stelle, Demuxer, Zeige-, Lauf-, Dekoder- und Stromzaehler stehen nur im Messmodus
+ * (`technikschildMessen`, per Startextra). Ueber die Kernzeilen hinaus nimmt [Kappliste] Zeilen nur,
+ * solange 55 % der angebotenen Hoehe reichen — weglassen statt scrollen, das Schild nimmt keine Eingaben.
+ *
+ * Schrift der Leiter (`klein`, gleich breite Ziffern) statt Monospace; Grund `grund` zu 0,78, kein Rand.
+ * `fern`: der Fernseher — 420 breit, 7 Abstand, Innenabstand 20/16, Ecke `eckeKlein`.
  * „zu spät" fehlt — libVLC fuer Android zaehlt verspaetete Bilder nicht; eine Null waere gelogen.
  *
  * Nicht `private`: `tv/TvPlayer.kt` zeigt dasselbe Schild an derselben Stelle.
  */
 @Composable
-fun Technikschild(fest: List<Pair<String, String>>, live: JSONObject?, position: Double, dauer: Double, modifier: Modifier) {
-    val schrift = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
-    val form = RoundedCornerShape(Stil.ecke)
+fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: Double, dauer: Double, messen: Boolean, fern: Boolean,
+                  modifier: Modifier = Modifier) {
+    val ziffern = "tnum"
+    val schrift = Stil.klein.copy(fontFeatureSettings = ziffern)
+    val kopfschrift = Stil.kachel.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = ziffern)
+    val abstand = if (fern) 7.dp else 4.dp
     fun komma(x: Double, stellen: Int = 1) = String.format(Locale.getDefault(), "%.${stellen}f", x)
-    Column(modifier.width(260.dp).clip(form).background(Stil.grund.copy(alpha = 0.82f)).border(1.dp, Stil.rand, form)
-               .padding(horizontal = 12.dp, vertical = 10.dp),
-           verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        fest.forEachIndexed { i, (text, art) ->
-            Text(text, style = if (i == 0) schrift.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold) else schrift,
-                 color = when (art) { "gut" -> Stil.akzent; "warnend" -> Stil.warnung; else -> if (i == 0) Stil.schrift else Stil.schriftLeise })
+    val zeilen = mutableListOf<Pair<Boolean, @Composable () -> Unit>>()
+    fun kern(z: @Composable () -> Unit) { zeilen += true to z }
+    fun rest(z: @Composable () -> Unit) { zeilen += false to z }
+    @Composable fun messzeile(text: String, auffaellig: Boolean) {
+        if (auffaellig) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Symbol(Zeichen.Warnung, 10.dp, farbe = Stil.warnung)
+            Text(text, style = schrift, color = Stil.warnung)
+        } else Text(text, style = schrift, color = Stil.schriftLeise)
+    }
+    @Composable fun angabe(name: String, wert: String, auffaellig: Boolean = false) {
+        if (auffaellig) messzeile("$name $wert", true)
+        else Text(buildAnnotatedString {
+            withStyle(SpanStyle(color = Stil.schriftLeise)) { append(name) }
+            withStyle(SpanStyle(color = Stil.schrift)) { append(" $wert") }
+        }, style = schrift)
+    }
+    fest.forEach { z ->
+        when {
+            z.kopf -> kern { Text(z.text, style = kopfschrift, color = if (z.art == "gut") Stil.akzent else Stil.warnung) }
+            z.name == null -> kern { Text(z.text, style = schrift, color = Stil.warnung, maxLines = if (messen) Int.MAX_VALUE else 2,
+                                          overflow = TextOverflow.Ellipsis) }
+            else -> kern { angabe(z.name, z.text) }
         }
-        Text("${uebersetzt("Stelle")} ${zeitText(position)} / ${zeitText(dauer)}", style = schrift, color = Stil.schriftLeise)
+    }
+    live?.let { w ->
+        // **Puffer: Sekunden Vorrat und was ankommt**, eine Zeile. KiB nur beim Messen.
+        val sekunden = w.feldZahl("vorratSekunden")
+        val teile = buildList {
+            sekunden?.let { add("${komma(it)} s") }
+            if (messen) add("${w.optLong("vorratKiB")} KiB")
+            w.feldText("eingang")?.let { add("${uebersetzt("Eingang")} $it") }
+        }
+        if (teile.isNotEmpty()) kern { angabe(uebersetzt("Puffer"), teile.joinToString(" · "), (sekunden ?: Double.MAX_VALUE) < 2) }
+        val verworfen = w.optLong("verworfen"); val tonWeg = w.optLong("tonVerloren")
+        val verlust = verworfen > 0 || tonWeg > 0
+        if (messen || verlust) rest { messzeile("${uebersetzt("Verworfen")} $verworfen · ${uebersetzt("Ton weg")} $tonWeg", verlust) }
+    }
+    if (messen) {
+        if (dauer > 1) rest { messzeile("${uebersetzt("Stelle")} ${zeitText(position)} / ${zeitText(dauer)}", false) }
         live?.let { w ->
-            Box(Modifier.padding(vertical = 2.dp).width(150.dp).height(1.dp).background(Stil.rand))
-            @Composable fun zeile(text: String, warnend: Boolean) =
-                Text(text, style = schrift, color = if (warnend) Stil.warnung else Stil.schriftLeise)
+            // Eine Haarlinie: darueber die Datei, darunter, was beim Laufen hochzaehlt.
+            rest { Box(Modifier.padding(vertical = abstand / 2).width(if (fern) 260.dp else 150.dp).height(1.dp).background(Stil.rand)) }
             val soll = w.feldZahl("soll")
-            w.feldText("eingang")?.let { zeile("${uebersetzt("Eingang")} $it", false) }
-            w.feldText("demuxer")?.let { zeile("${uebersetzt("Demuxer")} $it", false) }
-            w.feldZahl("zeigt")?.let { ist ->
-                zeile("${uebersetzt("Zeigt Ø")} ${komma(ist)} fps · ${uebersetzt("Gezeigt")} ${w.optLong("gezeigt")}", soll != null && ist < soll - 2)
-            }
-            w.feldZahl("lauf")?.let { anteil -> zeile("${uebersetzt("Lauf")} ${(anteil * 100).roundToInt()} %", anteil < 0.97) }
-            w.feldZahl("dekodiert")?.let { ist -> zeile("${uebersetzt("Dekodiert Ø")} ${komma(ist)} fps", soll != null && ist < soll - 2) }
-            val kib = w.optLong("vorratKiB")
-            val sekunden = w.feldZahl("vorratSekunden")
-            zeile("${uebersetzt("Vorrat")} ${sekunden?.let { "${komma(it, 0)} s · " }.orEmpty()}$kib KiB", sekunden != null && sekunden < 2)
-            val verworfen = w.optLong("verworfen"); val tonWeg = w.optLong("tonVerloren")
-            zeile("${uebersetzt("Verworfen")} $verworfen · ${uebersetzt("Ton weg")} $tonWeg", verworfen > 0 || tonWeg > 0)
+            w.feldText("demuxer")?.let { rest { messzeile("${uebersetzt("Demuxer")} $it", false) } }
+            val zeigt = w.feldZahl("zeigt")
+            rest { messzeile("${uebersetzt("Zeigt Ø")} ${zeigt?.let { komma(it) } ?: "—"} fps · ${uebersetzt("Gezeigt")} ${w.optLong("gezeigt")}",
+                             zeigt != null && soll != null && zeigt < soll - 2) }
+            val lauf = w.feldZahl("lauf")
+            rest { messzeile("${uebersetzt("Lauf")} ${lauf?.let { "${(it * 100).roundToInt()} %" } ?: "—"}", (lauf ?: 1.0) < 0.97) }
+            val dekodiert = w.feldZahl("dekodiert")
+            rest { messzeile("${uebersetzt("Dekodiert Ø")} ${dekodiert?.let { komma(it) } ?: "—"} fps",
+                             dekodiert != null && soll != null && dekodiert < soll - 2) }
             val kaputt = w.optLong("beschaedigt"); val spruenge = w.optLong("spruenge")
-            zeile("${uebersetzt("Beschädigt")} $kaputt · ${uebersetzt("Sprünge")} $spruenge", kaputt > 0 || spruenge > 0)
+            rest { messzeile("${uebersetzt("Beschädigt")} $kaputt · ${uebersetzt("Sprünge")} $spruenge", kaputt > 0 || spruenge > 0) }
+        }
+    }
+    val form = RoundedCornerShape(if (fern) Stil.eckeKlein else Stil.ecke)
+    Box(modifier.clip(form).background(Stil.grund.copy(alpha = 0.78f))
+            .padding(horizontal = if (fern) 20.dp else 12.dp, vertical = if (fern) 16.dp else 10.dp)
+            .width(if (fern) 420.dp else 260.dp)
+            .clearAndSetSemantics { contentDescription = fest.joinToString(", ") { listOfNotNull(it.name, it.text).joinToString(" ") } }) {
+        Kappliste(abstand, if (messen) null else 0.55f, zeilen.map { it.first }) { zeilen.forEach { it.second() } }
+    }
+}
+
+/**
+ * **Eine Spalte mit Hoechsthoehe, die weglaesst statt zu scrollen** — Vorlage `Kappliste`. Kernzeilen stehen
+ * immer; die uebrigen nimmt sie von oben, solange sie in `anteil` der angebotenen Hoehe passen, und hoert bei
+ * der ersten auf, die nicht mehr passt. Die Reihenfolge ist die Rangfolge.
+ */
+@Composable
+private fun Kappliste(abstand: Dp, anteil: Float?, kern: List<Boolean>, inhalt: @Composable () -> Unit) {
+    Layout(inhalt) { teile, schranken ->
+        val grenze = if (anteil != null && schranken.hasBoundedHeight) schranken.maxHeight * anteil else Float.POSITIVE_INFINITY
+        val luft = abstand.roundToPx()
+        val frei = schranken.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
+        var summe = 0; var voll = false
+        val stehen = teile.mapIndexed { i, t ->
+            val g = t.measure(frei)
+            val neu = summe + (if (summe == 0) 0 else luft) + g.height
+            if (!kern.getOrElse(i) { false } && (voll || neu > grenze)) { voll = true; null } else { summe = neu; g }
+        }
+        val breite = if (schranken.hasBoundedWidth) schranken.maxWidth else stehen.maxOfOrNull { it?.width ?: 0 } ?: 0
+        layout(breite, summe) {
+            var y = 0
+            stehen.forEach { g -> if (g != null) { g.place(0, y); y += g.height + luft } }
         }
     }
 }

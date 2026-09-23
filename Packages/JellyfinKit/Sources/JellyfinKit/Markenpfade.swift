@@ -25,6 +25,12 @@ public enum Markenpfade {
     public static let wortmarkeRahmen = (x: 23.0, y: -778.0, breite: 3005.0, hoehe: 1024.0)
 
     /// Die Farben der Marke, als Hexadezimalwerte für Plattformen ohne `Color`.
-    public static let akzentHex = "#2FDBC0"
+    ///
+    /// **Derselbe Ton wie `Marken.markeAkzent`.** Hier stand noch #2FDBC0,
+    /// das alte Markentuerkis, waehrend die Apple-Plattformen am 21.09. auf
+    /// #50D5DA gezogen sind — die App hatte damit wieder zwei Tuerkis, und
+    /// das zweite traf ausgerechnet Linux und Windows, die ihre Marke ueber
+    /// diese Zeichenkette zeichnen.
+    public static let akzentHex = "#50D5DA"
     public static let flaecheHex = "#17181B"
 }

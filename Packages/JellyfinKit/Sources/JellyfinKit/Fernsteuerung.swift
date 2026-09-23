@@ -131,6 +131,7 @@ public actor Fernsteuerung {
         // die Anmeldung des Kanals von dort, neuere aus der Kopfzeile.
         Spur.sag("[Fernsteuerung] verbinde …")
         var anfrage = URLRequest(url: url)
+        anfrage.eigeneKoepfeSetzen()
         anfrage.setValue(ausweis, forHTTPHeaderField: "Authorization")
         let neu = sitzung.webSocketTask(with: anfrage)
         neu.resume()

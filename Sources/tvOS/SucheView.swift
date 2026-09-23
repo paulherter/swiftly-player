@@ -19,6 +19,8 @@ struct SucheView: View {
     @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var laeuft = false
     @State private var gesucht = false
+    /// Der Server hat nicht geantwortet — anders als „nichts gefunden".
+    @State private var gestoert = false
     /// **Was zuletzt gesucht wurde** — dieselbe Liste wie auf dem iPhone, die
     /// Regel steht in `Suchverlauf`. Mit der Fernbedienung ist jedes getippte
     /// Wort teuer; eines, das man nicht noch einmal tippen muss, ist hier mehr
@@ -63,10 +65,26 @@ struct SucheView: View {
                         .padding(.horizontal, Stil.randSeite)
                         .padding(.top, 40)
                         .transition(.opacity)
+                } else if gestoert, treffer.isEmpty, !laeuft {
+                    // **Gestoert ist nicht „nichts gefunden".** `suche`
+                    // liefert `nil`, wenn der Server nicht antwortet; das
+                    // `?? []` darunter machte daraus eine leere Trefferliste
+                    // und die Seite sagte, es gebe den Titel nicht. Derselbe
+                    // Text wie in der Bibliothek — eine Ursache, eine
+                    // Diagnose.
+                    Leerzustand(
+                        symbol: "externaldrive.badge.xmark",
+                        titel: "Server ist abgetaucht",
+                        hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        knopf: ("Erneut versuchen", { Task { await suchen() } }))
+                        .frame(height: 460)
                 } else if treffer.isEmpty && gesucht, !laeuft {
+                    // **Ein Ausweg, kein Sackgassenschild** — auf der
+                    // Fernbedienung noch unangenehmer als am Finger.
                     Leerzustand(symbol: "magnifyingglass",
                                 titel: "Nichts gefunden",
-                                hinweis: "Versuch es mit einem anderen Wort.")
+                                hinweis: "Versuch es mit einem anderen Wort.",
+                                knopf: ("Erneut versuchen", { Task { await suchen() } }))
                         .frame(height: 460)
                 } else if !gesucht {
                     if letzte.isEmpty {
@@ -196,6 +214,7 @@ struct SucheView: View {
             guard !neu.isEmpty else {
                 treffer = []
                 gesucht = false
+                gestoert = false
                 return
             }
             Task { await suchen() }
@@ -253,12 +272,15 @@ struct SucheView: View {
                             .frame(width: 34)
                         Text("Verlauf löschen")
                     }
-                    .foregroundStyle(Stil.schriftSehrLeise)
                 }
-                .buttonStyle(ZeilenStil())
+                // **Leise ueber den Stil, nicht von innen.** Die Zeile trug
+                // hier `schriftSehrLeise` — auch im Fokus, und auf der
+                // Fokusflaeche sind das 3,59:1. `ZeilenStil(leise:)` haelt
+                // sie ruhend leise und hebt sie an, sobald man auf ihr steht.
+                .buttonStyle(ZeilenStil(leise: true))
             }
             .padding(10)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
         }
         .frame(width: 1000, alignment: .leading)
         .padding(.horizontal, Stil.randSeite)
@@ -290,7 +312,12 @@ struct SucheView: View {
         // uebernaechste. `ForEach` ordnet ueber die Kennung zu, und der
         // Server liefert denselben Titel gelegentlich zweimal. Die
         // iPhone-Fassung faengt das ab; hier fehlte der Schutz.
-        treffer = Listenregeln.ohneDoppelte(a)
+        // **`nil` heisst gestoert, nicht leer.** Das `?? []` allein machte
+        // aus dem stummen Server eine leere Trefferliste — die Seite
+        // behauptete dann, es gebe den Titel nicht. Die iPhone-Fassung
+        // unterscheidet die beiden seit dem 22.09.; hier fehlte es.
+        gestoert = a == nil
+        treffer = Listenregeln.ohneDoppelte(a ?? [])
         // Was schon auf dem Server liegt, gehoert in den oberen Block —
         // sonst staende derselbe Titel zweimal auf der Seite.
         seerrtreffer = b.filter { !$0.stand.schonDa }

@@ -223,7 +223,10 @@ extension App {
     private func personBannerNachladen(_ person: Item, in kulisse: Kulisse) {
         guard let client, let adressen else { return }
         Task.detached { [self] in
-            let titel = await client.titel(person: person.id)
+            // `?? []` nur fuer das Banner: hier geht es um ein Bild, nicht um
+            // eine Aussage an den Nutzer. Der Unterschied gestoert/leer wird
+            // auf Apple gezeigt; GTK zieht mit der Oberflaeche nach.
+            let titel = await client.titel(person: person.id) ?? []
             guard let erster = titel.first else { return }
             var bilder = titel.compactMap {
                 Bildwahl.quer($0, adressen: adressen, breite: 1600)?.url
@@ -233,34 +236,17 @@ extension App {
                                                         breite: 1600) {
                 bilder = [ersatz]
             }
-            guard !bilder.isEmpty else { return }
-            await personBannerWechseln(bilder, in: kulisse)
+            // **Nur das erste Bild — die Bannerschleife ist weg** (Mac
+            // 77af1111): alle sechs Sekunden ein neues Hintergrundbild war
+            // Dekoration, die niemand bestellt hat, und die iPhone-Fassung hat
+            // sie am 21.09. gestrichen.
+            guard let url = bilder.first, kulisse.lebt,
+                  let daten = await Bildlager.shared.laden(url, schluessel: Bildschluessel.fuer(url))
+            else { return }
+            aufHauptfaden { kulisse.setzen(daten) }
         }
     }
 
-    /// Der Takt selbst. Läuft, bis die Zeichenfläche stirbt.
-    private func personBannerWechseln(_ bilder: [URL], in kulisse: Kulisse) async {
-        var stelle = 0
-        while true {
-            let url = bilder[stelle % bilder.count]
-            guard kulisse.lebt else { return }
-            if let daten = await Bildlager.shared.laden(url,
-                                                        schluessel: Bildschluessel.fuer(url)) {
-                // `setzen` prueft selbst noch einmal — zwischen hier und dem
-                // Hauptfaden kann die Seite weg sein.
-                aufHauptfaden { kulisse.setzen(daten) }
-            }
-            // Mit einem Bild gibt es nichts zu wechseln.
-            guard bilder.count > 1 else { return }
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
-            guard kulisse.lebt else { return }
-            stelle += 1
-        }
-    }
-
-    /// Vier Zeilen, dann „Mehr". Eine Biografie ist hier Auskunft, nicht der
-    /// Grund, die Seite zu öffnen — sie soll die Titel nicht nach unten
-    /// schieben, bevor man sie will.
     private func biografie(_ text: String) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 6)
         gtk_widget_set_margin_start(block, Int32(Stil.randAbstand))
@@ -304,13 +290,28 @@ extension App {
     /// unten, damit sich darüber nichts verschiebt.
     private func personReihenNachladen(_ person: Item, in raum: Widget!) {
         guard let client else { return }
+        // **Platzhalter, solange sie laedt** (Mac 2b64e2af): vorher stand vor
+        // der Antwort nichts.
+        leeren(raum)
+        anhaengen(raum, reihenPlatzhalter(rand: Stil.randAbstand))
         let kiste = gehalten(raum)
         let seerr = seerrclient
         Task.detached { [self] in
-            let eigene = await client.titel(person: person.id)
+            let geholt = await client.titel(person: person.id)
+            let eigene = geholt ?? []
             nachDemSchub {
                 let ziel = kiste.widget
-                if !eigene.isEmpty {
+                leeren(ziel)
+                // **`nil` heisst gestoert** (4fffc63c): nicht „auf deinem Server
+                // gibt es sonst nichts", sondern die Serverformel.
+                if geholt == nil {
+                    anhaengen(ziel, self.stoerhinweis(oben: 0) { [weak self] in
+                        guard let self, let raum = kiste.widget else { return }
+                        self.personReihenNachladen(person, in: raum)
+                    })
+                    self.personAnfragbareNachladen(person, eigene: [],
+                                                   seerr: seerr, in: ziel)
+                } else if !eigene.isEmpty {
                     anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Auf deinem Server"),
                                                     art: .neu, items: eigene))
                     self.personAnfragbareNachladen(person, eigene: eigene,

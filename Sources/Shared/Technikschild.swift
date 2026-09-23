@@ -21,6 +21,24 @@ import SwiftUI
 /// Regler, rechts oben auf iPhone und iPad der Schliessen-Knopf. Oben links
 /// ist die einzige Ecke, die in allen vier Playern frei ist — und ein Schild,
 /// das je nach Gerät woanders sitzt, muss man suchen.
+///
+/// **Was darauf steht, und was nicht mehr** (22.09.2026, „viel zu riesig").
+/// Das Schild war mit jeder Messung eine Zeile länger geworden, bis es am
+/// Telefon quer fast das ganze Bild deckte. Sichtbar bleibt jetzt nur, was
+/// ein Zuschauer wissen will: wie der Server ausliefert und warum, was für
+/// Bild, Ton und Untertitel, wie gross und dicht die Datei ist, und ob der
+/// Puffer reicht. Alles, was nur beim Suchen eines Fehlers hilft — Takt,
+/// Stelle, Matroska-Kniff, Dekoder- und Zeigezähler, Schirmfrequenz —, steht
+/// nur im Messmodus (`technikschildMessen`, siehe dort).
+///
+/// **Die Kernzeilen stehen immer, gekappt wird nur der Rest.** Kopf, Grund,
+/// Bild, Ton, Untertitel, Datei und Puffer tragen `kern()` und stehen, egal
+/// wie hoch sie werden — ein langer Grund wird gekürzt, nicht weggelassen.
+/// Was darüber hinausgeht (verlorene Bilder), nimmt `Kappliste` nur, solange
+/// `hoechstanteil` der angebotenen Höhe reicht. Vorher galt die Kappung für
+/// alle Zeilen, und am iPhone quer fielen bei einer Umrechnung Ton und
+/// Puffer weg (Paul, 22.09.2026: „vielleicht fehlen Infos"). Kein Scrollen:
+/// das Schild nimmt keine Eingaben, also könnte auch niemand scrollen.
 struct Technikschild: View {
     /// Was der Server ausliefert und warum — die wichtigste Zeile.
     let plan: PlaybackPlan
@@ -35,6 +53,28 @@ struct Technikschild: View {
     /// Gemessene Bildwiederholrate des Schirms, nur auf iOS gefuellt.
     var schirmHertz: Double?
 
+    /// **Der Messmodus: alle Zeilen, ohne Höchsthöhe.**
+    ///
+    /// Kein Schalter in den Einstellungen — das ist Werkzeug für die Suche
+    /// nach einem Fehler, nicht für Zuschauer. Gesetzt wird er als
+    /// Startargument (`-technikschildMessen YES`), am Mac auch mit
+    /// `defaults write`. Nur `#if DEBUG` reichte nicht: auf die Testgeräte
+    /// kommen Debug-Bauten, und dort sollte das Schild genauso schlank sein
+    /// wie bei allen anderen.
+    @AppStorage("technikschildMessen") private var messen = false
+
+    /// Bis hierhin dürfen Zusatzzeilen das Schild verlängern — die
+    /// Kernzeilen zählen mit, stehen aber auch darüber hinaus.
+    ///
+    /// **Gerechnet, nicht geschätzt** (iPhone quer, 390 pt hoch): unter der
+    /// Titelzeile bleiben dem Schild gut 275 pt, 55 % davon sind 152. Die
+    /// sieben Kernzeilen brauchen bei 12 pt Schrift und 4 pt Abstand 120 pt,
+    /// mit zweizeiligem Grund und umbrechender Bildzeile 154 — dann fällt die
+    /// Verlustzeile weg, die Kernzeilen nicht. Mit 0,4 (110 pt) war schon der
+    /// Normalfall ohne Verlustzeile zu lang. Am Fernseher (1080, 24 pt,
+    /// 7 pt Abstand) bleiben gut 740 pt; die Kernzeilen brauchen höchstens 305.
+    static let hoechstanteil: CGFloat = 0.55
+
     private var quelle: MediaSource? { plan.quelle }
     private var video: MediaStream? { quelle.flatMap(Dateiangaben.videospur) }
     private var ton: MediaStream? { quelle.flatMap(Dateiangaben.tonspuren)?.first }
@@ -42,82 +82,86 @@ struct Technikschild: View {
         quelle.flatMap(Dateiangaben.untertitelspuren)?.first
     }
 
-    private var grad: CGFloat { fern ? 22 : 12 }
     private var abstand: CGFloat { fern ? 7 : 4 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: abstand) {
-            kopfzeile
+        Kappliste(abstand: abstand, anteil: messen ? nil : Self.hoechstanteil) {
+            kopfzeile.kern()
 
             // Der Grund steht direkt unter dem Wort, nicht am Ende: wer
             // „Transkodiert" liest, will als Nächstes wissen, woran es lag.
+            // Zwei Zeilen reichen für Art und Codec; der Rest der Klammer
+            // darf gekürzt werden, ausserhalb des Messmodus.
             if plan.method == .transcode, let grund = plan.reasons.first {
-                zeile(grund.text, farbe: Stil.warnung)
+                Text(verbatim: grund.text).foregroundStyle(Stil.warnung)
+                    .lineLimit(messen ? nil : 2)
+                    .kern()
             }
 
-            if let bild = Technikangaben.bildzeile(
-                breite: video?.width, hoehe: video?.height,
-                // Farbtiefe liefert der Server in unserem Modell nicht mit;
-                // der Umfang schon, und der ist die Angabe, an der auf dem
-                // Fernseher der HDR-Schalter haengt.
-                tiefe: nil,
-                umfang: video?.videoRangeType?.rawValue) {
-                zeile(bild)
-            }
-            if let v = videozeile { zeile(v) }
-            if let t = tonzeile { zeile(t) }
-            if let u = untertitelzeile { zeile(u) }
-            if let d = dateizeile { zeile(d) }
-
-            if let b = bedarfzeile { zeile(b) }
-            if let m = matroskazeile { zeile(m) }
-            if let z = zeitzeile { zeile(z) }
-            #if os(tvOS)
-            taktzeile
-            #endif
+            if let b = bildzeile { angabe(String(localized: "Bild"), b).kern() }
+            if let t = tonzeile { angabe(String(localized: "Ton"), t).kern() }
+            if let u = untertitelzeile { angabe(String(localized: "Untertitel"), u).kern() }
+            if let d = dateizeile { angabe(String(localized: "Datei"), d).kern() }
 
             if let werte {
-                // **Eine Haarlinie, kein Abstand.** Was darüber steht,
-                // beschreibt die Datei und ändert sich nie; was darunter
-                // steht, zählt beim Laufen hoch. Zwei Sorten Zahl, und man
-                // soll sie beim Überfliegen auseinanderhalten.
-                Rectangle().fill(Stil.rand)
-                    .frame(width: fern ? 260 : 150, height: 1)
-                    .padding(.vertical, abstand / 2)
+                pufferzeile(werte).kern()
+                // Ausserhalb des Messmodus nur, wenn etwas verloren ging —
+                // dann ist es die Antwort auf „warum ruckelt das?".
+                if messen || verlust(werte) { verlustzeile(werte) }
+            }
 
-                zeile("\(String(localized: "Eingang")) \(werte.eingang)")
-                zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
-                zeigtzeile(werte)
-                laufzeile(werte)
-                schirmzeile()
-                dekodierzeile(werte)
-                vorratzeile(werte)
-                verlustzeile(werte)
-                stromzeile(werte)
+            if messen {
+                if let m = matroskazeile { messzeile(m, auffaellig: false) }
+                if let z = zeitzeile { messzeile(z, auffaellig: false) }
+                #if os(tvOS)
+                taktzeile
+                #endif
+                if let werte {
+                    // **Eine Haarlinie, kein Abstand.** Was darüber steht,
+                    // beschreibt die Datei; was darunter steht, zählt beim
+                    // Laufen hoch.
+                    Rectangle().fill(Stil.rand)
+                        .frame(width: fern ? 260 : 150, height: 1)
+                        .padding(.vertical, abstand / 2)
+
+                    messzeile("\(String(localized: "Demuxer")) \(werte.demuxer)", auffaellig: false)
+                    zeigtzeile(werte)
+                    laufzeile(werte)
+                    schirmzeile()
+                    dekodierzeile(werte)
+                    stromzeile(werte)
+                }
             }
         }
-        .font(.system(size: grad, weight: .medium, design: .monospaced))
+        .clipped()
+        // **Die Leiter statt eigener Grade, und Ziffern statt Monospace.**
+        // Vorher stand das ganze Schild in einem Monospace-Schnitt mit eigenen
+        // Zahlen (12/24). Der Schnitt macht jede Zeile ein Fünftel breiter, und
+        // bei fester Breite heisst breiter: öfter zwei Zeilen. Gleich breite
+        // Ziffern reichen, damit die Zähler beim Hochzählen nicht zittern.
+        .font(Stil.klein.monospacedDigit())
         .foregroundStyle(Stil.schrift)
         // **Eine feste Breite, sonst laeuft die laengste Zeile hinaus.**
         //
         // Ein `VStack` in einer Auflage bekommt so viel Platz, wie er will —
         // und die Zeile mit den drei Zaehlern ist die laengste. Sie stand auf
         // dem Fernseher halb ausserhalb des Schildes. Mit einer Breite bricht
-        // sie um, statt zu fliehen.
+        // sie um, statt zu fliehen. Die Höhe reicht `Kappliste` durch: sie
+        // braucht die angebotene, um die Höchsthöhe daraus zu nehmen.
         .frame(width: fern ? 420 : 260, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, fern ? 20 : 12)
         .padding(.vertical, fern ? 16 : 10)
         .background {
             // Deckend, nicht durchscheinend: das Schild liegt über bewegtem
             // Bild, und über bewegtem Bild ist jede Transparenz mal lesbar
             // und mal nicht. Dieselbe Entscheidung wie bei den Leisten.
-            RoundedRectangle(cornerRadius: fern ? 14 : Stil.ecke)
-                .fill(Stil.grund.opacity(0.82))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: fern ? 14 : Stil.ecke)
-                .strokeBorder(Stil.rand)
+            // **0,88 statt 0,82.** Die kritischste Farbe auf dem Schild ist
+            // `warnung` (#E8833A), und die trug auf 0,82 über einem weißen
+            // Bild nur 4,38:1 — Grenze 4,5. Mit 0,88 sind es 5,40:1.
+            RoundedRectangle(cornerRadius: fern ? Stil.eckeKlein : Stil.ecke, style: .continuous)
+                // 0,78 wie die Kachelmarke und der Haken auf der Folgenzeile
+                // — dieselbe Aufgabe, dieselbe Zahl. Vorher 0,88.
+                .fill(Stil.grund.opacity(0.78))
         }
         .accessibilityElement(children: .combine)
     }
@@ -132,21 +176,35 @@ struct Technikschild: View {
     /// vermeiden verspricht.
     private var kopfzeile: some View {
         Text(verbatim: Technikangaben.auslieferung(plan.method))
-            .font(.system(size: grad + 2, weight: .bold, design: .monospaced))
+            // Eine Stufe über den Zeilen, halbfett: Bold steht genau einmal,
+            // am Seitentitel.
+            .font(Stil.kachel.weight(.semibold))
             .foregroundStyle(Technikangaben.gewicht(plan.method) == .gut
                              ? Stil.akzent : Stil.warnung)
     }
 
-    private var videozeile: String? {
-        guard let name = Technikangaben.codecname(video?.codec) else { return nil }
-        var text = "\(String(localized: "Bild")) \(name)"
-        if let rate = Technikangaben.bildrate(video?.bildrate) { text += " · \(rate) fps" }
-        return text
+    /// Codec, Auflösung und HDR-Art in einer Zeile.
+    ///
+    /// **Welche HDR-Art die Datei trägt** (Nutzerwunsch, 22.09.2026): HDR10,
+    /// HDR10+, Dolby Vision mit Profil, HLG oder SDR. Das Format der Datei,
+    /// nicht der Ausgang — ob das Gerät HDR ausgibt oder VLC auf SDR abbildet,
+    /// weiß hier niemand zuverlässig (`Technikangaben.dynamik`). Die Bildrate
+    /// steht nur im Messmodus: sie erklärt Ruckeln am Schirmtakt, und das ist
+    /// eine Frage für die Fehlersuche.
+    private var bildzeile: String? {
+        let teile = [
+            Technikangaben.codecname(video?.codec),
+            Technikangaben.bildzeile(breite: video?.width, hoehe: video?.height,
+                                     tiefe: nil, umfang: nil),
+            Technikangaben.dynamik(video),
+            messen ? Technikangaben.bildrate(video?.bildrate).map { "\($0) fps" } : nil
+        ].compactMap { $0 }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 
     private var tonzeile: String? {
         guard let name = Technikangaben.codecname(ton?.codec) else { return nil }
-        var text = "\(String(localized: "Ton")) \(name)"
+        var text = name
         if let k = Technikangaben.kanalwort(ton?.channels) { text += " · \(k)" }
         if let sprache = Technikangaben.sprache(ton?.language) { text += " · \(sprache)" }
         return text
@@ -154,21 +212,65 @@ struct Technikschild: View {
 
     private var untertitelzeile: String? {
         guard let name = Technikangaben.codecname(untertitel?.codec) else { return nil }
-        var text = "\(String(localized: "Untertitel")) \(name)"
+        var text = name
         if let sprache = Technikangaben.sprache(untertitel?.language) { text += " · \(sprache)" }
         return text
     }
 
-    /// Container und Grösse — was auf der Platte liegt.
+    /// Container, Grösse und was die Datei im Mittel braucht.
     ///
     /// **`Dateiangaben.container` bringt die Groesse schon mit.** Hier stand
     /// zusaetzlich `groesse(quelle)`, und weil auch die mit ihrem eigenen
     /// Trennzeichen kommt, las man auf dem Schild „Datei MP4 · 0,3 GB ·  ·
     /// 0,3 GB". Zwei Bausteine, die beide mehr tun, als ihr Name sagt — und
     /// ich habe sie addiert, statt einen zu lesen.
+    ///
+    /// **Die mittlere Bitrate steht hier und nicht mehr als eigene Zeile**
+    /// („Datei braucht"): Groesse geteilt durch Laufzeit. Neben dem Eingang
+    /// in der Pufferzeile sagt sie, ob der Strom nachkommt. Spitzen liegen
+    /// ueber dem Mittel; wer knapp darueber liegt, hat trotzdem ein Problem.
     private var dateizeile: String? {
         guard let quelle, let c = Dateiangaben.container(quelle) else { return nil }
-        return "\(String(localized: "Datei")) \(c.uppercased())"
+        guard let rate = Technikangaben.bitrate(bytesJeSekunde.map { $0 * 8 }) else { return c }
+        return "\(c) · Ø \(rate)"
+    }
+
+    /// Groesse durch Laufzeit. `nil`, solange eins davon fehlt.
+    private var bytesJeSekunde: Double? {
+        guard let bytes = quelle?.size, bytes > 0,
+              let dauer = flaeche?.durationSeconds, dauer > 1 else { return nil }
+        return Double(bytes) / dauer
+    }
+
+    /// **Wie viel Vorrat vor der Nadel liegt, und was ankommt.**
+    ///
+    /// VLC nennt keine Puffersekunden, aber es zaehlt beides, was man dafuer
+    /// braucht: was aus dem Netz kam und was der Demuxer davon schon
+    /// verbraucht hat. Die Differenz, geteilt durch das, was die Datei je
+    /// Sekunde braucht, sind Sekunden (`Zaehlwerk.vorratSekunden`).
+    ///
+    /// Genau diese Zahl zeigt ein anderer Client, der dieselbe Datei am
+    /// selben Server glatt abspielt, mit gut elf Sekunden an. Sie sagt als
+    /// einzige vorher, ob es gleich haengt: geht sie gegen null, steht das
+    /// Bild ein bis zwei Sekunden spaeter. Der Mittelwert als Nenner ist grob
+    /// — fuer „reicht der Vorrat oder nicht" genau genug; im Messmodus
+    /// stehen die Bytes ungerechnet daneben.
+    private func pufferzeile(_ w: Spielwerte) -> some View {
+        let sekunden = bytesJeSekunde.flatMap { w.werk.vorratSekunden(bytesJeSekunde: $0) }
+        var teile: [String] = []
+        if let sekunden { teile.append(komma(sekunden) + " s") }
+        if messen { teile.append("\(w.werk.vorratBytes / 1024) KiB") }
+        teile.append("\(String(localized: "Eingang")) \(w.eingang)")
+        return angabe(String(localized: "Puffer"), teile.joined(separator: " · "),
+                      auffaellig: (sekunden ?? .infinity) < 2)
+    }
+
+    private func komma(_ wert: Double) -> String {
+        String(format: "%.1f", wert).replacingOccurrences(of: ".", with: ",")
+    }
+
+    private func verlust(_ w: Spielwerte) -> Bool {
+        w.verworfen > 0 || w.zuSpaet > 0 || w.tonVerloren > 0
     }
 
     /// **Die Zeile, wegen der es das Schild gibt.**
@@ -179,25 +281,22 @@ struct Technikschild: View {
     /// eine Null, war es das Netz oder der Server; steht hier eine Zahl, war
     /// es der Dekoder.
     private func verlustzeile(_ w: Spielwerte) -> some View {
-        let schlecht = w.verworfen > 0 || w.zuSpaet > 0 || w.tonVerloren > 0
-        return Text(verbatim: "\(String(localized: "Verworfen")) \(w.verworfen)"
-                    + " · \(String(localized: "zu spät")) \(w.zuSpaet)"
-                    + " · \(String(localized: "Ton weg")) \(w.tonVerloren)")
-            .foregroundStyle(schlecht ? Stil.warnung : Stil.schriftLeise)
+        messzeile("\(String(localized: "Verworfen")) \(w.verworfen)"
+                  + " · \(String(localized: "zu spät")) \(w.zuSpaet)"
+                  + " · \(String(localized: "Ton weg")) \(w.tonVerloren)",
+                  auffaellig: verlust(w))
     }
 
-    /// **Was die Datei im Mittel braucht** — Groesse geteilt durch Laufzeit.
-    ///
-    /// Die Zahl daneben zu haben ist der ganze Punkt: steht unter „Eingang"
-    /// weniger, als hier steht, kommt der Strom nicht nach, und der Rest —
-    /// Ruckeln, wandernder Ton — folgt daraus. Spitzen liegen ueber dem
-    /// Mittel; wer knapp darueber liegt, hat trotzdem ein Problem.
-    private var bedarfzeile: String? {
-        guard let bytes = quelle?.size, bytes > 0,
-              let dauer = flaeche?.durationSeconds, dauer > 1,
-              let text = Technikangaben.bitrate(Double(bytes) * 8 / dauer)
-        else { return nil }
-        return "\(String(localized: "Datei braucht")) \(text) Ø"
+    /// Eine Angabe für Zuschauer: Name leise, Wert hell. Fällt sie auf,
+    /// steht sie ganz in `warnung` und mit Zeichen — wie `messzeile`.
+    @ViewBuilder
+    private func angabe(_ name: String, _ wert: String, auffaellig: Bool = false) -> some View {
+        if auffaellig {
+            messzeile("\(name) \(wert)", auffaellig: true)
+        } else {
+            Text(verbatim: name).foregroundStyle(Stil.schriftLeise)
+                + Text(verbatim: " \(wert)").foregroundStyle(Stil.schrift)
+        }
     }
 
     /// **Hat der Matroska-Kniff gegriffen?**
@@ -260,8 +359,7 @@ struct Technikschild: View {
         // ueber acht Sekunden genau auf der Rate der Datei lag. Erst zwei
         // Bilder Abstand sind mehr als die Kante.
         let hinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 2 } else { false }
-        return Text(verbatim: text)
-            .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
+        return messzeile(text, auffaellig: hinkt)
     }
 
     /// **Die einzige Zahl, die Haengen wirklich misst.**
@@ -287,8 +385,7 @@ struct Technikschild: View {
         // Unter 97 Prozent ist kein Messrauschen mehr: das sind mehr als
         // anderthalb Sekunden auf eine Minute.
         let haengt = (w.laufAnteil ?? 1) < 0.97
-        return Text(verbatim: text)
-            .foregroundStyle(haengt ? Stil.warnung : Stil.schriftLeise)
+        return messzeile(text, auffaellig: haengt)
     }
 
     /// **Mit wie viel Hertz der Schirm diese App bedient -- gemessen.**
@@ -301,8 +398,8 @@ struct Technikschild: View {
     @ViewBuilder private func schirmzeile() -> some View {
         if let hz = schirmHertz {
             let knapp = hz < 70
-            Text(verbatim: "\(String(localized: "Schirm")) \(Int(hz.rounded())) Hz")
-                .foregroundStyle(knapp ? Stil.warnung : Stil.schriftLeise)
+            messzeile("\(String(localized: "Schirm")) \(Int(hz.rounded())) Hz",
+                      auffaellig: knapp)
         }
     }
 
@@ -325,44 +422,7 @@ struct Technikschild: View {
         // Zwei Bilder Abstand, wie bei der Zeigt-Zeile: darunter ist es die
         // Kante des Fensters und kein Ereignis.
         let hinkt = if let ist = w.dekodiertProSekunde, let soll { ist < soll - 2 } else { false }
-        return Text(verbatim: text)
-            .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
-    }
-
-    /// **Wie viel Vorrat vor der Nadel liegt.**
-    ///
-    /// VLC nennt keine Puffersekunden, aber es zaehlt beides, was man dafuer
-    /// braucht: `readBytes` ist, was aus dem Netz kam, `demuxReadBytes`, was
-    /// der Demuxer davon schon verbraucht hat. Die Differenz liegt also
-    /// gelesen und unverbraucht dazwischen -- der Vorrat, in Bytes. Geteilt
-    /// durch das, was die Datei je Sekunde braucht, sind das Sekunden.
-    ///
-    /// Genau diese Zahl zeigt ein anderer Client, der dieselbe Datei am
-    /// selben Server glatt abspielt, mit gut elf Sekunden an. Sie sagt als
-    /// einzige vorher, ob es gleich haengt: geht sie gegen null, steht das
-    /// Bild ein bis zwei Sekunden spaeter.
-    ///
-    /// Ein Mittelwert als Nenner ist grob -- eine actionreiche Stelle
-    /// braucht mehr als die Datei im Schnitt. Fuer die Frage „reicht der
-    /// Vorrat oder nicht" ist das genau genug, und die Bytes daneben stehen
-    /// ungerechnet da.
-    private func vorratzeile(_ w: Spielwerte) -> some View {
-        let bytes = w.gelesen >= w.entpackt ? w.gelesen - w.entpackt : 0
-        var text = "\(String(localized: "Vorrat")) "
-        var knapp = false
-        if let groesse = quelle?.size, groesse > 0,
-           let dauer = flaeche?.durationSeconds, dauer > 1 {
-            let jeSekunde = Double(groesse) / dauer
-            let sekunden = Double(bytes) / jeSekunde
-            text += String(format: "%.1f", sekunden).replacingOccurrences(of: ".", with: ",")
-            text += " s"
-            knapp = sekunden < 2
-        } else {
-            text += "—"
-        }
-        text += " · \(bytes / 1024) KiB"
-        return Text(verbatim: text)
-            .foregroundStyle(knapp ? Stil.warnung : Stil.schriftLeise)
+        return messzeile(text, auffaellig: hinkt)
     }
 
     /// **Was am Strom selbst kaputt war.**
@@ -373,9 +433,9 @@ struct Technikschild: View {
     /// hier kam schon kaputt an, was er dekodieren sollte.
     private func stromzeile(_ w: Spielwerte) -> some View {
         let schlecht = w.beschaedigt > 0 || w.spruenge > 0
-        return Text(verbatim: "\(String(localized: "Beschädigt")) \(w.beschaedigt)"
-                    + " · \(String(localized: "Sprünge")) \(w.spruenge)")
-            .foregroundStyle(schlecht ? Stil.warnung : Stil.schriftLeise)
+        return messzeile("\(String(localized: "Beschädigt")) \(w.beschaedigt)"
+                         + " · \(String(localized: "Sprünge")) \(w.spruenge)",
+                         auffaellig: schlecht)
     }
 
     #if os(tvOS)
@@ -432,13 +492,107 @@ struct Technikschild: View {
                 passt = false
             }
         }
-        return Text(verbatim: "\(String(localized: "Takt")) \(rate ?? "?") fps"
-                    + " · \(wort) · \(String(localized: "Schirm")) \(takt) Hz")
-            .foregroundStyle(passt ? Stil.schriftLeise : Stil.warnung)
+        return messzeile("\(String(localized: "Takt")) \(rate ?? "?") fps"
+                         + " · \(wort) · \(String(localized: "Schirm")) \(takt) Hz",
+                         auffaellig: !passt)
     }
     #endif
 
-    private func zeile(_ text: String, farbe: Color = Stil.schriftLeise) -> some View {
-        Text(verbatim: text).foregroundStyle(farbe)
+    /// **Eine Messzeile, die auffällt — und zwar nicht nur farbig.**
+    ///
+    /// An acht Stellen wurde eine Zeile von `schriftLeise` auf `warnung`
+    /// umgefärbt und sonst nichts geändert: gleicher Wortlaut, gleicher Grad,
+    /// kein Zeichen. Wer Orange nicht von Grau trennt, sah acht Zeilen, die
+    /// alle gleich aussahen, und damit sagte das Schild ihm nichts — dabei ist
+    /// genau das sein Zweck. BRAND 1 sagt es als Regel: „Status zusätzlich
+    /// über Form, nicht nur über Farbe."
+    ///
+    /// Das Zeichen ist dasselbe, das `Belegzeile` in `Stil.swift` für denselben
+    /// Anlass nimmt — `exclamationmark.triangle.fill`. Zwei Zeichen für eine
+    /// Bedeutung wären eine zweite Sprache.
+    @ViewBuilder private func messzeile(_ text: String, auffaellig: Bool) -> some View {
+        if auffaellig {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(Stil.plakette)
+                Text(verbatim: text)
+            }
+            // `warnung` auf der Schildfläche: 5,40:1 bei 0,88 Deckkraft.
+            .foregroundStyle(Stil.warnung)
+        } else {
+            Text(verbatim: text).foregroundStyle(Stil.schriftLeise)
+        }
     }
+}
+
+/// **Eine Spalte mit Höchsthöhe, die weglässt statt zu scrollen.**
+///
+/// Kernzeilen (`kern()`) stehen immer. Die übrigen nimmt sie von oben,
+/// solange sie in `anteil` der angebotenen Höhe passen, und hört bei der
+/// ersten auf, die nicht mehr passt — auch wenn eine kürzere danach noch
+/// Platz hätte. Die Reihenfolge ist die Rangfolge; eine spätere Zeile, die
+/// eine frühere überholt, wäre ein Loch in der Mitte.
+///
+/// Die angebotene Höhe ist die der Auflage über dem Bild: die Aufrufstellen
+/// legen das Schild in einen Rahmen bis an alle Ränder, und der reicht seine
+/// Höhe durch. Ohne Angebot (`nil`) oder ohne `anteil` gibt es keine Grenze.
+private struct Kappliste: Layout {
+    var abstand: CGFloat
+    var anteil: CGFloat?
+
+    /// Die Grösse jeder Zeile, die steht — `nil` für die weggelassenen.
+    private func masse(_ angebot: ProposedViewSize, _ zeilen: Subviews) -> [CGSize?] {
+        var grenze = CGFloat.infinity
+        if let anteil, let hoehe = angebot.height, hoehe.isFinite { grenze = hoehe * anteil }
+        var summe: CGFloat = 0
+        var voll = false
+        var ergebnis: [CGSize?] = []
+        for zeile in zeilen {
+            let groesse = zeile.sizeThatFits(ProposedViewSize(width: angebot.width, height: nil))
+            let neu = summe + (summe == 0 ? 0 : abstand) + groesse.height
+            let kern = zeile[Kernzeile.self]
+            if !kern && (voll || neu > grenze) {
+                voll = true
+                ergebnis.append(nil)
+                continue
+            }
+            summe = neu
+            ergebnis.append(groesse)
+        }
+        return ergebnis
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let stehen = masse(proposal, subviews).compactMap { $0 }
+        let hoehe = stehen.map(\.height).reduce(0, +) + abstand * CGFloat(max(stehen.count - 1, 0))
+        return CGSize(width: proposal.width ?? stehen.map(\.width).max() ?? 0, height: hoehe)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize,
+                       subviews: Subviews, cache: inout ()) {
+        let masse = masse(proposal, subviews)
+        var y = bounds.minY
+        for (zeile, groesse) in zip(subviews, masse) {
+            if let groesse {
+                zeile.place(at: CGPoint(x: bounds.minX, y: y),
+                            proposal: ProposedViewSize(width: bounds.width, height: groesse.height))
+                y += groesse.height + abstand
+            } else {
+                // Platziert werden muss jede Zeile, sonst setzt SwiftUI sie
+                // in die Mitte. Die übrigen landen ohne Grösse unter dem
+                // Schild, und `clipped` im Schild schneidet sie ab.
+                zeile.place(at: CGPoint(x: bounds.minX, y: bounds.maxY), proposal: .zero)
+            }
+        }
+    }
+}
+
+/// Markiert eine Zeile, die `Kappliste` nie weglässt.
+private struct Kernzeile: LayoutValueKey {
+    static let defaultValue = false
+}
+
+private extension View {
+    /// Eine Kernzeile des Technikschilds — steht immer, siehe `Kappliste`.
+    func kern() -> some View { layoutValue(key: Kernzeile.self, value: true) }
 }

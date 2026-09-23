@@ -153,7 +153,7 @@ extension App {
                 self.naechsteAutomatischKonto = konto
                 self.downloadrecht = recht
                 self.umwandelnErlaubt = umwandeln
-                print("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch), Downloads: \(recht.rawValue)")
+                Protokoll.schreib("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch), Downloads: \(recht.rawValue)")
                 fflush(nil)
                 // Die offene Seite hat den Knopf vielleicht schon gebaut.
                 self.staffelladeknopfMalen()
@@ -170,8 +170,9 @@ extension App {
     }
 
     /// **Der Angebotsknopf steht, an einer Stelle, egal ob die Steuerung offen
-    /// ist** (Mac: `angebotDa`, Paul 17.09.2026): Überspringen, solange der
-    /// Abschnitt läuft; die Karte bei geschlossener Steuerung, bei offener der
+    /// ist** (Mac: `angebotDa`, Paul 17.09.2026): Überspringen die ersten
+    /// sechs Sekunden des Abschnitts, danach nur mit der Steuerung
+    /// (`Angebotsebene.knopfdauer`); die Karte bei geschlossener Steuerung, bei offener der
     /// normale Knopf „Nächste Folge". Der Knopf im Fuß hält nur den Platz.
     var angebotDa: Bool {
         guard laufenderTitel != nil, jetzigesAngebot.sichtbar, spielerLadeschirm == nil,
@@ -226,7 +227,7 @@ extension App {
         ebene.setzen(jetzigesAngebot, sichtbar: zeigen,
                      fuellung: countdown == nil ? nil : angebotsuhr, blende: true)
         if vorher != zeigen {
-            print("[Angebot] Einblendung \(zeigen ? "an" : "aus"): \(jetzigesAngebot.beschriftung)\(countdown != nil ? " mit Countdown" : "") bei \(Int(spielstand.position)) s, Steuerung \(steuerungDa ? "offen" : "zu")")
+            Protokoll.schreib("[Angebot] Einblendung \(zeigen ? "an" : "aus"): \(jetzigesAngebot.beschriftung)\(countdown != nil ? " mit Countdown" : "") bei \(Int(spielstand.position)) s, Steuerung \(steuerungDa ? "offen" : "zu")")
             fflush(nil)
         }
     }

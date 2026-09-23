@@ -59,9 +59,14 @@ struct Seerrkachel: View {
         if treffer.stand != .da {
             HStack(spacing: 3) {
                 Image(systemName: treffer.stand.symbol)
-                    .font(.system(size: 9, weight: .bold))
+                    // Symbolgrad bleibt als Zahl — ein Zeichen steht in keiner
+                    // Schriftleiter. Nur das Gewicht ändert sich: Bold steht
+                    // genau einmal, am Seitentitel, und das Wort daneben ist
+                    // ohnehin halbfett. Vorher `.bold`.
+                    .font(.system(size: 10, weight: .semibold))
                 if let wort = treffer.stand.kurzwort {
-                    Text(verbatim: wort).font(.system(size: 10, weight: .semibold))
+                    // Plakette aus der Leiter, 10 Semifett. Vorher als Zahl.
+                    Text(verbatim: wort).font(Stil.plakette)
                 }
             }
             .foregroundStyle(Stil.grund)

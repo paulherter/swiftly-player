@@ -20,6 +20,8 @@ struct SeerrEinstellungenView: View {
     @State private var adresse = ""
     @State private var benutzer = ""
     @State private var passwort = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor Seerr.
+    @State private var koepfe: [Kopfzeile] = []
 
     var body: some View {
         ScrollView {
@@ -37,14 +39,14 @@ struct SeerrEinstellungenView: View {
             // Linksbuendig wie Einstellungen und Wiedergabe, von denen man
             // hierher kommt — sonst springt der Pfeil beim Oeffnen in die
             // Fenstermitte.
-            .frame(maxWidth: 560, alignment: .leading)
+            .frame(maxWidth: Stil.formularbreite, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .ohneKanteneffekt()
+        .seitenscrollen()
         .task {
             if benutzer.isEmpty { benutzer = model.session?.userName ?? "" }
             await seerr.nachsehen()
@@ -57,7 +59,7 @@ struct SeerrEinstellungenView: View {
                        titel: Text(verbatim: seerr.adresse ?? ""),
                        wert: seerr.traegt ? String(localized: "Aktiv")
                                           : String(localized: "Sitzung abgelaufen"))
-            Trennstrich().padding(.leading, 48)
+            Blattlinie().padding(.leading, Stil.trennEinzugKarte)
             // **Kein „Abmelden", sondern „Trennen".** Bei Seerr selbst bleibt
             // alles, wie es ist — es geht nur um diesen einen Zugang hier.
             Wertezeile(symbol: "xmark.circle", titel: Text("Verbindung trennen"),
@@ -79,6 +81,7 @@ struct SeerrEinstellungenView: View {
                 Eingabezeile(text: $passwort, symbol: "lock", geheim: true,
                              platzhalter: String(localized: "Passwort"),
                              abschluss: { Task { await verbinden() } })
+                MacErweitert(zeilen: $koepfe)
             }
 
             if let fehler = seerr.fehler {
@@ -110,7 +113,8 @@ struct SeerrEinstellungenView: View {
     }
 
     private func verbinden() async {
-        await seerr.verbinden(adresse: adresse, benutzer: benutzer, passwort: passwort)
+        await seerr.verbinden(adresse: adresse, benutzer: benutzer, passwort: passwort,
+                              koepfe: koepfe.koepfe)
         if seerr.verbunden { passwort = "" }
     }
 }

@@ -39,7 +39,8 @@ struct Reihentitel: View {
             if let name { Text(verbatim: name) } else { Text(text) }
         }
             .font(Stil.reihe)
-            .tracking(-0.3)
+            // −0,012 em auf 20 Punkt sind −0,24; −0,3 war geschaetzt.
+            .tracking(Stil.sperrungReihe)
             .foregroundStyle(Stil.schrift)
     }
 }
@@ -53,24 +54,34 @@ struct Plakette: View {
     /// alarmiert. Waere sie fest, haette tvOS beim Uebernehmen der geteilten
     /// Fassung genau diese Auskunft verloren.
     var farbe: Color = Stil.schriftLeise
-    /// Getrennt von `farbe`: sonst haette das Einfaerben der Schrift den Rand
-    /// mitgezogen und die Plakette auf dem iPhone sichtbar heller gemacht.
-    var randfarbe: Color = Stil.rand
     /// Masse als Parameter: auf dem Fernseher sind die iPhone-Werte zu klein.
     /// So kommt jede Plattform ohne eigene Kopie aus.
-    var innenWaagerecht: CGFloat = 5
-    var innenSenkrecht: CGFloat = 2
-    var rundung: CGFloat = 3
-    var strichstaerke: CGFloat = 1
+    var innenWaagerecht: CGFloat = 10
+    var innenSenkrecht: CGFloat = 4
+    var rundung: CGFloat = Stil.eckeKlein
+    /// **Auch die Schrift ist ein Mass** — sie war als einzige fest.
+    ///
+    /// Innenabstand und Rundung durfte jede Plattform setzen, die 13 nicht.
+    /// Auf dem Fernseher stand die Freigabe damit in Telefongroesse in einem
+    /// auf das Doppelte aufgeblasenen Kasten, neben Text in 27: „total
+    /// winzig, passt nirgendwo rein."
+    var groesse: CGFloat = 13
 
     var body: some View {
+        // **Eine Flaeche in 15 Prozent, kein Umriss.**
+        //
+        // Sie war 10 Semifett in einem Kasten mit Ecke 3 und Innenabstand 5/2 —
+        // rund 16 hoch, mit Strich statt Flaeche. Die Belegzeile in
+        // `Stil.swift` baut dieselbe Plakette daneben schon richtig: 13 Medium,
+        // Ecke 8, `farbe.opacity(0.15)`. Zwei Plaketten mit derselben
+        // Bedeutung in zwei Gestalten waren der Fehler, nicht die Zahlen.
         Text(text)
-            .font(Stil.plakette)
+            .font(.system(size: groesse, weight: .medium))
             .foregroundStyle(farbe)
             .padding(.horizontal, innenWaagerecht)
             .padding(.vertical, innenSenkrecht)
-            .overlay(RoundedRectangle(cornerRadius: rundung)
-                .strokeBorder(randfarbe, lineWidth: strichstaerke))
+            .background(farbe.opacity(0.15),
+                        in: RoundedRectangle(cornerRadius: rundung, style: .continuous))
     }
 }
 
@@ -94,7 +105,10 @@ struct Lader: View {
             // **Eingegrenzt auf die Drehung** — eine Endlosschleife per
             // `value:` nahm unter iOS 18 die Rahmen eines gleichzeitigen
             // Uebergangs mit (siehe `Ladefeld`).
-            .animation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
+            // Bei reduzierter Bewegung dreht er nicht: eine Endlosdrehung ist
+            // genau das, was die Einstellung abschalten soll.
+            .animation(Stil.bewegungReduziert ? nil
+                       : .linear(duration: 0.7).repeatForever(autoreverses: false)) {
                 $0.rotationEffect(.degrees(dreht ? 360 : 0))
             }
             .background {
@@ -113,6 +127,8 @@ struct Profilzeichen: View {
     var bild: URL?
     var groesse: CGFloat = 34
     var hervorgehoben = false
+    /// Dieses Konto ist von mehreren das gewaehlte — weisser Ring, zwei Punkt.
+    var gewaehlt = false
 
     /// **Was schon geholt wurde, steht im ersten Durchgang da.**
     ///
@@ -135,11 +151,12 @@ struct Profilzeichen: View {
     @State private var ohneBild = false
 
     init(name: String, bild: URL? = nil, groesse: CGFloat = 34,
-         hervorgehoben: Bool = false) {
+         hervorgehoben: Bool = false, gewaehlt: Bool = false) {
         self.name = name
         self.bild = bild
         self.groesse = groesse
         self.hervorgehoben = hervorgehoben
+        self.gewaehlt = gewaehlt
         _geladen = State(initialValue: bild.flatMap { Bildspeicher.geteilt.bild($0) })
     }
 
@@ -193,18 +210,65 @@ struct Profilzeichen: View {
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
         .overlay {
-            Circle().strokeBorder(hervorgehoben ? Stil.akzent : Stil.rand,
-                                  lineWidth: hervorgehoben ? 1.5 : 1)
+            // **Zwei verschiedene Fragen, zwei Ringe.**
+            //
+            // `hervorgehoben` heisst „du bist gerade im Profilbereich" — das
+            // ist Zustand, und Zustand traegt der Akzent. Es steht nur in der
+            // Leiste unten, und die ist eine der zwei begruendeten
+            // Akzent-Ausnahmen (BRAND 1).
+            //
+            // `gewaehlt` heisst „dieses Konto von mehreren" — das ist Rangfolge
+            // unter Geschwistern, und die traegt nie der Akzent. Weiss und die
+            // zweite Strichbreite sagen es. `RootView` hatte dafuer ein
+            // zweites Zeichen von Hand gebaut (`Kontozeichen`), mit anderem
+            // Grund, anderem Ring und anderem Buchstabengrad — dasselbe Ding
+            // in zwei Bauarten, und damit zwei Profilringe in einer App.
+            Circle().strokeBorder(ringfarbe, lineWidth: gewaehlt ? 2 : hervorgehoben ? 1.5 : 1)
         }
         .accessibilityElement()
         .accessibilityLabel("Profil von \(name)")
     }
 
+    private var ringfarbe: Color {
+        if gewaehlt { return Stil.schrift }
+        return hervorgehoben ? Stil.akzent : Stil.rand
+    }
+
+    /// **Ein Ton, der am Namen haengt.**
+    ///
+    /// Drei Anlaeufe hatte dieser Grund. Erst ein gruener Verlauf aus zwei
+    /// rohen Werten, dann `akzentLeise` — und damit trug **jedes**
+    /// Profilzeichen der App einen Tuerkisverlauf, was als Gruenstich auffiel.
+    /// Dann zwei Tiefen der Leiter, also Grau. Paul am 22.09.: „so grau sehen
+    /// die tot aus."
+    ///
+    /// Beides war je fuer sich richtig gedacht und traf die Sache nicht: ein
+    /// Profilzeichen ist zwar ein Platzhalter, aber es steht fuer einen
+    /// **Menschen**, und acht graue Kreise untereinander sehen aus wie eine
+    /// Liste, die nicht fertig geladen hat.
+    ///
+    /// Die Farbe wird deshalb aus dem Namen gerechnet — dieselbe Person
+    /// bekommt immer dieselbe, auf jedem Geraet und nach jedem Neustart, ohne
+    /// dass irgendwo etwas gespeichert waere. Acht Toene auf einem Kreis, alle
+    /// mit **derselben Helligkeit und Saettigung** (OKLCH L 0,52 / C 0,105
+    /// oben, 0,36 / 0,085 unten): so ist keiner lauter als der andere, und der
+    /// Buchstabe darauf traegt zwischen 5,13 und 5,84 zu Weiss — gerechnet,
+    /// nicht geschaetzt.
+    ///
+    /// Der erste Ton des Kreises ist die Hue des Akzents. Das ist kein Zufall:
+    /// wer nur einen Kontakt hat, sieht damit die Farbe der App.
     private var grund: some View {
-        Circle()
-            .fill(LinearGradient(colors: [Color(red: 0.173, green: 0.424, blue: 0.400),
-                                          Color(red: 0.090, green: 0.251, blue: 0.239)],
+        let toene = Stil.profiltoene[abs(namensziffer) % Stil.profiltoene.count]
+        return Circle()
+            .fill(LinearGradient(colors: [toene.oben, toene.unten],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+
+    /// Eine feste Zahl zum Namen — `hashValue` taugt nicht: der ist je Start
+    /// der App ein anderer, und dann wechselt das Zeichen seine Farbe, sobald
+    /// man die App neu oeffnet.
+    private var namensziffer: Int {
+        name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 1_000_003 }
     }
 
     private var buchstabe: some View {
@@ -232,17 +296,25 @@ struct Uebernahmeauswahl: View {
     var body: some View {
         ZStack {
             // Fängt auch den Druck ab, damit dahinter nichts reagiert.
-            Color.black.opacity(0.62)
+            //
+            // `grund`, nicht `Color.black`: der Schleier ist die Seite, die
+            // durchscheint, und die ist `#101010`. Reines Schwarz gibt es an
+            // genau einer Stelle, hinter dem Bild im Player.
+            Stil.grund.opacity(0.62)
                 .ignoresSafeArea()
                 .onTapGesture(perform: abbrechen)
 
             VStack(spacing: 0) {
-                VStack(spacing: 6) {
+                // Systemschriften und Systemfarben gibt es hier nicht: die
+                // Tafel war die einzige Stelle der App mit `.headline`,
+                // `.caption` und `.secondary` — drei Werte, die Apple setzt und
+                // niemand hier bestimmt.
+                VStack(spacing: 8) {
                     Text("Wo weiterschauen?")
-                        .font(.headline)
+                        .font(Stil.listentitel)
                     Text("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Stil.klein)
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 20)
@@ -250,7 +322,7 @@ struct Uebernahmeauswahl: View {
                 .padding(.bottom, 16)
 
                 ForEach(sitzungen) { s in
-                    Divider().overlay(Stil.schrift.opacity(0.12))
+                    Blattlinie()
                     Button { waehlen(s) } label: {
                         HStack(spacing: 14) {
                             Image(systemName: s.geraetezeichen)
@@ -259,40 +331,72 @@ struct Uebernahmeauswahl: View {
                                 .frame(width: 26)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(s.geraetename ?? String(localized: "Gerät"))
-                                    .font(.system(size: 16, weight: .semibold))
+                                    // `listentitel` ist genau diese Stufe —
+                                    // 15 Semibold stand hier als Zahl.
+                                    .font(Stil.listentitel)
                                 Text(s.titelzeile)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.secondary)
+                                    .font(Stil.klein)
+                                    // Der Vermerk oben sagt, hier gebe es
+                                    // keine Systemfarben — `.secondary` stand
+                                    // aber noch zweimal darunter und war damit
+                                    // das letzte Vorkommen der ganzen
+                                    // iPhone-Fassung. Es ist Weiss mit
+                                    // Systemdeckkraft, also genau das, was
+                                    // BRAND 1 mit „volle Werte, keine
+                                    // Deckkraft" ausschliesst.
+                                    .foregroundStyle(Stil.schriftLeise)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 0)
                             Text(Spielzeit.text(s.stand?.stelle ?? 0))
-                                .font(.system(size: 13).monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                // 12 Regular ist die Angabe der Leiter. 13
+                                // Regular steht in keiner Stufe — 13 gibt es
+                                // nur als Medium.
+                                .font(Stil.klein.monospacedDigit())
+                                .foregroundStyle(Stil.schriftSehrLeise)
                         }
                         .padding(.horizontal, 20)
-                        .frame(height: 58)
+                        // `minHeight`: zwei Zeilen Schrift in einer festen
+                        // Hoehe reissen als erstes, sobald jemand die Schrift
+                        // groesser stellt. 58 war der engste Fall der App.
+                        .frame(minHeight: 58)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckzeile())
                 }
 
-                Divider().overlay(Stil.schrift.opacity(0.12))
+                // `Stil.rand`, nicht `schrift` mit 12 %: das war ein
+                // Beinahe-Token — `rand` ist weiss mit 12 %, hier stand
+                // #F5F5F8 mit 12 %. Also eine Farbe, die der Marke folgen
+                // soll und es nicht tut.
+                Divider().overlay(Stil.rand)
                 Button("Abbrechen", action: abbrechen)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    // Dieselbe Hoehe wie die Eintraege darueber. Sie standen
+                    // auf 58 und 52 uebereinander — sechs Punkt Versatz in
+                    // einem Blatt, sichtbar, weil sie sich beruehren.
+                    .frame(minHeight: 58)
                     .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckzeile())
             }
             .foregroundStyle(Stil.schrift)
-            .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke))
-            .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
-                .strokeBorder(Stil.schrift.opacity(0.12)))
+            // `eckeFlaeche` (16), nicht `ecke` (10): 10 ist das Knopfmass.
+            // Eine schwebende Tafel mit Schleier ist eine eigene Flaeche, und
+            // die Ecke waechst mit dem Ding (BRAND 4).
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
             .frame(maxWidth: 420)
             .padding(.horizontal, 24)
-            .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+            // **Kein Schatten.** Die Vorlage schliesst sie aus: Tiefe kommt
+            // aus der Flaechenhelligkeit. Dieser war mit Radius 30 der
+            // groesste der App und hob eine Tafel, die schon auf einem
+            // Schleier liegt.
         }
+        // **Mit VoiceOver kommt man sonst nicht heraus.** Der Schleier
+        // schliesst auf Antippen — ein Rotorwisch ist aber kein Tippen, und
+        // die Tafel hat keinen anderen Ausgang als „Abbrechen", den man erst
+        // finden muss. `.escape` ist die Geste, die das System dafuer kennt.
+        .accessibilityAction(.escape, abbrechen)
     }
 }
 
@@ -348,7 +452,7 @@ private struct Kopierbar: ViewModifier {
             } label: {
                 content.contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckknopf())
             #if os(macOS)
             .help(Text("Zum Kopieren klicken"))
             #endif
@@ -368,8 +472,7 @@ private struct Kopierbar: ViewModifier {
                         .foregroundStyle(Stil.schrift)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Stil.erhoeht, in: Capsule())
-                        .overlay { Capsule().strokeBorder(Stil.rand) }
+                        .background(Stil.flaeche, in: Capsule())
                         .offset(y: 16)
                         .transition(.opacity)
                         .allowsHitTesting(false)

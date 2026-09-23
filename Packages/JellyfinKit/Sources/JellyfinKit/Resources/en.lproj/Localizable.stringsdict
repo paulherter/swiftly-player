@@ -18,5 +18,37 @@
 			<string>%lld new episodes</string>
 		</dict>
 	</dict>
+	<key>%lld Filme</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld movie</string>
+			<key>other</key>
+			<string>%lld movies</string>
+		</dict>
+	</dict>
+	<key>%lld Serien</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld series</string>
+			<key>other</key>
+			<string>%lld series</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

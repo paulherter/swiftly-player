@@ -91,11 +91,21 @@ func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
 /// und nicht diese Funktion allein.
 final class Tafelstand { var da = true }
 
+///
+/// **Die Tafel haengt an einer Ecke ihres Knopfes** (Mac 51c9c8a8): links
+/// buendig darunter, ohne Pfeil, 8 Punkt Luft — und sie waechst aus dieser
+/// Ecke (`swiftly-aufklappen` im Stilblatt). `buendig` waehlt die Ecke.
 func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
-             lage: GtkPositionType = GTK_POS_BOTTOM) -> Widget! {
+             lage: GtkPositionType = GTK_POS_BOTTOM,
+             buendig: GtkAlign = GTK_ALIGN_START) -> Widget! {
     let tafel: Widget! = gtk_popover_new()
     gtk_widget_add_css_class(tafel, stil)
     gtk_popover_set_position(alsTafel(tafel), lage)
+    gtk_popover_set_has_arrow(alsTafel(tafel), 0)
+    gtk_popover_set_offset(alsTafel(tafel), 0, 8)
+    gtk_widget_set_halign(tafel, buendig)
+    gtk_widget_add_css_class(tafel, buendig == GTK_ALIGN_START ? "swiftly-links"
+                                  : buendig == GTK_ALIGN_END ? "swiftly-rechts" : "swiftly-mitte")
     gtk_widget_set_parent(tafel, anker)
     // **Nur, wenn es sie noch gibt.** `tafelSchliessen` haengt sie selbst ab
     // und gibt sie damit frei; ging danach der Anker weg, griff dieser
@@ -251,9 +261,26 @@ nonisolated(unsafe) private let auftragImLeerlauf: @convention(c) (gpointer?) ->
 /// **GTK ist nicht nebenläufig.** Jede Änderung an der Oberfläche muss auf
 /// dem Hauptfaden geschehen; ein Aufruf aus einer Task würde sie irgendwann
 /// still zerlegen. `g_idle_add` ist der vorgesehene Rückweg.
+/// **Vorrang vor dem Zeichnen, nicht dahinter.**
+///
+/// Hier stand `200` (`G_PRIORITY_DEFAULT_IDLE`). GTK zeichnet mit `120`
+/// (`GDK_PRIORITY_REDRAW`), und kleiner heisst wichtiger: solange ein
+/// Neuzeichnen ansteht, kommt eine 200er-Quelle nicht dran. Im Player steht
+/// dauernd eins an, denn jedes Bild setzt ein neues Paintable.
+///
+/// Im Protokoll eines Testers vom 20.09.2026 stand das schwarz auf weiss: ab
+/// dem Augenblick, in dem Bilder flossen, kam **keine** Leerlaufquelle mehr
+/// durch. VLCs „puffert 100 %" fehlte ganze fuenfzehn Sekunden und kam dann
+/// im Schwall, als die Wiedergabe endete. Mit ihr hing der Wiedergabetakt —
+/// und damit blieb der schwarze Ladeschleier ueber dem Bild liegen, das
+/// laengst da war. Von aussen: schwarzes Bild, Zeit 0:00, Ton laeuft.
+///
+/// `0` (`G_PRIORITY_DEFAULT`) ist die richtige Stufe. Was hier hereinkommt,
+/// ist eine Antwort aus dem Netz oder eine Meldung von VLC — Arbeit, kein
+/// Beiwerk, das warten kann, bis nichts mehr zu tun ist.
 func aufHauptfaden(_ block: @escaping @Sendable () -> Void) {
     let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_idle_add_full(200, auftragImLeerlauf, auftrag, nil)   // 200 = G_PRIORITY_DEFAULT_IDLE
+    g_idle_add_full(0, auftragImLeerlauf, auftrag, nil)   // 0 = G_PRIORITY_DEFAULT
 }
 
 // MARK: - Sanftes Blättern
@@ -889,4 +916,14 @@ func imBrowser(_ ziel: URL) {
     var fehler: UnsafeMutablePointer<GError>?
     _ = g_app_info_launch_default_for_uri(ziel.absoluteString, nil, &fehler)
     if let fehler { g_error_free(fehler) }
+}
+
+/// Eine Datei im Dateimanager zeigen, markiert — der Weg, auf dem ein
+/// Nutzer sie weiterreicht, wo es kein Teilen-Menue gibt.
+func imDateimanagerZeigen(_ datei: URL) {
+    let f = g_file_new_for_path(datei.path)
+    let starter = gtk_file_launcher_new(f)
+    gtk_file_launcher_open_containing_folder(starter, nil, nil, nil, nil)
+    g_object_unref(UnsafeMutableRawPointer(starter))
+    g_object_unref(UnsafeMutableRawPointer(f))
 }

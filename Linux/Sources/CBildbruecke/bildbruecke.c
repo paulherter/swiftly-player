@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 /* **Ein Schloss, zwei Systeme.**
  *
@@ -118,6 +120,32 @@ static void zeigen(void *opaque, void *bild) {
     b->schreibt = 1 - b->schreibt;
     b->neu = true;
     SCHLOSS_GEBEN(&b->schloss);
+}
+
+/* ---- VLCs eigene Meldungen ---------------------------------------------
+ *
+ * **Warum das hier in C steht und nicht in Swift.** `libvlc_log_set` will
+ * einen Rueckruf mit `va_list`, und eine Swift-Funktion mit `va_list` laesst
+ * sich nicht als `@convention(c)` schreiben -- der Uebersetzer weist es ab.
+ * Also wird die Zeile hier fertig formatiert und als einfache Zeichenkette
+ * weitergereicht.
+ *
+ * Nur Warnungen und Fehler (Stufe 3 und 4). VLCs Debugstufe schreibt im
+ * Sekundentakt und ertraenkt jedes Protokoll. */
+static Spurzeile spur_ziel;
+
+static void spur_rueckruf(void *daten, int stufe, const libvlc_log_t *wo,
+                          const char *form, va_list argumente) {
+    (void)daten; (void)wo;
+    if (stufe < 3 || !spur_ziel) return;
+    char puffer[1024];
+    vsnprintf(puffer, sizeof puffer, form, argumente);
+    spur_ziel(puffer);
+}
+
+void vlcspur_an(libvlc_instance_t *kern, Spurzeile ziel) {
+    spur_ziel = ziel;
+    libvlc_log_set(kern, spur_rueckruf, NULL);
 }
 
 void bildbruecke_anhaengen(Bildbruecke *b, libvlc_media_player_t *mp) {

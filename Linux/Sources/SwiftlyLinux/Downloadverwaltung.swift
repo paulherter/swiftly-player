@@ -246,13 +246,46 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
     }
 
+    /// **Das Kopfbild der Serie in Fensteraufloesung**, fuer die Seite einer
+    /// geladenen Serie (`Downloadverwaltung.kopfbild` auf Apple, Mac
+    /// cc4e6e75). Das Plakat und die Querbilder sind fuer Zeilen gemessen und
+    /// stuenden dort gestreckt und weich da.
+    func kopfbild(serie serienId: String, konto: String) -> URL? {
+        let weg = Self.bildweg(konto, serienId + "-kopf")
+        return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
+    }
+
+    /// **Geht mit dem ersten Download einer Serie mit** — Kopfbild und
+    /// Plakat, je einmal; was schon liegt, wird nicht neu geholt. Die
+    /// Ladeauswahl reicht beides herein, sobald sie Folgen anstoesst.
+    func serienbilderSichern(serie serienId: String, konto: String,
+                             kopf: URL?, plakat: URL?) {
+        if let kopf { bildSichern(konto, serienId + "-kopf", von: kopf) }
+        if let plakat { bildSichern(konto, serienId, von: plakat) }
+    }
+
+    /// Fuer Downloads von vorher, die es noch nicht haben: beim naechsten
+    /// Oeffnen mit Netz nachholen. Gibt den Weg zurueck, sobald es liegt;
+    /// ohne Netz scheitert es still.
+    func kopfbildNachholen(serie serienId: String, konto: String,
+                           von adresse: URL) async -> URL? {
+        let ziel = Self.bildweg(konto, serienId + "-kopf")
+        guard !FileManager.default.fileExists(atPath: ziel.path) else { return ziel }
+        try? FileManager.default.createDirectory(at: Speicher.downloadordner,
+                                                 withIntermediateDirectories: true)
+        guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(adresse)),
+              !daten.isEmpty, (try? daten.write(to: ziel, options: .atomic)) != nil
+        else { return nil }
+        return ziel
+    }
+
     private func bildSichern(_ konto: String, _ kennung: String, von adresse: URL) {
         let ziel = Self.bildweg(konto, kennung)
         guard !FileManager.default.fileExists(atPath: ziel.path) else { return }
         try? FileManager.default.createDirectory(at: Speicher.downloadordner,
                                                  withIntermediateDirectories: true)
         Task {
-            guard let (daten, _) = try? await URLSession.shared.data(from: adresse),
+            guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(adresse)),
                   !daten.isEmpty else { return }
             try? daten.write(to: ziel, options: .atomic)
             self.melden()
@@ -298,6 +331,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
             if let sid = p.serienId,
                !posten.contains(where: { !weg.contains($0.id) && $0.serienId == sid }) {
                 try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid))
+                try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid + "-kopf"))
             }
         }
         posten.removeAll { weg.contains($0.id) }
@@ -418,7 +452,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         // waehrend geschrieben wurde.
         vorher = (try? FileManager.default.attributesOfItem(atPath: pfad.path)[.size] as? Int64) ?? 0
 
-        var anfrage = URLRequest(url: adresse)
+        var anfrage = URLRequest.mitEigenenKoepfen(adresse)
         if vorher > 0 { anfrage.setValue("bytes=\(vorher)-", forHTTPHeaderField: "Range") }
 
         if !FileManager.default.fileExists(atPath: pfad.path) {
@@ -452,6 +486,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
 
     /// Zuletzt gemeldeter Stand je Download — siehe ``fortschritt(_:)``.
     private var gemeldet: [String: Int64] = [:]
+    private var gemeldetUm: [String: Date] = [:]
 
     private func fortschritt(_ geladen: Int64) {
         guard let id = laufend, let i = posten.firstIndex(where: { $0.id == id }) else { return }
@@ -466,10 +501,19 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         // Ein halbes Prozent ist bei einem kleinen Ring rund ein halber
         // Bildpunkt Bogen — darunter gibt es nichts zu sehen, und der letzte
         // Schritt auf voll kommt ohnehin ueber den Abschluss.
-        let grenze = max(Int64(1), posten[i].bytes / 200)
-        let vorher = gemeldet[id] ?? 0
-        guard geladen - vorher >= grenze || geladen < vorher else { return }
+        //
+        // **Hoechstens einmal je Sekunde** (Mac cc4e6e75). Die Grenze von
+        // einem halben Prozent allein liess bei schneller Leitung mehrere
+        // Zahlen je Sekunde durch, und jede baute die Liste neu. Dazwischen
+        // zaehlt die Zeile selbst weiter (`Fortschrittsschaetzer`). Die Regel
+        // steht im Paket.
+        let jetzt = Date()
+        guard Downloadregeln.fortschrittZeigen(
+            geladen: geladen, gesamt: posten[i].bytes, vorher: gemeldet[id],
+            vergangen: gemeldetUm[id].map { jetzt.timeIntervalSince($0) })
+        else { return }
         gemeldet[id] = geladen
+        gemeldetUm[id] = jetzt
 
         posten[i].geladen = geladen
 
@@ -478,7 +522,6 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         // Platte fuer eine Zahl zu beschaeftigen, die ohnehin gleich wieder
         // anders ist. Einmal je Sekunde reicht — und beim Anhalten steht
         // sie sowieso.
-        let jetzt = Date()
         if jetzt.timeIntervalSince(zuletztGesichert) > 1 {
             zuletztGesichert = jetzt
             sichern()

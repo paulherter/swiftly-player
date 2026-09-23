@@ -1,5 +1,10 @@
 package de.paulherter.swiftly
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.unit.Dp
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.animation.core.EaseInOut
 import de.paulherter.swiftly.kern.Kern
 import androidx.compose.animation.core.animateFloatAsState
@@ -11,10 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBackIosNew
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.foundation.selection.toggleable
@@ -25,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
@@ -126,6 +126,12 @@ class Einstellungen(ablage: Ablage) {
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }
     /** Aus, bis ihn jemand sucht — er aendert nichts an der Wiedergabe, er zeigt nur, was sie tut. */
     var technikschild by Merkwert(a, "technikschild", bool("technikschild", false), jaNein)
+    /**
+     * **Der Messmodus des Technikschilds** — alle Zeilen, ohne Hoechsthoehe. Kein Schalter: Werkzeug fuer die
+     * Fehlersuche, nicht fuer Zuschauer (Vorlage `technikschildMessen`, dort ein Startargument). Gesetzt ueber
+     * das Startextra `technikschildMessen` (`adb shell am start … --ez technikschildMessen true`).
+     */
+    var technikschildMessen by Merkwert(a, "technikschildMessen", bool("technikschildMessen", false), jaNein)
 }
 
 /** Liest eine Wahlliste der Fassade: `[{"wert","text"}]`. */
@@ -138,16 +144,24 @@ val LocalFortschrittZeigen = compositionLocalOf { true }
 
 // MARK: Bausteine der Unterseiten
 
-/** Vorlage: `Unterseitenkopf` — Zurueck 44, Titel 22 halbfett; so steht der Pfeil ueberall gleich weit vom Rand. */
+/**
+ * Vorlage: `Unterseitenkopf` — Zurueck 44, Titel 22 halbfett; so steht der Pfeil ueberall gleich weit
+ * vom Rand. `rechts` traegt die Zaehlmarke („Bin ich hier durch?"), `unten` ist 18 und 0 dort, wo
+ * darunter eine Wertreihe ihre 14 selbst mitbringt. `oben = false` in einem `Wurzelkopf`, der den
+ * Statusbereich schon freihaelt.
+ */
 @Composable
-fun Unterseitenkopf(titel: String, zurueck: () -> Unit) {
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 8.dp, end = 12.dp, bottom = 18.dp),
+fun Unterseitenkopf(titel: String, zurueck: () -> Unit, unten: Dp = 18.dp, oben: Boolean = true,
+                    rechts: @Composable RowScope.() -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().then(if (oben) Modifier.statusBarsPadding() else Modifier)
+            .padding(start = 8.dp, end = 12.dp, bottom = unten),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.size(44.dp).antippen(zurueck), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.ArrowBackIosNew, contentDescription = uebersetzt("Zurück"), tint = Stil.schrift, modifier = Modifier.size(22.dp))
+            Symbol(Zeichen.WinkelLinks, 20.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Zurück"))
         }
-        Text(titel, style = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-             color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(titel, style = Stil.unterseitentitel,
+             color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        rechts()
     }
 }
 
@@ -156,44 +170,66 @@ fun Unterseitenkopf(titel: String, zurueck: () -> Unit) {
 fun Einstellungsseite(titel: String, zurueck: () -> Unit, inhalt: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
         Unterseitenkopf(titel, zurueck)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 30.dp),
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 40.dp),
                content = inhalt)
     }
 }
 
-/** Vorlage: `Karte` — die eine erlaubte Flaeche auf Einstellungsseiten, Ecke 16. */
+/**
+ * Vorlage: `Karte` — die eine erlaubte Flaeche auf Einstellungsseiten, **Ecke 14**
+ * (`eckeKarte`) und Fläche `gruppenflaeche`.
+ *
+ * Sie trug `flaeche` #262626 und `eckeFlaeche` 16. `flaeche` traegt **Knoepfe** — kleine
+ * Gegenstaende, die sich vom Grund abheben muessen; eine Einstellungskarte ist das
+ * Gegenteil, ein grosser ruhiger Block, und derselbe Ton wirkt darauf deutlich heller.
+ * Paul am 22.09.: „die Kacheln in den Settings sind ein Stueck zu hell, das ist zu doller
+ * Kontrast."
+ */
 @Composable
 fun Karte(inhalt: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand).clip(RoundedCornerShape(Stil.eckeFlaeche))
-               .background(Stil.flaeche), content = inhalt)
+    Column(Modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand).clip(RoundedCornerShape(Stil.eckeKarte))
+               .background(Stil.gruppenflaeche), content = inhalt)
 }
 
-/** Vorlage: `Gruppentitel` — Grossbuchstaben, 11 halbfett, gesperrt. */
+/**
+ * Vorlage: `Gruppentitel` — **20 Semibold in Normalschreibung**, `sperrungReihe`,
+ * `schriftLeise`.
+ *
+ * Er stand in 11 Punkt Versalien. Die Versalienstufe gibt es weiter (`Stil.gruppe`), sie
+ * traegt aber nur noch Plaketten: eine Rubrik in Versalien liest sich auf einer Seite voller
+ * ruhiger Zeilen wie ein Alarm. 10 statt 8 darunter — der Grad ist von 11 auf 20 gewachsen,
+ * und ein Abstand, der zu einer 11er Zeile passte, klebt unter einer 20er.
+ */
 @Composable
 fun Gruppentitel(text: String, modifier: Modifier = Modifier) {
-    Text(text.uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-         color = Stil.schriftSehrLeise, modifier = modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand).padding(bottom = 8.dp))
+    Text(text, style = Stil.reihe,
+         color = Stil.schriftLeise, modifier = modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand).padding(bottom = 10.dp))
 }
 
 /** Vorlage: `Einstellungsgruppe` — Gruppentitel, darunter die Karte. */
 @Composable
 fun Einstellungsgruppe(titel: String, inhalt: @Composable ColumnScope.() -> Unit) {
     Column {
-        Gruppentitel(titel, Modifier.padding(top = 26.dp))
+        // 26 oben, 10 + 2 unten.
+        Gruppentitel(titel, Modifier.padding(top = 26.dp, bottom = 2.dp))
         Karte(inhalt)
     }
 }
 
-/** Vorlage: `Trennlinie` in der Karte — Einzug 34, sie beginnt hinter dem Zeichen. */
+/**
+ * Die Linie zwischen den Zeilen einer Karte — **`Blattlinie`, durchgehend**, von Kartenrand zu
+ * Kartenrand. Sie begann hier bei 34, hinter dem Zeichen; am iPhone tragen Einstellungskarten die
+ * durchgehende Linie, weil die gerundete Karte selbst schon die Gruppe ist.
+ */
 @Composable
 fun Trennlinie() {
-    Box(Modifier.padding(start = 34.dp).fillMaxWidth().height(1.dp).background(Stil.linie))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
 }
 
-/** Vorlage: `Fusszeile` unter einer Gruppe — 13, sehr leise. */
+/** Vorlage: `Fusszeile` unter einer Gruppe — 12 (`klein`), sehr leise. 13 Regular steht nicht in der Leiter. */
 @Composable
 fun Fusszeile(text: String) {
-    Text(text, style = TextStyle(fontSize = 13.sp, lineHeight = 18.sp), color = Stil.schriftSehrLeise,
+    Text(text, style = Stil.klein.copy(lineHeight = 17.sp), color = Stil.schriftSehrLeise,
          modifier = Modifier.padding(horizontal = Stil.randAbstand * 2).padding(top = 8.dp))
 }
 
@@ -204,7 +240,9 @@ fun Fusszeile(text: String) {
 @Composable
 fun Schalter(an: Boolean, aendern: (Boolean) -> Unit) {
     val lage by animateFloatAsState(if (an) 1f else 0f, tween(150, easing = EaseInOut), label = "schalter")
-    Box(Modifier.size(46.dp, 28.dp).clip(CircleShape).background(lerp(Color.White.copy(alpha = 0.16f), Stil.akzent, lage))
+    // Aus: Flaeche `rand` (Weiss 12 %), an: `akzent`, Knauf `grund` (BAUTEILE 6). Hier stand
+    // Weiss 16 % — ein Ton neben dem, den es dafuer gibt.
+    Box(Modifier.size(46.dp, 28.dp).clip(CircleShape).background(lerp(Stil.rand, Stil.akzent, lage))
             // Fuer TalkBack ein Schalter mit Zustand, nicht eine namenlose Flaeche.
             .toggleable(an, remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null,
                 role = androidx.compose.ui.semantics.Role.Switch) { aendern(it) }.padding(3.dp)) {
@@ -212,24 +250,40 @@ fun Schalter(an: Boolean, aendern: (Boolean) -> Unit) {
     }
 }
 
-/** Vorlage: `Zeilenaufbau` — Zeichen 17 in 20, Titel 16, Unterzeile 13 bei 45 %, 14 Abstand. */
+/**
+ * Vorlage: `Zeilenaufbau` — Zeichen 17 in einer 20 breiten Spalte, **Titel 15 Semibold**,
+ * Unterzeile 12 `schriftSehrLeise`, 14 Abstand, 14 senkrecht (BAUTEILE 6).
+ *
+ * Titel 16 und Unterzeile 13 stehen in keiner Leiter, und die Unterzeile trug Weiss auf
+ * 45 Prozent — als voller Wert ist das `schriftSehrLeise`, das ueber einem Plakat nicht
+ * kippt und gerechnet 5,78:1 auf der Gruppenflaeche traegt.
+ */
 @Composable
-fun Zeilenaufbau(symbol: ImageVector, titel: String, unter: String?, farbe: Color, modifier: Modifier,
-                         senkrecht: Int = 14, rechts: @Composable RowScope.() -> Unit) {
+fun Zeilenaufbau(symbol: Zeichen, titel: String, unter: String?, farbe: Color, modifier: Modifier,
+                         senkrecht: Int = 14, zeichenfarbe: Color = Stil.schrift, rechts: @Composable RowScope.() -> Unit) {
     Row(modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand, vertical = senkrecht.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Icon(symbol, contentDescription = null, tint = farbe, modifier = Modifier.width(20.dp).height(19.dp))
+        // Das Zeichen bleibt weiss, auch wenn der Titel gedaempft ist — wie `Zeilenaufbau` am iPhone.
+        Box(Modifier.width(Stil.zeichenSpalte), contentAlignment = Alignment.Center) { Symbol(symbol, 17.dp, farbe = zeichenfarbe) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(titel, style = TextStyle(fontSize = 16.sp), color = farbe)
-            unter?.let { Text(it, style = TextStyle(fontSize = 13.sp), color = Color.White.copy(alpha = 0.45f)) }
+            Text(titel, style = Stil.listentitel, color = farbe)
+            unter?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise) }
         }
         rechts()
     }
 }
 
+/**
+ * Der Winkel rechts in einer Zeile — `schriftSehrLeise`, wie auf Apple.
+ *
+ * Er trug Weiss auf 28 Prozent, und das sind gerechnet **2,47:1**: verboten, auch fuer ein
+ * Bedienzeichen (3:1). Die Groesse bleibt bei 20: Apples Winkel ist ein 13-Punkt-Glyphe,
+ * Materials `KeyboardArrowRight` bringt seinen Rand im Bild mit und zeichnet bei 20 dp
+ * einen Haken derselben Hoehe.
+ */
 @Composable
 private fun Pfeil() {
-    Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(20.dp))
+    Symbol(Zeichen.WinkelRechts, 13.dp, farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett)
 }
 
 /**
@@ -238,8 +292,11 @@ private fun Pfeil() {
  * Play", wenn der Server nicht umwandelt.
  */
 @Composable
-fun Wahlzeile(symbol: ImageVector, titel: String, unter: String? = null, an: Boolean, gesperrt: Boolean = false, aendern: (Boolean) -> Unit) {
-    val farbe = if (gesperrt) Stil.schrift.copy(alpha = 0.4f) else Stil.schrift
+fun Wahlzeile(symbol: Zeichen, titel: String, unter: String? = null, an: Boolean, gesperrt: Boolean = false, aendern: (Boolean) -> Unit) {
+    // **Gesperrt heisst gedaempfte Schrift, nicht durchscheinend** (BRAND 5): Weiss auf
+    // 40 Prozent ueber unserem Grund ergibt ein kraeftiges Grau — das sieht nach einem Knopf
+    // aus, der nicht reagiert, statt nach einem, der noch wartet.
+    val farbe = if (gesperrt) Stil.schriftSehrLeise else Stil.schrift
     Zeilenaufbau(symbol, titel, unter, farbe, if (gesperrt) Modifier else Modifier.druckzeile { aendern(!an) }) {
         Schalter(an, if (gesperrt) { _: Boolean -> } else aendern)
     }
@@ -247,18 +304,27 @@ fun Wahlzeile(symbol: ImageVector, titel: String, unter: String? = null, an: Boo
 
 /** Vorlage: `Wertzeile` — zeigt einen Wert und fuehrt, wenn antippbar, zu seiner Auswahl. Gedimmt, wenn er nicht greift. */
 @Composable
-fun Wertzeile(symbol: ImageVector, titel: String, unter: String? = null, wert: String? = null, gedimmt: Boolean = false, tun: (() -> Unit)? = null) {
-    val farbe = if (gedimmt) Stil.schrift.copy(alpha = 0.4f) else Stil.schrift
-    Zeilenaufbau(symbol, titel, unter, farbe, if (tun != null && !gedimmt) Modifier.druckzeile(tun) else Modifier) {
-        wert?.let { Text(it, style = TextStyle(fontSize = 15.sp), color = if (gedimmt) Stil.schriftLeise.copy(alpha = 0.4f) else Stil.schriftLeise, maxLines = 1) }
-        if (tun != null) Pfeil()
+fun Wertzeile(symbol: Zeichen, titel: String, unter: String? = null, wert: String? = null, gedimmt: Boolean = false, tun: (() -> Unit)? = null) {
+    val farbe = if (gedimmt) Stil.schriftSehrLeise else Stil.schrift
+    // Ein Knopf gibt nach (`Stil.Druckknopf`); gedimmt ist er keiner und traegt keinen Winkel.
+    val aktiv = tun != null && !gedimmt
+    Zeilenaufbau(symbol, titel, unter, farbe, if (aktiv) Modifier.antippen(tun!!) else Modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            wert?.let { Text(it, style = Stil.koerper, color = Stil.schriftLeise, maxLines = 1) }
+            if (aktiv) Pfeil()
+        }
     }
 }
 
-/** Vorlage: `Profilzeile` — fuehrt woanders hin; Quick Connect steht im Akzent. */
+/**
+ * Vorlage: `Profilzeile` — fuehrt woanders hin, senkrecht 14 wie jede Listenzeile. `zeichenAkzent`:
+ * **nur das Zeichen** im Akzent, der Titel bleibt weiss (Quick Connect — eine Profilseite ohne einen
+ * farbigen Punkt liest sich leblos).
+ */
 @Composable
-fun Profilzeile(symbol: ImageVector, titel: String, unter: String? = null, akzent: Boolean = false, tun: () -> Unit) {
-    Zeilenaufbau(symbol, titel, unter, if (akzent) Stil.akzent else Stil.schrift, Modifier.druckzeile(tun), senkrecht = 15) { Pfeil() }
+fun Profilzeile(symbol: Zeichen, titel: String, unter: String? = null, zeichenAkzent: Boolean = false, tun: () -> Unit) {
+    Zeilenaufbau(symbol, titel, unter, Stil.schrift, Modifier.antippen(tun),
+                 zeichenfarbe = if (zeichenAkzent) Stil.akzent else Stil.schrift) { Pfeil() }
 }
 
 /**
@@ -322,7 +388,7 @@ fun <T> Umsortierbar(eintraege: List<T>, schluessel: (T) -> String, verschieben:
                                     })
                             },
                         contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.DragHandle, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(20.dp))
+                        Symbol(Zeichen.Griff, 17.dp, farbe = Stil.schriftSehrLeise)
                     }
                 }
             }

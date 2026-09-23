@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.SwiftlyAnwendung
 import de.paulherter.swiftly.fehlertext
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.alsJson
 import de.paulherter.swiftly.gemeinsam.Wortmarke
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
@@ -60,13 +61,17 @@ fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
     var fehler by remember { mutableStateOf<String?>(app.anmeldehinweis.value.also { app.anmeldehinweis.value = null }) }
     val lauf = rememberCoroutineScope()
     val fokus = ersterFokus()
+    /** „Erweitert" — eigene Header fuer einen Dienst vor dem Server. */
+    val koepfe = de.paulherter.swiftly.rememberKopfzeilen()
 
     fun verbinden() {
         if (adresse.isBlank() || laeuft) return
         laeuft = true; fehler = null
         lauf.launch {
             try {
-                val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.verbinden(adresse).await() })
+                val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.verbinden(adresse, koepfe.alsJson()).await() })
+                // Erst jetzt ablegen: fuer eine Adresse, unter der nichts antwortet, bleibt nichts liegen.
+                if (koepfe.isNotEmpty()) app.eigeneKoepfeAblegen()
                 app.ablage.letzterServer = adresse
                 verbunden(antwort.getString("name"), antwort.getString("version"))
             } catch (e: CancellationException) {
@@ -87,6 +92,7 @@ fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
                    imeAction = ImeAction.Go, tastaturAktion = { verbinden() })
             Text(uebersetzt("https:// kannst du weglassen."), style = TvStil.klein, color = Stil.schriftSehrLeise,
                  modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            TvErweitert(koepfe, modifier = Modifier.padding(top = 14.dp))
             TvKnopf(uebersetzt(if (laeuft) "Verbinden…" else "Verbinden"), freigegeben = adresse.isNotBlank() && !laeuft,
                     modifier = Modifier.padding(top = 22.dp)) { verbinden() }
             // **Kein Ring, der den Knopf ersetzt** — GESTALTUNG, Abschnitt G, wie auf tvOS: der Knopf
@@ -227,9 +233,11 @@ fun TvQuickConnectSeite(app: SwiftlyAnwendung, neuerServer: Boolean = false, sch
                     Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         c.forEach { zeichen ->
                             Box(Modifier.size(58.dp, 78.dp).clip(RoundedCornerShape(TvStil.ecke))
-                                    .background(Stil.erhoeht).border(1.dp, Stil.rand, RoundedCornerShape(TvStil.ecke)),
+                                    // **Kein Rand** (BRAND 4), und `flaeche` statt `erhoeht`: `erhoeht` ist,
+                                    // was auf einer Flaeche liegt — hier liegt nichts darunter.
+                                    .background(Stil.flaeche),
                                 contentAlignment = Alignment.Center) {
-                                Text(zeichen.toString(), style = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold), color = Stil.schrift)
+                                Text(zeichen.toString(), style = TvStil.titelGross.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp), color = Stil.schrift)
                             }
                         }
                     }
@@ -244,7 +252,7 @@ fun TvQuickConnectSeite(app: SwiftlyAnwendung, neuerServer: Boolean = false, sch
             }
 
             Column(Modifier.padding(top = 32.dp).widthIn(max = 460.dp)) {
-                Text(uebersetzt("So gehts").uppercase(), style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
+                Text(uebersetzt("So gehts"), style = TvStil.reihe,
                      color = Stil.schriftSehrLeise)
                 listOf("Jellyfin im Browser öffnen und anmelden", "Oben rechts aufs Profil, dann Quick Connect",
                        "Code eingeben, dann geht es hier von selbst weiter").forEachIndexed { i, schritt ->

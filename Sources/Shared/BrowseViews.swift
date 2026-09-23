@@ -15,6 +15,9 @@ struct PosterTile: View {
     /// weg, und damit sagte dieselbe Suche auf dem iPad weniger als auf dem
     /// iPhone. D4 gilt auch für Trefferlisten.
     var auskunft: String?
+    /// **Nur für eine Sammlungskachel:** Sammlung und Bereich, aus denen ein
+    /// Ersatzplakat gebaut wird, falls die Sammlung selbst keins hat.
+    var mosaikQuelle: (sammlung: Sammlung, art: String)? = nil
 
     /// Bei einer Folge steht oben die Serie und unten die Nummer — sonst
     /// Titel und Jahr.
@@ -42,10 +45,18 @@ struct PosterTile: View {
     /// weichen Wechsel mit.
     @State private var da = false
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
-            // die Höhe der tatsächlichen Breite — 2 : 3, wie jedes Plakat.
+    /// **Das Plakat, oder sein Ersatz.**
+    ///
+    /// Eine Sammlung ohne eigenes Titelbild bekäme sonst nur das Filmsymbol
+    /// — bei einer Sammlung mit fünf Filmen eine Auskunft, die nichts sagt.
+    /// `mosaikQuelle` steht nur an der Sammlungskachel; überall sonst ist es
+    /// `nil`, und hier steht genau das Plakat wie vorher.
+    @ViewBuilder
+    private var plakat: some View {
+        if let mosaikQuelle, item.imageTags?["Primary"] == nil {
+            Sammlungsmosaik(model: model, sammlung: mosaikQuelle.sammlung,
+                            art: mosaikQuelle.art, breite: breite)
+        } else {
             Bild(url: model.imageURL(for: item, maxHeight: 500, hochkant: true),
                  breite: breite,
                  hoehe: breite.map { $0 * 1.5 },
@@ -56,6 +67,14 @@ struct PosterTile: View {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
+            // die Höhe der tatsächlichen Breite — 2 : 3, wie jedes Plakat.
+            plakat
             // **Drei Zustaende, drei Zeichen.** Balken heisst angefangen,
             // Haken heisst gesehen, eine Zahl heisst: so viel liegt hier.
             // Bis hierher gab es nur den Balken — und bei einer Serie sagt
@@ -72,21 +91,41 @@ struct PosterTile: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
+                // **Einzeilig.** Zwei Zeilen liessen die Kacheln einer Reihe
+                // verschieden hoch enden, und der laengere Titel schob seine
+                // Angabe nach unten. Gekuerzt wird mit Punkten, nicht
+                // umgebrochen.
                 Text(titelzeile)
                     .font(Stil.kachel)
                     .foregroundStyle(Stil.schrift)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .multilineTextAlignment(.leading)
                 if let unterzeile {
                     Text(unterzeile)
                         .font(Stil.klein)
-                        .foregroundStyle(Stil.schriftLeise)
+                        // Die Angabe unter einem Plakat ist der leiseste Ton,
+                        // nicht der mittlere: `schriftLeise` traegt Fliesstext
+                        // und Werte, eine Jahreszahl unter dem Titel nicht.
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         // Die volle Trefferauskunft braucht auf 138 Punkt
                         // zwei Zeilen. In der Bibliothek steht dort nur ein
                         // Jahr, da bleibt es bei einer.
                         .lineLimit(auskunft == nil ? 1 : 2)
                 }
             }
+            // **Der Text ist so breit wie das Plakat, nicht wie der Titel.**
+            //
+            // Hier stand keine Grenze. Ein `VStack` ist so breit wie sein
+            // breitestes Kind, und ein einzeiliger Text kuerzt erst, wenn ihm
+            // jemand eine Breite vorgibt — sonst waechst er. In einer Reihe
+            // mit fester Kachelbreite wurde die Kachel dadurch breiter als
+            // ihr Plakat, und „Obsession – Du sollst mich lieben" lief nach
+            // rechts ueber die Reihe hinaus. Auffaellig wurde es nur bei der
+            // letzten Kachel, weil dort rechts Platz ist; bei den anderen
+            // schob sie sich hinter den Nachbarn.
+            //
+            // Im Raster gibt die Spalte die Breite vor, also `infinity`.
+            .frame(maxWidth: breite ?? .infinity, alignment: .leading)
         }
         // Im Raster richtet SwiftUI die Zellen einer Zeile mittig aus. Bei
         // zweizeiligen Titeln rutschten die kürzeren Kacheln dadurch nach
@@ -138,6 +177,11 @@ struct ItemDetailView: View {
     @State private var meldung: String?
     @State private var frisch: Item?
     @State private var aehnliche: [Item] = []
+    /// **`[]` und „gescheitert" sind zwei Dinge.** Der Abschnitt „Ähnliche
+    /// Titel" verschwand bei einem Netzfehler ersatzlos, waehrend die
+    /// Serienseite zwei Dateien weiter „Nichts Ähnliches gefunden" sagte —
+    /// zwei Antworten auf dieselbe Frage, und beide falsch.
+    @State private var aehnlicheGestoert = false
     @State private var extras: [Item] = []
     @State private var gemerkt = false
     @State private var gesehen = false
@@ -207,8 +251,18 @@ struct ItemDetailView: View {
                         // ihm stand sie zwischen Knopf und Aktionsreihe und
                         // trennte zwei Dinge, die zusammengehören.
                         belegzeile
-                        hauptknopf
-                        aktionsreihe
+                        // **Knopf und Reihe sind ein Block, also stehen sie
+                        // dichter.** Der Abstand war 14, genauso gross wie der
+                        // zu allem anderen — waagerecht stehen die Felder der
+                        // Reihe aber nur 8 auseinander. Damit war der Abstand
+                        // nach oben groesser als der zwischen den Feldern, und
+                        // die Reihe las sich als eigene Sache statt als
+                        // Fortsetzung des Knopfs. Paul am 21.09.: „damit es
+                        // irgendwie clean wie ein Element aussieht".
+                        VStack(alignment: .leading, spacing: 8) {
+                            hauptknopf
+                            aktionsreihe
+                        }
                             // Die Reihe traegt ihre Beschriftungen dicht unter
                             // den Kreisen; ohne Zugabe stossen sie fast an den
                             // Text darunter.
@@ -221,6 +275,9 @@ struct ItemDetailView: View {
 
                     besetzung
                     extrasreihe
+                    // Über „Ähnliche Titel": die Sammlung ist die nähere
+                    // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                    Sammlungsreihe(model: model, titel: item)
                     aehnlichesreihe
                     // Die Dateiangaben ganz nach unten: sie beantworten eine
                     // Frage, die man erst später stellt.
@@ -230,7 +287,7 @@ struct ItemDetailView: View {
                 // sonst die ganze Seite — und eine Seite, die breiter ist als
                 // ihre Scrollfläche, lässt sich seitwärts ziehen.
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 30)
+                .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
@@ -293,8 +350,20 @@ struct ItemDetailView: View {
             frisch = await frischerTitel
             plan = await planung
             withAnimation(Stil.einblenden) { planDa = true }
-            aehnliche = await aehnlich
-            extras = await extra
+            // **Doppelte Kennungen raus.** Der Server liefert unter
+            // „Aehnliches" denselben Titel gelegentlich zweimal, und `ForEach`
+            // ordnet ueber die Kennung zu: zwei gleiche Kennungen heissen zwei
+            // gleiche Kacheln und ein Tipp, der danebengreift. Dieselbe Regel
+            // wie in Suche, Startseite und Merkliste — sie fehlte nur hier.
+            let frischeAehnliche = await aehnlich
+            aehnlicheGestoert = frischeAehnliche == nil
+            if let frischeAehnliche {
+                aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche)
+            }
+            // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
+            // fehlt die Reihe. Ein zweiter Stoerhinweis unter dem ersten waere
+            // dieselbe Auskunft zweimal.
+            extras = (await extra) ?? []
             gemerkt = aktuell.userData?.isFavorite ?? false
             gesehen = aktuell.userData?.played ?? false
             pruefe = false
@@ -324,13 +393,15 @@ struct ItemDetailView: View {
         Heldbild(url: model.kopfbildURL(for: aktuell))
             .overlay(alignment: .bottom) { Heldauslauf() }
             .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(aktuell.name)
                         .font(Stil.titel)
-                        .tracking(-0.6)
+                        .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
                     Text(nebenzeile)
-                        .font(.system(size: 14))
+                        // Jahr, Laufzeit, Genre sind eine Angabe: 12. Vorher
+                        // 14, was in keiner Stufe vorkommt.
+                        .font(Stil.klein)
                         .foregroundStyle(Stil.schriftLeise)
                         .lineLimit(1)
                 }
@@ -358,35 +429,54 @@ struct ItemDetailView: View {
             // und aus der Liste oft ohne Bewertung und Freigabe. Leer hatte sie
             // keine Höhe, der Knopf darunter saß höher und rutschte nach
             // unten, sobald sie sich füllte. So hoch wie eine Marke, immer.
-            .frame(minHeight: 26, alignment: .leading)
+            // `height`, nicht `minHeight`: der Umbau auf mitwachsende Schrift
+            // hat daraus ein Mindestmass gemacht und damit die Begruendung
+            // darueber entwertet — bei groesserer Systemschrift waere die Zeile
+            // ueber 26 gewachsen und der Knopf haette genau so gesprungen, wie
+            // es hier steht. Die Zeile traegt nur Plaketten, und Plaketten
+            // bleiben fest (BRAND 2).
+            .frame(height: 26, alignment: .leading)
             .opacity(planDa ? 1 : 0)
     }
 
-    @ViewBuilder
+    /// **Ein Knopf, nicht zwei.**
+    ///
+    /// Unter „Fortsetzen" stand ein zweiter, gleich breiter Knopf „Von vorn" —
+    /// bei einem angefangenen Film also zwei volle Zeilen Knopf ueber dem
+    /// Inhalt. Und er war doppelt: „Von vorn abspielen" steht seit jeher in
+    /// der Mehr-Tafel (`Titelhandlungen.fuerFilm`), genau wie
+    /// „Fortschritt zuruecksetzen" daneben. Paul am 22.09.: „mach den weg, der
+    /// ist ja sowieso in dem Menue."
+    ///
+    /// Die Seite hat damit wieder **eine** Hauptsache, und die Reihe darunter
+    /// faengt 60 Punkt weiter oben an.
     private var hauptknopf: some View {
-        // Schmal untereinander über die volle Breite, breit nebeneinander und
-        // nur so breit wie ihre Beschriftung.
-        let stapel = weit ? AnyLayout(HStackLayout(spacing: 12))
-                          : AnyLayout(VStackLayout(spacing: 10))
-        stapel {
-            if let ab = fortsetzenAb {
-                Button { starte(ab: ab) } label: {
+        // **Restzeit und Balken wie auf der Serienseite.**
+        //
+        // Dort stehen sie seit jeher unter dem Fortsetzen-Knopf; ein
+        // angefangener Film zeigte dagegen nur „Fortsetzen ab 51:10" und
+        // liess offen, wie viel noch kommt. Dieselbe Frage, dieselbe Antwort —
+        // Aufbau und Abstand zeichengleich mit `SeriesView.hauptknopf`.
+        VStack(alignment: .leading, spacing: 9) {
+            Button { starte(ab: fortsetzenAb ?? 0) } label: {
+                if let ab = fortsetzenAb {
                     Label("Fortsetzen ab \(zeitText(ab))", systemImage: "play.fill")
-                }
-                .buttonStyle(HauptknopfStil(dehnt: !breit))
-                .disabled(plan == nil)
-
-                Button { starte(ab: 0) } label: {
-                    Label("Von vorn", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(NebenknopfStil(dehnt: !breit))
-                .disabled(plan == nil)
-            } else {
-                Button { starte(ab: 0) } label: {
+                } else {
                     Label("Abspielen", systemImage: "play.fill")
                 }
-                .buttonStyle(HauptknopfStil(dehnt: !breit))
-                .disabled(plan == nil)
+            }
+            .buttonStyle(HauptknopfStil(dehnt: !breit))
+            .disabled(plan == nil)
+
+            if let rest = aktuell.restzeitText {
+                // Restzeit ist eine Angabe: 12.
+                Text(rest).mitwachsend(12).foregroundStyle(Stil.schriftLeise)
+            }
+            // Breit sitzt der Fortschritt am Poster im Kopf — hier waere er
+            // ein zweites Mal dasselbe, und zwar quer ueber die Seite.
+            if !breit, let anteil = aktuell.userData?.playedPercentage, anteil > 0 {
+                Fortschrittsbalken(anteil: anteil / 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
         }
     }
@@ -457,7 +547,15 @@ struct ItemDetailView: View {
                         Text(aktuell.regie.joined(separator: ", "))
                             .foregroundStyle(Stil.schrift)
                     }
-                    .font(.system(size: 13))
+                    // Eine Rolle ist eine Angabe: 12. Vorher 13 — der Grad
+                    // traegt in der Leiter Medium und gehoert dem Titel unter
+                    // einem Plakat.
+                    //
+                    // **Mitwachsend:** sie steht unter dem Beschreibungstext,
+                    // und der folgt der Systemschrift schon (`Klapptext`). Mit
+                    // fester Zeile darunter lief die Haelfte des Absatzes mit
+                    // und die andere nicht.
+                    .mitwachsend(12)
                 }
             }
         }
@@ -481,13 +579,12 @@ struct ItemDetailView: View {
                 ForEach(Array((quelle.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).enumerated()),
                         id: \.offset) { paar in
                     Dateizeile(bezeichnung: paar.offset == 0 ? "Ton" : " ",
-                               wert: paar.element.kurz, hervorgehoben: true)
+                               wert: paar.element.kurz)
                     Rectangle().fill(Stil.linie).frame(height: 1)
                 }
                 let untertitel = (quelle.mediaStreams ?? []).filter { $0.type == "Subtitle" }
                 Dateizeile(bezeichnung: "Untertitel",
-                           wert: Dateiangaben.untertitel(untertitel),
-                           hervorgehoben: !untertitel.isEmpty)
+                           wert: Dateiangaben.untertitel(untertitel))
                 Rectangle().fill(Stil.linie).frame(height: 1)
             }
             .padding(.horizontal, Stil.rand(breit: breit))
@@ -509,7 +606,7 @@ struct ItemDetailView: View {
                             Besetzungskachel(bild: model.personBild(person),
                                              name: person.name, rolle: person.role)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -532,7 +629,10 @@ struct ItemDetailView: View {
                             // ohne die Regel stünde dort „0 Min.".
                             if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
                                let s = extra.runtimeSeconds {
-                                Text(laufzeit(s)).font(Stil.klein).foregroundStyle(Stil.schriftLeise)
+                                // Derselbe leiseste Ton wie unter jedem
+                                // anderen Plakat — ein Extra ist eine Kachel.
+                                Text(laufzeit(s)).font(Stil.klein)
+                                    .foregroundStyle(Stil.schriftSehrLeise)
                             }
                         }
                         .frame(width: 210, alignment: .leading)
@@ -545,14 +645,29 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var aehnlichesreihe: some View {
-        if !aehnliche.isEmpty {
+        if aehnliche.isEmpty {
+            // Nur wenn der Abruf gescheitert ist. Eine Sammlung ohne
+            // Verwandtes braucht keinen Abschnitt.
+            if aehnlicheGestoert {
+                // **Kein `Abschnitt`.** Der legt seinen Inhalt in eine
+                // waagerechte Scrollflaeche, und darin faellt ein Hinweis, der
+                // die Breite nehmen soll, auf seine Textbreite zusammen.
+                VStack(alignment: .leading, spacing: 12) {
+                    Reihentitel(text: "Ähnliche Titel")
+                        .padding(.horizontal, Stil.rand(breit: breit))
+                    Stoerhinweis(model: model, erneut: { erneutAehnliche() },
+                                 abstandOben: 0)
+                }
+                .padding(.top, Stil.reihenAbstand)
+            }
+        } else {
             Abschnitt(titel: "Ähnliche Titel") {
                 HStack(spacing: Stil.kachelAbstand) {
                     ForEach(aehnliche) { titel in
                         NavigationLink(value: titel) {
                             PosterTile(model: model, item: titel)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -564,6 +679,16 @@ struct ItemDetailView: View {
         guard let plan else { return }
         Stil.ruck(.mittel)
         abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
+    }
+
+    /// Nur die eine Reihe nachholen — die ganze Seite neu zu laden waere fuer
+    /// einen gescheiterten Abschnitt zu viel.
+    private func erneutAehnliche() {
+        Task {
+            let frisch = await model.aehnliche(item)
+            aehnlicheGestoert = frisch == nil
+            if let frisch { aehnliche = Listenregeln.ohneDoppelte(frisch) }
+        }
     }
 
 }
@@ -585,7 +710,10 @@ struct Abschnitt<Inhalt: View>: View {
                 Reihentitel(text: titel)
                 if pfeil {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        // Ein Winkel ist 13 Semifett. Vorher 12 Semifett — auf
+                        // 12 steht in der Leiter Regular, und ein halbfetter
+                        // Winkel in einem Regular-Grad ist keine der Stufen.
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
@@ -593,7 +721,10 @@ struct Abschnitt<Inhalt: View>: View {
 
             ScrollView(.horizontal, showsIndicators: false) { inhalt() }
         }
-        .padding(.top, 26)
+        // 28, nicht 26: „Reihe zu Reihe" ist eine Zahl, und die
+                        // Startseite nimmt 28. Zwei Rhythmen fuer dieselbe
+                        // Bauart merkt man beim Durchtippen.
+                        .padding(.top, Stil.reihenAbstand)
     }
 }
 

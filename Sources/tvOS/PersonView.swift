@@ -20,6 +20,9 @@ struct PersonView: View {
     @State private var titel: [Item] = []
     @State private var anfragbar: [Seerrtreffer] = []
     @State private var geladen = false
+    /// `nil` von `titel(person:)` heisst gestoert. Vorher stand bei einem
+    /// stummen Server „Auf deinem Server gibt es sonst nichts mit …" da.
+    @State private var gestoert = false
     /// Seerr hat geantwortet — erst dann gilt „es gibt sonst nichts".
     @State private var seerrFertig = false
     @State private var banner: [URL] = []
@@ -33,7 +36,23 @@ struct PersonView: View {
             VStack(alignment: .leading, spacing: 0) {
                 kopf
 
-                if !titel.isEmpty {
+                // **Vor `geladen` stand hier nichts** — Name, Bild, und
+                // darunter eine leere Flaeche, beim Laden wie bei einem
+                // stummen Server.
+                if !geladen {
+                    reihenabschnitt {
+                        Reihentitel(text: "Auf deinem Server")
+                    } inhalt: {
+                        streifen {
+                            ForEach(0 ..< 5, id: \.self) { _ in
+                                Ladefeld()
+                                    .frame(width: Stil.posterBreite,
+                                           height: Stil.posterHoehe)
+                            }
+                        }
+                    }
+                    .transition(.opacity)
+                } else if !titel.isEmpty {
                     reihenabschnitt {
                         Reihentitel(text: "Auf deinem Server")
                     } inhalt: {
@@ -56,7 +75,12 @@ struct PersonView: View {
                     .transition(.opacity)
                 }
 
-                if geladen, seerrFertig, titel.isEmpty, anfragbar.isEmpty {
+                if gestoert, titel.isEmpty {
+                    // Auf Seerr wird nicht gewartet: was der eigene Server
+                    // sagt, ist die Hauptauskunft dieser Seite.
+                    Stoerzustand(model: model, erneut: { Task { await laden() } })
+                        .frame(height: Stil.posterHoehe)
+                } else if geladen, seerrFertig, titel.isEmpty, anfragbar.isEmpty {
                     Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
                         .font(Stil.kachel)
                         .foregroundStyle(Stil.schriftLeise)
@@ -109,9 +133,11 @@ struct PersonView: View {
 
     private var block: some View {
         HStack(alignment: .top, spacing: 40) {
-            // Rund, weil es ein Bild ist — wie die Kacheln der Besetzung.
+            // Rund, weil es ein Bild ist — wie die Kacheln der Besetzung. Die
+            // halbe Kantenlaenge ist keine Stufe der Eckenleiter, sondern der
+            // Kreis selbst.
             Bild(url: model.personBild(person, maxHeight: 600),
-                 breite: 208, hoehe: 208, ecke: 104)
+                 breite: 208, hoehe: 208, ecke: 208 / 2)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(person.name)
@@ -143,9 +169,9 @@ struct PersonView: View {
 
                 if let text = auskunft?.beschreibung {
                     Text(text)
-                        .font(.system(size: 29))
+                        .font(Stil.koerper)
                         .lineSpacing(Stil.beschreibungLuft)
-                        .foregroundStyle(Stil.schrift.opacity(0.62))
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(3)
                         .padding(.top, 16)
                         .transition(.opacity)
@@ -176,7 +202,9 @@ struct PersonView: View {
         async let eigene = model.titel(person: person.id)
         let a = await model.item(id: person.id)
         async let fremde = filmografie(tmdb: a?.tmdbKennung)
-        let b = await eigene
+        let geholt = await eigene
+        // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
+        let b = geholt ?? titel
 
         // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
         // Banner, was der erste als Ersatz hergibt.
@@ -187,6 +215,7 @@ struct PersonView: View {
 
         withAnimation(Stil.einblenden) {
             auskunft = a
+            gestoert = geholt == nil
             titel = b
             banner = bilder
             geladen = true

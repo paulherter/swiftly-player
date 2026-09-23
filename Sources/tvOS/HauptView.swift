@@ -271,6 +271,12 @@ struct HauptView: View {
                         stapel(b)
                             .opacity(bereich == b ? 1 : 0)
                             .disabled(bereich != b)
+                            // **`disabled` haelt den Fokus fern, VoiceOver
+                            // nicht.** Beim Wischen lief man durch Filme und
+                            // Serien mit, die niemand sieht — zwei, drei
+                            // ganze Bildschirme unsichtbarer Kacheln zwischen
+                            // je zwei sichtbaren. Der Mac macht es schon so.
+                            .accessibilityHidden(bereich != b)
                     }
                 }
             }
@@ -474,7 +480,7 @@ struct HauptView: View {
                   let seite = await model.items(in: bib.id) else { continue }
             for titel in seite.titel.prefix(40) {
                 let kandidat = art == "movies" ? [titel]
-                    : Array(await model.folgen(serie: titel.id, staffel: nil).prefix(1))
+                    : Array((await model.folgen(serie: titel.id, staffel: nil) ?? []).prefix(1))
                 for folge in kandidat {
                     guard let plan = await model.plan(for: folge.id) else { continue }
                     let stroeme = plan.quelle?.mediaStreams ?? []
@@ -541,7 +547,7 @@ struct HauptView: View {
             Protokoll.schreib("[Probe] keine Serien"); return
         }
         for serie in seite.titel.prefix(10) {
-            for folge in await model.folgen(serie: serie.id, staffel: nil).prefix(3) {
+            for folge in (await model.folgen(serie: serie.id, staffel: nil) ?? []).prefix(3) {
                 guard let ticks = folge.runTimeTicks, await model.folgeNach(folge) != nil,
                       let plan = await model.plan(for: folge.id) else { continue }
                 let dauer = Double(ticks) / 10_000_000
@@ -606,6 +612,10 @@ struct HauptView: View {
                 case .filme:
                     BibliothekView(model: model, art: "movies")
                 case .serien:
+                    // Ohne „Ungesehen": der Serverfilter arbeitet dort auf
+                    // Folgenebene und blendet halb gesehene Serien aus.
+                    // „Merkliste" ist wieder dabei — wie am iPhone, seit sie
+                    // keinen eigenen Reiter mehr hat.
                     BibliothekView(model: model, art: "tvshows",
                                    filter: [.alle, .angefangen, .merkliste])
                 case .merkliste:
@@ -641,6 +651,10 @@ extension View {
                     SerienView(model: model, serie: item)
                 } else if item.type == "Episode" {
                     StaffelZiel(model: model, folge: item)
+                } else if item.type == "BoxSet" {
+                    // Eine Sammlung aus Suche oder Merkliste: ohne Bereich,
+                    // also alles, was in ihr steht — wie am iPhone.
+                    BibliothekView(model: model, sammlung: item)
                 } else {
                     DetailView(model: model, item: item)
                 }
@@ -657,6 +671,9 @@ extension View {
             }
             .navigationDestination(for: GenreRoute.self) { route in
                 GenreView(model: model, name: route.name)
+            }
+            .navigationDestination(for: SammlungRoute.self) { route in
+                BibliothekView(model: model, art: route.art, sammlung: route.sammlung)
             }
     }
 }

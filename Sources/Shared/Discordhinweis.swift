@@ -17,7 +17,8 @@ struct Discordhinweis: View {
             .blatt(offen: $offen) {
                 Blattrubrik(text: Text("Swiftly hat einen Discord"))
                 Text("Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.")
-                    .font(.system(size: 15))
+                    // Fließtext aus der Leiter statt einer eigenen Zahl.
+                    .font(Stil.koerper)
                     .foregroundStyle(Stil.schriftLeise)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -32,15 +33,27 @@ struct Discordhinweis: View {
                             .font(.system(size: 17))
                             .frame(width: 20)
                         Text("Discord beitreten")
-                            .font(.system(size: 16))
+                            // **17 und 52 wie jede andere Zeile in einem
+                            // Blatt** — dieselben Werte, die `Handlungsblatt`
+                            // und `Auswahlblatt` setzen. Hier standen 15 und
+                            // eine feste Hoehe von 50: dieselbe Rolle, ein
+                            // paar Punkte daneben, und mit groesserer
+                            // Systemschrift haette die feste Hoehe den Text
+                            // angeschnitten.
+                            //
+                            // Der Baustein selbst passt nicht: `Handlungsblatt`
+                            // kennt nur Rubrik und Zeilen, hier steht ein
+                            // erklaerender Absatz dazwischen. Uebernommen sind
+                            // deshalb die Masse, nicht das Gehaeuse.
+                            .font(.system(size: 17))
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(Stil.schrift)
                     .padding(.horizontal, Stil.randAbstand)
-                    .frame(height: 50)
+                    .frame(minHeight: 52)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
                 Blattlinie()
                 Blattabbruch { offen = false }
             }

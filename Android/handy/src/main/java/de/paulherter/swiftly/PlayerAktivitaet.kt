@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -20,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -147,12 +149,11 @@ class PlayerAktivitaet : ComponentActivity() {
  */
 @androidx.compose.runtime.Composable
 fun Bildimbildhinweis(zurueckholen: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(de.paulherter.swiftly.gemeinsam.Stil.grund).antippen(zurueckholen),
+    Box(Modifier.fillMaxSize().background(de.paulherter.swiftly.gemeinsam.Stil.grund).tippen(zurueckholen),
         contentAlignment = androidx.compose.ui.Alignment.Center) {
         androidx.compose.foundation.layout.Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
-            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.PictureInPictureAlt, contentDescription = null,
-                tint = de.paulherter.swiftly.gemeinsam.Stil.schriftSehrLeise, modifier = Modifier.size(44.dp))
+            Symbol(Zeichen.BildImBild, 30.dp, farbe = de.paulherter.swiftly.gemeinsam.Stil.schriftSehrLeise, staerke = Staerke.Mittel)
             androidx.compose.material3.Text(de.paulherter.swiftly.gemeinsam.uebersetzt("Dieses Video wird im Bild-im-Bild wiedergegeben."),
                 style = de.paulherter.swiftly.gemeinsam.Stil.koerper, color = de.paulherter.swiftly.gemeinsam.Stil.schriftLeise,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp))

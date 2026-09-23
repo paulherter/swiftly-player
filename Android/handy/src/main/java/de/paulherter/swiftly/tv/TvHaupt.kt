@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
@@ -18,13 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Tablet
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -38,7 +34,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -101,7 +96,7 @@ fun TvKulisseMelden(bild: String?, bereit: Boolean = true) {
 
 /** Unterseiten, die **nicht** die gemeinsame Kulisse tragen — Gegenstueck zu `TvUnterseite`. Person
  *  und Seerr-Titel zeichnen ihre eigene (wechselndes Banner, fremde Adressen) auf deckendem Grund. */
-private val ohneGemeinsameKulisse = setOf("Person", "Genre", "Profil", "WeiteresKonto", "ServerAufnahme",
+private val ohneGemeinsameKulisse = setOf("Person", "Genre", "BoxSet", "Profil", "WeiteresKonto", "ServerAufnahme",
     "Wiedergabeeinstellungen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
 
 private fun seitenschluessel(b: TvBereich, tiefe: Int, id: String?) = "${b.name}/$tiefe/${id.orEmpty()}"
@@ -318,6 +313,8 @@ private fun TvUnterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> U
         "Series", "Episode" -> TvSerie(app, ziel, oeffnen)
         "Person" -> TvPerson(app, ziel, oeffnen)
         "Genre" -> TvGenre(app, ziel, oeffnen)
+        // Eine Sammlung — aus dem Titelmenue mit Bereich, aus Suche oder Merkliste ohne.
+        "BoxSet" -> TvSammlung(app, ziel, oeffnen)
         "Profil" -> TvProfil(app, oeffnen)
         "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Stil.grund)) {
             TvAnmeldeSeite(app, app.servername.value.orEmpty(), "", weiteresKonto = true, andererServer = zurueck) { zurueck() }
@@ -327,6 +324,7 @@ private fun TvUnterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> U
         "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
         "Einstellungen" -> EinstellungenSeite(app, oeffnen, zurueck)
         "Seerr" -> TvSeerrSeite(app, zurueck)
+        "EigeneKoepfe" -> { androidx.activity.compose.BackHandler(onBack = zurueck); TvEigeneKoepfeSeite(app, zurueck) }
         "Seerrtitel" -> TvSeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
         "Merkliste" -> TvMerkliste(app, oeffnen)
@@ -357,31 +355,34 @@ private fun Kopfleiste(app: SwiftlyAnwendung, aktiv: TvBereich, waehlen: (TvBere
             TvUebernahmeabzeichen(app, angebote)
             Spacer(Modifier.width(18.dp))
         }
-        Fokusflaeche(lupe = 1.10f, tun = profil) { fokus ->
-            Box(Modifier.size(32.dp).border(2.dp, if (fokus) Stil.akzent else Color.Transparent, CircleShape).padding(3.dp)) {
+        // Ein Profilkreis von 32 — die kleine Stufe der Fokusleiter. Der Ring ist **weiss**:
+        // ein Bild kann nicht heller werden wie eine Kachel, und der Akzent traegt Zustand,
+        // nicht „hier steht die Fernbedienung" (BRAND 1, `ProfilStil` auf tvOS).
+        Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = profil) { fokus ->
+            Box(Modifier.size(32.dp).border(2.dp, if (fokus) Stil.schrift else Color.Transparent, CircleShape).padding(3.dp)) {
                 SubcomposeAsyncImage(model = app.kern.benutzerbild(160).orElse(null), contentDescription = uebersetzt("Profil"),
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape).background(Stil.erhoeht),
                     error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(16.dp))
+                        Symbol(Zeichen.PersonVoll, 13.dp, farbe = Stil.schriftLeise)
                     } })
             }
         }
     }
 }
 
-private fun uebernahmezeichen(art: String): ImageVector = when (art) {
-    "telefon" -> Icons.Filled.Smartphone
-    "tablet" -> Icons.Filled.Tablet
-    "rechner" -> Icons.Filled.Computer
-    "fernseher" -> Icons.Filled.Tv
-    else -> Icons.Filled.PlayCircle
+private fun uebernahmezeichen(art: String): Zeichen = when (art) {
+    "telefon" -> Zeichen.Telefon
+    "tablet" -> Zeichen.Tablet
+    "rechner" -> Zeichen.Laptop
+    "fernseher" -> Zeichen.Fernseher
+    else -> Zeichen.AbspielenFernseher
 }
 
 /**
  * Vorlage: `Uebernahmeabzeichen` in `Sources/tvOS/TVBausteine.swift` — „Laeuft auf dem iPhone — hier
  * weiterschauen", in Ruhe eine Zeile, der Titel kommt im Fokus dazu. Auf dem Telefon steckt dieselbe
  * Handlung in `Uebernahmezeichen` (`Uebernahme.kt`); die Logik (`app.kern.uebernehmen`, `Angebot`) ist
- * dieselbe, nur die Zeichnung ist tvOS-eigen — kuehl statt Akzent, Kapsel statt Kreis.
+ * dieselbe, nur die Zeichnung ist tvOS-eigen — Kapsel statt Kreis.
  *
  * **Mehrere Angebote oeffnen `TvTafel` statt eines eigenen Auswahlblatts** wie auf tvOS
  * (`TVUebernahmeauswahl`): die Tafel kann Symbol, Haken und Auswahl schon, ein zweites Blatt waere
@@ -405,7 +406,7 @@ private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>
         }
     }
     val erstes = angebote.first()
-    Fokusflaeche(lupe = 1.06f, tun = {
+    Fokusflaeche(lupe = TvStil.fokusLupeBreit, tun = {
         if (angebote.size == 1) uebernehmen(erstes)
         else app.blatt.value = Blattwunsch(uebersetzt("Wo weiterschauen?"),
             angebote.map { a -> Wahl(a.sitzung, listOfNotNull(a.geraet ?: uebersetzt("Gerät"), a.titelzeile).joinToString(" · ")) },
@@ -414,19 +415,19 @@ private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>
             }
     }) { fokus ->
         // Vorlage: `AbzeichenStil(anderesGeraet: true)` in `Sources/tvOS/TVBausteine.swift` — **nicht
-        // durchsichtig**: in Ruhe die kuehle Toenung ueber dem Seitengrund (deckend), im Fokus eine
+        // durchsichtig**: in Ruhe der Akzent auf 18 Prozent ueber dem Seitengrund (deckend), im Fokus eine
         // volle weisse Flaeche mit dunkler Schrift/Symbol statt der blauen, durchscheinenden Flaeche
         // von vorher.
-        val vordergrund = if (fokus) Stil.grund else Stil.kuehl
+        val vordergrund = if (fokus) Stil.grund else Stil.akzent
         Row(Modifier.height(if (fokus) 38.dp else 32.dp).clip(RoundedCornerShape(50))
-                .background(Stil.grund).background(if (fokus) Color.White else Stil.kuehl.copy(alpha = 0.18f))
+                .background(Stil.grund).background(if (fokus) Color.White else Stil.akzent.copy(alpha = 0.18f))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(uebernahmezeichen(erstes.art), contentDescription = null, tint = vordergrund, modifier = Modifier.size(13.dp))
+            Symbol(uebernahmezeichen(erstes.art), 13.dp, farbe = vordergrund, staerke = Staerke.Mittel)
             Column {
-                Text(uebersetzt("Hier weiterschauen"), style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold),
+                Text(uebersetzt("Hier weiterschauen"), style = TvStil.knopf,
                      color = vordergrund, maxLines = 1)
-                if (fokus) Text(erstes.titelzeile, style = TextStyle(fontSize = 10.5.sp), color = vordergrund.copy(alpha = 0.75f),
+                if (fokus) Text(erstes.titelzeile, style = TvStil.klein, color = vordergrund.copy(alpha = 0.75f),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -436,11 +437,12 @@ private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>
 /** Vorlage: `ReiterStil` — Lupe 1,06, ruhige Flaeche im Fokus, gewaehlt mit Akzentstrich. */
 @Composable
 private fun Reiter(text: String, gewaehlt: Boolean, tun: () -> Unit) {
-    Fokusflaeche(lupe = 1.06f, tun = tun) { fokus ->
-        Column(Modifier.clip(RoundedCornerShape(TvStil.ecke)).background(if (fokus) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+    Fokusflaeche(lupe = TvStil.fokusLupe, tun = tun) { fokus ->
+        // Die ruhige Fokusflaeche, dieselbe wie ueberall — nicht ein eigener Weisswert.
+        Column(Modifier.clip(RoundedCornerShape(TvStil.ecke)).background(if (fokus) TvStil.fokusflaeche else Color.Transparent)
                 .padding(horizontal = 12.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text, style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold),
+            Text(text, style = TvStil.knopf,
                  color = if (fokus || gewaehlt) Stil.schrift else Stil.schriftLeise)
             Box(Modifier.padding(top = 3.dp).size(18.dp, 2.dp).clip(CircleShape).background(if (gewaehlt) Stil.akzent else Color.Transparent))
         }
@@ -485,12 +487,21 @@ fun TvTafel(app: SwiftlyAnwendung) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))) {
         CompositionLocalProvider(LocalInnerhalbTafel provides true) {
             Column(Modifier.align(Alignment.CenterEnd).padding(end = TvStil.randSeite).width(310.dp)
-                    .clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht).padding(10.dp)
+                    .clip(RoundedCornerShape(TvStil.eckeFlaeche)).background(Stil.flaeche).padding(10.dp)
                     .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
-                Text(w.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 2,
+                // Ohne Titel keine Kopfzeile — das Titelmenue von Filme und Serien hat auf tvOS keine.
+                if (w.titel.isNotEmpty()) Text(w.titel, style = TvStil.rubrikGross, color = Stil.schrift, maxLines = 2,
                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                 Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                     w.eintraege.forEachIndexed { i, e ->
+                        w.rubriken[e.wert]?.let { ueber ->
+                            // Vorlage: die Rubrik der `Handlungstafel` — Trennlinie, darunter die
+                            // Ueberschrift in Versalien, `schriftSehrLeise`, oben `reihenKopfLuft` (24 → 12),
+                            // unten 8 → 4; eingerueckt wie der Text der Zeilen, alles an einer Kante.
+                            Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(1.dp).background(Stil.linie))
+                            Text(ueber.uppercase(), style = Stil.gruppe, color = Stil.schriftSehrLeise,
+                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
+                        }
                         val menge = auswahl
                         TvZeile(e.text, w.symbole[e.wert], rechts = w.gesperrt[e.wert],
                                 haken = if (menge != null) e.wert in menge else e.wert == w.gewaehlt,

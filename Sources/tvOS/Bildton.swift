@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import JellyfinKit
 import SwiftUI
 
 /// **Der Farbton eines Bildes — nur der Ton, nicht die Farbe.**
@@ -61,7 +62,7 @@ final class Bildton {
         if let laeuft = laufend[url] { return await laeuft.value }
 
         let aufgabe = Task<[Double], Never> {
-            guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return [] }
+            guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)) else { return [] }
             return Self.toeneAus(daten)
         }
         laufend[url] = aufgabe

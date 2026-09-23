@@ -17,6 +17,9 @@ final class Uebernahmemodell {
 
     /// Alles, was übernommen werden kann — jüngste Regung zuerst.
     private(set) var angebote: [Fremdsitzung] = []
+    /// Der letzte geschriebene Grund — damit dieselbe Auskunft nicht alle
+    /// zehn Sekunden erneut im Protokoll steht.
+    private var letzterGrund: String?
 
     /// Das erste davon, für den Fall, dass es nur eins gibt.
     var angebot: Fremdsitzung? { angebote.first }
@@ -134,8 +137,20 @@ final class Uebernahmemodell {
                                                   eigeneBenutzerID: benutzer) ?? "taugt"
                 return "\(wer): \(warum)"
             }
-            Protokoll.schreib("[Uebernahme] \(sitzungen.count) Sitzungen, kein Angebot"
-                + (gruende.isEmpty ? "" : " — " + gruende.joined(separator: " · ")))
+            let zeile = "[Uebernahme] \(sitzungen.count) Sitzungen, kein Angebot"
+                + (gruende.isEmpty ? "" : " — " + gruende.joined(separator: " · "))
+            // **Nur bei Aenderung.** Gefragt wird alle zehn Sekunden, und die
+            // Antwort ist fast immer dieselbe: „1 Sitzungen, kein Angebot —
+            // Mac: wir selbst". In Pauls Protokoll vom 22.09. stand die Zeile
+            // dutzendfach im Sekundentakt und hat alles zugeschrieben, was
+            // sonst darin zu lesen gewesen waere. Wer eine Auskunft so oft
+            // wiederholt, macht sie unlesbar.
+            if zeile != letzterGrund {
+                letzterGrund = zeile
+                Protokoll.schreib(zeile)
+            }
+        } else {
+            letzterGrund = nil
         }
     }
 

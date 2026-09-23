@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOut
@@ -10,12 +13,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Tablet
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +22,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.gemeinsam.Stil
@@ -53,12 +49,12 @@ suspend fun SwiftlyAnwendung.angeboteHolen() {
     }.getOrDefault(emptyList())
 }
 
-private fun zeichen(art: String): ImageVector = when (art) {
-    "telefon" -> Icons.Filled.Smartphone
-    "tablet" -> Icons.Filled.Tablet
-    "rechner" -> Icons.Filled.Computer
-    "fernseher" -> Icons.Filled.Tv
-    else -> Icons.Filled.PlayCircle
+private fun zeichen(art: String): Zeichen = when (art) {
+    "telefon" -> Zeichen.Telefon
+    "tablet" -> Zeichen.Tablet
+    "rechner" -> Zeichen.Laptop
+    "fernseher" -> Zeichen.Fernseher
+    else -> Zeichen.AbspielenFernseher
 }
 
 /**
@@ -96,7 +92,7 @@ fun Uebernahmezeichen(app: SwiftlyAnwendung) {
                     angebote.map { Wahl(it.sitzung, listOfNotNull(it.geraet ?: uebersetzt("Gerät"), it.titelzeile, it.stelleText.ifEmpty { null }).joinToString(" · ")) },
                     null, angebote.associate { it.sitzung to zeichen(it.art) }) { s -> angebote.firstOrNull { it.sitzung == s }?.let { uebernehmen(it) } }
             }, contentAlignment = Alignment.Center) {
-            Icon(zeichen(erstes?.art ?: ""), contentDescription = uebersetzt("Hier weiterschauen"), tint = Stil.kuehl, modifier = Modifier.size(20.dp))
+            Symbol(zeichen(erstes?.art ?: ""), 20.dp, farbe = Stil.akzent, beschreibung = uebersetzt("Hier weiterschauen"))
         }
     }
 }

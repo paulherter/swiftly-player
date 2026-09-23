@@ -105,6 +105,40 @@ enum Speicher {
         }
     }
 
+    // MARK: Eigene Header (Issue #4)
+
+    /// Die ganze Tafel aus ``Eigenkoepfe`` — **nur für mich lesbar** wie die
+    /// Sitzung, denn die Werte sind Zugänge.
+    private static var koepfedatei: URL { ordner.appendingPathComponent("eigenkoepfe.json") }
+
+    /// Beim Start, vor der ersten Anfrage.
+    static func koepfeLaden() {
+        Eigenkoepfe.laden(try? Data(contentsOf: koepfedatei))
+    }
+
+    /// Setzen und ablegen. Eine leere Liste nimmt den Server heraus; ins
+    /// Protokoll gehen nur die Namen.
+    static func koepfeSichern(_ koepfe: [Eigenkopf], fuer server: URL) {
+        Eigenkoepfe.setzen(koepfe, fuer: server)
+        let tafel = Eigenkoepfe.ablage()
+        guard tafel != Data("{}".utf8) else {
+            try? FileManager.default.removeItem(at: koepfedatei)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try tafel.write(to: koepfedatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: koepfedatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Eigene Header ließen sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
         try? FileManager.default.removeItem(at: kontendatei)

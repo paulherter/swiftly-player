@@ -38,20 +38,33 @@ struct HomeView: View {
     private var neu: [Item] { stand.zuletzt }
     private var geladen: Bool { stand.geladen }
 
+    /// Wo die Seite steht — als eigenes Objekt, damit ein Scrolltakt nicht den
+    /// ganzen Rumpf neu auswertet. Begründung an `Kopfstand`.
+    @State private var kopfstand = Kopfstand()
+
     var body: some View {
         ScrollView {
-            ZStack(alignment: .top) {
-                // **Der Farbschein, wie auf iPhone und iPad.**
-                //
-                // Er liegt hier **im** Scrollinhalt statt als eigene Lage:
-                // damit faehrt er mit nach oben, ohne dass jemand den
-                // Scrollweg mitzaehlen muss. Auf den anderen Fassungen geht
-                // das nicht, weil dort ein Kopf darueber liegt, den er nicht
-                // einfaerben darf — im Fenster liegt darueber nichts.
-                Farbschein()
-                    .allowsHitTesting(false)
+            // **Der Farbschein ist weg.** Er war im Code als Versuch auf
+            // Widerruf angekuendigt (BAUTEILE 9.39) und wich von „Flaechen
+            // sind flach" ab: der einzige Farbverlauf der App auf einer
+            // Seitenflaeche, gebaut aus rohen Weisswerten. Paul am 22.09.
+            // nach dem Blick auf den Mac: raus. Damit faellt auch die
+            // `ZStack` weg — es gibt nichts mehr zu ueberlagern.
+            VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
 
-                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                // **Auch die Startseite trägt eine Überschrift.**
+                //
+                // Filme, Serien, Suche, Merkliste und Downloads hatten eine,
+                // die Startseite nicht — sie fing mit „Weiterschauen" in 20
+                // Punkt an. Paul am 22.09.: „ich denke, wir sollten Startseite
+                // hinzufügen." Damit fällt auch `reihenkopfAusgleich` weg: der
+                // Ausgleich war dafür da, dass eine 20er Zeile so hoch stünde
+                // wie ein 28er Titel. Jetzt steht dort ein 28er Titel.
+                Text("Startseite")
+                    .font(Stil.titelGross)
+                    .tracking(Stil.sperrungTitel)
+                    .foregroundStyle(Stil.schrift)
+                    .padding(.horizontal, Stil.randAbstand)
 
                 // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
                 // Einstieg, kein Inhalt: ein Klick öffnet das Genre.
@@ -77,27 +90,44 @@ struct HomeView: View {
                                              zeichen: zeichen(titel),
                                              vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                         }
                     }
                 }
 
-                // `alleLeer` statt dreier Abfragen — dieselbe Aussage, und
-                // sie steht im geteilten `Startseitenmodell`.
-                if geladen, stand.alleLeer {
-                    Leerzustand(symbol: "tray", titel: "Hier ist noch nichts",
+                // **Gestört ist nicht leer.** Das Modell weiss den
+                // Unterschied seit jeher (`Startseitenmodell.gestoert`), die
+                // Mac-Fassung fragte ihn nur nicht: bei einem Server, der
+                // nicht antwortet, stand hier „Hier ist noch nichts" — eine
+                // falsche Auskunft, und sie schickt einen zum Server statt
+                // zum Netz. Wortlaut und Zeichen sind die Serverformel, die
+                // ueberall gleich lautet (BAUTEILE 6).
+                if geladen, stand.gestoert {
+                    Leerzustand(
+                        symbol: "externaldrive.badge.xmark",
+                        kopfzeile: "Server ist abgetaucht",
+                        text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        hauptknopf: ("Erneut versuchen", { Task { await laden() } }))
+                        .padding(.top, 120)
+                } else if geladen, stand.alleLeer {
+                    // `alleLeer` statt dreier Abfragen — dieselbe Aussage,
+                    // und sie steht im geteilten `Startseitenmodell`.
+                    Leerzustand(symbol: "tray", kopfzeile: "Hier ist noch nichts",
                                 text: "Sobald der Server Titel hat, stehen sie hier.")
                         .padding(.top, 120)
                 }
-                }
-                // Nicht `inhaltOben` allein: die Startseite beginnt mit einer
-                // kleineren Schrift als die Bibliotheksseiten und stünde sonst
-                // zwei Punkt zu hoch. Siehe `Stil.reihenkopfAusgleich`.
-                .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
-                .padding(.bottom, 40)
             }
+            .padding(.top, Stil.inhaltOben)
+            .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // Derselbe stehende Titel wie auf Filme, Serien und Merkliste.
+        .overlay(alignment: .top) {
+            Bestandsleiste(titel: "Startseite", stand: kopfstand)
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
+            kopfstand.versatz = neu
+        }
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
         // aus über jede Scrollfläche — sie war nie in unserem Code, und
         // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
@@ -105,7 +135,7 @@ struct HomeView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
-        .ohneKanteneffekt()
+        .seitenscrollen()
         // Zwei Reihen in ihrer Form statt eines Rings — siehe GESTALTUNG G.
         .overlay(alignment: .topLeading) {
             if !geladen {
@@ -114,7 +144,8 @@ struct HomeView: View {
                     Reihenplatzhalter()
                 }
                 .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
+                // Unter dem Titel, wie die Reihen, die er ersetzt.
+                .padding(.top, Stil.inhaltOben + 33 + Stil.reihenAbstand)
                 .transition(.opacity)
                 .allowsHitTesting(false)
             }
@@ -228,7 +259,7 @@ struct HomeView: View {
                                          zeichen: zeichen(folge),
                                          vorholen: { Serienspeicher.geteilt.vorholen(folge, mit: model) })
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
             }
@@ -250,13 +281,16 @@ struct HomeView: View {
             Reihe(titel: titel) {
                 ForEach(items, id: \.id) { eintrag in
                     Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
-                        Posterkachel(titel: eintrag.name,
+                        // **Der Serienname, nicht der Folgenname** — wie in
+                        // `Kachel` auf dem iPhone. `Items/Latest` liefert
+                        // Folgen, und dort stand dann der Folgentitel.
+                        Posterkachel(titel: eintrag.seriesName ?? eintrag.name,
                                      zweitzeile: eintrag.neuzugangszeile,
                                      bild: model.imageURL(for: eintrag, hochkant: true),
                                      zeichen: zeichen(eintrag),
                                      vorholen: { Serienspeicher.geteilt.vorholen(eintrag, mit: model) })
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckknopf())
                 }
             }
         }
@@ -265,21 +299,33 @@ struct HomeView: View {
     /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
     /// Ecke wie ein Knopf, nicht rund: rund ist, was ein Bild ist.
     private var gattungschips: some View {
+        // Feste Höhe, aus demselben Grund wie bei `Reihe`: eine waagerechte
+        // `ScrollView` nimmt senkrecht, was der Stapel ihr zuteilt. 4 + 34 + 4.
         Blätterreihe(breiteJeStueck: 120, bildHoehe: 34) {
             ForEach(model.startGenres, id: \.self) { name in
                 Button { navigator.oeffne(.gattung(name), in: bereich) } label: {
                     // Vom Server, also nicht übersetzt.
+                    // Woertlich wie auf dem iPhone: 13 Medium, `flaeche`,
+                    // durchgehende Ecke, **kein Rand**. 14 steht in keiner
+                    // Leiter, und der Rand sagte ein zweites Mal, was die
+                    // Flaeche schon sagt (BAUTEILE 9.25).
                     Text(verbatim: name)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(Stil.kachel)
                         .foregroundStyle(Stil.schrift)
+                        // Genrenamen kommen vom Server. Der Chip hat eine
+                        // feste Hoehe — ein umbrechender Name waere darin
+                        // oben und unten abgeschnitten.
+                        .lineLimit(1)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
-                        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand))
+                        .background(Stil.flaeche,
+                                    in: RoundedRectangle(cornerRadius: Stil.ecke,
+                                                         style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckknopf())
             }
         }
+        .frame(height: 42)
     }
 
     private func kopf(_ titel: Item) -> String {
@@ -326,11 +372,31 @@ struct Reihe<Inhalt: View>: View {
     var quer = false
     @ViewBuilder let inhalt: Inhalt
 
+    /// **Die Hoehe steht fest, sie wird nicht gemessen** — wörtlich die
+    /// Rechnung aus `Reihe` auf dem iPhone.
+    ///
+    /// **Und das ist der Fehler, den Paul gesehen hat, dreimal auf einmal.**
+    /// Eine waagerechte `ScrollView` ist senkrecht **flexibel**: sie nimmt,
+    /// was ihr vorgeschlagen wird. In einem `VStack` in einer senkrechten
+    /// `ScrollView` heisst das — sie bekommt einen *Anteil* der Fensterhöhe,
+    /// und der hat mit der Kachel darin nichts zu tun. Eine `ScrollView`
+    /// beschneidet ihren Inhalt: fiel der Anteil zu klein aus, fehlte die
+    /// zweite Textzeile der Kachel und der ersten wurden die Unterlängen
+    /// abgeschnitten; fiel er zu gross aus, klaffte unter der Reihe Luft, die
+    /// mit der Kachelhöhe nichts zu tun hatte — bei „Weiterschauen" am
+    /// deutlichsten, weil dort die flachen Querkacheln stehen.
+    ///
+    /// Titelzeile (20 Punkt, rund 24 Zeilenhöhe) · 12 Abstand · 4 (der
+    /// senkrechte Rand der Blätterreihe) · Bildhöhe · 8 Abstand · Textblock
+    /// (13 und 12 Punkt mit 1 dazwischen, rund 32) · 4.
+    private var reihenhoehe: CGFloat {
+        let bild = quer ? Stil.querHoehe : Stil.kachelHoehe
+        return 24 + 12 + 4 + bild + 8 + 32 + 4
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
-            // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
-            // Breite: ohne sie rutscht der Titel in die Mitte.
+        // 12, nicht 11: dieselbe Rolle traegt auf der Detailseite 12.
+        VStack(alignment: .leading, spacing: 12) {
             // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
             // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
             // Breite: ohne sie rutscht der Titel in die Mitte.
@@ -344,45 +410,9 @@ struct Reihe<Inhalt: View>: View {
                             + Stil.kachelAbstand,
                          bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe) { inhalt }
         }
+        // Oben ausgerichtet, damit eine Kachel ohne Unterzeile nicht in der
+        // Mitte hängt.
+        .frame(height: reihenhoehe, alignment: .top)
     }
 }
 
-/// **Der Farbschein am oberen Rand — dieselbe Aussage wie auf iPhone und
-/// iPad, in der Geometrie des Fensters.**
-///
-/// Ein Verlauf von Kante zu Kante, nicht zwei Kreise. Zwei Kreise
-/// funktionieren nur, solange sie breiter sind als die Flaeche: auf dem
-/// iPhone ueberlappen sie sich bei 390 Punkt, in einem Fenster von 900 oder
-/// 1600 nicht mehr — dann steht links Tuerkis, rechts Blau und dazwischen
-/// ein dunkles Loch. Ein Verlauf ist aus einem Stueck und passt sich jeder
-/// Fensterbreite von selbst an.
-///
-/// Er ist leiser als auf dem iPhone. Dieselbe Farbe auf der dreifachen
-/// Flaeche ist nicht dieselbe Menge Farbe.
-private struct Farbschein: View {
-    /// Endet ueber der ersten Reihenueberschrift.
-    private let hoehe: CGFloat = 180
-
-    var body: some View {
-        LinearGradient(stops: [
-            .init(color: Stil.akzent.opacity(0.22), location: 0),
-            .init(color: Stil.akzent.opacity(0.17), location: 0.26),
-            .init(color: Stil.scheinMitte.opacity(0.15), location: 0.52),
-            .init(color: Stil.kuehl.opacity(0.17), location: 0.76),
-            .init(color: Stil.kuehl.opacity(0.20), location: 1),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing)
-        .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: hoehe, alignment: .top)
-        .mask(alignment: .top) {
-            LinearGradient(stops: [
-                .init(color: .white, location: 0),
-                .init(color: .white.opacity(0.92), location: 0.34),
-                .init(color: .white.opacity(0.66), location: 0.58),
-                .init(color: .white.opacity(0.28), location: 0.80),
-                .init(color: .white.opacity(0), location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: hoehe)
-        }
-        .accessibilityHidden(true)
-    }
-}

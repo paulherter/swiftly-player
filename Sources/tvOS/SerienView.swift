@@ -92,6 +92,11 @@ struct SerienView: View {
     @State private var bereitet = false
     @State private var weiterMit: Item?
     @State private var aehnliche: [Item] = []
+    /// **Leer und gestoert sind zwei Lagen.** Ohne diese Flaggen sagte die
+    /// Seite „Keine Folgen in dieser Staffel", wenn der Server geschwiegen
+    /// hatte — und die Reihe „Ähnliches" fiel wortlos weg.
+    @State private var folgenGestoert = false
+    @State private var aehnlicheGestoert = false
     @State private var mehrOffen = false
     @State private var staffelwahlOffen = false
     /// Welche Folgenkachel den Fokus hat.
@@ -150,7 +155,20 @@ struct SerienView: View {
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
                 }
-                if !aehnliche.isEmpty {
+                if aehnlicheGestoert, aehnliche.isEmpty {
+                    // Die Reihe fiel hier wortlos weg. Eine Serie ohne
+                    // Verwandtes braucht keinen Abschnitt — ein stummer
+                    // Server schon.
+                    reihenabschnitt {
+                        Reihentitel(text: "Ähnliches")
+                    } inhalt: {
+                        Stoerzustand(model: model,
+                                     erneut: { Task { await aehnlicheLaden() } })
+                            .frame(height: Stil.posterHoehe)
+                    }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
+                } else if !aehnliche.isEmpty {
                     reihenabschnitt {
                         Reihentitel(text: "Ähnliches")
                     } inhalt: {
@@ -389,9 +407,16 @@ struct SerienView: View {
                 // dasteht — der Streifen selbst bringt seine Hoehe mit.
                 Color.clear
                     .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
+            } else if folgenGestoert {
+                Stoerzustand(model: model, erneut: { Task { await folgenLaden() } })
+                    .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
             } else if folgen.isEmpty {
+                // **Ein Ausweg, kein Sackgassenschild.** Ohne Knopf steht
+                // man davor und kann nichts tun — auf der Fernbedienung
+                // noch unangenehmer als am Finger.
                 Leerzustand(symbol: "rectangle.stack",
-                            titel: "Keine Folgen in dieser Staffel")
+                            titel: "Keine Folgen in dieser Staffel",
+                            knopf: ("Erneut versuchen", { Task { await folgenLaden() } }))
                     .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
             } else {
                 Folgenstreifen(model: model, folgen: folgen,
@@ -447,12 +472,19 @@ struct SerienView: View {
         async let stand = model.standInSerie(serie)
 
         frisch = await frischeSerie
-        staffeln = await liste
+        // **`nil` heisst gestoert.** Eine leere Liste in den
+        // `Serienspeicher` zu schreiben hiesse, einen Netzfehler
+        // zwischenzuspeichern: die naechste Ansicht haelt ihn fuer die
+        // Wahrheit.
+        let geholteStaffeln = await liste
+        if let geholteStaffeln { staffeln = geholteStaffeln }
         weiterMit = await stand
-        Serienspeicher.geteilt.merken(serie.id) {
-            $0.serie = frisch ?? serie
-            $0.staffeln = staffeln
-            $0.weiterMit = weiterMit
+        if geholteStaffeln != nil {
+            Serienspeicher.geteilt.merken(serie.id) {
+                $0.serie = frisch ?? serie
+                $0.staffeln = staffeln
+                $0.weiterMit = weiterMit
+            }
         }
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.userData?.played ?? false
@@ -470,14 +502,26 @@ struct SerienView: View {
         if let ziel = weiterMit {
             plan = await model.plan(for: ziel.id)
         }
+        await aehnlicheLaden()
+    }
+
+    private func aehnlicheLaden() async {
         let neueAehnliche = await model.aehnliche(serie)
-        withAnimation(.easeOut(duration: 0.3)) { aehnliche = neueAehnliche }
+        withAnimation(.easeOut(duration: 0.3)) {
+            aehnlicheGestoert = neueAehnliche == nil
+            if let neueAehnliche { aehnliche = neueAehnliche }
+        }
     }
 
     private func folgenLaden() async {
         guard let staffel = gewaehlteStaffel else { return }
         if folgen.isEmpty { laedtFolgen = true }
-        let geholt = await model.folgen(serie: serie.id, staffel: staffel.id)
+        let antwort = await model.folgen(serie: serie.id, staffel: staffel.id)
+        folgenGestoert = antwort == nil
+        guard let geholt = antwort else {
+            laedtFolgen = false
+            return
+        }
 
         // Ein Zug, eine Kurve. Den Wechsel von Hand zu fuehren — ausblenden,
         // warten, tauschen, einblenden — war der falsche Weg: er flackerte,
@@ -563,7 +607,7 @@ struct FolgenStil: ButtonStyle {
             configuration.label
                 .foregroundStyle(Stil.schrift)
                 .background(fokus ? Color.white.opacity(0.12) : .clear,
-                            in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
+                            in: RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }

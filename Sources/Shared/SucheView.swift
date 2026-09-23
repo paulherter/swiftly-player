@@ -16,6 +16,13 @@ struct SucheView: View {
     @State private var begriff = ""
     @State private var treffer: [Item] = []
     @State private var sucht = false
+    /// **Der Abruf ist gescheitert — nicht „nichts gefunden".**
+    ///
+    /// Die beiden sahen gleich aus: `suche` lieferte bei jedem Netzfehler eine
+    /// leere Liste, und die Seite sagte dann „Auf deinem Server steht dazu
+    /// nichts". Das ist eine Falschaussage, und zwar die teuerste Sorte — sie
+    /// schickt einen zum Server, statt zum WLAN.
+    @State private var gestoert = false
     @State private var aufgabe: Task<Void, Never>?
     /// Was Seerr kennt und der eigene Server nicht hat.
     ///
@@ -95,8 +102,10 @@ struct SucheView: View {
                 // der Seitenleiste, dort waeren sie das zweite Mal.
                 if !suchmodus {
                     Unschaerfekopf {
-                        HStack(alignment: .top, spacing: 0) {
-                            Text("Suchen").font(Stil.titelGross).tracking(-0.6)
+                        // Mittig, damit Titel und Profilzeichen auf einer
+                        // Linie sitzen — wie auf jeder anderen Wurzelseite.
+                        HStack(alignment: .center, spacing: 0) {
+                            Text("Suchen").font(Stil.titelGross).tracking(Stil.sperrungTitel)
                             Spacer(minLength: 0)
                             if !breit {
                                 Kopfziele(name: model.session?.userName ?? "?",
@@ -148,14 +157,14 @@ struct SucheView: View {
                             suchmodus = false
                         } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(Stil.listentitel)
                                 .foregroundStyle(Stil.schriftLeise)
                                 .frame(width: 36, height: 36)
-                                .background(Stil.erhoeht, in: Circle())
+                                .background(Stil.flaeche, in: Circle())
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                         .accessibilityLabel(Text("Suche schließen"))
                         // **Es kommt zuletzt und geht zuerst.**
                         //
@@ -200,6 +209,15 @@ struct SucheView: View {
                                 .padding(.horizontal, Stil.rand(breit: breit))
                                 .padding(.top, 12)
                                 .transition(.opacity)
+                        } else if gestoert, treffer.isEmpty, seerrtreffer.isEmpty {
+                            // Derselbe Text wie in der Bibliothek, samt
+                            // Serveradresse — eine Ursache, eine Diagnose.
+                            Leerzustand(
+                                symbol: "externaldrive.badge.xmark",
+                                kopfzeile: "Server ist abgetaucht",
+                                text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                                hauptknopf: ("Erneut versuchen", { suchen(begriff) }))
+                                .padding(.top, 24)
                         } else if treffer.isEmpty, seerrtreffer.isEmpty {
                             // **Beide leer, nicht nur die Bibliothek.** Hier
                             // stand `treffer.isEmpty`, und damit gewann dieser
@@ -207,12 +225,29 @@ struct SucheView: View {
                             // der Seerr-Block darunter wurde nie erreicht.
                             // Genau der Fall, für den die ganze Anbindung
                             // gebaut ist: „Blade Runner" gibt es hier nicht,
-                            // und *deshalb* will man ihn anfragen. Von
-                            Text("Keine Treffer für \u{201E}\(begriff)\u{201C}")
-                                .font(Stil.koerper)
-                                .foregroundStyle(Stil.schriftLeise)
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 40)
+                            // und *deshalb* will man ihn anfragen.
+
+                            // **Ein Leerzustand, keine graue Zeile.** Hier
+                            // stand ein Satz in 15 Regular mitten im Nichts —
+                            // dieselbe Lage wie eine leere Merkliste, nur in
+                            // einer zweiten Bauart. Es gibt eine, und die
+                            // trägt Zeichen, Kopfzeile und Text in einem Maß.
+                            //
+                            // Die Kopfzeile bleibt sachlich, der Witz steht im
+                            // zweiten Satz — so steht es in BRAND, Abschnitt 7
+                            // unter „Emoji".
+                            //
+                            // **Und ohne Knopf.** „Über Seerr suchen" wäre
+                            // eine Attrappe: Seerr läuft bei jedem Wort mit,
+                            // hier ist also schon beides durchgesehen. Der
+                            // Ausweg ist die Liste darunter — deshalb bleibt
+                            // sie stehen, statt mit dem ersten Buchstaben zu
+                            // verschwinden.
+                            Leerzustand(symbol: "magnifyingglass",
+                                        kopfzeile: "Nichts gefunden zu \u{201E}\(begriff)\u{201C}",
+                                        text: "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.")
+                                .padding(.top, 24)
+                            if !letzte.isEmpty { zuletzt }
                         } else {
                             // Nach Art gruppiert, wie bei Plex: in der Liste
                             // liest man Titel und Art auf einen Blick.
@@ -236,7 +271,11 @@ struct SucheView: View {
                                 !["Series", "Movie", "Episode"].contains($0.type ?? "")
                             }, nutzbar: nutzbar)
                             if !seerrtreffer.isEmpty {
-                                blockTitel("Kann angefragt werden", seerrtreffer.count).padding(.top, 8)
+                                // „Kann angefragt werden" sagte nicht, wo.
+                                // Der Gegenblock heißt „Auf deinem Server" —
+                                // dann gehört in diesen, welcher Weg der
+                                // andere ist.
+                                blockTitel("Über Seerr anfragen", seerrtreffer.count).padding(.top, 8)
                                 seerrRaster(nutzbar: nutzbar)
                             }
                         }
@@ -300,8 +339,12 @@ struct SucheView: View {
     private func gruppe(_ titel: String, _ eintraege: [Item],
                         nutzbar: CGFloat) -> some View {
         if !eintraege.isEmpty {
+            // 15 Semibold steht in der Leiter, der rohe Aufruf nicht — und
+            // „Serien" ist kein Rubriktitel, sondern die Beschriftung der
+            // Kacheln darunter. Deshalb Listenzeile und nicht `Stil.gruppe`:
+            // die Versalien gehören den drei Blöcken, nicht ihren Teilen.
             Text(titel)
-                .font(.system(size: 15, weight: .semibold))
+                .font(Stil.listentitel)
                 .foregroundStyle(Stil.schriftLeise)
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 14)
@@ -325,7 +368,7 @@ struct SucheView: View {
                             PosterTile(model: model, item: item, breite: nil,
                                        auskunft: item.trefferauskunft)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -338,13 +381,15 @@ struct SucheView: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
                                                              spacing: Stil.kachelAbstand),
                                          count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
-                          alignment: .leading, spacing: 16) {
+                          // 20 wie in Bibliothek, Merkliste und Genre — die
+                          // schmale Suche stand als einzige auf 16.
+                          alignment: .leading, spacing: 20) {
                     ForEach(eintraege) { item in
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, breite: nil,
                                        auskunft: item.trefferauskunft)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -361,39 +406,52 @@ struct SucheView: View {
     /// wie viel Seerr anzubieten hat.
     private func blockTitel(_ text: LocalizedStringKey, _ anzahl: Int) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(text)
-                .font(.system(size: 13, weight: .semibold))
-                .tracking(0.5)
-                .textCase(.uppercase)
-                .foregroundStyle(Stil.schriftSehrLeise)
+            rubrik(text)
             Spacer(minLength: 8)
             if anzahl > 0 { Zaehlmarke(anzahl: anzahl) }
         }
         .padding(.horizontal, Stil.rand(breit: breit))
         .padding(.top, 16)
-        .padding(.bottom, 4)
+        // 10 wie unter `Gruppentitel`: der Grad ist von 11 auf 20 gewachsen,
+        // und 4 klebten unter einer 20er Zeile.
+        .padding(.bottom, 10)
+    }
+
+    /// **Die Rubrik der Suche — dieselbe Stufe wie jeder Gruppentitel.**
+    ///
+    /// Sie stand hier zuerst in 13 Semibold mit 0,5 Sperrung, dann in 11
+    /// Versalien aus `Stil.gruppe`. Beides war die dritte Fassung derselben
+    /// Überschrift: `Gruppentitel` trägt seit dem Umbau 20 Semibold in
+    /// Normalschreibung, und eine Suchrubrik hat keine andere Rolle als eine
+    /// Einstellungsrubrik. Gesperrt wird ohnehin nur, was in Versalien steht.
+    ///
+    /// **Trotzdem nicht der Baustein `Gruppentitel`.** Der bringt seinen
+    /// eigenen Seitenrand mit; die Zeilen hier tragen ihn schon, das ergäbe 36
+    /// Punkt statt 18. Und er dehnt sich auf die ganze Breite — die Zählmarke
+    /// rechts hätte keinen Platz mehr. Übernommen sind Grad, Schnitt,
+    /// Sperrung und Farbe, nicht das Gehäuse.
+    private func rubrik(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(Stil.reihe)
+            .tracking(Stil.sperrungReihe)
+            .foregroundStyle(Stil.schriftLeise)
     }
 
     private func seerrRaster(nutzbar: CGFloat) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
                                                      spacing: Stil.kachelAbstand),
                                  count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
-                  alignment: .leading, spacing: 16) {
+                  // 20: derselbe Rasterzeilenabstand wie ueberall sonst.
+                  alignment: .leading, spacing: 20) {
             ForEach(seerrtreffer) { t in
                 NavigationLink(value: t) { Seerrkachel(treffer: t) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckzeile())
             }
         }
         .padding(.horizontal, Stil.rand(breit: breit))
         .padding(.bottom, 10)
     }
 
-    /// **Breit steht er unter dem Feld, nicht in der Mitte.**
-    ///
-    /// Schmal fuellt das Suchfeld die Zeile, und ein mittiger Hinweis steht
-    /// unter seiner Mitte. Breit ist das Feld nur `lesebreite` lang und sitzt
-    /// links — der Hinweis stand dann in der Mitte des Fensters, also neben
-    /// dem, worauf er sich bezieht.
     /// **Wonach zuletzt gesucht wurde.**
     ///
     /// Der Platz unter dem Feld stand leer und trug einen Satz, der erklaerte,
@@ -404,17 +462,24 @@ struct SucheView: View {
     /// Antippen fuellt das Feld, es sucht dann von selbst. Es oeffnet die
     /// Tastatur ausdruecklich **nicht**: wer aus der Liste waehlt, will das
     /// Ergebnis und nicht weitertippen.
+    ///
+    /// **Sie steht auch unter dem Leerzustand.** Der bekommt keinen Knopf,
+    /// weil es nichts zu drücken gibt — dann muss der Ausweg anderswo stehen,
+    /// und ein schon einmal gesuchtes Wort ist der kürzeste.
     private var zuletzt: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Gruppentitel(text: "Zuletzt gesucht")
+                // Dieselbe Rubrik wie die beiden Trefferblöcke — der
+                // Baustein `Gruppentitel` wäre hier der zweite Seitenrand
+                // gewesen, die Stufe ist aber dieselbe.
+                rubrik("Zuletzt gesucht")
                 Spacer(minLength: 8)
                 Button { letzteRoh = "" } label: {
                     Text("Löschen")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Stil.kachel)
                         .foregroundStyle(Stil.schriftSehrLeise)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
             }
             .padding(.horizontal, Stil.rand(breit: breit))
             .padding(.top, 18)
@@ -426,20 +491,24 @@ struct SucheView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 15))
+                            .font(Stil.koerper)
                             .foregroundStyle(Stil.schriftSehrLeise)
                             .frame(width: 20)
                         Text(verbatim: wort)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(Stil.listentitel)
                             .foregroundStyle(Stil.schrift)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
-                    .frame(height: 44)
+                    // **`minHeight`, nicht `height`.** Derselbe Fehler wie einmal beim
+                    // `Schalter`: eine feste Hoehe an einer Textzeile schneidet
+                    // den Text ab, sobald jemand die Systemschrift groesser
+                    // stellt. Das Mass bleibt das Mindestmass.
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
 
                 if stelle < letzte.count - 1 {
                     Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
@@ -449,10 +518,21 @@ struct SucheView: View {
         .frame(maxWidth: breit ? Stil.lesebreite : .infinity, alignment: .leading)
     }
 
+    /// **Eine Ansage, kein Leerzustand — deshalb kein Emoji.**
+    ///
+    /// Hier ist nichts schiefgegangen und nichts leer: es hat nur noch niemand
+    /// getippt. Ein Detektiv oder ein Popcorn würde eine Lage kommentieren,
+    /// die es nicht gibt. Die Regel steht in BRAND, Abschnitt 7: „Nie, wenn
+    /// nur noch nichts getan wurde."
     private var leerhinweis: some View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 34, weight: .light))
+                // Vorher 34 in `.light`. Das Gewicht gibt es nicht mehr — drei
+                // Schnitte, Regular ist der leichteste. Und 44 ist der Grad, in
+                // dem `Leerzustand` sein Zeichen setzt: zwei Zeichen derselben
+                // Rolle, ein Maß. (Erst stand hier 30 — das war der alte Wert
+                // des Leerzustands, bevor er selbst auf 44 ging.)
+                .font(.system(size: 44))
                 .foregroundStyle(Stil.schriftSehrLeise)
             Text("Filme, Serien und Folgen durchsuchen")
                 .font(Stil.koerper)
@@ -494,8 +574,9 @@ struct SucheView: View {
             async let fremd = model.seerr.suchen(sauber)
             let ergebnis = await model.suche(sauber)
             guard !Task.isCancelled else { return }
+            gestoert = ergebnis == nil
             // Doppelte Kennungen lassen einen Tipp danebengreifen.
-            treffer = Listenregeln.ohneDoppelte(ergebnis)
+            treffer = Listenregeln.ohneDoppelte(ergebnis ?? [])
             sucht = false
 
             let dazu = await fremd

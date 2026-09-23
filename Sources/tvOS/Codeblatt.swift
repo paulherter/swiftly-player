@@ -71,7 +71,7 @@ struct Codeblatt: View {
                         // Weisser Rand gehört zum Code: ohne ihn liest
                         // eine Kamera auf dunklem Grund schlecht.
                         .padding(24)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                         .padding(.top, 56)
                         .accessibilityLabel(Text(verbatim: ziel.kurz ?? ziel.adresse.absoluteString))
                 }
@@ -91,7 +91,8 @@ struct Codeblatt: View {
 
     /// Der QR-Code als Bild, ein Pixel je Modul — vergrößert wird ohne
     /// Glättung, sonst verschwimmen die Kanten.
-    private static func code(_ adresse: URL) -> CGImage? {
+    /// Auch für den Trakt-Code (`TraktAnbindenView`).
+    static func code(_ adresse: URL) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(adresse.absoluteString.utf8)
         filter.correctionLevel = "M"

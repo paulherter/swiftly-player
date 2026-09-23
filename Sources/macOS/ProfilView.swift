@@ -1,3 +1,4 @@
+import AppKit
 import JellyfinKit
 import SwiftUI
 
@@ -46,7 +47,7 @@ struct ProfilView: View {
                                    unter: Text("Code vom Fernseher eingeben"),
                                    akzent: true, pfeil: true, schwebbar: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckzeile())
                 }
 
                 Color.clear.frame(height: 18)
@@ -66,20 +67,20 @@ struct ProfilView: View {
                                    unter: Text("Sprache, Untertitel, Tempo"),
                                    pfeil: true, schwebbar: true)
                     }
-                    .buttonStyle(.plain)
-                    Trennstrich().padding(.leading, 48)
+                    .buttonStyle(Stil.Druckzeile())
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     Button { navigator.oeffne(.darstellung, in: bereich) } label: {
                         Wertezeile(symbol: "square.grid.2x2", titel: Text("Darstellung"),
                                    unter: Text("Startseite, Reihen, Genres"),
                                    pfeil: true, schwebbar: true)
                     }
-                    .buttonStyle(.plain)
-                    Trennstrich().padding(.leading, 48)
+                    .buttonStyle(Stil.Druckzeile())
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
                                    pfeil: true, schwebbar: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckzeile())
                 }
 
                 Color.clear.frame(height: 18)
@@ -100,8 +101,8 @@ struct ProfilView: View {
                                    unter: Text("Ein zweiter Jellyfin, eigene Konten"),
                                    pfeil: true, schwebbar: true)
                     }
-                    .buttonStyle(.plain)
-                    Trennstrich().padding(.leading, 48)
+                    .buttonStyle(Stil.Druckzeile())
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     // **Trifft nur das aktive Konto.** Sind noch andere da,
                     // schaltet die App auf das nächste um; erst beim letzten
                     // geht es zurück zur Anmeldung. Steht so im
@@ -118,22 +119,28 @@ struct ProfilView: View {
                     Wertezeile(symbol: "star", titel: Text("Swiftly bewerten"),
                                unter: Text("Im App Store"),
                                aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
-                    Trennstrich().padding(.leading, 48)
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     Wertezeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
                                unter: Text("Fragen stellen und sagen, was fehlt"),
                                aktion: { oeffnen(Gemeinschaft.discord) })
-                    Trennstrich().padding(.leading, 48)
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
                     Wertezeile(symbol: "ladybug", titel: Text("Fehler melden"),
                                unter: Text("Auf GitHub, deine App-Version ist schon eingetragen"),
                                aktion: { oeffnen(Fassung.fehlerMelden) })
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
+                    // Neben „Fehler melden", weil es dazugehört: wer im
+                    // Discord einen Fehler meldet, hängt das hier an.
+                    Wertezeile(symbol: "doc.text", titel: Text("Protokoll teilen"),
+                               unter: Text("Die letzte Stunde, ohne Zugangsdaten"),
+                               aktion: { protokollTeilen() })
                 }
 
                 // **Nicht getippt.** Hier stand „Swiftly 1.0" — seit der
                 // ersten Abgabe falsch, und genau diese Zeile schreibt ein
                 // Tester in seinen Fehlerbericht.
                 Text(verbatim: Fassung.zeile)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Stil.schrift.opacity(0.3))
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 26)
             }
@@ -142,7 +149,18 @@ struct ProfilView: View {
             // rechtem Rand, an keiner Kante, die es sonst gibt. Die Breite
             // bleibt begrenzt; nur der Platz, der uebrig ist, liegt jetzt
             // rechts statt zu beiden Seiten.
-            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+            //
+            // **Formularbreite, nicht Lesebreite.** 700 waren zu viel: eine
+            // Zeile aus Zeichen, einem Wort und einem Winkel, ueber 700 Punkt
+            // gezogen und 46 hoch, ist ein Strich mit Text am Rand. Paul am
+            // 22.09.: „warum muessen die ganzen Reihen so extrem lang sein,
+            // gleichzeitig aber in der Hoehe so klein?" Lesebreite ist das
+            // Mass fuer **Fliesstext**; eine Liste aus Zeilen ist ein
+            // Formular, und dafuer gibt es `formularbreite`. Damit stehen die
+            // Zeilen im selben Verhaeltnis wie am iPhone, und die Konten in
+            // der Karte darueber lesen sich als Gruppe statt als Reihe, die
+            // nach rechts ausläuft.
+            .frame(maxWidth: Stil.formularbreite, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
@@ -156,7 +174,18 @@ struct ProfilView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
-        .ohneKanteneffekt()
+        .seitenscrollen()
+    }
+
+    /// **Das Teilen-Menü des Mac, an der Stelle des Klicks** — das
+    /// Gegenstück zum Teilen-Blatt auf dem iPhone. Ein Blatt von unten gibt
+    /// es auf dem Mac nicht; das Menü hängt am Zeiger, also an der Zeile.
+    private func protokollTeilen() {
+        guard let datei = Protokolldatei.schreiben(),
+              let fenster = NSApp.keyWindow, let flaeche = fenster.contentView else { return }
+        let punkt = flaeche.convert(fenster.mouseLocationOutsideOfEventStream, from: nil)
+        NSSharingServicePicker(items: [datei.url])
+            .show(relativeTo: NSRect(origin: punkt, size: .zero), of: flaeche, preferredEdge: .minY)
     }
 }
 
@@ -191,23 +220,25 @@ struct QuickConnectView: View {
                 .padding(.top, 14)
 
             TextField("", text: $code,
-                      prompt: Text(verbatim: "000000").foregroundColor(Stil.schrift.opacity(0.22)))
+                      prompt: Text(verbatim: "000000").foregroundColor(Stil.schriftSehrLeise))
                 .textFieldStyle(.plain)
-                .font(.system(size: 34, weight: .semibold).monospacedDigit())
+                // Der Code ist der Titel dieser Seite: 28 Bold ist die
+                // hoechste Stufe der Leiter, 34 und 40 standen darueber.
+                .font(Stil.titelGross.monospacedDigit())
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Stil.schrift)
                 .focused($imFeld)
                 .padding(.vertical, 16)
                 .frame(maxWidth: .infinity)
-                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+                .background(Stil.flaeche,
+                            in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
                 .padding(.top, 26)
                 .onSubmit(freigeben)
 
             if let meldung {
                 Text(verbatim: meldung)
-                    .font(.system(size: 13))
-                    .foregroundStyle(geschafft ? Stil.akzent : Stil.warnung)
+                    .font(Stil.koerper)
+                    .foregroundStyle(geschafft ? Stil.akzent : Stil.fehler)
                     .padding(.top, 12)
             }
 
@@ -221,7 +252,7 @@ struct QuickConnectView: View {
         }
         // Schmal wie ein Formular, aber am linken Rand wie jede Unterseite:
         // mittig stand der Pfeil mitten im Fenster, an keiner Kante.
-        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: Stil.formularbreite, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Stil.randAbstand)
         .padding(.top, Stil.inhaltOben)
@@ -295,7 +326,7 @@ struct KontoHinzufuegenView: View {
         }
         // Schmal wie ein Formular, aber am linken Rand wie jede Unterseite:
         // mittig stand der Pfeil mitten im Fenster, an keiner Kante.
-        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: Stil.formularbreite, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Stil.randAbstand)
         .padding(.top, Stil.inhaltOben)
@@ -316,7 +347,7 @@ struct KontoHinzufuegenView: View {
     private var serverzeile: some View {
         HStack(spacing: 10) {
             Image(systemName: "server.rack")
-                .font(.system(size: 13))
+                .font(Stil.klein)
             Text(verbatim: serverbeschreibung)
                 .font(Stil.zweitzeile)
         }
@@ -370,13 +401,13 @@ struct KontoHinzufuegenView: View {
                 .padding(.top, 26)
 
             Text(verbatim: vorgang.code)
-                .font(.system(size: 40, weight: .semibold).monospacedDigit())
+                .font(Stil.titelGross.monospacedDigit())
                 .tracking(6)
                 .foregroundStyle(Stil.schrift)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+                .background(Stil.flaeche,
+                            in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
                 // Ein Klick legt den Code in die Zwischenablage — meist wird
                 // er gleich daneben in einem Browserfenster eingefügt.
                 .kopierbar(vorgang.code)
@@ -426,7 +457,7 @@ struct KontoHinzufuegenView: View {
         HStack(spacing: 8) {
             Rectangle().fill(Stil.linie).frame(height: 1)
             Text("oder")
-                .font(.system(size: 12))
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
             Rectangle().fill(Stil.linie).frame(height: 1)
         }
@@ -471,18 +502,21 @@ struct Umrissknopf: View {
     var body: some View {
         Button(action: auswahl) {
             HStack(spacing: 9) {
-                Image(systemName: symbol).font(.system(size: 14))
-                Text(beschriftung).font(.system(size: 15, weight: .medium))
+                Image(systemName: symbol).font(Stil.koerper)
+                Text(beschriftung).font(Stil.koerper.weight(.medium))
             }
             .frame(maxWidth: .infinity)
             .frame(height: Stil.hauptknopfHoehe)
             .foregroundStyle(Stil.akzent)
-            .background(schwebt ? Stil.schrift.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: Stil.ecke))
-            .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+            // **Eine Flaeche, kein gezeichneter Rahmen** — die Flaeche sagt
+            // „hier kann man druecken", der Rand sagt dasselbe ein zweites
+            // Mal (BRAND 1). Die Schrift traegt den Akzent: das ist der
+            // zweite Weg zum selben Ziel, kein Ersatz fuer den Hauptknopf.
+            .background(schwebt ? Stil.gedruecktFlaeche : Stil.flaeche,
+                        in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
     }
@@ -542,7 +576,7 @@ private struct Kontokarte: View {
         let andere = alle.filter { $0.kontoschluessel != vorn?.kontoschluessel }
         Karte {
             kopfzeile(vorn, aktiv: aktiv, server: server)
-            Trennstrich()
+            Blattlinie()
             reihe(andere, aktiv: aktiv, server: server)
         }
         // Der verbundene Server trägt den Akzentrand; die anderen stehen als
@@ -550,7 +584,7 @@ private struct Kontokarte: View {
         // unterscheiden — dann bleibt er weg.
         .overlay {
             if aktiv, model.server.count > 1 {
-                RoundedRectangle(cornerRadius: Stil.eckeFlaeche)
+                RoundedRectangle(cornerRadius: Stil.eckeKarte, style: .continuous)
                     .strokeBorder(Stil.akzent.opacity(0.55), lineWidth: 1.5)
             }
         }
@@ -565,15 +599,18 @@ private struct Kontokarte: View {
                           hervorgehoben: aktiv && model.server.count > 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: konto?.userName ?? String(localized: "Angemeldet"))
-                    .font(.system(size: 19, weight: .semibold))
-                    .tracking(-0.2)
+                    // 19 steht in keiner Leiter; 20 Semifett ist die Stufe
+                    // der Reihenueberschrift, und ihre Sperrung haengt an
+                    // ihr (BAUTEILE 2).
+                    .font(Stil.reihe)
+                    .tracking(Stil.sperrungReihe)
                     .foregroundStyle(Stil.schrift)
                 // Name und Fassung kennen wir nur vom Server, mit dem wir
                 // gerade verbunden sind; bei den anderen steht die Adresse.
                 Text(verbatim: aktiv ? (model.serverName ?? server?.host() ?? "")
                                      : (server?.host() ?? ""))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Stil.schrift.opacity(0.45))
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
                     .lineLimit(1)
                 // **Die Zeile steht immer, auch ohne Fassung.** Die kommt
                 // erst mit der Antwort des Servers — nach einem Kaltstart
@@ -582,15 +619,15 @@ private struct Kontokarte: View {
                 // sprangen nach oben (derselbe Fehler wie auf Android).
                 if aktiv {
                     Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Stil.schrift.opacity(0.45))
+                        .font(Stil.klein)
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(1)
                         .opacity(model.serverVersion == nil ? 0 : 1)
                         .accessibilityHidden(model.serverVersion == nil)
                 } else {
                     Text("Klicken zum Wechseln")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Stil.schrift.opacity(0.45))
+                        .font(Stil.klein)
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(1)
                 }
             }
@@ -600,7 +637,7 @@ private struct Kontokarte: View {
         .contentShape(Rectangle())
         if !aktiv, let konto {
             Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: { inhalt }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckknopf())
         } else {
             inhalt
         }
@@ -608,14 +645,21 @@ private struct Kontokarte: View {
 
     /// Die übrigen Konten dieses Servers, dahinter das Plus.
     private func reihe(_ andere: [Session], aktiv: Bool, server: URL?) -> some View {
+        // **Woertlich die Reihe des iPhones**, samt ihrer beiden Feinheiten:
+        // sie scrollt waagerecht, wenn viele Konten auf einem Server liegen,
+        // und sie haelt ihre Hoehe auch leer — sonst ist die Karte eines
+        // Servers mit nur einem Konto niedriger als die anderen, und genau
+        // das sah auf dem Mac aus, als sei die Reihe verrutscht.
+        ScrollView(.horizontal) {
         HStack(spacing: 14) {
+            Color.clear.frame(width: 0, height: 40)
             ForEach(andere, id: \.kontoschluessel) { konto in
                 Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: {
                     Profilzeichen(name: konto.userName,
                                   bild: model.benutzerbildURL(fuer: konto),
                                   groesse: 40)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckknopf())
                 .help(Text(verbatim: konto.userName))
             }
 
@@ -628,22 +672,26 @@ private struct Kontokarte: View {
             Button {
                 if aktiv { hinzufuegen() } else if let server { hinzufuegenAuf(server) }
             } label: {
+                // **Ein Feld auf `flaeche`, kein gestrichelter Kreis.** Der
+                // Strichkreis war die einzige gestrichelte Linie der App und
+                // zugleich der einzige Kreis auf einer Karte. Ein Knopf ohne
+                // Beschriftung ist quadratisch (BRAND 7).
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Stil.schrift.opacity(0.45))
-                    .frame(width: 40, height: 40)
-                    .overlay {
-                        Circle().strokeBorder(Stil.rand,
-                                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    }
-                    .contentShape(Circle())
+                    .font(Stil.listentitel)
+                    .foregroundStyle(Stil.schriftLeise)
+                    .frame(width: Stil.knopfFeld, height: Stil.knopfFeld)
+                    .background(Stil.flaeche,
+                                in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckknopf())
+            // `.help` setzt den Kurzhinweis unter dem Zeiger, nicht die
+            // Beschriftung — VoiceOver las hier „Taste" und sonst nichts.
+            .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
             .help(Text("Weiteres Konto hinzufügen"))
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(16)
+        }
+        .scrollIndicators(.hidden)
     }
 }
