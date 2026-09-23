@@ -25,6 +25,8 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#android)
 &nbsp;
+[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=5CD1C2)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.4/Swiftly-1.0.4.apk)
+&nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#windows)
 &nbsp;
 [![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=5CD1C2)](#linux)
@@ -189,8 +191,8 @@ and only where distance, input or window size demand it.
 | iPad | **1.0.3** on the App Store · ships with the iPhone app |
 | Apple TV | **1.0.3** on the App Store |
 | Mac | **1.0.3** on the App Store |
-| Android | beta on Google Play · [join](#android) |
-| Android TV | beta on Google Play · same app, [join](#android) |
+| Android | **1.0.4** beta on Google Play · [join](#android) · [APK](#android) |
+| Android TV | **1.0.4** beta on Google Play · same app, [join](#android) · [APK](#android) |
 | Linux | **1.0.4** · [install](#linux) |
 | Windows | **1.0.4** · [download](#windows) |
 
@@ -239,6 +241,12 @@ step** — the one signed in to the Play Store on your phone.
 12 testers have been in its test for 14 days. Every tester counts towards that.
 Updates arrive through the Play Store like for any other app; bugs and feedback
 go to the [Discord](https://discord.gg/MeGwfv3UwN).
+
+**Rather install it yourself?**
+**[Download Swiftly-1.0.4.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.4/Swiftly-1.0.4.apk)** — one APK for phones and Android TV,
+Android 9 or newer. It is the same build as on Google Play, signed with the
+same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
+install it with an app like Downloader or over `adb install`.
 
 **Android TV** is part of the same beta and was built from the Apple TV app,
 screen by screen: the row layout on the home screen, detail pages, the profile,
