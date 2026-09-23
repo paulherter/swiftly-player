@@ -33,6 +33,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -211,6 +218,8 @@ fun TvHaupt(app: SwiftlyAnwendung) {
     }
     gezeigt[0] = kulisse
     // Kopfleiste und -verlauf: sichtbar nur an der Wurzel eines Bereichs — siehe die Ebene unten.
+    val inhalt = remember { FocusRequester() }
+    val fokusVerwalter = LocalFocusManager.current
     val leiste = animateFloatAsState(if (oben.isEmpty()) 1f else 0f,
         tween(TvStil.leisteDauer, easing = TvStil.leisteKurve), label = "kopfleiste")
 
@@ -225,7 +234,7 @@ fun TvHaupt(app: SwiftlyAnwendung) {
                 CompositionLocalProvider(LocalKulisseMelden provides melden) {
                 zustaende.SaveableStateProvider(schluessel) {
                     if (ziel == null) {
-                        Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxSize().focusRequester(inhalt).focusGroup()) {
                             when (b) {
                                 TvBereich.Start -> TvStartSeite(app, oeffnen)
                                 TvBereich.Filme -> TvBibliothek(app, "movies", listOf("alle", "angefangen", "merkliste", "ungesehen"), oeffnen)
@@ -257,7 +266,18 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         if (leiste.value > 0.001f || oben.isEmpty()) {
             val leisteDa = oben.isEmpty()
             Box(Modifier.fillMaxWidth().graphicsLayer { alpha = leiste.value }
-                    .focusProperties { if (!leisteDa) enter = { FocusRequester.Cancel } }.focusGroup()) {
+                    .focusProperties { if (!leisteDa) enter = { FocusRequester.Cancel } }.focusGroup()
+                    .onPreviewKeyEvent { e ->
+                        // **Runter aus der Leiste findet den Inhalt auch, wenn die Suche nichts
+                        // findet.** Raster und Listen der Wurzelseiten reichen bis unter die Leiste
+                        // (Inhalt laeuft unter dem Kopf durch); ihre Gruppe beginnt also nicht
+                        // *unterhalb* des Reiters, und Compose verwarf sie als Ziel fuer „Runter" —
+                        // auf Filme, Serien, Merkliste und Suche passierte nichts. Erst die
+                        // geometrische Suche, sonst die erste Stelle der Seite.
+                        if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                        if (!fokusVerwalter.moveFocus(FocusDirection.Down)) runCatching { inhalt.requestFocus() }
+                        true
+                    }) {
                 Kopfleiste(app, bereich, { bereich = it }, app.angebote.value) { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }
             }
         }

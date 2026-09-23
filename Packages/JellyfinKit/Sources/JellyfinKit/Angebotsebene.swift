@@ -3,10 +3,10 @@ import Foundation
 /// Die Ebene über dem Bild, auf der „Intro überspringen" und „Nächste Folge"
 /// von selbst erscheinen — ohne dass die Steuerung aufgeht.
 ///
-/// Wunsch von Paul (16.09.2026, LISTE): wie bei Netflix. Vorbilder mit Quellen
+/// Gewünscht (16.09.2026, LISTE): wie bei Netflix. Vorbilder mit Quellen
 /// in `Notizen/Audit/2026-09-16-teil3-vergleich.md`, Abschnitt 1.
 ///
-/// **Neu gefasst nach Pauls Tests am iPhone (17.09.2026):**
+/// **Neu gefasst nach Tests am iPhone (17.09.2026):**
 ///
 /// - **Überspringen** (Intro, Rückblick …) steht ab Beginn des Abschnitts
 ///   ``knopfdauer`` lang über dem Bild und blendet dann aus, wenn niemand
@@ -30,7 +30,7 @@ import Foundation
 ///   Kontovorgabe. Wer währenddessen die Steuerung **bewusst** öffnet, sagt
 ///   sie ab; dann steht nur der normale Knopf in der Steuerung. Ohne
 ///   Abspann-Abschnitt geht es nie von selbst weiter.
-/// - **Zeigerbewegung ist kein Absagen** (Paul, 17.09.2026): Auf dem Mac,
+/// - **Zeigerbewegung ist kein Absagen** (17.09.2026): Auf dem Mac,
 ///   unter Linux und Windows holt jede Mausbewegung die Steuerung. Geht sie
 ///   so auf (``Oeffnung/nebenbei``), bleibt die Karte an ihrer Stelle und
 ///   zählt weiter. Erst Klick ins Bild, eine Taste oder ein Knopf
@@ -47,7 +47,7 @@ public struct Angebotsebene: Sendable, Equatable {
 
     /// So lange läuft die Füllung der Karte „Nächste Folge" höchstens. Kürzer,
     /// wenn die Datei vorher endet (``Abschnittslogik/countdown(position:dauer:)``).
-    /// Zehn Sekunden waren Paul zu lang (17.09.2026).
+    /// Zehn Sekunden waren zu lang (17.09.2026).
     public static let countdown: Double = 7
 
     /// Wie lange nach dem rechnerischen Ende der Füllung gewechselt wird.
@@ -248,7 +248,7 @@ public struct Angebotsebene: Sendable, Equatable {
     }
 }
 
-/// **Die Füllung der Karte als durchgehende Bewegung** (Paul, 17.09.2026).
+/// **Die Füllung der Karte als durchgehende Bewegung** (17.09.2026).
 ///
 /// Die Ebene zählt im Takt; eine Füllung, die jeden Takt auf den neuen Wert
 /// nachzieht, ruckelte am iPhone am Anfang und gegen Ende. Diese Uhr rechnet

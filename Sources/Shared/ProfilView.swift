@@ -70,7 +70,7 @@ struct ProfilView: View {
                         //
                         // Das Zeichen traegt die Farbe, der Titel bleibt
                         // weiss: so faellt die Zeile auf, ohne eine Rangfolge
-                        // unter Geschwistern zu behaupten. Paul am 22.09.:
+                        // unter Geschwistern zu behaupten. Rückmeldung vom 22.09.:
                         // „dadurch wirkt die Seite nicht mehr so extrem
                         // farblos."
                         Profilzeile(symbol: "rectangle.and.text.magnifyingglass",

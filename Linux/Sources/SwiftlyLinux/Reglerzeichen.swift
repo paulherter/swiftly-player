@@ -7,8 +7,8 @@ import Foundation
 /// (`Sources/macOS/PlayerScreen.swift:406`): drei waagerechte Schienen mit je
 /// einem Knauf an anderer Stelle. Hier stand `media-eq-symbolic`, und den Namen
 /// gibt es im Adwaita-Satz nicht — auf cachy nachgesehen, kein Treffer. GTK
-/// zeigt dann das Ersatzbild „fehlendes Bild", und genau das meinte Paul mit
-/// „die Icons fixen".
+/// zeigt dann das Ersatzbild „fehlendes Bild", und genau das war mit
+/// „die Icons fixen" gemeint.
 ///
 /// Dieselbe Antwort wie bei ``Sprungzeichen``: was die Vorlage zeigt und der
 /// Zeichensatz nicht hergibt, wird gemalt. Ein ähnlich aussehendes Zahnrad

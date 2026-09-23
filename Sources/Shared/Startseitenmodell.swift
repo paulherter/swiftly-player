@@ -74,7 +74,7 @@ final class Startseitenmodell {
         // wenn die festen Reihen schon da waren — also **nach** einem
         // vollstaendigen Netzweg. Am Geraet hiess das: man scrollt nach unten,
         // dort ist nichts, und irgendwann erscheint die letzte Kategorie auf
-        // einen Schlag. Paul am 22.09.: „beim Runterscrollen erscheint die
+        // einen Schlag. Rückmeldung vom 22.09.: „beim Runterscrollen erscheint die
         // letzte Kategorie random einfach zack da, auch viel zu spaet."
         //
         // Der Gedanke dahinter war richtig — die festen Reihen sollen zuerst

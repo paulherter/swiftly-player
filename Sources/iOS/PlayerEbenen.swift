@@ -96,7 +96,7 @@ private struct Ebenengrund: View {
         // Also beides, mit passenden Anteilen: das Material traegt, und die
         // Abdunklung darueber ist auf 0,45 zurueck — genug, damit die
         // Spaltentitel stehen, wenig genug, dass der Weichzeichner sichtbar
-        // wird. Paul am 22.09.: „auf iOS gibt es ja den Blur, den hatten wir
+        // wird. Rückmeldung vom 22.09.: „auf iOS gibt es ja den Blur, den hatten wir
         // schon, den einfach wieder reinnehmen."
         ZStack {
             // **Ueber den Rand hinaus.** Ein Weichzeichner, der am

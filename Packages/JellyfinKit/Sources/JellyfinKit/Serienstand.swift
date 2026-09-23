@@ -102,8 +102,8 @@ public extension JellyfinClient {
     /// und das winzige daneben über `Bildwahl.quer` — bei einer Serie ohne
     /// Hintergrund gab das erste das Standbild der nächsten Folge und das
     /// zweite gar nichts. Ergebnis: Bild da, Ton nicht, und unter der Kulisse
-    /// stand eine harte Kante gegen den blanken Grund. Genau die, die Paul am
-    /// 13.09.2026 gemeldet hat — auf Serienseiten, während Filmseiten
+    /// stand eine harte Kante gegen den blanken Grund. Genau die, die am
+    /// 13.09.2026 gemeldet wurde — auf Serienseiten, während Filmseiten
     /// stimmten. Der Mac hat den Fall nicht, weil dort **eine** Adresse
     /// (`kopfbildURL`) beides bedient.
     ///

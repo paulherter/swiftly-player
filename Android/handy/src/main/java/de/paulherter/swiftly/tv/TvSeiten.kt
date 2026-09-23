@@ -4,6 +4,22 @@ import de.paulherter.swiftly.gemeinsam.Zeichen
 import de.paulherter.swiftly.gemeinsam.Symbol
 import de.paulherter.swiftly.gemeinsam.Staerke
 import android.graphics.Color as AndroidColor
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.tween
@@ -188,11 +204,16 @@ fun TvStoerung(app: SwiftlyAnwendung, adresse: String? = null, erneut: (() -> Un
 }
 
 /**
- * Vorlage: `BibliothekView` auf tvOS. **Eine Chipreihe**: vorn die Wahl als Kapsel mit Tafel — seit
- * dem 23.09.2026 das Titelmenue des iPhones: „Alle", „Sammlungen", Strich und Rubrik
- * „Bibliotheken", dann die Bibliotheken (`Bereichsangebot`, nur ab `istMenue`) —, dann die Filter;
- * die Sortierung ist ebenfalls eine Kapsel mit Tafel. Die Kapsel nennt den Wert: „Alle Filme",
- * nicht wie am iPhone nur „Filme" — die Kopfleiste sagt schon, wo man ist.
+ * Vorlage: `BibliothekView` auf tvOS. **Eine Reihe Kapseln**: vorn die Wahl — seit dem 23.09.2026
+ * das Titelmenue des iPhones: „Alle", „Sammlungen", Strich und Rubrik „Bibliotheken", dann die
+ * Bibliotheken (`Bereichsangebot`, nur ab `istMenue`) —, dann Filter und Sortierung als je eine
+ * Kapsel mit Zeichen, rechts nur die Anzahl. Die Kapsel nennt den Wert: „Alle Filme", nicht wie am
+ * iPhone nur „Filme" — die Kopfleiste sagt schon, wo man ist.
+ *
+ * **Keine Filterchips mehr** („Alle · Angefangen · Merkliste · Ungesehen") und kein „5 · sortiert
+ * nach" rechts: am iPhone ist der Filter seit je ein Knopf, der den Wert nennt und eine Wahl
+ * oeffnet, und tvOS hat das am 22.09. uebernommen (d82e0bd9). Jede Tafel klappt unter ihrer Kapsel
+ * auf (`TvKapselMitTafel`), nicht am rechten Rand.
  *
  * **Bei „Sammlungen" nur die Anzahl**: die Liste muss man weder filtern noch umsortieren. Das Gitter
  * zeigt dann die Sammlungen mit „3 Filme" und, ohne eigenes Bild, dem Mosaik.
@@ -211,34 +232,42 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
         TvRaster(if (sammlungen) emptyList() else stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen,
                  laedt = stand.laedt && !sammlungen, mitUnterzeile = false, kopf = {
             Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // **Eine feste Hoehe mit und ohne Kapseln** (tvOS: `.frame(height: chipHoehe)`) — bei
+                // „Sammlungen" fehlen Filter und Sortierung, sonst rutschte die Reihe beim Wechsel.
+                Row(Modifier.height(TvStil.chipHoehe), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     // **Die Wahl als Kapsel, nur wenn es etwas zu waehlen gibt** — die Namen der
-                    // Bibliotheken kommen vom Server und stehen wie sie sind. Die Tafel oeffnet wie die
-                    // der Sortierung; der Fokus kehrt ueber `Fokusmerker` auf die Kapsel zurueck.
+                    // Bibliotheken kommen vom Server und stehen wie sie sind.
                     if (stand.istMenue) {
-                        TvKapsel(stand.beschriftung(stand.wahl)) {
-                            // Ohne Kopf, wie die `Handlungstafel` des Titelmenues auf tvOS.
-                            app.blatt.value = Blattwunsch("", stand.angebot.map { Wahl(it.wert, stand.beschriftung(it.wert)) },
-                                                          stand.wahl, rubriken = stand.rubriken) { neu ->
-                                if (neu != stand.wahl) {
-                                    stand.waehlen(neu)
-                                    lauf.launch { stand.laden(app.kern) }
-                                }
+                        TvKapselMitTafel(stand.beschriftung(stand.wahl), null,
+                                         stand.angebot.map { Wahl(it.wert, stand.beschriftung(it.wert)) },
+                                         stand.wahl, rubriken = stand.rubriken) { neu ->
+                            if (neu != stand.wahl) {
+                                stand.waehlen(neu)
+                                lauf.launch { stand.laden(app.kern) }
                             }
                         }
-                        // Ohne Filter („Sammlungen") trennt der Strich nichts und faellt weg.
-                        if (!sammlungen) Box(Modifier.size(1.dp, 15.dp).background(Stil.rand))
+                        // Senkrechter Strich, 2 × 60 % der Chiphoehe auf tvOS. Ohne Filter
+                        // („Sammlungen") trennt er nichts und faellt weg.
+                        if (!sammlungen) Box(Modifier.size(1.dp, TvStil.chipHoehe * 0.6f).background(Stil.rand))
                     }
-                    if (!sammlungen) filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
-                    Spacer(Modifier.weight(1f))
+                    // **Filter und Sortierung als je eine Kapsel mit Zeichen — wie die zwei
+                    // `Wertpille`n am iPhone**, keine Chipreihe mehr (tvOS d82e0bd9). Jede nennt den
+                    // Wert und klappt die Wahl unter sich auf; die gewaehlte Zeile traegt den Akzent.
+                    if (!sammlungen) {
+                        val filterwahl = filter.map { Wahl(it, Wahlen.text(Wahlen.filter, it)) }
+                        TvKapselMitTafel(Wahlen.text(Wahlen.filter, stand.filter), Zeichen.Filter,
+                                         filterwahl, stand.filter) { stand.filterSetzen(it) }
+                        TvKapselMitTafel(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Zeichen.Sortieren,
+                                         Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
+                    }
+                    Spacer(Modifier.weight(1f).widthIn(min = 20.dp))
+                    // Rechts nur die Anzahl, wie am iPhone.
                     if (sammlungen) {
                         if (stand.sammlungsliste.isNotEmpty())
-                            Text(uebersetzt("%lld Sammlungen", stand.sammlungsliste.size), style = TvStil.klein, color = Stil.schriftLeise)
-                    } else {
-                        if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                        TvKapsel(Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
-                            app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
-                        }
+                            Text(uebersetzt("%lld Sammlungen", stand.sammlungsliste.size), style = TvStil.klein, color = Stil.schriftSehrLeise)
+                    } else if (stand.gesamt > 0) {
+                        Text(uebersetzt("%lld Titel", stand.gesamt), style = TvStil.klein, color = Stil.schriftSehrLeise)
                     }
                 }
                 if (sammlungen) {
@@ -259,6 +288,90 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
                 }
             }
         })
+    }
+}
+
+/**
+ * Vorlage: eine Kapsel mit `KapselStil` plus `.tafel(unter:)` und `Handlungstafel(gewaehlt:)` aus
+ * `BibliothekView` auf tvOS — **die Tafel haengt unter ihrem Ausloeser**, an seiner linken Kante,
+ * 8 dp darunter (`Handlungstafel.luft` 16 → 8), 310 breit (620 → 310). Laeuft sie rechts hinaus,
+ * richtet sie sich an seiner rechten Kante aus (`Handlungstafel.links`).
+ *
+ * Zeilen wie in der Handlungstafel: vorn der leere Kreis, bei der gewaehlten der gefuellte Haken —
+ * **im Akzent**. Eine Formstufe allein ueberlebt drei Meter nicht (tvOS-Kommentar an `gewaehlt`).
+ * Grund `erhoeht`, ohne Luft um die Zeilen, ohne Kopfzeile, ohne Abdunkeln der Seite.
+ *
+ * **Fokus**: beim Oeffnen auf die erste Zeile, nach Auswahl oder Zurueck wieder auf die Kapsel.
+ * Solange sie offen ist, bleibt er drin — dasselbe Mittel wie `TvMehrknopf`.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun TvKapselMitTafel(text: String, symbol: Zeichen?, eintraege: List<Wahl>, gewaehlt: String,
+                             rubriken: Map<String, String> = emptyMap(), waehlen: (String) -> Unit) {
+    var offen by remember { mutableStateOf(false) }
+    val kapsel = remember { FocusRequester() }
+    // `exit = Cancel` sperrt auch das programmatische `requestFocus` nach draussen — `freigabe`
+    // oeffnet den Ausgang genau fuer den Rueckweg auf die Kapsel.
+    val freigabe = remember { booleanArrayOf(false) }
+    fun schliessen() {
+        freigabe[0] = true
+        runCatching { kapsel.requestFocus() }
+        offen = false
+    }
+    val rand = with(LocalDensity.current) { TvStil.randSeite.roundToPx() }
+    val luft = with(LocalDensity.current) { 8.dp.roundToPx() }
+    Box {
+        TvKapsel(text, Modifier.focusRequester(kapsel), symbol = symbol) {
+            if (offen) schliessen() else { freigabe[0] = false; offen = true }
+        }
+        if (offen) {
+            BackHandler(onBack = { schliessen() })
+            val erste = remember { FocusRequester() }
+            LaunchedEffect(Unit) { delay(30); runCatching { erste.requestFocus() } }
+            val lage = remember(rand, luft) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize,
+                                                   layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+                        val breite = popupContentSize.width
+                        val links = if (anchorBounds.left + breite <= windowSize.width - rand) anchorBounds.left
+                                    else anchorBounds.right - breite
+                        return IntOffset(links.coerceIn(rand, maxOf(rand, windowSize.width - rand - breite)),
+                                         anchorBounds.bottom + luft)
+                    }
+                }
+            }
+            // **`focusable = true`: die Tafel ist ein eigenes Fenster** und bekommt nur so die Tasten.
+            // Mit `false` stand der Fokus zwar auf ihrer ersten Zeile, aber jede Richtungstaste ging an
+            // das Fenster darunter — der Fokus sprang ins Raster, in der Tafel war nichts waehlbar.
+            // Zurueck schliesst sie ueber `onDismissRequest`.
+            Popup(popupPositionProvider = lage, onDismissRequest = { schliessen() },
+                  properties = PopupProperties(focusable = true)) {
+                CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+                    Column(Modifier.width(310.dp).clip(RoundedCornerShape(TvStil.eckeFlaeche)).background(Stil.erhoeht)
+                            .heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+                            .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }
+                            .focusGroup()) {
+                        eintraege.forEachIndexed { i, e ->
+                            rubriken[e.wert]?.let { ueber ->
+                                // Die Rubrik der `Handlungstafel` — Trennlinie, darunter die
+                                // Ueberschrift in Versalien, eingerueckt wie der Text der Zeilen.
+                                Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(1.dp).background(Stil.linie))
+                                Text(ueber.uppercase(), style = Stil.gruppe, color = Stil.schriftSehrLeise,
+                                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
+                            }
+                            val an = e.wert == gewaehlt
+                            TvZeile(e.text, if (an) Zeichen.HakenKreisVoll else Zeichen.Kreis,
+                                    symbolFarbe = if (an) Stil.akzent else Stil.schrift,
+                                    modifier = (if (i == 0) Modifier.focusRequester(erste) else Modifier)
+                                        .semantics { selected = an }) {
+                                schliessen()
+                                waehlen(e.wert)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

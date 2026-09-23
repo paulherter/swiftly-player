@@ -47,7 +47,7 @@ struct HomeView: View {
             // **Der Farbschein ist weg.** Er war im Code als Versuch auf
             // Widerruf angekuendigt (BAUTEILE 9.39) und wich von „Flaechen
             // sind flach" ab: der einzige Farbverlauf der App auf einer
-            // Seitenflaeche, gebaut aus rohen Weisswerten. Paul am 22.09.
+            // Seitenflaeche, gebaut aus rohen Weisswerten. Rückmeldung vom 22.09.
             // nach dem Blick auf den Mac: raus. Damit faellt auch die
             // `ZStack` weg — es gibt nichts mehr zu ueberlagern.
             VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
@@ -56,7 +56,7 @@ struct HomeView: View {
                 //
                 // Filme, Serien, Suche, Merkliste und Downloads hatten eine,
                 // die Startseite nicht — sie fing mit „Weiterschauen" in 20
-                // Punkt an. Paul am 22.09.: „ich denke, wir sollten Startseite
+                // Punkt an. Rückmeldung vom 22.09.: „ich denke, wir sollten Startseite
                 // hinzufügen." Damit fällt auch `reihenkopfAusgleich` weg: der
                 // Ausgleich war dafür da, dass eine 20er Zeile so hoch stünde
                 // wie ein 28er Titel. Jetzt steht dort ein 28er Titel.
@@ -375,7 +375,7 @@ struct Reihe<Inhalt: View>: View {
     /// **Die Hoehe steht fest, sie wird nicht gemessen** — wörtlich die
     /// Rechnung aus `Reihe` auf dem iPhone.
     ///
-    /// **Und das ist der Fehler, den Paul gesehen hat, dreimal auf einmal.**
+    /// **Und das ist der Fehler, der dreimal auf einmal auftrat.**
     /// Eine waagerechte `ScrollView` ist senkrecht **flexibel**: sie nimmt,
     /// was ihr vorgeschlagen wird. In einem `VStack` in einer senkrechten
     /// `ScrollView` heisst das — sie bekommt einen *Anteil* der Fensterhöhe,

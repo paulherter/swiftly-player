@@ -141,7 +141,7 @@ final class Uebernahmemodell {
                 + (gruende.isEmpty ? "" : " — " + gruende.joined(separator: " · "))
             // **Nur bei Aenderung.** Gefragt wird alle zehn Sekunden, und die
             // Antwort ist fast immer dieselbe: „1 Sitzungen, kein Angebot —
-            // Mac: wir selbst". In Pauls Protokoll vom 22.09. stand die Zeile
+            // Mac: wir selbst". Im Protokoll vom 22.09. stand die Zeile
             // dutzendfach im Sekundentakt und hat alles zugeschrieben, was
             // sonst darin zu lesen gewesen waere. Wer eine Auskunft so oft
             // wiederholt, macht sie unlesbar.

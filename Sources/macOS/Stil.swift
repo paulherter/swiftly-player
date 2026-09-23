@@ -169,7 +169,7 @@ extension Stil {
     ///
     /// Hier gibt es nichts freizuhalten: der Inhalt beginnt rechts der
     /// Seitenleiste, die Ampel liegt gar nicht darüber. Er stand trotzdem auf
-    /// 52, also dem Doppelten des Seitenrandes. Paul am 22.09.: „jetzt ist
+    /// 52, also dem Doppelten des Seitenrandes. Rückmeldung vom 22.09.: „jetzt ist
     /// oben der Headspace einfach riesig, da ist so ein Riesenabstand von oben
     /// bis zu der Kategorie. Mach, dass der Abstand nach oben genauso ist wie
     /// der Abstand nach links, so dass es konsistent ist."

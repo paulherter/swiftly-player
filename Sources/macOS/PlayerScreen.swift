@@ -243,10 +243,9 @@ struct PlayerScreen: View {
             }
 
             // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt
-            // keine Klicks. **Direkt auf dem Film** (Paul, 22.09.2026): über
+            // keine Klicks. **Direkt auf dem Film** (22.09.2026): über
             // der Abdunklung, unter Titel, Knöpfen und Leiste und damit auch
-            // unter den Ebenen. **Es gleitet mit der Steuerung** (Paul,
-            // 22.09.2026): offen unter der Titelzeile, zu an den oberen Rand,
+            // unter den Ebenen. **Es gleitet mit der Steuerung** (22.09.2026): offen unter der Titelzeile, zu an den oberen Rand,
             // wo sie stand. Bewegung statt Blende, dieselbe Kurve wie die
             // Steuerung; mit reduzierter Bewegung springt es. Ausserhalb von
             // `schirmWeg`, damit es wie bisher schon beim Laden steht.
@@ -281,7 +280,7 @@ struct PlayerScreen: View {
             }
 
             // **Die Überspringen-Pille — an derselben Stelle, ob die
-            // Steuerung offen ist oder nicht** (wie iOS, Paul 17.09.2026); der
+            // Steuerung offen ist oder nicht** (wie iOS, 17.09.2026); der
             // Fuß hält ihr nur den Platz frei. Überspringen steht sechs
             // Sekunden von selbst, danach nur mit der Steuerung
             // (`Angebotsebene.knopfdauer`) — auch mit der, die der Zeiger holt.
@@ -362,7 +361,7 @@ struct PlayerScreen: View {
             guard let vorher = zeigerZuletzt else { return }
             let weg = hypot(stelle.x - vorher.x, stelle.y - vorher.y)
             // Nebenbei: Bewegung holt die Steuerung, sagt aber die Karte
-            // „Nächste Folge" nicht ab (Paul, 17.09.2026).
+            // „Nächste Folge" nicht ab (17.09.2026).
             if weg > 2 { steuerungZeigen(durch: .nebenbei) }
         }
         .onAppear { steuerungZeigen() }
@@ -1042,7 +1041,7 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
             guard let flaeche else { continue }
 
-            // **Dazwischen nur die Zeit**, wie auf iOS (Paul, 17.09.2026): im
+            // **Dazwischen nur die Zeit**, wie auf iOS (17.09.2026): im
             // halben Sekundentakt lief sie verzögert an und zählte ungleichmäßig.
             nurZeit.toggle()
             if nurZeit {
@@ -1116,7 +1115,7 @@ struct PlayerScreen: View {
             }
 
             // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
-            // Server), nicht, wenn sie abgesagt wurde (Paul, 17.09.2026).
+            // Server), nicht, wenn sie abgesagt wurde (17.09.2026).
             if ebene.weiterAmEnde, let folge = naechsteFolge, !wechselt,
                Folgenende.weiterschalten(position: stand.position, dauer: stand.dauer,
                                          seitOeffnen: Date().timeIntervalSince(seitStart)) {
@@ -1665,7 +1664,7 @@ final class Fensterhalter {
         //
         // Das kleine Fenster nahm der Player schon immer zurueck, das
         // Vollbild nicht. Wer im Player auf Vollbild ging und ihn dann
-        // schloss, stand mit der ganzen App im Vollbild. Paul am 22.09.:
+        // schloss, stand mit der ganzen App im Vollbild. Rückmeldung vom 22.09.:
         // „Im Normalfall sollte die App dann wieder zurueck zu dem Stand
         // gehen, wo sie vorher war."
         //

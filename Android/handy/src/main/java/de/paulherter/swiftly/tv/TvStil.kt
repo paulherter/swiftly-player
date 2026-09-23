@@ -421,25 +421,31 @@ fun TvChip(text: String, an: Boolean, modifier: Modifier = Modifier, tun: () -> 
 }
 
 /**
- * Vorlage: `KapselStil` — eine Kapsel, die etwas aufklappt (Bibliothek, Sortierung). Form und Hoehe
- * wie `TvChip`, damit die Reihe eine Form hat; halbfett und mit Pfeil dahinter. Fokus ist die ruhige
- * Flaeche, der Pfeil folgt der Schriftfarbe.
+ * Vorlage: `KapselStil` — eine Kapsel, die etwas aufklappt (Bibliothek, Filter, Sortierung). Form und
+ * Hoehe wie `TvChip`, damit die Reihe eine Form hat. Grund `erhoeht`, im Fokus die ruhige Flaeche;
+ * Schrift `kachel` (13 Medium) in `schrift`.
+ *
+ * **Mit `symbol` ein Zeichen vorn statt des Pfeils hinten — wie die `Wertpille` am iPhone** (tvOS
+ * d82e0bd9). Filter und Sortierung stehen dort als Pille mit Zeichen und Wert, ohne Pfeil. Zeichen
+ * und Pfeil tragen Deckkraft 0,6 statt eigener Farbe, damit sie der Schrift folgen. Masse halbiert:
+ * Zeichen 22 → 11, Pfeil 18 → 9, Abstand 10 → 5, Einzug 22 → 11.
  */
 @Composable
 fun TvKapsel(text: String, modifier: Modifier = Modifier,
+             /** `KapselStil(symbol:)` — `null` heisst: der Pfeil hinten. */
+             symbol: Zeichen? = null,
              /** `KapselStil(pfeil:)` — nach unten, wenn sie etwas aufklappt; nach rechts, wenn sie weiterfuehrt. */
              pfeil: Zeichen = Zeichen.WinkelRunter, tun: () -> Unit) {
     Fokusflaeche(modifier, lupe = TvStil.fokusLupe, tun = tun) { fokus ->
-        // Dieselbe Form wie `TvChip`, damit die Reihe eine Form hat — also auch ohne Rand und
-        // auf `flaeche`. Was sie vom nicht gewaehlten Filter unterscheidet: halbfette Schrift
-        // und der Pfeil.
-        Row(Modifier.heightIn(min = TvStil.chipHoehe).clip(CircleShape)
-                .background(if (fokus) TvStil.fokusflaeche else Stil.flaeche)
+        Row(Modifier.height(TvStil.chipHoehe).clip(CircleShape)
+                .background(if (fokus) TvStil.fokusflaeche else Stil.erhoeht)
                 .padding(horizontal = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(text, style = TvStil.kachel.copy(fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 1)
-            Symbol(pfeil, 11.dp, farbe = Stil.schriftLeise, staerke = Staerke.Halbfett)
+            val leise = Stil.schrift.copy(alpha = 0.6f)
+            symbol?.let { Symbol(it, 11.dp, farbe = leise, staerke = Staerke.Mittel) }
+            Text(text, style = TvStil.kachel, color = Stil.schrift, maxLines = 1)
+            if (symbol == null) Symbol(pfeil, 9.dp, farbe = leise, staerke = Staerke.Halbfett)
         }
     }
 }
@@ -447,12 +453,14 @@ fun TvKapsel(text: String, modifier: Modifier = Modifier,
 /** Vorlage: `ZeilenStil` — Auswahllisten und Handlungstafel: keine Lupe, nur eine ruhige Flaeche. */
 @Composable
 fun TvZeile(text: String, symbol: Zeichen? = null, rechts: String? = null, haken: Boolean = false,
-            modifier: Modifier = Modifier, tun: () -> Unit) {
+            modifier: Modifier = Modifier,
+            /** Die gewaehlte Zeile einer Auswahltafel traegt ihr Zeichen im Akzent (`Handlungstafel.gewaehlt`). */
+            symbolFarbe: Color = Stil.schrift, tun: () -> Unit) {
     Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, tun = tun) { fokus ->
         Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
                 .background(if (fokus) TvStil.fokusflaeche else Color.Transparent).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            symbol?.let { Symbol(it, 13.dp, farbe = Stil.schrift, staerke = Staerke.Mittel) }
+            symbol?.let { Symbol(it, 13.dp, farbe = symbolFarbe, staerke = Staerke.Mittel) }
             // 15, und im Fokus halbfett — eine **senkrechte** Liste, also verschiebt der
             // Gewichtswechsel keine Nachbarn (Vorlage `ZeilenStil`).
             Text(text, style = if (fokus) TvStil.knopf else TvStil.koerper.copy(fontWeight = FontWeight.Medium),

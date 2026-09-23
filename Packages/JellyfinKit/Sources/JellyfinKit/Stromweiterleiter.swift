@@ -35,14 +35,18 @@ import Glibc
 ///   Untertitel eigene Verbindungen; jede läuft für sich, blockierend, und
 ///   endet mit `Connection: close`.
 /// - **Range geht 1:1 durch**, `Content-Range` und `Content-Length` kommen
-///   unverändert zurück.
+///   unverändert zurück. Beim stückweisen Holen (unten) setzt der
+///   Weiterleiter sie aus der Gesamtlänge so zusammen, wie VLC gefragt hat.
 /// - **Kein Puffern ganzer Dateien.** Liest VLC nicht (Pause), hält der
 ///   Weiterleiter auf Apple die Anfrage beim Server an, sobald 8 MiB warten.
 ///   Wächst der Vorrat über 64 MiB, bricht er ab; VLC setzt mit
 ///   `:http-reconnect` und einem Range an genau der Stelle neu an. Auf
-///   Android, Linux und Windows (swift-corelibs) gibt es nur diese Grenze —
-///   und dort hält auch der Abbruch die Übertragung nicht sofort an (offen,
-///   siehe ``Leitung/anhaltenWirkt``).
+///   Linux und Windows (swift-corelibs) hält `suspend()` nichts an, und
+///   `cancel()` wirkt erst, wenn schon viel mehr geladen ist (über Loopback
+///   unter Last Hunderte MB). Dort holt er deshalb in Stücken von 16 MiB,
+///   jedes mit eigenem Range, das nächste erst, wenn VLC das vorige
+///   abgenommen hat. Nur wenn der Server Range nicht bedient, bleibt die
+///   Obergrenze.
 /// - **Abbruch:** schließt VLC die Verbindung, scheitert das nächste Senden,
 ///   und die Anfrage beim Server wird abgebrochen.
 /// - **HLS:** relative Segmentadressen laufen von selbst über den
@@ -221,11 +225,21 @@ public final class Stromweiterleiter: @unchecked Sendable {
         r.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         Eigenkoepfe.anwenden(auf: &r)
 
+        // Wo `suspend()` nicht anhält (swift-corelibs), wird in Stücken
+        // geholt: jede Anfrage beim Server trägt einen begrenzten Range, und
+        // das nächste Stück kommt erst, wenn VLC das vorige abgenommen hat.
+        // Liest VLC nicht, liegt beim Server keine offene Anfrage mehr —
+        // ohne dass es auf `cancel()` ankommt, das dort spät wirkt.
+        let erbeten = Leitung.anhaltenWirkt || anfrage.verfahren != "GET"
+            || url.pathExtension.lowercased() == "m3u8"
+            ? nil : Self.bereichLesen(anfrage.koepfe["range"])
+        if let e = erbeten {
+            r.setValue("bytes=\(e.von)-\(Self.stueckEnde(ab: e.von, bis: e.bis))",
+                       forHTTPHeaderField: "Range")
+        }
+
         let leitung = Leitung()
-        let aufgabe = sitzung.dataTask(with: r)
-        leitung.aufgabe = aufgabe
-        verteiler.eintragen(leitung, fuer: aufgabe)
-        aufgabe.resume()
+        let aufgabe = starten(r, leitung)
         defer { aufgabe.cancel() }
 
         let pfad = url.path
@@ -244,9 +258,29 @@ public final class Stromweiterleiter: @unchecked Sendable {
         if antwort.value(forHTTPHeaderField: "Content-Encoding") != nil {
             felder["Content-Length"] = nil
         }
+        var status = antwort.statusCode
+
+        // Stückweise nur, wenn der Server den Range genau so bedient hat.
+        // Sonst (200 ohne Range, Gesamtlänge unbekannt) läuft es wie bisher
+        // in einem Zug, mit der Obergrenze als letztem Halt.
+        var weiter: (ab: Int, bis: Int)?
+        if let e = erbeten, status == 206,
+           let teil = Self.inhaltsbereichLesen(antwort.value(forHTTPHeaderField: "Content-Range")),
+           teil.von == e.von {
+            let bis = min(e.bis ?? teil.gesamt - 1, teil.gesamt - 1)
+            if anfrage.koepfe["range"] == nil {
+                status = 200
+                felder["Content-Range"] = nil
+                felder["Content-Length"] = String(teil.gesamt)
+            } else {
+                felder["Content-Range"] = "bytes \(e.von)-\(bis)/\(teil.gesamt)"
+                felder["Content-Length"] = String(bis - e.von + 1)
+            }
+            if teil.bis < bis { weiter = (teil.bis + 1, bis) }
+        }
 
         if anfrage.verfahren == "HEAD" {
-            Stecker.senden(v, Self.kopf(antwort.statusCode, felder, laenge: nil)); return
+            Stecker.senden(v, Self.kopf(status, felder, laenge: nil)); return
         }
 
         let typ = (felder["Content-Type"] ?? "").lowercased()
@@ -257,20 +291,96 @@ public final class Stromweiterleiter: @unchecked Sendable {
             let text = String(decoding: roh, as: UTF8.self)
             let neu = Data(listeUmschreiben(text, marke: marke).utf8)
             felder["Content-Length"] = nil
-            Stecker.senden(v, Self.kopf(antwort.statusCode, felder, laenge: neu.count))
+            Stecker.senden(v, Self.kopf(status, felder, laenge: neu.count))
             Stecker.senden(v, neu)
             return
         }
 
-        guard Stecker.senden(v, Self.kopf(antwort.statusCode, felder, laenge: nil)) else { return }
+        guard Stecker.senden(v, Self.kopf(status, felder, laenge: nil)) else { return }
         var gesendet = 0
+        guard weitergeben(leitung, an: v, pfad: pfad, gesendet: &gesendet) else { return }
+
+        // Die weiteren Stücke. Ändert sich die Datei dazwischen, antwortet
+        // der Server auf If-Range mit 200 — dann endet die Verbindung, und
+        // VLC setzt mit `:http-reconnect` neu an.
+        if r.value(forHTTPHeaderField: "If-Range") == nil {
+            if let etag = felder["ETag"], !etag.hasPrefix("W/") {
+                r.setValue(etag, forHTTPHeaderField: "If-Range")
+            } else if let datum = felder["Last-Modified"] {
+                r.setValue(datum, forHTTPHeaderField: "If-Range")
+            }
+        }
+        while let w = weiter {
+            let ab = w.ab, bis = w.bis
+            let ende = Self.stueckEnde(ab: ab, bis: bis)
+            r.setValue("bytes=\(ab)-\(ende)", forHTTPHeaderField: "Range")
+            let l = Leitung()
+            let a = starten(r, l)
+            defer { a.cancel() }
+            guard let antw = l.warteAufAntwort(), antw.statusCode == 206,
+                  let teil = Self.inhaltsbereichLesen(antw.value(forHTTPHeaderField: "Content-Range")),
+                  teil.von == ab, teil.bis >= ab else {
+                Self.protokoll?("[Weiterleiter] \(pfad) Stück ab \(ab) nicht bedient")
+                return
+            }
+            guard weitergeben(l, an: v, pfad: pfad, gesendet: &gesendet) else { return }
+            weiter = teil.bis < bis ? (teil.bis + 1, bis) : nil
+        }
+    }
+
+    /// Stückgröße, wo nur so gebremst werden kann.
+    static let stueck = 16 << 20
+
+    private func starten(_ r: URLRequest, _ leitung: Leitung) -> URLSessionTask {
+        let aufgabe = sitzung.dataTask(with: r)
+        leitung.aufgabe = aufgabe
+        verteiler.eintragen(leitung, fuer: aufgabe)
+        aufgabe.resume()
+        return aufgabe
+    }
+
+    /// Alles aus der Leitung an VLC; `false`, wenn VLC nicht mehr liest.
+    private func weitergeben(_ leitung: Leitung, an v: Stecker.Griff, pfad: String,
+                             gesendet: inout Int) -> Bool {
         while let stueck = leitung.naechstes() {
             guard Stecker.senden(v, stueck) else {
                 Self.protokoll?("[Weiterleiter] \(pfad) abgebrochen nach \(gesendet) Bytes")
-                return
+                return false
             }
             gesendet += stueck.count
         }
+        return true
+    }
+
+    /// Letztes Byte des Stücks ab `von`, höchstens bis `bis`.
+    static func stueckEnde(ab von: Int, bis: Int?) -> Int {
+        let ende = von + stueck - 1
+        return bis.map { min($0, ende) } ?? ende
+    }
+
+    /// `Range` von VLC: ohne Kopf alles ab 0, sonst `bytes=N-` oder
+    /// `bytes=N-E`. Suffix und mehrere Bereiche: `nil`, geht in einem Zug.
+    static func bereichLesen(_ w: String?) -> (von: Int, bis: Int?)? {
+        guard let w else { return (0, nil) }
+        let t = w.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("bytes="), !t.contains(",") else { return nil }
+        let z = t.dropFirst(6).split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard z.count == 2, let von = Int(z[0].trimmingCharacters(in: .whitespaces)) else { return nil }
+        let hinten = z[1].trimmingCharacters(in: .whitespaces)
+        if hinten.isEmpty { return (von, nil) }
+        guard let bis = Int(hinten), bis >= von else { return nil }
+        return (von, bis)
+    }
+
+    /// `Content-Range: bytes A-B/T` mit bekannter Gesamtlänge.
+    static func inhaltsbereichLesen(_ w: String?) -> (von: Int, bis: Int, gesamt: Int)? {
+        guard let w, w.hasPrefix("bytes ") else { return nil }
+        let z = w.dropFirst(6).split(separator: "/")
+        guard z.count == 2, let gesamt = Int(z[1]) else { return nil }
+        let b = z[0].split(separator: "-")
+        guard b.count == 2, let von = Int(b[0]), let bis = Int(b[1]),
+              von <= bis, bis < gesamt else { return nil }
+        return (von, bis, gesamt)
     }
 
     // MARK: Wiedergabelisten
@@ -375,8 +485,9 @@ final class Leitung: @unchecked Sendable {
     /// **Anhalten nur auf Apple.** In swift-corelibs-foundation (Android,
     /// Linux, Windows) hält `suspend()` die Übertragung nicht an — gemessen
     /// auf Android: angehalten bei 8 MiB, danach kamen weiter Daten — und
-    /// ein danach abgebrochener Auftrag meldete nie sein Ende. Dort bleibt
-    /// nur die Obergrenze.
+    /// ein danach abgebrochener Auftrag meldete nie sein Ende. Dort holt
+    /// der Weiterleiter in Stücken (``Stromweiterleiter/stueck``); die
+    /// Obergrenze bleibt für Server, die Range nicht bedienen.
     #if canImport(Darwin)
     static let anhaltenWirkt = true
     #else
@@ -633,7 +744,14 @@ enum Stecker {
         #else
         var t = timeval()
         t.tv_sec = .init(sekunden)
-        _ = setsockopt(g, SOL_SOCKET, SO_RCVTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
+        #if os(Android) && arch(arm)
+        // 32-Bit-Android (viele Fernseher): dort ist `SO_RCVTIMEO` ein Makro mit
+        // `sizeof`, das Swift nicht importiert. time_t ist hier 32 Bit, also gilt der alte Wert.
+        let option = SO_RCVTIMEO_OLD
+        #else
+        let option = SO_RCVTIMEO
+        #endif
+        _ = setsockopt(g, SOL_SOCKET, option, &t, socklen_t(MemoryLayout<timeval>.size))
         #endif
     }
 

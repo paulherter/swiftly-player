@@ -385,7 +385,7 @@ struct DownloadsView: View {
         // Er war der einzige mit zwei Zeilen und der einzige, der bei
         // `ampelHoehe` (40) statt bei `inhaltOben` (52) ansetzte — beides
         // zusammen machte ihn sichtbar hoeher als „Filme", „Serien",
-        // „Merkliste" und „Suche", und Paul hat genau das gesehen.
+        // „Merkliste" und „Suche", und genau das fiel auf.
         //
         // **Keine Zeile unter dem Titel.** Hier stand die Belegung —
         // Titelzahl, Groesse, freier Platz. Dieselbe Auskunft steht am
@@ -879,7 +879,7 @@ private final class Schaetzerhalter {
 ///
 /// Hier stand ein Chip „Staffel laden": er nahm genau eine Staffel, und zwar
 /// die gerade gewählte. Wer zwei wollte, klickte zweimal; wer die Serie
-/// wollte, sieben Mal. Paul am 22.09.: „der Chip Staffel laden kommt doch
+/// wollte, sieben Mal. Rückmeldung vom 22.09.: „der Chip Staffel laden kommt doch
 /// weg. Wir machen doch dann einen neuen Knopf, auf den man drückt, wo ein
 /// Menü kommt, wo man dann einzelne Staffeln auswählen kann. Die ganze Serie
 /// und so. So wie auf dem iPhone halt."
@@ -1275,8 +1275,8 @@ struct MacLadeauswahl: View {
         // **Die eingerückte Folgenzeile trägt die 52 der übrigen Blätter, die
         // Staffelzeile eine Stufe darüber.** Die 58 sind die gewollte
         // Ausnahme, nicht ein zweiter Wert für dieselbe Rolle: die Folge soll
-        // flacher stehen als die Staffel, zu der sie gehört. Paul hat beide
-        // Werte am 22.09. bestätigt.
+        // flacher stehen als die Staffel, zu der sie gehört. Beide Werte
+        // wurden am 22.09. bestätigt.
         .frame(minHeight: klein ? 52 : 58)
     }
 

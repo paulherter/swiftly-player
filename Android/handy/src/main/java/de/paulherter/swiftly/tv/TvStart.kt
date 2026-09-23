@@ -483,7 +483,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     // Vorher lief hier eine Feder (Daempfung 1, Steifigkeit 260), die beim Unterbrechen die
     // Geschwindigkeit der alten Bewegung uebernahm. Am Emulator wirkte das je nach Tempo anders: wer
     // schneller drueckte, bekam schnellere, kuerzere Bewegungen, weil jede neue mit dem Schwung der
-    // vorigen losging. Paul will **immer dieselbe Weichheit**, egal wie schnell gedrueckt wird.
+    // vorigen losging. Gewünscht: **immer dieselbe Weichheit**, egal wie schnell gedrueckt wird.
     //
     // Deshalb jetzt pro Reihenwechsel eine Zeitkurve, die bei neuem Ziel **von der aktuellen
     // Position aus** neu startet — mit derselben Dauer, ohne Geschwindigkeitsuebernahme und ohne

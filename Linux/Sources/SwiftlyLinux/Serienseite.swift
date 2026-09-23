@@ -75,7 +75,7 @@ extension App {
         // Zug — von einer langen Folgenliste auf eine kurze Besetzungsreihe —,
         // GTK teilt die Seite neu zu, und die Zeichenflaeche der Kulisse geht
         // durch eine Zwischengroesse. Von aussen: das Kopfbild verschwindet
-        // kurz und kommt wieder. Genau das hat Paul zweimal gemeldet.
+        // kurz und kommt wieder. Genau das wurde zweimal gemeldet.
         //
         // Ein `GtkStack` haelt die drei Seiten nebeneinander und blendet
         // zwischen ihnen um; oben aendert sich nichts. Nebenbei faellt damit

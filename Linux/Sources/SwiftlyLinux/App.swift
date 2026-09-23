@@ -2710,7 +2710,7 @@ final class App: @unchecked Sendable {
 
     /// **Ein Wahlknopf statt einer Chipreihe** (`Wahlknopf`, Mac 7202b872).
     ///
-    /// Paul am 22.09.: „einen Alle-Knopf und einen A-bis-Z-Knopf, da drueckt
+    /// Rückmeldung vom 22.09.: „einen Alle-Knopf und einen A-bis-Z-Knopf, da drueckt
     /// man drauf, dann kommt ein Pop-up". Der Knopf traegt den **gewaehlten
     /// Wert**; was zur Wahl steht, steht in der Tafel darunter. Offen traegt
     /// er den Winkel nach oben und die angehobene Flaeche.

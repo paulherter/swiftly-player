@@ -78,7 +78,7 @@ final class Kulisse: @unchecked Sendable {
     /// diesen Text nicht — dort steht unten links ein runder Kopf, und Apple
     /// fuellt das Banner ueber die ganze Breite (`Heldbild`). Mit der
     /// Detailseiten-Rechnung blieben die linken 38 % leer, und darueber war
-    /// nichts: genau der „Riesen-Headspace", den Paul gemeldet hat.
+    /// nichts: genau der gemeldete „Riesen-Headspace".
     var vollBreit = false
 
     init(hoehe: Int = Stil.heldHoehe) {

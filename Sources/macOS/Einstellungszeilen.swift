@@ -125,7 +125,7 @@ private struct Zeilenrumpf<Rechts: View>: View {
         // Mindesthoehe rechnet den Inhalt nicht mit. Einzeilig ging es auf:
         // rund 20 Punkt Schrift, 13 oben und unten. Eine Zeile **mit
         // Unterzeile** traegt 37 (17 Titel, 2 Abstand, 12 klein), und dann
-        // blieben viereinhalb Punkt je Seite. Paul am 22.09.: „Wiedergabe,
+        // blieben viereinhalb Punkt je Seite. Rückmeldung vom 22.09.: „Wiedergabe,
         // Sprache, Untertitel, Tempo — da ist gar kein Platz oben und unten,
         // da ist ja nichts zum Atmen." Quick Connect traegt dieselbe Form.
         //

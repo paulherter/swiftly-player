@@ -508,7 +508,7 @@ public actor SeerrClient {
         // bleibt die alte Sitzung gültig und der Server schickt **kein**
         // `Set-Cookie` — die Anmeldung sah dann aus wie „Seerr hat keine
         // Sitzung mitgegeben", obwohl sie gelungen war. Genau so lief es bei
-        // Paul am 17.09.: abmelden in der App warf nur unseren gespeicherten
+        // Rückmeldung vom 17.09.: abmelden in der App warf nur unseren gespeicherten
         // Keks weg, der im Keksspeicher der Verbindung blieb liegen, und
         // danach ging keine Anmeldung mehr.
         req.httpShouldHandleCookies = false

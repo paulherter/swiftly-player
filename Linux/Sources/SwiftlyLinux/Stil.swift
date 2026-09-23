@@ -85,7 +85,7 @@ enum Stil {
     /// | Chip, Hinweis | Kapsel |
     ///
     /// **Am 06.09.2026 um vier Punkte aufgerundet.** Vorher stand hier
-    /// 6/8/10, und genau daran ist Paul hängengeblieben: zwei Punkte
+    /// 6/8/10, und genau daran blieb die Rückmeldung hängen: zwei Punkte
     /// Unterschied zwischen zwei Dingen, die nebeneinander stehen, liest man
     /// nicht als Rangfolge, sondern als Versehen.
     ///
@@ -308,7 +308,7 @@ enum Stil {
            höher fasst `stack` mit — und der Wechsler zwischen Folgen,
            Besetzung und Ähnliches liegt mitten im ausklingenden Seitenton.
            Eine deckende `grund`-Fläche schneidet ihn dort ab: genau der harte
-           Schnitt, den Paul am 13.09.2026 auf Serienseiten gemeldet hat.
+           Schnitt, den Rückmeldung vom 13.09.2026 auf Serienseiten gemeldet hat.
            Filmseiten haben keinen Stapel im Inhalt — deshalb sahen sie
            richtig aus und Serien nicht. */
         .swiftly-reiterstapel { background-color: transparent; }

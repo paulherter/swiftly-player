@@ -250,7 +250,7 @@ struct KapselStil: ButtonStyle {
     /// **Ein Zeichen vorn statt des Pfeils hinten — wie die `Wertpille` am
     /// iPhone.** Filter und Sortierung stehen dort als Pille mit Zeichen und
     /// Wert, ohne Pfeil; der Pfeil gehoert dort nur zur Bibliothekswahl am
-    /// Titel. Paul am 22.09.: „auch mit diesem Symbol, wie auf dem Handy, so
+    /// Titel. Rückmeldung vom 22.09.: „auch mit diesem Symbol, wie auf dem Handy, so
     /// dass es identisch aussieht." `nil` heisst: der Pfeil wie bisher.
     var symbol: String? = nil
     /// Der Pfeil hinten — nach unten, weil die Kapsel etwas aufklappt. Nach
@@ -537,7 +537,7 @@ struct Kopfleiste: View {
                 // **Die Merkliste ist wieder ein Reiter.** Am 22.09. zog sie
                 // fuer eine Stunde als runder Knopf neben das Profilbild;
                 // zwei Kreise nebeneinander wirkten „ein bisschen matsch",
-                // und Paul hat sie zurueckgeholt. Als Wort in der Leiste
+                // und sie wurde zurueckgeholt. Als Wort in der Leiste
                 // steht sie zwischen den anderen Bereichen, wo man sie sucht.
                 ForEach(Bereich.allCases) { b in
                     Button { bereich = b } label: { Text(b.name) }
@@ -927,7 +927,7 @@ struct Handlungstafel: View {
 /// zugrunde, auf tvOS 80 Punkt zur Seite und 60 nach oben. Jede Tafel stand
 /// damit um genau diesen Rand versetzt: auf der Filmseite die
 /// Bibliothekswahl 80 Punkt zu weit rechts und 60 zu tief, die Sortierung
-/// 80 Punkt zu weit links. Am 17.09. von Paul am Fernseher gemeldet, im
+/// 80 Punkt zu weit links. Am 17.09. am Fernseher gemeldet, im
 /// Simulator nachgemessen (Knopf 76…266, Tafel 160…779).
 ///
 /// Dass eine gerechnete Zahl irgendwann nicht mehr stimmt, stand schon in

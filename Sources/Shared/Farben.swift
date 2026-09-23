@@ -16,7 +16,7 @@ enum Stil {
 
     // MARK: Die drei Tiefen
     //
-    // **Gemessen aus Plex, nicht gewaehlt.** Paul am 21.09.: „ich habe mich
+    // **Gemessen aus Plex, nicht gewaehlt.** Rückmeldung vom 21.09.: „ich habe mich
     // doch gegen OLED entschieden, wir sollten das machen wie Plex — die haben
     // das farblich ganz gut." Die Werte sind aus seinen Bildschirmfotos
     // ausgezaehlt, Bildpunkt fuer Bildpunkt, nicht nachempfunden:
@@ -56,7 +56,7 @@ enum Stil {
     /// Bloecken — bei uns traegt derselbe Ton die **Knoepfe** unter dem
     /// Abspielknopf, und die sind klein und stehen neben einem gefuellten
     /// Hauptknopf. Ein kleiner Gegenstand braucht mehr Abstand zum Grund als
-    /// ein grosser, um sich als Gegenstand zu lesen. Paul am 21.09.: „die
+    /// ein grosser, um sich als Gegenstand zu lesen. Rückmeldung vom 21.09.: „die
     /// Buttons und so sind noch zu dunkel."
     ///
     /// #262626 verdoppelt den Sprung zum Grund fast (0,0956 statt 0,0534) und
@@ -68,7 +68,7 @@ enum Stil {
     /// `flaeche` traegt Knoepfe — kleine Gegenstaende, die sich vom Grund
     /// abheben muessen, um als Gegenstand zu lesen. Eine Einstellungskarte ist
     /// das Gegenteil: ein grosser, ruhiger Block, und derselbe Ton wirkt
-    /// darauf deutlich heller, weil die Flaeche gross ist. Paul am 22.09.:
+    /// darauf deutlich heller, weil die Flaeche gross ist. Rückmeldung vom 22.09.:
     /// „die Kacheln in den Settings sind ein Stueck zu hell, das ist zu doller
     /// Kontrast."
     ///
@@ -160,7 +160,7 @@ enum Stil {
     /// **Weiss-Deckkraft**. Ueber Schwarz landen beide gleich; ueber der
     /// Karte (`flaeche`) landet Apples bei #3E3E41 und unserer bei #49494B.
     /// In den Einstellungen liegen fast alle Linien auf einer Karte, und
-    /// genau dort sah man es: Paul am 21.09. — „die Striche sind so ultra
+    /// genau dort sah man es: Rückmeldung vom 21.09. — „die Striche sind so ultra
     /// hell jetzt, die Kontraste passen nicht mehr im Vergleich zu vorher."
     ///
     /// Bei 12 Prozent ueber der Karte kommt #373739 heraus und damit fast

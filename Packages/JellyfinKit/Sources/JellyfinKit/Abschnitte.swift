@@ -208,7 +208,7 @@ public enum Abschnittslogik {
     /// Ob die Karte „Nächste Folge" von selbst aufgeht (T3 #3).
     ///
     /// **Nur mit Abspann-Abschnitt vom Server, der bis ans Ende reicht**
-    /// (Paul, 17.09.2026): dann ab Beginn des Abspanns. Ohne Abspann gibt es
+    /// (17.09.2026): dann ab Beginn des Abspanns. Ohne Abspann gibt es
     /// keine Karte und kein automatisches Weiter — nur den Knopf in der
     /// Steuerung. Früher ging sie dann in den letzten zehn Sekunden auf; ohne
     /// Analyse weiß aber niemand, ob dort noch Handlung ist.

@@ -47,8 +47,8 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(titel), 0)
         anhaengen(titelblock, titel)
         // **Keine Belegungszeile mehr unter dem Titel** (Mac fa55d091): der
-        // Kopf war der einzige mit zwei Zeilen, und Paul hat genau das
-        // gesehen. Das Feld bleibt, damit ``downloadseiteFuellen`` weiter
+        // Kopf war der einzige mit zwei Zeilen, und genau das fiel auf.
+        // Das Feld bleibt, damit ``downloadseiteFuellen`` weiter
         // hineinschreiben kann — es steht nur nicht mehr in der Seite.
         downloadbelegung = beschriftung("", stil: "swiftly-zweitzeile")
         anhaengen(kopf, titelblock)

@@ -5,7 +5,7 @@ import JellyfinKit
 /// **Die Ladeauswahl einer Serie** — die GTK-Fassung von `MacLadeauswahl`
 /// (`Sources/macOS/Macdownloads.swift`, Mac fa55d091 und 25a21b02).
 ///
-/// Paul am 22.09.: „der Chip Staffel laden kommt doch weg. Wir machen doch
+/// Rückmeldung vom 22.09.: „der Chip Staffel laden kommt doch weg. Wir machen doch
 /// dann einen neuen Knopf, auf den man drückt, wo ein Menü kommt, wo man dann
 /// einzelne Staffeln auswählen kann. Die ganze Serie und so." Der Chip nahm
 /// genau die gerade gewählte Staffel; wer zwei wollte, klickte zweimal. Und

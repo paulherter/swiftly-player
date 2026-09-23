@@ -5,7 +5,7 @@ import Testing
 @Suite("Mehrere Konten auf demselben Server")
 struct KontenbundTests {
 
-    private let server = URL(string: "https://tv.paulherter.de")!
+    private let server = URL(string: "https://jellyfin.example.com")!
 
     private func konto(_ name: String, _ kennung: String) -> Session {
         Session(accessToken: "t-\(kennung)", userID: kennung,
@@ -117,7 +117,7 @@ struct KontenbundTests {
     func schraegstrich() {
         let bund = Kontenbund(konto("paul", "1"))
         let mitStrich = Session(accessToken: "t", userID: "2", userName: "eltern",
-                                serverURL: URL(string: "https://tv.paulherter.de/")!)
+                                serverURL: URL(string: "https://jellyfin.example.com/")!)
         #expect(bund.passtZumServer(mitStrich))
     }
 
@@ -144,7 +144,7 @@ struct KontenbundTests {
 @Suite("Aufnehmen und Ablage")
 struct KontenbundAblageTests {
 
-    private let server = URL(string: "https://tv.paulherter.de")!
+    private let server = URL(string: "https://jellyfin.example.com")!
     private func konto(_ name: String, _ kennung: String) -> Session {
         Session(accessToken: "t-\(kennung)", userID: kennung,
                 userName: name, serverURL: server)
@@ -239,7 +239,7 @@ struct KontenbundAblageTests {
     func alteAppleAblage() throws {
         let alt = Data("""
         {"accessToken":"t-1","userID":"1","userName":"paul",
-         "serverURL":"https://tv.paulherter.de"}
+         "serverURL":"https://jellyfin.example.com"}
         """.utf8)
         let bund = try #require(Kontenbund.ausAblage(bund: nil, einzelne: alt))
         #expect(bund.aktives.userID == "1")
@@ -253,7 +253,7 @@ struct KontenbundAblageTests {
     func fremdeSchluessel() {
         let fremd = Data("""
         {"token":"t-1","benutzerID":"1","benutzername":"paul",
-         "serverURL":"https://tv.paulherter.de"}
+         "serverURL":"https://jellyfin.example.com"}
         """.utf8)
         #expect(Kontenbund.ausAblage(bund: nil, einzelne: fremd) == nil)
     }
@@ -263,14 +263,14 @@ struct KontenbundAblageTests {
     @Test("Die alte GTK-Ablage wird übersetzt, nicht durchgereicht")
     func alteGtkAblage() throws {
         let alt = Data("""
-        {"serverURL":"https://tv.paulherter.de","token":"t-1",
+        {"serverURL":"https://jellyfin.example.com","token":"t-1",
          "benutzerID":"1","benutzername":"paul","servername":"Testkiste"}
         """.utf8)
         let s = try #require(Kontenbund.ausAlterGtkAblage(alt))
         #expect(s.accessToken == "t-1")
         #expect(s.userID == "1")
         #expect(s.userName == "paul")
-        #expect(s.serverURL.absoluteString == "https://tv.paulherter.de")
+        #expect(s.serverURL.absoluteString == "https://jellyfin.example.com")
     }
 
     /// Und der Weg, der ohne Übersetzung genommen wurde: er liefert nichts.
@@ -278,7 +278,7 @@ struct KontenbundAblageTests {
     @Test("Ohne Übersetzung liefert die alte GTK-Ablage nichts")
     func gtkAblageOhneUebersetzung() {
         let alt = Data("""
-        {"serverURL":"https://tv.paulherter.de","token":"t-1",
+        {"serverURL":"https://jellyfin.example.com","token":"t-1",
          "benutzerID":"1","benutzername":"paul"}
         """.utf8)
         #expect(Kontenbund.ausAblage(bund: nil, einzelne: alt) == nil)
@@ -288,8 +288,8 @@ struct KontenbundAblageTests {
 @Suite("Mehrere Server")
 struct KontenbundServerTests {
 
-    private let heim = URL(string: "https://tv.paulherter.de")!
-    private let zweit = URL(string: "https://tv2.paulherter.de")!
+    private let heim = URL(string: "https://jellyfin.example.com")!
+    private let zweit = URL(string: "https://jellyfin2.example.com")!
     private func konto(_ name: String, _ kennung: String, _ server: URL) -> Session {
         Session(accessToken: "t-\(kennung)", userID: kennung, userName: name, serverURL: server)
     }
@@ -331,7 +331,7 @@ struct KontenbundServerTests {
 
     @Test("Ein gemerkter Bund mit bloßer Benutzerkennung liest sich weiter")
     func alteKennung() throws {
-        let json = #"{"konten":[{"accessToken":"t","userID":"1","userName":"paul","serverURL":"https://tv.paulherter.de"},{"accessToken":"u","userID":"2","userName":"eltern","serverURL":"https://tv.paulherter.de"}],"aktiveKennung":"2"}"#
+        let json = #"{"konten":[{"accessToken":"t","userID":"1","userName":"paul","serverURL":"https://jellyfin.example.com"},{"accessToken":"u","userID":"2","userName":"eltern","serverURL":"https://jellyfin.example.com"}],"aktiveKennung":"2"}"#
         let bund = try JSONDecoder().decode(Kontenbund.self, from: Data(json.utf8))
         #expect(bund.aktives.userName == "eltern")
     }

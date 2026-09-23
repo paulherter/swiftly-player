@@ -27,8 +27,8 @@ import androidx.compose.ui.unit.dp
  * Der Satz ist **Material Symbols Rounded** als variable Schrift
  * (`res/font/symbole_rund.ttf`, Apache 2.0, Lizenz unter `assets/lizenzen/`). Vorher stand ein
  * Mischbestand da — Material Icons in Filled und Outlined, dazu selbstgezeichnete Vektoren im
- * Player —, und jedes Zeichen hatte eine andere Groesse, Strichstaerke und Machart. Paul am
- * 22.09.: „Wir brauchen einfach mehr Konsistenz in den Symbolen, weniger selbstgemachte
+ * Player —, und jedes Zeichen hatte eine andere Groesse, Strichstaerke und Machart. Rückmeldung
+ * vom 22.09.: „Wir brauchen einfach mehr Konsistenz in den Symbolen, weniger selbstgemachte
  * Scheisse. Nimm die Rounded." Rounded, weil SF Symbols runde Strichenden haben.
  *
  * **Keine Stelle setzt die Achsen selbst.** Sonst laeuft es in drei Monaten wieder auseinander.

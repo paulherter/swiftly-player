@@ -37,9 +37,11 @@ def swiftLaufzeit = [
     "FoundationNetworking"
 ]
 
-// Zunaechst nur arm64: Emulator auf dem Mac und Pauls Pixel sind beide arm64.
+// arm64 und 32-Bit-ARM. Viele Fernseher (auch mit 64-Bit-Chip) haben ein 32-Bit-Android
+// und melden nur armeabi-v7a; ohne diese ABI zeigt Play ihnen die App gar nicht an.
 def abis = [
     "arm64-v8a": [triple: "aarch64-unknown-linux-android28", sdkLib: "swift-aarch64", ndk: "aarch64-linux-android"],
+    "armeabi-v7a": [triple: "armv7-unknown-linux-android28", sdkLib: "swift-armv7", ndk: "arm-linux-androideabi"],
 ]
 
 def swiftOrdner = layout.projectDirectory.dir("swift")

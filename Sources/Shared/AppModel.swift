@@ -440,7 +440,7 @@ final class AppModel {
     /// **Worauf Seiten mit Sehstand hoeren.** Beides aendert, was dort steht:
     /// eine zu Ende geschaute Folge und ein Haken von Hand. Vorher hoerten
     /// sie nur auf das Erste — wer eine ganze Serie abhakte, sah die Folgen
-    /// darunter weiter offen, bis er die Seite neu oeffnete (Paul, 18.09.2026).
+    /// darunter weiter offen, bis er die Seite neu oeffnete (18.09.2026).
     var seitenAuffrischen: Int { wiedergabeBeendet + sehstandGeaendert }
 
     /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
@@ -468,7 +468,7 @@ final class AppModel {
     /// Zugang gebaut, ohne Netzweg. Das **Bild** dagegen wurde erst geholt,
     /// wenn das Profilzeichen zum ersten Mal auf dem Schirm stand: beim
     /// ersten Oeffnen des Profils sah man deshalb kurz den Buchstaben und
-    /// danach das Bild. Paul am 22.09.: „beim ersten Oeffnen tauchen die
+    /// danach das Bild. Rückmeldung vom 22.09.: „beim ersten Oeffnen tauchen die
     /// anderen Profilbilder erst spaeter auf."
     ///
     /// Es sind hoechstens eine Handvoll kleiner Bilder, und sie stehen fest,

@@ -65,7 +65,7 @@ public enum Wiedergabetakt {
 
     /// **Die Zielstelle eines Sprungs, bis VLC dort ist** (Bug 17.09.2026).
     ///
-    /// Paul am iPhone: nach einem Doppeltipp stand die Zeit unten noch
+    /// Rückmeldung am iPhone: nach einem Doppeltipp stand die Zeit unten noch
     /// Sekunden auf der alten Stelle, und „Intro überspringen" kam und ging
     /// entsprechend spät. Gemessen im iOS-Simulator (`-sprunglauf`): VLC
     /// meldete die neue Zeit schon im nächsten Takt, die Anzeige blieb aber
@@ -178,7 +178,7 @@ public enum Wiedergabetakt {
     /// auch wenn sie ein Schlüsselbild vor dem Ziel liegt. (Eine erste Fassung
     /// hielt das Ziel, bis VLC es überholte; am iPhone stand die Zeit dadurch
     /// nach „30 s vor" still und wirkte danach, als zähle sie schneller —
-    /// Paul, 17.09.2026.) Kommt VLC nie an, endet es nach ``sprungdeckel``.
+    /// 17.09.2026.) Kommt VLC nie an, endet es nach ``sprungdeckel``.
     ///
     /// Eigene Funktion, damit eine Plattform die Anzeige öfter nachziehen kann
     /// als den ganzen Takt (``anzeigetakt``) — mit denselben Sperren.

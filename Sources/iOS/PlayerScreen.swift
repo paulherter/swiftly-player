@@ -81,7 +81,7 @@ struct PlayerScreen: View {
     private var ebeneOffen: Bool { offeneEbene != nil }
 
     /// **Der Angebotsknopf unten rechts** — eine Regel, egal ob die Steuerung
-    /// offen ist (Paul, 17.09.2026): Überspringen steht die ersten sechs
+    /// offen ist (17.09.2026): Überspringen steht die ersten sechs
     /// Sekunden des Abschnitts, danach nur mit der Steuerung
     /// (`Angebotsebene.knopfdauer`); die Karte „Nächste Folge" steht bei geschlossener Steuerung
     /// (`Angebotsebene.anzeige`), bei offener steht dort der normale Knopf.
@@ -379,10 +379,10 @@ struct PlayerScreen: View {
                            value: schleierDa)
 
             // **Das Technikschild.** Eine Auskunft, kein Bedienteil: es nimmt
-            // nichts an. **Direkt auf dem Film** (Paul, 22.09.2026): über dem
+            // nichts an. **Direkt auf dem Film** (22.09.2026): über dem
             // Schleier, damit es lesbar bleibt, aber unter Titel, Knöpfen und
             // Leiste — und damit auch unter den Ebenen. **Es gleitet mit der
-            // Steuerung** (Paul, 22.09.2026): offen steht es unter der
+            // Steuerung** (22.09.2026): offen steht es unter der
             // Titelzeile, zu rückt es an den oberen Rand, wo sie stand — so
             // ist es nie im Weg. Bewegung statt Blende, dieselbe Kurve wie die
             // Steuerung; mit reduzierter Bewegung springt es.
@@ -448,8 +448,7 @@ struct PlayerScreen: View {
 
             // **Die Einblendung — und derselbe Knopf bei offener Steuerung.**
             // Ein Tipp darauf führt aus; ein Tipp daneben öffnet wie immer die
-            // Steuerung. Beide stehen an genau dieser einen Stelle (Paul,
-            // 17.09.2026): vorher lag der Knopf bei offener Steuerung in der
+            // Steuerung. Beide stehen an genau dieser einen Stelle (17.09.2026): vorher lag der Knopf bei offener Steuerung in der
             // Titelzeile, zehn Punkt höher, und sprang beim Aufblenden. Der Fuß
             // hält ihm dafür nur den Platz frei. Überspringen steht sechs
             // Sekunden von selbst, danach kommt und geht es mit der Steuerung
@@ -459,7 +458,7 @@ struct PlayerScreen: View {
             // Rechtsbündig direkt über der Leiste, mit denselben Maßen wie der
             // Fuß — so überlappt er sie nie, ob die Steuerung offen ist oder
             // nicht.
-            // **Weich weg, nicht zack weg** (Paul, 22.09.2026): das Entfernen
+            // **Weich weg, nicht zack weg** (22.09.2026): das Entfernen
             // aus dem Baum lief trotz Transition hart. Der Knopf bleibt
             // deshalb im Baum, solange es ein Angebot gibt, und kommt und
             // geht über die Deckkraft — die Transition gilt nur noch am
@@ -835,7 +834,7 @@ struct PlayerScreen: View {
     /// Doppeltipp die Steuerung einmal auf und wieder zu. Dann wartete der
     /// Einzeltipp `doppeltipp` lang: kein Flackern mehr, aber der Player fuehlte
     /// sich traege an, weil auf den Fingerdruck eine Viertelsekunde nichts
-    /// geschah (beides Paul, 17.09.2026).
+    /// geschah (beides 17.09.2026).
     ///
     /// **Jetzt schaltet der erste Tipp sofort und nichts wird zurueckgenommen.**
     /// Der zweite Tipp spult und laesst die Steuerung so, wie der erste sie
@@ -1558,7 +1557,7 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
             guard let surface else { continue }
 
-            // **Dazwischen nur die Zeit** (Paul, 17.09.2026): im halben
+            // **Dazwischen nur die Zeit** (17.09.2026): im halben
             // Sekundentakt lief sie nach dem Abspielen verzögert an und zählte
             // ungleichmäßig. Dieselben Sperren wie im ganzen Takt.
             nurZeit.toggle()
@@ -1685,7 +1684,7 @@ struct PlayerScreen: View {
             // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
             // Server), und nicht, wenn sie abgesagt wurde. Der Schalter
             // „Nächste Folge automatisch" spielt dafür keine Rolle mehr
-            // (Paul, 17.09.2026).
+            // (17.09.2026).
             if ebene.weiterAmEnde, let folge = naechsteFolge, !wechselt,
                Folgenende.weiterschalten(position: position, dauer: dauer,
                                          seitOeffnen: Date().timeIntervalSince(seitStart)) {
@@ -1844,7 +1843,7 @@ private struct Playerschleier: View {
         // war der Schleier ein blosses `Color` — das hat keine eigene Groesse
         // und passt in jeden Rahmen, auch in den kleinen Fensterplayer. Mit
         // der Mindesthoehe ragte er dort heraus, und mit ihm alles, was auf
-        // ihm liegt. Paul am 21.09.: „der Player ist kaputt, die Elemente
+        // ihm liegt. Rückmeldung vom 21.09.: „der Player ist kaputt, die Elemente
         // ragen aus dem Player raus."
         //
         // Als `overlay` auf der Flaeche zaehlen die Baender fuer die Groesse
@@ -2028,7 +2027,7 @@ private struct Angebotsknopf: View {
                         // `.white`.
                         RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous).fill(Stil.schrift)
                         if let fuellung {
-                            // **Durchgehend statt im Takt** (Paul, 17.09.2026):
+                            // **Durchgehend statt im Takt** (17.09.2026):
                             // im halben Sekundentakt nachgezogen ruckelte sie am
                             // Anfang und gegen Ende. **Dunkel auf Weiß**, nicht in
                             // Akzentfarbe: die gehört im Player allein dem Griff

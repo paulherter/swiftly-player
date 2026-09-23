@@ -730,8 +730,8 @@ struct BibliothekView: View {
                 // Servername stand, war `.top` richtig: der Block war zwei
                 // Zeilen hoch, und die Zeichen rechts sollten an der ersten
                 // haengen. Ohne die zweite Zeile sitzt der Titel damit oben und
-                // die Zeichen daneben tiefer — auf verschiedenen Linien. Paul
-                // am 21.09.: „die sind nicht auf der gleichen Linie wie das
+                // die Zeichen daneben tiefer — auf verschiedenen Linien. Rückmeldung
+                // vom 21.09.: „die sind nicht auf der gleichen Linie wie das
                 // Profilbild".
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -775,7 +775,7 @@ struct BibliothekView: View {
                         // Seitentitel bekommt einen Unterbau, den keine andere
                         // Wurzelseite hat. Wer wissen will, auf welchem Server
                         // er ist, findet es im Profil — dort steht es ohnehin.
-                        // Paul am 21.09. am Geraet.
+                        // Rückmeldung vom 21.09. am Geraet.
                     }
                     Spacer(minLength: 0)
                     // **Breit steht die Zahl hier oben, nicht in der

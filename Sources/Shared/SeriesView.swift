@@ -169,7 +169,7 @@ struct SeriesDetailView: View {
                         // Reihe aber nur 8 auseinander. Damit war der Abstand
                         // nach oben groesser als der zwischen den Feldern, und
                         // die Reihe las sich als eigene Sache statt als
-                        // Fortsetzung des Knopfs. Paul am 21.09.: „damit es
+                        // Fortsetzung des Knopfs. Rückmeldung vom 21.09.: „damit es
                         // irgendwie clean wie ein Element aussieht".
                         VStack(alignment: .leading, spacing: 8) {
                             hauptknopf
@@ -648,7 +648,7 @@ struct SeriesDetailView: View {
                         // fuenfundzwanzig Folgen fuenfundzwanzig Mal dasselbe
                         // anbietet. Wer eine einzelne Folge will, hakt sie im
                         // Blatt an — dort sieht er dabei auch, wie gross sie
-                        // ist. Paul am 21.09.: „die ergeben natuerlich keinen
+                        // ist. Rückmeldung vom 21.09.: „die ergeben natuerlich keinen
                         // Sinn, wenn man die jetzt ueber so ein extra Menue
                         // runterlaedt".
                         Folgenzeile(model: model, folge: folge,
@@ -881,7 +881,7 @@ struct Folgenzeile: View {
     /// in weiss 8 %, und im Player lief die ueber die **volle Breite**: ein
     /// durchgehender Streifen bis an beide Kanten. Am iPhone faehrt der damit
     /// unter die Dynamic Island, und die wird sichtbar — in einer Ebene, in
-    /// der man sie sonst gar nicht bemerkt. Paul am 22.09.: „dadurch sieht man
+    /// der man sie sonst gar nicht bemerkt. Rückmeldung vom 22.09.: „dadurch sieht man
     /// die Dynamic Island, die man sonst ueberhaupt nicht sehen wuerde."
     ///
     /// Jetzt waechst das Vorschaubild nach rechts, links bleibt es mit den
@@ -956,7 +956,7 @@ struct Folgenzeile: View {
     /// 152 statt 116, bei gleichem Seitenverhaeltnis — gross genug, dass man
     /// es ohne Vergleich sieht, klein genug, dass die Zeile nicht springt.
     /// 134 statt 152 — gross genug, dass man es ohne Vergleich sieht, klein
-    /// genug, dass die Zeile nicht aus der Liste faellt. Paul am 22.09.: „soll
+    /// genug, dass die Zeile nicht aus der Liste faellt. Rückmeldung vom 22.09.: „soll
     /// nicht so riesig sein, gerne ein wenig kleiner."
     private var bildbreite: CGFloat { laufend ? 134 : 116 }
 
@@ -997,7 +997,7 @@ struct Folgenzeile: View {
         guard Anzeigeregeln.laufzeitZeigen(sekunden: folge.runtimeSeconds),
               let gesamt = folge.runtimeSeconds else { return "" }
         // Nur die Laufzeit: die Dateigröße steht in der Ladeauswahl, an der
-        // Folge ist sie eine Zahl ohne Frage dahinter (Paul, 22.09.2026).
+        // Folge ist sie eine Zahl ohne Frage dahinter (22.09.2026).
         return folge.restzeitText ?? "\(Int(gesamt / 60)) min"
     }
 }

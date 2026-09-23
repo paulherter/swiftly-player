@@ -198,8 +198,9 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, Zeichen> = emptyMap(
             LaunchedEffect(Unit) { delay(30); runCatching { erste.requestFocus() } }
             // 44 dp unter dem Knopf — dieselbe Zahl wie die Staffelliste auf dem Telefon
             // (`Staffelkopf` in `SerienSeite.kt`), aus demselben Grund: knapp unter der eigenen Hoehe.
+            // `focusable = true` wie bei `TvKapselMitTafel`: sonst gehen die Tasten am Menue vorbei.
             Popup(offset = IntOffset(0, with(LocalDensity.current) { 44.dp.roundToPx() }),
-                  onDismissRequest = { schliessen() }, properties = PopupProperties(focusable = false)) {
+                  onDismissRequest = { schliessen() }, properties = PopupProperties(focusable = true)) {
                 // Innerhalb der Tafel: eine angeklickte Zeile darf sich nicht selbst als „Ausloeser"
                 // bei `Fokusmerker` eintragen, sonst zeigte das naechste Schliessen auf die zuletzt
                 // gewaehlte Zeile statt zurueck auf den „…"-Knopf.

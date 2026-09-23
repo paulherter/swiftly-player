@@ -35,10 +35,10 @@ struct LiveServerTests {
 @Suite("URL-Normalisierung")
 struct URLNormalizationTests {
     @Test("Ergänzt https und entfernt Schrägstriche", arguments: [
-        ("tv.paulherter.de",            "https://tv.paulherter.de"),
-        ("https://tv.paulherter.de/",   "https://tv.paulherter.de"),
+        ("jellyfin.example.com",            "https://jellyfin.example.com"),
+        ("https://jellyfin.example.com/",   "https://jellyfin.example.com"),
         ("http://192.168.1.5:8096",     "http://192.168.1.5:8096"),
-        ("  tv.paulherter.de  ",        "https://tv.paulherter.de"),
+        ("  jellyfin.example.com  ",        "https://jellyfin.example.com"),
     ])
     func normalize(input: String, expected: String) {
         #expect(AppModelURLNormalizer.normalize(input)?.absoluteString == expected)

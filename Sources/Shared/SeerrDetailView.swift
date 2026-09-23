@@ -276,7 +276,7 @@ struct SeerrDetailView: View {
 
     /// **Die zweite Stufe sagt, was zu tun ist.**
     ///
-    /// Vorher stand dort „Wirklich anfragen?" — Paul am 21.09.: „Man versteht
+    /// Vorher stand dort „Wirklich anfragen?" — Rückmeldung vom 21.09.: „Man versteht
     /// nicht, dass man nochmal drücken muss." Ein Knopf, auf dem eine Frage
     /// steht, ist eine Frage ohne Antwort: man weiss nicht, ob Druecken
     /// bestaetigt oder abbricht. Jede Fassung faengt deshalb mit „Nochmal" an
@@ -463,8 +463,8 @@ struct SeerrDetailView: View {
         // Hier stand `.frame(maxHeight: 320)`, und das reicht nicht: eine
         // `ScrollView` ist senkrecht gierig und nimmt sich die 320 auch dann,
         // wenn drei Staffeln nur 150 brauchen. Uebrig blieb ein Hohlraum von
-        // gut zwei Zentimetern unter der letzten Zeile, der nichts tut. Paul
-        // am 22.09.: „da sind so 2 cm frei, als waere da etwas, was aber eben
+        // gut zwei Zentimetern unter der letzten Zeile, der nichts tut. Rückmeldung
+        // vom 22.09.: „da sind so 2 cm frei, als waere da etwas, was aber eben
         // nicht da ist."
         //
         // Dieselbe Rechnung wie im `Auswahlblatt`, wo sie samt Begruendung

@@ -129,7 +129,7 @@ struct Chip: View {
                     Capsule().fill(aktiv ? Stil.erhoeht : Stil.flaeche)
                     if let fuellung {
                         // Durchgehend aus der Uhr, in Akzentfarbe halb
-                        // deckend — wie auf iOS (Paul, 17.09.2026).
+                        // deckend — wie auf iOS (17.09.2026).
                         TimelineView(.animation) { zeit in
                             GeometryReader { g in
                                 Rectangle()
@@ -992,7 +992,7 @@ struct Detailkopf: View {
                 // an beide Kanten reicht. Auf dem Mac reicht die `Kulisse`
                 // nur ueber die rechten zwei Drittel; der Pfeil steht links
                 // auf blankem Grund, und der Verlauf war dort ein dunkler
-                // Schein ohne Aufgabe. Paul am 22.09.: „da muss einfach
+                // Schein ohne Aufgabe. Rückmeldung vom 22.09.: „da muss einfach
                 // dieser andere Verlauf weg." Was bleibt, ist die Leiste, die
                 // beim Scrollen kommt.
                 // **Nur wenn sie etwas tut.**
@@ -1056,7 +1056,7 @@ struct Blätterreihe<Inhalt: View>: View {
     /// Auslegevorgang, und der naechste Takt lag schon an. Genau das ist das
     /// „Haengenbleiben" beim schnellen Wisch: die Bewegung verliert Bilder,
     /// weil daneben die Reihe neu ausgelegt wird, und ein Schwung, der Bilder
-    /// verliert, kommt nicht wieder in Gang. Paul am 22.09.: „wenn ich ganz
+    /// verliert, kommt nicht wieder in Gang. Rückmeldung vom 22.09.: „wenn ich ganz
     /// schnell wische, bleibe ich haengen — ich komme nicht wieder hoch mit
     /// dem gleichen Wisch."
     ///
@@ -1113,14 +1113,14 @@ struct Blätterreihe<Inhalt: View>: View {
             masse.gesamt = neu.gesamt
             masse.sichtbar = neu.sichtbar
             #if DEBUG
-            // Gemessen, weil Paul den Linkspfeil auf einer gerade geoeffneten
+            // Gemessen, weil man den Linkspfeil auf einer gerade geoeffneten
             // Seite sieht: steht die Reihe wirklich auf null?
             Reihenprobe.melden(versatz: neu.versatz, gesamt: neu.gesamt,
                                sichtbar: neu.sichtbar)
             #endif
             // **Eine Schwelle von vier Punkten, nicht von einem.**
             //
-            // Paul am 22.09.: der Pfeil nach links steht schon da, wenn die
+            // Rückmeldung vom 22.09.: der Pfeil nach links steht schon da, wenn die
             // Seite gerade aufgegangen ist, und ein Klick bewegt die Reihe
             // „einen Millimeter". Gemessen habe ich die Ruhelage mit
             // **Versatz 0,00** — an dieser Stelle also nicht reproduziert.
@@ -1203,7 +1203,7 @@ struct Blätterreihe<Inhalt: View>: View {
 /// **Der Kanteneffekt ist nicht mehr abgeschaltet — er war die Ursache des
 /// Klebens.** Hier stand `scrollEdgeEffectHidden(true, for: .all)`, eine
 /// Schnittstelle aus macOS 26, und sie lag auf **jeder** Scrollfläche der App.
-/// Paul am 22.09.2026 nach dem A/B-Vergleich zweier Fassungen desselben Baus:
+/// Rückmeldung vom 22.09.2026 nach dem A/B-Vergleich zweier Fassungen desselben Baus:
 /// „das Hängenbleiben ist weg. Ich kann jetzt normal hoch und runter scrollen,
 /// ohne irgendwo hängen zu bleiben."
 ///
@@ -1228,7 +1228,7 @@ struct Blätterreihe<Inhalt: View>: View {
 /// Gemessen am 22.09.: eine Seite trug **446 Punkt Inhalt in einem Fenster von
 /// 833** und nahm trotzdem Scrollgesten an; sie federte, wo es nichts zu
 /// scrollen gab. `.basedOnSize` allein hat das nicht getroffen — auf langen,
-/// wirklich scrollbaren Seiten fiel damit das Federn **ganz** weg. Paul:
+/// wirklich scrollbaren Seiten fiel damit das Federn **ganz** weg. Rückmeldung:
 /// „wenn ich oben bin, kann ich nicht mehr weiter runterziehen." Das Federn
 /// ist auf Apple-Plattformen die Rückmeldung „hier ist das Ende", und die
 /// gehört dazu.
@@ -1343,7 +1343,7 @@ struct Uebernahmezeile: View {
 
 /// **Ein Wert, ein Knopf, eine Tafel darunter.**
 ///
-/// Paul am 22.09. über die Bibliotheksseite: „wir haben da acht verschiedene
+/// Rückmeldung vom 22.09. über die Bibliotheksseite: „wir haben da acht verschiedene
 /// Sachen. Wir machen das wie auf dem iPhone: einen Alle-Knopf und einen
 /// A-bis-Z-Knopf, da drückt man drauf, dann kommt ein Pop-up, und da kann man
 /// die Sachen umstellen. Das ist deutlich cleaner."
@@ -1361,7 +1361,7 @@ struct Uebernahmezeile: View {
 ///
 /// Jeder Knopf hatte seinen eigenen Zustand und wusste von den anderen
 /// nichts. Dazu lag der Fang fuer „Klick daneben" hinter dem eigenen Knopf,
-/// und der Nachbar in derselben Reihe lag darueber. Paul am 22.09.: „Wenn ich
+/// und der Nachbar in derselben Reihe lag darueber. Rückmeldung vom 22.09.: „Wenn ich
 /// auf Alle druecke und dann auf Zuletzt, kommt das Zuletzt-Pop-up da
 /// drueber. Aber eigentlich ist das, als wuerde ich ins Nichts druecken, und
 /// es muesste sich einfach das andere schliessen."
@@ -1593,7 +1593,7 @@ private struct Wahltafelzeile: View {
 
 /// **Die Leiste, die beim Scrollen kommt — auf einer Bestandsseite.**
 ///
-/// Paul am 22.09.: der Titel „Filme" soll beim Scrollen oben stehen bleiben,
+/// Rückmeldung vom 22.09.: der Titel „Filme" soll beim Scrollen oben stehen bleiben,
 /// mit dem Verlauf dahinter, und die Filterelemente sollen wegblenden.
 ///
 /// **Sie hängt nicht an einer Höhe, nur an einer Deckkraft.** Genau daran ist
@@ -1667,7 +1667,7 @@ struct Bestandsleiste: View {
         // Hier lag ein `LinearGradient` von `grund` nach durchsichtig, und er
         // haing an nichts: nur die deckende Flaeche darunter folgte
         // `staerke`. Der Verlauf stand also **immer** ueber dem Titel, auch
-        // auf einer Seite, die gar nicht gescrollt war. Paul am 22.09.:
+        // auf einer Seite, die gar nicht gescrollt war. Rückmeldung vom 22.09.:
         // „ueber dem Text Filme ist immer noch so ein Schein drueber, der
         // auch schon ohne Scrollen ueber den Text geht."
         //
@@ -1691,7 +1691,7 @@ struct Bestandsleiste: View {
 #if DEBUG
 /// **Steht eine Reihe wirklich auf null, wenn sie erscheint?**
 ///
-/// Paul am 22.09.: der Pfeil zum Nach-links-Blättern steht schon da, wenn die
+/// Rückmeldung vom 22.09.: der Pfeil zum Nach-links-Blättern steht schon da, wenn die
 /// Seite gerade aufgegangen ist, und ein Klick darauf bewegt die Reihe „einen
 /// Millimeter". Beides heisst: der gemessene Versatz ist nicht null. Diese
 /// Probe schreibt die ersten Messwerte jeder Reihe ins Protokoll — nur die
@@ -1734,7 +1734,7 @@ extension AnyTransition {
     /// Ansicht um ihre **eigene volle Hoehe** — eine 200 Punkt hohe Liste kam
     /// also aus 200 Punkt ueber ihrer Endlage, lag auf dem Weg ueber den
     /// Elementen darueber und hatte mit dem Knopf, der sie oeffnet, nichts
-    /// zu tun. Paul am 22.09.: „Das kommt nicht aus diesen drei Punkten raus,
+    /// zu tun. Rückmeldung vom 22.09.: „Das kommt nicht aus diesen drei Punkten raus,
     /// sondern so drei Meter da drueber. Es fliegt so aus dem Nichts rein."
     ///
     /// Die Regel steht in BRAND unter Bewegung: was aufgeht, geht **dort**

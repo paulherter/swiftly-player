@@ -55,7 +55,7 @@ enum Sprunglauf {
         await befehl(.zurueck, warte: 7)
         await befehl(.springenAuf(vorspann.von + 3), warte: 7)
         await befehl(.springenAuf(vorspann.bis + 30), warte: 7)
-        // Wie „Überspringen", gleich danach „30 s vor" (Paul 17.09.: sprang zurück).
+        // Wie „Überspringen", gleich danach „30 s vor" (17.09.: sprang zurück).
         await befehl(.springenAuf(vorspann.bis), warte: 0.3)
         await befehl(.vor, warte: 6)
         // Angehalten, damit der Countdown der Karte nicht in die naechste

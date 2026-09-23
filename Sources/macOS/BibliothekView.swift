@@ -94,8 +94,8 @@ struct BibliothekView: View {
                 //
                 // Hier standen alle Filter und alle Sortierungen als Chips
                 // nebeneinander — bei vier und vier sind das acht
-                // Gegenstaende in einer Zeile, von denen zwei gelten. Paul am
-                // 22.09.: „wir machen das wie auf dem iPhone: einen
+                // Gegenstaende in einer Zeile, von denen zwei gelten. Rückmeldung
+                // vom 22.09.: „wir machen das wie auf dem iPhone: einen
                 // Alle-Knopf und einen A-bis-Z-Knopf, da drueckt man drauf,
                 // dann kommt ein Pop-up. Das ist deutlich cleaner."
                 //

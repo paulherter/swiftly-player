@@ -182,7 +182,7 @@ fun Einstellungsseite(titel: String, zurueck: () -> Unit, inhalt: @Composable Co
  * Sie trug `flaeche` #262626 und `eckeFlaeche` 16. `flaeche` traegt **Knoepfe** — kleine
  * Gegenstaende, die sich vom Grund abheben muessen; eine Einstellungskarte ist das
  * Gegenteil, ein grosser ruhiger Block, und derselbe Ton wirkt darauf deutlich heller.
- * Paul am 22.09.: „die Kacheln in den Settings sind ein Stueck zu hell, das ist zu doller
+ * Rückmeldung vom 22.09.: „die Kacheln in den Settings sind ein Stueck zu hell, das ist zu doller
  * Kontrast."
  */
 @Composable
