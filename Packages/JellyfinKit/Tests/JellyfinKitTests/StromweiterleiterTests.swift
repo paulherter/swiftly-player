@@ -124,9 +124,63 @@ struct StromweiterleiterTests {
         // Steckdosenpuffer; über Loopback liefert URLSession nach `suspend()`
         // aber manchmal noch Zig-Megabyte nach (gemessen: 72 MB gesendet).
         // Dann greift die Obergrenze, und die Anfrage endet — VLC setzt per
-        // Range neu an. Gepuffert wird so oder so nicht die ganze Datei.
+        // Range neu an. Auf Linux und Windows holt der Weiterleiter in
+        // Stücken; beim Server liegen dann höchstens zwei davon an.
+        // Gepuffert wird so oder so nicht die ganze Datei.
         #expect(b - a < 1 << 20)
         #expect(b < Stromweiterleiter.obergrenze + (16 << 20))
+    }
+
+    @Test("Über mehrere Stücke hinweg kommt jedes Byte an seiner Stelle an")
+    func stueckgrenzen() throws {
+        let posten = try Vorposten()
+        let w = Stromweiterleiter()
+        let u = w.adresse(fuer: posten.url("/endlos"))
+        let ab = Stromweiterleiter.stueck - 1000
+        let v = try #require(Stecker.verbinden(port: UInt16(u.port ?? 0)))
+        defer { Stecker.schliessen(v) }
+        Stecker.senden(v, Data("GET \(u.path) HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=\(ab)-\r\n\r\n".utf8))
+        let gesamt = 100_000 * 16384
+        let soll = 2 * Stromweiterleiter.stueck + 5000
+        var empfangen = Data()
+        var puffer = [UInt8](repeating: 0, count: 65536)
+        while empfangen.count < soll + 4096 {
+            let n = Stecker.lesen(v, &puffer)
+            if n <= 0 { break }
+            empfangen.append(contentsOf: puffer[0..<n])
+        }
+        let trenner = empfangen.range(of: Data([13, 10, 13, 10]))
+        let kopfEnde = try #require(trenner).lowerBound
+        let kopf = String(decoding: empfangen[..<kopfEnde], as: UTF8.self)
+        #expect(kopf.hasPrefix("HTTP/1.1 206"))
+        #expect(kopf.contains("Content-Range: bytes \(ab)-\(gesamt - 1)/\(gesamt)"))
+        #expect(kopf.contains("Content-Length: \(gesamt - ab)"))
+        let koerper = Data(empfangen[(kopfEnde + 4)...])
+        #expect(koerper.count >= soll)
+        // In Fenstern gegen das Muster vergleichen; Byte für Byte ist im
+        // Debug-Bau zu langsam.
+        var falsch: Int?
+        var stelle = 0
+        while stelle < soll, falsch == nil {
+            let o = (ab + stelle) % endlosPeriode
+            let n = min(endlosPeriode, soll - stelle)
+            if koerper[stelle..<(stelle + n)] != endlosMuster[o..<(o + n)] { falsch = stelle }
+            stelle += n
+        }
+        #expect(falsch == nil)
+    }
+
+    @Test("Range-Köpfe lesen")
+    func bereiche() {
+        #expect(Stromweiterleiter.bereichLesen(nil)! == (0, nil))
+        #expect(Stromweiterleiter.bereichLesen("bytes=100-")! == (100, nil))
+        #expect(Stromweiterleiter.bereichLesen("bytes=100-199")! == (100, 199))
+        #expect(Stromweiterleiter.bereichLesen("bytes=-500") == nil)
+        #expect(Stromweiterleiter.bereichLesen("bytes=0-1,5-9") == nil)
+        #expect(Stromweiterleiter.inhaltsbereichLesen("bytes 0-99/1000")! == (0, 99, 1000))
+        #expect(Stromweiterleiter.inhaltsbereichLesen("bytes 0-99/*") == nil)
+        #expect(Stromweiterleiter.stueckEnde(ab: 10, bis: 20) == 20)
+        #expect(Stromweiterleiter.stueckEnde(ab: 10, bis: nil) == 10 + Stromweiterleiter.stueck - 1)
     }
 
     @Test("HLS: relative Adressen bleiben, absolute und wurzelbezogene laufen über den Weiterleiter")
@@ -164,6 +218,12 @@ private struct Rohantwort {
     var felder: [String: String] = [:]
     var koerper = Data()
 }
+
+/// Inhalt von `/endlos`: Periode ist eine Primzahl, kein Vielfaches einer
+/// Stückgröße — ein verrutschtes Stück fällt auf.
+let endlosPeriode = 65521
+let endlosMuster = Data((0..<(2 * endlosPeriode)).map { UInt8(truncatingIfNeeded: ($0 % endlosPeriode) &* 31 &+ 7 &+ ($0 % endlosPeriode) >> 8) })
+func endlosByte(_ i: Int) -> UInt8 { endlosMuster[i % endlosPeriode] }
 
 private func roh(url: URL, range: String? = nil) -> Rohantwort {
     var pfad = url.path
@@ -250,11 +310,26 @@ private final class Vorposten: @unchecked Sendable {
 
         switch pfad {
         case "/endlos":
-            Stecker.senden(v, Data("HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nConnection: close\r\n\r\n".utf8))
-            let stueck = Data(repeating: 0x42, count: 16384)
-            for _ in 0..<100_000 {
+            // Eine sehr große Datei, jedes Byte aus seiner Stelle ableitbar.
+            // Range wird bedient wie bei Jellyfin; ohne kommt sie am Stück.
+            let gesamt = 100_000 * 16384
+            var von = 0, bis = gesamt - 1
+            if let r = a.koepfe["range"], r.hasPrefix("bytes=") {
+                let z = r.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+                von = Int(z[0]) ?? 0
+                if z.count > 1, let b = Int(z[1]) { bis = min(b, gesamt - 1) }
+                Stecker.senden(v, Data("HTTP/1.1 206 Partial Content\r\nContent-Type: video/x-matroska\r\nAccept-Ranges: bytes\r\nETag: \"endlos\"\r\nContent-Range: bytes \(von)-\(bis)/\(gesamt)\r\nContent-Length: \(bis - von + 1)\r\nConnection: close\r\n\r\n".utf8))
+            } else {
+                Stecker.senden(v, Data("HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nAccept-Ranges: bytes\r\nETag: \"endlos\"\r\nContent-Length: \(gesamt)\r\nConnection: close\r\n\r\n".utf8))
+            }
+            var stelle = von
+            while stelle <= bis {
+                let n = min(16384, bis - stelle + 1)
+                let o = stelle % endlosPeriode
+                let stueck = endlosMuster.subdata(in: o..<(o + n))
                 guard Stecker.senden(v, stueck) else { break }
-                sperre.lock(); _endlosGesendet += stueck.count; sperre.unlock()
+                stelle += n
+                sperre.lock(); _endlosGesendet += n; sperre.unlock()
             }
             sperre.lock(); _endlosAbgebrochen = true; sperre.unlock()
         case "/Videos/1/master.m3u8":

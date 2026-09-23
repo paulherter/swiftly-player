@@ -87,7 +87,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// und laedt trotz eingeschaltetem Schalter; hier wartet er. GLib kennt
     /// die Schnittstellenart gar nicht, und `NWPathMonitor.isExpensive` waere
     /// auf Apple die Entsprechung zu dem, was hier gemessen wird — gerufen
-    /// wird es dort nirgends. **Fuer Paul zum Entscheiden:** entweder der Mac
+    /// wird es dort nirgends. **Noch zu entscheiden:** entweder der Mac
     /// nimmt `isExpensive` dazu, oder diese Zeile wird auf „immer WLAN"
     /// zurueckgedreht. Bis dahin tut Linux, was H5 sagt, und der Mac etwas
     /// Grosszuegigeres.

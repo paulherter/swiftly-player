@@ -333,7 +333,7 @@ fun Fortschrittsbalken(anteil: Double, modifier: Modifier = Modifier,
 @Composable
 fun Wertpille(symbol: Zeichen, text: String, tun: () -> Unit) {
     // **Fuellung ohne Rand, und `flaeche` statt `erhoeht`.** Sie trugen als einzige Knoepfe
-    // der App eine Umrandung und sahen deshalb aus wie eine fremde Sorte — Paul am 21.09. zu
+    // der App eine Umrandung und sahen deshalb aus wie eine fremde Sorte — Rückmeldung vom 21.09. zu
     // „Alle" und „A–Z": „die sehen optisch so anders aus, die haben so eine Umrandung, die
     // sonst nichts hat." `erhoeht` ist das, was **auf** einer Flaeche liegt; die Pille liegt
     // auf der Seite. `minHeight`, damit wachsende Systemschrift den Text nicht abschneidet.

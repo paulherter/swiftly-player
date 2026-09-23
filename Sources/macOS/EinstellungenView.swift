@@ -42,7 +42,7 @@ struct EinstellungenView: View {
                 // Sie standen auf `maxWidth: .infinity` in einem Rahmen von
                 // 1366 — also 659 Punkt je Spalte, und darin eine Zeile aus
                 // Zeichen, einem Wort und einem Schalter. Das ist dieselbe
-                // Sache, die Paul auf der Profilseite gesehen hat: lang
+                // Sache, die auf der Profilseite auffiel: lang
                 // gezogen und dabei flach. Eine Liste aus Zeilen ist ein
                 // Formular, nicht Fliesstext.
                 HStack(alignment: .top, spacing: Stil.randAbstand * 2) {

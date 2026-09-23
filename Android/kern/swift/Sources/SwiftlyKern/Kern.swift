@@ -999,7 +999,7 @@ public final class Kern: @unchecked Sendable {
         }
 
         if countdownFertig { protokoll("Angebot: Countdown abgelaufen") }
-        // Am Ende von selbst weiter — nur mit Karte, nicht, wenn sie abgesagt wurde (Paul, 17.09.).
+        // Am Ende von selbst weiter — nur mit Karte, nicht, wenn sie abgesagt wurde (17.09.).
         let weiter = w.naechste != nil
             && (countdownFertig || (w.ebene.weiterAmEnde
                 && Folgenende.weiterschalten(position: stelle, dauer: w.stand.dauer,
@@ -1046,7 +1046,7 @@ public final class Kern: @unchecked Sendable {
         return (art, nach, angebot.beschriftung, einblendung, anteil)
     }
 
-    /// **Nur die Zeit, zwischen zwei Takten** (`Wiedergabetakt.zeitUebernehmen`, Paul 17.09.2026): Kotlin
+    /// **Nur die Zeit, zwischen zwei Takten** (`Wiedergabetakt.zeitUebernehmen`, 17.09.2026): Kotlin
     /// fragt alle 250 ms, der ganze Takt bleibt bei 500 ms. VLCs Zeit, nach einem Sprung das Ziel, bis VLC
     /// dort ist. `-1`, wenn nichts laeuft oder gerade gewechselt wird — dann bleibt die Anzeige, wie sie ist.
     public func anzeigeZeit(position: Double, amSchieben: Bool) -> Double {

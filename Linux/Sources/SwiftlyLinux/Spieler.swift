@@ -8,7 +8,7 @@ import JellyfinKit
 ///
 /// Hier stand „Schließen oben links, Einstellungen oben rechts". Das war die
 /// gespiegelte Fassung von E10: die Fensterampel sitzt auf GTK rechts, also
-/// sollte der Schließweg ihr links ausweichen. Am 13.09.2026 hat Paul es am
+/// sollte der Schließweg ihr links ausweichen. Am 13.09.2026 wurde es am
 /// Bild verglichen und anders entschieden — die Ampel sitzt in der
 /// Titelzeile, die Werkzeuge gut fünfzig Punkt tiefer, sie stoßen gar nicht
 /// aneinander. Das Register ist nachgezogen. Bild-im-Bild entfällt — wie auf dem Mac,
@@ -802,7 +802,7 @@ extension App {
         // `Wiedergabetakt.taktlaenge` — zwei Bauplaetze fuer eine Zahl, die
         // in B12 als geteilt festgeschrieben ist.
         // Er laeuft im Anzeigetakt (250 ms); jeder zweite Aufruf ist der ganze
-        // Takt, dazwischen wird nur die Zeit nachgezogen (Paul, 17.09.2026).
+        // Takt, dazwischen wird nur die Zeit nachgezogen (17.09.2026).
         let ms = UInt32(Wiedergabetakt.anzeigetakt.components.seconds * 1000
                         + Wiedergabetakt.anzeigetakt.components.attoseconds / 1_000_000_000_000_000)
         // **Prioritaet 0, nicht 200.** Derselbe Grund wie bei
@@ -1009,7 +1009,7 @@ extension App {
         }
         angebotNachfuehren()
         // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
-        // Server), nicht, wenn sie abgesagt wurde (Paul, 17.09.2026).
+        // Server), nicht, wenn sie abgesagt wurde (17.09.2026).
         if angebotsebene.weiterAmEnde,
            vorgeholteFolge != nil, !folgenwechsel.laeuft,
            Folgenende.weiterschalten(position: spielstand.position,

@@ -239,7 +239,7 @@ struct Profilzeichen: View {
     /// Drei Anlaeufe hatte dieser Grund. Erst ein gruener Verlauf aus zwei
     /// rohen Werten, dann `akzentLeise` — und damit trug **jedes**
     /// Profilzeichen der App einen Tuerkisverlauf, was als Gruenstich auffiel.
-    /// Dann zwei Tiefen der Leiter, also Grau. Paul am 22.09.: „so grau sehen
+    /// Dann zwei Tiefen der Leiter, also Grau. Rückmeldung vom 22.09.: „so grau sehen
     /// die tot aus."
     ///
     /// Beides war je fuer sich richtig gedacht und traf die Sache nicht: ein

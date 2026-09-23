@@ -204,8 +204,8 @@ struct DarstellungView: View {
 /// **Sie war bis zum 22.09. die alte Fassung**: 11 Punkt, Versalien, gesperrt.
 /// Als `Gruppentitel` auf Normalschreibung im Grad der Reihenüberschrift
 /// umgestellt wurde, ist diese Kopie stehen geblieben — und damit sah genau
-/// eine der vier Einstellungsseiten anders aus als die drei anderen. Paul am
-/// 22.09.: „bei Darstellung ist noch die falsche drin."
+/// eine der vier Einstellungsseiten anders aus als die drei anderen. Rückmeldung
+/// vom 22.09.: „bei Darstellung ist noch die falsche drin."
 ///
 /// Dass es überhaupt eine Kopie gibt, hat einen Grund: `Gruppentitel` bringt
 /// seinen Seitenrand mit, und in einer Liste setzt den die Liste. Der Grad

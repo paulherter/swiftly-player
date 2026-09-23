@@ -56,13 +56,13 @@ struct AblagefassungenTests {
           "accessToken": "abc123",
           "userID": "u-1",
           "userName": "paul",
-          "serverURL": "https://tv.paulherter.de"
+          "serverURL": "https://jellyfin.example.com"
         },
         {
           "accessToken": "def456",
           "userID": "u-2",
           "userName": "eltern",
-          "serverURL": "https://tv.paulherter.de"
+          "serverURL": "https://jellyfin.example.com"
         }
       ],
       "aktiveKennung": "u-2"
@@ -76,7 +76,7 @@ struct AblagefassungenTests {
       "accessToken": "abc123",
       "userID": "u-1",
       "userName": "paul",
-      "serverURL": "https://tv.paulherter.de"
+      "serverURL": "https://jellyfin.example.com"
     }
     """.utf8)
 
@@ -89,7 +89,7 @@ struct AblagefassungenTests {
         #expect(bund.aktives.userID == "u-2")
         #expect(bund.aktives.userName == "eltern")
         #expect(bund.konten[0].accessToken == "abc123")
-        #expect(bund.serverURL.host() == "tv.paulherter.de")
+        #expect(bund.serverURL.host() == "jellyfin.example.com")
     }
 
     @Test("Eine Einzelsitzung von früher wird weiter übernommen")
@@ -112,7 +112,7 @@ struct AblagefassungenTests {
               "accessToken": "abc123",
               "userID": "u-1",
               "userName": "paul",
-              "serverURL": "https://tv.paulherter.de",
+              "serverURL": "https://jellyfin.example.com",
               "einFeldAusDerZukunft": 42
             }
           ],
@@ -133,6 +133,6 @@ struct AblagefassungenTests {
     func sessionBleibtLesbar() throws {
         let sitzung = try JSONDecoder().decode(Session.self, from: einzelneWieFrueher)
         #expect(sitzung.userID == "u-1")
-        #expect(sitzung.serverURL.absoluteString == "https://tv.paulherter.de")
+        #expect(sitzung.serverURL.absoluteString == "https://jellyfin.example.com")
     }
 }

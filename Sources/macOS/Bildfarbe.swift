@@ -49,7 +49,7 @@ final class Bildfarbe {
         // 55,6 % — dort kam 0,26 − (0,26 − 0,063) × 0,556 = **0,150** heraus.
         // `Stil.flaeche` ist 0,149. Die Knoepfe standen damit auf genau
         // ihrer eigenen Farbe und waren als Knoepfe nicht mehr zu sehen;
-        // Paul am 22.09.: „die Buttons sind doch viel heller" als am iPhone,
+        // Rückmeldung vom 22.09.: „die Buttons sind doch viel heller" als am iPhone,
         // wo dieselbe Reihe auf `grund` steht.
         //
         // 14,6 % ist der groesste Wert, bei dem die Toenung unter `flaeche`

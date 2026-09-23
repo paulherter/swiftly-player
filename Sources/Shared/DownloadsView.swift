@@ -212,7 +212,7 @@ struct Downloadfeld: View {
             // dasselbe tun sollen. Der Vermerk, der hier stand, hat die
             // Kopplung sogar benannt — „bis er nachzieht, sieht man den
             // Unterschied" —, nur ist der Nachbar laengst nachgezogen und
-            // dieses Feld stehen geblieben. Paul am 21.09.: „der Download-
+            // dieses Feld stehen geblieben. Rückmeldung vom 21.09.: „der Download-
             // Button auf der Filmseite ist noch falsch."
             .frame(width: dehnt ? nil : 48, height: 48)
             .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
@@ -686,7 +686,7 @@ struct DownloadsView: View {
                         // weiter unten, und ein Seitentitel mit Unterbau sieht
                         // anders aus als jede andere Wurzelseite. Ohne Netz
                         // sagt das der Leerzustand beziehungsweise die
-                        // Zustandszeile an der Zeile selbst. Paul am 21.09.
+                        // Zustandszeile an der Zeile selbst. Rückmeldung vom 21.09.
                     }
                     Spacer(minLength: 0)
                     // **Bearbeiten gibt es breit wie schmal.**
@@ -820,7 +820,7 @@ struct DownloadserieRoute: Hashable {
 /// **Die Serie auf dem Geraet, als Detailseite.**
 ///
 /// Hier stand eine blosse Liste unter Serienname und „N Folgen · X GB".
-/// Paul wollte, was der Rest der App hat: oben das grosse Bild, der Name,
+/// Gewünscht: was der Rest der App hat: oben das grosse Bild, der Name,
 /// ein Abspielknopf, darunter die Folgen nach Staffel. Gebaut aus den
 /// Bausteinen der Serienseite (`Heldbild`, `Heldauslauf`, `HauptknopfStil`,
 /// `Detailkopfleser`) — keine eigene Gestaltung.
@@ -972,8 +972,8 @@ struct DownloadserieView: View {
         #endif
     }
 
-    /// **Drei Wege zum Entfernen, wie in iOS ueblich.** Paul fand den Ring
-    /// an jeder Folge nicht als Loeschweg — er ist keiner, er haelt an und
+    /// **Drei Wege zum Entfernen, wie in iOS ueblich.** Der Ring an jeder
+    /// Folge taugte nicht als Loeschweg — er ist keiner, er haelt an und
     /// setzt fort. Jetzt: nach links wischen, lange druecken, oder oben
     /// Bearbeiten mit Auswahlkreisen und dem Knopf unten, wie in der Liste.
     ///

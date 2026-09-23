@@ -7,7 +7,7 @@ import JellyfinKit
 ///
 /// Es gibt ihn zweimal: im Fuß der Steuerung, wo er immer stand, und als
 /// eigene Ebene über dem Bild, die bei zugeklappter Steuerung von selbst
-/// erscheint (Stufe 3, Paul 16.09.2026: „Bei Netflix poppt der Button zur
+/// erscheint (Stufe 3, 16.09.2026: „Bei Netflix poppt der Button zur
 /// richtigen Zeit auf"). Vorlage ist der Mac: `Chip(fuellung:)` in
 /// `Sources/macOS/Macbausteine.swift`, die Einblendung in
 /// `Sources/macOS/PlayerScreen.swift` (`karteDa`, `angebotChip`).
@@ -22,7 +22,7 @@ final class Angebotsknopf {
     private var fuellung: Widget!
     private var gezeigt: Knopfangebot = .keiner
     /// Die Füllung als durchgehende Bewegung (`Fuellungsuhr`), am Bildtakt
-    /// des Fensters nachgezogen statt im halben Sekundentakt (Paul, 17.09.2026).
+    /// des Fensters nachgezogen statt im halben Sekundentakt (17.09.2026).
     fileprivate var uhr: Fuellungsuhr?
     private var takt: guint = 0
 
@@ -170,7 +170,7 @@ extension App {
     }
 
     /// **Der Angebotsknopf steht, an einer Stelle, egal ob die Steuerung offen
-    /// ist** (Mac: `angebotDa`, Paul 17.09.2026): Überspringen die ersten
+    /// ist** (Mac: `angebotDa`, 17.09.2026): Überspringen die ersten
     /// sechs Sekunden des Abschnitts, danach nur mit der Steuerung
     /// (`Angebotsebene.knopfdauer`); die Karte bei geschlossener Steuerung, bei offener der
     /// normale Knopf „Nächste Folge". Der Knopf im Fuß hält nur den Platz.

@@ -367,7 +367,7 @@ struct SerienView: View {
                 // gerade sieht. Bei einer Serie mit einer Staffel fehlte
                 // damit die einzige Stelle, an der das steht, und bei
                 // „Specials" dazu die Auskunft, dass man in den Specials
-                // steckt. Paul am 22.09.: „Die Staffelauswahl fehlt auf dem
+                // steckt. Rückmeldung vom 22.09.: „Die Staffelauswahl fehlt auf dem
                 // Mac komplett."
                 //
                 // **Rechts daneben stand der Chip „Laden".** Er war der
@@ -858,8 +858,8 @@ struct Folgenzeile: View {
             // Ladeauswahl der schlechteste: eine Spalte am rechten Rand jeder
             // Zeile, die bei fuenfundzwanzig Folgen fuenfundzwanzig Mal
             // dasselbe anbietet. Wer eine einzelne Folge will, hakt sie in der
-            // Auswahl an — dort sieht er dabei auch, wie gross sie ist. Paul
-            // am 21.09.: „die ergeben natuerlich keinen Sinn, wenn man die
+            // Auswahl an — dort sieht er dabei auch, wie gross sie ist. Rückmeldung
+            // vom 21.09.: „die ergeben natuerlich keinen Sinn, wenn man die
             // jetzt ueber so ein extra Menue runterlaedt". Der Wortlaut stand
             // in `Sources/Shared/SeriesView.swift`, der Ring hier blieb
             // stehen.

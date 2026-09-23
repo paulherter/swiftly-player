@@ -6,8 +6,8 @@ import Foundation
 ///
 /// **Sammlungen sind keine Bibliothek.** Deshalb stehen sie nicht am Ende
 /// der Bibliotheksliste, sondern direkt unter „Alle": sie sind eine andere
-/// Sicht auf denselben Bestand, kein weiterer Ordner auf der Platte. So hat
-/// Paul es am Entwurf vom 22.09.2026 korrigiert.
+/// Sicht auf denselben Bestand, kein weiterer Ordner auf der Platte. So wurde
+/// es am Entwurf vom 22.09.2026 korrigiert.
 public enum Bereichswahl: Hashable, Sendable, Identifiable {
     /// Jeder Titel dieser Gattung aus jeder Bibliothek. Voreingestellt.
     case alle
@@ -122,7 +122,7 @@ public struct Bereichsangebot: Sendable, Equatable {
     /// **Woraus „Alle" liest: die Bibliotheken dieser Gattung — nicht die
     /// gemischten.**
     ///
-    /// Paul am 22.09.2026 am iPhone: „Alle Filme" zeigte Folgen von Game of
+    /// Rückmeldung vom 22.09.2026 am iPhone: „Alle Filme" zeigte Folgen von Game of
     /// Thrones. Gemessen: Jellyfin führt lose Videodateien in einer
     /// gemischten Bibliothek als `Movie` — 13 „Filme" der Testbibliothek
     /// waren Folgen mit `S01E01` im Namen. Eine Gattung, die der Server so

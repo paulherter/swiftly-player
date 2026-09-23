@@ -394,7 +394,7 @@ struct SeerrDetailView: View {
 
     /// **Die zweite Stufe sagt, was zu tun ist.**
     ///
-    /// Vorher stand dort „Wirklich anfragen?" — Paul am 21.09.: „Man
+    /// Vorher stand dort „Wirklich anfragen?" — Rückmeldung vom 21.09.: „Man
     /// versteht nicht, dass man nochmal druecken muss." Ein Knopf, auf dem
     /// eine Frage steht, ist eine Frage ohne Antwort: man weiss nicht, ob
     /// Druecken bestaetigt oder abbricht. Jede Fassung faengt deshalb mit

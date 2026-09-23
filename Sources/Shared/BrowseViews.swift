@@ -257,7 +257,7 @@ struct ItemDetailView: View {
                         // Reihe aber nur 8 auseinander. Damit war der Abstand
                         // nach oben groesser als der zwischen den Feldern, und
                         // die Reihe las sich als eigene Sache statt als
-                        // Fortsetzung des Knopfs. Paul am 21.09.: „damit es
+                        // Fortsetzung des Knopfs. Rückmeldung vom 21.09.: „damit es
                         // irgendwie clean wie ein Element aussieht".
                         VStack(alignment: .leading, spacing: 8) {
                             hauptknopf
@@ -445,7 +445,7 @@ struct ItemDetailView: View {
     /// bei einem angefangenen Film also zwei volle Zeilen Knopf ueber dem
     /// Inhalt. Und er war doppelt: „Von vorn abspielen" steht seit jeher in
     /// der Mehr-Tafel (`Titelhandlungen.fuerFilm`), genau wie
-    /// „Fortschritt zuruecksetzen" daneben. Paul am 22.09.: „mach den weg, der
+    /// „Fortschritt zuruecksetzen" daneben. Rückmeldung vom 22.09.: „mach den weg, der
     /// ist ja sowieso in dem Menue."
     ///
     /// Die Seite hat damit wieder **eine** Hauptsache, und die Reihe darunter

@@ -1079,7 +1079,7 @@ class Spielwerk(
         var nurZeit = false
         while (true) {
             delay(250)
-            // **Dazwischen nur die Zeit** (Vorlage iOS `beobachten`, Paul 17.09.2026): im halben Sekundentakt lief
+            // **Dazwischen nur die Zeit** (Vorlage iOS `beobachten`, 17.09.2026): im halben Sekundentakt lief
             // sie nach dem Abspielen verzoegert an und zaehlte ungleichmaessig.
             nurZeit = !nurZeit
             if (nurZeit) {
@@ -1143,7 +1143,7 @@ class Spielwerk(
  * - Die Steuerung kommt schnell (180 ms) und geht langsam (340 ms), nach 4 s Ruhe — nicht, wenn
  *   angehalten ist, geschoben wird oder ein Blatt offen ist.
  * - **Ein Tipp schaltet nach 260 ms**, ein zweiter davor springt und laesst die Steuerung, wie sie war
- *   (Paul, 17.09.2026: sofort schalten und zuruecknehmen blitzte bei jedem Doppeltipp).
+ *   (17.09.2026: sofort schalten und zuruecknehmen blitzte bei jedem Doppeltipp).
  * - Die Mitte haelt an, auch bei ausgeblendeter Steuerung — wer dorthin tippt, meint den Knopf.
  * - Zwei Finger schalten hart zwischen ganzem und formatfuellendem Bild; ein weiches Zoomen, das
  *   falsch landet, wirkte auf iOS kaputter als ein Schalter.
@@ -1274,7 +1274,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                     modifier = Modifier.fillMaxSize())
 
         // **Tippflaechen** — ueber dem Bild, unter der Steuerung. Vorlage `tippflaechen` + `tippen(richtung:)`:
-        // **der erste Tipp schaltet sofort, nichts wird zurueckgenommen** (Paul, 17.09.2026). Ein zweiter auf
+        // **der erste Tipp schaltet sofort, nichts wird zurueckgenommen** (17.09.2026). Ein zweiter auf
         // derselben Seite binnen 260 ms spult und laesst die Steuerung, wie der erste sie gestellt hat.
         Box(Modifier.fillMaxSize()
             .pointerInput(Unit) {
@@ -2027,7 +2027,7 @@ fun Angebotspille(art: String, text: String, anteil: Double?, sekunden: Int?, we
 }
 
 /**
- * **Die Fuellung der Karte als eine durchgehende Bewegung** (Paul, 17.09.2026: im Takt nachgezogen ruckelte sie) —
+ * **Die Fuellung der Karte als eine durchgehende Bewegung** (17.09.2026: im Takt nachgezogen ruckelte sie) —
  * Gegenstueck zu `Fuellungsuhr` im Paket. Laeuft: linear vom jetzigen Stand bis voll ueber die Restdauer. Steht:
  * haelt genau dort an. Weiter: von dort, nie zurueck. Ohne Karte null.
  */

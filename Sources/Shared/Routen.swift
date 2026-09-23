@@ -52,7 +52,7 @@ struct ServerRoute: Hashable {
 /// **Ein weiteres Konto auf demselben Server — auch als Seite.**
 ///
 /// Sie kam als `fullScreenCover` von unten, wie die Serveraufnahme vorher.
-/// Paul am 22.09.: „ich moechte gar nichts mehr von unten."
+/// Rückmeldung vom 22.09.: „ich moechte gar nichts mehr von unten."
 struct KontoRoute: Hashable {}
 
 struct EinstellungenRoute: Hashable {}

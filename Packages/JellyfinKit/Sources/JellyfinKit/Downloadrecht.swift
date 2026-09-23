@@ -3,7 +3,7 @@ import Foundation
 /// Darf dieses Konto Titel aufs Geraet laden? Das Recht heisst am Server
 /// `Policy.EnableContentDownloading`, im Dashboard „Allow media downloading".
 ///
-/// **Gemessen am 17.09.2026** gegen `tv.paulherter.de`, Jellyfin 12.0.0: von
+/// **Gemessen am 17.09.2026** gegen `jellyfin.example.com`, Jellyfin 12.0.0: von
 /// 409 Operationen im OpenAPI-Dokument des Servers traegt genau **eine** die
 /// Berechtigung `Download` — `GET /Items/{itemId}/Download`, mit einer 403
 /// unter den Antworten. `GET /Videos/{itemId}/stream` traegt **keine**. Und

@@ -194,7 +194,7 @@ struct FilmView: View {
         // Auslauf — auf dem iPhone steht dieselbe Reihe **unter** dem Bild auf
         // reinem `grund`. Die Knoepfe tragen auf beiden Plattformen exakt
         // `flaeche` #262626; derselbe Grauton wirkt auf einem farbigen Grund
-        // aber wie eine andere Farbe. Paul am 22.09.: „Das sind nicht
+        // aber wie eine andere Farbe. Rückmeldung vom 22.09.: „Das sind nicht
         // dieselben, so wie ich das sehe."
         //
         // Endet der Verlauf mit dem Bild, kommen an der Mitte der Knopfreihe
@@ -296,7 +296,7 @@ struct Heldenkopf: View {
     /// die Auswahl (ganze Serie, Staffel, einzelne Folge). Hier war der Knopf
     /// an `titel.type != "Series"` gebunden — auf der Serienseite gab es ihn
     /// also gar nicht, und das Laden hing allein an einem Chip neben der
-    /// Staffelwahl, an dem niemand sucht. Paul am 22.09.: „Der Laden-Knopf
+    /// Staffelwahl, an dem niemand sucht. Rückmeldung vom 22.09.: „Der Laden-Knopf
     /// existiert nicht."
     ///
     /// Die Auswahl selbst braucht Staffeln und vorgeladene Folgen und steht
@@ -474,7 +474,7 @@ struct Heldenkopf: View {
             // oben und unten, also rund 24 hoch. Auf 20 gedeckelt und
             // beschnitten fehlte ihnen oben und unten je ein Streifen: die
             // Plakette sah dadurch anders aus als dieselbe Plakette auf dem
-            // iPhone, und der Beleg wirkte angeschnitten. Paul am 22.09.:
+            // iPhone, und der Beleg wirkte angeschnitten. Rückmeldung vom 22.09.:
             // „oben und unten abgeschnitten."
             //
             // 26 ist der Wert der Vorlage — `Belegzeile` in

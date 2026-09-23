@@ -265,7 +265,7 @@ enum Speicher {
     /// **Der zuletzt benutzte Server, auch nach dem Abmelden.**
     ///
     /// Abmelden loeschte bisher alles — beim naechsten Start stand wieder ein
-    /// leeres Adressfeld, und man tippte `tv.paulherter.de` von Hand. Der Mac
+    /// leeres Adressfeld, und man tippte `jellyfin.example.com` von Hand. Der Mac
     /// merkt sich Adresse, Name und Fassung getrennt von der Sitzung
     /// (`Shared/Anmeldemodell.swift:15`); die Zugangsdaten sind damit weg, der
     /// Weg dorthin nicht.

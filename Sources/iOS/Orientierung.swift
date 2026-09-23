@@ -54,7 +54,7 @@ final class Orientierung {
     ///
     /// Umgeschaltet wird nur, **ob sie andere Töne duldet**. Mit
     /// `.mixWithOthers` laeuft Spotify oder eine Sprachnachricht weiter, waehrend
-    /// Swiftly offen ist. Paul am 22.09.: „Jedes Mal, wenn ich Spotify oder eine
+    /// Swiftly offen ist. Rückmeldung vom 22.09.: „Jedes Mal, wenn ich Spotify oder eine
     /// Sprachnachricht abspiele und dann Swiftly öffne, pausiert trotzdem die
     /// Sprachnachricht, auch wenn gar nichts läuft." Erst wenn ein Film
     /// startet, nimmt Swiftly den Ton exklusiv — dann haelt das System die

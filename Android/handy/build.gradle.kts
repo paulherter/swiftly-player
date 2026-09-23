@@ -37,11 +37,12 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 8
+        versionCode = 9
         versionName = "1.0.4"
-        // **Nur arm64.** Der Swift-Kern wird nur fuer arm64-v8a gebaut; auf jeder anderen ABI
-        // stuerzte die App beim Start. libVLC brachte vier ABIs mit — rund 135 MB, die nie liefen.
-        ndk { abiFilters += listOf("arm64-v8a") }
+        // **Nur die ABIs, fuer die der Swift-Kern gebaut wird** (`kern/build.gradle`); auf jeder
+        // anderen stuerzte die App beim Start. libVLC brachte vier ABIs mit — x86 lief nie.
+        // armeabi-v7a fuer Fernseher mit 32-Bit-Android: ohne sie war die App dort im Store unsichtbar.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -200,7 +200,7 @@ struct PlayerScreen: View {
     }
 
     /// **Der Angebotsknopf steht an einer Stelle, egal ob die Steuerung offen
-    /// ist** (wie iOS, Paul 17.09.2026): Überspringen die ersten sechs
+    /// ist** (wie iOS, 17.09.2026): Überspringen die ersten sechs
     /// Sekunden des Abschnitts, danach nur mit der Steuerung
     /// (`Angebotsebene.knopfdauer`); blendet er aus, wird `karteDa` falsch
     /// und der Fokus geht über `onChange(of: karteDa)` an die Ruhe. Die Karte bei geschlossener Steuerung, bei offener der normale
@@ -344,10 +344,9 @@ struct PlayerScreen: View {
             schleier.opacity(steuerungDa ? 1 : 0)
 
             // **Das Technikschild.** Eine Auskunft, kein Bedienteil: nimmt
-            // weder Fokus noch Eingaben. **Direkt auf dem Film** (Paul,
-            // 22.09.2026): über dem Schleier, unter Titel, Knöpfen und Leiste
+            // weder Fokus noch Eingaben. **Direkt auf dem Film** (22.09.2026): über dem Schleier, unter Titel, Knöpfen und Leiste
             // und damit auch unter den Ebenen. **Es gleitet mit der
-            // Steuerung** (Paul, 22.09.2026): offen unter der Titelzeile, zu
+            // Steuerung** (22.09.2026): offen unter der Titelzeile, zu
             // an den oberen Rand, wo sie stand. Bewegung statt Blende, dieselbe
             // Kurve wie die Steuerung; mit reduzierter Bewegung springt es.
             //
@@ -1371,7 +1370,7 @@ struct PlayerScreen: View {
         ausrollen?.cancel()
         // **Schrubben haelt an, wie im Systemplayer.** Vorher lief der Film
         // weiter, waehrend die Leiste schon ganz woanders stand: Bild und
-        // Ton sagten das eine, die Marke das andere (Paul, 18.09.2026 —
+        // Ton sagten das eine, die Marke das andere (18.09.2026 —
         // Vergleich mit Apples Player und Swiftfin, die beide anhalten).
         if !markeVomWisch, schaltwerk.laeuft, let flaeche {
             flaeche.pause()
@@ -1477,7 +1476,7 @@ struct PlayerScreen: View {
         // gefragt, war immer einer offen — der eigene. Jeder Sprung wartete
         // dann auf sich selbst, bis der Deckel nach 3 s griff: die Zeit stand
         // sofort am Ziel, das Bild lief weiter und sprang erst Sekunden
-        // spaeter (Paul, Apple TV, 18.09.2026).
+        // spaeter (Apple TV, 18.09.2026).
         let vorigesZiel = sprung?.ziel
         gesprungen(auf: ziel)
         spulziel = nil
@@ -1787,7 +1786,7 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
             guard let flaeche else { continue }
 
-            // **Dazwischen nur die Zeit**, wie auf iOS (Paul, 17.09.2026).
+            // **Dazwischen nur die Zeit**, wie auf iOS (17.09.2026).
             nurZeit.toggle()
             if nurZeit {
                 if !wechselt {
@@ -1943,7 +1942,7 @@ struct PlayerScreen: View {
 
             // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
             // Server), und nicht, wenn sie abgesagt wurde. „Nächste Folge
-            // automatisch" spielt dafuer keine Rolle mehr (Paul, 17.09.2026).
+            // automatisch" spielt dafuer keine Rolle mehr (17.09.2026).
             if ebene.weiterAmEnde, let folge = naechste, !wechselt,
                // Erst wenn die neue Folge wirklich steht. Sonst zaehlt noch
                // die Zeit der alten, und die ist naturgemaess am Ende.
@@ -2316,7 +2315,7 @@ struct Wischfeld: UIViewRepresentable {
 
         /// **Nur waagerecht spult.** Vorher genuegte jede Beruehrung: wer nach
         /// oben wischte, um zu „Naechste Folge" oder den Einstellungen zu
-        /// kommen, bekam die Spulmarke (Paul, 19.09.2026). Jetzt beginnt das
+        /// kommen, bekam die Spulmarke (19.09.2026). Jetzt beginnt das
         /// Spulen erst nach 40 Punkten, die mindestens doppelt so weit zur
         /// Seite gehen wie nach oben oder unten. Alles andere bleibt dem Fokus.
         @objc func gewischt(_ erkenner: UIPanGestureRecognizer) {

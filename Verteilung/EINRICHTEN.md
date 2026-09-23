@@ -1,6 +1,6 @@
 # Einmal einrichten, dann läuft es von selbst
 
-Diese Schritte macht Paul **einmal**. Danach landet jede neue GitHub-Version
+Diese Schritte macht der Nutzer **einmal**. Danach landet jede neue GitHub-Version
 automatisch bei winget und im AUR — der Auslöser ist die Veröffentlichung
 des Releases, ohne dass jemand etwas anstößt.
 

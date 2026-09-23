@@ -187,7 +187,7 @@ struct MerklisteView: View {
         Unschaerfekopf(versatz: versatz) {
             // **Vier, nicht vierzehn.** Der `Unterseitenkopf` bringt unten
             // schon 18 Punkt mit; zusammen mit 14 standen die Pillen 32 Punkt
-            // unter dem Titel und wirkten abgehaengt. Paul am 21.09.: „viel zu
+            // unter dem Titel und wirkten abgehaengt. Rückmeldung vom 21.09.: „viel zu
             // weit unten". Breit gibt es keinen solchen Unterbau, dort bleibt
             // es bei 14 — deshalb haengt die Zahl an `breit`.
             // Eine Zahl fuer „Kopf zu Wertreihe", wie in Bibliothek und
@@ -225,7 +225,7 @@ struct MerklisteView: View {
                     //
                     // Sie war einen Tag lang oben rechts neben „Merkliste" —
                     // und stand dort auf einer anderen Ebene als die Werte,
-                    // auf die sie sich bezieht. Paul am 21.09.: „die müsste
+                    // auf die sie sich bezieht. Rückmeldung vom 21.09.: „die müsste
                     // rechts von den zwei Buttons sein und nicht von dem
                     // Namen". Sie zählt, was die zwei Pillen gefiltert haben,
                     // also gehört sie in deren Zeile.

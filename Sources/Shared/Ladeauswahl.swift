@@ -25,8 +25,8 @@ import SwiftUI
 /// **Aufbau wie die Mac-Tafel (`MacLadeauswahl`), Töne nach BRAND 4.** Bis
 /// zum 22.09. stand hier fast derselbe Aufbau, aber das Blatt war `flaeche`
 /// und die Karten darin auch — von den zwei Gruppen blieben nur die Linien.
-/// Der Mac legt die Karten eine Stufe *dunkler* als seine Tafel. Paul hat für
-/// das Telefon die andere Richtung gewählt: **Tiefe geht nach oben** — das
+/// Der Mac legt die Karten eine Stufe *dunkler* als seine Tafel. Fürs
+/// Telefon wurde die andere Richtung gewählt: **Tiefe geht nach oben** — das
 /// Blatt bleibt `flaeche` wie jedes Blatt, die Karten liegen auf `erhoeht`.
 /// Etwas Dunkleres in Hellerem läse sich als Loch.
 struct Ladeauswahl: View {
@@ -123,7 +123,7 @@ struct Ladeauswahl: View {
     /// Die Zeilen klappten in einer Animation auf, die Hoehe darueber aber
     /// nicht: gemessen wird erst nach dem Aufklappen, und der Wert kam ohne
     /// Animation an. Also stand das Blatt schlagartig hoch, und die Zeilen
-    /// schoben sich danach hinein — Paul: „zack oben, zack unten". Jetzt
+    /// schoben sich danach hinein — Rückmeldung: „zack oben, zack unten". Jetzt
     /// laeuft die Hoehe in derselben Kurve wie das Blatt selbst
     /// (`blattbewegung`, bei reduzierter Bewegung eine Blende). Nur die erste
     /// Messung setzt hart, sonst wuechse das Blatt beim Oeffnen aus null.

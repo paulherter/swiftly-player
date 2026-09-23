@@ -104,7 +104,7 @@ enum Regal {
     /// letzte Antwort. Fiel die erste Frage in die Zeit, bevor ueberhaupt
     /// Daten dalagen, blieb der Startbildschirm bei „leer" stehen — und zwar
     /// dauerhaft, bis irgendwann zufaellig neu gefragt wurde. Genau so sah es
-    /// bei Paul aus: meistens nur das Zeichen, manchmal das richtige Regal
+    /// im Test aus: meistens nur das Zeichen, manchmal das richtige Regal
     /// (17.09.2026).
     private static func bescheidGeben() {
         #if os(tvOS)

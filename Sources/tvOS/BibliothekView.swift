@@ -17,7 +17,7 @@ import SwiftUI
 ///
 /// **Keine Filterchips mehr.** Sie standen als Reihe „Alle · Angefangen ·
 /// Ungesehen" da; am iPhone ist es seit je ein Knopf, der den Filter nennt
-/// und ein Blatt oeffnet. Paul am 22.09.: „Das gefällt mir nicht. Wir müssen
+/// und ein Blatt oeffnet. Rückmeldung vom 22.09.: „Das gefällt mir nicht. Wir müssen
 /// das anders machen, wie auf dem Handy."
 ///
 /// **Kein Kopfblock.** Startseite und Detailseiten tragen oben Titel,
@@ -236,7 +236,7 @@ struct BibliothekView: View {
     /// man ist, und sie sagt es in Worten. Und die Merkliste — dieselbe Art
     /// Seite, derselbe Aufbau, dasselbe Gitter — hatte nie einen Verlauf;
     /// nebeneinander sahen drei Bestandsseiten nach drei verschiedenen Apps
-    /// aus. Paul am 23.09.: „einfach nur unser Grau, so wie bei Watchlist.
+    /// aus. Rückmeldung vom 23.09.: „einfach nur unser Grau, so wie bei Watchlist.
     /// Das ist konsistent."
     ///
     /// Die Farbe bleibt dort, wo sie etwas aussagt: am gewaehlten Filter, am

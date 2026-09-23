@@ -96,7 +96,7 @@ struct DownloadrechtTests {
         return JellyfinClient(baseURL: URL(string: "https://tv.example.de")!,
                               deviceID: "dev-42", deviceName: "Prueflauf",
                               session: .init(accessToken: "tok", userID: "u1",
-                                             userName: "Paul",
+                                             userName: "nutzer",
                                              serverURL: URL(string: "https://tv.example.de")!),
                               urlSession: URLSession(configuration: config))
     }

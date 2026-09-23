@@ -219,7 +219,7 @@ extension App {
     /// **Nur echte Querbilder wechseln.** Hat keiner der Titel eines, nimmt
     /// das Banner, was der erste als Ersatz hergibt — sonst sässe der runde
     /// Kopf unten in einer dunklen Fläche. Genau der „viel zu tiefe" Kopf,
-    /// den Paul gemeldet hat; auf Apple fängt `kopfbildURL` denselben Fall ab.
+    /// gemeldete Kopf; auf Apple fängt `kopfbildURL` denselben Fall ab.
     private func personBannerNachladen(_ person: Item, in kulisse: Kulisse) {
         guard let client, let adressen else { return }
         Task.detached { [self] in

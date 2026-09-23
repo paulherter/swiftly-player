@@ -10,7 +10,7 @@ import Foundation
 ///
 /// **Warum es das braucht.** Eine Sitzung soll nachsehen, bevor sie etwas
 /// meldet — so steht es im Übernahmeskill, und der Blick kostet dreißig
-/// Sekunden gegen eine ganze Runde über Paul. Auf Linux ging das nicht:
+/// Sekunden gegen eine ganze Rückfragerunde. Auf Linux ging das nicht:
 /// `ydotool` erreicht die App auf dieser Wayland-Sitzung nicht, egal mit
 /// welchen Koordinaten. Am 13.09.2026 sind dadurch zwei Behebungen
 /// ausgeliefert worden, die gar nicht griffen, und drei Seiten galten als

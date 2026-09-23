@@ -136,7 +136,7 @@ final class VLCPlayerView: Basisansicht {
     /// **Eine eigene Bibliothek, damit VLC keine Bilder vorab wegwirft.**
     ///
     /// DVD-Rips ruckelten auf Apple TV und iPhone, 4K-HEVC nicht; beim
-    /// Kollegen alle DVD-Rips, also auch progressive. Paul am Geraet:
+    /// Kollegen alle DVD-Rips, also auch progressive. Rückmeldung am Gerät:
     /// dekodiert Ø 22,6–25,4, gezeigt Ø 22,6–23,7, verworfen bis 298.
     ///
     /// **Der Ausgabeweg, im tvOS-Simulator protokolliert** (dessen VLCKit ist
@@ -812,8 +812,8 @@ final class VLCPlayerView: Basisansicht {
         // **Die laufende Spurwahl mitnehmen.** Ein neu geoeffneter Strom
         // bringt VLCs eigene Voreinstellung mit - meist die Untertitelspur mit
         // „Standard"-Markierung aus der MKV. Ohne das gingen abgeschaltete
-        // Untertitel nach einem kurzen Abriss von selbst wieder an (Paul,
-        // 18.09.2026: Caddy neu gestartet, Apple TV).
+        // Untertitel nach einem kurzen Abriss von selbst wieder an
+        // (18.09.2026: Caddy neu gestartet, Apple TV).
         spurenNachAufbau = gemeldeteSpuren
         Protokoll.schreib("[Netz] \(grund) → Strom neu aufbauen bei \(Int(letzteGutePosition)) s")
         // Der Versatz bleibt: dieselbe Adresse liefert wieder ab derselben
@@ -1439,7 +1439,7 @@ final class VLCPlayerView: Basisansicht {
     /// nach — der Abspielknopf nicht. Kam kein automatisches Ende der
     /// Unterbrechung (ein Wecker meldet es oft gar nicht), drückte man selbst,
     /// und VLC startete den Ton auf der inaktiven Sitzung: ein paar Sekunden
-    /// Stille, dann setzte er verspätet ein (Paul, 17.09.2026, Stoppuhr).
+    /// Stille, dann setzte er verspätet ein (17.09.2026, Stoppuhr).
     /// `setActive(true)` auf einer schon aktiven Sitzung kostet nichts.
     func resume() {
         #if os(iOS) || os(tvOS)
@@ -1853,8 +1853,8 @@ final class VLCPlayerView: Basisansicht {
 
     /// Relativ springen.
     ///
-    /// **Ist der vorige Sprung noch unterwegs, zählt sein Ziel** (Paul,
-    /// 17.09.2026, iPhone): „Intro überspringen", gleich danach „30 s vor" —
+    /// **Ist der vorige Sprung noch unterwegs, zählt sein Ziel**
+    /// (17.09.2026, iPhone): „Intro überspringen", gleich danach „30 s vor" —
     /// und die Wiedergabe sprang zurück an das Ende des Intros. Zwei Gründe:
     /// `jump(withOffset:)` rechnet von VLCs eigener, noch alter Zeit, und
     /// `sprungNachmessen` wachte weiter über das **alte** Ziel, sah die

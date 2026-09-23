@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -77,6 +78,7 @@ private fun Gruppenkopf(text: String) {
  * eine gruppierte Karte mit Haarlinien statt einer flachen Liste, Zeilen ohne Symbole, gezeichnete
  * Schalter statt Text und ein Pfeil an jeder Auswahlzeile.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val e = app.einstellungen
@@ -124,15 +126,24 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     Column(Modifier.fillMaxSize().background(Stil.grund)
             .padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
-            Column(Modifier.width(230.dp).focusGroup()) {
+            // **Nach links zurueck heisst: auf den gewaehlten Bereich** (tvOS: `.focusSection()` mit
+            // `.defaultFocus($links, bereich)`, Zurueck setzt `links = bereich`). Vorher fand die
+            // geometrische Suche aus dem rechten Teil den Kontenstreifen oben, und Zurueck sprang
+            // immer auf die erste Zeile — `links` haengt deshalb an der gewaehlten Zeile.
+            //
+            // **Scrollbar**, wie die rechte Spalte: Kontokarte und sieben Bereiche sind hoeher als
+            // ein 1080er-Bild. Ohne Scrollen bekam „Swiftly" die Hoehe 0 — der Fokus landete auf
+            // einer unsichtbaren Zeile unter dem Bildrand.
+            Column(Modifier.width(230.dp).focusProperties { enter = { links } }
+                    .verticalScroll(rememberScrollState()).focusGroup()) {
                 Kontokarte(app, serverzeile, karten,
                            aufnehmen = { oeffnen(Ziel("weiteresKonto", uebersetzt("Konto hinzufügen"), "WeiteresKonto")) },
                            wechseln = { k -> app.kontoWechseln(k) })
                 Spacer(Modifier.height(20.dp))
                 Gruppenkopf(uebersetzt("Bereiche"))
-                Abteil.entries.forEachIndexed { i, a ->
+                Abteil.entries.forEach { a ->
                     BereichZeile(uebersetzt(a.titel), ausgewaehlt = a == abteil,
-                                 modifier = if (i == 0) Modifier.focusRequester(links) else Modifier,
+                                 modifier = if (a == abteil) Modifier.focusRequester(links) else Modifier,
                                  fokusGeaendert = { if (it) { abteil = a; linksImFokus = true } },
                                  tun = { runCatching { rechts.requestFocus() } })
                 }
@@ -269,7 +280,7 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             // Konten stehen — wie auf tvOS. An seiner Stelle hier der zweite Server: dieselbe
                             // Handlung wie „Server hinzufügen" im Server-Abteil, derselbe Katalogschlüssel und
                             // dasselbe Ziel (`ServerAufnahme` → `TvServerAufnahme`). Stand hier als tote
-                            // Anzeigezeile „Kommt später" — Paul will Server hinzufügen können.
+                            // Anzeigezeile „Kommt später" — gewünscht: Server hinzufügen können.
                             TvHandlung(uebersetzt("Server hinzufügen"), modifier = erste) {
                                 oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme"))
                             }

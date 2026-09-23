@@ -37,7 +37,7 @@ import SwiftUI
 /// Was darüber hinausgeht (verlorene Bilder), nimmt `Kappliste` nur, solange
 /// `hoechstanteil` der angebotenen Höhe reicht. Vorher galt die Kappung für
 /// alle Zeilen, und am iPhone quer fielen bei einer Umrechnung Ton und
-/// Puffer weg (Paul, 22.09.2026: „vielleicht fehlen Infos"). Kein Scrollen:
+/// Puffer weg (22.09.2026: „vielleicht fehlen Infos"). Kein Scrollen:
 /// das Schild nimmt keine Eingaben, also könnte auch niemand scrollen.
 struct Technikschild: View {
     /// Was der Server ausliefert und warum — die wichtigste Zeile.

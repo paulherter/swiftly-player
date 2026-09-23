@@ -196,7 +196,7 @@ struct ProfilView: View {
                             // Der Beschnitt haengt an derselben Flaeche wie
                             // die Fuellung, also an derselben wachsenden
                             // Hoehe: der Inhalt geht mit dem Kasten auf. Am
-                            // 17.09. von Paul am Fernseher gemeldet.
+                            // 17.09. am Fernseher gemeldet.
                             //
                             // Vor der Fuellung, nicht danach — sonst wuerde
                             // der Beschnitt auch die Fuellung wegschneiden,
@@ -297,7 +297,7 @@ struct ProfilView: View {
     /// rechts, und direkt darueber die Bereichsliste, deren gewaehlter
     /// Eintrag ebenfalls ein gefuellter, gerundeter Kasten ist. Drei
     /// gefuellte Kaesten in einem Bild fuer drei verschiedene Dinge: wer du
-    /// bist, wo du bist, was du einstellst. Paul am 23.09.: die Kachel
+    /// bist, wo du bist, was du einstellst. Rückmeldung vom 23.09.: die Kachel
     /// gehoert nicht zu den Bereichen, sieht aber so aus, als gehoere sie
     /// dazu.
     ///

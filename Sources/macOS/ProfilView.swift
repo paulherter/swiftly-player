@@ -152,8 +152,8 @@ struct ProfilView: View {
             //
             // **Formularbreite, nicht Lesebreite.** 700 waren zu viel: eine
             // Zeile aus Zeichen, einem Wort und einem Winkel, ueber 700 Punkt
-            // gezogen und 46 hoch, ist ein Strich mit Text am Rand. Paul am
-            // 22.09.: „warum muessen die ganzen Reihen so extrem lang sein,
+            // gezogen und 46 hoch, ist ein Strich mit Text am Rand. Rückmeldung
+            // vom 22.09.: „warum muessen die ganzen Reihen so extrem lang sein,
             // gleichzeitig aber in der Hoehe so klein?" Lesebreite ist das
             // Mass fuer **Fliesstext**; eine Liste aus Zeilen ist ein
             // Formular, und dafuer gibt es `formularbreite`. Damit stehen die

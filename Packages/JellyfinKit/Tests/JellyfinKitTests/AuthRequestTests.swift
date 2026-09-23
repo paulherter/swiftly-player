@@ -320,7 +320,7 @@ struct ServeradresseTests {
 
     @Test("Oeffentliche Namen bekommen https")
     func oeffentlichBekommtHTTPS() throws {
-        let url = try #require(AppModelURLNormalizer.normalize("tv.paulherter.de"))
+        let url = try #require(AppModelURLNormalizer.normalize("jellyfin.example.com"))
         #expect(url.scheme == "https")
     }
 

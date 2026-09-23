@@ -86,8 +86,8 @@ aufgeschrieben, sonst hält die nächste Sitzung „übersetzt" für „geprüft
   Also greift die Einstellung, VLC kennt die Laufzeit (`guard dauer > 0`
   hält), die Stelle läuft mit, der Titel stimmt. **Offen bleibt allein
   `CreateFileW`/`WriteFile`** — in der VM ist kein Discord, und es liegt keine
-  `\\.\pipe\discord-ipc-*` an. Absichtlich nicht installiert: es ist Pauls
-  Rechner, und er hat nicht darum gebeten. Der Rahmen selbst ist über die
+  `\\.\pipe\discord-ipc-*` an. Absichtlich nicht installiert: es ist der
+  Testrechner, und dort wurde nicht darum gebeten. Der Rahmen selbst ist über die
   Unix-Steckdose auf dem Mac belegt, und Linux nimmt seit `677bc57` denselben
   Weg.
 
