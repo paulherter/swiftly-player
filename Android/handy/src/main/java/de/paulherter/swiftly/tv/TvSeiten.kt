@@ -49,6 +49,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -418,6 +425,7 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val verlauf = remember(verlaufRoh) { runCatching { JSONArray(Kern.suchverlaufListe(verlaufRoh)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList()) }
     LaunchedEffect(st.begriff) { st.suchen(app, st.begriff.trim()) }
     val feld = ersterFokus()
+    val fokusVerwalter = LocalFocusManager.current
     fun merken() { verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh); app.ablage.merken(Kern.suchverlaufSchluessel(), verlaufRoh) }
 
     TvRaster(st.treffer, oeffnen = oeffnen, laedt = st.sucht && st.treffer.isEmpty(), platzhalterReihen = 1, kopf = {
@@ -427,7 +435,19 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 BasicTextField(st.begriff, { st.begriff = it }, singleLine = true,
                     textStyle = TvStil.koerper.copy(color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { merken() }),
-                    modifier = Modifier.width(460.dp).focusRequester(feld).onFocusChanged { imFeld = it.isFocused },
+                    // **Hoch und Runter verlassen das Feld.** Das Textfeld nahm beide Tasten selbst
+                    // (Schreibmarke an Anfang/Ende der Zeile) und meldete sie als erledigt: aus der
+                    // Suche kam man weder in die Reiterleiste noch an Verlauf oder Treffer.
+                    modifier = Modifier.width(460.dp).focusRequester(feld).onFocusChanged { imFeld = it.isFocused }
+                        .onPreviewKeyEvent { e ->
+                            val richtung = when (e.key) {
+                                Key.DirectionUp -> FocusDirection.Up
+                                Key.DirectionDown -> FocusDirection.Down
+                                else -> return@onPreviewKeyEvent false
+                            }
+                            if (e.type == KeyEventType.KeyDown) fokusVerwalter.moveFocus(richtung)
+                            true
+                        },
                     decorationBox = { innen ->
                         // **Kein Rand, auch nicht im Fokus** — ein Suchfeld ist eine
                         // gefuellte Kapsel, kein gezeichneter Rahmen, und der Fokus hat mit
