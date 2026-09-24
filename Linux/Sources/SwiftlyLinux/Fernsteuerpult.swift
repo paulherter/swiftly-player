@@ -82,6 +82,26 @@ extension App {
                 oeffne(erster)
             }
 
+        /// Eine Sammlung öffnen, über den Anfang ihres Namens — wie ein Klick
+        /// auf ihre Kachel in einer Bibliothek, die Filme zu Sammlungen
+        /// gruppiert. `raster` sagt danach, was darin steht.
+        case "sammlung":
+            let name = teile.count > 1 ? teile[1] : ""
+            let art = bereich == .serien ? "tvshows" : "movies"
+            guard let s = sammlungsverzeichnis?.sammlungen(art: art)
+                    .first(where: { $0.item.name.hasPrefix(name) }) else {
+                print("[Fern] keine Sammlung \(name) (\(sammlungsverzeichnis?.alle.count ?? -1) bekannt)")
+                fflush(nil)
+                break
+            }
+            oeffne(s.item)
+
+        /// Was im Raster des sichtbaren Bereichs steht.
+        case "raster":
+            print("[Fern] \(bereich): \(rasterItems[bereich]?.count ?? -1) Titel, "
+                  + (rasterItems[bereich] ?? []).prefix(5).map(\.name).joined(separator: " | "))
+            fflush(nil)
+
         /// Den ersten Titel der ersten Startreihe abspielen — der einzige
         /// Weg in den Player ohne Klick.
         case "spielen":

@@ -270,7 +270,14 @@ class Spielwerk(
     private val ruck: (Ruck) -> Unit = {},
 ) {
     // Eigene Zertifizierungsstellen des Nutzers: GnuTLS liest sonst nur den Systemspeicher (`Zertifikate`).
+    // **`--stereo-mode=1`: dekodierter Ton als Stereo, solange `mehrkanalTon` aus ist.** Meldet der
+    // HDMI-Ausgang Bitstream-Formate, oeffnet libVLCs AudioTrack-Ausgabe (Geraet `encoded:`/`pcm`)
+    // Mehrkanal-PCM mit bis zu acht Kanaelen — AAC 5.1 ging so als 6-Kanal-Strom hinaus, und manche
+    // Boxen (Mi Box S) geben den stumm wieder, statt ihn herunterzumischen. Die Option wirkt in libVLC
+    // nur auf lineares PCM (`aout_OutputNew`), AC3/E-AC3/DTS/TrueHD gehen weiter roh durch
+    // (`digitalenTonAnwenden`).
     val vlc = LibVLC(kontext, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") +
+        listOfNotNull("--stereo-mode=1".takeUnless { app.einstellungen.mehrkanalTon }) +
         listOfNotNull(Zertifikate.ordner?.let { "--gnutls-dir-trust=$it" })))
     val spieler = MediaPlayer(vlc)
     val sitzung = MediaSession(kontext, "Swiftly")
@@ -546,8 +553,11 @@ class Spielwerk(
             add(AudioDeviceInfo.TYPE_HDMI); add(AudioDeviceInfo.TYPE_HDMI_ARC); add(AudioDeviceInfo.TYPE_LINE_DIGITAL)
             if (android.os.Build.VERSION.SDK_INT >= 33) add(AudioDeviceInfo.TYPE_HDMI_EARC)
         }
-        val kodierungen = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .filter { it.type in digitaleAusgaenge }
+        val ausgaenge = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { it.type in digitaleAusgaenge }
+        // Fuers Protokoll: was der Ausgang an PCM-Kanaelen meldet (leer heisst „beliebig").
+        ausgaenge.forEach { Protokoll.schreib("[VLC] Ausgang ${it.type}: Kanaele ${it.channelCounts.toList()}, " +
+            "Mehrkanal-Ton ${if (app.einstellungen.mehrkanalTon) "an" else "aus"}") }
+        val kodierungen = ausgaenge
             .flatMap { it.encodings.toList() }
             .filter { it in bekannt }
             .distinct()

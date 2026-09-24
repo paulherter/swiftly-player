@@ -1160,7 +1160,7 @@ final class App: @unchecked Sendable {
     /// **Welche Sammlung gerade als Unterseite offen ist** — `nil`, wenn
     /// keine. `art` sagt, ob ihre Filme oder ihre Serien gemeint sind
     /// (Mac `Sammlungsseite`).
-    var offeneSammlung: (item: Item, art: String)?
+    var offeneSammlung: (item: Item, art: String?)?
     /// Woher die Sammlung geoeffnet wurde — dorthin fuehrt der Pfeil, und
     /// diese Zeile der Leiste bleibt hervorgehoben, wie auf dem Mac, wo die
     /// Sammlung im Stapel ihres Bereichs liegt.
@@ -4033,7 +4033,10 @@ final class App: @unchecked Sendable {
     /// Pfeil, Name, Filter und Sortierung, Raster — die Rasterseite mit einer
     /// Sammlung als Quelle. Voreingestellt nach Jahr, aufsteigend; Filter und
     /// Sortierung fangen jedes Mal von vorn an.
-    func sammlungOeffnen(_ sammlung: Item, art: String) {
+    ///
+    /// `art` ist `nil` für eine Sammlung, die als Kachel in einer Liste
+    /// stand (siehe ``oeffne(_:)``): dann ohne Gattung, also alles darin.
+    func sammlungOeffnen(_ sammlung: Item, art: String?) {
         // Aus einer Sammlung heraus bleibt der Rueckweg der urspruengliche.
         if bereich != .sammlung { sammlungHerkunft = bereich }
         offeneSammlung = (sammlung, art)

@@ -174,6 +174,8 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                 blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
                             }
                             Trennlinie()
+                            TvSchalterzeile(uebersetzt("Mehrkanal-Ton (5.1)"), e.mehrkanalTon) { e.mehrkanalTon = !e.mehrkanalTon }
+                            Trennlinie()
                             TvSchalterzeile(uebersetzt("Untertitel automatisch"), e.untertitelAutomatisch) { e.untertitelAutomatisch = !e.untertitelAutomatisch }
                             Trennlinie()
                             // Derselbe Ablageschluessel wie im Player (`TvPlayer`/`TvBildtakt`, Vorgabe an) —
