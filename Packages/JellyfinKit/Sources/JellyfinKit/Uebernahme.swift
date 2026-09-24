@@ -224,6 +224,9 @@ public enum Uebernahme {
         guard let wem = s.benutzerID, wem == eigeneBenutzerID else { return false }
         // 3. Es läuft etwas, und es hat eine Kennung, mit der man es öffnen kann.
         guard let titel = s.laeuft, !titel.id.isEmpty else { return false }
+        // 3b. Nur Bild. Musik und Hörbücher (auch aus Swiftly Music) gehören
+        //     nicht in den Player — dort gäbe es nichts zu übernehmen.
+        guard istVideo(titel), s.programm != "Swiftly Music" else { return false }
         // 4. Anhalten muss ankommen. Ohne das würde das andere Gerät
         //    weiterlaufen, während hier dasselbe beginnt — zwei Tonspuren
         //    im Raum, und niemand versteht, warum.
@@ -243,6 +246,11 @@ public enum Uebernahme {
     /// ob sie nur zu alt ist. Diese Auskunft steht deshalb neben der Regel
     /// und nicht in der Ansicht -- sie gehoert zu den fuenf Bedingungen und
     /// laeuft mit ihnen mit, wenn sie sich aendern.
+    /// Audio, Hörbücher und Musik sind keine Übernahme für den Player.
+    static func istVideo(_ titel: Item) -> Bool {
+        !["Audio", "AudioBook", "MusicAlbum", "Playlist"].contains(titel.type ?? "")
+    }
+
     public static func warumNicht(_ s: Fremdsitzung, eigeneGeraeteID: String,
                                   eigeneBenutzerID: String,
                                   jetzt: Date = Date()) -> String? {
@@ -251,6 +259,7 @@ public enum Uebernahme {
         guard wem == eigeneBenutzerID else { return "fremdes Konto" }
         guard let titel = s.laeuft else { return "spielt nichts" }
         guard !titel.id.isEmpty else { return "Titel ohne Kennung" }
+        guard istVideo(titel), s.programm != "Swiftly Music" else { return "kein Video" }
         guard s.nimmtBefehle else { return "nimmt keine Befehle" }
         if let regung = s.letzteRegung {
             let alter = jetzt.timeIntervalSince(regung)

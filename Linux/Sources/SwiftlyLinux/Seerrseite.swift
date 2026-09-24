@@ -35,6 +35,9 @@ extension App {
         seerrGewaehlteStaffeln = []
         seerrBestaetigt = false
         seerrStaffelnOffen = false
+        seerrLaeuft = false
+        seerrAngefragt = false
+        seerrFehler = nil
         let scheibe: Widget! = naechsteScheibe()
         // **Keine der Einstellungsunterseiten** — sonst hielte ein zweiter
         // Aufruf sie fuer dieselbe und baute an Ort und Stelle um, statt
@@ -147,7 +150,13 @@ extension App {
         gtk_fixed_put(alsFeld2(feld), fach(seerrHandlung, breite: 640, hoehe: 66,
                                            senkrecht: GTK_ALIGN_START), 0, 92)
 
-        seerrKnopfreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        seerrKnopfreihe = reihe
+        // Eine Anfrage kann zurueckkommen, wenn die Seite schon weg ist —
+        // dann darf sie nicht in abgeraeumte Widgets schreiben.
+        beiSignal(reihe, "destroy") { [weak self] in
+            if self?.seerrKnopfreihe == reihe { self?.seerrKnopfreihe = nil }
+        }
         seerrKnopfreiheFuellen(t)
         gtk_fixed_put(alsFeld2(feld), fach(seerrKnopfreihe, breite: 640,
                                            hoehe: Stil.hauptknopfHoehe), 0, 182)
@@ -190,6 +199,20 @@ extension App {
         guard seerrKnopfreihe != nil else { return }
         leeren(seerrKnopfreihe)
 
+        // **Nach der Anfrage sagt die Reihe, was daraus geworden ist** —
+        // wortgleich der Mac (`SeerrKachelUndSeite.swift`, `handlung`). Hier
+        // blieb der Knopf auf „Wirklich anfragen?" stehen, und die Meldung
+        // ging an das Hinweisfeld der Jellyfin-Detailseite, das es auf
+        // dieser Seite nicht gibt: die Anfrage kam an, zu sehen war nichts.
+        if seerrAngefragt {
+            let wort = beschriftung(uebersetzt("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."),
+                                    stil: "swiftly-koerper")
+            gtk_widget_add_css_class(wort, "swiftly-leise")
+            gtk_widget_set_valign(wort, GTK_ALIGN_CENTER)
+            anhaengen(seerrKnopfreihe, wort)
+            return
+        }
+
         guard t.stand.anfragbar else {
             let wort = beschriftung(seerrStandwort(t.stand), stil: "swiftly-koerper")
             gtk_widget_add_css_class(wort, "swiftly-leise")
@@ -208,7 +231,9 @@ extension App {
         // die Sicherung ausdruecklich eingebaut
         // (`SeerrDetailView.swift:40-43`, `SeerrKachelUndSeite.swift:370-386`).
         let titel: String
-        if t.istSerie {
+        if seerrLaeuft {
+            titel = uebersetzt("Wird angefragt …")
+        } else if t.istSerie {
             titel = seerrGewaehlteStaffeln.isEmpty
                 ? uebersetzt("Staffeln wählen")
                 : String(format: uebersetzt("%d Staffeln anfragen"), seerrGewaehlteStaffeln.count)
@@ -219,7 +244,7 @@ extension App {
         gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfBreite),
                                     Int32(Stil.hauptknopfHoehe))
         beiSignal(knopf, "clicked") { [weak self] in
-            guard let self else { return }
+            guard let self, !self.seerrLaeuft else { return }
             if t.istSerie {
                 // **Erster Druck klappt die Liste auf.** Ohne Auswahl
                 // passiert danach nichts — leer hiess frueher „alle", und
@@ -244,6 +269,18 @@ extension App {
             self.seerrAnfragenVonSeite(t)
         }
         anhaengen(seerrKnopfreihe, knopf)
+
+        // Ein Fehler steht neben dem Knopf, bis erneut gedrueckt wird.
+        if let fehler = seerrFehler {
+            let l = beschriftung(fehler, stil: "swiftly-zweitzeile", umbruch: true)
+            gtk_widget_add_css_class(l, "swiftly-warnung")
+            gtk_label_set_xalign(OpaquePointer(l), 0)
+            gtk_label_set_lines(OpaquePointer(l), 2)
+            gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
+            gtk_widget_set_valign(l, GTK_ALIGN_CENTER)
+            gtk_widget_set_hexpand(l, 1)
+            anhaengen(seerrKnopfreihe, l)
+        }
     }
 
     private func seerrStandwort(_ stand: Seerrstand) -> String {
@@ -395,17 +432,35 @@ extension App {
     /// (`SeerrDetailView.swift:419`); auf Linux war der Knopf immer aktiv und
     /// schickte bei leerer Auswahl `staffeln: nil`.
     private func seerrAnfragenVonSeite(_ t: Seerrtreffer) {
-        guard let client = seerrclient else { return }
+        guard let client = seerrclient, !seerrLaeuft else { return }
         guard !t.istSerie || !seerrGewaehlteStaffeln.isEmpty else { return }
         let staffeln = t.istSerie ? Array(seerrGewaehlteStaffeln).sorted() : nil
-        melden(uebersetzt("Wird angefragt …"))
+        // **Die Antwort gehoert zu dieser Seite.** Wer inzwischen eine
+        // andere geoeffnet hat, bekommt dort nichts davon zu sehen.
+        let reihe = seerrKnopfreihe.map { Int(bitPattern: $0) }
+        seerrFehler = nil
+        seerrLaeuft = true
+        seerrKnopfreiheFuellen(t)
         Task.detached { [self] in
+            let fehler: String?
             do {
                 try await client.anfragen(art: t.art, id: t.id, staffeln: staffeln)
-                aufHauptfaden { self.melden(uebersetzt("Angefragt")) }
+                fehler = nil
             } catch {
-                let text = lesbarerFehler(error)
-                aufHauptfaden { self.melden(text) }
+                fehler = lesbarerFehler(error)
+            }
+            aufHauptfaden {
+                guard let jetzt = self.seerrKnopfreihe, Int(bitPattern: jetzt) == reihe else { return }
+                self.seerrLaeuft = false
+                if let fehler {
+                    self.seerrFehler = fehler
+                } else {
+                    self.seerrAngefragt = true
+                    if let auf = self.seerrStaffelaufklapp {
+                        gtk_revealer_set_reveal_child(alsAufklapp(auf), 0)
+                    }
+                }
+                self.seerrKnopfreiheFuellen(t)
             }
         }
     }

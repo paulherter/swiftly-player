@@ -169,12 +169,11 @@
 "Keine Verbindung" = "No connection";
 
 /* Seerr */
-"%@ anfragen?" = "Request %@?";
-"%@ mit allen Staffeln anfragen?" = "Request %@ with all seasons?";
 "Abbrechen" = "Cancel";
 "Anfragen" = "Request";
 "Anfragen über Seerr" = "Request via Seerr";
 "Angefragt" = "Requested";
+"Angefragt. Sobald sie freigegeben ist, lädt sie von selbst." = "Requested. Once it is approved, it downloads on its own.";
 "Wird angefragt …" = "Requesting …";
 "wartet" = "waiting";
 "angefragt" = "requested";

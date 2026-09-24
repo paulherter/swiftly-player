@@ -342,20 +342,24 @@ extension View {
 ///
 /// Fehlt die Sammlung, fehlt die Reihe — wie bei den Extras. Ein Hinweis
 /// „gehört zu keiner Sammlung" wäre eine Auskunft, nach der niemand fragt.
+///
+/// **Geladen wird auf der Filmseite, nicht hier.** Die Reihe holte sich ihre
+/// Titel selbst und drückte sich später als alles andere in die Seite; jetzt
+/// wartet die Filmseite auf sie wie auf Extras und Ähnliches und blendet alles
+/// zusammen ein (24.09.2026).
 struct Sammlungsreihe: View {
+    typealias Reihe = (sammlung: Sammlung, titel: [Item])
+
     let model: AppModel
     let titel: Item
+    let reihen: [Reihe]
 
     @Environment(\.breit) private var breit
-    @State private var reihen: [(sammlung: Sammlung, titel: [Item])] = []
 
     private var art: String? { Bibliotheksgattung.art(zuTyp: titel.type) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Ein Anker, damit `.task` auch dann läuft, wenn noch keine
-            // Reihe dasteht — ein leerer Stapel erscheint sonst womöglich nie.
-            Color.clear.frame(height: 0)
             ForEach(reihen, id: \.sammlung.id) { reihe in
                 VStack(alignment: .leading, spacing: 12) {
                     NavigationLink(value: SammlungRoute(sammlung: reihe.sammlung.item, art: art)) {
@@ -391,13 +395,13 @@ struct Sammlungsreihe: View {
                 .padding(.top, Stil.reihenAbstand)
             }
         }
-        .task(id: "\(titel.id)|\(model.kontowechsel)") { await laden() }
     }
 
-    private func laden() async {
-        guard let art else { return }
+    /// Die Reihen zu einem Titel — leer, wenn er in keiner Sammlung steht.
+    static func laden(model: AppModel, titel: Item) async -> [Reihe] {
+        guard let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return [] }
         await model.angebotLaden()
-        var gefunden: [(sammlung: Sammlung, titel: [Item])] = []
+        var gefunden: [Reihe] = []
         // Höchstens zwei Reihen. Steht ein Film in mehr Sammlungen, sind die
         // übrigen meist automatisch angelegte Doppel.
         for sammlung in model.sammlungen(mit: titel).prefix(2) {
@@ -405,6 +409,6 @@ struct Sammlungsreihe: View {
             let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
             if !andere.isEmpty { gefunden.append((sammlung, andere)) }
         }
-        withAnimation(Stil.einblenden) { reihen = gefunden }
+        return gefunden
     }
 }
