@@ -183,6 +183,9 @@ struct ItemDetailView: View {
     /// zwei Antworten auf dieselbe Frage, und beide falsch.
     @State private var aehnlicheGestoert = false
     @State private var extras: [Item] = []
+    @State private var sammlungsreihen: [Sammlungsreihe.Reihe] = []
+    /// Alles unter der Beschreibung ist beantwortet. Siehe `body`.
+    @State private var untenDa = false
     @State private var gemerkt = false
     @State private var gesehen = false
 
@@ -273,15 +276,26 @@ struct ItemDetailView: View {
                     .padding(.top, 14)
                     }
 
-                    besetzung
-                    extrasreihe
-                    // Über „Ähnliche Titel": die Sammlung ist die nähere
-                    // Verwandtschaft. Nur bei Titeln, die in einer stehen.
-                    Sammlungsreihe(model: model, titel: item)
-                    aehnlichesreihe
-                    // Die Dateiangaben ganz nach unten: sie beantworten eine
-                    // Frage, die man erst später stellt.
-                    dateiauszug
+                    // **Alles darunter kommt auf einmal** (24.09.2026). Besetzung,
+                    // Extras, Sammlung und Ähnliches trafen einzeln ein, drückten
+                    // sich in die Seite und schoben den Rest vor sich her. Jetzt
+                    // wartet die Seite auf alle und blendet sie gemeinsam ein —
+                    // wie die Serienseite seit `2b17f044`: keine Platzhalter,
+                    // kein Leerhinweis, solange noch geladen wird.
+                    if untenDa {
+                        VStack(alignment: .leading, spacing: 0) {
+                            besetzung
+                            extrasreihe
+                            // Über „Ähnliche Titel": die Sammlung ist die nähere
+                            // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                            Sammlungsreihe(model: model, titel: item, reihen: sammlungsreihen)
+                            aehnlichesreihe
+                            // Die Dateiangaben ganz nach unten: sie beantworten eine
+                            // Frage, die man erst später stellt.
+                            dateiauszug
+                        }
+                        .transition(.opacity)
+                    }
                 }
                 // **Nie breiter als der Schirm.** Wird ein Kind breiter, ist es
                 // sonst die ganze Seite — und eine Seite, die breiter ist als
@@ -347,25 +361,36 @@ struct ItemDetailView: View {
             async let planung = model.plan(for: item.id)
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
-            frisch = await frischerTitel
-            plan = await planung
-            withAnimation(Stil.einblenden) { planDa = true }
+            async let sammlung = Sammlungsreihe.laden(model: model, titel: item)
+            let neuerTitel = await frischerTitel
+            let neuerPlan = await planung
             // **Doppelte Kennungen raus.** Der Server liefert unter
             // „Aehnliches" denselben Titel gelegentlich zweimal, und `ForEach`
             // ordnet ueber die Kennung zu: zwei gleiche Kennungen heissen zwei
             // gleiche Kacheln und ein Tipp, der danebengreift. Dieselbe Regel
             // wie in Suche, Startseite und Merkliste — sie fehlte nur hier.
             let frischeAehnliche = await aehnlich
+            // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
+            // fehlt die Reihe. Ein zweiter Stoerhinweis unter dem ersten waere
+            // dieselbe Auskunft zweimal.
+            let neueExtras = (await extra) ?? []
+            let neueSammlungen = await sammlung
+            // **Ein Einblenden, nicht fünf.** Erst wenn alles beantwortet
+            // ist, wird es auf einmal gesetzt.
+            frisch = neuerTitel
+            plan = neuerPlan
             aehnlicheGestoert = frischeAehnliche == nil
             if let frischeAehnliche {
                 aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche)
             }
-            // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
-            // fehlt die Reihe. Ein zweiter Stoerhinweis unter dem ersten waere
-            // dieselbe Auskunft zweimal.
-            extras = (await extra) ?? []
+            extras = neueExtras
+            sammlungsreihen = neueSammlungen
             gemerkt = aktuell.userData?.isFavorite ?? false
             gesehen = aktuell.userData?.played ?? false
+            withAnimation(Stil.einblenden) {
+                planDa = true
+                untenDa = true
+            }
             pruefe = false
         }
     }

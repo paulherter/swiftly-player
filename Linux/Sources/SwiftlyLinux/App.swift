@@ -1200,7 +1200,7 @@ final class App: @unchecked Sendable {
     /// die falsche Seite gefuellt. Ein Woerterbuch kennt keinen Sonderfall.
     private var rasterFeld: [Bereich: Widget] = [:]
     private var zahlFeld: [Bereich: Widget] = [:]
-    private var suchfeld: Widget!
+    var suchfeld: Widget!
     /// „Zuletzt gesucht" — steht, solange das Feld leer ist.
     private var suchverlaufblock: Widget!
     /// Ob die beiden Bloecke der Suche leer sind — „Nichts gefunden" gilt nur,
@@ -1209,7 +1209,7 @@ final class App: @unchecked Sendable {
     var seerrTrefferLeer = true
     private var suchhinweis: Widget!
     private var suchverlaufliste: Widget!
-    private var suchraster: Widget!
+    var suchraster: Widget!
     var suchleer: Widget!
     var geladen: Set<Bereich> = []
     /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
@@ -1420,6 +1420,12 @@ final class App: @unchecked Sendable {
     /// Druck auf den Hauptknopf oeffnet sie, der zweite fragt an.
     var seerrStaffelnOffen = false
     var seerrStaffelaufklapp: Widget?
+    /// Der Stand der Anfrage auf der offenen Seerr-Seite — wie `laeuft`,
+    /// `angefragt` und `fehler` in `SeerrKachelUndSeite.swift`. Wird beim
+    /// Oeffnen einer Seerr-Seite zurueckgesetzt.
+    var seerrLaeuft = false
+    var seerrAngefragt = false
+    var seerrFehler: String?
     /// H10: die Nachfrage vor dem Abschalten, in den Einstellungen.
     var downloadabschaltfrage: Widget!
     var benutzername = ""
@@ -1746,8 +1752,6 @@ final class App: @unchecked Sendable {
     /// Wie viele Treffer Seerr hat (E27).
     var seerrZahl: Widget!
     var seerrRaster: Widget!
-    /// Die Rueckfrage vor einer Anfrage — sie steht dort, wo geklickt wurde.
-    var seerrRueckfrage: Widget!
     var schlafminuten: Int?
     var schlaftakt = 0
 
@@ -3408,11 +3412,6 @@ final class App: @unchecked Sendable {
         seerrKopfzeile = seerrzeile
         anhaengen(block, seerrzeile)
 
-        seerrRueckfrage = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        gtk_widget_set_visible(seerrRueckfrage, 0)
-        gtk_widget_set_margin_top(seerrRueckfrage, 4)
-        anhaengen(block, seerrRueckfrage)
-
         seerrRaster = rasterBauen()
         gtk_widget_set_visible(seerrRaster, 0)
         anhaengen(block, seerrRaster)
@@ -3611,6 +3610,21 @@ final class App: @unchecked Sendable {
     ///   dort (`SucheView.swift:117`) und in der Bibliothek nicht
     ///   (`BibliothekView.swift:136`).
     func rasterFuellen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
+        rasterLeeren(raster)
+        for item in items {
+            gtk_flow_box_insert(OpaquePointer(raster),
+                                rasterkachel(item, auskunft: auskunft), -1)
+        }
+    }
+
+    /// **Ein Raster wird über die FlowBox geleert, nie mit ``leeren(_:)``.**
+    ///
+    /// `leeren` hängt die Kinder mit `gtk_widget_unparent` ab — die FlowBox
+    /// führt daneben aber eine eigene Liste ihrer Kinder, und die erfährt
+    /// davon nichts. Die Seerr-Treffer wurden so geleert: ab der zweiten
+    /// Suche hingen neue Kacheln hinter Einträgen, die es nicht mehr gab,
+    /// und das Raster blieb leer, während die Zählmarke daneben „3" sagte.
+    func rasterLeeren(_ raster: Widget!) {
         // **Dieselbe Bauart, die die App schon einmal aufgehängt hat.** Die
         // Schleife hing am Vorhandensein eines Kindes statt am Fortschritt:
         // schlägt `gtk_flow_box_remove` fehl — der Zeiger wird dafür blind
@@ -3622,10 +3636,6 @@ final class App: @unchecked Sendable {
                                 unsafeBitCast(kind, to: Widget.self))
             guard gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) != kind
             else { break }
-        }
-        for item in items {
-            gtk_flow_box_insert(OpaquePointer(raster),
-                                rasterkachel(item, auskunft: auskunft), -1)
         }
     }
 
@@ -4445,7 +4455,6 @@ final class App: @unchecked Sendable {
         guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
             rasterFuellen(suchraster, [])
             gtk_widget_set_visible(suchleer, 0)
-            seerrRueckfrageWeg()
             seerrTrefferZeigen([])
             // Feld leer heisst: „Zuletzt gesucht" kommt zurueck.
             suchverlaufZeigen()
@@ -4545,7 +4554,6 @@ final class App: @unchecked Sendable {
                 self.eigeneTrefferLeer = treffer.isEmpty
                 gtk_widget_set_visible(self.suchleer,
                                        treffer.isEmpty && self.seerrTrefferLeer ? 1 : 0)
-                self.seerrRueckfrageWeg()
                 self.seerrTrefferZeigen([])
             }
             guard let seerr else { return }

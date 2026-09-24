@@ -338,8 +338,9 @@ internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, me
                         /** Ein freier Beleg statt des Wiedergabeplans — auf der Seerr-Seite der Stand. */
                         eigen: Triple<Zeichen, String, Color>? = null) {
     val sichtbar by animateFloatAsState(if (geladen) 1f else 0f, Bewegung.einblenden(), label = "beleg")
+    // 8 zwischen den Huellen wie auf iOS — 14 galt, solange die Bewertung ohne Huelle stand.
     Row(Modifier.heightIn(min = 26.dp).alpha(sichtbar), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (eigen != null) {
             val (zeichen, wort, farbe) = eigen
             Belegmarke(zeichen, wort, farbe, Staerke.Halbfett)

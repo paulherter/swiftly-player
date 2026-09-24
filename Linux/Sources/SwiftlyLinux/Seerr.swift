@@ -224,7 +224,6 @@ extension App {
             // Die Suche zeigt sonst weiter die fremden Treffer der letzten
             // Abfrage — die kommen von einem Dienst, der nicht mehr
             // angebunden ist.
-            self.seerrRueckfrageWeg()
             self.seerrTrefferZeigen([])
             self.unterseiteOeffnen(.seerr)
         })
@@ -286,7 +285,7 @@ extension App {
         if suchleer != nil {
             gtk_widget_set_visible(suchleer, eigeneTrefferLeer && fremde.isEmpty ? 1 : 0)
         }
-        leeren(seerrRaster)
+        rasterLeeren(seerrRaster)
         for t in fremde {
             gtk_flow_box_insert(OpaquePointer(seerrRaster), seerrKachel(t), -1)
         }
@@ -385,79 +384,4 @@ extension App {
         case .teilweiseDa:          return uebersetzt("teilweise")
         case .da:                   return nil
         }
-    }
-
-    /// **Gefragt wird, bevor angefordert wird.**
-    ///
-    /// Eine Anfrage ist folgenreich: sie legt beim Server jemandes Arbeit an.
-    /// Ein Klick, der das ohne Rueckfrage ausloest, ist derselbe Fehler wie
-    /// ein Loeschknopf ohne Nachfrage.
-    ///
-    /// **Die Rueckfrage steht dort, wo geklickt wurde**, statt in einem
-    /// Dialog. Einen Nachfragedialog gibt es in dieser Fassung nicht, und
-    /// einen nebenbei einzufuehren waere ein Standardsteuerelement mitten in
-    /// einer Oberflaeche, die bewusst keine benutzt (E4). Die Zeile
-    /// erscheint unter der Ueberschrift, nennt den Titel und hat zwei
-    /// Knoepfe — sie ist nicht zu uebersehen und nicht aus Versehen zu
-    /// treffen.
-    private func seerrAnfrageZeigen(_ t: Seerrtreffer) {
-        guard t.stand.anfragbar, seerrRueckfrage != nil else { return }
-        leeren(seerrRueckfrage)
-
-        let text = t.istSerie
-            ? String(format: uebersetzt("%@ mit allen Staffeln anfragen?"), t.titel)
-            : String(format: uebersetzt("%@ anfragen?"), t.titel)
-        let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(l), 0)
-        gtk_widget_set_hexpand(l, 1)
-        anhaengen(seerrRueckfrage, l)
-
-        let ja = chip(uebersetzt("Anfragen"), symbol: "object-select-symbolic", aktiv: true)
-        beiSignal(ja, "clicked") { [weak self] in
-            guard let self else { return }
-            self.seerrAnfragen(t)
-        }
-        anhaengen(seerrRueckfrage, ja)
-
-        let nein = chip(uebersetzt("Abbrechen"))
-        beiSignal(nein, "clicked") { [weak self] in self?.seerrRueckfrageWeg() }
-        anhaengen(seerrRueckfrage, nein)
-
-        gtk_widget_set_visible(seerrRueckfrage, 1)
-    }
-
-    func seerrRueckfrageWeg() {
-        guard seerrRueckfrage != nil else { return }
-        leeren(seerrRueckfrage)
-        gtk_widget_set_visible(seerrRueckfrage, 0)
-    }
-
-    /// Statt einer Kurzmeldung, die es hier nicht gibt: dieselbe Zeile sagt,
-    /// was aus der Anfrage geworden ist, und bleibt stehen, bis der Naechste
-    /// angetippt wird.
-    private func seerrSagen(_ text: String) {
-        guard seerrRueckfrage != nil else { return }
-        leeren(seerrRueckfrage)
-        let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(l), 0)
-        gtk_widget_set_hexpand(l, 1)
-        anhaengen(seerrRueckfrage, l)
-        gtk_widget_set_visible(seerrRueckfrage, 1)
-    }
-
-    private func seerrAnfragen(_ t: Seerrtreffer) {
-        guard let client = seerrclient else { return }
-        seerrSagen(uebersetzt("Wird angefragt …"))
-        Task.detached {
-            do {
-                // `nil` heisst bei einer Serie „alle Staffeln"; der Client
-                // setzt das um, die Regel steht dort.
-                try await client.anfragen(art: t.art, id: t.id, staffeln: nil)
-                aufHauptfaden { self.seerrSagen(uebersetzt("Angefragt")) }
-            } catch {
-                let meldung = lesbarerFehler(error)
-                aufHauptfaden { self.seerrSagen(meldung) }
-            }
-        }
-    }
-}
+    }}

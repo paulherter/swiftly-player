@@ -129,6 +129,48 @@ extension App {
             }
             #endif
 
+        /// Den ersten Film einer Seerr-Suche öffnen (`seerrfilm:Dune`) — die
+        /// Seite liegt sonst hinter Suche, Tippen und Kachel.
+        case "seerrfilm":
+            guard let client = seerrclient, teile.count > 1 else { break }
+            let begriff = teile[1]
+            Task.detached { [self] in
+                let treffer = await client.suchen(begriff).first { !$0.istSerie }
+                aufHauptfaden {
+                    guard let treffer else { Protokoll.schreib("[Fern] Seerr: kein Film"); return }
+                    self.seerrSeiteOeffnen(treffer)
+                }
+            }
+
+        /// Den Knopf der Seerr-Seite drücken und sagen, was danach dort
+        /// steht.
+        case "seerrknopf":
+            guard seerrKnopfreihe != nil, let knopf = gtk_widget_get_first_child(seerrKnopfreihe),
+                  gtk_widget_get_first_child(knopf) != nil else { break }
+            gtk_widget_activate(knopf)
+        case "seerrreihe":
+            Protokoll.schreib("[Fern] Seerr-Knopfreihe: " + widgetTexte(seerrKnopfreihe).joined(separator: " | "))
+
+        /// Einen Begriff ins Suchfeld schreiben, wie getippt (`suchen:Dune`).
+        case "suchen":
+            zeige(.suche)
+            gtk_editable_set_text(OpaquePointer(suchfeld), teile.count > 1 ? teile[1] : "")
+        /// Was die Suche gerade zeigt: Kacheln je Raster, davon gezeichnet.
+        case "suchstand":
+            func zaehlen(_ r: Widget!) -> String {
+                guard r != nil else { return "-" }
+                var n = 0, gezeichnet = 0
+                while let k = gtk_flow_box_get_child_at_index(OpaquePointer(r), Int32(n)) {
+                    if gtk_widget_get_mapped(unsafeBitCast(k, to: Widget.self)) != 0 { gezeichnet += 1 }
+                    n += 1
+                }
+                var kinder = 0
+                var k = gtk_widget_get_first_child(r)
+                while let w = k { kinder += 1; k = gtk_widget_get_next_sibling(w) }
+                return "\(n) Kacheln, \(gezeichnet) gezeichnet, \(kinder) Kinder, sichtbar=\(gtk_widget_get_visible(r))"
+            }
+            Protokoll.schreib("[Fern] Suche eigen: \(zaehlen(suchraster)) · Seerr: \(zaehlen(seerrRaster)) Zahl=\(widgetTexte(seerrZahl).joined())")
+
         case "steuerung":  steuerungZeigen()
 
         /// Den Player wieder schliessen.
@@ -462,4 +504,21 @@ enum Pruefzaehler {
         else { art = "anderes" }
         bilder["\(art)-\(gelesen ? "ok" : "fehler")", default: 0] += 1
     }
+}
+
+/// Alle sichtbaren Beschriftungen unter einem Widget, in Baumreihenfolge —
+/// damit ein Messlauf lesen kann, was auf einer Stelle steht, ohne Bild.
+func widgetTexte(_ w: Widget!) -> [String] {
+    guard let w, gtk_widget_get_visible(w) != 0 else { return [] }
+    if let name = gtk_widget_get_css_name(w), String(cString: name) == "label",
+       let t = gtk_label_get_text(OpaquePointer(w)) {
+        return [String(cString: t)]
+    }
+    var texte: [String] = []
+    var kind = gtk_widget_get_first_child(w)
+    while let k = kind {
+        texte += widgetTexte(k)
+        kind = gtk_widget_get_next_sibling(k)
+    }
+    return texte
 }

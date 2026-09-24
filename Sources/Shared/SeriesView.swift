@@ -63,6 +63,9 @@ struct SeriesDetailView: View {
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
         _folgen = State(initialValue: folgen)
         _laedt = State(initialValue: folgen.isEmpty)
+        // Ohne gemerkte Folgen stehen die Platzhalter vom ersten Bild an da —
+        // nicht erst, wenn der Abruf der Folgen beginnt.
+        _folgenLaedt = State(initialValue: folgen.isEmpty)
     }
 
     @Environment(\.dismiss) private var zurueck
@@ -95,7 +98,8 @@ struct SeriesDetailView: View {
     @State private var folgen: [Item] = []
     /// Die Folgenliste hatte weder Lade- noch Leer- noch Stoerzweig: leere
     /// Staffel, gescheiterter Abruf und laufender Abruf sahen alle gleich aus.
-    @State private var folgenLaedt = false
+    /// Anfangswert im `init`.
+    @State private var folgenLaedt: Bool
     @State private var folgenGestoert = false
     @State private var ladeblatt = false
     @State private var ladeposten: [Downloadposten] = []
@@ -331,23 +335,42 @@ struct SeriesDetailView: View {
         // derselbe Fall beide Listen auf leer — die Staffelwahl verschwand und
         // darunter stand „Nichts Ähnliches gefunden".
         let (frischerStand, frischeStaffeln, frischeAehnliche) = await (a, b, c)
-        stand = frischerStand
-        staffelnGestoert = frischeStaffeln == nil
-        if let frischeStaffeln { staffeln = frischeStaffeln }
-        aehnlicheGestoert = frischeAehnliche == nil
-        if let frischeAehnliche { aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche) }
-        standGeklaert = true
+        let staffelnJetzt = frischeStaffeln ?? staffeln
         // Kommt man von einer Folge, deren Staffel — sonst die, in der man
         // zuletzt war. Beim Auffrischen bleibt die getroffene Wahl stehen.
         // A10: erst der Hinweis (Kennung, dann Nummer), dann der Stand. Die
         // Kette liegt im Paket; die eigene Kopie hier prüfte die Kennung des
         // Stands vor der Nummer des Hinweises — kam eine Folge ohne
         // `SeasonId`, stand die laufende Staffel da statt ihrer.
-        if gewaehlteStaffel == nil {
-            gewaehlteStaffel = Staffelwahlregel.waehle(aus: staffeln,
-                                                       hinweisID: startStaffelID,
-                                                       hinweisNummer: startStaffelNummer,
-                                                       stand: stand)
+        let wahl = gewaehlteStaffel
+            ?? Staffelwahlregel.waehle(aus: staffelnJetzt,
+                                       hinweisID: startStaffelID,
+                                       hinweisNummer: startStaffelNummer,
+                                       stand: frischerStand)
+
+        // **Ein Einblenden, nicht fuenf.** Staffelwahl, Folgen, Stand und
+        // Ähnliches kommen zusammen und in derselben Transaktion auf die
+        // Seite. Bis zum 23.09.2026 setzte die Seite jede Antwort einzeln:
+        // erst die Staffelwahl ohne Folgen (darunter kurz „Keine Folgen in
+        // dieser Staffel"), dann wartete sie auf den Plan, dann kamen
+        // Platzhalter, dann die Folgen. Der Plan laeuft jetzt daneben und
+        // blendet nur die Belegzeile ein, deren Platz schon steht.
+        async let p = planHolen(frischerStand?.id)
+        let geholt = await model.folgen(serie: serie.id, staffel: wahl?.id)
+        withAnimation(Stil.einblenden) {
+            stand = frischerStand
+            staffelnGestoert = frischeStaffeln == nil
+            staffeln = staffelnJetzt
+            aehnlicheGestoert = frischeAehnliche == nil
+            if let frischeAehnliche { aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche) }
+            standGeklaert = true
+            // Hat der Nutzer waehrenddessen selbst eine Staffel gewaehlt,
+            // gehoert die Liste seiner Wahl, nicht dieser Antwort.
+            if gewaehlteStaffel == nil || gewaehlteStaffel?.id == wahl?.id {
+                gewaehlteStaffel = wahl
+                folgenAnnehmen(geholt)
+            }
+            laedt = false
         }
         Protokoll.schreib("[Staffel] \(serie.name): mitgebracht=\(startStaffelID ?? "-")/\(startStaffelNummer.map(String.init) ?? "-") "
             + "stand=\(stand.map { "S\($0.parentIndexNumber ?? -1)E\($0.indexNumber ?? -1) " + ($0.seasonId ?? "-") } ?? "-") "
@@ -359,13 +382,19 @@ struct SeriesDetailView: View {
         Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = staffeln }
         gemerkt = serie.userData?.isFavorite ?? false
         gesehen = serie.userData?.played ?? false
-        if let stand { plan = await model.plan(for: stand.id) }
+        // Der Plan ohne Animation, nur das Einblenden mit: im animierten
+        // Zug schob die neue Direct-Play-Marke Bewertung und Freigabe
+        // sichtbar nach rechts, die Zeile glitt von links herein.
+        if frischerStand != nil { plan = await p }
         withAnimation(Stil.einblenden) { planDa = true }
-        await folgenLaden()
-        laedt = false
     }
 
     private func auffrischen() async { await laden() }
+
+    private func planHolen(_ folgeID: String?) async -> PlaybackPlan? {
+        guard let folgeID else { return nil }
+        return await model.plan(for: folgeID)
+    }
 
     // MARK: Teile
 
@@ -432,6 +461,10 @@ struct SeriesDetailView: View {
             // es hier steht. Die Zeile traegt nur Plaketten, und Plaketten
             // bleiben fest (BRAND 2).
             .frame(height: 26, alignment: .leading)
+            // **Blendet ein, bewegt sich nicht.** Innen wird nie animiert —
+            // kommt eine Marke dazu, steht die Zeile gleich fertig da; nur die
+            // Deckkraft darunter laeuft weich.
+            .transaction { $0.animation = nil }
             .opacity(planDa ? 1 : 0)
     }
 
@@ -597,31 +630,27 @@ struct SeriesDetailView: View {
                     .padding(.bottom, 14)
                     .zIndex(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            } else if laedt {
+                // **Leer, aber mit Platz.** Solange die Staffelwahl laedt, steht
+                // ihre Hoehe frei (34 wie `Aufklappliste`, 14 darueber und
+                // darunter); sie blendet dann an dieser Stelle ein. Ein
+                // Platzhalter in fester Breite war laenger als der Knopf und
+                // schien beim Eintreffen zu schrumpfen (23.09.2026).
+                Color.clear.frame(height: 34 + 2 * 14)
             }
 
             // **Vier Zweige, wo vorher einer stand.** Ist der Abruf
-            // gescheitert, sagt die Seite das; laeuft er noch, stehen
-            // Platzhalter da (wie auf macOS); ist die Staffel wirklich leer,
-            // steht es da. Vorher war alles drei dieselbe leere Flaeche.
+            // gescheitert, sagt die Seite das; laeuft er noch, bleibt die
+            // Flaeche leer; ist die Staffel wirklich leer, steht es da. Vorher war alles drei dieselbe leere Flaeche.
             if folgenGestoert {
                 Stoerhinweis(model: model) { Task { await folgenLaden() } }
             } else if folgenLaedt && folgen.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(0 ..< 3, id: \.self) { _ in
-                        HStack(spacing: 12) {
-                            Ladefeld().frame(width: 132, height: 74)
-                            VStack(alignment: .leading, spacing: 8) {
-                                Ladefeld(ecke: 3).frame(width: 170, height: 13)
-                                Ladefeld(ecke: 3).frame(width: 80, height: 11)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 10)
-                    }
-                }
-                .padding(.horizontal, Stil.rand(breit: breit))
-                .transition(.opacity)
-            } else if folgen.isEmpty && !staffeln.isEmpty {
+                // **Keine Platzhalter.** Die Liste ist das Letzte auf der
+                // Seite, darunter springt nichts; die Folgen blenden ein, wenn
+                // sie da sind. Leer heisst hier nur „laedt", nie „keine Folgen".
+                EmptyView()
+            } else if folgen.isEmpty && !staffeln.isEmpty && !laedt {
                 // **Kein neuer Wortlaut.** „Keine Folgen in dieser Staffel" steht
                 // seit Langem im Katalog (tvOS nutzt es); ein zweiter Satz
                 // fuer dieselbe Lage waere ein zweiter Eintrag, der in einer
@@ -666,6 +695,7 @@ struct SeriesDetailView: View {
                     // die sitzt in `Folgenzeile`.
                 }
             }
+            .transition(.opacity)
             }
         }
     }
@@ -673,7 +703,11 @@ struct SeriesDetailView: View {
     @ViewBuilder
     private var besetzung: some View {
         let leute = (stand?.darsteller.isEmpty == false ? stand!.darsteller : serie.darsteller)
-        if leute.isEmpty {
+        if leute.isEmpty && laedt {
+            // Die Serie aus der Liste traegt oft keine Besetzung; die kommt
+            // mit dem Stand. Bis dahin kein „Keine Besetzung".
+            Color.clear.frame(height: 1)
+        } else if leute.isEmpty {
             leerhinweis("Keine Besetzung hinterlegt.")
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
@@ -695,6 +729,8 @@ struct SeriesDetailView: View {
     private var aehnlichesbereich: some View {
         if aehnlicheGestoert && aehnliche.isEmpty {
             Stoerhinweis(model: model) { Task { await laden() } }
+        } else if aehnliche.isEmpty && laedt {
+            Color.clear.frame(height: 1)
         } else if aehnliche.isEmpty {
             leerhinweis("Nichts Ähnliches gefunden.")
         } else {
@@ -749,6 +785,10 @@ struct SeriesDetailView: View {
     private func folgenLaden() async {
         folgenLaedt = true
         let geholt = await model.folgen(serie: serie.id, staffel: gewaehlteStaffel?.id)
+        withAnimation(Stil.einblenden) { folgenAnnehmen(geholt) }
+    }
+
+    private func folgenAnnehmen(_ geholt: [Item]?) {
         folgenLaedt = false
         folgenGestoert = geholt == nil
         // Gescheitert: die alte Liste bleibt stehen, und nichts kommt in den
@@ -870,6 +910,73 @@ struct SeriesDetailView: View {
     }
 }
 
+/// Platzhalter einer `Folgenzeile` — **derselbe Aufbau**, `Folgenzeilenaufbau`,
+/// nur mit Ladefeldern statt Bild und Schrift. Bis zum 23.09.2026 war es ein
+/// eigener Nachbau (erst 132 × 74 mit 10 Rand, dann mit Balken fester Breite
+/// und eigenem Versatz); die Zeilen standen dadurch hoeher oder anders als die
+/// echten, und die Liste sprang, sobald die Folgen kamen.
+struct Folgenplatzhalter: View {
+    var body: some View {
+        Folgenzeilenaufbau(titel: Text(verbatim: "10. Folgentitel"),
+                           nebenzeile: Text(verbatim: "45 min"),
+                           platzhalter: true) {
+            Ladefeld().frame(width: 116, height: 116 * 65 / 116)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Die Zeile, in der eine Folge und ihr Platzhalter stehen — ein Aufbau, damit
+/// beide dieselben Masse haben.
+struct Folgenzeilenaufbau<Vorschau: View>: View {
+    @Environment(\.breit) private var breit
+    let titel: Text
+    let nebenzeile: Text
+    var titelfarbe: Color = Stil.schrift
+    /// Die Schrift steht unsichtbar da und haelt die Zeilenhoehe; darauf liegt
+    /// ein Ladefeld in ihrer Breite.
+    var platzhalter = false
+    @ViewBuilder let vorschau: Vorschau
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            vorschau
+
+            VStack(alignment: .leading, spacing: 3) {
+                titel
+                    // Titel einer Zeile mit Bild: 15 Semifett. Vorher 14
+                    // Medium — der Grad stand in keiner Leiter, und die Zeile
+                    // war damit leiser als jede gewoehnliche Listenzeile,
+                    // obwohl sie dasselbe traegt.
+                    // **Mitwachsend, nicht fest** (BRAND 2): eine Zeile mit
+                    // Bild ist eine Listenzeile, und Listen folgen der
+                    // Systemschrift. Fest bleiben auf dieser Seite das Plakat,
+                    // die Plaketten und die tabellarischen Dateiangaben.
+                    .mitwachsend(15, .semibold)
+                    .foregroundStyle(platzhalter ? .clear : titelfarbe)
+                    .overlay { if platzhalter { Ladefeld(ecke: 3).padding(.vertical, 3) } }
+                    .multilineTextAlignment(.leading)
+                    // **Einzeilig.** Zwei Zeilen liessen die Zeilen einer
+                    // Staffel verschieden hoch enden und schoben die Angabe
+                    // darunter weg — dieselbe Entscheidung wie auf der Kachel.
+                    .lineLimit(1)
+
+                nebenzeile
+                    // Die Angabe unter dem Titel waechst mit ihm — sonst
+                    // folgte die halbe Zeile der Systemschrift und die
+                    // andere Haelfte nicht.
+                    .mitwachsend(12)
+                    .foregroundStyle(platzhalter ? .clear : Stil.schriftSehrLeise)
+                    .overlay { if platzhalter { Ladefeld(ecke: 3).padding(.vertical, 3) } }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.vertical, 12)
+    }
+}
+
 /// Eine Folge in der Liste — Vorschaubild, Nummer, Laufzeit, Fortschritt.
 struct Folgenzeile: View {
     @Environment(\.breit) private var breit
@@ -893,60 +1000,30 @@ struct Folgenzeile: View {
     private var geladen: Downloadposten? { model.downloads.posten(fuer: folge.id) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            vorschau
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(folge.indexNumber.map { "\($0). " } ?? "")\(folge.name)")
-                    // Titel einer Zeile mit Bild: 15 Semifett. Vorher 14
-                    // Medium — der Grad stand in keiner Leiter, und die Zeile
-                    // war damit leiser als jede gewoehnliche Listenzeile,
-                    // obwohl sie dasselbe traegt.
-                    // **Mitwachsend, nicht fest** (BRAND 2): eine Zeile mit
-                    // Bild ist eine Listenzeile, und Listen folgen der
-                    // Systemschrift. Fest bleiben auf dieser Seite das Plakat,
-                    // die Plaketten und die tabellarischen Dateiangaben.
-                    .mitwachsend(15, .semibold)
-                    // **Gesehenes tritt zurueck, es verschwindet nicht.** Der
-                    // gedaempfte Titel ist die dritte Auskunft neben dem
-                    // abgedunkelten Bild und dem Haken darauf — zusammen liest
-                    // man den Zustand, ohne ein Zeichen suchen zu muessen.
-                    .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
-                    .multilineTextAlignment(.leading)
-                    // **Einzeilig.** Zwei Zeilen liessen die Zeilen einer
-                    // Staffel verschieden hoch enden und schoben die Angabe
-                    // darunter weg — dieselbe Entscheidung wie auf der Kachel.
-                    .lineLimit(1)
-
-                Text(nebenzeile)
-                    // Die Angabe unter dem Titel waechst mit ihm — sonst
-                    // folgte die halbe Zeile der Systemschrift und die
-                    // andere Haelfte nicht.
-                    .mitwachsend(12)
-                    .foregroundStyle(Stil.schriftSehrLeise)
-            }
-
-            Spacer(minLength: 0)
-
-            // **Die rechte Spalte gehoert dem Download, und ihm allein.**
-            //
-            // Hier stand der Haken fuer „gesehen". Ein zweites rundes Zeichen
-            // daneben waere dasselbe Suchbild, das wir bei zwei Haken schon
-            // einmal hatten: zwei Formen nebeneinander, die Verschiedenes
-            // meinen. Der Haken ist deshalb auf das Vorschaubild gezogen —
-            // dort steht ohnehin schon der Fortschrittsbalken, also die
-            // Auskunft „wie weit bin ich", und der Haken ist deren Ende.
-            //
-            // Netflix macht es genauso: rechts nur der Pfeil, der Sehstand
-            // auf dem Bild. Prime Video legt beides in dieselbe Spalte, und
-            // genau dort wird es mehrdeutig.
-        }
-        .padding(.horizontal, Stil.rand(breit: breit))
-        .padding(.vertical, 12)
+        // **Die rechte Spalte gehoert dem Download, und ihm allein.**
+        //
+        // Hier stand der Haken fuer „gesehen". Ein zweites rundes Zeichen
+        // daneben waere dasselbe Suchbild, das wir bei zwei Haken schon
+        // einmal hatten: zwei Formen nebeneinander, die Verschiedenes
+        // meinen. Der Haken ist deshalb auf das Vorschaubild gezogen —
+        // dort steht ohnehin schon der Fortschrittsbalken, also die
+        // Auskunft „wie weit bin ich", und der Haken ist deren Ende.
+        //
+        // Netflix macht es genauso: rechts nur der Pfeil, der Sehstand
+        // auf dem Bild. Prime Video legt beides in dieselbe Spalte, und
+        // genau dort wird es mehrdeutig.
         // **Keine Flaeche.** Die Folge, auf die der grosse Knopf zeigt, trug
         // eine in weiss 8 % — am Geraet sah das aus wie eine Auswahl, die
         // niemand getroffen hat. Was `laufend` heute tut, steht am Feld: das
         // Bild waechst.
+        Folgenzeilenaufbau(titel: Text("\(folge.indexNumber.map { "\($0). " } ?? "")\(folge.name)"),
+                           nebenzeile: Text(nebenzeile),
+                           // **Gesehenes tritt zurueck, es verschwindet nicht.** Der
+                           // gedaempfte Titel ist die dritte Auskunft neben dem
+                           // abgedunkelten Bild und dem Haken darauf.
+                           titelfarbe: gesehen ? Stil.schriftLeise : Stil.schrift) {
+            vorschau
+        }
         .contentShape(Rectangle())
     }
 
@@ -1042,18 +1119,9 @@ struct SeasonView: View {
                     } else if laedt {
                         VStack(spacing: 0) {
                             ForEach(0 ..< 4, id: \.self) { _ in
-                                HStack(spacing: 12) {
-                                    Ladefeld().frame(width: 132, height: 74)
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Ladefeld(ecke: 3).frame(width: 170, height: 13)
-                                        Ladefeld(ecke: 3).frame(width: 80, height: 11)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.vertical, 10)
+                                Folgenplatzhalter()
                             }
                         }
-                        .padding(.horizontal, Stil.rand(breit: breit))
                     } else if folgen.isEmpty {
                         Text("Keine Folgen in dieser Staffel")
                             .mitwachsend(15)

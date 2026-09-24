@@ -2889,13 +2889,17 @@ struct Belegzeile: View {
     /// Über einen Titel, den der eigene Server gar nicht hat, weiss niemand,
     /// wie er läuft — auf der Seerr-Seite steht an dieser Stelle stattdessen
     /// der Stand. Vorher stand dafür dort dieselbe Zeile ein zweites Mal, mit
-    /// denselben Zahlen: Symbol 11 semifett, Wort 13 medium, Abstände 6 und 14.
+    /// denselben Zahlen: Symbol 11 semifett, Wort 13 medium, Abstände 6 und 8.
     /// Ändert jemand einen Grad, laufen zwei Zeilen auseinander, die
     /// nebeneinander gleich aussehen sollen.
     var eigen: (symbol: String, wort: String, farbe: Color)?
 
     var body: some View {
-        HStack(spacing: 14) {
+        // **8 zwischen Huellen, nicht 14.** 14 stammt aus der Zeit, als nur
+        // Direct Play eine Huelle trug und die Bewertung nackt daneben stand.
+        // Seit alle drei Marken Flaechen haben (7d55a810), stehen sie wie
+        // Wertpillen und die Felder der Aktionsreihe: 8 auseinander.
+        HStack(spacing: 8) {
             if let eigen {
                 marke(eigen.symbol, Text(verbatim: eigen.wort),
                       farbe: eigen.farbe, gewicht: .semibold)

@@ -2,7 +2,12 @@
 #
 # Baut aus einem fertigen Bau ein .deb, ein .rpm und einen Tarball.
 #
-#     paket-bauen.sh <Fassung> <Bauverzeichnis> <Ausgabeverzeichnis>
+#     paket-bauen.sh <Fassung> <Bauverzeichnis> <Ausgabeverzeichnis> [Paketstand]
+#
+# Der Paketstand ist normalerweise 1. Geht dieselbe Fassung mit einer
+# Behebung noch einmal hinaus (Baunummer in `Fassung.swift`), wird er
+# hochgezaehlt — sonst sieht apt und dnf kein Update: 1.0.4-2 ist neuer als
+# 1.0.4, beim rpm zaehlt `Release`. Wie `pacman-paket.sh`.
 #
 # Laeuft in der Baumaschine, nicht beim Nutzer. Was hier entsteht, landet in
 # der Paketquelle — und von dort holt es der Paketverwalter des Nutzers beim
@@ -13,6 +18,9 @@ set -euo pipefail
 fassung="${1:?Fassung fehlt}"
 bau="${2:?Bauverzeichnis fehlt}"
 raus="${3:?Ausgabeverzeichnis fehlt}"
+stand="${4:-1}"
+# Beim ersten Stand bleibt die deb-Fassung, wie sie immer war.
+if [ "$stand" = "1" ]; then debfassung="$fassung"; else debfassung="$fassung-$stand"; fi
 quelle="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 PROGRAMM="swiftly-jellyfin"
@@ -93,7 +101,7 @@ mkdir -p "$deb/DEBIAN"
 groesse=$(du -sk "$deb" | cut -f1)
 cat > "$deb/DEBIAN/control" <<EOF
 Package: $PROGRAMM
-Version: $fassung
+Version: $debfassung
 Section: video
 Priority: optional
 Architecture: amd64
@@ -114,12 +122,12 @@ rm -rf "$deb"
 sagen "rpm"
 rpmbaum="$(mktemp -d)"
 mkdir -p "$rpmbaum"/{BUILD,RPMS,SOURCES,SPECS,BUILDROOT}
-puffer="$rpmbaum/BUILDROOT/$PROGRAMM-$fassung-1.x86_64"
+puffer="$rpmbaum/BUILDROOT/$PROGRAMM-$fassung-$stand.x86_64"
 baum_fuellen "$puffer"
 cat > "$rpmbaum/SPECS/$PROGRAMM.spec" <<EOF
 Name:           $PROGRAMM
 Version:        $fassung
-Release:        1
+Release:        $stand
 Summary:        Jellyfin client that never transcodes
 License:        MPL-2.0
 URL:            https://github.com/paulherter/swiftly-player

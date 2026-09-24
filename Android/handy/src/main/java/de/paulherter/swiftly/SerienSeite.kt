@@ -134,7 +134,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var selbstGewaehlt by remember(ziel.id) { mutableStateOf(false) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>?>(null) }
     var aehnlicheGestoert by remember(ziel.id) { mutableStateOf(false) }
-    var folgenLaedt by remember(ziel.id) { mutableStateOf(false) }
+    // Ohne gemerkte Folgen stehen die Platzhalter vom ersten Bild an da, nicht erst mit dem Abruf.
+    var folgenLaedt by remember(ziel.id) { mutableStateOf(folgen.isEmpty()) }
     var folgenGestoert by remember(ziel.id) { mutableStateOf(false) }
     var gemerkt by remember(ziel.id) { mutableStateOf(serie?.gemerkt ?: false) }
     var gesehen by remember(ziel.id) { mutableStateOf(serie?.gesehen ?: false) }
@@ -176,13 +177,25 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             val alt = serie
             val neu = if (alt != null && alt.stand?.id == gelesen.stand?.id)
                 gelesen.copy(planDa = alt.planDa, lossless = alt.lossless, methode = alt.methode) else gelesen
-            serie = neu
             neu.stand?.let { st -> bereich.launch { planLaden(st.id) } } ?: run { planGeladen = true }
+            val wahl = if (!selbstGewaehlt || staffel == null) neu.gewaehlt else staffel
+            // **Ein Einblenden, nicht zwei.** Steht noch keine Folge da, kommen Serie und Folgen im selben
+            // Bild: bis zum 23.09.2026 stand erst die Serie mit Platzhaltern, dann schrumpfte die Liste auf
+            // die Folgen. Scheitert der Vorababruf, laedt `folgenLaden` wie bisher nach.
+            val vorab = if (folgen.isEmpty() && wahl != null && app.folgenSpeicher[wahl] == null) try {
+                folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(neu.id, wahl).await() })
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
+            serie = neu
             app.serienSpeicher[ziel.id] = neu
             gemerkt = neu.gemerkt
             gesehen = neu.gesehen
-            if (!selbstGewaehlt || staffel == null) staffel = neu.gewaehlt
-            staffel?.let { s -> if (folgen.isEmpty()) app.folgenSpeicher[s]?.let { folgen = it }; folgenLaden(neu.id, s) }
+            if (!selbstGewaehlt || staffel == null) staffel = wahl
+            if (vorab != null && wahl != null && staffel == wahl) {
+                app.folgenSpeicher[wahl] = vorab
+                folgen = vorab
+                folgenGestoert = false
+                folgenLaedt = false
+            } else staffel?.let { s -> if (folgen.isEmpty()) app.folgenSpeicher[s]?.let { folgen = it }; folgenLaden(neu.id, s) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
@@ -336,19 +349,26 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             Crossfade(reiter, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
                     0 -> Column {
-                        Staffelkopf(s?.staffeln.orEmpty(), staffel, listeOffen, { listeOffen = it }) { neu ->
-                            selbstGewaehlt = true
-                            if (neu != staffel) {
-                                staffel = neu
-                                folgen = app.folgenSpeicher[neu].orEmpty()
-                                s?.id?.let { id -> bereich.launch { folgenLaden(id, neu) } }
+                        // **Keine Platzhalter** (Vorlage iOS, 23.09.2026): solange die Serie laedt, steht der
+                        // Staffelknopf unsichtbar da und haelt seine Hoehe; er blendet an seinem Platz ein.
+                        val kopfDa = s?.staffeln?.isNotEmpty() == true
+                        val kopfSicht by animateFloatAsState(if (kopfDa) 1f else 0f, Bewegung.einblenden(), label = "staffelkopf")
+                        if (kopfDa || s == null) Box(Modifier.alpha(kopfSicht)) {
+                            Staffelkopf(s?.staffeln.orEmpty(), staffel, listeOffen, { listeOffen = it }) { neu ->
+                                selbstGewaehlt = true
+                                if (neu != staffel) {
+                                    staffel = neu
+                                    folgen = app.folgenSpeicher[neu].orEmpty()
+                                    s?.id?.let { id -> bereich.launch { folgenLaden(id, neu) } }
+                                }
                             }
                         }
                         // Keine Linien zwischen den Folgen: das Bild traegt die Zeile, 12 oben und unten.
+                        // Waehrend des Ladens bleibt die Flaeche leer — nie „Keine Folgen", nie Platzhalter.
                         if (folgenGestoert) Stoerhinweis(app.serveradresse(), erneut = { s?.id?.let { id -> staffel?.let { st -> bereich.launch { folgenLaden(id, st) } } } })
-                        else if (folgen.isEmpty() && folgenLaedt) Folgenplatzhalter(3)
-                        else if (folgen.isEmpty() && s != null && s.staffeln.isNotEmpty()) Leerhinweis(uebersetzt("Keine Folgen in dieser Staffel"))
-                        folgen.forEachIndexed { i, f ->
+                        else if (folgen.isEmpty() && !folgenLaedt && s != null && s.staffeln.isNotEmpty()) Leerhinweis(uebersetzt("Keine Folgen in dieser Staffel"))
+                        val folgenSicht by animateFloatAsState(if (folgen.isNotEmpty()) 1f else 0f, Bewegung.einblenden(), label = "folgen")
+                        Column(Modifier.alpha(folgenSicht)) { folgen.forEachIndexed { i, f ->
                             // Wischen schaltet gesehen — `Wischzeile` mit Haken oder Rueckpfeil.
                             key(f.id) {
                                 Wischzeile(if (f.gesehen) Zeichen.Rueckgaengig else Zeichen.Haken,
@@ -356,7 +376,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                                     Folgenzeile(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
-                        }
+                        } }
                     }
                     1 -> {
                         val leute = s?.darsteller.orEmpty()
@@ -480,8 +500,7 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
  */
 @Composable
 internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
-    Row(Modifier.fillMaxWidth().druckzeile(tun).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Folgenzeilenaufbau(Modifier.druckzeile(tun), f.titel, f.unterzeile, if (f.gesehen) Stil.schriftLeise else Stil.schrift, ende = ende) {
         Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)
                 .alpha(if (f.gesehen) 0.45f else 1f)) {
             AsyncImage(model = f.bild, contentDescription = null, contentScale = ContentScale.Crop,
@@ -496,12 +515,21 @@ internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: 
                 }
             }
         }
+    }
+}
+
+/** Vorlage: `Folgenzeilenaufbau` (iOS) — der Aufbau einer Folgenzeile; auf iOS teilt ihn der Platzhalter der Staffelansicht. */
+@Composable
+private fun Folgenzeilenaufbau(modifier: Modifier, titel: String, unterzeile: String?, titelfarbe: Color,
+                               ende: (@Composable () -> Unit)? = null, bild: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().then(modifier).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        bild()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             // Zeile mit Bild: Titel 15 Semibold, Unterzeile 12 (BAUTEILE 6).
             // **Einzeilig** — zwei Zeilen liessen die Zeilen einer Staffel verschieden hoch enden.
-            Text(f.titel, style = Stil.listentitel,
-                 color = if (f.gesehen) Stil.schriftLeise else Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            f.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
+            Text(titel, style = Stil.listentitel, color = titelfarbe, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
         }
         ende?.let { Box(Modifier.align(Alignment.CenterVertically)) { it() } }
     }
@@ -517,22 +545,6 @@ private fun <T> Raster(eintraege: List<T>, spalten: (Float) -> Int, abstand: Int
                 Row(horizontalArrangement = Arrangement.spacedBy(abstand.dp)) {
                     reihe.forEach { Box(Modifier.weight(1f)) { zelle(it) } }
                     repeat(anzahl - reihe.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
-    }
-}
-
-/** Vorlage: Platzhalter der Folgenliste — Bild 132 × 74, zwei Balken 170 × 13 und 80 × 11, senkrecht 10. */
-@Composable
-internal fun Folgenplatzhalter(anzahl: Int) {
-    Column(Modifier.padding(horizontal = Stil.randAbstand)) {
-        repeat(anzahl) {
-            Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Ladefeld(Modifier.size(132.dp, 74.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Ladefeld(Modifier.size(170.dp, 13.dp), 3.dp)
-                    Ladefeld(Modifier.size(80.dp, 11.dp), 3.dp)
                 }
             }
         }

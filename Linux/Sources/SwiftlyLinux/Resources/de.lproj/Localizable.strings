@@ -172,12 +172,11 @@
 "Keine Verbindung" = "Keine Verbindung";
 
 /* Seerr */
-"%@ anfragen?" = "%@ anfragen?";
-"%@ mit allen Staffeln anfragen?" = "%@ mit allen Staffeln anfragen?";
 "Abbrechen" = "Abbrechen";
 "Anfragen" = "Anfragen";
 "Anfragen über Seerr" = "Anfragen über Seerr";
 "Angefragt" = "Angefragt";
+"Angefragt. Sobald sie freigegeben ist, lädt sie von selbst." = "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst.";
 "Wird angefragt …" = "Wird angefragt …";
 "wartet" = "wartet";
 "angefragt" = "angefragt";
