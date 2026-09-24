@@ -224,6 +224,10 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
             Wertzeile(Zeichen.WlanStoerung, uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
                 blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
             }
+            Trennlinie()
+            Wahlzeile(Zeichen.Lautsprecher, uebersetzt("Mehrkanal-Ton (5.1)"),
+                      uebersetzt("Schickt 5.1 und 7.1 so raus, wie sie in der Datei stehen. Kommt kein Ton, schalt es wieder aus."),
+                      e.mehrkanalTon) { e.mehrkanalTon = it }
         }
     }
 }

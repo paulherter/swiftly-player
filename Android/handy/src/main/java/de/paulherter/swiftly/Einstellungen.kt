@@ -121,6 +121,14 @@ class Einstellungen(ablage: Ablage) {
         get() = umwandelnErlaubtKonto != "0"
     /** H5: Originaldateien sind gross — ueber Mobilfunk wird gewartet. */
     var nurUeberWLAN by Merkwert(a, "nurUeberWLAN", bool("nurUeberWLAN", true), jaNein)
+    /**
+     * **Dekodierten Mehrkanal-Ton (AAC/FLAC 5.1, 7.1) unverändert ausgeben.** Aus: libVLC mischt ihn auf
+     * Stereo (`--stereo-mode=1` in `Spielwerk`). Vorgabe aus, weil manche Boxen (Mi Box S) 6-Kanal-PCM
+     * annehmen und stumm wiedergeben — und dass eine Box das tut, steht in keiner Angabe, die Android
+     * ueber den Ausgang macht (nicht nachgemessen: keine solche Box hier). Passthrough (AC3/DTS) betrifft
+     * das nicht. Wirkt ab dem naechsten Oeffnen des Players.
+     */
+    var mehrkanalTon by Merkwert(a, "mehrkanalTon", bool("mehrkanalTon", false), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
     var zurueckSekunden by Merkwert(a, "zurueckSek", zahl("zurueckSek", 10)) { it.toString() }
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }

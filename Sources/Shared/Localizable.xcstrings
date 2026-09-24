@@ -9900,6 +9900,40 @@
           }
         }
       }
+    },
+    "Mehrkanal-Ton (5.1)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehrkanal-Ton (5.1)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multichannel audio (5.1)"
+          }
+        }
+      }
+    },
+    "Schickt 5.1 und 7.1 so raus, wie sie in der Datei stehen. Kommt kein Ton, schalt es wieder aus.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schickt 5.1 und 7.1 so raus, wie sie in der Datei stehen. Kommt kein Ton, schalt es wieder aus."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends 5.1 and 7.1 out the way they are in the file. If you hear nothing, turn it off again."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

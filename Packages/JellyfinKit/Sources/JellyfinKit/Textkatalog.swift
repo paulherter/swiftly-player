@@ -76,9 +76,12 @@ public struct Textschluessel: ExpressibleByStringInterpolation, Sendable {
         case text(String)
         case kommazahl(Double)
 
+        /// **`Int64`, nicht `Int`.** `%lld` liest immer 64 Bit. Auf 32-Bit-Android
+        /// (armeabi-v7a, etwa Mi Box S) ist `Int` 32 Bit breit: zwei Zahlen landeten
+        /// in einem Platz, aus „1 Std. 40 Min." wurde „171798691841 Std. …".
         var alsFormatargument: any CVarArg {
             switch self {
-            case let .zahl(w):      w
+            case let .zahl(w):      Int64(w)
             case let .text(w):      w
             case let .kommazahl(w): w
             }

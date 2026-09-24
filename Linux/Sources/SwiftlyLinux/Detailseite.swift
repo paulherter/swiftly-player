@@ -18,6 +18,15 @@ extension App {
     /// Folge führt auf die Serienseite, mit der Staffel der Folge gewählt.
     /// Das entscheidet ``detailZeigen(_:)`` beim Aufbauen.
     func oeffne(_ item: Item) {
+        // **Eine Sammlung ist keine Detailseite.** Wer auf dem Server Filme
+        // zu Sammlungen gruppiert, bekommt sie als Kachel mitten in der
+        // Bibliothek; sie lief hier auf die Filmseite und stand leer da.
+        // Wie auf dem iPhone (`HauptView`, `SammlungView(art: nil)`): die
+        // Sammlungsseite, ohne Gattung, also alles, was darin steht.
+        if item.type == "BoxSet" {
+            sammlungOeffnen(item, art: nil)
+            return
+        }
         // **Eine Folge bekommt keine eigene Seite** (A8). Jeder Weg zu einer
         // Folge — aus „Zuletzt hinzugefügt", aus „Nächste Folge" — führt auf
         // die **Serienseite**, mit der Staffel der Folge schon gewählt. Eine
