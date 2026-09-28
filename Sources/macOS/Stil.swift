@@ -1,4 +1,5 @@
 import SwiftUI
+import JellyfinKit
 
 /// Maße, Schriftgrößen und Grundformen für den Mac.
 ///
@@ -22,6 +23,11 @@ extension Stil {
     static var bewegungReduziert: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
+
+    /// Mit reduzierter Bewegung die kurze Blende statt der Bewegung — derselbe
+    /// Wert wie auf dem iPhone, für die geteilten Teile (Folgenkarte,
+    /// Bildfarbe).
+    static let blendeReduziert: Animation = .linear(duration: 0.14)
 
     /// **Die kleine Ecke, fuer Dinge unter 34 Punkt Hoehe.** Die Ecke waechst
     /// mit dem Ding: 10 auf 48 Hoehe sind 0,21, und dasselbe Verhaeltnis ergibt
@@ -337,6 +343,10 @@ extension Stil {
     /// Der Schwebezustand — 0,12 s, dieselbe Zeit wie der Druck (BRAND 5).
     static let zeitSchweben   = Animation.easeOut(duration: 0.12)
 
+    /// Die Blätterpfeile einer Reihe — kommen und gehen weich
+    /// (`Blendzeiten.pfeile`), gleich auf Linux und Windows.
+    static let zeitPfeile = Animation.easeInOut(duration: Blendzeiten.pfeile)
+
     // MARK: Seitenwechsel — drei Bewegungen, an drei Bedeutungen gebunden
     //
     // Vorher tat jede Stelle etwas anderes: der Bereichswechsel gar nichts,
@@ -362,67 +372,25 @@ extension Stil {
         bewegungReduziert ? linearReduziert : .easeInOut(duration: 0.28)
     }
 
-    // MARK: Der Wechsel in der Leiste — „Fade Through"
-    //
-    // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und eine
-    // veröffentlichte Vorschrift: das Ausgehende blendet in 100 ms aus,
-    // **danach** blendet das Eingehende in 200 ms ein und wächst dabei von 92
-    // % auf 100 %. Nacheinander, nicht überlappend.
-    //
-    // Die 92 % sind ausdrücklich so gewählt und nicht kleiner: der Übergang
-    // soll die Aufmerksamkeit nicht auf sich ziehen. Genau deshalb sieht man
-    // ihn kaum und findet ihn trotzdem angenehm.
-    //
-    // Gedacht ist er für Inhalte **ohne starke Beziehung zueinander** — und
-    // der Wechsel zwischen Tabs wird in der Vorschrift wörtlich als der
-    // passende Fall genannt.
-    //
-    // Zur Einordnung: eine macOS-Seitenleiste schaltet sonst ohne Blende um
-    // (Finder, Mail, Systemeinstellungen). Das hier ist eine bewusste
-    // Abweichung, eine bewusste Entscheidung — und sie trägt erst, seit die Stände der
-    // Bereiche liegen bleiben. Solange jeder Wechsel neu geladen hat, hätte
-    // eine Blende die Wartezeit nur verlängert.
+    // MARK: Der Wechsel in der Leiste — erst weg, dann da
 
-    /// Das Alte geht. Nur blenden, nicht schrumpfen.
-    ///
-    /// **Und es überlappt jetzt mit dem Kommenden.** Die Vorschrift trennt
-    /// beides sauber: erst 100 ms ganz hinaus, dann herein. Auf einem
-    /// Telefonbildschirm ist diese Lücke ein Wimpernschlag, in einem grossen
-    /// Fenster ist sie ein **leerer Bildschirm** — und das war vermutlich das
-    /// Harte daran, nicht die Stärke der Mittel. Jetzt gehen die beiden
-    /// ineinander über, und es ist nie nichts zu sehen.
-    static let zeitBereichHinaus = Animation.easeInOut(duration: 0.20)
-    /// Das Neue kommt — erst danach, deshalb der Vorlauf.
-    static let zeitBereichHerein = Animation.easeOut(duration: 0.26).delay(0.04)
+    // **Keine Überblendung.** Das Alte geht zuerst, kurz und mit `easeIn`;
+    // erst wenn es weg ist, kommt das Neue mit `easeOut`. Bis 27.09.2026
+    // überlappten beide (0,20 s hinaus, 0,26 s herein ab 0,04 s), und in der
+    // Mitte standen zwei halbe Seiten übereinander — das wirkt unsauber.
+    // Dazu kamen Unschärfe und ein Hauch Zoom; beides ist raus, bewegt wird
+    // nur die Deckkraft. Die Zahlen stehen im Paket (`Blendzeiten`), damit
+    // Linux und Windows dieselben nehmen.
 
-    // **Und warum hier keine Skalierung mehr steht.**
-    //
-    // Die Vorschrift lässt das Eingehende von 92 % wachsen. Eine Skalierung
-    // verschiebt aber jeden Punkt proportional zu seinem Abstand vom
-    // Mittelpunkt — auf einem Telefon sind das an der Kante wenige Punkte, in
-    // einem Fenster von 1500 Punkt Breite bei nur einem Prozent schon acht,
-    // und ein Fenster ist breiter als hoch. Die Verschiebung ist damit
-    // seitlich am grössten, also genau dort, wo die Kachelreihen enden.
-    //
-    // Sie tat es. Das ist keine Einstellungs- frage — es folgt aus der
-    // Skalierung selbst und lässt sich nur verkleinern, nicht abstellen.
-    //
-    // Deshalb Unschärfe statt Skalierung: sie gibt dieselbe Tiefe und
-    // verschiebt nichts.
-    //
-    // `.blurReplace`, Apples fertiger Übergang dafür, war ebenfalls zu kräftig
-    // — er bringt seine eigene Skalierung mit und lässt sich nicht dosieren.
-    // Deshalb hier von Hand, mit drei Zahlen, die einzeln einstellbar sind.
+    /// Das Alte geht.
+    static let zeitBereichHinaus = Animation.easeIn(duration: Blendzeiten.seiteHinaus)
+    /// Das Neue kommt — erst danach, deshalb der Vorlauf in voller Länge.
+    static let zeitBereichHerein = Animation.easeOut(duration: Blendzeiten.seiteHerein)
+        .delay(Blendzeiten.seiteHinaus)
 
-    /// Wie weich das Neue anfängt. Das ist der Anteil, den man sehen soll.
-    /// Unschärfe fällt in einem grossen Fenster deutlich mehr auf als auf
-    /// einem Telefon — sie trifft ja jeden Text auf der ganzen Fläche
-    /// gleichzeitig.
-    static let bereichUnschaerfe: CGFloat = 0.8
-    /// Und wie wenig es dabei wächst. Der Weg hierher, alles am laufenden
-    /// Bild: 92 % (Vorschrift, viel zu viel), 98, 99, 99,5 — und 99,8 war
-    /// gar nicht mehr wahrnehmbar. 99,6 legt an der Fensterkante rund drei
-    /// Punkte zurück; das ist der schmale Streifen dazwischen.
+    /// Wie wenig ein Reiterinhalt beim Auftreten wächst (`bereichsmass`, im
+    /// geteilten `Stil` benutzt) — 99,6 %, an der Fensterkante rund drei
+    /// Punkte. Der Bereichswechsel selbst skaliert nicht mehr.
     static let bereichKleiner: CGFloat = 0.996
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
@@ -444,38 +412,27 @@ extension Stil {
     /// `easeInOut` verteilt gleichmässig — die Hälfte der Strecke in der
     /// Hälfte der Zeit — und hört auf, wenn sie fertig ist. 450 ms, also die
     /// Hälfte länger als die 300, die zu kurz waren.
-    static let zeitSeitenschub = Animation.easeInOut(duration: 0.45)
-}
+    static let zeitSeitenschub = Animation.easeInOut(duration: dauerSeitenschub)
 
-/// Wie ein Bereich hereinkommt: **Unschärfe zuerst, Zoom fast keiner.**
-///
-/// Von Hand statt `.blurReplace`, weil dessen Anteile feststehen. Hier sind
-/// sie drei Zahlen in `Stil`, und die Unschärfe trägt bewusst das meiste.
-struct Bereichseintritt: ViewModifier {
-    var unschaerfe: CGFloat
-    var staerke: Double
-    var groesse: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: unschaerfe)
-            .opacity(staerke)
-            .scaleEffect(groesse)
-    }
+    /// **Das Abzeichen „Hier weiterschauen" in der Seitenleiste** — seine
+    /// Höhe und sein Abstand zu jeder Kante, an der es liegt (links, rechts,
+    /// unten). Ein Wert, damit die drei nicht wieder auseinanderlaufen;
+    /// Linux/Windows nehmen dieselben Zahlen.
+    static let abzeichenHoehe: CGFloat = 40
+    static let abzeichenRand: CGFloat = 12
+    /// Dieselbe Zahl für `Einfahrt`: so lange wartet, was vom Server kommt.
+    static let dauerSeitenschub: Double = 0.45
 }
 
 extension AnyTransition {
-    /// Der Wechsel in der Leiste — siehe die Zahlen in `Stil`.
+    /// Der Wechsel in der Leiste — nacheinander, nur Deckkraft (siehe
+    /// `Stil.zeitBereichHinaus`).
     ///
     /// Berechnet statt abgelegt: `AnyTransition` ist nicht `Sendable`, eine
     /// gespeicherte Eigenschaft wäre unter Swift 6 ein gemeinsam genutzter
     /// veränderlicher Zustand.
     static var bereichswechsel: AnyTransition { .asymmetric(
-        insertion: .modifier(
-            active: Bereichseintritt(unschaerfe: Stil.bereichUnschaerfe,
-                                     staerke: 0, groesse: Stil.bereichKleiner),
-            identity: Bereichseintritt(unschaerfe: 0, staerke: 1, groesse: 1))
-            .animation(Stil.zeitBereichHerein),
+        insertion: .opacity.animation(Stil.zeitBereichHerein),
         removal: .opacity.animation(Stil.zeitBereichHinaus)) }
 }
 

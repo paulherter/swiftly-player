@@ -37,11 +37,12 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.4"
+        versionCode = 13
+        versionName = "1.0.5"
         // **Nur die ABIs, fuer die der Swift-Kern gebaut wird** (`kern/build.gradle`); auf jeder
         // anderen stuerzte die App beim Start. libVLC brachte vier ABIs mit — x86 lief nie.
         // armeabi-v7a fuer Fernseher mit 32-Bit-Android: ohne sie war die App dort im Store unsichtbar.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     compileOptions {
@@ -83,6 +84,9 @@ dependencies {
     implementation(libs.androidx.tvprovider)
     // Nur fuer die JVM-Tests (`StromweiterleiterTest`).
     testImplementation("junit:junit:4.13.2")
+    // Nur fuer die Geraetetests (`ZertifikateTest`) — auf dem Emulator.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
 // **Die Startanimation liegt einmal im Repo** (`Sources/Shared/Mittel`) und wird beim Bau

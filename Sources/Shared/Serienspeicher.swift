@@ -98,6 +98,97 @@ final class Serienspeicher {
         bekannt[serie] = nil
     }
 
+    /// **Der Stand ist nach dem Abspielen alt, die Folgen nicht.**
+    ///
+    /// `weiterMit` nennt der Hauptknopf der Serienseite beim Oeffnen, bevor
+    /// der frische Stand da ist. Wer seitdem geschaut hat — etwa ueber
+    /// „Weiterschauen" auf der Startseite, ohne die Serienseite —, bekam
+    /// dort die alte Folge genannt und eine Sekunde spaeter die richtige.
+    /// Der Knopf nennt nie eine geratene Folge; also weg damit, und die
+    /// Seite zeigt bis zum Abruf ein neutrales „Abspielen".
+    func standVergessen(_ serie: String) {
+        staende[serie]?.weiterMit = nil
+        naechste[serie] = nil
+    }
+
+    // MARK: Die naechste Folge, vor dem Klick
+
+    /// **Wo es in einer Serie weitergeht — gemerkt, bevor jemand drueckt.**
+    ///
+    /// Getrennt von `staende`: die halten zwoelf Serien samt Folgenlisten,
+    /// hier liegt nur je Serie eine Folge, fuer jede Serie der Startseite.
+    /// Gefuellt aus „Weiterschauen" und „Naechste Folge" (dort *ist* die
+    /// Kachel die Folge, vom Server so geliefert), aus dem Fokus auf einer
+    /// Serien- oder Folgenkachel (`naechsteVorladen`) und aus dem Abruf der
+    /// Serienseite selbst. Nach dem Abspielen verworfen (`standVergessen`).
+    private var naechste: [String: Item] = [:]
+    private var naechsteLaufend: Set<String> = []
+
+    /// Die Folge, bei der es weitergeht, sofern bekannt — frischer Vorrat
+    /// zuerst, dann der Stand der zuletzt besuchten Serienseite.
+    func naechsteFolge(_ serie: String, mit model: AppModel) -> Item? {
+        guard gueltig(model) else { return nil }
+        return naechste[serie] ?? staende[serie]?.weiterMit
+    }
+
+    func naechsteMerken(_ folge: Item?, fuer serie: String) {
+        naechste[serie] = folge
+    }
+
+    /// Aus einer Reihe der Startseite: jede Folge ist die, bei der es in
+    /// ihrer Serie weitergeht.
+    func naechsteMerken(aus reihe: [Item]) {
+        for folge in reihe where folge.type == "Episode" {
+            if let serie = folge.seriesId { naechste[serie] = folge }
+        }
+    }
+
+    /// Holt den Stand der Serie zu dieser Kachel, falls er fehlt — gerufen,
+    /// wenn eine Kachel den Fokus haelt (entprellt in `KachelStil`).
+    func naechsteVorladen(zu titel: Item, mit model: AppModel) async {
+        let serie: String? = switch titel.type {
+        case "Series": titel.id
+        case "Episode": titel.seriesId
+        default: nil
+        }
+        guard let serie, gueltig(model), naechste[serie] == nil,
+              staende[serie]?.weiterMit == nil,
+              !naechsteLaufend.contains(serie),
+              let client = model.client else { return }
+        let konto = model.kontowechsel
+        naechsteLaufend.insert(serie)
+        defer { naechsteLaufend.remove(serie) }
+        let folge = await client.standInSerie(serie)
+        guard konto == model.kontowechsel, let folge else { return }
+        naechste[serie] = folge
+    }
+
+    /// **Die Serien einer ganzen Reihe in einer Anfrage** — fuer die
+    /// Angabenzeile der Startseite auf dem Fernseher.
+    ///
+    /// Dort steht bei einer Folge die Zeile der Serie (Jahr, Laufzeit,
+    /// Sterne, Freigabe). Einzeln unter dem Fokus geholt kam sie einen
+    /// Moment nach allem anderen. cb6bcefd hatte das Vorholen auf dem
+    /// Fernseher abgeschaltet, weil es **18 Einzelabrufe** gleichzeitig mit
+    /// den ersten Plakaten waren, deren Ergebnis niemand las. Beides ist
+    /// jetzt anders: **eine** Anfrage `Items?Ids=…` je Reihe, erst nach dem
+    /// Laden der Reihen, mit niedriger Prioritaet — und die Zeile liest es.
+    func vorholenGebuendelt(_ folgen: [Item], mit model: AppModel) async {
+        _ = gueltig(model)
+        let offen = Array(Set(folgen.filter { $0.type == "Episode" }.compactMap(\.seriesId))
+            .subtracting(bekannt.keys)
+            .subtracting(laufend))
+        guard !offen.isEmpty, let client = model.client else { return }
+        let konto = model.kontowechsel
+        laufend.formUnion(offen)
+        defer { laufend.subtract(offen) }
+        guard let antwort = try? await client.items(limit: offen.count, ids: offen),
+              // Inzwischen ein anderes Konto: dessen Speicher, nicht dieser.
+              konto == model.kontowechsel
+        else { return }
+        for serie in antwort.items { bekannt[serie.id] = serie }
+    }
+
     /// Holt die Serie zu **einer** Folge — für das Überfahren einer Kachel.
     ///
     /// **Das ist der eine Teil, der von der Eingabeart abhängt.** Auf dem Mac
@@ -153,6 +244,8 @@ final class Serienspeicher {
         fuerKonto = model.kontowechsel
         bekannt.removeAll()
         staende.removeAll()
+        naechste.removeAll()
+        naechsteLaufend.removeAll()
         reihenfolge.removeAll()
         laufend.removeAll()
         return false

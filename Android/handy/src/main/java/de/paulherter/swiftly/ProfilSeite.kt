@@ -55,6 +55,9 @@ private fun rememberServerauskunft(app: SwiftlyAnwendung): State<Pair<String, St
 @Composable
 fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     val server by rememberServerauskunft(app)
+    // **Geht die Seite mitten im Kontowechsel auf**, ist er sofort fertig — neues Konto aktiv, Profilbild an
+    // seinem Platz (`Kontowechselflug.abschliessen`).
+    LaunchedEffect(Unit) { Kontowechselflug.abschliessen() }
     Einstellungsseite(uebersetzt("Profil"), zurueck) {
         Kontokarten(app, server, oeffnen)
         Spacer(Modifier.height(18.dp))
@@ -212,6 +215,12 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
             Trennlinie()
             Wahlzeile(Zeichen.Wellensuche, uebersetzt("Technische Daten im Player"), an = e.technikschild) { e.technikschild = it }
             Trennlinie()
+            // Wie bei YouTube: Finger aufs Bild und liegen lassen. Nur am Telefon — der Fernseher hat keinen Finger.
+            if (!app.istFernseher) {
+                Wahlzeile(Zeichen.Doppeltempo, uebersetzt("Gedrückt halten für 2×"), uebersetzt("Solange der Finger auf dem Bild liegt"),
+                          e.festhaltenDoppelt) { e.festhaltenDoppelt = it }
+                Trennlinie()
+            }
             Wertzeile(Zeichen.Zurueckspulen, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
                 blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
             }
@@ -284,7 +293,7 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
                 val nach = (von + schritt).coerceIn(0, liste.lastIndex)
                 if (von >= 0 && von != nach) { liste.removeAt(von); liste.add(nach, g); e.startGenres = liste }
             }) { g ->
-                Row(Modifier.fillMaxWidth().padding(start = Stil.randAbstand).height(52.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(start = Stil.randAbstand).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Der Genrename in 15 Regular — er ist ein Eintrag, keine Zeile mit Titel.
                     Text(g, style = Stil.koerper, color = Stil.schrift, modifier = Modifier.weight(1f))
                     Box(Modifier.size(44.dp).antippen { e.startGenres = e.startGenres - g }, contentAlignment = Alignment.Center) {

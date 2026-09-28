@@ -1,6 +1,7 @@
 package de.paulherter.swiftly.tv
 
 import de.paulherter.swiftly.Protokoll
+import de.paulherter.swiftly.gemeinsam.Sichtschutz
 import de.paulherter.swiftly.gemeinsam.Zeichen
 import de.paulherter.swiftly.gemeinsam.Symbol
 import de.paulherter.swiftly.gemeinsam.Staerke
@@ -10,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -27,11 +29,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -69,6 +81,12 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
  * Die eine Regel, die alles traegt: **Fokus ist weiss, Auswahl ist Akzent.**
  */
 object TvStil {
+    /**
+     * **Wie lange ein Fokuswunsch wartet, bis der Knoten steht.** `requestFocus()` im selben Bild wie das
+     * Einhaengen trifft oft noch keinen Knoten; ein Bild und etwas Luft reichen. Stand vorher als lose 30 und
+     * 60 an acht Stellen — eine Zahl, damit alle gleich warten und sie sich an einer Stelle aendern laesst.
+     */
+    const val fokusFrist = 30L
     val randSeite = 40.dp
     val randOben = 30.dp
     val leisteHoehe = 34.dp
@@ -214,9 +232,11 @@ object TvStil {
  * `Modifier.tvEingeblendet`), kein Neuaufbau je Bild.
  */
 @Composable
-fun rememberTvEinblendung(schluessel: Any?): androidx.compose.runtime.State<Float> {
+fun rememberTvEinblendung(schluessel: Any?, bereit: Boolean = true): androidx.compose.runtime.State<Float> {
     val wert = remember(schluessel) { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(schluessel) {
+    // `bereit`: erst einblenden, wenn der Inhalt da ist (Filmseite: alles unter dem Kopf kommt auf einmal).
+    LaunchedEffect(schluessel, bereit) {
+        if (!bereit || wert.value == 1f) return@LaunchedEffect
         withFrameNanos { }
         withFrameNanos { }
         wert.animateTo(1f, tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve))
@@ -237,8 +257,11 @@ fun Modifier.tvEingeblendet(deckkraft: () -> Float): Modifier = this.graphicsLay
  * dorthin zurueckgeben. tvOS laesst den Ausloeser stehen, der Fokus bleibt dort von selbst;
  * Compose braucht dafuer diesen Umweg (siehe `Fokusmerker`, `LocalInnerhalbTafel`).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun Fokusflaeche(modifier: Modifier = Modifier, lupe: Float = TvStil.fokusLupe, fokusGeaendert: (Boolean) -> Unit = {},
+                 /** Menue-Taste oder langes OK — das Kachelmenue (`kachelmenueTafel`). */
+                 lange: (() -> Unit)? = null,
                  tun: () -> Unit, inhalt: @Composable BoxScope.(fokus: Boolean) -> Unit) {
     var fokus by remember { mutableStateOf(false) }
     // **„Bewegung reduzieren" gilt auch hier** — der Fokus bleibt sichtbar, nur die Kurve wird
@@ -252,7 +275,19 @@ fun Fokusflaeche(modifier: Modifier = Modifier, lupe: Float = TvStil.fokusLupe, 
             .focusRequester(eigenerFokus)
             .onFocusChanged { if (fokus != it.isFocused) { fokus = it.isFocused; fokusGeaendert(it.isFocused) } }
             .graphicsLayer { scaleX = mass; scaleY = mass }
-            .clickable(remember { MutableInteractionSource() }, null, onClick = {
+            .then(if (lange == null) Modifier else Modifier.onPreviewKeyEvent { e ->
+                // **Die Menue-Taste der Fernbedienung** oeffnet das Kachelmenue — wie das lange Druecken.
+                if (e.key != androidx.compose.ui.input.key.Key.Menu) return@onPreviewKeyEvent false
+                if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
+                    Fokusmerker.letzter = eigenerFokus
+                    Tastensperre.nachLangemDruck()
+                    lange()
+                }
+                true
+            })
+            .combinedClickable(remember { MutableInteractionSource() }, null,
+                onLongClick = lange?.let { l -> { Fokusmerker.letzter = eigenerFokus; Tastensperre.nachLangemDruck(); l() } },
+                onClick = {
                 // Nicht innerhalb einer offenen Tafel: sonst ueberschriebe eine Auswahlzeile *in*
                 // ihr den Rueckweg zu der Zeile, die sie geoeffnet hat.
                 if (!innerhalbTafel) Fokusmerker.letzter = eigenerFokus
@@ -286,9 +321,13 @@ object Fokusmerker {
         vorDemPlayer = letzter.takeIf { android.os.SystemClock.elapsedRealtime() - gesetztUm < 3000 }
     }
 
+    /** Wohin der Fokus nach dem Player zurueckging — der Rueckwegstreifen gibt ihn dorthin zurueck. */
+    var nachDemPlayer: FocusRequester? = null
+
     fun playerZu() {
         val ziel = vorDemPlayer ?: return
         vorDemPlayer = null
+        nachDemPlayer = ziel
         val traf = runCatching { ziel.requestFocus() }.isSuccess
         Protokoll.schreib("[Fokus] nach dem Player ${if (traf) "zurück am Auslöser" else "Auslöser nicht mehr da"}")
     }
@@ -334,8 +373,17 @@ val LocalInnerhalbTafel = compositionLocalOf { false }
  */
 @Composable
 fun TvKnopf(text: String?, symbol: Zeichen? = null, modifier: Modifier = Modifier, hoehe: Dp = TvStil.knopfHoehe,
-            freigegeben: Boolean = true, symbolNachText: Boolean = false, fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
-    Fokusflaeche(modifier, lupe = TvStil.fokusLupe, fokusGeaendert = fokusGeaendert, tun = { if (freigegeben) tun() }) { fokus ->
+            freigegeben: Boolean = true, symbolNachText: Boolean = false, beschreibung: String? = text, aktiv: Boolean? = null,
+            /** Menue-Taste oder langes OK — das Kachelmenue (`kachelmenueTafel`). */
+            lange: (() -> Unit)? = null,
+            fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
+    // **Reine Symbolknoepfe** (kein sichtbarer Text) brauchen trotzdem eine Beschreibung fuer
+    // TalkBack — `beschreibung` faellt auf `text` zurueck, wo beides zusammenfaellt.
+    Fokusflaeche(modifier.semantics {
+            role = Role.Button
+            aktiv?.let { selected = it }
+            if (text == null) beschreibung?.let { contentDescription = it }
+        }, lupe = TvStil.fokusLupe, fokusGeaendert = fokusGeaendert, lange = lange, tun = { if (freigegeben) tun() }) { fokus ->
         val farbe = if (!freigegeben) Stil.schriftSehrLeise else if (fokus) Stil.grund else Stil.schrift
         Row(Modifier.height(hoehe).then(if (text == null) Modifier.width(hoehe) else Modifier)
                 .clip(RoundedCornerShape(TvStil.ecke))
@@ -343,11 +391,38 @@ fun TvKnopf(text: String?, symbol: Zeichen? = null, modifier: Modifier = Modifie
                 .padding(horizontal = if (text == null) 0.dp else 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-            val symbolInhalt: @Composable () -> Unit = { symbol?.let { Symbol(it, 15.dp, farbe = farbe, staerke = Staerke.Halbfett, beschreibung = text) } }
+            val symbolInhalt: @Composable () -> Unit = { symbol?.let { Symbol(it, 15.dp, farbe = farbe, staerke = Staerke.Halbfett, beschreibung = if (text != null) text else null) } }
             val textInhalt: @Composable () -> Unit = { text?.let { Text(it, style = TvStil.knopf, color = farbe, maxLines = 1) } }
             // **Sortierknoepfe zeigen den Pfeil hinter dem Wort** — „A–Z ⌄" auf tvOS, kein
             // fuehrendes Symbol wie bei jedem anderen `TvKnopf`.
             if (symbolNachText) { textInhalt(); symbolInhalt() } else { symbolInhalt(); textInhalt() }
+        }
+    }
+}
+
+/**
+ * **Ein Textfeld laesst die Fernbedienung wieder los** — fuer `TvFeld` und das Suchfeld (`TvSuche`).
+ *
+ * `BasicTextField` nimmt Hoch und Runter selbst (Schreibmarke an Anfang/Ende der Zeile) und meldet sie
+ * als erledigt: aus dem Feld kam man mit dem Steuerkreuz nicht mehr heraus — auf der Serverseite
+ * weder zu „Weiter" noch zu „Erweitert", sobald die Tastatur einmal zu war. Und **OK holt die
+ * Tastatur zurueck**: Compose zeigt sie nur beim ersten Fokus; wer sie mit Zurueck geschlossen hatte,
+ * bekam sie mit OK nicht wieder (plezy#1079, gemessen im TV-Emulator). Nur die Mitte-Taste der
+ * Fernbedienung — Enter einer echten Tastatur loest weiter die Tastaturaktion aus.
+ */
+@Composable
+fun Modifier.fernbedienbaresFeld(): Modifier {
+    val fokus = androidx.compose.ui.platform.LocalFocusManager.current
+    val tastatur = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    return onPreviewKeyEvent { e ->
+        when (e.key) {
+            Key.DirectionUp, Key.DirectionDown -> {
+                if (e.type == KeyEventType.KeyDown)
+                    fokus.moveFocus(if (e.key == Key.DirectionUp) androidx.compose.ui.focus.FocusDirection.Up else androidx.compose.ui.focus.FocusDirection.Down)
+                true
+            }
+            Key.DirectionCenter -> { if (e.type == KeyEventType.KeyUp) tastatur?.show(); true }
+            else -> false
         }
     }
 }
@@ -364,6 +439,7 @@ fun TvFeld(wert: String, aendern: (String) -> Unit, platzhalter: String, modifie
           geheim: Boolean = false, imeAction: ImeAction = ImeAction.Done,
           tastaturTyp: KeyboardType = KeyboardType.Text, tastaturAktion: () -> Unit = {}) {
     var fokus by remember { mutableStateOf(false) }
+    if (geheim) Sichtschutz()
     val farbe = if (fokus) Stil.grund else Stil.schrift
     BasicTextField(wert, aendern, singleLine = true,
         textStyle = TvStil.koerper.copy(color = farbe),
@@ -371,7 +447,7 @@ fun TvFeld(wert: String, aendern: (String) -> Unit, platzhalter: String, modifie
         visualTransformation = if (geheim) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(imeAction = imeAction, keyboardType = tastaturTyp),
         keyboardActions = KeyboardActions(onDone = { tastaturAktion() }, onGo = { tastaturAktion() }, onSearch = { tastaturAktion() }),
-        modifier = modifier.height(TvStil.knopfHoehe).onFocusChanged { fokus = it.isFocused },
+        modifier = modifier.height(TvStil.knopfHoehe).onFocusChanged { fokus = it.isFocused }.fernbedienbaresFeld(),
         decorationBox = { innen ->
             // **Kein Rand** (BRAND 4): ein Feld ist eine gefuellte Kapsel, kein gezeichneter
             // Rahmen — auch am Fernseher. Ruhend `flaeche`, nicht `erhoeht`: `erhoeht` ist,
@@ -479,6 +555,10 @@ fun TvZeile(text: String, symbol: Zeichen? = null, rechts: String? = null, haken
 fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = false, fortschritt: Double? = null,
              marke: String? = null, markenzahl: Int = 0,
              modifier: Modifier = Modifier, deckkraft: Float = 1f, titelLeise: Boolean = false,
+             /** Gesehen: das Bild nur dunkler, nicht durchsichtig (`GESEHEN_ABDUNKELN`, wie `Gesehenhaken`). */
+             abgedunkelt: Boolean = false,
+             /** Menue-Taste oder langes OK: das Kachelmenue. */
+             lange: (() -> Unit)? = null,
              fokusGeaendert: (Boolean) -> Unit = {},
              /**
               * **Ein Ersatz fuer das Bild** (`Kachelinhalt.ersatz`) — nur an einer Sammlung ohne eigenes
@@ -486,15 +566,31 @@ fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = 
               */
              ersatz: (@Composable () -> Unit)? = null, tun: () -> Unit) {
     val breite = if (quer) TvStil.querBreite else TvStil.posterBreite
+    // **Die Kachel spricht als Ganzes** — Titel plus Fortschritt oder Marke, nicht nur der Titel
+    // vom Bild allein (die Auskunft unter dem Bild ist optisch da, TalkBack erreicht sie sonst nicht).
+    val anteil = fortschritt?.takeIf { it > 0.0 && it < 1.0 }
+    val markenwortlaut = when (marke) {
+        "offen" -> uebersetzt("%lld offen", markenzahl)
+        "staffeln" -> if (markenzahl == 1) uebersetzt("1 Staffel") else uebersetzt("%lld Staffeln", markenzahl)
+        "gesehen" -> uebersetzt("Gesehen")
+        else -> null
+    }
+    val beschreibung = listOfNotNull(
+        titel, unterzeile,
+        anteil?.let { uebersetzt("%lld Prozent gesehen", (it * 100).toInt()) } ?: markenwortlaut
+    ).joinToString(", ")
     Column(modifier.width(breite)) {
-        Fokusflaeche(fokusGeaendert = fokusGeaendert, tun = tun) {
+        Fokusflaeche(modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = beschreibung }, fokusGeaendert = fokusGeaendert, lange = lange, tun = tun) {
             Box(Modifier.size(breite, if (quer) TvStil.querHoehe else TvStil.posterHoehe)
                     .clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche)) {
                 // Kein eigener Platzhalter-Zeichentrick: fehlt das Bild oder laedt es noch,
                 // bleibt `Stil.flaeche` sichtbar — genau das Verhalten von `Bild` in
                 // `Sources/tvOS/Stil.swift` (dort auch nur eine Flaeche, kein Symbol).
                 if (ersatz != null) Box(Modifier.fillMaxSize().alpha(deckkraft)) { ersatz() }
-                else AsyncImage(model = bild, contentDescription = titel, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().alpha(deckkraft))
+                // Dekorativ: die Kachel spricht ihre Beschreibung schon oben, als Ganzes.
+                else AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop,
+                                colorFilter = if (abgedunkelt) de.paulherter.swiftly.GESEHEN_ABDUNKELN else null,
+                                modifier = Modifier.fillMaxSize().alpha(deckkraft))
                 // Vorlage: `Fortschrittsbalken` in `Sources/tvOS/Stil.swift` — **buendig an der
                 // Unterkante, volle Breite, eckig**; die Rundung kommt allein vom Beschnitt der Kachel.
                 // Vorher schwebte hier eine eingerueckte Pille ueber dem Bild.

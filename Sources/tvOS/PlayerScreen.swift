@@ -47,6 +47,8 @@ struct PlayerScreen: View {
     @State private var laeuft = true
     @State private var erstesBildDa = false
     @State private var steuerungSichtbar = true
+    /// Das Bild geht gerade als Karte an ein anderes Gerät.
+    @State private var abgabeLaeuft = false
     @State private var ausblendMarke = 0
     /// Eine der drei Ebenen — Audio & Untertitel, Folgen, Einstellungen.
     @State private var offeneEbene: Playerebene?
@@ -58,10 +60,22 @@ struct PlayerScreen: View {
     @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne Steuerung.
     /// Was wann zu sehen ist, steht in `Angebotsebene` im Paket.
-    @State private var ebene = Angebotsebene()
+    /// Die Karte der nächsten Folge wartet, solange die Steuerung offen ist,
+    /// und kommt mit ihrem Schließen zurück; Menü bricht sie ab.
+    @State private var ebene: Angebotsebene = {
+        var e = Angebotsebene()
+        e.karteWartetBeiSteuerung = true
+        return e
+    }()
     /// Der Wechsel laeuft schon — spiegelt den Riegel von `folgenwechsel`.
     @State private var wechselt = false
     @State private var folgenwechsel = Folgenwechsel()
+    /// Plan und Dateianfang der nächsten Folge, in den letzten Minuten geholt
+    /// — wie am iPhone (``Folgenvorbereitung``, Regeln in `Vorpuffer`).
+    @State private var vorbereitung = Folgenvorbereitung()
+    /// Seit wann die nächste Folge geladen wird — für die Wechselzeit im
+    /// Protokoll.
+    @State private var wechselBeginn: Date?
     /// Zaehlt bei jedem Titelwechsel hoch; die Schleife setzt ihren Stand
     /// daraufhin ueber `Wiedergabetakt.neuerTitel` zurueck, wie auf iOS.
     /// Fehlte das, ueberlebte `seitMeldung` den Wechsel, und die erste
@@ -125,6 +139,12 @@ struct PlayerScreen: View {
     @State private var ausrollen: Task<Void, Never>?
     /// Halten links/rechts auf dem Klickring: laeuft, solange gehalten wird.
     @State private var abtastAufgabe: Task<Void, Never>?
+    /// **Das Nachsetzen des Fokus — immer nur eines.** Jede Stelle, die den
+    /// Fokus einen Takt spaeter noch einmal legt, lief bisher frei. Kam
+    /// innerhalb der 80 bis 600 ms ein zweiter Anlass, setzte der alte Lauf
+    /// danach sein veraltetes Ziel und holte den Fokus von dort weg, wo der
+    /// neue ihn eben hingelegt hatte.
+    @State private var fokusnachzug: Task<Void, Never>?
     @State private var tastet = false
     @State private var klickring = Klickring()
     /// Dieser Wisch hat die Steuerung geholt — und tut sonst nichts.
@@ -136,6 +156,13 @@ struct PlayerScreen: View {
     /// stand danach woanders.
     @State private var wischNurGeoeffnet = false
     @State private var naechste: Item?
+    /// **Die Karte der nächsten Folge** (``Folgenkarte``, Variante C) —
+    /// solange sie ins Bild zoomt, mit Folge und Countdown von eben gehalten.
+    @State private var kartenwechsel: Kartenwechsel?
+    @State private var kartenfolge: Item?
+    @State private var kartenuhr: Fuellungsuhr?
+    @State private var kartenzoom: Double = 0
+    @State private var kartenbild: Double = 1
     /// Ein Sprung, bei dem VLC noch nicht angekommen ist — bis dahin zeigt die
     /// Leiste das Ziel (`Wiedergabetakt.Sprung`, Bug 17.09.2026).
     @State private var sprung: Wiedergabetakt.Sprung?
@@ -165,6 +192,22 @@ struct PlayerScreen: View {
     /// Wohin der Fokus geht, wenn die Steuerung gleich erscheint — die
     /// Leiste, ausser „hoch" hat die Knoepfe oben verlangt.
     @State private var zielBeimZeigen: Fokusziel = .leiste
+
+    /// **Gemeinsam schauen.** Gesetzt beim Öffnen, wenn der Titel der ist,
+    /// den die Gruppe schaut. Die Gruppe selbst hält ``Gemeinsammodell``.
+    ///
+    /// Zweimal, aus demselben Grund wie `Schaltwerk`: die Ansicht zeichnet
+    /// aus `@State`, die festgehaltenen Rückrufe der Zentrale lesen
+    /// `schaltwerk.gemeinsam` — sonst gingen Pause und Springen von dort an
+    /// der Gruppe vorbei.
+    @State private var gemeinsamAn = false
+    @State private var bruecke = Gemeinsamspieler()
+    private var gemeinsam: Gemeinsammodell { .geteilt }
+    /// Läuft dieser Player gerade in einer Gruppe? Dann gehen Anhalten,
+    /// Weiter und Springen als Bitte an den Server, nicht an VLC.
+    private var inGruppe: Bool { schaltwerk.gemeinsam && gemeinsam.gruppe != nil }
+    /// Dasselbe für die Anzeige — hängt an `@State`, damit sie nachzieht.
+    private var gruppeZeigen: Bool { gemeinsamAn && gemeinsam.gruppe != nil }
     /// Beim Verlassen der App wird angehalten — siehe unten.
     @Environment(\.scenePhase) private var phase
 
@@ -197,6 +240,23 @@ struct PlayerScreen: View {
     private var karteDa: Bool {
         ebene.anzeige.sichtbar && erstesBildDa && !steuerungDa
             && !ebeneOffen && !wechselt
+    }
+
+    /// Die Karte der nächsten Folge steht (oder zoomt gerade) — der
+    /// Countdown-Fall von `karteDa`.
+    private var folgenkarteDa: Bool {
+        kartenwechsel != nil || (karteDa && countdownAnteil != nil)
+    }
+
+    /// Die Pille unten rechts — nicht, solange dort die Karte steht.
+    private var pilleDa: Bool {
+        angebotDa && countdownAnteil == nil && kartenwechsel == nil
+    }
+
+    private static func feder(_ omega: Double) -> Animation {
+        let f = Folgenkarte.feder(omega)
+        return Stil.bewegung(.interpolatingSpring(mass: 1, stiffness: f.steifigkeit,
+                                                  damping: f.daempfung))
     }
 
     /// **Der Angebotsknopf steht an einer Stelle, egal ob die Steuerung offen
@@ -273,7 +333,9 @@ struct PlayerScreen: View {
             VideoFlaeche(url: startPlan.url, startAt: startAt,
                          container: startPlan.container,
                          puffer: model.pufferstufe,
-                         untertitel: model.untertiteldateien(startPlan)) { neu in
+                         untertitel: model.untertiteldateien(startPlan),
+                         softwareDekoder: startPlan.softwareDekoder,
+                         spuren: spurwunsch(item, startPlan)) { neu in
                 flaeche = neu
                 // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
                 // die naechste Folge -- derselbe Schluessel wie die Geste
@@ -315,7 +377,7 @@ struct PlayerScreen: View {
             // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter umwidmet,
             // haelt bei einem haengenden Wechsel auch den Gleichrichter an.
             // Genau daran kann der verdrehte Pausezustand gelegen haben.
-            if !erstesBildDa || Bildtakt.schaltetUm {
+            if !erstesBildDa || Bildtakt.schaltetUm, kartenwechsel == nil {
                 ZStack {
                     Color.black
                     Lader.fern
@@ -333,7 +395,7 @@ struct PlayerScreen: View {
             // Steuerung, die im Stehen stehen bleibt; ein Zeichen in der
             // Mitte gibt es im Entwurf nicht, bedient wird am Clickpad. Das
             // Pausezeichen lag ausserdem ueber dem Technikschild.
-            if erstesBildDa, stockt || wechselt {
+            if erstesBildDa, stockt || wechselt, kartenwechsel == nil {
                 Lader(groesse: 86, staerke: 7)
                     .frame(width: 190, height: 190)
                     .allowsHitTesting(false)
@@ -341,7 +403,12 @@ struct PlayerScreen: View {
                     .zIndex(3)
             }
 
-            schleier.opacity(steuerungDa ? 1 : 0)
+            // Steht die Karte, dunkelt der Schleier das Bild ab wie bei
+            // offener Steuerung, und sie liegt davor.
+            schleier.opacity(steuerungDa || (folgenkarteDa && kartenwechsel == nil) ? 1 : 0)
+                .animation(Stil.steuerungBlende, value: folgenkarteDa)
+
+            kartenebene
 
             // **Das Technikschild.** Eine Auskunft, kein Bedienteil: nimmt
             // weder Fokus noch Eingaben. **Direkt auf dem Film** (22.09.2026): über dem Schleier, unter Titel, Knöpfen und Leiste
@@ -365,8 +432,7 @@ struct PlayerScreen: View {
                     .padding(.leading, Stil.randSeite)
                     .padding(.top, Stil.randOben + Playermass.knopf + Stil.kachelAbstand)
                     .offset(y: steuerungDa ? 0 : -(Playermass.knopf + Stil.kachelAbstand))
-                    .animation(Stil.bewegungReduziert ? nil : .easeInOut(duration: 0.2),
-                               value: steuerungDa)
+                    .animation(Stil.steuerungBlende, value: steuerungDa)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -389,12 +455,12 @@ struct PlayerScreen: View {
             // Ränder und sperrte die Fokussuche wie einst das Technikschild.
             if angebot.sichtbar {
                 angebotsebene
-                    .opacity(angebotDa ? 1 : 0)
-                    .allowsHitTesting(angebotDa)
-                    .accessibilityHidden(!angebotDa)
+                    .opacity(pilleDa ? 1 : 0)
+                    .allowsHitTesting(pilleDa)
+                    .accessibilityHidden(!pilleDa)
                     // Dieselbe Blende wie die Steuerung (`.animation` auf `steuerungDa`).
-                    .animation(.easeInOut(duration: 0.2), value: angebotDa)
-                    .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                    .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: pilleDa)
+                    .transition(.opacity.animation(Stil.bewegung(.easeInOut(duration: 0.2))))
             }
 
             // **Die drei Ebenen.** Vollbild über dem Bild, die Steuerung
@@ -408,7 +474,31 @@ struct PlayerScreen: View {
 
             stehenderTitel
                 .zIndex(6)
+
+            // **Was in der Gruppe passiert, kurz oben** — damit niemand
+            // rätselt, warum der Film steht. Unter der Titelzeile, mittig:
+            // dort liegt nichts, was den Fokus braucht.
+            if gruppeZeigen, let ereignis = gemeinsam.ereignis {
+                TVGruppenereignis(symbol: ereignis.symbol, text: ereignis.text)
+                    .padding(.top, Stil.randOben + Playermass.knopf + Stil.kachelAbstand)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .id(ereignis.id)
+                    .zIndex(7)
+            }
         }
+        .animation(Stil.einblenden, value: gemeinsam.ereignis)
+        // Was bei „Gemeinsam schauen" schiefging, auch hier — die Seite
+        // darunter ist verdeckt.
+        .overlay(alignment: .top) {
+            if gemeinsamAn, let fehler = gemeinsam.fehler {
+                Hinweisstreifen(text: fehler) { gemeinsam.fehler = nil }
+                    .padding(.top, Stil.randOben)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: gemeinsam.fehler)
         .overlay(alignment: .bottom) {
             if let hinweis {
                 Text(verbatim: hinweis)
@@ -482,10 +572,10 @@ struct PlayerScreen: View {
             let ziel = zielBeimZeigen
             zielBeimZeigen = .leiste
             fokus = ziel
-            Task { @MainActor in
+            fokusNachziehen {
                 for warten in [80, 250, 600] {
                     try? await Task.sleep(for: .milliseconds(warten))
-                    guard steuerungDa, !ebeneOffen else { return }
+                    guard !Task.isCancelled, steuerungDa, !ebeneOffen else { return }
                     guard fokus == nil || fokus == .ruhe else { return }
                     fokus = ziel
                     Protokoll.schreib("[Fokus] nachgesetzt auf \(ziel) nach \(warten) ms")
@@ -509,21 +599,26 @@ struct PlayerScreen: View {
         // eingehängt wird, und SwiftUI verwirft sie. Zurück geht er an die
         // Ruhe, nicht an die Leiste (Plezy #1890): sonst öffnet der nächste
         // Klick die Steuerung, statt anzuhalten.
+        .onChange(of: folgenkarteDa) { _, da in
+            guard kartenwechsel == nil else { return }
+            Protokoll.schreib(da ? "[Karte] erscheint bei \(Int(position)) s von \(Int(dauer)) s"
+                                 : "[Karte] geht (Menü oder Steuerung)")
+        }
         .onChange(of: karteDa) { _, da in
             Protokoll.schreib("[Angebot] \(da ? "ein" : "aus") \(ebene.anzeige)")
             if da {
                 fokus = .angebot
-                Task { @MainActor in
+                fokusNachziehen {
                     try? await Task.sleep(for: .milliseconds(80))
-                    guard karteDa else { return }
+                    guard !Task.isCancelled, karteDa else { return }
                     fokus = .angebot
                     Protokoll.schreib("[Angebot] Fokus \(String(describing: fokus))")
                 }
             } else if !steuerungDa, !ebeneOffen {
                 fokus = .ruhe
-                Task { @MainActor in
+                fokusNachziehen {
                     try? await Task.sleep(for: .milliseconds(80))
-                    guard ruheDa else { return }
+                    guard !Task.isCancelled, ruheDa else { return }
                     if fokus == nil || fokus == .angebot { fokus = .ruhe }
                     Protokoll.schreib("[Angebot] Fokus zurück \(String(describing: fokus))")
                 }
@@ -548,9 +643,9 @@ struct PlayerScreen: View {
             // Die Zuweisung oben allein reicht nicht: SwiftUI raeumt den Fokus
             // im selben Durchlauf noch auf und wirft sie weg. Deshalb danach
             // noch einmal, wenn sich alles gesetzt hat.
-            Task { @MainActor in
+            fokusNachziehen {
                 try? await Task.sleep(for: .milliseconds(80))
-                guard !ebeneOffen else { return }
+                guard !Task.isCancelled, !ebeneOffen else { return }
                 fokus = .leiste
             }
         }
@@ -589,9 +684,9 @@ struct PlayerScreen: View {
         // jemand wieder annimmt, steht er im Nichts — und dann kommt auch
         // kein Bewegungsbefehl mehr an, mit dem sich die Steuerung wecken
         // liesse. Der Balken war weg und blieb weg.
-        .animation(.easeInOut(duration: 0.2), value: steuerungDa)
-        .animation(.easeInOut(duration: 0.22), value: laeuft)
-        .animation(.easeInOut(duration: 0.22), value: stockt)
+        .animation(Stil.steuerungBlende, value: steuerungDa)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.22)), value: laeuft)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.22)), value: stockt)
         // **Wer die App verlaesst, will nicht weiterhoeren.**
         //
         // `onDisappear` greift hier nicht: die Ansicht verschwindet nicht,
@@ -606,6 +701,11 @@ struct PlayerScreen: View {
         // zurueckkommt, drueckt Wiedergabe — das ist eine Entscheidung, keine
         // Nebenwirkung.
         .onChange(of: phase) { _, neu in
+            // **In der Gruppe heisst weg: verlassen.** Hier allein
+            // anzuhalten liesse die anderen weiterlaufen und diesen Player
+            // stehen — beim Zurueckkommen waere er nicht mehr im Gleichschritt.
+            // Ueber das Abzeichen und den Streifen geht es wieder hinein.
+            if neu == .background, inGruppe { verlassen(); return }
             guard neu == .background, let flaeche, flaeche.isPlaying else { return }
             // **Erst melden, dann anhalten** (T3 #5): VLCs Rueckmeldung kaeme
             // womoeglich erst, wenn tvOS die App schon eingefroren hat, und
@@ -618,10 +718,16 @@ struct PlayerScreen: View {
             zeigen()
         }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
-        .animation(.easeInOut(duration: 0.2), value: offeneEbene)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: offeneEbene)
         .onAppear {
             model.playerOffen = true
             model.fernbefehl = ausfuehren
+            if gemeinsam.gehoertZurGruppe(item.id) {
+                schaltwerk.gemeinsam = true
+                gemeinsamAn = true
+                brueckeNachziehen()
+                gemeinsam.anschliessen(bruecke)
+            }
             // **Vor dem ersten Bild, nicht danach.** Der Server kennt die
             // Bildrate schon; der Fernseher kann also gleichzeitig mit dem
             // Aufbau des Stroms umschalten, statt hinterher. Was er nicht
@@ -630,14 +736,21 @@ struct PlayerScreen: View {
             klickring.beobachten(beginnt: haltenBeginnt, endet: haltenEndet)
         }
         .onDisappear {
+            Uebergabebuehne.geteilt.spielerWeg(item.id)
             klickring.loesen()
             abtastAufgabe?.cancel()
+            fokusnachzug?.cancel()
             // Der Ausgang gehoert wieder der Oberflaeche, die auf 60 Hz
             // gezeichnet ist.
             Bildtakt.loesen()
             schlafAufgabe?.cancel()
             spulAufgabe?.cancel()
             model.fernbefehl = nil
+            // Schließen heißt verlassen (Entwurf A).
+            if schaltwerk.gemeinsam {
+                schaltwerk.gemeinsam = false
+                gemeinsam.abtrennen()
+            }
             // Vor `stop()`: `position` ist der Stand der Ansicht, aber wer die
             // Zeilen tauscht, soll nicht über VLCs Null stolpern.
             model.fertigGeschaut(position: position, dauer: dauer)
@@ -656,6 +769,9 @@ struct PlayerScreen: View {
         .task { await nachschlagen(fuer: item) }
         // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
         .task(id: item.id) { await trickplay.laden(model: model, item: item, plan: plan) }
+        // Das Folgenbild für eine mögliche Übergabe schon bereit — die Karte
+        // des Abgebers braucht es im ersten Bild (``Uebergabeabgang``).
+        .task(id: item.id) { await Uebergabeabgang.vorladen(item, model: model) }
         // Die Folgenebene soll beim Öffnen schon stehen.
         .task(id: item.id) {
             if hatFolgen { await FolgenEbene.vorladen(model: model, item: item) }
@@ -807,7 +923,12 @@ struct PlayerScreen: View {
                     .hidden()
                     .accessibilityHidden(true)
                 HStack(spacing: 16) {
-                    if let metatext { Text(verbatim: metatext) }
+                    // **In der Gruppe steht hier die Gruppe** (Entwurf A):
+                    // wo sonst Staffel und Folge stehen. Das ist Zustand,
+                    // also Akzent.
+                    if gruppeZeigen, let gruppe = gemeinsam.gruppe {
+                        TVGruppenzeile(name: gruppe.name, mitWem: gemeinsam.mitWem)
+                    } else if let metatext { Text(verbatim: metatext) }
                     if !plan.isLossless {
                         Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(Stil.warnung)
@@ -868,7 +989,7 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(false)
         .opacity(da ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: da)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: da)
     }
 
     // MARK: - Ebenen
@@ -891,11 +1012,18 @@ struct PlayerScreen: View {
         case .einstellungen: .einstellungen
         }
         fokus = ziel
-        Task { @MainActor in
+        fokusNachziehen {
             try? await Task.sleep(for: .milliseconds(80))
-            guard offeneEbene == nil, steuerungDa else { return }
+            guard !Task.isCancelled, offeneEbene == nil, steuerungDa else { return }
             fokus = ziel
         }
+    }
+
+    /// Bricht das vorige Nachsetzen ab und merkt sich das neue — siehe
+    /// `fokusnachzug`.
+    private func fokusNachziehen(_ arbeit: @escaping @MainActor () async -> Void) {
+        fokusnachzug?.cancel()
+        fokusnachzug = Task { @MainActor in await arbeit() }
     }
 
     @ViewBuilder
@@ -904,14 +1032,21 @@ struct PlayerScreen: View {
         case .spuren:
             SpurenEbene(flaeche: flaeche)
         case .einstellungen:
-            EinstellungsEbene(flaeche: flaeche, schlafminuten: $schlafminuten, qualitaet: qualitaetswahl)
+            EinstellungsEbene(flaeche: flaeche, schlafminuten: $schlafminuten, qualitaet: qualitaetswahl,
+                              gemeinsam: gruppeZeigen ? gemeinsam : nil,
+                              gruppeVerlassen: { verlassen() })
         case .folgen:
             FolgenEbene(model: model, item: item, titel: titelzeile) { folge in
                 ebeneSchliessen()
                 // Die laufende Folge wählen heißt: weiterschauen.
                 guard folge.id != item.id else { return }
+                // In der Gruppe wechselt niemand allein: die Wahl setzt die
+                // Warteschlange, und alle laden die Folge (wie iOS).
+                if inGruppe { gemeinsam.bitteTitel(folge.id); return }
                 wechsleZu(folge, ab: folge.fortsetzenAb ?? 0)
             }
+            // **Nicht bei jedem Takt neu** — siehe `FolgenEbene.==`.
+            .equatable()
         }
     }
 
@@ -927,7 +1062,7 @@ struct PlayerScreen: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 angebotspille
-                    .disabled(!angebotDa)
+                    .disabled(!pilleDa)
                     .focused($fokus, equals: .angebot)
                     // Ohne Steuerung holt eine Richtungstaste sie, sonst wäre der
                     // Fokus in der Pille gefangen. Eine Karte „Nächste Folge" ist
@@ -961,7 +1096,7 @@ struct PlayerScreen: View {
                 Text(verbatim: angebot.beschriftung)
             }
         }
-        .buttonStyle(PillenStil(fuellung: countdownAnteil == nil ? nil : fuellungsuhr))
+        .buttonStyle(PillenStil(fuellung: nil))
         .accessibilityLabel(Text(verbatim: angebot.beschriftung))
     }
 
@@ -1010,6 +1145,22 @@ struct PlayerScreen: View {
         schliessen()
     }
 
+    /// **Die Wiedergabe geht an ein anderes Gerät** (``Uebergabeabgang``).
+    /// Die Stelle geht sofort an den Server — drüben wird auf sie gewartet —,
+    /// die Steuerung weg, das Bild steht bei 0,12 s und geht als Karte ab.
+    private func abgeben(an ziel: String, flaeche: VLCPlayerView) {
+        guard !abgabeLaeuft else { return }
+        abgabeLaeuft = true
+        let stelle = position
+        Task { await model.reportStopped(item: item, plan: plan, seconds: stelle) }
+        var ohne = Transaction()
+        ohne.disablesAnimations = true
+        withTransaction(ohne) { steuerungSichtbar = false }
+        Uebergabeabgang.starten(flaeche: flaeche, ziel: ziel, titel: item, model: model,
+                                anhalten: { flaeche.pause() },
+                                fertig: { verlassen() })
+    }
+
     /// Fokus zurueck auf die Leiste und die Steuerung zeigen.
     private func steuerungWecken() {
         fokus = .leiste
@@ -1050,6 +1201,15 @@ struct PlayerScreen: View {
         // Meldung.** Die kommt erst nach dem Befehl; wer schnell zweimal
         // drückte, schaltete gegen den alten Stand — der zweite Druck
         // befahl noch einmal dasselbe und ging verloren.
+        // **In der Gruppe eine Bitte.** Der Knopf springt erst um, wenn der
+        // Befehl vom Server kommt — dann bei allen gleichzeitig.
+        if inGruppe {
+            Protokoll.schreib("[Taste] \(quelle): Bitte an die Gruppe")
+            markeVerwerfen(fortsetzen: false)
+            gemeinsam.bitteUmschalten(laeuftGerade: schaltwerk.laeuft)
+            zeigen()
+            return
+        }
         Protokoll.schreib("[Taste] \(quelle): \(schaltwerk.gewollt ? "anhalten" : "abspielen")")
         setzen(laeuft: !schaltwerk.gewollt, sofortAnzeigen: false)
     }
@@ -1142,6 +1302,16 @@ struct PlayerScreen: View {
     /// Anzeige auf VLCs Meldung.
     private func setzen(laeuft soll: Bool, sofortAnzeigen: Bool = true) {
         guard let flaeche else { return }
+        // In der Gruppe ein ausdrückliches „spiel ab"/„halt an" als Bitte —
+        // und nur, wenn es etwas ändern würde.
+        if inGruppe {
+            markeVerwerfen(fortsetzen: false)
+            if soll != schaltwerk.laeuft {
+                gemeinsam.bitteUmschalten(laeuftGerade: schaltwerk.laeuft)
+            }
+            zeigen()
+            return
+        }
         // Im Schaltwerk, nicht im Zustand: sonst liest ein alter Rueckruf
         // einen alten Stand.
         schaltwerk.zuletzt = Date()
@@ -1150,10 +1320,20 @@ struct PlayerScreen: View {
         // verworfen, nicht bestaetigt. Bestaetigen bleibt der mittlere Knopf.
         markeVerwerfen(fortsetzen: false)
 
-        if soll { flaeche.resume() } else { flaeche.pause() }
+        if soll { fortsetzen() } else { flaeche.pause() }
         if sofortAnzeigen { laeuftSetzen(soll) }
         zentrale.standNachziehen(position: position, laeuft: soll, tempo: tempo)
         zeigen()
+    }
+
+    /// Weiterspielen auf Wunsch des Zuschauers — nach langer Pause ein
+    /// Stück zurück (``Pausenruecksprung``, wie am iPhone). Die Anzeige
+    /// übernimmt das Ziel im selben Moment. Nicht in der Gruppe (dort geht
+    /// `setzen` gar nicht bis hier) und nicht am Ende des Spulens: das
+    /// Ende des Schrubbens ruft `resume()` weiter ohne.
+    private func fortsetzen() {
+        guard let ziel = flaeche?.resume(ruecksprung: !inGruppe) else { return }
+        gesprungen(auf: ziel)
     }
 
     /// Ob VLC noch liefert, was es liefern soll.
@@ -1194,7 +1374,7 @@ struct PlayerScreen: View {
         let zeitSteht = stillSeit.map { Date().timeIntervalSince($0) > 0.9 } ?? false
         let neu = zeitSteht || stelltWiederHer
         if neu != stockt {
-            withAnimation(.easeInOut(duration: 0.22)) { stockt = neu }
+            withAnimation(Stil.bewegung(.easeInOut(duration: 0.22))) { stockt = neu }
         }
     }
 
@@ -1215,14 +1395,20 @@ struct PlayerScreen: View {
             abspielen:   { vonDerZentrale("abspielen") { zentraleWill(laufen: true) } },
             anhalten:    { vonDerZentrale("anhalten") { zentraleWill(laufen: false) } },
             umschalten:  { vonDerZentrale("umschalten") { anhaltenOderWeiter("Zentrale") } },
-            springenAuf: { ziel in
-                flaeche?.seek(toSeconds: ziel)
-                gesprungen(auf: ziel)
-            },
+            springenAuf: { ziel in zentraleSpringen(ziel) },
             vor:         { springen(Double(model.vorSekunden)) },
             zurueck:     { springen(-Double(model.zurueckSekunden)) },
-            naechste:    naechste.map { folge in { wechsleZu(folge) } }))
+            // In der Gruppe keine nächste Folge — siehe `nachschlagen`.
+            naechste:    inGruppe ? nil : naechste.map { folge in { wechsleZu(folge) } }))
         zentraleMelden()
+    }
+
+    /// Ein Sprung aus der Zentrale — in der Gruppe als Bitte. Liest
+    /// `schaltwerk`, weil der Rückruf festgehalten ist.
+    private func zentraleSpringen(_ ziel: Double) {
+        if inGruppe { gemeinsam.bitteSpringen(auf: ziel) }
+        else { flaeche?.seek(toSeconds: ziel) }
+        gesprungen(auf: ziel)
     }
 
     private func zentraleMelden() {
@@ -1312,7 +1498,9 @@ struct PlayerScreen: View {
             spulAufgabe?.cancel()
             spulAufgabe = nil
             ausrollen?.cancel()
-            if !liefVorDemSchrubben, schaltwerk.laeuft, let flaeche {
+            // In der Gruppe haelt Schrubben nicht an: das waere eine Pause
+            // an der Gruppe vorbei. Gesprungen wird beim Loslassen, als Bitte.
+            if !liefVorDemSchrubben, !inGruppe, schaltwerk.laeuft, let flaeche {
                 flaeche.pause()
                 laeuftSetzen(false)
                 liefVorDemSchrubben = true
@@ -1372,7 +1560,8 @@ struct PlayerScreen: View {
         // weiter, waehrend die Leiste schon ganz woanders stand: Bild und
         // Ton sagten das eine, die Marke das andere (18.09.2026 —
         // Vergleich mit Apples Player und Swiftfin, die beide anhalten).
-        if !markeVomWisch, schaltwerk.laeuft, let flaeche {
+        // Nicht in der Gruppe — siehe `haltenBeginnt`.
+        if !markeVomWisch, !inGruppe, schaltwerk.laeuft, let flaeche {
             flaeche.pause()
             laeuftSetzen(false)
             liefVorDemSchrubben = true
@@ -1485,6 +1674,15 @@ struct PlayerScreen: View {
         spulAufgabe = nil
         ausrollen?.cancel()
         ausrollen = nil
+        // **In der Gruppe eine Bitte.** Die Anzeige steht schon auf dem Ziel;
+        // gesprungen wird, wenn der Befehl vom Server kommt — bei allen.
+        if inGruppe {
+            liefVorDemSchrubben = false
+            wischt = false
+            wischEnde = Date()
+            gemeinsam.bitteSpringen(auf: ziel)
+            return
+        }
         // Bestaetigt: springen und, wenn er vorher lief, weiterlaufen.
         if liefVorDemSchrubben {
             liefVorDemSchrubben = false
@@ -1545,6 +1743,10 @@ struct PlayerScreen: View {
         Wiedergabetakt.gesprungen(&stand, ziel: ziel)
         position = stand.position
         sprung = stand.sprung
+        // Ein Sprung in den Abspann oder ans Ende: der Countdown fängt von
+        // vorn an, wie am iPhone.
+        ebene.gesprungen()
+        if countdownAnteil != nil { fuellungsuhr = Fuellungsuhr() }
         angebotNachziehen(vergangen: 0)
     }
 
@@ -1557,17 +1759,21 @@ struct PlayerScreen: View {
         let fertig = neu.takt(angebot: angebot,
                           karteFaellig: Abschnittslogik.karteFaellig(position: position, dauer: dauer,
                                                                      abschnitte: abschnitte,
-                                                                     hatNaechsteFolge: naechste != nil),
+                                                                     hatNaechsteFolge: naechste != nil,
+                                                                     restfenster: Folgenkarte.restfenster),
                           // Nur zaehlen, solange man es sehen koennte:
                           // nicht unter dem Ladeschirm.
                           laeuft: laeuft && erstesBildDa && !Bildtakt.schaltetUm,
                           vergangen: vergangen,
-                          countdown: Abschnittslogik.countdown(position: position, dauer: dauer))
+                          countdown: Abschnittslogik.countdown(position: position, dauer: dauer,
+                                                               abschnitte: abschnitte,
+                                                               restfenster: Folgenkarte.restfenster),
+                          amEnde: Folgenende.amEnde(position: position, dauer: dauer) && spulziel == nil)
         // Blendet der Überspringen-Knopf von selbst aus (`knopfdauer`), soll
         // er so weich gehen, wie er kam: der Takt läuft ohne Animation, also
         // den Wechsel der Sichtbarkeit hier ausdrücklich animieren.
         if neu.anzeige.sichtbar != ebene.anzeige.sichtbar {
-            withAnimation(.smooth(duration: 0.34)) { ebene = neu }
+            withAnimation(Stil.bewegung(.smooth(duration: 0.34))) { ebene = neu }
         } else {
             ebene = neu
         }
@@ -1593,9 +1799,15 @@ struct PlayerScreen: View {
     ///   sonst der Anfang.
     /// Direct Play oder Obergrenze — nur, wenn vom Server gespielt wird und
     /// das Konto umwandeln darf.
+    ///
+    /// **Und nicht in einer Gruppe** (wie iOS 5ee8a91a): der Wechsel lädt den
+    /// Titel neu und meldet Stopp und Start an der Gruppe vorbei.
     private var qualitaetswahl: Qualitaetswahl? {
-        guard model.downloads.datei(fuer: item.id) == nil, model.umwandelnErlaubt else { return nil }
+        guard model.downloads.datei(fuer: item.id) == nil, model.umwandelnErlaubt,
+              !gruppeZeigen else { return nil }
         return Qualitaetswahl(directPlay: model.immerDirectPlay, grenze: model.bitratenGrenze) { wert in
+            // Die Gruppe kann dazukommen, während die Ebene offen steht.
+            guard !inGruppe else { return }
             let vorher = (model.immerDirectPlay, model.bitratenGrenze)
             if let wert {
                 model.immerDirectPlay = false
@@ -1605,15 +1817,27 @@ struct PlayerScreen: View {
             }
             guard vorher != (model.immerDirectPlay, model.bitratenGrenze) else { return }
             Protokoll.schreib("[Qualität] \(model.immerDirectPlay ? "Direct Play" : "\(model.bitratenGrenze) Mbit/s") — neu laden bei \(Int(position)) s")
+            // Ein vorbereiteter Plan der nächsten Folge trägt die alte Wahl.
+            vorbereitung.vergessen()
             qualitaetGewechselt = true
             wechsleZu(item, ab: position)
         }
     }
 
-    private func wechsleZu(_ folge: Item, ab: Double = 0) {
+    private func wechsleZu(_ folge: Item, ab: Double = 0, ausKarte: Bool = false) {
         guard !wechselt else { return }
         wechselt = true
         offeneEbene = nil
+        // Aus der Karte: sie zoomt aufs ganze Bild und deckt den Wechsel.
+        let zoomt = ausKarte && !inGruppe && folge.id != item.id
+        if zoomt {
+            kartenfolge = folge
+            kartenuhr = fuellungsuhr
+            kartenwechsel = Kartenwechsel(folgeID: folge.id)
+            Protokoll.schreib("[Karte] Start → \(folge.id)")
+            withAnimation(Self.feder(Folgenkarte.zoomOmega)) { kartenzoom = 1 }
+        }
+        let tauschAb = zoomt ? Date().addingTimeInterval(Folgenkarte.tausch) : nil
         // **Die Spulmarke gehoert der alten Folge.**
         //
         // Sie zeigt eine Stelle *in diesem* Titel an; die naechste Folge faengt
@@ -1628,11 +1852,26 @@ struct PlayerScreen: View {
         markeVerwerfen()
         model.fertigGeschaut(position: position, dauer: dauer)
         let alt = (item: item, plan: plan, stelle: position)
+        // In den letzten Minuten schon geholt (``Folgenvorbereitung``)? Dann
+        // wartet der Wechsel nicht noch einmal auf den Server.
+        let vorbereitet = vorbereitung.nimm(folge.id)
+        wechselBeginn = Date()
+        Protokoll.schreib("[Wechsel] Beginn → \(folge.id) · Plan vorbereitet: \(vorbereitet != nil ? "ja" : "nein")")
         Task {
             let ergebnis = await folgenwechsel.ausfuehren(.init(
                 stoppen: { await model.reportStopped(item: alt.item, plan: alt.plan,
                                                      seconds: alt.stelle) },
-                planen: { await model.plan(for: folge.id) },
+                planen: {
+                    let neuerPlan: PlaybackPlan?
+                    if let vorbereitet { neuerPlan = vorbereitet }
+                    else { neuerPlan = await model.plan(for: folge.id) }
+                    // Erst tauschen, wenn die Karte das Bild deckt.
+                    if let tauschAb, neuerPlan != nil {
+                        let rest = tauschAb.timeIntervalSinceNow
+                        if rest > 0 { try? await Task.sleep(for: .seconds(rest)) }
+                    }
+                    return neuerPlan
+                },
                 anwenden: { neuerPlan in folgeAnwenden(folge, neuerPlan, ab: ab) },
                 starten: { neuerPlan in await model.reportStart(item: folge, plan: neuerPlan,
                                                            seconds: ab) },
@@ -1644,22 +1883,99 @@ struct PlayerScreen: View {
                 }))
             Protokoll.schreib("[Wechsel] \(ergebnis) → \(folge.id)")
             wechselt = false
-            guard ergebnis == .gewechselt else { return }
+            guard ergebnis == .gewechselt else {
+                if kartenwechsel != nil { karteZurueck() }
+                return
+            }
             // Nach dem Wechsel steht der Fokus sonst im Nichts: die Folgen-
-            // liste ist zu, und die Leiste hatte ihn nie.
-            steuerungWecken()
+            // liste ist zu, und die Leiste hatte ihn nie. Aus der Karte bleibt
+            // die Steuerung zu — der Fokus geht an die Ruhe.
+            if kartenwechsel == nil { steuerungWecken() } else { fokus = .ruhe }
             await nachschlagen(fuer: folge)
         }
     }
 
+    /// Das erste Bild der neuen Folge steht: das Vorschaubild blendet aus —
+    /// frühestens ab dem Tausch. Gleicher Ablauf wie am iPhone.
+    private func karteUebergeben() async {
+        guard let k = kartenwechsel, let bildSeit = k.bildSeit else { return }
+        let warten = Folgenkarte.blendeAb(bildSeit: bildSeit) - k.seit
+        if warten > 0 { try? await Task.sleep(for: .seconds(warten)) }
+        withAnimation(Stil.bewegung(.easeInOut(duration: Folgenkarte.bildBlende))) { kartenbild = 0 }
+        try? await Task.sleep(for: .seconds(Folgenkarte.bildBlende))
+        guard kartenwechsel?.beginn == k.beginn else { return }
+        Protokoll.schreib("[Karte] Ende nach \(Int(k.seit * 1000)) ms")
+        karteAufraeumen()
+    }
+
+    private func karteZurueck() {
+        Protokoll.schreib("[Karte] Wechsel gescheitert, zurück")
+        karteAufraeumen()
+        steuerungWecken()
+    }
+
+    private func karteAufraeumen() {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            kartenwechsel = nil
+            kartenfolge = nil
+            kartenuhr = nil
+            kartenzoom = 0
+            kartenbild = 1
+        }
+    }
+
+    /// Die Karte unten rechts — im Baum, solange es eine nächste Folge gibt,
+    /// damit Herein und Hinaus Federn aus dem jetzigen Stand sind.
+    @ViewBuilder
+    private var kartenebene: some View {
+        if let folge = kartenfolge ?? naechste, !inGruppe {
+            TVFolgenkarte(
+                folge: folge,
+                bildAdresse: model.imageURL(for: folge, maxHeight: 1080)
+                    ?? model.querbildURL(for: folge, breite: 1920),
+                da: folgenkarteDa, zoom: kartenzoom,
+                angabenDa: folgenkarteDa && kartenwechsel == nil,
+                bild: kartenbild,
+                fuellung: kartenuhr ?? fuellungsuhr,
+                rest: ebene.countdownRest,
+                fokus: $fokus,
+                tippen: {
+                    ebene.gedrueckt()
+                    Protokoll.schreib("[Karte] geklickt")
+                    wechsleZu(folge, ausKarte: true)
+                })
+            .animation(folgenkarteDa ? Self.feder(Folgenkarte.erscheinenOmega)
+                                        .delay(kartenwechsel == nil ? Folgenkarte.erscheinenVerzug : 0)
+                                     : Self.feder(Folgenkarte.wegOmega),
+                       value: folgenkarteDa)
+        }
+    }
+
     /// Die neue Folge übernehmen — alles, was der alten gehörte, zurück.
+    /// Die Spurwahl fürs Öffnen — dieselben Eingaben wie `wendeSprachenAn`,
+    /// nur schon vor `play`, damit VLC gleich mit der richtigen Spur anläuft.
+    private func spurwunsch(_ titel: Item, _ plan: PlaybackPlan) -> VLCPlayerView.Spurwunsch {
+        VLCPlayerView.Spurwunsch(ton: model.tonSprache, untertitel: model.untertitelSprache,
+                                 automatisch: model.untertitelAutomatisch, quelle: plan.quelle,
+                                 titel: Spurgedaechtnis.titel(fuer: titel))
+    }
+
     private func folgeAnwenden(_ folge: Item, _ neuerPlan: PlaybackPlan, ab: Double = 0) {
+        if let kartenwechsel {
+            Protokoll.schreib("[Karte] Tausch nach \(Int(kartenwechsel.seit * 1000)) ms")
+        }
         // **Erst der Zustand, dann der Strom.**
         //
         // `item` und `plan` sind der laufende Titel, nicht der geoeffnete.
         // Bleiben sie stehen, meldet die Schleife weiter die alte Folge
         // an den Server, das Blatt zeigt ihren Namen, und die Folgenliste
         // hebt die falsche Zeile hervor.
+        //
+        // Verzögerung: dieselbe Serie behält sie, sonst null.
+        flaeche?.verzoegerungFuerNeuenTitel(alterTitel: item.id, alteSerie: item.seriesId,
+                                            neuerTitel: folge.id, neueSerie: folge.seriesId)
         item = folge
         plan = neuerPlan
         // Grenze gewählt, aber es läuft das Original: entweder reicht die Datei
@@ -1710,15 +2026,19 @@ struct PlayerScreen: View {
         // Oeffnen.** Wer waehrend einer Folge umstellt, meint die
         // naechste mit — und `play` liest den Wert beim Aufsetzen.
         flaeche?.puffer = model.pufferstufe
+        flaeche?.spurwunsch = spurwunsch(folge, neuerPlan)
         flaeche?.play(url: neuerPlan.url, abSekunden: ab, container: neuerPlan.container,
-                      untertitel: model.untertiteldateien(neuerPlan))
+                      untertitel: model.untertiteldateien(neuerPlan),
+                      softwareDekoder: neuerPlan.softwareDekoder)
     }
 
     /// Nächste Folge und Abschnitte zum laufenden Titel. Kommt ein Ergebnis
     /// erst nach dem nächsten Wechsel, verwirft es `Folgenwechsel`.
     private func nachschlagen(fuer titel: Item) async {
+        // **In der Gruppe keine nächste Folge.** Jeder schaltete sonst für
+        // sich weiter, und die Gruppe liefe auseinander.
         await folgenwechsel.nachschlagen(holen: { await model.folgeNach(titel) },
-                                         uebernehmen: { naechste = $0 })
+                                         uebernehmen: { naechste = schaltwerk.gemeinsam ? nil : $0 })
         // **Die neue Folge hat eigene Abschnitte.** Ohne das truege sie
         // die des Vorgaengers, und der Knopf erschiene an dessen Stellen.
         await folgenwechsel.nachschlagen(holen: { await model.abschnitte(fuer: titel.id) },
@@ -1740,11 +2060,28 @@ struct PlayerScreen: View {
     /// Wiedergabe übergeben wird.
     private func ausfuehren(_ befehl: Fernbefehl) {
         guard let flaeche else { return }
+        if inGruppe {
+            switch befehl {
+            case .pause:      if schaltwerk.laeuft { gemeinsam.bitteUmschalten(laeuftGerade: true) }
+            case .weiter:     if !schaltwerk.laeuft { gemeinsam.bitteUmschalten(laeuftGerade: false) }
+            case .umschalten: gemeinsam.bitteUmschalten(laeuftGerade: schaltwerk.laeuft)
+            case .stopp:      verlassen()
+            case let .springenAuf(sekunden): gemeinsam.bitteSpringen(auf: sekunden)
+            case .vor:        springen(Double(model.vorSekunden))
+            case .zurueck:    springen(-Double(model.zurueckSekunden))
+            case .naechste, .vorige: break
+            }
+            zeigen()
+            return
+        }
         switch befehl {
         case .pause:      markeVerwerfen(fortsetzen: false); flaeche.pause();  laeuftSetzen(false); zeigen()
-        case .weiter:     markeVerwerfen(fortsetzen: false); flaeche.resume(); laeuftSetzen(true);  zeigen()
+        case .weiter:     markeVerwerfen(fortsetzen: false); fortsetzen(); laeuftSetzen(true);  zeigen()
         case .umschalten: anhaltenOderWeiter("Fernbefehl")
-        case .stopp:      verlassen()
+        // **Ein anderes Gerät übernimmt** (Hinweis kam kurz vorher): das Bild
+        // geht als Karte ab. Sonst — Dashboard, andere App — wie immer.
+        case .stopp:
+            if let ziel = model.uebergabeZielNehmen() { abgeben(an: ziel, flaeche: flaeche) } else { verlassen() }
         case .vor:        springen(Double(model.vorSekunden))
         case .zurueck:    springen(-Double(model.zurueckSekunden))
         case let .springenAuf(sekunden):
@@ -1772,6 +2109,18 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Trägt den jetzigen Stand in die Brücke zur Gruppe und gibt ihr den
+    /// Takt — siehe ``Gemeinsamspieler``, warum ein Objekt und kein Abschluss.
+    private func brueckeNachziehen() {
+        bruecke.flaeche = flaeche
+        bruecke.titelID = item.id
+        bruecke.istBereit = (flaeche?.startFertig ?? false) && erstesBildDa
+            && !Bildtakt.schaltetUm && !wechselt
+        bruecke.sprungZeigen = { ziel in gesprungen(auf: ziel) }
+        bruecke.titelWechseln = { folge, _, ab in wechsleZu(folge, ab: ab) }
+        gemeinsam.spielertakt()
+    }
+
     // MARK: - Beobachten und melden
 
     private func beobachten() async {
@@ -1785,6 +2134,7 @@ struct PlayerScreen: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
             guard let flaeche else { continue }
+            if schaltwerk.gemeinsam { brueckeNachziehen() }
 
             // **Dazwischen nur die Zeit**, wie auf iOS (17.09.2026).
             nurZeit.toggle()
@@ -1878,7 +2228,21 @@ struct PlayerScreen: View {
             // Waehrend des Moduswechsels ist der Ausgang schwarz. Den
             // Ladeschirm da wegzunehmen hiesse, ein totes Bild zu zeigen.
             if auftrag.ladeschirmWeg {
-                withAnimation(.easeOut(duration: 0.3)) { erstesBildDa = true }
+                Startmessung.geteilt.marke("Ladeschirm weicht")
+                if let beginn = wechselBeginn {
+                    wechselBeginn = nil
+                    Protokoll.schreib("[Wechsel] erstes Bild nach \(Int(Date().timeIntervalSince(beginn) * 1000)) ms")
+                }
+                withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) { erstesBildDa = true } completion: {
+                    Startmessung.geteilt.marke("Ladeschirm ausgeblendet")
+                }
+                // Aus einer Übergabe: die Karte zoomt jetzt aufs Bild.
+                Uebergabebuehne.geteilt.bildDa(item.id)
+                if let k = kartenwechsel, k.bildSeit == nil {
+                    kartenwechsel?.bildSeit = k.seit
+                    Protokoll.schreib("[Karte] erstes Bild nach \(Int(k.seit * 1000)) ms")
+                    Task { await karteUebergeben() }
+                }
             }
             if auftrag.spurenAnwenden {
                 flaeche.wendeSprachenAn(ton: model.tonSprache,
@@ -1929,15 +2293,29 @@ struct PlayerScreen: View {
                 if ProcessInfo.processInfo.arguments.contains("-messlauf") {
                     Protokoll.schreib("[Takt] \(String(format: "%.1f", position)) laeuft \(laeuft)")
                 }
+                if Offlinelauf.an {
+                    Protokoll.schreib("[Sprungtakt] \(item.id) Anzeige \(String(format: "%.1f", position)) · Angebot \(angebot)")
+                }
                 #endif
+            }
+
+            // **Die nächste Folge vorbereiten**, solange diese noch läuft —
+            // nicht in der Gruppe, die schaltet selbst. Einmal je Folge;
+            // wann und über welches Netz, sagt `Vorpuffer`.
+            if let folge = naechste, !inGruppe, !wechselt,
+               Vorpuffer.jetzt(position: position, dauer: dauer,
+                               abspannVon: abschnitte.first { $0.art == .abspann }?.von,
+                               netzGuenstig: vorbereitung.netzGuenstig) {
+                vorbereitung.vorbereiten(folge) { await model.plan(for: folge.id, still: true) }
             }
 
             // **Die Einblendung.** Der Countdown laeuft nur, solange der Film
             // laeuft; im Stehen haelt er an.
+            let karteVorher = folgenkarteDa
             if angebotNachziehen(vergangen: Wiedergabetakt.taktlaenge / .seconds(1)),
                let folge = naechste {
-                Protokoll.schreib("[Angebot] Countdown abgelaufen")
-                wechsleZu(folge)
+                Protokoll.schreib("[Karte] Countdown abgelaufen")
+                wechsleZu(folge, ausKarte: karteVorher)
             }
 
             // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
@@ -1948,7 +2326,9 @@ struct PlayerScreen: View {
                // die Zeit der alten, und die ist naturgemaess am Ende.
                erstesBildDa,
                Folgenende.weiterschalten(position: position, dauer: dauer,
-                                         seitOeffnen: Date().timeIntervalSince(seitStart)) {
+                                         seitOeffnen: Date().timeIntervalSince(seitStart),
+                                         karteZaehlt: ebene.karteZaehlt) {
+                Protokoll.schreib("[Wechsel] Dateiende ohne Karte")
                 wechsleZu(folge)
             }
         }
@@ -2028,7 +2408,7 @@ struct Zeitleiste: View {
                 }
                 Text(Spielzeit.text(position))
             }
-            .animation(.easeInOut(duration: 0.18), value: laeuft)
+            .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: laeuft)
 
             GeometryReader { rahmen in
                 let breite = rahmen.size.width
@@ -2076,21 +2456,43 @@ struct Zeitleiste: View {
             }
             .frame(height: Playermass.leiste)
 
-            Text("−" + Spielzeit.text(max(dauer - position, 0)))
+            restzeit
         }
         .font(.system(size: Playermass.zeit).monospacedDigit())
         .foregroundStyle(Stil.schriftLeise)
         .focusable()
         // Der mittlere Knopf landet auf der fokussierten Ansicht.
         .onTapGesture { klick() }
-        .animation(.easeInOut(duration: 0.18), value: spult)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: spult)
         .onMoveCommand { richtung in
             switch richtung {
             case .left:  springen(-zurueck)
             case .right: springen(vor)
+            // **Nach unten schaltet die Restzeit um** — das Gegenstück zum
+            // Tipp auf die Restzeit am iPhone. Unter der Leiste liegt
+            // nichts, das den Fokus nehmen könnte; die Zeit selbst ist kein
+            // eigenes Fokusziel, sonst läge zwischen Leiste und Spulen ein
+            // Weg mehr.
+            case .down:  alsEnde.toggle(); wecken()
             default:     wecken()
             }
         }
+    }
+
+    /// **Restzeit oder Ende** (1.0.5, wie am iPhone): „−12:34" oder „Endet
+    /// um 22:41", dieselbe Stelle, dieselbe Schrift; die Wahl bleibt.
+    @AppStorage("restzeitAlsEnde") private var alsEnde = false
+
+    private var restzeit: some View {
+        let rest = max(dauer - position, 0)
+        return Group {
+            if alsEnde {
+                Text("Endet um \(Date().addingTimeInterval(rest).formatted(date: .omitted, time: .shortened))")
+            } else {
+                Text(verbatim: "−" + Spielzeit.text(rest))
+            }
+        }
+        .lineLimit(1)
     }
 
     /// **Über dem Griff: Vorschaubild, darunter die Zeit.** Am Rand bleibt der
@@ -2193,13 +2595,19 @@ struct VideoFlaeche: UIViewRepresentable {
     let puffer: Pufferstufe
     /// Externe Untertitel, ebenfalls vor `play` (T1-H4).
     var untertitel: [Untertiteldatei] = []
+    /// Gleich mit Software-Dekoder öffnen — ``PlaybackPlan/softwareDekoder``.
+    var softwareDekoder = false
+    /// Die gewünschten Spuren, ebenfalls vor `play`.
+    var spuren: VLCPlayerView.Spurwunsch?
     /// Wo im Titel der gelieferte Strom beginnt — siehe `PlaybackPlan`.
     let angelegt: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
         view.puffer = puffer
-        view.play(url: url, abSekunden: startAt, container: container, untertitel: untertitel)
+        view.spurwunsch = spuren
+        view.play(url: url, abSekunden: startAt, container: container, untertitel: untertitel,
+                  softwareDekoder: softwareDekoder)
         DispatchQueue.main.async { angelegt(view) }
         return view
     }
@@ -2245,6 +2653,9 @@ final class Schaltwerk {
     /// festgehaltenen Rueckrufen liest. Siehe die Erklaerung oben an dieser
     /// Klasse.
     var laeuft = true
+    /// Der Player gehört zu einer Gruppe (Gemeinsam schauen) — siehe
+    /// `PlayerScreen.inGruppe`.
+    var gemeinsam = false
 }
 
 /// Die Wischfläche der Fernbedienung.
@@ -2398,9 +2809,16 @@ final class Klickring {
     private func einrichten(_ c: GCController) {
         guard let pad = c.microGamepad else { return }
         pad.reportsAbsoluteDpadValues = true
+        // **Gleich hier, nicht einen Umlauf spaeter.** GameController ruft
+        // auf seiner `handlerQueue`, und die ist die Hauptschlange — dieselbe
+        // Zusicherung wie beim Beobachter oben. `DispatchQueue.main.async`
+        // schob jeden Druck um einen Umlauf nach hinten und umging dabei die
+        // Pruefung, auf welchem Akteur er ankommt.
         pad.buttonA.pressedChangedHandler = { [weak self, weak pad] _, _, gedrueckt in
-            let x = pad?.dpad.xAxis.value ?? 0
-            DispatchQueue.main.async { self?.gedrueckt(x: x, an: gedrueckt) }
+            MainActor.assumeIsolated {
+                let x = pad?.dpad.xAxis.value ?? 0
+                self?.gedrueckt(x: x, an: gedrueckt)
+            }
         }
     }
 

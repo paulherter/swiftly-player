@@ -26,6 +26,14 @@ struct TechnikangabenTests {
         #expect(Technikangaben.codecname(vlcKennung: kennung("a52 ")) == "AC-3")
         #expect(Technikangaben.codecname(vlcKennung: kennung("dts ")) == "DTS")
         #expect(Technikangaben.codecname(vlcKennung: kennung("trhd")) == "TrueHD")
+        // libVLC 4 nennt TrueHD `mlpa`, Jellyfin `truehd` — beides muss gleich heissen, sonst sieht
+        // die Spurzuordnung einen Widerspruch, wo keiner ist.
+        #expect(Technikangaben.codecname(vlcKennung: kennung("mlpa")) == Technikangaben.codecname("truehd"))
+        #expect(Technikangaben.codecname(vlcKennung: kennung("wvtt")) == Technikangaben.codecname("webvtt"))
+        #expect(Technikangaben.codecname(vlcKennung: kennung("stpp")) == Technikangaben.codecname("ttml"))
+        #expect(Technikangaben.codecname(vlcKennung: kennung("dvbs")) == Technikangaben.codecname("DVBSUB"))
+        #expect(Technikangaben.codecname(vlcKennung: kennung("spu ")) == Technikangaben.codecname("DVDSUB"))
+        #expect(Technikangaben.codecname(vlcKennung: kennung("bdpg")) == Technikangaben.codecname("PGSSUB"))
         #expect(Technikangaben.codecname(vlcKennung: kennung("xxxx")) == nil)
         #expect(Technikangaben.codecname(vlcKennung: 0) == nil)
     }

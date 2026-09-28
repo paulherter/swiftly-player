@@ -51,6 +51,10 @@ public enum JellyfinError: LocalizedError, Equatable {
     /// Ein eigener Satz des Pakets, schon für den Nutzer formuliert.
     case transport(String)
     case noPlayableSource
+    /// Der Server nennt keine Fassung und sagt, warum (`ErrorCode` in
+    /// `PlaybackInfo`). Vorher wurde daraus ein leerer Plan: auf dem Mac
+    /// „kamen keine Daten", auf der iPhone-Startseite geschah gar nichts.
+    case wiedergabeAbgelehnt(String)
 
     /// Aus dem Fehler von `URLSession`: mit Code, wenn es einer ist.
     init(anfrage fehler: any Error) {
@@ -149,6 +153,19 @@ public actor JellyfinClient {
     }
     public func currentSession() -> Session? { session }
 
+    /// **Ein zweiter Client für dasselbe Gerät am selben Server, ohne Konto.**
+    ///
+    /// Für „Weiteres Konto hinzufügen": `authenticate` setzt die Sitzung des
+    /// Clients um, auf dem es läuft. Liefe es auf dem angemeldeten, trüge der
+    /// schon das Merkmal des neuen Kontos, bevor die App aufgeräumt hat — und
+    /// das Verlassen der Gruppe ginge im Namen des neuen Kontos raus. Mit
+    /// diesem Client angemeldet bleibt der alte, wie er ist, bis die App
+    /// den neuen übernimmt.
+    public nonisolated func ohneKonto() -> JellyfinClient {
+        JellyfinClient(baseURL: baseURL, deviceID: deviceID, deviceName: deviceName,
+                       clientVersion: clientVersion, programm: programm, urlSession: urlSession)
+    }
+
     /// Der letzte bekannte Stand des Rechts `EnableContentDownloading`.
     /// Fuer die Oberflaechen, die nicht selbst ``kontovorgaben()`` halten.
     public func downloadrecht() -> Downloadrecht { downloadrechtStand }
@@ -166,15 +183,30 @@ public actor JellyfinClient {
             // vom 07.09.2026 „Swiftly Player", und das ist der Name, den ein
             // Nutzer in seiner Geraeteliste wiedererkennen soll — er sieht
             // ihn in Jellyfin, nicht auf dem Homebildschirm.
-            "Client=\"\(programm)\"",
-            "Device=\"\(deviceName)\"",
-            "DeviceId=\"\(deviceID)\"",
-            "Version=\"\(clientVersion)\"",
+            "Client=\"\(Self.kopfwert(programm))\"",
+            "Device=\"\(Self.kopfwert(deviceName))\"",
+            "DeviceId=\"\(Self.kopfwert(deviceID))\"",
+            "Version=\"\(Self.kopfwert(clientVersion))\"",
         ]
         if let token = session?.accessToken {
-            parts.append("Token=\"\(token)\"")
+            parts.append("Token=\"\(Self.kopfwert(token))\"")
         }
         return "MediaBrowser " + parts.joined(separator: ", ")
+    }
+
+    /// **Ein Wert, der das Kopffeld nicht aufbrechen kann.**
+    ///
+    /// Der Geraetename kommt vom Nutzer. Ein Anfuehrungszeichen darin schloss
+    /// den Wert vorzeitig, und der Server las den Rest als Unsinn — im
+    /// schlimmsten Fall ohne `DeviceId`. Jellyfin kennt kein Maskieren mit
+    /// Rueckstrich; das gerade Anfuehrungszeichen wird deshalb zum
+    /// einfachen, Zeilenumbrueche und Steuerzeichen fallen weg.
+    static func kopfwert(_ roh: String) -> String {
+        String(String.UnicodeScalarView(roh.unicodeScalars.compactMap { z in
+            if z == "\"" { return "'" }
+            if CharacterSet.controlCharacters.contains(z) { return nil }
+            return z
+        }))
     }
 
     /// Derselbe Ausweis fuer den Steuerkanal.
@@ -212,11 +244,12 @@ public actor JellyfinClient {
         return req
     }
 
-    private func send<T: Decodable>(_ req: URLRequest, as: T.Type) async throws -> T {
+    private func send<T: Decodable>(_ req: URLRequest, as: T.Type,
+                                    ueber sitzung: URLSession? = nil) async throws -> T {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await urlSession.data(for: req)
+            (data, response) = try await (sitzung ?? urlSession).data(for: req)
         } catch {
             throw JellyfinError(anfrage: error)
         }
@@ -302,6 +335,14 @@ public actor JellyfinClient {
     /// Erreichbarkeits- und Versionsprüfung. Braucht keine Anmeldung.
     public func publicSystemInfo() async throws -> PublicSystemInfo {
         try await send(request("System/Info/Public"), as: PublicSystemInfo.self)
+    }
+
+    /// **Dieselbe Frage, aber mit der kurzen Frist der Adresseingabe** —
+    /// siehe ``Adresspruefung``. Nur für die Prüfung einer eingetippten
+    /// Adresse; alles danach läuft über die gewohnte Sitzung.
+    public func erreichbarkeitPruefen() async throws -> PublicSystemInfo {
+        try await send(request("System/Info/Public"), as: PublicSystemInfo.self,
+                       ueber: Adresspruefung.sitzung(fuer: baseURL))
     }
 
     public func authenticate(username: String, password: String) async throws -> Session {
@@ -609,7 +650,9 @@ public actor JellyfinClient {
         let req = try request("Items/\(itemID)/SpecialFeatures", query: [
             .init(name: "userId", value: s.userID),
         ])
-        return try await send(req, as: [Item].self)
+        // Nachsichtig wie `ItemsResponse`: ein Eintrag ohne Kennung oder Namen
+        // nimmt sonst die ganze Liste mit.
+        return try await send(req, as: Nachsichtig<Item>.self).werte
     }
 
     /// Volltextsuche über Filme und Serien.
@@ -635,6 +678,43 @@ public actor JellyfinClient {
             .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
         ])
         return try await send(req, as: ItemsResponse.self).items
+    }
+
+    /// Der Wiedergabestand eines Titels für dieses Konto — Stelle, gesehen,
+    /// zuletzt gespielt. Für die Nachmeldung (``nachmelden(_:)``).
+    public func nutzerdaten(itemID: String) async throws -> UserItemData {
+        let s = try requireSession()
+        let req = try request("UserItems/\(itemID)/UserData",
+                              query: [.init(name: "userId", value: s.userID)])
+        return try await send(req, as: UserItemData.self)
+    }
+
+    /// Setzt nur `LastPlayedDate` — die übrigen Felder bleiben, wie sie sind
+    /// (`UpdateUserItemDataDto`, seit Jellyfin 10.9 teilweise zu setzen).
+    public func zuletztGespieltSetzen(itemID: String, wann: Date) async throws {
+        struct Zeitpunkt: Encodable { let LastPlayedDate: String }
+        let s = try requireSession()
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let req = try request("UserItems/\(itemID)/UserData", method: "POST",
+                              query: [.init(name: "userId", value: s.userID)],
+                              body: Zeitpunkt(LastPlayedDate: f.string(from: wann)))
+        try await sendIgnoringBody(req)
+    }
+
+    /// **Aus „Weiterschauen" nehmen**: die Stelle auf null, sonst nichts.
+    ///
+    /// Jellyfin kennt kein eigenes „ausblenden" (12.x hat keinen
+    /// `HideFromResume`); in der Reihe steht, was eine Stelle hat. Gesehen
+    /// bleibt, wie es war — anders als „ungesehen", das auch die Markierung
+    /// nimmt.
+    public func stelleZuruecksetzen(itemID: String) async throws {
+        struct Stelle: Encodable { let PlaybackPositionTicks: Int64 }
+        let s = try requireSession()
+        let req = try request("UserItems/\(itemID)/UserData", method: "POST",
+                              query: [.init(name: "userId", value: s.userID)],
+                              body: Stelle(PlaybackPositionTicks: 0))
+        try await sendIgnoringBody(req)
     }
 
     #if DEBUG
@@ -705,7 +785,9 @@ public actor JellyfinClient {
         let s = try requireSession()
         let req = try request("Items/\(itemID)/LocalTrailers",
                               query: [.init(name: "userId", value: s.userID)])
-        return try await send(req, as: [Item].self)
+        // Nachsichtig wie `ItemsResponse`: ein Eintrag ohne Kennung oder Namen
+        // nimmt sonst die ganze Liste mit.
+        return try await send(req, as: Nachsichtig<Item>.self).werte
     }
 
     /// Stößt beim Server an, die Metadaten neu einzulesen.
@@ -822,7 +904,12 @@ public actor JellyfinClient {
     /// Überlegung wie bei ``folgeNach(itemID:seriesID:)``.
     ///
     /// Ohne `parentID` über alle Bibliotheken.
-    public func neuDazugekommen(parentID: String? = nil, limit: Int = 20) async throws -> [Item] {
+    ///
+    /// `schlank`: nur, was ``Listenregeln/jeTitelEinmal(_:zeigen:)`` zum
+    /// Zusammenfassen braucht — ohne Beschreibung, Bilder und Nutzerdaten.
+    /// Siehe ``zuletztHinzugefuegt(in:holen:zeigen:)``.
+    public func neuDazugekommen(parentID: String? = nil, limit: Int = 20,
+                                schlank: Bool = false) async throws -> [Item] {
         let s = try requireSession()
         var query: [URLQueryItem] = [
             .init(name: "userId", value: s.userID),
@@ -832,8 +919,16 @@ public actor JellyfinClient {
             .init(name: "SortOrder", value: "Descending"),
             .init(name: "IncludeItemTypes", value: "Movie,Episode"),
             .init(name: "IsVirtualItem", value: "false"),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
         ]
+        if schlank {
+            query += [
+                .init(name: "Fields", value: "ProviderIds"),
+                .init(name: "EnableImages", value: "false"),
+                .init(name: "EnableUserData", value: "false"),
+            ]
+        } else {
+            query.append(.init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"))
+        }
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
         return try await send(try request("Items", query: query), as: ItemsResponse.self).items
     }
@@ -910,6 +1005,26 @@ public actor JellyfinClient {
         }
     }
 
+    /// **Der Hinweis zur Übernahme** — wer übernimmt, an den Abgeber.
+    ///
+    /// Geht als `DisplayMessage` mit eigenem Kopf (``Uebernahme/hinweisKopf``)
+    /// **vor** dem Stopp hinaus. Der Stopp allein sagt dem Abgeber nicht,
+    /// *warum* er stoppen soll; ohne das kann er einen Stopp aus dem
+    /// Dashboard nicht von einer Übergabe unterscheiden.
+    /// Nur an Swiftly schicken: andere Programme zeigen die Meldung als Text.
+    public func uebergabeHinweis(an sitzung: String, geraet: String) async throws {
+        var req = try request("Sessions/\(sitzung)/Message", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "Header": Uebernahme.hinweisKopf, "Text": geraet, "TimeoutMs": 1000,
+        ])
+        let (_, antwort) = try await urlSession.data(for: req)
+        guard let http = antwort as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw JellyfinError.transport(uebersetzt("Das andere Gerät hat nicht reagiert."))
+        }
+    }
+
     /// Die Einstellungen und Rechte des Kontos: „Nächste Folge automatisch"
     /// (T3 #15) und `EnableContentDownloading` (``Downloadrecht``). `nil` bei
     /// jedem Fehlschlag: dann gilt, was die App ohnehin tut — ein Netzfehler
@@ -935,11 +1050,22 @@ public actor JellyfinClient {
     /// behandelt, zeigt eine Meldung fuer eine Funktion, die der Zuschauer
     /// nie erwartet hat.
     public func abschnitte(fuer itemID: String) async -> [Abschnitt] {
+        await abschnitteZumAblegen(fuer: itemID) ?? []
+    }
+
+    /// Dasselbe fuer die Ablage beim Download — **mit dem Unterschied
+    /// zwischen „keine" und „nicht erreichbar"**: `nil` heisst, es kam keine
+    /// Antwort, und es wird beim naechsten Kontakt noch einmal gefragt. Eine
+    /// Fehlerantwort des Servers (alte Fassung ohne den Endpunkt) gilt als
+    /// „keine".
+    public func abschnitteZumAblegen(fuer itemID: String) async -> [Abschnitt]? {
         do {
             let req = try request("MediaSegments/\(itemID)")
             return try await send(req, as: AbschnittsAntwort.self).items
-        } catch {
+        } catch JellyfinError.http(_, _) {
             return []
+        } catch {
+            return nil
         }
     }
 
@@ -1014,6 +1140,7 @@ public actor JellyfinClient {
                                           audioStreamIndex: eignung.tonspur,
                                           subtitleStreamIndex: -1)
         guard let quelle = PlaybackPlan.besteQuelle(info.mediaSources) else {
+            if let grund = info.errorCode, !grund.isEmpty { throw JellyfinError.wiedergabeAbgelehnt(grund) }
             throw JellyfinError.noPlayableSource
         }
 
@@ -1106,6 +1233,59 @@ public actor JellyfinClient {
             throw JellyfinError.http(status: 403, body: "EnableContentDownloading")
         }
         return try streamURL(itemID: itemID, mediaSourceID: mediaSourceID, playSessionID: nil)
+    }
+
+    /// **Die Adresse fuer einen Download in einer kleineren Qualitaet.**
+    ///
+    /// Beim Original dieselbe wie oben. Sonst derselbe Endpunkt mit
+    /// `static=false`: der Server wandelt fortlaufend um und schickt die
+    /// Datei, waehrend sie entsteht — ein einziger Abruf, den die
+    /// Hintergrundsitzung wie jeden anderen laedt. HLS waere der andere Weg;
+    /// dafuer braeuchte es einen Muxer auf dem Geraet, und ein angehaltener
+    /// Download bestuende aus Hunderten Stuecken.
+    ///
+    /// **Ohne Laenge.** Die Groesse kennt der Server erst am Ende; der
+    /// Fortschritt rechnet mit der Schaetzung aus Bitrate mal Laufzeit
+    /// (``Downloadqualitaet/geschaetzteBytes(original:laufzeitTicks:)``).
+    ///
+    /// Der Riegel ist derselbe wie beim Original: ohne Downloadrecht keine
+    /// Adresse.
+    public func downloadURL(itemID: String, mediaSourceID: String?,
+                            qualitaet: Downloadqualitaet) throws -> URL {
+        guard !qualitaet.istOriginal,
+              let bild = qualitaet.bildBitrate, let ton = qualitaet.tonBitrate,
+              let hoehe = qualitaet.hoehe, let breite = qualitaet.breite,
+              let kanaele = qualitaet.tonkanaele
+        else { return try downloadURL(itemID: itemID, mediaSourceID: mediaSourceID) }
+        guard downloadrechtStand.darfLaden else {
+            throw JellyfinError.http(status: 403, body: "EnableContentDownloading")
+        }
+        let s = try requireSession()
+        let c = Downloadqualitaet.container
+        guard var comps = URLComponents(
+            url: baseURL.appendingPathComponent("Videos/\(itemID)/stream.\(c)"),
+            resolvingAgainstBaseURL: false
+        ) else { throw JellyfinError.invalidServerURL }
+        var query: [URLQueryItem] = [
+            .init(name: "static", value: "false"),
+            .init(name: "container", value: c),
+            .init(name: "videoCodec", value: "h264"),
+            .init(name: "audioCodec", value: "aac"),
+            .init(name: "videoBitRate", value: String(bild)),
+            .init(name: "audioBitRate", value: String(ton)),
+            .init(name: "maxAudioChannels", value: String(kanaele)),
+            .init(name: "maxHeight", value: String(hoehe)),
+            .init(name: "maxWidth", value: String(breite)),
+            // Die Geraetekennung haelt den Umwandelvorgang am Server
+            // auseinander — zwei Downloads desselben Titels von zwei Geraeten
+            // teilen sich sonst eine Aufgabe.
+            .init(name: "deviceId", value: deviceID),
+            .init(name: "ApiKey", value: s.accessToken),
+        ]
+        if let mediaSourceID { query.append(.init(name: "mediaSourceId", value: mediaSourceID)) }
+        comps.queryItems = query
+        guard let url = comps.url else { throw JellyfinError.invalidServerURL }
+        return url
     }
 
     /// Hintergrundbild für die Serienseite. `nil`, wenn keins hinterlegt ist.

@@ -39,6 +39,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +60,8 @@ import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -144,6 +150,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var meldung by remember { mutableStateOf<String?>(null) }
     /** Der Plan kommt nach der Seite — bis dahin haelt die Belegzeile ihren Platz. */
     var planGeladen by remember(ziel.id) { mutableStateOf(serie?.planDa == true) }
+    /** Die Serie selbst kam nicht (Audit 27.09.) — vorher stand „Lädt…" ohne Ende und ohne „Erneut versuchen". */
+    var serieGestoert by remember(ziel.id) { mutableStateOf(false) }
     val bereich = rememberCoroutineScope()
     val kontext = LocalContext.current
     val ruck = rememberRuck()
@@ -172,7 +180,17 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     /** **Ein Laden fuer alles**, auch nach „Staffel als gesehen" — ein eigenes Auffrischen vergass auf iOS einmal den Plan. */
     suspend fun laden() {
         try {
-            val gelesen = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(ziel.id).await() })
+            // Aehnliches kommt im selben Zug wie die Serie (iOS `SeriesDetailView.laden`, fcd0d890) —
+            // bis zum 24.09.2026 lief es erst nach Serie und Folgen und rutschte unten nach.
+            // `null`: der Abruf scheiterte.
+            val (gelesen, umfeld) = coroutineScope {
+                val a = async(Dispatchers.IO) { app.kern.serie(ziel.id).await() }
+                val b = async(Dispatchers.IO) {
+                    try { JSONObject(app.kern.titelUmfeld(ziel.id).await()).feldListe("aehnliche") { rasterkachelLesen(it) } }
+                    catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                }
+                serieLesen(a.await()) to b.await()
+            }
             // Den schon bekannten Plan behalten, bis der neue da ist — sonst flackert die Belegzeile.
             val alt = serie
             val neu = if (alt != null && alt.stand?.id == gelesen.stand?.id)
@@ -187,6 +205,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
             serie = neu
             app.serienSpeicher[ziel.id] = neu
+            aehnlicheGestoert = umfeld == null
+            umfeld?.let { aehnliche = it }
             gemerkt = neu.gemerkt
             gesehen = neu.gesehen
             if (!selbstGewaehlt || staffel == null) staffel = wahl
@@ -196,7 +216,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                 folgenGestoert = false
                 folgenLaedt = false
             } else staffel?.let { s -> if (folgen.isEmpty()) app.folgenSpeicher[s]?.let { folgen = it }; folgenLaden(neu.id, s) }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            serieGestoert = false
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { serieGestoert = serie == null }
     }
 
     /** Erst umschalten, dann fragen — sagt der Server nein, zurueck und melden. Danach neu laden: der Knopf zeigt eine andere Folge. */
@@ -218,19 +239,12 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var hatGespielt by remember { mutableStateOf(false) }
     LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; laden() } }
     // Und noch einmal, wenn die Endmeldung durch ist — erst dann kennt der Server die Stelle.
-    val beendet = app.wiedergabeBeendet.intValue
+    // Auch nach einer Aenderung am Sehstand (Kachelmenue) — `seitenAuffrischen` auf iOS.
+    val beendet = app.wiedergabeBeendet.intValue + app.sehstandGeaendert.intValue
     val beendetAnfangs = remember { beendet }
     LaunchedEffect(beendet) { if (beendet != beendetAnfangs) laden() }
 
-    LaunchedEffect(ziel.id) {
-        laden()
-        val id = serie?.id ?: return@LaunchedEffect
-        try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(id).await() })
-            aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
-            aehnlicheGestoert = false
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { aehnlicheGestoert = true }
-    }
+    LaunchedEffect(ziel.id) { laden() }
 
     val scroll = rememberScrollState()
     // Scrollen schliesst die Staffelliste — ein Tipp auf die Pille selbst nicht.
@@ -258,9 +272,12 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         if (!ging) meldung = uebersetzt("Für diesen Titel liegt kein Trailer vor.")
     }
 
+    // **Die Farbe des Kopfbilds unter der Seite** — wie auf der Filmseite (`Stimmungsgrund`).
+    val stimmung = rememberBildtoene(s?.kopfbild)
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
-            Held(s?.kopfbild, name, s?.nebenzeile.orEmpty())
+        CompositionLocalProvider(LocalAufBildfarbe provides true, LocalBildtoene provides stimmung.toene) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).stimmungsgrund(stimmung, Stil.heldHoehe)) {
+            Held(s?.kopfbild, name, s?.nebenzeile.orEmpty(), stimmung)
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -271,12 +288,20 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                 // Knopf und Aktionsreihe als ein Block: 8 zwischen ihnen, 14 zu allem anderen.
                 Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    val menue = LocalKachelmenue.current
                     Spielknopf(Zeichen.Abspielen, s?.knopftext ?: uebersetzt("Lädt…"),
-                               an = s == null || s.stand != null, haupt = true) {
+                               an = s == null || s.stand != null, haupt = true,
+                               // Langer Druck: das Kachelmenue der Serie, wie an ihrer Kachel.
+                               lange = menue?.let { m -> {
+                                   m(Kachelmenuewunsch(ziel.id, name, "Series", s?.kopfbild, quer = true,
+                                                        s?.nebenzeile, nachher = { bereich.launch { laden() } }))
+                               } }) {
                         s?.stand?.let { st -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(st.id, st.ab) }
                     }
                     s?.stand?.restzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise) }
                     s?.stand?.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.clip(RoundedCornerShape(2.dp))) }
+                    if (serieGestoert && s == null) Stoerhinweis(app.serveradresse(), abstandOben = 12.dp,
+                        erneut = { serieGestoert = false; bereich.launch { laden() } })
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,15 +330,25 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                             if (app.einstellungen.downloadKnopfZeigen) add(Wahl("trailer", uebersetzt("Trailer")))
                             s?.stand?.let {
                                 add(Wahl("vonvorn", uebersetzt("Folge von vorn abspielen")))
-                                add(Wahl("naechste", uebersetzt("Nächste Folge abspielen")))
+                                // **„Nächste Folge" weicht für „Gemeinsam schauen"** (Entwurf A, iOS 1.0.5): das
+                                // Blatt soll nicht laenger werden, die naechste Folge erreicht man ueber die Liste.
+                                if (app.gemeinsam.value.darfAnlegen) add(Wahl("gemeinsam", uebersetzt("Gemeinsam schauen")))
+                                else add(Wahl("naechste", uebersetzt("Nächste Folge abspielen")))
                             }
                             gewaehlteStaffel?.let { add(Wahl("staffel", uebersetzt("%@ als gesehen", it.name))) }
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
-                        val kuerzel = s?.stand?.let { st -> if (st.staffel != null && st.folge != null) " · S${st.staffel} E${st.folge}" else "" }.orEmpty()
+                        // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand hier
+                        // fest als „E", auch auf Deutsch (gemeldet 27.09.2026).
+                        val kuerzel = s?.stand?.let { st -> if (st.staffel != null && st.folge != null) " · " + uebersetzt("S%d F%d", st.staffel, st.folge) else "" }.orEmpty()
                         app.blatt.value = Blattwunsch(name + kuerzel, eintraege, null,
                             mapOf("trailer" to Zeichen.Film, "vonvorn" to Zeichen.Zurueckspulen, "naechste" to Zeichen.Ueberspringen, "staffel" to Zeichen.HakenKreis,
-                                  "metadaten" to Zeichen.Neuladen)) { wahl ->
+                                  "gemeinsam" to Zeichen.Gruppe, "metadaten" to Zeichen.Neuladen)) { wahl ->
+                            if (wahl == "gemeinsam") {
+                                s?.stand?.let { st -> bereich.launch { kotlinx.coroutines.delay(BLATTWECHSEL)
+                                    gemeinsamAnlegenOeffnen(app, st.id, if (st.staffel != null && st.folge != null) gemeinsamTitelzeile("", s.name, st.staffel, st.folge) else s.name) } }
+                                return@Blattwunsch
+                            }
                             bereich.launch {
                                 when (wahl) {
                                     "trailer" -> trailerStarten()
@@ -373,7 +408,15 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                             key(f.id) {
                                 Wischzeile(if (f.gesehen) Zeichen.Rueckgaengig else Zeichen.Haken,
                                            uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
-                                    Folgenzeile(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                                    // **Langer Druck: das Kachelmenue**, wie an jeder anderen Folge
+                                    // (`Kachelmenue`) — Abspielen, gesehen/ungesehen, Laden, Gemeinsam
+                                    // schauen. Vorher stand hier nur „Gemeinsam schauen".
+                                    val menue = LocalKachelmenue.current
+                                    val lange: (() -> Unit)? = menue?.let { m -> {
+                                        m(Kachelmenuewunsch(f.id, f.titel, "Episode", f.bild, quer = true, f.unterzeile,
+                                                             nachher = { bereich.launch { laden() } }))
+                                    } }
+                                    Folgenzeile(f, lange = lange) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         } }
@@ -399,6 +442,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
+        }
 
         Detailkopf(name, { ((scroll.value / dichte - 150f) / 70f).coerceIn(0f, 1f) }, zurueck)
         Hinweisstreifen(meldung, Modifier.align(Alignment.BottomCenter)) { meldung = null }
@@ -420,6 +464,7 @@ private fun Reiter(titel: List<String>, gewaehlt: Int, waehlen: (Int) -> Unit) {
                 Text(t, style = Stil.listentitel,
                      color = if (an) Stil.schrift else Stil.schriftLeise,
                      modifier = Modifier.antippen { waehlen(i) }
+                         .semantics { selected = an; role = Role.Tab }
                          .drawBehind {
                              // Weiss, nicht Akzent: gewaehlt ist Rangfolge, kein Zustand.
                              if (an) drawRect(Stil.schrift, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
@@ -449,8 +494,8 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
     val hoehe = if (kompakt) 28.dp else 34.dp
     Box(if (kompakt) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
         Row(Modifier.antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) }
-                .height(hoehe)
-                .then(if (kompakt) Modifier else Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(Stil.flaeche).padding(horizontal = 11.dp)),
+                .heightIn(min = hoehe)
+                .then(if (kompakt) Modifier else Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(knopfflaeche(LocalAufBildfarbe.current)).padding(horizontal = 11.dp)),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"),
                  style = if (kompakt) Stil.klein.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold) else Stil.listentitel,
@@ -474,7 +519,13 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
                     exit = fadeOut(Bewegung.sprung()) + scaleOut(Bewegung.sprung(), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
                 // **So breit wie der laengste Name, mindestens 180** — fest 200 liess rechts eine Luecke.
                 // Ecke 10, keine Schatten.
-                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche)) {
+                // **Ueber Bildfarbe in der Farbe der Seite** (Versuch `experiment-glas`): deckend, weil
+                // darunter Folgen stehen — aber im Ton der Seite an dieser Stelle, darueber das Weiss der
+                // uebrigen Flaechen. Ein festes Grau stand dort wie ein Fremdkoerper.
+                val toene = LocalBildtoene.current
+                val grund = if (LocalAufBildfarbe.current && toene.isNotEmpty()) remember(toene) { bildfarbeBei(toene, 0.2, 0.55) } else null
+                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).clip(RoundedCornerShape(Stil.ecke))
+                        .background(Stil.flaeche).then(if (grund != null) Modifier.background(grund).background(flaecheDurchsichtig) else Modifier)) {
                     staffeln.forEach { st ->
                         val an = st.id == gewaehlt
                         // Haken links, immer als Platz da; gewaehlt Weiss, sonst leise — 15 Semibold, 14/9 innen.
@@ -499,21 +550,16 @@ internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Bool
  * Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
  */
 @Composable
-internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
-    Folgenzeilenaufbau(Modifier.druckzeile(tun), f.titel, f.unterzeile, if (f.gesehen) Stil.schriftLeise else Stil.schrift, ende = ende) {
-        Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)
-                .alpha(if (f.gesehen) 0.45f else 1f)) {
+internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, lange: (() -> Unit)? = null, tun: () -> Unit) {
+    Folgenzeilenaufbau(if (lange != null) Modifier.druckzeileLang(lange, tun) else Modifier.druckzeile(tun), f.titel, f.unterzeile, if (f.gesehen) Stil.schriftLeise else Stil.schrift, ende = ende) {
+        // **Gesehen wird nur dunkler, nicht durchsichtig** (`Gesehenhaken`, `colorMultiply`): mit Deckkraft
+        // schien der Grund durch — auf einer Seite in Bildfarbe bekam jedes gesehene Standbild deren Stich.
+        Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             AsyncImage(model = f.bild, contentDescription = null, contentScale = ContentScale.Crop,
-                       modifier = Modifier.fillMaxSize())
+                       colorFilter = if (f.gesehen) GESEHEN_ABDUNKELN else null, modifier = Modifier.fillMaxSize())
             // Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
             if (!f.gesehen) f.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
-            if (f.gesehen) {
-                // 0,78 wie jede andere dunkle Scheibe auf einem Bild.
-                Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.78f)),
-                    contentAlignment = Alignment.Center) {
-                    Symbol(Zeichen.Haken, 10.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Gesehen"))
-                }
-            }
+            if (f.gesehen) Gesehenhaken()
         }
     }
 }

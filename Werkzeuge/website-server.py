@@ -23,6 +23,39 @@ BEREICH = re.compile(r"^bytes=(\d*)-(\d*)$")
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    # /blog/ ist PHP. Der Python-Server kann es nicht, also laeuft daneben PHPs
+    # eingebauter Server (mit website-router.php), und hierher kommt nur die
+    # Weiterleitung. Videos und alles andere bleiben beim Python-Server, weil
+    # der Bereichsanfragen kann und PHP nicht.
+    php_port = None
+
+    def _php(self):
+        import http.client
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", self.php_port, timeout=20)
+            c.request(self.command, self.path, headers={"Accept": self.headers.get("Accept", "*/*")})
+            r = c.getresponse(); body = r.read()
+        except Exception as e:
+            self.send_error(502, "PHP nicht erreichbar: %s" % e); return
+        self.send_response(r.status)
+        for k, v in r.getheaders():
+            if k.lower() not in ("connection", "transfer-encoding", "content-length", "date", "server", "cache-control"):
+                self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def do_GET(self):
+        if self.php_port and self.path.split("?")[0].startswith("/blog"):
+            return self._php()
+        return super().do_GET()
+
+    def do_HEAD(self):
+        if self.php_port and self.path.split("?")[0].startswith("/blog"):
+            return self._php()
+        return super().do_HEAD()
+
     def _frisch(self):
         return os.path.splitext(self.path.split("?")[0])[1].lower() in FRISCH
 
@@ -103,5 +136,14 @@ if __name__ == "__main__":
     # Standard nur dieser Mac. "0.0.0.0" als drittes Argument macht die Seite
     # im WLAN erreichbar, etwa zum Testen auf dem Handy.
     host = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
+    import atexit, shutil, subprocess
+    ordner_abs = os.path.abspath(ordner)
+    php = shutil.which("php")
+    router = os.path.join(os.path.dirname(os.path.abspath(__file__)), "website-router.php")
+    if php and os.path.isdir(os.path.join(ordner_abs, "blog")) and os.path.exists(router):
+        Handler.php_port = port + 100
+        proc = subprocess.Popen([php, "-S", "127.0.0.1:%d" % Handler.php_port, "-t", ordner_abs, router],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        atexit.register(proc.terminate)
     ThreadingHTTPServer((host, port),
         lambda *a, **k: Handler(*a, directory=ordner, **k)).serve_forever()

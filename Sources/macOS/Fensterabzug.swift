@@ -225,6 +225,8 @@ enum Scrollprobe {
     private static var anfang: CGFloat = 0
     private static var weitesteFahrt: CGFloat = 0
     private static var weite: CGFloat = 0
+    /// Wie oft schon nach einer scrollbaren Seite gesucht wurde.
+    private static var anlaeufe = 0
 
     static var angefordert: Bool {
         ProcessInfo.processInfo.environment["SWIFTLY_SCROLLPROBE"] != nil
@@ -242,6 +244,7 @@ enum Scrollprobe {
         case "serien": .serien
         case "merkliste": .merkliste
         case "downloads": .downloads
+        case "einstellungen": .einstellungen
         default: nil
         }
     }
@@ -286,9 +289,18 @@ enum Scrollprobe {
         // ausgefallene Bilder" wie ein Erfolg ausgesehen.
         let hoehe = f.documentView?.frame.height ?? 0
         guard hoehe > f.frame.height + 40 else {
-            log.notice("""
-                Inhalt \(Int(hoehe)) in \(Int(f.frame.height)) — nichts zu scrollen,                 Probe sagt nichts aus
-                """)
+            // **Noch einmal nachsehen, statt aufzugeben.** Der erste Lauf auf
+            // „Filme" fiel genau hier heraus — die Seite war noch nicht da,
+            // und „nichts zu scrollen" sah aus wie ein Befund. Zehn Anlaeufe
+            // im Sekundenabstand, dann steht es fest.
+            anlaeufe += 1
+            guard anlaeufe < 12 else {
+                log.notice("Inhalt \(Int(hoehe)) in \(Int(f.frame.height)) — nichts zu scrollen")
+                return
+            }
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { _ in
+                MainActor.assumeIsolated { fahren() }
+            }
             return
         }
         weite = hoehe - f.frame.height
@@ -340,11 +352,31 @@ enum Scrollprobe {
         guard let ansicht else { return nil }
         var beste: NSScrollView?
         func gehen(_ v: NSView) {
-            if let s = v as? NSScrollView,
-               s.frame.height > (beste?.frame.height ?? 0) { beste = s }
+            // **Nach Inhalt waehlen, nicht nach Rahmen.** Beim Bereichswechsel
+            // bleibt die alte Wurzel im Baum stehen; beide Flaechen sind dann
+            // gleich hoch, und „die erste mit der groessten Hoehe" traf die
+            // falsche.
+            if let s = v as? NSScrollView, s.frame.height > 200,
+               (s.documentView?.frame.height ?? 0) > (beste?.documentView?.frame.height ?? 0) {
+                beste = s
+            }
             v.subviews.forEach(gehen)
         }
         gehen(ansicht)
+        // **Alle nennen, nicht nur die gewaehlte.** Der Lauf auf „Filme" fiel
+        // wiederholt auf „Inhalt 446 in 833" heraus, und ohne diese Zeile war
+        // nicht zu sehen, ob die Seite fehlt oder die falsche Flaeche gewaehlt
+        // wurde.
+        var alle: [String] = []
+        func zaehlen(_ v: NSView) {
+            if let sv = v as? NSScrollView {
+                alle.append("\(Int(sv.frame.width))x\(Int(sv.frame.height))"
+                    + "/Inhalt \(Int(sv.documentView?.frame.height ?? 0))")
+            }
+            v.subviews.forEach(zaehlen)
+        }
+        zaehlen(ansicht)
+        log.notice("Scrollflaechen: \(alle.joined(separator: " · "), privacy: .public)")
         return beste
     }
 }

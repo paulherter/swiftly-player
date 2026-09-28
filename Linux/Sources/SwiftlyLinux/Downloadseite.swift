@@ -203,7 +203,7 @@ extension App {
         guard b.anzahl > 0 || downloads.posten.contains(where: { $0.stand != .fertig }) else {
             return uebersetzt("Nichts auf diesem Rechner")
         }
-        let anzahl = String(format: uebersetzt("%d Titel"), b.anzahl)
+        let anzahl = zahlwort(b.anzahl, eins: uebersetzt("1 Titel"), viele: uebersetzt("%lld Titel"))
         // **Und was noch frei ist.** Der Mac nennt es in derselben Zeile;
         // ohne die Zahl steht dort eine Belegung ohne Bezugsgroesse.
         return anzahl + " · " + Downloadregeln.groesse(b.bytes)
@@ -242,7 +242,7 @@ extension App {
         }
         return downloadgrundzeile(
             titel: p.titel,
-            unten: p.stand == .laedt ? downloadLadetext(geladen, von: p.bytes)
+            unten: p.stand == .laedt ? downloadLadetext(geladen, von: p.bytes, geschaetzt: p.umgewandelt)
                                      : downloadstandwort(p),
             warnend: p.stand == .fehler,
             quer: quer,
@@ -255,6 +255,10 @@ extension App {
             anteil: laeuft ? (p.bytes > 0 ? Double(geladen) / Double(p.bytes) : p.anteil) : nil,
             zaehlen: p.stand == .laedt ? (p.id, p.bytes) : nil,
             rechts: downloadknopf(p),
+            // **Gesehen wie in der Folgenliste** — auch ohne Netz: der Stand
+            // liegt im Posten (1.0.5). Nur an der einzelnen Zeile; eine
+            // Serienzeile steht fuer viele Folgen.
+            gesehen: p.gesehen,
             // **Ein Klick auf die Zeile spielt ab** — auf dem Mac stand
             // dazu: „Das fehlte ganz." Abspielen und nicht die Detailseite,
             // denn die braucht den Server, und wer hier steht, hat
@@ -273,8 +277,9 @@ extension App {
     private func downloadseriengruppe(_ sid: String, _ titel: String,
                                       _ folgen: [Downloadposten]) -> Widget! {
         let bytes = folgen.reduce(Int64(0)) { $0 + $1.bytes }
-        let unten = String(format: uebersetzt("%d Folgen"), folgen.count)
+        let unten = zahlwort(folgen.count, eins: uebersetzt("1 Folge"), viele: uebersetzt("%lld Folgen"))
             + " · " + Downloadregeln.groesse(bytes)
+            + (Downloadqualitaet.gemeinsam(folgen).map { " · " + $0.name } ?? "")
 
         // Rechts der Winkel, 36 breit, wo sonst der Knopf steht.
         let winkel: Widget! = gtk_image_new_from_icon_name("pan-end-symbolic")
@@ -336,6 +341,7 @@ extension App {
                                     umlegen: @escaping () -> Void,
                                     anteil: Double?, zaehlen: (String, Int64)?,
                                     rechts: Widget!,
+                                    gesehen: Bool = false,
                                     geklickt: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         // **Eigene Klasse, nicht `swiftly-zeile`** (Mac cc4e6e75, `Abdunkeln`):
@@ -389,6 +395,7 @@ extension App {
         } else {
             zeichenLegen(huelle, serie: serie)
         }
+        if gesehen { gesehenhakenLegen(huelle, an: true) }
         anhaengen(zeile, huelle)
 
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 4)
@@ -412,7 +419,10 @@ extension App {
             anhaengen(text, b.anzeige)
             balken = b
         }
-        if let z = zaehlen { downloadZaehlen(z.0, bytes: z.1, zeile: u, balken: balken) }
+        if let z = zaehlen {
+            downloadZaehlen(z.0, bytes: z.1, geschaetzt: downloads.posten(fuer: z.0)?.umgewandelt ?? false,
+                            zeile: u, balken: balken)
+        }
         anhaengen(zeile, text)
         anhaengen(zeile, rechts)
 
@@ -429,6 +439,7 @@ extension App {
         let haken = nebenknopf("object-select-symbolic",
                                name: an ? uebersetzt("Abwählen") : uebersetzt("Auswählen"),
                                aktiv: an)
+        bedienhilfe(haken, haken: an ? .an : .aus)
         gtk_widget_set_valign(haken, GTK_ALIGN_CENTER)
         beiSignal(haken, "clicked") { umlegen() }
         return haken
@@ -467,13 +478,18 @@ extension App {
         return knopf
     }
 
+    /// „ · 720p" bei einer umgewandelten Datei, sonst nichts.
+    private func stufe(_ p: Downloadposten) -> String {
+        p.umgewandelt ? " · " + p.guete.name : ""
+    }
+
     private func downloadstandwort(_ p: Downloadposten) -> String {
         switch p.stand {
-        case .wartet:     return uebersetzt("Wartet")
+        case .wartet:     return uebersetzt("Wartet") + stufe(p)
         case .laedt:
             guard p.bytes > 0 else { return Downloadregeln.groesse(p.geladen) }
             return Downloadregeln.groesse(p.geladen) + " / " + Downloadregeln.groesse(p.bytes)
-        case .angehalten: return uebersetzt("Angehalten")
+        case .angehalten: return uebersetzt("Angehalten") + stufe(p)
         case .fehler:     return p.grund ?? uebersetzt("Fehler")
         case .fertig:
             // **H9: verschwindet der Titel vom Server, bleibt die Datei — und
@@ -481,7 +497,10 @@ extension App {
             // boese Ueberraschung im Flugzeug, und das ist der Fall, fuer den
             // die ganze Funktion gebaut ist. Der Hinweis fehlte hier ganz.
             var stuecke = [Downloadregeln.groesse(p.geladen)]
-            if let behaelter = p.container, !behaelter.isEmpty {
+            // Die gewaehlte Stufe steht, wo sonst der Container steht.
+            if p.umgewandelt {
+                stuecke.append(p.guete.name)
+            } else if let behaelter = p.container, !behaelter.isEmpty {
                 stuecke.append(behaelter.uppercased())
             }
             if !p.nochAufDemServer {
@@ -512,6 +531,8 @@ extension App {
     /// Pfad auf der Platte. Alles Weitere ist derselbe Weg.
     func downloadSpielen(_ p: Downloadposten) {
         guard let pfad = downloads.datei(fuer: p.id) else { return }
-        spielerOeffnen(p.alsItem, ab: 0, ausDatei: pfad)
+        // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
+        spielerOeffnen(p.alsItem, ab: downloads.posten(fuer: p.id)?.fortsetzenAb ?? 0,
+                       ausDatei: pfad)
     }
 }

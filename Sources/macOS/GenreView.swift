@@ -50,10 +50,14 @@ struct GenreView: View {
                                             staffeln: eintrag.childCount,
                                             gesehen: eintrag.userData?.played,
                                             offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                         zeichen: eintrag.type == "Series" ? "tv" : "film",
-                                         vorholen: { Serienspeicher.geteilt.vorholen(eintrag, mit: model) })
+                                         zeichen: eintrag.kachelzeichen,
+                                         vorholen: {
+                Serienspeicher.geteilt.vorholen(eintrag, mit: model)
+                Planvorrat.vorholen(eintrag, mit: model)
+            })
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(eintrag, model: model)
                     }
                 }
                 .padding(.top, 20)

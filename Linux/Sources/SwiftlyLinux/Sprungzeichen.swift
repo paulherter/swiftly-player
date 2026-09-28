@@ -60,6 +60,9 @@ final class Sprungzeichen: @unchecked Sendable {
 
     /// Ein Ausschlag. Zählt **jeden** Druck, auch den zehnten hintereinander.
     func stupsen() {
+        // Kein Ausschlag bei reduzierter Bewegung — wie beim Mac-Vorbild
+        // `.symbolEffect(.bounce)`, das dort dann stillsteht.
+        guard !bewegungReduziert() else { return }
         laufen(auf: anzeige, dauer: 0.34) { [weak self] e in
             guard let self else { return }
             self.wucht = sin(Double.pi * e)

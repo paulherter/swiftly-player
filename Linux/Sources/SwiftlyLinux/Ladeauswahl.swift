@@ -30,6 +30,10 @@ final class Ladeauswahlstand: @unchecked Sendable {
     /// jeder andere Neubau steht sofort.
     var frischAufgeklappt: String?
     var nurUngesehene = false
+    /// Original, bis jemand die Plakette anklickt und etwas anderes nimmt.
+    var qualitaet: Downloadqualitaet = .original
+    /// Ob die Liste der Stufen unter der Plakette aufgeklappt ist.
+    var qualitaetOffen = false
     var laedt = true
     var gestoert = false
     var alleFolgen: [Item] { staffeln.compactMap { folgen[$0.id] }.flatMap { $0 } }
@@ -187,7 +191,7 @@ extension App {
         if kasten == .da { return uebersetzt("alles da") }
         let frei = nehmbar(eigene, stand)
         if frei.isEmpty { return uebersetzt("alles da") }
-        return String(format: uebersetzt("%d Folgen"), frei.count)
+        return String(format: uebersetzt("%lld Folgen"), frei.count)
     }
 
     /// **Gesehen steht dabei, bevor man waehlt.** Ohne Schalter bleiben
@@ -210,7 +214,7 @@ extension App {
     }
 
     private func folgenzahl(_ n: Int) -> String {
-        n == 1 ? uebersetzt("1 Folge") : String(format: uebersetzt("%d Folgen"), n)
+        zahlwort(n, eins: uebersetzt("1 Folge"), viele: uebersetzt("%lld Folgen"))
     }
 
     private func bytes(_ liste: [Item]) -> Int64 {
@@ -280,7 +284,7 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(st), 0)
         gtk_widget_set_hexpand(st, 1)
         anhaengen(schalterreihe, st)
-        anhaengen(schalterreihe, kleinerSchalter(an: stand.nurUngesehene) { [weak self] an in
+        anhaengen(schalterreihe, kleinerSchalter(an: stand.nurUngesehene, name: uebersetzt("Nur ungesehene")) { [weak self] an in
             guard let self else { return }
             stand.nurUngesehene = an
             let erlaubt = Set(self.nehmbar(stand.alleFolgen, stand).map(\.id))
@@ -389,7 +393,24 @@ extension App {
         gtk_widget_set_margin_bottom(fuss, 12)
         anhaengen(fuss, trennlinie())
         let gewaehlteFolgen = stand.alleFolgen.filter { stand.gewaehlt.contains($0.id) }
-        let summe = bytes(gewaehlteFolgen)
+        // **Der Fuss rechnet in der gewaehlten Qualitaet** (Mac
+        // `MacLadeauswahl.bytes(in:)`): beim Original die echte Groesse,
+        // sonst die Schaetzung aus Bitrate mal Laufzeit.
+        func summeIn(_ q: Downloadqualitaet) -> Int64 {
+            gewaehlteFolgen.reduce(0) {
+                $0 + q.geschaetzteBytes(original: $1.mediaSources?.first?.size ?? 0,
+                                        laufzeitTicks: $1.runTimeTicks)
+            }
+        }
+        let basis = gewaehlteFolgen.isEmpty ? stand.alleFolgen : gewaehlteFolgen
+        let angeboten = Downloadqualitaet.angeboten(
+            waehlbar: downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.quellBitrate(basis.map {
+                ($0.mediaSources?.first?.size ?? 0, $0.runTimeTicks)
+            }))
+        // Faellt die gewaehlte Stufe weg, gilt wieder das Original.
+        if !angeboten.contains(stand.qualitaet) { stand.qualitaet = .original }
+        let summe = summeIn(stand.qualitaet)
         let zahlreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
         gtk_widget_set_margin_start(zahlreihe, 16)
         gtk_widget_set_margin_end(zahlreihe, 16)
@@ -428,17 +449,17 @@ extension App {
         }
         anhaengen(fuss, zahlreihe)
 
-        let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
-        gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
-        gtk_widget_add_css_class(beleg, "swiftly-beleg")
-        gtk_widget_set_halign(beleg, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(beleg, 16)
-        let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(haken), 11)
-        anhaengen(beleg, haken)
-        anhaengen(beleg, beschriftung(uebersetzt("Direct Play · Originalqualität"),
-                                      stil: "swiftly-zweitzeile"))
-        anhaengen(fuss, beleg)
+        // **Die Plakette ist zugleich die Wahl einer kleineren Fassung**,
+        // wenn der Server umwandeln darf.
+        let wahl = qualitaetswahlBauen(
+            wahl: stand.qualitaet, angeboten: angeboten, waehlbar: downloadqualitaetWaehlbar,
+            offen: stand.qualitaetOffen,
+            groesse: { stand.gewaehlt.isEmpty ? 0 : summeIn($0) },
+            umschalten: { stand.qualitaetOffen.toggle(); neu() },
+            waehlen: { stand.qualitaet = $0; stand.qualitaetOffen = false; neu() })
+        gtk_widget_set_margin_start(wahl, 16)
+        gtk_widget_set_margin_end(wahl, 16)
+        anhaengen(fuss, wahl)
 
         let knopf = hauptknopf(stand.gewaehlt.isEmpty ? uebersetzt("Laden")
                                : String(format: uebersetzt("%@ laden"),
@@ -451,7 +472,7 @@ extension App {
             gtk_popover_popdown(alsTafel(tafelkiste.widget))
             losgelassen(tafelkiste)
             guard let self else { return }
-            self.staffelLaden(gewaehlteFolgen)
+            self.staffelLaden(gewaehlteFolgen, qualitaet: stand.qualitaet)
             // Mit dem ersten Download der Serie gehen Kopfbild und Plakat mit
             // — einmal; was schon liegt, wird nicht neu geholt.
             if self.downloads.kopfbild(serie: serie.id, konto: self.benutzerID) == nil {
@@ -507,7 +528,8 @@ extension App {
             gtk_image_set_pixel_size(OpaquePointer(b), 11)
             gtk_button_set_child(alsKnopf(kastenknopf), b)
         }
-        beschriften(kastenknopf, uebersetzt("Auswählen"))
+        bedienhilfe(kastenknopf, name: uebersetzt("Auswählen"),
+                    haken: kasten == .voll ? .an : kasten == .teil ? .teils : .aus)
         gtk_widget_set_size_request(kastenknopf, 22, 22)
         gtk_widget_set_valign(kastenknopf, GTK_ALIGN_CENTER)
         beiSignal(kastenknopf, "clicked", tun)
@@ -547,5 +569,81 @@ extension App {
         beiSignal(zeile, "clicked") { (aufklappen ?? tun)() }
         anhaengen(reihe, zeile)
         return reihe
+    }
+
+    /// **Die Plakette unter einer Ladeauswahl — und die Wahl der Qualität.**
+    /// Vorlage: `MacQualitaetsplakette` (`Sources/macOS/Macdownloads.swift`).
+    /// Original ist die Vorgabe; darf der Server umwandeln, klappt ein Klick
+    /// die kleineren Stufen mit ihrer geschätzten Größe darunter auf. Hier
+    /// aufgeklappt statt als Menü: die Auswahl ist selbst schon eine Tafel,
+    /// und eine Tafel über der Tafel verliert GTK beim Schließen.
+    func qualitaetswahlBauen(wahl: Downloadqualitaet, angeboten: [Downloadqualitaet],
+                             waehlbar: Bool, offen: Bool,
+                             groesse: @escaping (Downloadqualitaet) -> Int64,
+                             umschalten: @escaping () -> Void,
+                             waehlen: @escaping (Downloadqualitaet) -> Void) -> Widget! {
+        let feld = stapel(GTK_ORIENTATION_VERTICAL, abstand: 6)
+        let aufklappbar = waehlbar && angeboten.count > 1
+
+        let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+        gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
+        gtk_widget_add_css_class(beleg, "swiftly-beleg")
+        let haken: Widget! = gtk_image_new_from_icon_name(wahl.istOriginal ? "object-select-symbolic"
+                                                                          : "folder-download-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(haken), 11)
+        anhaengen(beleg, haken)
+        anhaengen(beleg, beschriftung(wahl.plakette(), stil: "swiftly-zweitzeile"))
+        if aufklappbar {
+            let w: Widget! = gtk_image_new_from_icon_name(offen ? "pan-down-symbolic" : "pan-end-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(w), 11)
+            anhaengen(beleg, w)
+            let knopf: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(knopf, "swiftly-auswahlzeile")
+            gtk_widget_set_halign(knopf, GTK_ALIGN_START)
+            gtk_button_set_child(alsKnopf(knopf), beleg)
+            beschriften(knopf, uebersetzt("Qualität"))
+            beiSignal(knopf, "clicked", umschalten)
+            anhaengen(feld, knopf)
+        } else {
+            gtk_widget_set_halign(beleg, GTK_ALIGN_START)
+            anhaengen(feld, beleg)
+        }
+
+        if aufklappbar, offen {
+            for q in angeboten {
+                let zeile: Widget! = gtk_button_new()
+                gtk_widget_add_css_class(zeile, "swiftly-auswahlzeile")
+                let innen = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+                let t = beschriftung(q.name + " · " + q.zusatz(), stil: "swiftly-koerper")
+                gtk_label_set_xalign(OpaquePointer(t), 0)
+                gtk_widget_set_hexpand(t, 1)
+                anhaengen(innen, t)
+                let g = groesse(q)
+                if g > 0 {
+                    let r = beschriftung((q.istOriginal ? "" : "≈ ") + Downloadregeln.groesse(g),
+                                         stil: "swiftly-zweitzeile")
+                    gtk_widget_add_css_class(r, "swiftly-leise")
+                    anhaengen(innen, r)
+                }
+                let h: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+                gtk_image_set_pixel_size(OpaquePointer(h), 13)
+                gtk_widget_set_opacity(h, q == wahl ? 1 : 0)
+                anhaengen(innen, h)
+                gtk_button_set_child(alsKnopf(zeile), innen)
+                bedienhilfe(zeile, gewaehlt: q == wahl)
+                beiSignal(zeile, "clicked") { waehlen(q) }
+                anhaengen(feld, zeile)
+            }
+        }
+
+        if !waehlbar {
+            let l = beschriftung(uebersetzt("Kleinere Fassungen gibt der Server für dieses Konto nicht frei."),
+                                 stil: "swiftly-zweitzeile", umbruch: true)
+            gtk_label_set_xalign(OpaquePointer(l), 0)
+            gtk_label_set_justify(OpaquePointer(l), GTK_JUSTIFY_LEFT)
+            gtk_widget_add_css_class(l, "swiftly-leise")
+            anhaengen(feld, l)
+        }
+        return feld
     }
 }

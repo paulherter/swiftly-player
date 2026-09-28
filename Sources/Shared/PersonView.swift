@@ -181,7 +181,7 @@ struct PersonView: View {
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(ganzeBiografie ? nil : 4)
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { ganzeBiografie.toggle() }
+                    withAnimation(Stil.sprung) { ganzeBiografie.toggle() }
                 } label: {
                     Text(ganzeBiografie ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
                 }
@@ -205,16 +205,17 @@ struct PersonView: View {
         // beim Laden, bei einer Person ohne Titel und bei einem stummen
         // Server dieselbe. Drei Lagen, ein Bild.
         if !geladen {
-            HStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                ForEach(0 ..< 3, id: \.self) { _ in
-                    Ladefeld()
-                        .frame(width: Stil.reihenBreite(breit: breit),
-                               height: Stil.reihenHoehe(breit: breit))
-                }
-            }
-            .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, Stil.reihenAbstand)
-            .transition(.opacity)
+            // **In der Form der Reihe, die kommt: Ueberschrift und Kacheln.**
+            // Vorher standen nur drei Kacheln ohne Ueberschrift da; beim
+            // Eintreffen schob die Ueberschrift alles um ihre Hoehe nach
+            // unten. Die Kacheln liegen in einer Flaeche, die nicht breiter
+            // wird als der Schirm — siehe die Spalte oben.
+            Color.clear
+                .frame(height: Stil.reihenHoehe(breit: breit) + 30)
+                .overlay(alignment: .topLeading) { Reihenplatzhalter() }
+                .clipped()
+                .padding(.top, Stil.reihenAbstand)
+                .transition(.opacity)
         } else {
             if !titel.isEmpty {
                 Abschnitt(titel: "Auf deinem Server") {
@@ -224,6 +225,7 @@ struct PersonView: View {
                                 PosterTile(model: model, item: item)
                             }
                             .buttonStyle(Stil.Druckknopf())
+                            .kachelmenue(item, model: model)
                         }
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))

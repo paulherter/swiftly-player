@@ -160,6 +160,22 @@ object TvReihenBringIntoView : BringIntoViewSpec {
     }
 }
 
+/**
+ * **Wie `TvReihenBringIntoView`, aber eine ganz sichtbare Kachel bleibt stehen.** Folgenreihe der
+ * Serienseite: runter aus der Kopfzeile landet der Fokus auf der Kachel, die am naechsten unter dem Knopf
+ * liegt — der sichtbar ersten. Der Pivot schob sie dann auf 30 % Breite, die Reihe rueckte eine Folge
+ * nach rechts, und beim naechsten Runter lag die Folge davor unter dem Knopf: 4→3→2→1. Jetzt bewegt sich
+ * die Reihe nur, wenn die Kachel nicht ganz im Bild steht; dann wie bisher auf den Pivot.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+object TvStehendeReihe : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        if (containerSize <= 0f) return 0f
+        if (offset >= -0.5f && offset + size <= containerSize + 0.5f) return 0f
+        return TvReihenBringIntoView.calculateScrollDistance(offset, size, containerSize)
+    }
+}
+
 /** Wie ein Abschnitt beim Fokuseintritt ins Bild kommt — siehe `TvAbschnitte.betreten`. */
 enum class TvAbschnittsart {
     /** Kopf mit Knopfreihe: Seite ganz nach oben, voller Kopf sichtbar. */
@@ -325,6 +341,8 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val lauf = rememberCoroutineScope()
 
     suspend fun laden() {
+        // Laeuft ein Kontowechsel, laedt der — nicht die Rueckkehr auf die Seite (sie holte sonst das alte Konto).
+        if (de.paulherter.swiftly.Kontowechselflug.wartet && !de.paulherter.swiftly.Kontowechselflug.gewechselt) return
         runCatching {
             withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
@@ -353,7 +371,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var hatGespielt by remember { mutableStateOf(false) }
     LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; laden() } }
     // Und noch einmal, wenn die Endmeldung durch ist — erst dann kennt der Server die Stelle.
-    val beendet = app.wiedergabeBeendet.intValue
+    val beendet = app.wiedergabeBeendet.intValue + app.sehstandGeaendert.intValue
     val beendetAnfangs = remember { beendet }
     LaunchedEffect(beendet) { if (beendet != beendetAnfangs) laden() }
     val lebenszyklus = LocalLifecycleOwner.current.lifecycle
@@ -569,19 +587,22 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                 CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
                                     LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
                                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        items(e.startGenres) { g -> TvChip(g, false) { oeffnen(Ziel(g, g, "Genre")) } }
+                                        // Mit Schluessel wie jede andere Reihe; `distinct`, weil ein doppelter Schluessel wirft.
+                                        items(e.startGenres.distinct(), key = { it }) { g -> TvChip(g, false) { oeffnen(Ziel(g, g, "Genre")) } }
                                     }
                                 }
                             }
                             // **Zwei Platzhalterreihen, nicht eine** — die erste quer wie
                             // „Weiterschauen", die zweite hochkant wie die uebrigen. So springt beim
                             // Ankommen der Reihen nichts in der Form um.
-                            if (liste == null) {
+                            // Waehrend eines Kontowechsels keine Reihen (Entwurf D) — nach der Landung gestaffelt.
+                            val wechselt = de.paulherter.swiftly.Kontowechselflug.wartet
+                            if (liste == null && !wechselt) {
                                 key("platzhalter-quer") { TvReihenplatzhalter(quer = true) }
                                 key("platzhalter-plakat") { TvReihenplatzhalter(quer = false) }
                             }
-                            liste.orEmpty().forEachIndexed { i, r -> key("$i-${r.titel}") {
-                                Column(Modifier.onGloballyPositioned { c ->
+                            (if (wechselt) emptyList() else liste.orEmpty()).forEachIndexed { i, r -> key("$i-${r.titel}") {
+                                Column(Modifier.reihenauftritt(i).onGloballyPositioned { c ->
                                     val lage = c.positionInParent().y.roundToInt() to c.size.height
                                     if (reihenlagen[i] != lage) reihenlagen[i] = lage
                                 }) {
@@ -597,11 +618,20 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                         LazyRow(state = zeile, contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
                                                 horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
                                             itemsIndexed(r.kacheln, key = { _, k -> k.id }) { _, k ->
-                                                TvKachel(if (r.quer) k.quer ?: k.plakat else k.plakat, k.name, k.unterzeile, r.quer,
+                                                // „Weiterschauen" nennt die Restzeit — „S2 · F5 · noch 12 Min." (Entwurf D).
+                                                TvKachel(if (r.quer) k.quer ?: k.plakat else k.plakat, k.name,
+                                                         (if (r.quer) k.weiterschauenzeile else null) ?: k.unterzeile, r.quer,
                                                          if (r.quer) k.fortschritt else null,
                                                          marke = k.marke, markenzahl = k.markenzahl,
                                                          modifier = Modifier.focusRequester(anfrage("$i|${k.id}")),
-                                                         fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i; zuletztAmTitel = "$i|${k.id}" } }) {
+                                                         fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i; zuletztAmTitel = "$i|${k.id}" } },
+                                                         // Menue-Taste oder langes OK: dasselbe Kachelmenue wie am Telefon.
+                                                         lange = {
+                                                             de.paulherter.swiftly.kachelmenueTafel(app, de.paulherter.swiftly.Kachelmenuewunsch(
+                                                                 k.id, k.name, k.typ, null, r.quer, k.angabenzeile, weiterschauen = r.quer)) { z ->
+                                                                 if (z.id == k.id) oeffnenMitVorab(k) else oeffnen(z)
+                                                             }
+                                                         }) {
                                                     // „Weiterschauen" spielt direkt ab, wie auf tvOS.
                                                     if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnenMitVorab(k) }
                                                     else oeffnenMitVorab(k)

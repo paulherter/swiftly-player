@@ -1,6 +1,9 @@
 import CGtk
 import Foundation
 import JellyfinKit
+#if os(Windows)
+import WinSDK
+#endif
 
 /// Einstiegspunkt. Alles Weitere steht in ``App``.
 ///
@@ -98,6 +101,16 @@ nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer
 // 32 ist der Wert, den sie seit jeher trägt (das sechste Bit).
 #if os(Windows)
 let merkmale = GApplicationFlags(rawValue: 32)
+// **Der Installer muss sehen, dass Swiftly laeuft.** `Swiftly.iss` nennt
+// dieselben Namen unter `AppMutex`; steht einer davon, warnt Setup, statt an
+// einer gesperrten EXE zu scheitern. Einmal je Sitzung und einmal global, wie
+// Inno Setup es empfiehlt — so sieht auch ein Installer aus einer anderen
+// Anmeldung die laufende App. Die Griffe bleiben offen, bis der Prozess
+// endet; Windows raeumt sie dann ab. Schlaegt der globale fehl, reicht der
+// lokale.
+nonisolated(unsafe) let laufmarken: [HANDLE?] = ["SwiftlyPlayer", "Global\\SwiftlyPlayer"].map {
+    $0.withCString(encodedAs: UTF16.self) { CreateMutexW(nil, false, $0) }
+}
 #else
 let merkmale = GApplicationFlags(rawValue: 0)
 #endif

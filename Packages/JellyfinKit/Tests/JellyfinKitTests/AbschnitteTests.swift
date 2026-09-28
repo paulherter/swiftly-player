@@ -41,9 +41,23 @@ struct AbschnittEinlesenTests {
 
     @Test("Eine unbekannte Art wirft nicht, sie heißt unbekannt")
     func unbekannteArt() throws {
-        let d = #"{ "Items": [ { "Type": "Intro", "StartTicks": 0, "EndTicks": 10000000 } ] }"#
-            .data(using: .utf8)!
-        #expect(try JSONDecoder().decode(AbschnittsAntwort.self, from: d).items[0].bis == 1)
+        // Bis 1.0.5 stand hier "Intro" — der Test prüfte die bekannte Art,
+        // und die unbekannte warf die ganze Antwort weg.
+        let d = #"{ "Items": [ { "Type": "Werbepause2030", "StartTicks": 0, "EndTicks": 10000000 },"#
+            + #" { "Type": "Intro", "StartTicks": 0, "EndTicks": 900000000 } ] }"#
+        let a = try JSONDecoder().decode(AbschnittsAntwort.self, from: Data(d.utf8))
+        #expect(a.items.count == 2)
+        #expect(a.items[0].art == .unbekannt)
+        #expect(a.items[0].bis == 1)
+        #expect(a.items[1].art == .vorspann)
+    }
+
+    @Test("Ein kaputter Abschnitt nimmt die anderen nicht mit")
+    func kaputterAbschnitt() throws {
+        let d = #"{ "Items": [ { "Type": "Intro", "StartTicks": "neun", "EndTicks": 1 },"#
+            + #" { "Type": "Outro", "StartTicks": 0, "EndTicks": 10000000 }, 42, null ] }"#
+        let a = try JSONDecoder().decode(AbschnittsAntwort.self, from: Data(d.utf8))
+        #expect(a.items.map(\.art) == [.abspann])
     }
 }
 
@@ -255,5 +269,28 @@ struct AbschnittslogikTests {
                                         abschnitte: [ueberall, vorspann],
                                         hatNaechsteFolge: true)
                 == .ueberspringen(nach: 90, art: .vorspann))
+    }
+
+    /// findroid#1123: nach dem Sprung ans Segmentende stand der Abspieler
+    /// knapp davor — Millisekunden gerundet oder auf dem Schlüsselbild vorher
+    /// — und bot denselben Sprung erneut an. Mit automatischem Überspringen
+    /// wird daraus eine Schleife. Hier: das Ziel liegt nicht mehr im Abschnitt,
+    /// und alles bis ``Abschnittslogik/mindestrest`` davor bietet ihn nicht an.
+    @Test("Nach dem Sprung ans Abschnittsende kein zweites Angebot — auch leicht davor")
+    func keinZweitesAngebot() throws {
+        // Ein Ende, das sich nicht glatt in Millisekunden schreiben lässt.
+        let json = #"{"Type":"Intro","StartTicks":120000000,"EndTicks":899999999}"#
+        let intro = try JSONDecoder().decode(Abschnitt.self, from: Data(json.utf8))
+        guard case let .ueberspringen(nach, _) = Abschnittslogik.angebot(
+            position: 20, dauer: 1500, abschnitte: [intro], hatNaechsteFolge: true) else {
+            Issue.record("kein Angebot im Vorspann"); return
+        }
+        // So wie der Abspieler springt: ganze Millisekunden, abgeschnitten.
+        let gelandet = Double(Int(nach * 1000)) / 1000
+        for daneben in [0, 0.001, 0.5, 1.0, Abschnittslogik.mindestrest - 0.01] {
+            #expect(Abschnittslogik.angebot(position: gelandet - daneben, dauer: 1500,
+                                            abschnitte: [intro], hatNaechsteFolge: true)
+                    == .keiner, "gelandet \(daneben) s vor dem Ende")
+        }
     }
 }

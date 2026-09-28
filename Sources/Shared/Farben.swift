@@ -1,3 +1,4 @@
+import JellyfinKit
 import SwiftUI
 
 /// Die Farben — das einzige Stück Erscheinungsbild, das beide Plattformen
@@ -238,4 +239,79 @@ enum Stil {
     /// die fuenf semantische Farben vermeiden sollen. Gerechnet auf `grund`:
     /// 6,30:1.
     static let fehler  = Color(red: 0.937, green: 0.396, blue: 0.404)   // #EF6567
+}
+
+// MARK: - Farbe aus dem Bild
+
+/// **Wie stark eine Seite die Farbe ihres Kopfbilds annimmt** — Fernseher
+/// und iPhone mit denselben Zahlen (`Bildton.farbe(_:bei:)`). Aus dem Bild
+/// kommt nur der Ton; Saettigung und Helligkeit setzt die App, damit jede
+/// Seite gleich ruhig bleibt, gleich wie bunt das Bild ist.
+///
+/// `naehe` ist 1 an der Kulisse (oben rechts) und faellt nach links unten.
+/// Die Farbe bleibt so dunkel, dass weisse Schrift ueberall steht: am
+/// hellsten Punkt, den auf dem iPhone Text erreicht (Unterkante des
+/// Kopfbilds, `naehe` ≤ 0,8), liegt die Leuchtdichte bei hoechstens 0,024 —
+/// `schriftSehrLeise` hat dort noch 5 : 1.
+extension Stil {
+    /// Saettigung fern der Kulisse.
+    static let bildtonSaettigung = Bildtonrechnung.saettigung
+    /// Was an der Kulisse an Saettigung dazukommt.
+    static let bildtonSaettigungNah = Bildtonrechnung.saettigungNah
+    /// Helligkeit fern der Kulisse — knapp ueber `grund`.
+    static let bildtonHelligkeit = Bildtonrechnung.helligkeit
+    /// Was an der Kulisse an Helligkeit dazukommt.
+    static let bildtonHelligkeitNah = Bildtonrechnung.helligkeitNah
+    /// Wie schnell die Helligkeit mit der Entfernung faellt (Exponent).
+    static let bildtonAbfall = Bildtonrechnung.abfall
+    /// Wie weit die Nebentoene vom Hauptton abweichen duerfen (Anteil).
+    static let bildtonSpannweite = Bildtonrechnung.spannweite
+}
+
+// MARK: - Flaechen ueber Bildfarbe
+
+/// **Durchsichtig statt `flaeche`, wo Bildfarbe dahinter liegt** — dieselbe
+/// Deckkraft wie in Swiftly Music (`Seitenfarbe.laufend`). Ein festes Grau steht auf einer gefaerbten Seite wie ein
+/// fremder Block; Weiss mit wenig Deckkraft nimmt die Farbe darunter auf.
+/// Nur dort, wo wirklich Farbe liegt (Film- und Serienseite); sonst bleibt
+/// `flaeche`. Kein Glas, keine Unschaerfe.
+extension Stil {
+    /// Knopf oder hervorgehobene Zeile ueber Bildfarbe: weiss 8 %.
+    static let flaecheDurchsichtig = Color.white.opacity(0.08)
+    // Aktiv traegt keine eigene Flaeche: der Zustand steht im Zeichen
+    // (Akzent), die Flaeche bleibt wie bei den Nachbarn (Paul, 26.09.:
+    // die volle Tuerkisflaeche passte nicht in die Reihe).
+}
+
+/// **Liegt Bildfarbe dahinter?** (Versuch `experiment-glas`) Dann tragen
+/// Knöpfe durchsichtige Flächen statt `flaeche` — siehe
+/// `Stil.flaecheDurchsichtig`. Gesetzt von Film- und Serienseite — hier und
+/// nicht in `Stil.swift`, damit der Mac dieselben Schlüssel liest.
+private struct AufBildfarbeSchluessel: EnvironmentKey {
+    static let defaultValue = false
+}
+
+/// Das Kopfbild, dessen Farbe dahinter liegt — für Tafeln, die über Inhalt
+/// aufgehen und deshalb deckend sein müssen (``Aufklappliste``).
+private struct BildfarbeQuelleSchluessel: EnvironmentKey {
+    static let defaultValue: URL? = nil
+}
+
+extension EnvironmentValues {
+    var aufBildfarbe: Bool {
+        get { self[AufBildfarbeSchluessel.self] }
+        set { self[AufBildfarbeSchluessel.self] = newValue }
+    }
+    var bildfarbeQuelle: URL? {
+        get { self[BildfarbeQuelleSchluessel.self] }
+        set { self[BildfarbeQuelleSchluessel.self] = newValue }
+    }
+}
+
+extension Stil {
+    /// Die Fläche eines Knopfs — fest auf `grund`, durchsichtig über
+    /// Bildfarbe. **Aktiv ändert sie nicht**: den Zustand trägt das Zeichen.
+    static func knopfflaeche(aufBild: Bool) -> Color {
+        aufBild ? flaecheDurchsichtig : flaeche
+    }
 }

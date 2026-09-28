@@ -113,6 +113,12 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     }
     // Je Bereich ein eigener Stapel — `pfade[b.rawValue]` in `HauptView`.
     val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
+    // **Beim Tipp in der Profilauswahl** (Entwurf D) faehrt ein Standbild der Seite weg; darunter springen
+    // Stapel und Bereich hier ohne Animation zurueck — sichtbar ist davon nichts (`Kontowechselflug.zurueck`).
+    val zurueckStand = remember { Kontowechselflug.zurueck }
+    LaunchedEffect(Kontowechselflug.zurueck) {
+        if (Kontowechselflug.zurueck != zurueckStand && Kontowechselflug.wartet) { stapel.clear(); bereich = Bereich.Start }
+    }
     val oben = stapel[bereich].orEmpty()
     val lauf = rememberCoroutineScope()
     /** Wie weit die oberste Seite nach rechts hinaus ist: 0 steht, 1 ist draussen. */
@@ -191,8 +197,10 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     LaunchedEffect(spiel) {
         if (spiel == null || spiel === app.spielUebergeben) return@LaunchedEffect
         app.spielUebergeben = spiel
+        // Aus einer Uebergabe ohne eigene Blende: die Karte liegt darueber (`Uebergabe`).
+        val ein = if (Uebergabe.empfang != null) de.paulherter.swiftly.R.anim.halten else de.paulherter.swiftly.R.anim.player_ein
         kontext.startActivity(android.content.Intent(kontext, PlayerAktivitaet::class.java),
-            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_ein, de.paulherter.swiftly.R.anim.halten).toBundle())
+            android.app.ActivityOptions.makeCustomAnimation(kontext, ein, de.paulherter.swiftly.R.anim.halten).toBundle())
     }
 
     val waehlen: (Bereich) -> Unit = { b ->
@@ -217,7 +225,9 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val downloadsAn = app.einstellungen.downloadsAn
     LaunchedEffect(downloadsAn) { if (!downloadsAn && bereich == Bereich.Downloads) waehlen(Bereich.Start) }
 
+    var kachelmenue by remember { mutableStateOf<Kachelmenuewunsch?>(null) }
     CompositionLocalProvider(LocalBereichsmass provides bereichsmass, LocalFortschrittZeigen provides app.einstellungen.fortschritt,
+                              LocalKachelmenue provides { w: Kachelmenuewunsch -> kachelmenue = w },
                               LocalLadepuls provides Ladepuls()) {
         Box(Modifier.fillMaxSize().background(Stil.grund)) {
             val ab = if (bewegt && oben.isNotEmpty()) oben.size - 1 else oben.size
@@ -242,8 +252,20 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                 }
             }
             // Ueber allem, auch ueber der Leiste: das Blatt haengt auf iOS hinter `.bereichsleiste()`.
+            // „Filmabend verlassen · Wieder beitreten" nach dem Schliessen des Players (`Gemeinsamblaetter`).
+            // Auf einer Wurzelseite ueber der Leiste, sonst am Rand wie jeder Hinweis.
+            if (spiel == null) Rueckwegstreifen(app, if (oben.isEmpty()) Stil.leisteHoehe + 12.dp else 34.dp)
+            // Eine Meldung der Gruppe — derselbe Streifen wie auf jeder Seite; im Player zeigt der sie.
+            if (spiel == null) Hinweisstreifen(app.gemeinsamFehler.value, Modifier.align(Alignment.BottomCenter)
+                .padding(bottom = if (oben.isEmpty()) Stil.leisteHoehe else 0.dp)) { app.gemeinsamFehler.value = null }
             // Solange der Player laeuft, gehoert das Blatt ihm.
             if (spiel == null) Blattauflage(app)
+            // „Wo weiterschauen?" — die Karte waechst aus dem Abzeichen.
+            if (spiel == null) Uebernahmeauflage(app)
+            // Das Kachelmenue ueber allem (`Kachelmenue`), und was es meldet.
+            if (spiel == null) Kachelmenueauflage(app, kachelmenue, oeffnen) { kachelmenue = null }
+            if (spiel == null) Hinweisstreifen(app.meldung.value, Modifier.align(Alignment.BottomCenter)
+                .padding(bottom = if (oben.isEmpty()) Stil.leisteHoehe else 0.dp)) { app.meldung.value = null }
         }
     }
 }

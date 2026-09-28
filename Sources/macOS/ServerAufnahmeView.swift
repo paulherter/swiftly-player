@@ -137,6 +137,7 @@ struct ServerAufnahmeView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.akzent)
+                .accessibilityHidden(true)
             Text(verbatim: "\(server.name) · Jellyfin \(server.fassung)")
                 .font(Stil.zweitzeile)
                 .foregroundStyle(Stil.schriftSehrLeise)
@@ -251,8 +252,16 @@ struct ServerAufnahmeView: View {
     private func pruefen() {
         guard !adresse.isEmpty, !pruefe else { return }
         pruefe = true
+        let geprueft = adresse
         Task {
             let antwort = await model.serverPruefen(adresse, koepfe: koepfe.koepfe)
+            // Inzwischen eine andere Adresse im Feld: die Antwort gehört zur
+            // alten und bleibt liegen.
+            guard adresse == geprueft else {
+                model.errorMessage = nil
+                pruefe = false
+                return
+            }
             withAnimation(Stil.sprung) { server = antwort }
             pruefe = false
             if antwort != nil { feld = .benutzer }

@@ -95,6 +95,15 @@ struct Startanimation: UIViewRepresentable {
             return huelle
         }
 
+        // **Bei „Bewegung reduzieren" das Standbild, nicht die Fahrt.** Die
+        // Marke steht sofort in ihrer Endlage und bleibt so lange stehen wie
+        // sonst das Ende der Animation; danach blendet die App auf wie immer.
+        if Stil.bewegungReduziert {
+            ansicht.currentProgress = 1
+            weiter()
+            return huelle
+        }
+
         ansicht.play { _ in
             // Das Standbild am Ende einen Moment stehen lassen, bevor die App
             // aufblendet — sonst wirkt die Marke nur durchgereicht.
@@ -165,6 +174,12 @@ struct Startanimation: NSViewRepresentable {
 
         guard ansicht.animation != nil else {
             einmal.ruf(fertig)
+            return huelle
+        }
+        // Wie auf iOS: bei „Bewegung reduzieren" gleich das Standbild.
+        if Stil.bewegungReduziert {
+            ansicht.currentProgress = 1
+            weiter()
             return huelle
         }
         ansicht.play { _ in weiter() }

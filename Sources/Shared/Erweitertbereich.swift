@@ -32,6 +32,7 @@ struct Erweitertbereich: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .rotationEffect(.degrees(offen ? 90 : 0))
+                            .accessibilityHidden(true)
                     }
                     .font(Stil.klein)
                     .foregroundStyle(Stil.schriftLeise)
@@ -39,6 +40,7 @@ struct Erweitertbereich: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Stil.Druckknopf())
+                .accessibilityHint(offen ? Text("Zuklappen") : Text("Aufklappen"))
             }
 
             if offen || aufgeklappt { inhalt }
@@ -89,6 +91,7 @@ struct Erweitertbereich: View {
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "plus")
+                        .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }
             }

@@ -93,7 +93,9 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     val lauf = rememberCoroutineScope()
     val verbunden = app.seerrVerbunden.value
     LaunchedEffect(verbunden) {
-        traegt = if (verbunden) withContext(Dispatchers.IO) { app.kern.seerrGilt().await() } else null
+        // Wie auf dem Telefon: ein Fehler heisst „traegt nicht", kein Absturz aus dem Effekt.
+        traegt = if (!verbunden) null else try { withContext(Dispatchers.IO) { app.kern.seerrGilt().await() } }
+                 catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
     }
     fun verbinden() {
         if (verbindet || adresse.isBlank() || benutzer.isBlank() || passwort.isBlank()) return

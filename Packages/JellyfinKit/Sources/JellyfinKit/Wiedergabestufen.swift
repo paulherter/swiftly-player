@@ -39,7 +39,7 @@ public enum Schlafzeiten {
 public enum Spielzeit {
     public static func text(_ sekunden: Double) -> String {
         guard sekunden.isFinite, sekunden >= 0 else { return "0:00" }
-        let ganz = Int(sekunden)
+        let ganz = Int(gekappt: sekunden)
         let s = ganz % 60, m = (ganz / 60) % 60, h = ganz / 3600
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s)
                      : String(format: "%d:%02d", m, s)

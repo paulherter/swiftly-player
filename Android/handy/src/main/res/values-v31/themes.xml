@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ab Android 12 zeigt das System vor der App einen eigenen Startschirm mit dem App-Symbol. Danach
+         kam der Startvorhang mit der Marke noch einmal — zwei Starts hintereinander. Wie der
+         Startbildschirm auf Apple: nur der Grund, die Marke bringt die Lottie-Animation. -->
+    <style name="Swiftly" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/grund</item>
+        <item name="android:colorBackground">@color/grund</item>
+        <item name="android:windowSplashScreenBackground">@color/grund</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/grund</item>
+    </style>
+</resources>

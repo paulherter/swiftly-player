@@ -119,6 +119,13 @@ class Einstellungen(ablage: Ablage) {
     /** Ohne Antwort vom Server: erlaubt — dann bleibt die Qualitätswahl im Player. */
     val umwandelnErlaubt: Boolean
         get() = umwandelnErlaubtKonto != "0"
+    /**
+     * Ob beim Laden eine kleinere Qualitaet waehlbar ist — Bild- und Tonrecht, entschieden im Paket
+     * (`Downloadqualitaet.waehlbar`). `"1"`/`"0"`, ohne Antwort erlaubt.
+     */
+    var downloadqualitaetKonto by mutableStateOf("")
+    val downloadqualitaetWaehlbar: Boolean
+        get() = downloadqualitaetKonto != "0"
     /** H5: Originaldateien sind gross — ueber Mobilfunk wird gewartet. */
     var nurUeberWLAN by Merkwert(a, "nurUeberWLAN", bool("nurUeberWLAN", true), jaNein)
     /**
@@ -134,6 +141,8 @@ class Einstellungen(ablage: Ablage) {
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }
     /** Aus, bis ihn jemand sucht — er aendert nichts an der Wiedergabe, er zeigt nur, was sie tut. */
     var technikschild by Merkwert(a, "technikschild", bool("technikschild", false), jaNein)
+    /** „Gedrueckt halten fuer 2×" — Vorgabe an, wie `festhaltenDoppelt` auf iOS. */
+    var festhaltenDoppelt by Merkwert(a, "festhaltenDoppelt", bool("festhaltenDoppelt", true), jaNein)
     /**
      * **Der Messmodus des Technikschilds** — alle Zeilen, ohne Hoechsthoehe. Kein Schalter: Werkzeug fuer die
      * Fehlersuche, nicht fuer Zuschauer (Vorlage `technikschildMessen`, dort ein Startargument). Gesetzt ueber

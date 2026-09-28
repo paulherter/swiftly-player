@@ -6,6 +6,9 @@ import JellyfinKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+#if os(Windows)
+import WinSDK
+#endif
 
 /// **Nach einer neueren Fassung sehen und sie einspielen — nur unter Windows.**
 ///
@@ -41,6 +44,7 @@ enum Aktualisierung {
     enum Fehler: Error {
         case keineAntwort
         case keinInstallierer
+        case unvollstaendig
     }
 
     // MARK: Suchen
@@ -105,7 +109,17 @@ enum Aktualisierung {
         var anfrage = URLRequest(url: stand.adresse)
         anfrage.setValue("Swiftly/\(Fassung.nummer)", forHTTPHeaderField: "User-Agent")
         anfrage.timeoutInterval = 600
-        let (daten, _) = try await URLSession.shared.data(for: anfrage)
+        let (daten, antwort) = try await URLSession.shared.data(for: anfrage)
+        // **Nur starten, was wirklich der Installer ist.** Hier wurde jede
+        // Antwort als `.exe` geschrieben und ausgefuehrt — auch eine
+        // Fehlerseite von GitHub (404, 503) oder eine abgerissene Uebertragung.
+        // Windows meldete dann „keine gueltige Anwendung", und die App hatte
+        // sich zu dem Zeitpunkt schon beendet. Die Groesse nennt GitHub mit
+        // dem Anhang; stimmt sie nicht, war es nicht die ganze Datei.
+        guard let http = antwort as? HTTPURLResponse, http.statusCode == 200
+        else { throw Fehler.keineAntwort }
+        guard stand.groesse <= 0 || daten.count == stand.groesse
+        else { throw Fehler.unvollstaendig }
         let ziel = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("Swiftly-\(stand.fassung)-Setup.exe")
         try? FileManager.default.removeItem(at: ziel)
@@ -116,6 +130,11 @@ enum Aktualisierung {
     /// Den Installer starten und die App beenden — er kann eine laufende
     /// `Swiftly.exe` nicht ersetzen.
     static func einspielen(_ datei: URL) throws {
+        #if os(Windows)
+        // Die Laufmarken zuerst loslassen: der Installer prueft sie beim
+        // Start (`AppMutex`), und die App ist dann erst im Begriff zu gehen.
+        for marke in laufmarken { if let marke { CloseHandle(marke) } }
+        #endif
         let lauf = Process()
         lauf.executableURL = datei
         try lauf.run()

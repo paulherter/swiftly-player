@@ -11,7 +11,18 @@
 
   `user` steht hier bewusst: eingetragen hat es der Besitzer des Geräts
   selbst, und ohne diesen Eintrag ist ein eigener Server nicht erreichbar.
-  Klartext bleibt getrennt davon erlaubt (Manifest), für Server ohne TLS.
+
+  **Klartext (http) bleibt für jede Adresse erlaubt — bewusst.**
+
+  Jellyfin läuft meist zu Hause ohne TLS: `http://192.168.…:8096`,
+  `http://nas.local:8096`, ein Tailscale-Name oder eine öffentliche Adresse
+  ohne Zertifikat. Die Adresse tippt der Nutzer frei ein; eine Liste
+  erlaubter Rechner (`domain-config`) kann es darum nicht geben, und
+  IP-Bereiche wie 192.168.0.0/16 kennt diese Datei nicht. Ein Verbot hätte
+  genau diese Server gebrochen. Ohne Schema nimmt die App https, im
+  Heimnetz http (`ServerURL` im Paket). Die Regel steht nur hier — nicht
+  zusätzlich als `usesCleartextTraffic` im Manifest, das ab Android 7 von
+  dieser Datei ohnehin überstimmt wird.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">

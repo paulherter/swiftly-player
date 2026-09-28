@@ -201,10 +201,18 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         ["Series", "Season", "BoxSet", "Folder", "CollectionFolder"].contains(type ?? "")
     }
 
-    /// „S1 • E3" — kurz, für Knopfbeschriftungen.
+    /// „S1 • F3" auf Deutsch, „S1 • E3" auf Englisch — kurz, für
+    /// Knopfbeschriftungen.
+    ///
+    /// **Der Buchstabe ist übersetzt, nicht fest verdrahtet.** Stand hier
+    /// einmal immer als „E" — auf Deutsch stimmt das nicht: Netflix DE und
+    /// die Apple-TV-App zeigen „F" wie „Folge", „E" gehört nur zu
+    /// „Episode". An den Kacheln stand deshalb „F6, F7", am Abspielknopf
+    /// „E7" — derselbe Wert, zwei Sprachen an einer Stelle (gemeldet
+    /// 27.09.2026).
     public var folgenkuerzel: String? {
         guard let staffel = parentIndexNumber, let folge = indexNumber else { return nil }
-        return "S\(staffel) • E\(folge)"
+        return uebersetzt("S\(staffel) • F\(folge)")
     }
 
     /// Anteil des schon Gesehenen, 0 bis 1 — für die Fortschrittsbalken.
@@ -255,12 +263,18 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         }
     }
 
-    /// „S1 • E3 • 21 Jump Street" — leer bei Filmen.
+    /// „S1 • F3 • 21 Jump Street" auf Deutsch, „S1 • E3 • 21 Jump Street"
+    /// auf Englisch — beim Film das Jahr.
+    ///
+    /// **Das Jahr beim Film stand hier einmal nicht.** Unter „Weiterschauen"
+    /// stand bei Filmen dann nur die Restzeit, obwohl überall sonst das Jahr
+    /// steht (Liste 23.09.). Eine Stelle für alle Plattformen.
     public var kontextzeile: String? {
         var teile: [String] = []
-        if let staffel = parentIndexNumber { teile.append("S\(staffel)") }
-        if let folge = indexNumber { teile.append("E\(folge)") }
+        if let staffel = parentIndexNumber { teile.append(uebersetzt("S\(staffel)")) }
+        if let folge = indexNumber { teile.append(uebersetzt("F\(folge)")) }
         if let serie = seriesName { teile.append(serie) }
+        if teile.isEmpty, type == "Movie", let jahr = productionYear { teile.append(String(jahr)) }
         return teile.isEmpty ? nil : teile.joined(separator: " • ")
     }
 
@@ -356,6 +370,30 @@ public struct UserItemData: Codable, Sendable, Equatable {
     /// Deshalb konnte eine Serienkachel nichts sagen: der Fortschrittsbalken
     /// zeigt den Stand der angefangenen *Folge*, nicht den der Serie.
     public let unplayedItemCount: Int?
+    /// `LastPlayedDate`, **so wie der Server es schickt** — als Text.
+    ///
+    /// Nicht als `Date`: `Item` wird an zwei Stellen mit dem gewoehnlichen
+    /// `JSONDecoder` gelesen (tvOS-Oberregal, Kern auf Android), und der
+    /// liest ein Datum als Zahl. Ein `Date`-Feld haette dort den ganzen Titel
+    /// unlesbar gemacht. Gelesen wird es ueber ``zuletztGespielt``.
+    public let lastPlayedDate: String?
+
+    public init(playbackPositionTicks: Int64? = nil, played: Bool? = nil,
+                isFavorite: Bool? = nil, playedPercentage: Double? = nil,
+                unplayedItemCount: Int? = nil, lastPlayedDate: String? = nil) {
+        self.playbackPositionTicks = playbackPositionTicks
+        self.played = played
+        self.isFavorite = isFavorite
+        self.playedPercentage = playedPercentage
+        self.unplayedItemCount = unplayedItemCount
+        self.lastPlayedDate = lastPlayedDate
+    }
+
+    /// Wann zuletzt gespielt — fuer „neuerer Stand gewinnt" (Nachmeldung).
+    public var zuletztGespielt: Date? {
+        guard let text = lastPlayedDate else { return nil }
+        return Zeitstempel.lesen(text)
+    }
 
     enum CodingKeys: String, CodingKey {
         case playbackPositionTicks = "PlaybackPositionTicks"
@@ -363,6 +401,28 @@ public struct UserItemData: Codable, Sendable, Equatable {
         case isFavorite = "IsFavorite"
         case playedPercentage = "PlayedPercentage"
         case unplayedItemCount = "UnplayedItemCount"
+        case lastPlayedDate = "LastPlayedDate"
+    }
+}
+
+extension UserItemData {
+    /// **Der Anteil wird beim Lesen auf 0 bis 100 begrenzt.**
+    ///
+    /// Die Kacheln schreiben ihn als ganze Zahl in die Bedienhilfe
+    /// (`Int(anteil * 100)`), und `Int` bricht die App ab, sobald der Wert
+    /// nicht hineinpasst. Ein Server mit kaputter Laufzeit — ein Tick lang,
+    /// Stand bei einer Stunde — liefert genau so einen. Nachgestellt im
+    /// tvOS-Simulator: die Bibliothek stuerzte beim ersten Zeichnen der
+    /// Kachel ab. Hier einmal begrenzt, gilt es fuer jede Stelle.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        playbackPositionTicks = try c.decodeIfPresent(Int64.self, forKey: .playbackPositionTicks)
+        played = try c.decodeIfPresent(Bool.self, forKey: .played)
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite)
+        playedPercentage = try c.decodeIfPresent(Double.self, forKey: .playedPercentage)
+            .flatMap { $0.isFinite ? min(max($0, 0), 100) : nil }
+        unplayedItemCount = try c.decodeIfPresent(Int.self, forKey: .unplayedItemCount)
+        lastPlayedDate = try c.decodeIfPresent(String.self, forKey: .lastPlayedDate)
     }
 }
 
@@ -403,10 +463,29 @@ public struct MediaURL: Codable, Sendable, Hashable {
 public struct PlaybackInfoResponse: Codable, Sendable {
     public let mediaSources: [MediaSource]
     public let playSessionId: String?
+    /// Warum der Server keine Fassung nennt: `NotAllowed`,
+    /// `NoCompatibleStream`, `RateLimitExceeded`. Kommt nur zusammen mit einer
+    /// leeren Quellenliste — siehe ``JellyfinError/wiedergabeAbgelehnt(_:)``.
+    public let errorCode: String?
+
+    public init(mediaSources: [MediaSource], playSessionId: String?, errorCode: String? = nil) {
+        self.mediaSources = mediaSources; self.playSessionId = playSessionId; self.errorCode = errorCode
+    }
 
     enum CodingKeys: String, CodingKey {
         case mediaSources = "MediaSources"
         case playSessionId = "PlaySessionId"
+        case errorCode = "ErrorCode"
+    }
+
+    /// Eine Ablehnung trägt oft gar keine Quellenliste; ohne `decodeIfPresent`
+    /// wurde daraus „Die Antwort des Servers war unverständlich" statt des
+    /// Grundes.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mediaSources = try c.decodeIfPresent([MediaSource].self, forKey: .mediaSources) ?? []
+        playSessionId = try c.decodeIfPresent(String.self, forKey: .playSessionId)
+        errorCode = try c.decodeIfPresent(String.self, forKey: .errorCode)
     }
 }
 
@@ -425,6 +504,19 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
     /// `-1` heißt „keine". Siehe ``Spurregel``.
     public var defaultAudioStreamIndex: Int?
     public var defaultSubtitleStreamIndex: Int?
+    /// Die Laufzeit der Datei in Ticks (Hundertnanosekunden).
+    public var runTimeTicks: Int64?
+
+    /// Die Laufzeit in Sekunden, wenn der Server sie kennt.
+    ///
+    /// **Wofür.** libVLC 4 nennt bei MPEG-TS über HTTP keine Länge — gemessen
+    /// 25.09.2026: `media.length` bleibt 0, lokal dieselbe Datei hat 60,6 s.
+    /// Ohne Länge gab es keinen Fortschrittsbalken und keine
+    /// Fortschrittsmeldung an den Server. TV-Aufnahmen sind TS.
+    public var laufzeitSekunden: Double? {
+        guard let runTimeTicks, runTimeTicks > 0 else { return nil }
+        return Double(runTimeTicks) / 10_000_000
+    }
 
     /// Bildhöhe der Videospur — für „2160p".
     public var hoehe: Int? {
@@ -443,6 +535,7 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
         case mediaStreams = "MediaStreams"
         case defaultAudioStreamIndex = "DefaultAudioStreamIndex"
         case defaultSubtitleStreamIndex = "DefaultSubtitleStreamIndex"
+        case runTimeTicks = "RunTimeTicks"
     }
 
     /// Wie der Server diese Quelle ausliefern würde. Das ist die Zahl, auf die
@@ -510,8 +603,10 @@ public struct MediaStream: Codable, Sendable, Equatable {
                 colorTransfer: String? = nil, colorPrimaries: String? = nil,
                 dvProfile: Int? = nil, dvBlSignalCompatibilityId: Int? = nil,
                 isForced: Bool? = nil, isExternal: Bool? = nil,
-                title: String? = nil, deliveryUrl: String? = nil) {
+                title: String? = nil, deliveryUrl: String? = nil,
+                isHearingImpaired: Bool? = nil, aspectRatio: String? = nil) {
         self.title = title; self.deliveryUrl = deliveryUrl
+        self.isHearingImpaired = isHearingImpaired; self.aspectRatio = aspectRatio
         self.codec = codec; self.type = type; self.language = language
         self.displayTitle = displayTitle; self.channels = channels
         self.isDefault = isDefault; self.index = index
@@ -540,6 +635,14 @@ public struct MediaStream: Codable, Sendable, Equatable {
     /// der Abspieler bei Direct Play nicht, sie darf also beim Abzählen nicht
     /// mitzählen.
     public let isExternal: Bool?
+    /// Untertitel für Hörgeschädigte (SDH/CC): mit Geräuschen und Sprechernamen.
+    /// Die Datei trägt dafür ein eigenes Merkmal, VLC zeigt es nicht an —
+    /// ohne diese Angabe stehen „Deutsch" und „Deutsch" nebeneinander, und
+    /// die automatische Wahl nahm, was zuerst kam.
+    public let isHearingImpaired: Bool?
+    /// Das Seitenverhältnis, in dem das Bild **gezeigt** wird („16:9") —
+    /// bei anamorphem Material nicht Breite zu Höhe der Pixel.
+    public let aspectRatio: String?
     /// Der Spurtitel aus der Datei („Forced", „SDH", „Kommentar") — anders
     /// als `DisplayTitle` ohne vom Server angehängte Wörter.
     public let title: String?
@@ -579,8 +682,8 @@ public struct MediaStream: Codable, Sendable, Equatable {
     private let dvProfileRoh: Zahlwert?
     private let dvKompatibelRoh: Zahlwert?
 
-    public var dvProfile: Int? { dvProfileRoh?.wert.map { Int($0) } }
-    public var dvBlSignalCompatibilityId: Int? { dvKompatibelRoh?.wert.map { Int($0) } }
+    public var dvProfile: Int? { dvProfileRoh?.wert.flatMap { Int(exactly: $0) } }
+    public var dvBlSignalCompatibilityId: Int? { dvKompatibelRoh?.wert.flatMap { Int(exactly: $0) } }
 
     /// Die Bildrate der Spur.
     ///
@@ -636,6 +739,8 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case isDefault = "IsDefault"
         case isForced = "IsForced"
         case isExternal = "IsExternal"
+        case isHearingImpaired = "IsHearingImpaired"
+        case aspectRatio = "AspectRatio"
         case title = "Title"
         case deliveryUrl = "DeliveryUrl"
         case index = "Index"

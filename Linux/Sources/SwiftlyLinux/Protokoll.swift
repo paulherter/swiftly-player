@@ -1,5 +1,8 @@
 import Foundation
 import JellyfinKit
+#if os(Windows)
+import WinSDK
+#endif
 
 /// **Eine Zeile Protokoll, mit Uhrzeit und mit Laufzeit.**
 ///
@@ -90,10 +93,46 @@ enum Protokoll {
     /// Steht hier `UTC`, obwohl der Rechner woanders steht, sind die
     /// Uhrzeiten im Protokoll gegen die des Startprogramms verschoben — und
     /// dann ist die Laufzeit das Mass, nicht die Uhr.
+    ///
+    /// **Unter Windows fragt sie das System selbst** (`GetTimeZoneInformation`).
+    /// Foundation fiel dort beim Tester auf GMT zurueck, obwohl es bei ihm
+    /// 21:43 Ortszeit war. Weicht Foundation ab, gilt der Versatz von Windows
+    /// fuer die ganze App — fuer diese Uhr und fuer jeden `DateFormatter`, der
+    /// danach entsteht.
     static func zeitzoneMelden() {
+        #if os(Windows)
+        if let w = windowsZeitzone() {
+            if TimeZone.current.secondsFromGMT() != w.sekunden,
+               let fest = TimeZone(secondsFromGMT: w.sekunden) {
+                NSTimeZone.default = fest
+                uhr.timeZone = fest
+            }
+            schreib(String(format: "[Protokoll] Zeitzone %@, Versatz %+.1f h (Windows)",
+                           locale: Locale(identifier: "en_US_POSIX"), w.name, Double(w.sekunden) / 3600))
+            return
+        }
+        #endif
         let z = TimeZone.current
         schreib("[Protokoll] Zeitzone \(z.identifier), Versatz \(z.secondsFromGMT() / 3600) h")
     }
+
+    #if os(Windows)
+    /// Name und Versatz zu UTC, wie Windows sie gerade fuehrt — mit Sommerzeit.
+    /// `Bias` ist UTC minus Ortszeit in Minuten, also andersherum als der
+    /// Versatz. Die Konstanten als Zahlen, wie in ``Wachhalter``: die Makros
+    /// kommen mit ihrer Umwandlung nicht verlaesslich nach Swift.
+    private static func windowsZeitzone() -> (name: String, sekunden: Int)? {
+        var info = TIME_ZONE_INFORMATION()
+        let art = GetTimeZoneInformation(&info)
+        guard art != 0xFFFF_FFFF else { return nil }     // TIME_ZONE_ID_INVALID
+        let sommer = art == 2                            // TIME_ZONE_ID_DAYLIGHT
+        let bias = Int(info.Bias) + Int(sommer ? info.DaylightBias : info.StandardBias)
+        let name = withUnsafeBytes(of: sommer ? info.DaylightName : info.StandardName) { roh in
+            String(decoding: roh.bindMemory(to: UInt16.self).prefix { $0 != 0 }, as: UTF16.self)
+        }
+        return (name.isEmpty ? "?" : name, -bias * 60)
+    }
+    #endif
 }
 
 /// **„Protokoll teilen" — die letzte Stunde als Textdatei.**

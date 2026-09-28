@@ -116,6 +116,7 @@ struct WiedergabeEinstellungenView: View {
     }
 
     @AppStorage("technikschild") private var technikschild = false
+    @AppStorage("festhaltenDoppelt") private var festhaltenDoppelt = true
 
     private var verhalten: some View {
         Einstellungsgruppe(titel: "Verhalten") {
@@ -131,6 +132,11 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "waveform.badge.magnifyingglass",
                       titel: Text("Technische Daten im Player"),
                       an: $technikschild)
+            Blattlinie()
+            // Wie bei YouTube: Finger aufs Bild und liegen lassen.
+            Wahlzeile(symbol: "forward.fill", titel: Text("Gedrückt halten für 2×"),
+                      unter: Text("Solange der Finger auf dem Bild liegt"),
+                      an: $festhaltenDoppelt)
             Blattlinie()
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
@@ -313,6 +319,11 @@ struct Wahlzeile: View {
                      gedimmt: !bedienbar) {
             Schalter(an: $an)
         }
+        // **Die ganze Zeile ist der Schalter.** Vorher las VoiceOver den
+        // Titel, die Unterzeile und dann einen Schalter namens „Ein" — drei
+        // Halte, und beim letzten fehlte, was er schaltet.
+        .accessibilityRepresentation { Toggle(isOn: $an) { titel } }
+        .accessibilityHint(unter ?? Text(verbatim: ""))
     }
 }
 
@@ -344,13 +355,15 @@ struct Wertzeile: View {
                         .font(.system(size: 13, weight: .semibold))
                         // Siehe RootView: 28 Prozent sind 2,50:1.
                         .foregroundStyle(Stil.schriftSehrLeise)
+                        .accessibilityHidden(true)
                 }
             }
         }
         if let aktion {
             Button(action: aktion) { rumpf }.buttonStyle(Stil.Druckknopf())
         } else {
-            rumpf
+            // Titel und Wert als eine Angabe („Server, 10.9.11").
+            rumpf.accessibilityElement(children: .combine)
         }
     }
 }
@@ -369,6 +382,9 @@ struct Zeilenaufbau<Rechts: View>: View {
             Image(systemName: symbol)
                 .font(.system(size: 17))
                 .frame(width: 20)
+                // Schmuck: ohne das las VoiceOver Symbolnamen wie
+                // „externaldrive.connected.to.line.below" vor.
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 // **Listenzeile: 15 Semifett.** 16 Regular war genauso laut
                 // wie der Erklaertext darunter — der Name fuehrt, der Wert

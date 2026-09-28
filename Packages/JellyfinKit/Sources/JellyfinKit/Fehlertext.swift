@@ -37,6 +37,15 @@ public func lesbarerFehler(_ fehler: any Error) -> String {
             return uebersetzt("Die Antwort des Servers war unverständlich.")
         case .noPlayableSource:
             return uebersetzt("Der Server nennt keine abspielbare Fassung.")
+        case let .wiedergabeAbgelehnt(grund):
+            switch grund {
+            case "NotAllowed":
+                return uebersetzt("Der Server lässt dieses Konto den Titel nicht abspielen.")
+            case "RateLimitExceeded":
+                return uebersetzt("Der Server lässt gerade keine weitere Wiedergabe zu. Die Bandbreite für dieses Konto ist ausgeschöpft.")
+            default:
+                return uebersetzt("Der Server findet keine Fassung, die er an dieses Gerät schicken darf. Meist ist Umwandeln für dieses Konto abgeschaltet.")
+            }
         }
     }
     // **Über `NSError`, nicht `as? URLError`.** FoundationNetworking (Android,

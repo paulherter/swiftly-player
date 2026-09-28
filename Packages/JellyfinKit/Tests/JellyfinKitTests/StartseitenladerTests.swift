@@ -23,6 +23,8 @@ struct StartseitenladerTests {
             neu[bibliothek ?? ""]
         }
         func titel(gattung: String, limit: Int) async -> [Item]? { gattungen[gattung] }
+        var sichten: [Item]? = []
+        func bibliotheken() async -> [Item]? { sichten }
     }
 
     private func t(_ id: String) -> Item { Item(id: id, name: id) }
@@ -52,6 +54,31 @@ struct StartseitenladerTests {
         let gemeinsam = await Startseitenlader.laden(von: q, .init(getrennt: false))
         #expect(gemeinsam.zuletzt?.map(\.id) == ["x"])
         #expect(gemeinsam.neueFilme == nil && gemeinsam.neueSerien == nil)
+    }
+
+    @Test("Getrennt ohne Kennung: je Art die erste Bibliothek, nie alle zusammen")
+    func getrenntOhneKennung() async {
+        // Film-, Serien- und gemischte Bibliothek; ohne ParentId kaemen die
+        // Neuzugaenge aller — Filme in „Neue Serien".
+        let sichten = [Item(id: "mix", name: "Gemischt"),
+                       Item(id: "filme", name: "Filme", collectionType: "movies"),
+                       Item(id: "serien", name: "Serien", collectionType: "tvshows")]
+        let q = Quelle(neu: ["": [t("film")], "filme": [t("f")], "serien": [t("s")], "mix": [t("m")]],
+                       sichten: sichten)
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f"])
+        #expect(s.neueSerien?.map(\.id) == ["s"])
+    }
+
+    @Test("Getrennt ohne Serienbibliothek: Reihe leer; Bibliotheken nicht lesbar: nil")
+    func getrenntOhneBibliothekDerArt() async {
+        let nurFilme = Quelle(neu: ["": [t("film")], "filme": [t("f")]],
+                              sichten: [Item(id: "filme", name: "Filme", collectionType: "movies")])
+        let s = await Startseitenlader.laden(von: nurFilme, .init(getrennt: true))
+        #expect(s.neueSerien?.isEmpty == true)
+        let weg = Quelle(neu: ["": [t("film")]], sichten: nil)
+        let w = await Startseitenlader.laden(von: weg, .init(getrennt: true))
+        #expect(w.neueFilme == nil && w.neueSerien == nil)
     }
 
     @Test("Nichts kam an: gestört; eine einzige Reihe genuegt dagegen")

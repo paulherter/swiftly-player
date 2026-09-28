@@ -61,7 +61,7 @@ struct SerienView: View {
             folge: folge.indexNumber,
             laufzeitTicks: folge.runTimeTicks, container: quelle?.container,
             quelle: quelle?.id, bytes: quelle?.size ?? 0,
-            gesehen: folge.userData?.played ?? false)
+            sehstand: folge.userData, bildcodec: quelle?.bildcodec)
     }
 
     /// Das Plakat der Serie plus das Querbild jeder Folge, die geladen wird.
@@ -102,19 +102,23 @@ struct SerienView: View {
     /// **Was die Auswahl hergibt, geht an die Ladetafel.** Sie bleibt
     /// unverändert zuständig für Platz, WLAN und den Normalfall — die Auswahl
     /// ist eine Stufe davor.
-    private func auswahlLaden(_ gewaehlteFolgen: [Item]) {
-        ladeposten = gewaehlteFolgen.compactMap { posten($0) }
+    private func auswahlLaden(_ gewaehlteFolgen: [Item], _ qualitaet: Downloadqualitaet) {
+        ladeposten = gewaehlteFolgen.compactMap { posten($0)?.inQualitaet(qualitaet) }
         guard !ladeposten.isEmpty else { return }
         ladetitel = serie.name
         withAnimation(Stil.sprung) { staffeltafelOffen = true }
     }
     @State private var laedt = true
-    /// Ob die Staffeln schon da sind. **Ohne das lief das Laden zweimal:**
-    /// `.task(id: gewaehlt?.id)` feuert beim Erscheinen mit `nil` und holte
-    /// alle Folgen der Serie; kurz darauf kam die Staffel an, der Lauf
-    /// wiederholte sich, und die ganze Liste wurde ein zweites Mal mit
-    /// anderem Inhalt gebaut — mitten im Hereinfahren.
-    @State private var staffelnDa = false
+    /// Ob der erste Zug von `laden()` durch ist. **Ohne das lief das Laden
+    /// zweimal:** `.task(id: gewaehlt?.id)` feuert beim Erscheinen und holte
+    /// die Folgen neben `laden()` her; kurz darauf kam dessen Antwort, und
+    /// die ganze Liste wurde ein zweites Mal gebaut — mitten im Hereinfahren.
+    /// Vorher hiess das `staffelnDa` und hing nur an den Staffeln.
+    @State private var ersterZug = false
+    /// Die Staffel, deren Folgen dastehen oder gerade kommen. Setzt
+    /// `laden()` die Wahl, sieht `.task(id:)` den Wechsel — und darf dann
+    /// nicht noch einmal holen, was im selben Zug schon kam.
+    @State private var folgenFuer: String?
 
     /// **Der Anfangsstand kommt aus dem Speicher, nicht aus dem Nichts.**
     ///
@@ -134,11 +138,10 @@ struct SerienView: View {
         let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         let staffeln = gemerkt?.staffeln ?? []
         _staffeln = State(initialValue: staffeln)
-        _staffelnDa = State(initialValue: !staffeln.isEmpty)
 
         // **Nur, was mitgekommen ist** (A10). Kommt ein Hinweis, gilt er
         // sofort — dann steht die richtige Staffel schon im ersten Bild.
-        // Kommt keiner, bleibt die Wahl offen: `staffelnLaden` fragt dann,
+        // Kommt keiner, bleibt die Wahl offen: `laden` fragt dann,
         // in welcher Staffel man steckt, und die gilt. Hier `staffeln.first`
         // zu nehmen hiesse, Staffel 1 zu zeigen und sie einen Wimpernschlag
         // später gegen die laufende zu tauschen — genau das Zucken, das die
@@ -152,7 +155,6 @@ struct SerienView: View {
         _laedt = State(initialValue: folgen.isEmpty)
     }
     @State private var kopfstand = Kopfstand()
-    @State private var farbe = Bildfarbe()
 
     enum Reiter: String, CaseIterable {
         case folgen, besetzung, aehnliches
@@ -196,6 +198,15 @@ struct SerienView: View {
                     .padding(.top, 20)
             }
             .padding(.bottom, 40)
+            // **Die Farbe des Kopfbilds unter der Seite**, wie auf der
+            // Filmseite und am iPhone (`Stimmungsgrund`) — am Inhalt, damit
+            // sie mit dem Kopf scrollt; Knöpfe, Staffelpille und -liste
+            // nehmen sie über `aufBildfarbe` auf.
+            .background(alignment: .top) {
+                Stimmungsgrund(url: model.kopfbildURL(for: serie), ab: Stil.heldHoehe)
+            }
+            .environment(\.aufBildfarbe, true)
+            .environment(\.bildfarbeQuelle, model.kopfbildURL(for: serie))
             // **Die Ladetafel liegt im Inhalt, nicht auf der Seite.**
             //
             // Sie hing als Auflage ueber der ganzen Seite. Zwei Sachen waren
@@ -236,8 +247,8 @@ struct SerienView: View {
                         MacLadeauswahl(model: model, serie: serie, staffeln: staffeln,
                                        vorgeladen: gewaehlt.map { [$0.id: folgen] } ?? [:],
                                        offen: $auswahlOffen,
-                                       weiter: { gewaehlteFolgen in
-                                           auswahlLaden(gewaehlteFolgen)
+                                       weiter: { gewaehlteFolgen, qualitaet in
+                                           auswahlLaden(gewaehlteFolgen, qualitaet)
                                        })
                             .padding(.leading, Stil.randAbstand)
                             .padding(.top, Stil.heldHoehe + 8)
@@ -282,12 +293,6 @@ struct SerienView: View {
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .seitenscrollen()
-        .background(alignment: .top) {
-            LinearGradient(colors: [farbe.ton, Stil.grund],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: Stil.heldHoehe + 260)
-                .frame(maxHeight: .infinity, alignment: .top)
-        }
         .background(Stil.grund)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { seitenbreite = $0 }
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
@@ -296,14 +301,16 @@ struct SerienView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.kopfbildURL(for: serie)) }
-        .task { await staffelnLaden() }
+        .task { await laden() }
         // Nach dem Player die Folgen neu holen: er liegt als Ebene über der
         // Seite, `.task(id:)` unten läuft dabei nicht neu. Siehe
         // `AppModel.wiedergabeBeendet`.
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await folgenLaden() } }
+        // **Nur für den Wechsel der Staffel.** Die erste Wahl samt Folgen
+        // bringt `laden()` in einem Zug mit.
         .task(id: gewaehlt?.id) {
-            guard staffelnDa else { return }
+            guard ersterZug, let staffel = gewaehlt?.id, staffel != folgenFuer else { return }
+            folgenFuer = staffel
             // **Und nicht, solange keine Staffel gewählt ist.** Seit A10
             // wählt der `init` ohne Hinweis keine mehr — kamen die Staffeln
             // dann aus dem Speicher, stand `staffelnDa` sofort auf wahr und
@@ -313,9 +320,8 @@ struct SerienView: View {
             // im Hereinfahren. Genau das, wogegen `staffelnDa` einmal
             // eingeführt wurde; die Lücke habe ich mit A10 wieder aufgemacht.
             //
-            // Hat die Serie gar keine Staffeln, ruft `staffelnLaden` das
-            // Laden selbst — dann ist hier nichts zu tun.
-            guard gewaehlt != nil else { return }
+            // Hat die Serie gar keine Staffeln, holt `laden()` die Folgen
+            // selbst — dann ist hier nichts zu tun.
             await folgenLaden()
         }
     }
@@ -383,7 +389,9 @@ struct SerienView: View {
                     Staffelwahl(staffeln: staffeln, gewaehlt: $gewaehlt,
                                 offen: $staffelOffen)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 18)
+                        // 14 wie am iPhone (`folgenliste`), dazu die 12 der
+                        // Zeile — 26 bis zum ersten Standbild.
+                        .padding(.bottom, 14)
                         // Die aufgeklappte Liste liegt über den Folgen.
                         .zIndex(10)
                 }
@@ -437,9 +445,13 @@ struct SerienView: View {
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
                             Folgenzeile(model: model, folge: folge)
-                            if folge.id != folgen.last?.id {
-                                Rectangle().fill(Stil.linie).frame(height: 1)
-                            }
+                                // **Rechtsklick: das Kachelmenü**, wie an
+                                // jeder Kachel (``Kachelmenue``). Vorher stand
+                                // hier nur „Gemeinsam schauen".
+                                .kachelmenue(folge, model: model,
+                                             nachher: { await folgenLaden() })
+                            // Keine Haarlinie zwischen den Folgen — das
+                            // iPhone trennt sie nur durch Luft.
                         }
                     }
                     .transition(.opacity)
@@ -452,13 +464,17 @@ struct SerienView: View {
                             herkunft: serie.name)
 
         case .aehnliches:
-            if aehnlicheGestoert, aehnliche.isEmpty {
+            // Leerhinweise erst, wenn das Laden vorbei ist — wie auf dem
+            // iPhone. Vorher stand hier „Nichts Ähnliches gefunden", während
+            // die Abfrage noch lief.
+            if !ersterZug, aehnliche.isEmpty {
+                Color.clear.frame(height: 200)
+            } else if aehnlicheGestoert, aehnliche.isEmpty {
                 Stoerhinweis(model: model) { Task { await aehnlicheLaden() } }
                     .frame(height: 200)
             } else if aehnliche.isEmpty {
                 Leerhinweis(text: "Nichts Ähnliches gefunden")
                     .frame(height: 200)
-                    .task { await aehnlicheLaden() }
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: Stil.kachelBreite,
                                                        maximum: Stil.kachelBreite),
@@ -473,6 +489,7 @@ struct SerienView: View {
                                          zeichen: "tv")
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(eintrag, model: model)
                     }
                 }
             }
@@ -481,35 +498,56 @@ struct SerienView: View {
 
     // MARK: Laden
 
-    private func staffelnLaden() async {
-        // **Auch wenn die Staffeln schon dastehen.** Sie koennen aus dem
-        // Speicher kommen, die Wahl aber offen sein — ohne Hinweis trifft der
-        // `init` keine mehr (A10). Dann wird hier nur noch gewaehlt.
-        if staffelnDa, !staffeln.isEmpty {
-            if gewaehlt == nil { gewaehlt = await gewaehlteStaffel(aus: staffeln) }
-            return
-        }
-        guard staffeln.isEmpty else { return }
-
+    /// **Ein Zug, nicht fünf** — wie auf dem iPhone (`SeriesDetailView`,
+    /// 23.09.2026). Staffeln, Wahl, die Folgen der gewählten Staffel und
+    /// „Ähnliches" kommen zusammen und in derselben Transaktion auf die
+    /// Seite. Vorher standen erst die Staffeln da, dann holte `.task(id:)`
+    /// die Folgen, und „Ähnliches" lud erst, wenn man den Reiter öffnete —
+    /// darunter stand so lange „Nichts Ähnliches gefunden".
+    ///
+    /// **Ohne Animation.** Die Mac-Seite animiert bei Datenankunft nichts;
+    /// siehe `abschnitt`. Der Platzhalter steht vom ersten Bild an, die Liste
+    /// löst ihn in einem Schritt ab.
+    private func laden() async {
         // **Nebeneinander, weil sie einander nicht brauchen.** Die Liste
         // braucht die Staffeln, die Wahl den Stand — und den nur, wenn kein
-        // Hinweis mitkam. Hintereinander lägen die zwei Fristen aufeinander;
+        // Hinweis mitkam. Hintereinander lägen die Fristen aufeinander;
         // dieselbe Rechnung wie beim Folgenwechsel im Player.
-        async let stand: Item? = ohneHinweis ? await model.standInSerie(serie) : nil
-        let geholt = await model.staffeln(serie)
+        async let stand: Item? = (gewaehlt == nil && ohneHinweis) ? await model.standInSerie(serie) : nil
+        async let liste = model.staffeln(serie)
+        async let aehnlich = model.aehnliche(serie)
+        let geholt = await liste
+        // Gescheitert: die Staffeln aus dem Speicher bleiben stehen, nichts
+        // wird gemerkt. Der Abschnitt sagt es, wenn keine dastehen.
+        let staffelnJetzt = geholt ?? staffeln
+        // **Auch wenn die Staffeln schon aus dem Speicher dastehen.** Die
+        // Wahl kann offen sein — ohne Hinweis trifft der `init` keine
+        // (A10). Eine getroffene Wahl bleibt stehen.
+        let wahl: Item?
+        if let schon = gewaehlt { wahl = schon } else { wahl = waehle(aus: staffelnJetzt, stand: await stand) }
+        // Ohne Staffeln gehören alle Folgen der Serie in die Liste; ohne
+        // Wahl bei vorhandenen Staffeln gibt es nichts zu holen.
+        let holen = wahl != nil || (geholt?.isEmpty ?? false)
+        let neueFolgen = holen ? await model.folgen(serie: serie.id, staffel: wahl?.id) : nil
+        let neueAehnliche = await aehnlich
+        // Staffeln, Folgenliste und Ähnliches bauen die halbe Seite neu aus —
+        // erst, wenn sie steht (`Einfahrt`).
+        await Einfahrt.abwarten()
+        guard !Task.isCancelled else { return }
+
         staffelnGestoert = geholt == nil
-        // Gescheitert: nichts wird gesetzt und nichts gemerkt. Der Abschnitt
-        // sagt es; `staffelnDa` bleibt falsch, damit der naechste Versuch
-        // wieder holen darf.
-        guard let neue = geholt else { return }
-        // Erst die Wahl, dann die Liste, dann das Zeichen — alles in einem
-        // Zug, damit `.task(id:)` nur einen Wechsel sieht.
-        //
-        gewaehlt = waehle(aus: neue, stand: await stand)
-        staffeln = neue
-        staffelnDa = true
-        Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = neue }
-        if neue.isEmpty { await folgenLaden() }
+        if let geholt { staffeln = geholt }
+        aehnlicheGestoert = neueAehnliche == nil
+        if let neueAehnliche { aehnliche = neueAehnliche }
+        // Hat man währenddessen selbst eine Staffel gewählt, gehört die
+        // Liste dieser Wahl, nicht dieser Antwort — `.task(id:)` holt sie.
+        if gewaehlt == nil || gewaehlt?.id == wahl?.id {
+            gewaehlt = wahl
+            folgenFuer = wahl?.id
+            if holen { folgenAnnehmen(neueFolgen) } else { laedt = false }
+        }
+        ersterZug = true
+        if let geholt { Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = geholt } }
     }
 
     /// Welche Staffel dasteht — **A10**, und die Kette ist wörtlich die der
@@ -534,12 +572,6 @@ struct SerienView: View {
                                 hinweisNummer: startStaffelNummer, stand: stand)
     }
 
-    /// Für den Fall, dass die Staffeln schon aus dem Speicher kamen: dann
-    /// gibt es nichts zu parallelisieren, es fehlt nur noch die Wahl.
-    private func gewaehlteStaffel(aus liste: [Item]) async -> Item? {
-        waehle(aus: liste, stand: ohneHinweis ? await model.standInSerie(serie) : nil)
-    }
-
     private func aehnlicheLaden() async {
         let geholt = await model.aehnliche(serie)
         aehnlicheGestoert = geholt == nil
@@ -550,8 +582,17 @@ struct SerienView: View {
         // Steht schon etwas aus dem Speicher, wird nicht auf leer
         // zurückgestellt — sonst blitzt der Lader trotzdem auf.
         laedt = folgen.isEmpty
-        defer { laedt = false }
-        let geholt = await model.folgen(serie: serie.id, staffel: gewaehlt?.id)
+        let staffel = gewaehlt?.id
+        let geholt = await model.folgen(serie: serie.id, staffel: staffel)
+        // Inzwischen eine andere Staffel gewählt: deren Abruf gilt.
+        await Einfahrt.abwarten()
+        guard !Task.isCancelled else { return }
+        guard gewaehlt?.id == staffel else { return }
+        folgenAnnehmen(geholt)
+    }
+
+    private func folgenAnnehmen(_ geholt: [Item]?) {
+        laedt = false
         folgenGestoert = geholt == nil
         guard let neue = geholt else { return }
         folgen = neue
@@ -648,6 +689,8 @@ struct Staffelwahl: View {
     let staffeln: [Item]
     @Binding var gewaehlt: Item?
     @Binding var offen: Bool
+    @Environment(\.aufBildfarbe) private var aufBild
+    @Environment(\.bildfarbeQuelle) private var bildfarbe
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -672,7 +715,26 @@ struct Staffelwahl: View {
                 .background {
                     let form = RoundedRectangle(cornerRadius: Stil.eckeFlaeche,
                                                 style: .continuous)
-                    form.fill(Stil.erhoeht).overlay { form.strokeBorder(Stil.rand, lineWidth: 1) }
+                    form.fill(Stil.erhoeht)
+                        .overlay {
+                            // **Über Bildfarbe im Ton der Seite** (wie die
+                            // Staffelliste am iPhone): deckend, weil Folgen
+                            // darunter stehen — aber in der Farbe des Netzes an
+                            // dieser Stelle, darüber das Weiß der übrigen
+                            // Flächen. Ein festes Grau stand dort wie ein
+                            // Fremdkörper.
+                            if aufBild, let bildfarbe {
+                                ZStack {
+                                    Stil.grund
+                                    Stimmungslader(url: bildfarbe) { toene in
+                                        Bildton.farbe(toene, bei: SIMD2<Float>(0.2, 0.55))
+                                    }
+                                    Stil.flaecheDurchsichtig
+                                }
+                                .clipShape(form)
+                            }
+                        }
+                        .overlay { form.strokeBorder(Stil.rand, lineWidth: 1) }
                 }
                 .padding(.top, 8)
                 .transition(.aufklappen(von: .topLeading))
@@ -704,6 +766,7 @@ struct Staffelzeile: View {
                         .font(Stil.listentitel)
                         .foregroundStyle(Stil.schrift)
                         .frame(width: 14)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 12)
@@ -713,6 +776,7 @@ struct Staffelzeile: View {
         }
         .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
         .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
     }
 }
@@ -784,18 +848,12 @@ struct Folgenzeile: View {
                             // dieselbe Auskunft zweimal.
                             fortschritt: gesehen ? nil : fortschritt,
                             zeichen: "tv")
-                    .opacity(gesehen ? 0.45 : 1)
-                    .overlay(alignment: .topTrailing) {
-                        if gesehen {
-                            Image(systemName: "checkmark")
-                                .font(Stil.plakette)
-                                .foregroundStyle(Stil.schrift)
-                                .frame(width: 20, height: 20)
-                                .background(Stil.grund.opacity(0.78), in: Circle())
-                                .padding(6)
-                        }
-                    }
-                    .animation(Stil.einblenden, value: gesehen)
+                    .gesehenHaken(gesehen, kante: 20, abstand: 6)
+                    // **Unter dem Zeiger wächst das Standbild, nicht die
+                    // Zeile leuchtet** — wie jede Kachel (`scale 1,04`,
+                    // `zeitSchweben`). Der volle helle Streifen über die
+                    // ganze Breite war für eine Liste zu laut.
+                    .scaleEffect(schwebt ? 1.04 : 1)
                 if schwebt {
                     Circle()
                         .fill(Stil.grund.opacity(0.78))
@@ -818,8 +876,11 @@ struct Folgenzeile: View {
                         .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                         .lineLimit(2)
                     Spacer(minLength: 0)
+                    // **Angefangen: die Restzeit statt der Laufzeit** — wie
+                    // `Folgenzeile` am iPhone („Noch 24 Minuten"). Der Balken
+                    // im Bild sagt, wie weit; das Wort, wie lange noch.
                     if let sekunden = folge.runtimeSeconds {
-                        Text(verbatim: laufzeit(sekunden))
+                        Text(verbatim: (gesehen ? nil : folge.restzeitText) ?? laufzeit(sekunden))
                             .font(Stil.zweitzeile)
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
@@ -838,41 +899,14 @@ struct Folgenzeile: View {
             }
             .buttonStyle(Stil.Druckzeile())
             .accessibilityLabel(Text(verbatim: kopfzeile))
+            .accessibilityValue(zustandsText.map(Text.init) ?? Text(""))
             .accessibilityHint(Text("Abspielen"))
             .accessibilityAddTraits(gesehen ? [.isButton, .isSelected] : .isButton)
 
-            // **Der Haken steht immer, wenn die Folge gesehen ist** — auf
-            // dem iPhone genauso. Vorher erschien er erst beim Schweben, und
-            // damit war beim Überfliegen der Liste nicht zu erkennen, wie
-            // weit man ist. Zum *Ändern* braucht es den Zeiger, zum *Sehen*
-            // nicht.
-            // **Rechts steht der Zustand des Downloads, nicht der des
-            // Sehens.** Der Haken als *Auskunft* ist auf das Bild gezogen;
-            // was hier bleibt, ist der Haken als *Handlung* — und der
-            // erscheint wie eh nur unter dem Zeiger. Das ist der eine
-            // erlaubte Unterschied zum iPhone: dort ist die Handlung ein
-            // Wisch, hier das Schweben (VERHALTEN F, Eingabeart).
-            //
-            // **Kein Ladering je Folge mehr** — wie auf dem iPhone seit dem
-            // 21.09. Er war einer von drei Wegen zum Laden und mit der
-            // Ladeauswahl der schlechteste: eine Spalte am rechten Rand jeder
-            // Zeile, die bei fuenfundzwanzig Folgen fuenfundzwanzig Mal
-            // dasselbe anbietet. Wer eine einzelne Folge will, hakt sie in der
-            // Auswahl an — dort sieht er dabei auch, wie gross sie ist. Rückmeldung
-            // vom 21.09.: „die ergeben natuerlich keinen Sinn, wenn man die
-            // jetzt ueber so ein extra Menue runterlaedt". Der Wortlaut stand
-            // in `Sources/Shared/SeriesView.swift`, der Ring hier blieb
-            // stehen.
-            HStack(spacing: 6) {
-                if schwebt {
-                    Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                                 titel: "Gesehen", aktiv: gesehen) {
-                        gesehen.toggle()
-                        Task { _ = await model.setzeGesehen(folge, an: gesehen) }
-                    }
-                }
-            }
-            .frame(width: Stil.knopfFeld, alignment: .trailing)
+            // **Kein Haken-Knopf mehr am Zeilenende.** Er kam unter dem
+            // Zeiger und war der zweite Weg zum Sehstand; der Weg ist jetzt
+            // der Rechtsklick (`kachelmenue`), wie an jeder Kachel. Der Haken
+            // als *Auskunft* steht auf dem Bild.
 
         }
         .padding(.vertical, 12)
@@ -887,7 +921,6 @@ struct Folgenzeile: View {
         // festen Höhe gibt es nichts zu schätzen. 90 für das Bild, zweimal 12
         // Rand; Titel und Text bleiben mit ihren Zeilengrenzen darunter.
         .frame(height: bildHoehe + 24)
-        .background(schwebt ? Stil.schwebeflaeche : .clear)
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
@@ -906,4 +939,12 @@ struct Folgenzeile: View {
 
     /// Aus `Item.gesehenerAnteil` — siehe die Begründung in `HomeView`.
     private var fortschritt: Double? { folge.gesehenerAnteil }
+
+    /// „Gesehen" trägt schon das Merkmal der Zeile; nur der Zwischenstand
+    /// muss als Wort stehen, sonst ist der Balken im Bild die einzige
+    /// Auskunft dazu — dieselbe Regel wie bei `Kachelhuelle`.
+    private var zustandsText: String? {
+        guard !gesehen, let fortschritt, fortschritt >= 0.01 else { return nil }
+        return String(localized: "\(Int(fortschritt * 100)) Prozent gesehen")
+    }
 }

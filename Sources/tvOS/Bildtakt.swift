@@ -288,6 +288,7 @@ enum Bildtakt {
         verwalter?.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: gewuenscht,
                                                                 formatDescription: beschreibung)
         zuletzt = gewuenscht
+        Startmessung.geteilt.marke("Ausgang umgestellt auf \(String(format: "%.3f", rate)) Hz")
         wechselSeit = Date()
         log.info("Ausgang auf \(rate, privacy: .public) Hz gestellt (\(breite, privacy: .public)×\(hoehe, privacy: .public))")
         Protokoll.schreib("[Takt] Ausgang auf \(String(format: "%.3f", rate)) Hz gestellt"

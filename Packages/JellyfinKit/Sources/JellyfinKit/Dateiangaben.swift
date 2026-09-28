@@ -73,3 +73,8 @@ public enum Dateiangaben {
         (quelle.mediaStreams ?? []).first { $0.type == "Video" }
     }
 }
+
+public extension MediaSource {
+    /// Codec der ersten Bildspur laut Server (`h264`, `mpeg4` …), `nil` ohne Bildspur.
+    var bildcodec: String? { Dateiangaben.videospur(self)?.codec }
+}

@@ -36,13 +36,16 @@ struct Ladeauswahl: View {
     let staffeln: [Item]
     /// Die Folgen, die die Serienseite schon hat — meist die gewählte Staffel.
     let vorgeladen: [String: [Item]]
-    /// Was die Auswahl hergibt: die Folgen, die geladen werden sollen.
-    let weiter: ([Item]) -> Void
+    /// Was die Auswahl hergibt: die Folgen, die geladen werden sollen, und
+    /// in welcher Qualität.
+    let weiter: ([Item], Downloadqualitaet) -> Void
 
     @State private var folgen: [String: [Item]] = [:]
     @State private var gewaehlt: Set<String> = []
     @State private var offeneStaffel: String?
     @State private var nurUngesehene = false
+    /// Original, bis jemand die Plakette antippt und etwas anderes nimmt.
+    @State private var qualitaet: Downloadqualitaet = .original
     @State private var laedt = true
     /// **Der Fehlfall gehört dazu** — wie am Mac. Scheitert der Abruf, darf
     /// die Auswahl nicht leer dastehen; dann wüsste niemand, ob die Serie
@@ -63,8 +66,27 @@ struct Ladeauswahl: View {
     }
 
     private var gewaehlteFolgen: [Item] { alleFolgen.filter { gewaehlt.contains($0.id) } }
-    private var bytes: Int64 {
-        gewaehlteFolgen.reduce(0) { $0 + Int64($1.mediaSources?.first?.size ?? 0) }
+    /// **Der Fuss rechnet in der gewählten Qualität.** Beim Original die
+    /// echte Größe, sonst die Schätzung aus Bitrate mal Laufzeit — „Danach
+    /// frei" zieht mit, sobald man eine andere Stufe nimmt.
+    private var bytes: Int64 { bytes(in: qualitaet) }
+
+    private func bytes(in q: Downloadqualitaet) -> Int64 {
+        gewaehlteFolgen.reduce(0) {
+            $0 + q.geschaetzteBytes(original: Int64($1.mediaSources?.first?.size ?? 0),
+                                    laufzeitTicks: $1.runTimeTicks)
+        }
+    }
+
+    /// Welche Stufen zur Wahl stehen: nach der besten Datei der Auswahl —
+    /// oder der ganzen Serie, solange nichts gewählt ist.
+    private var angeboten: [Downloadqualitaet] {
+        let basis = gewaehlteFolgen.isEmpty ? alleFolgen : gewaehlteFolgen
+        return Downloadqualitaet.angeboten(
+            waehlbar: model.downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.quellBitrate(basis.map {
+                (Int64($0.mediaSources?.first?.size ?? 0), $0.runTimeTicks)
+            }))
     }
 
     var body: some View {
@@ -165,6 +187,9 @@ struct Ladeauswahl: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            // Ein Schalter mit Namen statt Titel, Satz und „Ein".
+            .accessibilityRepresentation { Toggle(isOn: $nurUngesehene) { Text("Nur ungesehene") } }
+            .accessibilityHint(Text("Entscheidet, was ein Haken auswählt."))
         }
         .background(Stil.erhoeht, in: kartenform)
         .padding(.horizontal, 16)
@@ -298,20 +323,19 @@ struct Ladeauswahl: View {
             .padding(.horizontal, 16)
             // **Die Qualitaet steht dabei, nicht im Kleingedruckten.** Swiftly
             // laedt die Originaldatei — bei 35 GB ist das die Erklaerung fuer
-            // die Zahl darueber und kein Nebensatz.
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark")
-                    .font(Stil.gruppe)
-                Text("Direct Play · Originalqualität")
-                    .font(Stil.klein)
-            }
-            .foregroundStyle(Stil.akzent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Stil.akzent.opacity(0.15),
-                        in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
+            // die Zahl darueber und kein Nebensatz. Darf der Server umwandeln,
+            // ist die Plakette zugleich die Wahl einer kleineren Fassung.
+            Qualitaetsplakette(wahl: $qualitaet, angeboten: angeboten,
+                               waehlbar: model.downloadqualitaetWaehlbar,
+                               groesse: { gewaehlt.isEmpty ? 0 : bytes(in: $0) })
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                // Faellt die gewaehlte Stufe weg, weil die Auswahl kleiner
+                // wurde, gilt wieder das Original — nie eine Stufe, die
+                // nicht mehr dasteht.
+                .onChange(of: angeboten) { _, neu in
+                    if !neu.contains(qualitaet) { qualitaet = .original }
+                }
 
             // **Mit Pfeil, wie am Mac.** Derselbe Pfeil steht in der
             // Knopfreihe der Serie, von dort kommt man her. Reicht der Platz
@@ -319,7 +343,7 @@ struct Ladeauswahl: View {
             // Platz", und dort steht der Ausweg ueber gesehene Titel.
             Button {
                 offen = false
-                weiter(gewaehlteFolgen)
+                weiter(gewaehlteFolgen, qualitaet)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down")
@@ -561,5 +585,91 @@ struct Ladeauswahl: View {
         // Was seit dem letzten Öffnen geladen wurde, ist nicht mehr wählbar —
         // sonst zählte der Fuss es noch mit.
         neuRechnen()
+    }
+}
+
+/// **Die Plakette unter einer Ladeauswahl — und die Wahl der Qualität.**
+///
+/// Bis 1.0.5 stand hier nur „Direct Play · Originalqualität". Die Zusage
+/// bleibt die Vorgabe: ohne Zutun lädt Swiftly die Originaldatei. Darf der
+/// Server für dieses Konto umwandeln, öffnet ein Tipp eine Liste mit den
+/// kleineren Stufen, jede mit ihrer geschätzten Größe. Darf er es nicht,
+/// bleibt die Plakette, was sie war, und ein Satz darunter sagt, warum
+/// nichts zu wählen ist.
+///
+/// Ein Systemmenü und keine eigene Liste: es liegt über dem Blatt, statt
+/// ein zweites Blatt hineinzuschieben, und bringt VoiceOver und Haken mit.
+struct Qualitaetsplakette: View {
+    @Binding var wahl: Downloadqualitaet
+    let angeboten: [Downloadqualitaet]
+    let waehlbar: Bool
+    /// Geschätzte Größe je Stufe für die Auswahl. 0 heißt: keine Angabe.
+    let groesse: (Downloadqualitaet) -> Int64
+
+    var body: some View {
+        if waehlbar, angeboten.count > 1 {
+            Menu {
+                ForEach(angeboten) { q in
+                    Button {
+                        withAnimation(Stil.umschalten) { wahl = q }
+                    } label: {
+                        if q == wahl {
+                            Label(zeile(q), systemImage: "checkmark")
+                        } else {
+                            Text(verbatim: zeile(q))
+                        }
+                        if groesse(q) > 0 {
+                            Text(verbatim: (q.istOriginal ? "" : "≈ ")
+                                 + Downloadregeln.groesse(groesse(q)))
+                        }
+                    }
+                }
+            } label: {
+                plakette(aufklappbar: true)
+            }
+            .accessibilityLabel(Text("Qualität"))
+            .accessibilityValue(Text(verbatim: wahl.plakette()))
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                plakette(aufklappbar: false)
+                if !waehlbar {
+                    Text("Kleinere Fassungen gibt der Server für dieses Konto nicht frei.")
+                        .mitwachsend(12)
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// „Original · Direct Play", „720p · 4 Mbit/s".
+    private func zeile(_ q: Downloadqualitaet) -> String {
+        q.name + " · " + q.zusatz()
+    }
+
+    private func plakette(aufklappbar: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: wahl.istOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
+                .font(Stil.gruppe)
+                .accessibilityHidden(true)
+            Text(verbatim: wahl.plakette())
+                .font(Stil.klein)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            if aufklappbar {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(Stil.akzent)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Stil.akzent.opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
+        // Antippbar wächst die Trefferfläche auf 44, die Plakette bleibt so
+        // klein, wie sie war (BRAND 7).
+        .frame(minHeight: aufklappbar ? 44 : nil)
+        .contentShape(Rectangle())
     }
 }

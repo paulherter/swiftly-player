@@ -52,13 +52,26 @@ public enum Folgenende {
     /// ganze Folge.
     public static let anlaufruhe: Double = 5
 
+    /// Steht die Wiedergabe am Dateiende? Dieselbe Grenze wie
+    /// ``weiterschalten(position:dauer:seitOeffnen:karteZaehlt:)``.
+    public static func amEnde(position: Double, dauer: Double) -> Bool {
+        dauer > 60 && position >= dauer - 1
+    }
+
     /// Ob von selbst zur naechsten Folge gewechselt wird.
     ///
     /// Deutlich enger gefasst als der Knopf: hier wird gehandelt, ohne dass
     /// jemand darum gebeten hat. Erst wenn wirklich nichts mehr kommt — und
     /// fruehestens ``anlaufruhe`` Sekunden nach dem Oeffnen.
+    ///
+    /// **`karteZaehlt`** (26.09.2026, gemeldet: ganz nach hinten gespult,
+    /// sofort die nächste Folge): zählt die Karte ihren Countdown, gehört das
+    /// Weiterschalten ihr. Ein Sprung ans Ende erfüllt `position >= dauer - 1`
+    /// sofort — ohne diese Bedingung wechselte der Player im selben Takt,
+    /// bevor die Karte überhaupt erschien.
     public static func weiterschalten(position: Double, dauer: Double,
-                                      seitOeffnen: Double) -> Bool {
+                                      seitOeffnen: Double, karteZaehlt: Bool = false) -> Bool {
+        guard !karteZaehlt else { return false }
         guard seitOeffnen > anlaufruhe else { return false }
         guard dauer > 60 else { return false }
         return position >= dauer - 1

@@ -112,12 +112,14 @@ nonisolated(unsafe) private let balkenMalen: @convention(c) (
 private final class Zaehlwerk {
     let id: String
     let bytes: Int64
+    let geschaetzt: Bool
     let zeile: Widget
     let balken: Ladebalken?
     var zuletzt = Date.distantPast
 
-    init(id: String, bytes: Int64, zeile: Widget, balken: Ladebalken?) {
-        self.id = id; self.bytes = bytes; self.zeile = zeile; self.balken = balken
+    init(id: String, bytes: Int64, geschaetzt: Bool, zeile: Widget, balken: Ladebalken?) {
+        self.id = id; self.bytes = bytes; self.geschaetzt = geschaetzt
+        self.zeile = zeile; self.balken = balken
     }
 }
 
@@ -135,8 +137,9 @@ nonisolated(unsafe) private let zaehlTakt: @convention(c) (
     guard var s = a.schaetzer[z.id] else { return 1 }
     let geladen = s.wert(um: jetzt)
     a.schaetzer[z.id] = s
-    gtk_label_set_text(OpaquePointer(z.zeile), downloadLadetext(geladen, von: z.bytes))
-    if z.bytes > 0 { z.balken?.setzen(Double(geladen) / Double(z.bytes)) }
+    gtk_label_set_text(OpaquePointer(z.zeile), downloadLadetext(geladen, von: z.bytes, geschaetzt: z.geschaetzt))
+    // Eine Schaetzung erreicht vor dem Ende nie ganz voll (`Downloadposten.anteil`).
+    if z.bytes > 0 { z.balken?.setzen(min(Double(geladen) / Double(z.bytes), z.geschaetzt ? 0.99 : 1)) }
     return 1
 }
 
@@ -149,15 +152,19 @@ nonisolated(unsafe) private let zaehlwerkLoesen: @convention(c) (gpointer?) -> V
 /// `groesse` wechselte mitten im Laden von „845 MB" auf „1 GB" und
 /// „1,01 GB"; die Zeile wurde bei jedem Schritt anders breit. Die Regel steht
 /// als `Downloadregeln.fortschritt` im Paket.
-func downloadLadetext(_ geladen: Int64, von bytes: Int64) -> String {
+///
+/// `geschaetzt`: eine umgewandelte Datei hat nur eine gerechnete Groesse —
+/// dann steht „≈" vor dem Ende.
+func downloadLadetext(_ geladen: Int64, von bytes: Int64, geschaetzt: Bool = false) -> String {
     guard bytes > 0 else { return Downloadregeln.groesse(geladen) }
     let f = Downloadregeln.fortschritt(geladen: geladen, von: bytes)
-    return String(format: uebersetzt("%@ von %@"), f.geladen, f.gesamt)
+    return String(format: uebersetzt("%@ von %@"), f.geladen, (geschaetzt ? "≈ " : "") + f.gesamt)
 }
 
 /// Hängt das Weiterzählen an die Unterzeile einer laufenden Zeile.
-func downloadZaehlen(_ id: String, bytes: Int64, zeile: Widget!, balken: Ladebalken?) {
-    let z = Zaehlwerk(id: id, bytes: bytes, zeile: zeile, balken: balken)
+func downloadZaehlen(_ id: String, bytes: Int64, geschaetzt: Bool = false,
+                     zeile: Widget!, balken: Ladebalken?) {
+    let z = Zaehlwerk(id: id, bytes: bytes, geschaetzt: geschaetzt, zeile: zeile, balken: balken)
     _ = gtk_widget_add_tick_callback(zeile, zaehlTakt,
                                      Unmanaged.passRetained(z).toOpaque(), zaehlwerkLoesen)
 }
@@ -398,7 +405,8 @@ extension App {
 
         if let angabe = a.angabe {
             gtk_label_set_text(OpaquePointer(angabe),
-                               String(format: uebersetzt("%d Folgen"), folgen.count) + " · "
+                               zahlwort(folgen.count, eins: uebersetzt("1 Folge"),
+                                        viele: uebersetzt("%lld Folgen")) + " · "
                                + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes }))
         }
         if let haupt = a.abspielen {
@@ -424,7 +432,7 @@ extension App {
         for nummer in reihe {
             let eigene = je[nummer] ?? []
             if let n = nummer {
-                let rubrik = beschriftung(String(format: uebersetzt("Staffel %d"), n),
+                let rubrik = beschriftung(String(format: uebersetzt("Staffel %lld"), n),
                                           stil: "swiftly-gruppenrubrik")
                 gtk_label_set_xalign(OpaquePointer(rubrik), 0)
                 gtk_widget_set_margin_top(rubrik, 26)

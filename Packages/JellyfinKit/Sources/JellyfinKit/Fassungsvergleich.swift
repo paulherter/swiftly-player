@@ -57,9 +57,15 @@ public enum Fassungsvergleich {
         for wort in ["build ", "bau "] {
             var ab = klein.startIndex
             while let fund = klein.range(of: wort, range: ab..<klein.endIndex) {
+                ab = fund.upperBound
+                // **Nur das ganze Wort.** „Umbau 12", „Ausbau 3", „rebuild 9"
+                // enthalten dieselbe Folge — und eine solche Zahl im Text
+                // haette jedem Nutzer ein Update auf das angeboten, was er
+                // schon hat, bei jedem Start von Neuem.
+                if fund.lowerBound > klein.startIndex,
+                   klein[klein.index(before: fund.lowerBound)].isLetter { continue }
                 let ziffern = klein[fund.upperBound...].prefix(while: \.isNumber)
                 if let zahl = Int(ziffern), zahl > (groesste ?? 0) { groesste = zahl }
-                ab = fund.upperBound
             }
         }
         return groesste

@@ -42,6 +42,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
@@ -131,6 +135,13 @@ val kopfUnten = TvStil.randOben + TvStil.leisteHoehe + 12.dp
 fun TvHaupt(app: SwiftlyAnwendung) {
     var bereich by rememberSaveable { mutableStateOf(TvBereich.Start) }
     val stapel = remember { mutableStateMapOf<TvBereich, List<Ziel>>() }
+    // Kontowechsel (Entwurf D): unter dem Standbild springen Stapel und Bereich ohne Animation zurueck.
+    val zurueckStand = remember { de.paulherter.swiftly.Kontowechselflug.zurueck }
+    LaunchedEffect(de.paulherter.swiftly.Kontowechselflug.zurueck) {
+        if (de.paulherter.swiftly.Kontowechselflug.zurueck != zurueckStand && de.paulherter.swiftly.Kontowechselflug.wartet) {
+            stapel.clear(); bereich = TvBereich.Start
+        }
+    }
     val zustaende = rememberSaveableStateHolder()
     val kontext = LocalContext.current
 
@@ -161,13 +172,15 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         if (spiel == null || spiel === app.spielUebergeben) return@LaunchedEffect
         app.spielUebergeben = spiel
         Fokusmerker.playerStartet()
+        // Aus einer Uebergabe ohne eigene Blende: die Karte liegt darueber (`Uebergabe`).
+        val ein = if (de.paulherter.swiftly.Uebergabe.empfang != null) de.paulherter.swiftly.R.anim.halten else de.paulherter.swiftly.R.anim.player_ein
         kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),
-            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_ein, de.paulherter.swiftly.R.anim.halten).toBundle())
+            android.app.ActivityOptions.makeCustomAnimation(kontext, ein, de.paulherter.swiftly.R.anim.halten).toBundle())
     }
     // **Nach dem Player zurueck auf die Kachel, Folge oder den Knopf, von dem aus gestartet wurde**
     // (Vorlage tvOS 57d3219) — derselbe Weg, ob der Player per Zurueck oder von selbst endet.
     LaunchedEffect(spiel == null) {
-        if (spiel == null) { delay(30); Fokusmerker.playerZu() }
+        if (spiel == null) { delay(TvStil.fokusFrist); Fokusmerker.playerZu() }
     }
 
     // Gemeldete Kulissen je Seite (`seitenschluessel`) — siehe `TvKulissenebene`.
@@ -189,7 +202,8 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         val adresse = app.tiefenlink.value ?: return@LaunchedEffect
         app.tiefenlink.value = null
         if (adresse.scheme != "swiftly" || adresse.host != "titel") return@LaunchedEffect
-        val id = adresse.lastPathSegment ?: return@LaunchedEffect
+        // Nur eine Jellyfin-Kennung, wie `Pfadteil.istKennung` im Paket — kein `..%2F` in die Serveradresse.
+        val id = adresse.lastPathSegment?.takeIf { Regex("[A-Za-z0-9-]{1,64}").matches(it) } ?: return@LaunchedEffect
         bereich = TvBereich.Start
         runCatching { titelLesen(withContext(Dispatchers.IO) { app.kern.titel(id).await() }) }.getOrNull()?.let { t ->
             if (t.planDa) app.spiel.value = Abspielwunsch(id, t.fortsetzenAb) else oeffnen(Ziel(id, t.name, t.typ))
@@ -231,7 +245,9 @@ fun TvHaupt(app: SwiftlyAnwendung) {
             key(b, tiefe, ziel?.id) {
                 val schluessel = seitenschluessel(b, tiefe, ziel?.id)
                 val melden = remember(schluessel) { { url: String? -> kulissen[schluessel] = url } }
-                CompositionLocalProvider(LocalKulisseMelden provides melden) {
+                // Menue-Taste oder langes OK auf einer Kachel: das Kachelmenue als Tafel (`kachelmenueTafel`).
+                CompositionLocalProvider(LocalKulisseMelden provides melden,
+                    de.paulherter.swiftly.LocalKachelmenue provides { w -> de.paulherter.swiftly.kachelmenueTafel(app, w, oeffnen) }) {
                 zustaende.SaveableStateProvider(schluessel) {
                     if (ziel == null) {
                         Box(Modifier.fillMaxSize().focusRequester(inhalt).focusGroup()) {
@@ -281,8 +297,109 @@ fun TvHaupt(app: SwiftlyAnwendung) {
                 Kopfleiste(app, bereich, { bereich = it }, app.angebote.value) { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }
             }
         }
+        // „Filmabend verlassen · Wieder beitreten" nach dem Schliessen des Players.
+        if (spiel == null) TvRueckwegstreifen(app)
+        // Eine Meldung der Gruppe — derselbe Streifen wie auf den Seiten; im Player zeigt der sie.
+        if (spiel == null) app.gemeinsamFehler.value?.let {
+            TvHinweisstreifen(it, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { app.gemeinsamFehler.value = null }
+        }
         // Solange der Player laeuft, gehoert die Tafel ihm.
         if (spiel == null) TvTafel(app)
+        // „Wo weiterschauen?" — waechst aus dem Abzeichen.
+        if (spiel == null) TvUebernahmeauflage(app)
+    }
+}
+
+/**
+ * Vorlage: `TVUebernahmeauswahl` in `Sources/tvOS/TVBausteine.swift` samt Schleier (Schwarz 72 %) und
+ * `.transition(.ausDemPunkt(Abzeichenursprung.punkt))` in `Sources/tvOS/HauptView.swift`. **Der Schleier
+ * blendet, die Auswahl waechst aus dem Abzeichen** (Masstab ab 12 %, Deckung schneller als der Masstab)
+ * und schrumpft beim Schliessen dorthin zurueck — dieselbe Mechanik wie `Uebernahmeauflage` am Telefon,
+ * Feder `Stil.feder`. Punkte halbiert. Zurueck schliesst; der Fokus geht zurueck ans Abzeichen.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun TvUebernahmeauflage(app: SwiftlyAnwendung) {
+    val offen = app.uebernahmeauswahl.value
+    val gemerkt = remember { arrayOfNulls<de.paulherter.swiftly.Uebernahmeauswahl>(1) }
+    offen?.let { gemerkt[0] = it }
+    val w = gemerkt[0] ?: return
+    val ruhig = de.paulherter.swiftly.gemeinsam.bewegungReduziert()
+    val auf = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(offen != null) {
+        auf.animateTo(if (offen != null) 1f else 0f,
+            if (ruhig) de.paulherter.swiftly.gemeinsam.Bewegung.blendeReduziert()
+            else androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 322f))
+        if (offen == null) gemerkt[0] = null
+    }
+    LaunchedEffect(offen == null) { if (offen == null) { delay(TvStil.fokusFrist); Fokusmerker.zurueckfordern() } }
+    if (offen == null && auf.value <= 0.001f) return
+    val freigabe = remember(w) { booleanArrayOf(false) }
+    fun zu() {
+        freigabe[0] = true
+        Fokusmerker.zurueckgeben()
+        if (app.uebernahmeauswahl.value === w) app.uebernahmeauswahl.value = null
+    }
+    BackHandler(enabled = offen != null) { zu() }
+    val erster = remember(w) { FocusRequester() }
+    LaunchedEffect(w) { delay(TvStil.fokusFrist); runCatching { erster.requestFocus() } }
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = auf.value.coerceIn(0f, 1f) }.background(Color.Black.copy(alpha = 0.72f)))
+        val rahmen = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }
+        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+            Column(Modifier.align(Alignment.Center).padding(24.dp)
+                    .onGloballyPositioned { rahmen[0] = it.boundsInRoot() }
+                    .graphicsLayer {
+                        val a = auf.value
+                        if (!ruhig && rahmen[0].width > 0 && w.ursprung != androidx.compose.ui.geometry.Offset.Zero) {
+                            val r = rahmen[0]
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                ((w.ursprung.x - r.left) / r.width).coerceIn(-2f, 3f), ((w.ursprung.y - r.top) / r.height).coerceIn(-2f, 3f))
+                            val m = 0.12f + 0.88f * a
+                            scaleX = m; scaleY = m
+                        }
+                        alpha = (a * 1.6f).coerceIn(0f, 1f)
+                    }
+                    .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup(),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(17.dp)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(uebersetzt("Wo weiterschauen?"), style = TvStil.unterseitentitel, color = Stil.schrift)
+                    Text(uebersetzt("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter."),
+                         style = TvStil.klein.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = Stil.schriftLeise)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    w.angebote.forEachIndexed { i, a ->
+                        // Jede Zeile ist ein anderes Geraet — kuehl wie das Abzeichen (`AbzeichenStil(anderesGeraet: true)`).
+                        Fokusflaeche(modifier = if (i == 0) Modifier.focusRequester(erster) else Modifier,
+                                     lupe = TvStil.fokusLupeBreit, tun = { zu(); w.waehlen(a) }) { fokus ->
+                            val vorn = if (fokus) Stil.grund else Stil.akzent
+                            Row(Modifier.widthIn(max = 380.dp).fillMaxWidth().height(44.dp).clip(RoundedCornerShape(50))
+                                    .background(Stil.grund).background(if (fokus) Color.White else Stil.akzent.copy(alpha = 0.18f))
+                                    .padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                                    Symbol(uebernahmezeichen(a.art), 14.dp, farbe = vorn, staerke = Staerke.Mittel)
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                    Text(a.geraet ?: uebersetzt("Gerät"), style = TvStil.knopf, color = vorn, maxLines = 1)
+                                    Text(a.titelzeile, style = TvStil.klein, color = vorn.copy(alpha = 0.75f), maxLines = 1,
+                                         overflow = TextOverflow.Ellipsis)
+                                }
+                                Text(a.stelleText, style = TvStil.klein.copy(fontFeatureSettings = "tnum"), color = vorn.copy(alpha = 0.75f))
+                            }
+                        }
+                    }
+                }
+                // „Abbrechen" bleibt grau (`AbzeichenStil()`).
+                Fokusflaeche(lupe = TvStil.fokusLupeBreit, tun = { zu() }) { fokus ->
+                    Box(Modifier.height(TvStil.knopfHoehe).clip(RoundedCornerShape(50))
+                            .background(if (fokus) Color.White else Stil.erhoeht).padding(horizontal = 18.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text(uebersetzt("Abbrechen"), style = TvStil.knopf, color = if (fokus) Stil.grund else Stil.schrift)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -371,15 +488,21 @@ private fun Kopfleiste(app: SwiftlyAnwendung, aktiv: TvBereich, waehlen: (TvBere
             TvBereich.entries.forEach { b -> Reiter(uebersetzt(b.titel), b == aktiv) { waehlen(b) } }
         }
         Spacer(Modifier.weight(1f))
-        if (angebote.isNotEmpty()) {
-            TvUebernahmeabzeichen(app, angebote)
+        // Entwurf A: ein Abzeichen fuer „Hier weiterschauen" und offene Gruppen zusammen.
+        val gruppen = app.gemeinsam.value.offeneGruppen
+        if (angebote.isNotEmpty() || gruppen.isNotEmpty()) {
+            TvUebernahmeabzeichen(app, angebote, gruppen)
             Spacer(Modifier.width(18.dp))
         }
         // Ein Profilkreis von 32 — die kleine Stufe der Fokusleiter. Der Ring ist **weiss**:
         // ein Bild kann nicht heller werden wie eine Kachel, und der Akzent traegt Zustand,
         // nicht „hier steht die Fernbedienung" (BRAND 1, `ProfilStil` auf tvOS).
+        // Der Kontowechsel fliegt hierher; solange das neue Bild unterwegs ist, steht hier noch keins.
+        val flug = de.paulherter.swiftly.Kontowechselflug.flug
         Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = profil) { fokus ->
-            Box(Modifier.size(32.dp).border(2.dp, if (fokus) Stil.schrift else Color.Transparent, CircleShape).padding(3.dp)) {
+            Box(Modifier.size(32.dp).border(2.dp, if (fokus) Stil.schrift else Color.Transparent, CircleShape).padding(3.dp)
+                    .onGloballyPositioned { de.paulherter.swiftly.Kontowechselflug.zielMelden(it.boundsInRoot(), it.findRootCoordinates().size.width.toFloat()) }
+                    .graphicsLayer { alpha = if (flug != null && !flug.ersetzt) 0f else 1f }) {
                 SubcomposeAsyncImage(model = app.kern.benutzerbild(160).orElse(null), contentDescription = uebersetzt("Profil"),
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape).background(Stil.erhoeht),
                     error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -409,46 +532,57 @@ private fun uebernahmezeichen(art: String): Zeichen = when (art) {
  * eine Kopie derselben Handlung.
  */
 @Composable
-private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>) {
+private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>, gruppen: List<Gemeinsamgruppe>) {
     val kontext = LocalContext.current
     val lauf = rememberCoroutineScope()
     var uebernimmt by remember { mutableStateOf(false) }
+    // Wo das Abzeichen steht (Wurzelpixel) — Auswahl und Karte wachsen von dort (`Abzeichenursprung`).
+    val mitte = remember { arrayOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val dichte = androidx.compose.ui.platform.LocalDensity.current.density
+    val ruhig = de.paulherter.swiftly.gemeinsam.bewegungReduziert()
     fun uebernehmen(a: Angebot) {
         if (uebernimmt) return
         uebernimmt = true
-        lauf.launch {
-            val grund = withContext(Dispatchers.IO) { app.kern.uebernehmen(a.sitzung).await() }
-            if (grund.isEmpty()) {
-                app.angebote.value = emptyList()
-                app.spiel.value = Abspielwunsch(a.itemID, a.stelle)
-            } else Toast.makeText(kontext, fehlertext(grund), Toast.LENGTH_LONG).show()
-            uebernimmt = false
-        }
+        lauf.launch { de.paulherter.swiftly.hierWeiterschauen(app, kontext, a, mitte[0], dichte, ruhig); uebernimmt = false }
     }
-    val erstes = angebote.first()
+    val erstes = angebote.firstOrNull()
+    val anzahl = angebote.size + gruppen.size
+    // Vorlage `Angebotsabzeichen.antippen` (iOS, Entwurf A): nur Uebernahme wie bisher; nur eine Gruppe:
+    // „Beitreten"; sonst die Auswahl mit beidem.
     Fokusflaeche(lupe = TvStil.fokusLupeBreit, tun = {
-        if (angebote.size == 1) uebernehmen(erstes)
-        else app.blatt.value = Blattwunsch(uebersetzt("Wo weiterschauen?"),
-            angebote.map { a -> Wahl(a.sitzung, listOfNotNull(a.geraet ?: uebersetzt("Gerät"), a.titelzeile).joinToString(" · ")) },
-            null, angebote.associate { it.sitzung to uebernahmezeichen(it.art) }) { s ->
-                angebote.firstOrNull { it.sitzung == s }?.let { uebernehmen(it) }
-            }
+        if (gruppen.isNotEmpty()) {
+            if (angebote.isEmpty() && gruppen.size == 1) tvBeitretenOeffnen(app, gruppen.first())
+            else tvAuswahlOeffnen(app, ::uebernehmen)
+        }
+        else if (angebote.size == 1 && erstes != null) uebernehmen(erstes)
+        // Mehrere Geraete: die Auswahl waechst aus dem Abzeichen (`TVUebernahmeauswahl`, `TvUebernahmeauflage`).
+        else app.uebernahmeauswahl.value = de.paulherter.swiftly.Uebernahmeauswahl(angebote, mitte[0]) { uebernehmen(it) }
     }) { fokus ->
         // Vorlage: `AbzeichenStil(anderesGeraet: true)` in `Sources/tvOS/TVBausteine.swift` — **nicht
         // durchsichtig**: in Ruhe der Akzent auf 18 Prozent ueber dem Seitengrund (deckend), im Fokus eine
         // volle weisse Flaeche mit dunkler Schrift/Symbol statt der blauen, durchscheinenden Flaeche
         // von vorher.
         val vordergrund = if (fokus) Stil.grund else Stil.akzent
-        Row(Modifier.height(if (fokus) 38.dp else 32.dp).clip(RoundedCornerShape(50))
+        Row(Modifier.onGloballyPositioned { mitte[0] = it.boundsInRoot().center }
+                .height(if (fokus) 38.dp else 32.dp).clip(RoundedCornerShape(50))
                 .background(Stil.grund).background(if (fokus) Color.White else Stil.akzent.copy(alpha = 0.18f))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Symbol(uebernahmezeichen(erstes.art), 13.dp, farbe = vordergrund, staerke = Staerke.Mittel)
+            Symbol(erstes?.let { uebernahmezeichen(it.art) } ?: Zeichen.GruppeVoll, 13.dp, farbe = vordergrund, staerke = Staerke.Mittel)
             Column {
-                Text(uebersetzt("Hier weiterschauen"), style = TvStil.knopf,
-                     color = vordergrund, maxLines = 1)
-                if (fokus) Text(erstes.titelzeile, style = TvStil.klein, color = vordergrund.copy(alpha = 0.75f),
+                Text(uebersetzt(when {
+                        anzahl > 1 -> "Läuft gerade"
+                        angebote.isEmpty() -> "Gemeinsam schauen"
+                        else -> "Hier weiterschauen"
+                     }), style = TvStil.knopf, color = vordergrund, maxLines = 1)
+                if (fokus) Text(erstes?.titelzeile ?: gruppen.first().name, style = TvStil.klein, color = vordergrund.copy(alpha = 0.75f),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            // Der Zaehler, wenn es mehr als eins ist — derselbe wie am Telefon.
+            if (anzahl > 1) Box(Modifier.defaultMinSize(18.dp, 18.dp).clip(CircleShape).background(vordergrund).padding(horizontal = 5.dp),
+                                contentAlignment = Alignment.Center) {
+                Text("$anzahl", style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
+                     color = if (fokus) Color.White else Stil.aufAkzent)
             }
         }
     }
@@ -481,7 +615,7 @@ private fun Reiter(text: String, gewaehlt: Boolean, tun: () -> Unit) {
 @Composable
 fun TvTafel(app: SwiftlyAnwendung) {
     val w = app.blatt.value
-    LaunchedEffect(w == null) { if (w == null) { delay(30); Fokusmerker.zurueckfordern() } }
+    LaunchedEffect(w == null) { if (w == null) { delay(TvStil.fokusFrist); Fokusmerker.zurueckfordern() } }
     if (w == null) return
     // `exit = Cancel` haelt die Fokussuche in der Tafel — sperrt aber auch ein programmatisches
     // `requestFocus` nach draussen (Compose fragt beim Verlassen jeder Gruppe `exit`). Deshalb
@@ -503,7 +637,7 @@ fun TvTafel(app: SwiftlyAnwendung) {
     BackHandler(onBack = schliessen)
     var auswahl by remember(w) { mutableStateOf(w.mehrfach) }
     val erster = remember(w) { FocusRequester() }
-    LaunchedEffect(w) { delay(30); runCatching { erster.requestFocus() } }
+    LaunchedEffect(w) { delay(TvStil.fokusFrist); runCatching { erster.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))) {
         CompositionLocalProvider(LocalInnerhalbTafel provides true) {
             Column(Modifier.align(Alignment.CenterEnd).padding(end = TvStil.randSeite).width(310.dp)
@@ -512,6 +646,8 @@ fun TvTafel(app: SwiftlyAnwendung) {
                 // Ohne Titel keine Kopfzeile — das Titelmenue von Filme und Serien hat auf tvOS keine.
                 if (w.titel.isNotEmpty()) Text(w.titel, style = TvStil.rubrikGross, color = Stil.schrift, maxLines = 2,
                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                w.unterzeile?.let { Text(it, style = TvStil.koerper, color = Stil.schriftLeise,
+                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) }
                 Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                     w.eintraege.forEachIndexed { i, e ->
                         w.rubriken[e.wert]?.let { ueber ->

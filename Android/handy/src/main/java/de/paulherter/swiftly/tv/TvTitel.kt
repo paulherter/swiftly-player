@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 import de.paulherter.swiftly.gemeinsam.Zeichen
 import de.paulherter.swiftly.gemeinsam.Symbol
 import de.paulherter.swiftly.gemeinsam.Staerke
@@ -46,6 +47,8 @@ import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
@@ -189,13 +192,13 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, Zeichen> = emptyMap(
         offen = false
     }
     Box {
-        TvKnopf(null, Zeichen.Mehr, modifier = Modifier.focusRequester(knopf)) {
+        TvKnopf(null, Zeichen.Mehr, modifier = Modifier.focusRequester(knopf), beschreibung = uebersetzt("Mehr")) {
             if (offen) schliessen() else { freigabe[0] = false; offen = true }
         }
         if (offen) {
             BackHandler(onBack = { schliessen() })
             val erste = remember { FocusRequester() }
-            LaunchedEffect(Unit) { delay(30); runCatching { erste.requestFocus() } }
+            LaunchedEffect(Unit) { delay(TvStil.fokusFrist); runCatching { erste.requestFocus() } }
             // 44 dp unter dem Knopf — dieselbe Zahl wie die Staffelliste auf dem Telefon
             // (`Staffelkopf` in `SerienSeite.kt`), aus demselben Grund: knapp unter der eigenen Hoehe.
             // `focusable = true` wie bei `TvKapselMitTafel`: sonst gehen die Tasten am Menue vorbei.
@@ -273,6 +276,11 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var t by remember(ziel.id) { mutableStateOf(app.titelSpeicher[ziel.id]) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
     var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
+    var sammlungen by remember(ziel.id) { mutableStateOf<List<Sammlungsreihendaten>>(emptyList()) }
+    /** Alles unter dem Kopf ist beantwortet — siehe `laden`. */
+    var untenDa by remember(ziel.id) { mutableStateOf(false) }
+    /** Der Titel kam beim ersten Laden nicht (Audit 27.09.) — vorher blieb die Seite dauerhaft leer. */
+    var gestoert by remember(ziel.id) { mutableStateOf(false) }
     val lauf = rememberCoroutineScope()
     val spielt = app.spiel.value != null
 
@@ -280,18 +288,41 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         try { t = titelLesen(withContext(Dispatchers.IO) { app.kern.titel(ziel.id).await() }).also { app.titelSpeicher[ziel.id] = it } }
         catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
-    // Auch nach der Endmeldung: erst dann kennt der Server die Stelle (`wiedergabeBeendet`).
-    LaunchedEffect(ziel.id, spielt, app.wiedergabeBeendet.intValue) { if (!spielt) neuLaden() }
-    LaunchedEffect(ziel.id) {
-        try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() })
-            aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
-            val basis = o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
-            // Der Trailer wohnt hier, nicht als sechste Pille — siehe Doc-Kommentar oben.
-            val tr = JSONObject(withContext(Dispatchers.IO) { app.kern.lokalerTrailer(ziel.id).await() })
-            val vorschau = if (tr.has("id")) Extra(tr.getString("id"), tr.getString("name"), tr.feldText("bild"), tr.feldText("laufzeit")) else null
-            extras = listOfNotNull(vorschau) + basis
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    /**
+     * **Alles unter dem Kopf kommt auf einmal** — Vorlage `ItemDetailView.untenDa` (iOS, 83677a44),
+     * wie `TitelSeite.laden` am Telefon. Sammlung, Aehnliches, Extras und Besetzung trafen einzeln ein
+     * und drueckten sich nacheinander in die Seite; beim Herunterschalten stand der Fokus so auf
+     * einer Reihe, die gleich darauf nach unten rutschte. Jetzt wartet die Seite auf alle Abrufe und
+     * blendet die Reihen gemeinsam ein. Scheitert ein Teil, fehlt nur seine Reihe.
+     */
+    suspend fun laden() {
+        coroutineScope {
+            val a = async { try { titelLesen(withContext(Dispatchers.IO) { app.kern.titel(ziel.id).await() }) }
+                            catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
+            val b = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() }) }
+                            catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
+            // Der Trailer wohnt in den Extras, nicht als sechste Pille — siehe Doc-Kommentar oben.
+            val c = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.lokalerTrailer(ziel.id).await() }) }
+                            catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
+            val d = async { sammlungsreihenLaden(app.kern, ziel.id) }
+            val neu = a.await(); val umfeld = b.await(); val tr = c.await(); val reihen = d.await()
+            val vorschau = tr?.takeIf { it.has("id") }?.let { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
+            // Ab hier ohne Unterbrechung: alles landet im selben Bild.
+            neu?.let { t = it; app.titelSpeicher[ziel.id] = it }
+            gestoert = neu == null && t == null
+            umfeld?.let { o ->
+                aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
+                extras = listOfNotNull(vorschau) + o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
+            }
+            sammlungen = reihen
+            untenDa = true
+        }
+    }
+    LaunchedEffect(ziel.id) { laden() }
+    // Nach dem Schauen und nach der Endmeldung (erst dann kennt der Server die Stelle) nur der Titel.
+    var hatGespielt by remember(ziel.id) { mutableStateOf(false) }
+    LaunchedEffect(ziel.id, spielt, app.wiedergabeBeendet.intValue, app.sehstandGeaendert.intValue) {
+        if (spielt) hatGespielt = true else if (hatGespielt) neuLaden()
     }
     val haupt = ersterFokus()
     val titel = t
@@ -313,6 +344,9 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // Emulator nicht sichtbar einblendete, steht dort.
     val eingeblendet = rememberTvEinblendung(ziel.id)
     val einblendAlpha = { eingeblendet.value }
+    // Die Reihen darunter blenden erst ein, wenn `laden` durch ist — gemeinsam, nicht einzeln.
+    val unten = rememberTvEinblendung(ziel.id, bereit = untenDa)
+    val untenAlpha = { eingeblendet.value * unten.value }
     // Vorlage: `HauptView.errorMessage`-Band, angebunden wie am Handy (`TitelSeite.meldung`) —
     // Android hat keine geteilte Fehlerquelle wie `AppModel.errorMessage`, deshalb eigener Zustand.
     var meldung by remember { mutableStateOf<String?>(null) }
@@ -327,18 +361,32 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
                     // Vorlage: `DetailView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
-                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Zeichen.Abspielen, Modifier.focusRequester(haupt)) {
+                    val menue = de.paulherter.swiftly.LocalKachelmenue.current
+                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Zeichen.Abspielen, Modifier.focusRequester(haupt),
+                            // Langes OK oder die Menue-Taste: das Kachelmenue des Titels, wie an seiner Kachel.
+                            lange = menue?.let { m -> {
+                                m(de.paulherter.swiftly.Kachelmenuewunsch(ziel.id, name, titel?.typ?.ifEmpty { null } ?: "Movie",
+                                    titel?.let { it.kulisse ?: it.kopfbild }, true, titel?.nebenzeile,
+                                    nachher = { lauf.launch { neuLaden() } }))
+                            } }) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
+                        // Ohne Titel weiss niemand, ob es eine Datei gibt — erst noch einmal fragen.
+                        else if (titel == null && gestoert) { gestoert = false; lauf.launch { laden() } }
                         else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
-                    if (titel?.fortsetzenAb != null) TvKnopf(null, Zeichen.Zurueckspulen) {
+                    if (titel?.fortsetzenAb != null) TvKnopf(null, Zeichen.Zurueckspulen, beschreibung = uebersetzt("Von vorn abspielen")) {
                         if (titel.planDa) app.spiel.value = Abspielwunsch(ziel.id, null)
                         else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
-                    TvKnopf(null, if (titel?.gemerkt == true) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen) {
+                    TvKnopf(null, if (titel?.gemerkt == true) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen,
+                            beschreibung = uebersetzt("Merkliste"), aktiv = titel?.gemerkt == true) {
                         val an = !(titel?.gemerkt ?: false)
                         titel?.let { t = it.copy(gemerkt = an) }
-                        lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }.isNotEmpty()) titel?.let { t = it } }
+                        // Wie „Gesehen": zurueckdrehen **und melden** — vorher sprang das Zeichen nur still zurueck.
+                        lauf.launch {
+                            val grund = withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }
+                            if (grund.isNotEmpty()) { titel?.let { t = it }; meldung = fehlertext(grund) }
+                        }
                     }
                     // **`TvMehrknopf` statt `app.blatt`** — auf tvOS klappt das Menue direkt unter dem
                     // Knopf auf, nicht als Tafel am rechten Rand. Siehe Doc-Kommentar dort.
@@ -353,11 +401,15 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                                 add(Wahl("vonvorn", uebersetzt("Von vorn abspielen")))
                                 add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
                             }
+                            // Nur mit Datei und Recht (`Titelhandlungen.fuerFilm`, `gemeinsam`).
+                            if (tt.planDa && app.gemeinsam.value.darfAnlegen) add(Wahl("gemeinsam", uebersetzt("Gemeinsam schauen")))
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         TvMehrknopf(eintraege,
                             mapOf("gesehen" to Zeichen.HakenKreisVoll, "vonvorn" to Zeichen.Zurueckspulen,
-                                  "zuruecksetzen" to Zeichen.RuecksetzenKreis, "metadaten" to Zeichen.Neuladen)) { wahl ->
+                                  "zuruecksetzen" to Zeichen.RuecksetzenKreis, "gemeinsam" to Zeichen.Gruppe,
+                                  "metadaten" to Zeichen.Neuladen)) { wahl ->
+                            if (wahl == "gemeinsam") { tvAnlegenOeffnen(app, ziel.id, tt.name); return@TvMehrknopf }
                             lauf.launch {
                                 when (wahl) {
                                     // Vorlage: `gesehenHandlung`/`DetailView.swift:189-194` (VERHALTEN D6) —
@@ -381,21 +433,24 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             }
                         }
                     } else {
-                        TvKnopf(null, Zeichen.Mehr) {}
+                        TvKnopf(null, Zeichen.Mehr, beschreibung = uebersetzt("Mehr")) {}
                     }
                 }
                 // Ueber „Aehnliche Filme": die Sammlung ist die naehere Verwandtschaft. Nur bei
                 // Titeln, die in einer stehen (`Sammlungsreihe` in `Titelreihen.swift`).
-                TvSammlungsreihe(app, ziel.id, oeffnen) { i -> Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "sammlung$i") }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
-                    items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
-                }
-                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "extras")) {
-                    items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
-                }
-                val leute = titel?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "besetzung")) {
-                    items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
+                if (gestoert && titel == null) TvStoerung(app, erneut = { gestoert = false; lauf.launch { laden() } })
+                if (untenDa) {
+                    TvSammlungsreihe(sammlungen, oeffnen) { i -> Modifier.tvEingeblendet(untenAlpha).tvAbschnitt(a, "sammlung$i") }
+                    if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.tvEingeblendet(untenAlpha).tvAbschnitt(a, "aehnliche")) {
+                        items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+                    }
+                    if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.tvEingeblendet(untenAlpha).tvAbschnitt(a, "extras")) {
+                        items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
+                    }
+                    val leute = titel?.darsteller.orEmpty()
+                    if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.tvEingeblendet(untenAlpha).tvAbschnitt(a, "besetzung")) {
+                        items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
+                    }
                 }
                 Spacer(Modifier.height(40.dp))
         }
@@ -419,9 +474,14 @@ private fun tvLangesDatum(iso: String): String? =
 @Composable
 fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var stand by remember(ziel.id) { mutableStateOf(app.personenSpeicher[ziel.id]) }
-    LaunchedEffect(ziel.id) {
+    // **Kein Fehler ohne Ausweg** (Audit 27.09.): scheiterte der Abruf, blieb die Seite leer, und nichts
+    // war fokussierbar — eine Sackgasse. Jetzt der Stoerzustand mit „Erneut versuchen", im Fokus.
+    var fehlgeschlagen by remember(ziel.id) { mutableStateOf(false) }
+    var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    LaunchedEffect(ziel.id, versuch) {
+        fehlgeschlagen = false
         try { stand = personLesen(withContext(Dispatchers.IO) { app.kern.person(ziel.id).await() }).also { app.personenSpeicher[ziel.id] = it } }
-        catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        catch (e: CancellationException) { throw e } catch (_: Exception) { fehlgeschlagen = true }
     }
     val s = stand
     var anfragbar by remember(ziel.id) { mutableStateOf<List<Seerrkachel>?>(null) }
@@ -430,13 +490,18 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(tmdb, seerrDa) {
         if (tmdb == null || !seerrDa) return@LaunchedEffect
         val eigene = s?.titel.orEmpty().mapTo(HashSet()) { it.titel.lowercase() }
-        anfragbar = seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() }).filter { it.titel.lowercase() !in eigene }
+        anfragbar = try {
+            seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() }).filter { it.titel.lowercase() !in eigene }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     val seerrFertig = anfragbar != null || !seerrDa || (s != null && tmdb == null)
     val banner = s?.banner.orEmpty()
     var stelle by remember(ziel.id) { mutableIntStateOf(0) }
-    LaunchedEffect(banner.size) { if (banner.size > 1) while (true) { delay(6000); stelle++ } }
-    val fokus = ersterFokus(s != null)
+    // **Bei „Bewegung reduzieren" bleibt das erste Querbild** (Audit 27.09.) — das Wechseln ist die einzige
+    // Stelle der Seite, die sich ohne Zutun ruehrt; das System kuerzt nur die Blende, nicht den Wechsel.
+    val ruhig = bewegungReduziert()
+    LaunchedEffect(banner.size, ruhig) { if (banner.size > 1 && !ruhig) while (true) { delay(6000); stelle++ } }
+    val fokus = ersterFokus(s != null || fehlgeschlagen)
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         // Vorlage: `PersonView` `.bildgrund(url: bannerJetzt)` — der Grund folgt dem Querbild.
@@ -504,8 +569,10 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                 // **Gestoert ist nicht leer** — „Auf deinem Server gibt es sonst nichts mit …"
                 // ist eine Aussage ueber den Bestand, und die hat niemand geprueft, wenn der
                 // Server nicht geantwortet hat.
-                if (s != null && s.gestoert) {
-                    TvStoerung(app)
+                if (s == null && fehlgeschlagen) {
+                    TvStoerung(app, knopfModifier = Modifier.focusRequester(fokus), erneut = { versuch++ })
+                } else if (s != null && s.gestoert && s.titel.isEmpty()) {
+                    TvStoerung(app, knopfModifier = Modifier.focusRequester(fokus), erneut = { versuch++ })
                 } else if (s != null && seerrFertig && s.titel.isEmpty() && anfragbar.orEmpty().isEmpty()) {
                     Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name), style = TvStil.koerper, color = Stil.schriftLeise,
                          modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))

@@ -26,12 +26,22 @@ extension Stil {
     static var bewegungReduziert: Bool {
         UIAccessibility.isReduceMotionEnabled
     }
+    /// Die kurze Überblendung, wenn Bewegung reduziert ist — derselbe Wert
+    /// wie auf dem iPhone, für die geteilten Übergänge (`Kontowechselflug`).
+    static let blendeReduziert: Animation = .linear(duration: 0.14)
     static let listentitel = Font.system(size: 30, weight: .semibold)
 
     // Die Eckenleiter steht weiter unten bei den uebrigen Massen, unter
     // „MARK: Ecken" — alle vier Stufen an einer Stelle, mit der Rechnung.
 
     // MARK: - Rueckmeldung auf den Druck
+
+    /// **Der Druck: sofort hinein, in 0,12 s heraus** — wie am iPhone und
+    /// auf dem Mac. Symmetrisch war falsch: eine Rueckmeldung auf den Druck
+    /// darf keine Dauer haben, das Zurueckgehen schon.
+    static func druckkurve(_ gedrueckt: Bool) -> Animation? {
+        gedrueckt ? nil : .linear(duration: 0.12)
+    }
 
     /// **Dieselben zwei Stile wie auf dem iPhone**, damit die geteilten
     /// Bausteine in `Sources/Shared` sie hier auch finden. Eine Zeile bekommt
@@ -41,7 +51,7 @@ extension Stil {
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .background(Stil.schrift.opacity(configuration.isPressed ? 0.06 : 0))
-                .animation(.linear(duration: 0.12), value: configuration.isPressed)
+                .animation(Stil.druckkurve(configuration.isPressed), value: configuration.isPressed)
         }
     }
 
@@ -50,7 +60,7 @@ extension Stil {
             configuration.label
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .opacity(configuration.isPressed ? 0.85 : 1)
-                .animation(.linear(duration: 0.12), value: configuration.isPressed)
+                .animation(Stil.druckkurve(configuration.isPressed), value: configuration.isPressed)
         }
     }
 
@@ -163,6 +173,8 @@ extension Stil {
     /// Waagerecht 16:9 — für „Weiterschauen", wo ein Standbild mehr sagt als
     /// das Cover.
     static let querBreite: CGFloat = 448
+    /// Die Breite des Bildes. tvOS rechnet immer in 1920 × 1080 Punkt.
+    static let schirmBreite: CGFloat = 1920
     static let querHoehe: CGFloat = 252
 
     /// Alle Abstände sind so gewählt, dass die **fokussierte** Kachel noch
@@ -201,7 +213,7 @@ extension Stil {
     /// waechst auch die Kopfzone um denselben Betrag, und die Tafelmasse
     /// gelten unveraendert weiter:
     ///
-    /// 196 + 68 + 14 + 34 + 22 + 80 + 36 + 76 = 526   Block endet 566 + 24
+    /// 196 + 68 + 8 + 40 + 22 + 80 + 36 + 76 = 526   Block endet 566 + 24
     /// = 590   Reihentitel 590 − 526                              =  64   wie
     /// in der Tafel
     static let kopfversatzDetail: CGFloat = 56
@@ -233,26 +245,71 @@ extension Stil {
 
     /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
     ///
-    /// Titel           68 + 14 Angaben    34 + 22 Beschr.   127 = 265
-    ///
-    /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
+    /// Titel 68 + `angabenLuft` 8 + `markeHoehe` 40 + 22 + Beschreibung 127
+    /// = 265. Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
     /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
     /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
-    /// Stelle. **Wo das oberste Element jeder Seite endet.**
+    /// Stelle.
     ///
-    /// Stimmt, und es war es nicht:
+    /// **Die Oberkante jeder Hauptseite** — Start, Filme, Serien, Merkliste,
+    /// Suche —, von der Bildkante gemessen. Auf der Startseite beginnt hier
+    /// der Titel, auf Filme, Serien und Merkliste die Kapselreihe, in der
+    /// Suche das Feld.
     ///
-    /// Start, Detail   Titel 68 ab 196   endet 264 Bibliothek      Chips 48 ab
-    /// 190   endet 238 Suche           Feld  76 ab 190   endet 266
+    /// Vorher waren die **Unterkanten** gleichgezogen (`erstesEnde`, 264): jede
+    /// Seite rechnete ihren Abstand aus der Hoehe ihres ersten Elements
+    /// zurueck. Das richtete die Seiten an einer Linie aus, die man nicht
+    /// sieht — sichtbar ist, wo etwas anfaengt. Die 48 hohen Kapseln begannen
+    /// dadurch bei 216, 20 tiefer als der Titel der Startseite, und die Seite
+    /// wirkte kopflastig (Paul, 27.09.2026). Jetzt beginnt alles an derselben
+    /// Linie: 196, die Zeile aus `Start-A.dc.html`.
+    static let inhaltOben: CGFloat = 196
+
+    /// Wo das Raster unter der Kapselreihe beginnt — vom sicheren Rand aus,
+    /// an dem die Scrollflaeche beginnt. Der Platzhalter beim Laden steht
+    /// damit genau dort, wo danach die ersten Plakate stehen.
+    static var rasterOben: CGFloat { inhaltOben - randOben + chipHoehe + kapselreiheLuft }
+    /// Zwischen der Kapselreihe und dem Raster darunter.
+    static let kapselreiheLuft: CGFloat = 30
+
+    // MARK: Angabenzeile
+
+    /// **Eine Hoehe fuer alle Marken der Angabenzeile** — Bewertung, Freigabe,
+    /// Direct Play.
     ///
-    /// Ich hatte die **Anfaenge** auf 190 gelegt. Bei verschieden hohen
-    /// Elementen richtet das nichts aus — sichtbar ist die Unterkante, weil
-    /// darunter der Inhalt beginnt.
+    /// Vorher zwei Formen: die Marke (Zeichen 22, Wort 26, 8 senkrecht, rund
+    /// 47 hoch) und die Freigabe-Plakette (24 in 14/6, rund 41). Nebeneinander
+    /// sah die Freigabe wie ein anderes Element aus, obwohl sie dieselbe Art
+    /// Angabe ist. Und 47 war zu schwer: der Abspielknopf ist 76 hoch, die
+    /// Marke damit mehr als halb so laut wie das Einzige, was man hier
+    /// druecken soll. Rangfolge Titel > Abspielknopf > Angaben.
     ///
-    /// 264 kommt vom Titel: 196 aus der Tafel plus seine Zeilenhoehe. Jede
-    /// Seite rechnet ihren oberen Abstand daraus und aus der Hoehe ihres
-    /// eigenen ersten Elements zurueck.
-    static let erstesEnde: CGFloat = 264
+    /// Jetzt eine Hoehe, fest gesetzt statt aus Schrift und Innenabstand
+    /// ergeben — ein Zeichen neben dem Wort darf sie nicht mehr verschieben.
+    /// 40 ist das Doppelte der Marke am iPhone (13 Medium in 4 senkrecht, rund
+    /// 24), abgerundet auf die Stufe, die zur Schrift der Angabe passt.
+    static let markeHoehe: CGFloat = 40
+    /// Die Schrift in der Marke: die Stufe der Angabe (24), in Medium — so
+    /// stehen Jahr, Laufzeit und die Worte in den Marken in **einer**
+    /// Schriftgroesse auf einer Grundlinie. BRAND 4 „Die Plakette": 24 Medium.
+    static let markeSchrift = Font.system(size: 24, weight: .medium)
+    /// Das Zeichen vor dem Wort, eine Stufe unter der Schrift.
+    static let markeZeichen: CGFloat = 18
+    /// Innenabstand waagerecht. Vor einem Zeichen links zwei weniger: das
+    /// Zeichen ist schmaler als seine Zeichenzelle, sonst sitzt das Wort
+    /// sichtbar aus der Mitte.
+    static let markeInnen: CGFloat = 14
+    /// Zwischen Zeichen und Wort.
+    static let markeZeichenAbstand: CGFloat = 8
+    /// **Ein Abstand in der ganzen Zeile** — zwischen „2019 · 1 Std 52 Min"
+    /// und der ersten Marke genauso wie zwischen den Marken. Vorher 24
+    /// zwischen allem, was die Marken auseinanderfallen liess; 16 ist das
+    /// Doppelte der 8 am iPhone.
+    static let angabenAbstand: CGFloat = 16
+    /// Zwischen Titel und Angabenzeile. 8 statt 14, weil die Zeile um
+    /// dieselben 6 hoeher ist (40 statt 34) — der Block bleibt so hoch wie
+    /// vorher, und die Knopfreihe steht an derselben Stelle.
+    static let angabenLuft: CGFloat = 8
 
     static var auskunftHoehe: CGFloat { auskunftHoehe(zweitzeile: false) }
 
@@ -262,14 +319,14 @@ extension Stil {
     /// bei einer Folge der Folgentitel dazu, kostet er 54 Punkt — und die
     /// dritte Zeile lief dann in den Reihentitel darunter.
     ///
-    /// ohne  68      + 14 + 34 + 22 + 127 = 265 mit   68 + 54 + 14 + 34 + 22 +
+    /// ohne  68      + 8 + 40 + 22 + 127 = 265 mit   68 + 54 + 8 + 40 + 22 +
     /// 81 = 273
     ///
     /// Der Block waechst also nur um acht statt um 54: der Folgentitel nimmt
     /// sich seinen Platz groesstenteils von der Beschreibung, nicht von der
     /// Seite.
     static func auskunftHoehe(zweitzeile: Bool) -> CGFloat {
-        68 + (zweitzeile ? zweitzeileHoehe : 0) + 14 + 34 + 22
+        68 + (zweitzeile ? zweitzeileHoehe : 0) + angabenLuft + markeHoehe + 22
         + beschreibungHoehe(zweitzeile ? 2 : 3)
     }
 
@@ -425,8 +482,22 @@ extension Stil {
     /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
     /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
     /// Inhalt loest Platzhalter ab.
+    ///
+    /// **Eine Feder, keine feste Kurve** — wie am iPhone seit der Pruefung
+    /// gegen Apples Regeln zu fluiden Oberflaechen: eine feste Dauer ist
+    /// nicht unterbrechbar, `.smooth` schwingt nicht nach und behaelt die
+    /// Kennlinie. Stand hier als `.easeInOut(duration: 0.28)`.
     static var einblenden: Animation {
-        bewegungReduziert ? .linear(duration: 0.14) : .easeInOut(duration: 0.28)
+        bewegungReduziert ? .linear(duration: 0.14) : .smooth(duration: 0.28)
+    }
+
+    /// **Eine feste Kurve, die „Bewegung reduzieren" beachtet.** Am iPhone
+    /// fragt `Stil` die Einstellung zentral ab, und jede Kurve gibt dann eine
+    /// kurze lineare Blende zurueck. Hier standen rund vierzig Kurven direkt
+    /// an ihren Aufrufstellen und liefen an der Einstellung vorbei; sie gehen
+    /// jetzt durch diese eine Weiche, ihre eigene Dauer behalten sie.
+    static func bewegung(_ kurve: Animation) -> Animation {
+        bewegungReduziert ? .linear(duration: 0.14) : kurve
     }
 
     // MARK: Seitenwechsel
@@ -436,6 +507,17 @@ extension Stil {
     /// Reines Überblenden, ohne Verschiebung — mehr macht die Systemleiste
     /// auf tvOS auch nicht. `easeInOut`, weil an beiden Enden etwas
     /// passiert: das eine geht, das andere kommt.
+    /// Die Steuerung des Players kommt und geht — und alles, was an ihr
+    /// haengt (das Technikschild), mit derselben Kurve.
+    static var steuerungBlende: Animation {
+        bewegung(.easeInOut(duration: 0.2))
+    }
+
+    /// Das Atmen eines Platzhalters. Nur aufrufen, wenn Bewegung erlaubt
+    /// ist — ein endloses Pulsieren hat keine reduzierte Fassung, es steht
+    /// dann still.
+    static let pulsieren = Animation.easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+
     static var seitenwechsel: Animation {
         bewegungReduziert ? .linear(duration: 0.14) : .easeInOut(duration: 0.25)
     }
@@ -494,60 +576,37 @@ struct Bild: View {
     var ecke: CGFloat = Stil.eckeKachel
     /// Fortschritt am unteren Rand, innerhalb der Maske.
     var fortschritt: Double? = nil
+    /// **Was stehen soll, wenn kein Bild kommt** — ein Systemzeichen statt
+    /// einer leeren Flaeche, wie am iPhone und auf dem Mac. Erst, wenn es
+    /// feststeht (keine Adresse, oder der Abruf ist endgueltig gescheitert),
+    /// nicht waehrend des Ladens: sonst blitzte es vor jeder Kachel auf.
+    var zeichen: String? = nil
 
     /// Profil → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
     @Environment(\.fortschrittAufKacheln) private var balkenZeigen
-
-    /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
-    /// Versuch wert.**
-    ///
-    /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und
-    /// bleibt danach im Fehlerzustand stehen: kommt dieselbe Kachel zurück,
-    /// versucht es von sich aus nichts mehr. Beim Kontowechsel geht die halbe
-    /// Seite kurz durch die Hände des Fokusmotors, und dann trifft es viele
-    /// Kacheln auf einmal. Am Gerät gemessen, zwanzigmal in Folge:
-    ///
-    ///     NSURLErrorDomain -999
-    ///
-    /// Das heißt „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
-    /// Aufruf von außen kam mit HTTP 200 und 158 KB zurück. Deshalb hier ein
-    /// neuer Anlauf statt einer grauen Fläche; höchstens zwei, damit ein
-    /// echter Ausfall nicht in eine Schleife läuft.
-    @State private var anlauf = 0
 
     var body: some View {
         Color.clear
             .frame(width: breite, height: hoehe)
             .frame(maxWidth: breite == nil ? .infinity : nil)
             .overlay {
-              // **Nur hinter einem Vorposten.** `AsyncImage` kann keine
-              // eigenen Header senden (Issue #4); `Netzbild` kann es. Fuer
-              // alle anderen bleibt es beim Bisherigen.
-              if let url, !Eigenkoepfe.fuer(url).isEmpty {
-                Netzbild(url: url)
-              } else {
-                // Die `transaction` blendet den Wechsel der Lagen weich;
-                // ohne sie schaltet `AsyncImage` hart um. **Nichts erscheint
-                // hart** — GESTALTUNG, Abschnitt E.
-                AsyncImage(url: url,
-                           transaction: Transaction(animation: Stil.einblenden)) { phase in
-                    if case let .success(bild) = phase {
-                        bild.resizable().aspectRatio(contentMode: .fill)
-                            .transition(.opacity)
-                    } else {
-                        Stil.flaeche.onAppear {
-                            guard case let .failure(f) = phase,
-                                  (f as NSError).code == NSURLErrorCancelled,
-                                  anlauf < 2 else { return }
-                            anlauf += 1
-                        }
+                // **Ueber den `Bildspeicher`, nicht ueber `AsyncImage`** —
+                // wie iPhone und Mac seit dem 10.09. (`8e69cfd`). Hier stand
+                // `AsyncImage` fuer alle Server ohne Vorposten: es
+                // entschluesselt auf dem Hauptlauf, merkt sich nichts ausser
+                // der Netzantwort und bricht ab, sobald die Kachel den Schirm
+                // verlaesst — dagegen stand ein Anlaufzaehler. `Netzbild`
+                // entschluesselt abseits, auf die Kachelgroesse, und legt die
+                // Datei auf die Platte (`Bildablage`).
+                //
+                // Die Flaeche bleibt darunter, damit eine ladende Kachel
+                // aussieht wie bisher.
+                Stil.flaeche
+                    .overlay {
+                        Netzbild(url: url, zeichen: zeichen, anzeigekante: anzeigekante,
+                                 zeichengroesse: 44)
                     }
-                }
-                .id(anlauf)
-              }
             }
-            // Eine neue Adresse heißt ein frischer Anlauf.
-            .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
                 if let fortschritt, balkenZeigen {
                     Fortschrittsbalken(anteil: fortschritt)
@@ -555,6 +614,21 @@ struct Bild: View {
             }
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: ecke, style: .continuous))
+    }
+
+    /// Die Kante, fuer die das Bild geholt wird — nur, wenn beide Masse
+    /// feststehen. Ohne Breite reicht die Kachel ueber die volle Zeile, und
+    /// dann ist jede Schaetzung zu klein.
+    private var anzeigekante: CGFloat? {
+        guard let breite, let hoehe else { return nil }
+        return max(breite, hoehe)
+    }
+
+    /// Ein abgebrochener Abruf — der einzige Fehlschlag, der einen neuen
+    /// Anlauf wert ist. Fuer `Kulisse`, die ueber `AsyncImage` laedt.
+    static func abgebrochen(_ phase: AsyncImagePhase) -> Bool {
+        guard case let .failure(f) = phase else { return false }
+        return (f as NSError).code == NSURLErrorCancelled
     }
 }
 
@@ -588,62 +662,29 @@ struct Fortschrittsbalken: View {
 // **Die Maße bleiben hier, die Bausteine nicht.** Der geteilte Baustein nimmt
 // sie entgegen, das Ziel gibt sie mit.
 
-/// Die Fernseher-Maße der Plakette an einer Stelle.
+/// Die Belege einer Angabenzeile — Bewertung, Freigabe, Direct Play —, **ohne
+/// eigenen Stapel**.
 ///
-/// Das ist **keine zweite Plakette**, sondern ein Satz Zahlen: die
-/// iPhone-Werte (5/2, Rundung 3, Strich 1) sind auf drei Meter Entfernung zu
-/// klein. Wer sie ändert, ändert sie hier — nicht in einer Kopie.
+/// Sie stehen direkt in der Zeile, in die man sie setzt: im Kopfblock neben
+/// „2019 · 1 Std 52 Min", in der `Belegzeile` fuer sich. Vorher war es ein
+/// Stapel im Stapel; der hielt seinen Abstand auch dann, wenn er leer war,
+/// und die Marken dahinter lagen je nach Nachbar 24 oder 48 auseinander.
+/// Jetzt ist jede Marke ein Kind der Zeile, und was fehlt, kostet keinen
+/// Abstand.
 ///
-/// Die Randfarbe leitet sich aus der Schriftfarbe ab, so wie es die eigene
-/// Fassung tat. Der geteilte Baustein hält beide getrennt, weil ein
-/// gekoppelter Rand die Plakette auf dem iPhone aufgehellt hätte.
-extension Plakette {
-    static func fern(_ text: String, farbe: Color = Stil.schriftLeise) -> Plakette {
-        // **Dieselbe Form wie die Marke nebenan, eine Stufe kleiner.**
-        //
-        // Hier stand die Haelfte der noetigen Masse: Innenabstand und Ecke
-        // waren verdoppelt, die Schrift blieb bei 13 — sie war im geteilten
-        // Baustein gar nicht einstellbar. Das war eine
-        // Telefonbeschriftung in einem Fernseherkasten mit doppelt so
-        // runden Ecken wie ihr Nachbar.
-        //
-        // Auf 27 gesetzt, also gleichauf mit der Marke, wurde sie zu
-        // schwer: „etwas zu riesig verglichen mit denen daneben." Das ist
-        // richtig so, und es hat einen Grund ausser dem Augenmass — „Direct
-        // Play" ist die Aussage der Zeile, die Freigabe eine Nebenangabe
-        // wie die Bewertung. 24 Medium in 14/6: dieselbe Form, sichtbar eine
-        // Stufe leiser.
-        //
-        // **Die Ecke ist `eckeKlein`, keine eigene Zahl.** Hier stand 6 — auf
-        // einer 41 Punkt hohen Plakette sind das 0,15, wo am iPhone 0,33
-        // stehen; sie war damit das kantigste Ding der Seite. Am iPhone
-        // nimmt dieselbe Plakette in der `Belegzeile` ebenfalls das kleine
-        // Mass. Die Marke nebenan nimmt es auch, und genau darauf kommt es an.
-        Plakette(text: text,
-                 farbe: farbe,
-                 innenWaagerecht: 14,
-                 innenSenkrecht: 6,
-                 rundung: Stil.eckeKlein,
-                 groesse: 24)
-    }
-}
-
-/// Der Beleg, dass der Server nicht transkodiert — der Grund für diese App.
-///
-/// Steht auf der Detailseite. Im Player ausdrücklich **nicht**: dort zählt
-/// das Bild, und wer die Wiedergabe schon gestartet hat, hat den Beleg
-/// gesehen.
-struct Belegzeile: View {
-    var direktplay: Bool
+/// **Eine Huelle fuer alle drei** (`Belegmarke`). Die Freigabe war eine
+/// `Plakette` in eigenen Massen — gleiche Art Angabe, anderes Element.
+struct Belegmarken: View {
+    var direktplay: Bool = false
     var hinweis: String?
     var bewertung: Double?
     var freigabe: String?
     /// Der Beleg steht hinten statt vorn.
     ///
-    /// Auf dem Detailkopf laeuft die Zeile „Jahr · Laufzeit · Gattung",
-    /// Bewertung, Freigabe, Beleg — die Angaben zum Titel zuerst, die Aussage
-    /// ueber die **Wiedergabe** zuletzt. Im Wiedergabeblatt ist es umgekehrt:
-    /// dort ist der Beleg der Grund, warum die Zeile ueberhaupt dasteht.
+    /// Auf dem Detailkopf laeuft die Zeile „Jahr · Laufzeit", Bewertung,
+    /// Freigabe, Beleg — die Angaben zum Titel zuerst, die Aussage ueber die
+    /// **Wiedergabe** zuletzt. Im Wiedergabeblatt ist es umgekehrt: dort ist
+    /// der Beleg der Grund, warum die Zeile ueberhaupt dasteht.
     var belegZuletzt = false
     /// **Ein freier Beleg statt des Wiedergabeplans** — auf der Seerr-Seite
     /// der Stand der Anfrage, in derselben Huelle wie Direct Play und die
@@ -651,68 +692,97 @@ struct Belegzeile: View {
     var eigen: (symbol: String, wort: String, farbe: Color)? = nil
 
     var body: some View {
-        HStack(spacing: 24) {
-            if !belegZuletzt { beleg }
-            // In derselben Huelle wie Direct Play — wie am iPhone seit dem
-            // 23.09.2026: vorher stand die Bewertung als einzige Angabe der
-            // Zeile nackt da.
-            if let bewertung {
-                marke("star.fill",
-                      Text(verbatim: String(format: "%.1f", bewertung)
-                          .replacingOccurrences(of: ".", with: ",")),
-                      farbe: Stil.schriftLeise, gewicht: .semibold)
-            }
-
-            if let freigabe { Plakette.fern(freigabe) }
-
-            if belegZuletzt { beleg }
+        if !belegZuletzt { beleg }
+        // In derselben Huelle wie Direct Play — wie am iPhone seit dem
+        // 23.09.2026: vorher stand die Bewertung als einzige Angabe der
+        // Zeile nackt da.
+        if let bewertung {
+            Belegmarke(symbol: "star.fill",
+                       wort: Text(verbatim: String(format: "%.1f", bewertung)
+                           .replacingOccurrences(of: ".", with: ",")),
+                       farbe: Stil.schriftLeise, gewicht: .semibold)
         }
+        if let freigabe {
+            Belegmarke(wort: Text(verbatim: freigabe), farbe: Stil.schriftLeise)
+        }
+        if belegZuletzt { beleg }
     }
 
     @ViewBuilder
     private var beleg: some View {
         if let eigen {
-            marke(eigen.symbol, Text(verbatim: eigen.wort),
-                  farbe: eigen.farbe, gewicht: .semibold)
+            Belegmarke(symbol: eigen.symbol, wort: Text(verbatim: eigen.wort),
+                       farbe: eigen.farbe, gewicht: .semibold)
         } else if direktplay {
             // Halbfett, nicht `.heavy` — wie am iPhone. Extrafett war der
             // vierte Schnitt und damit einer zu viel (BRAND 2).
-            marke("checkmark", Text("Direct Play"), farbe: Stil.akzent, gewicht: .semibold)
+            Belegmarke(symbol: "checkmark", wort: Text("Direct Play"),
+                       farbe: Stil.akzent, gewicht: .semibold)
         } else if let hinweis {
-            marke("exclamationmark.triangle.fill", Text(hinweis),
-                  farbe: Stil.warnung, gewicht: .regular)
+            Belegmarke(symbol: "exclamationmark.triangle.fill", wort: Text(hinweis),
+                       farbe: Stil.warnung, gewicht: .regular)
         }
     }
+}
 
-    /// Die Huelle, in der die Belege und die Bewertung stecken.
-    ///
-    /// **Warum eine Marke und kein loser Text.** Zeichen und Wort standen
-    /// nackt auf dem Grund, und daneben liegt die Freigabe als umrandete
-    /// Plakette — zwei verschiedene Formen fuer zwei Angaben, die gleich viel
-    /// wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich als Paar;
-    /// welche Auskunft es ist, sagt die Farbe.
-    ///
-    /// **`eckeKlein`, dieselbe wie `Plakette.fern`** — nicht `Stil.ecke`. Es
-    /// geht hier nicht um die Groesse der Flaeche, sondern darum, dass die
-    /// beiden Nachbarn gleich aussehen. Hier stand 6: auf einer 47 Punkt hohen
-    /// Marke 0,13, wo am iPhone auf 24 Punkt Hoehe 0,33 stehen.
-    ///
-    /// Fuenfzehn Prozent Toenung, keine Fuellung: der weisse Fokus bleibt
-    /// die einzige gefuellte Flaeche des Bildschirms.
-    private func marke(_ symbol: String, _ wort: Text,
-                       farbe: Color, gewicht: Font.Weight) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 22, weight: gewicht))
-            // `Stil.kachel` — 26 Medium, das Doppelte der 13 Medium, die das
-            // Wort am iPhone traegt. Vorher 27, eine Zahl ohne Stufe.
-            wort.font(Stil.kachel)
+/// Der Beleg, dass der Server nicht transkodiert — der Grund für diese App —,
+/// als eigene Zeile: im Wiedergabeblatt und auf der Seerr-Seite.
+///
+/// Im Player ausdrücklich **nicht**: dort zählt das Bild, und wer die
+/// Wiedergabe schon gestartet hat, hat den Beleg gesehen.
+struct Belegzeile: View {
+    var direktplay: Bool
+    var hinweis: String?
+    var bewertung: Double?
+    var freigabe: String?
+    var belegZuletzt = false
+    var eigen: (symbol: String, wort: String, farbe: Color)? = nil
+
+    var body: some View {
+        // An der Mitte, nicht an der Grundlinie: eine Marke mit Zeichen
+        // meldete sonst die Grundlinie des SF Symbols, und die Huellen lagen
+        // bis zu 3 Punkt versetzt. Siehe `Kopfauskunft`.
+        HStack(alignment: .center, spacing: Stil.angabenAbstand) {
+            Belegmarken(direktplay: direktplay, hinweis: hinweis,
+                        bewertung: bewertung, freigabe: freigabe,
+                        belegZuletzt: belegZuletzt, eigen: eigen)
         }
+    }
+}
+
+/// **Die eine Huelle** fuer Bewertung, Freigabe und Beleg.
+///
+/// **Warum eine Marke und kein loser Text.** Zeichen und Wort standen nackt
+/// auf dem Grund, und daneben lag die Freigabe als umrandete Plakette — zwei
+/// verschiedene Formen fuer zwei Angaben, die gleich viel wiegen. Jetzt
+/// tragen alle drei dieselbe Form; welche Auskunft es ist, sagt die Farbe.
+///
+/// **Die Hoehe ist gesetzt, nicht ergeben** — siehe `Stil.markeHoehe`. So
+/// ist die Freigabe ohne Zeichen genau so hoch wie die Bewertung mit.
+///
+/// Fuenfzehn Prozent Toenung, keine Fuellung: der weisse Fokus bleibt die
+/// einzige gefuellte Flaeche des Bildschirms. Ecke `eckeKlein` — 14 auf 40
+/// sind 0,35, das Verhaeltnis der Marke am iPhone (8 auf 24).
+struct Belegmarke: View {
+    var symbol: String?
+    let wort: Text
+    let farbe: Color
+    var gewicht: Font.Weight = .semibold
+
+    var body: some View {
+        HStack(spacing: Stil.markeZeichenAbstand) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: Stil.markeZeichen, weight: gewicht))
+                    .accessibilityHidden(true)
+            }
+            wort.font(Stil.markeSchrift)
+        }
+        .lineLimit(1)
         .foregroundStyle(farbe)
-        // Links enger als rechts: das Zeichen ist schmaler als seine
-        // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
-        .padding(.leading, 16)
-        .padding(.trailing, 20)
-        .padding(.vertical, 8)
+        .padding(.leading, symbol == nil ? Stil.markeInnen : Stil.markeInnen - 2)
+        .padding(.trailing, Stil.markeInnen)
+        .frame(height: Stil.markeHoehe)
         .background(farbe.opacity(0.15),
                     in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
     }
@@ -763,6 +833,11 @@ struct Leerzustand: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // **Der Eintritt gehoert ins Bauteil**, wie am iPhone und auf dem
+        // Mac: bis hierher sprang ein Leerzustand hart ins Bild. Das Wann
+        // bleibt beim Aufrufer — eine `.transition` wirkt nur, wenn das
+        // Einfuegen selbst animiert ist.
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
 }
 
@@ -904,6 +979,7 @@ struct Hinweisstreifen: View {
         HStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 26))
+                .accessibilityHidden(true)
             Text(text)
                 .font(Stil.kachel)
                 .lineLimit(2)
@@ -918,7 +994,10 @@ struct Hinweisstreifen: View {
                 .strokeBorder(Stil.warnung.opacity(0.3), lineWidth: 2)
         }
         .frame(maxWidth: 1100)
-        .task {
+        // **An den Text gebunden**, wie am iPhone. Ohne `id` lief die Frist
+        // der ersten Meldung weiter, wenn eine zweite kam, solange die erste
+        // noch stand — und nahm die zweite nach dem Rest der Zeit mit.
+        .task(id: text) {
             // Von selbst wieder weg: auf tvOS gibt es keinen bequemen Weg,
             // eine Meldung wegzutippen, und stehen bleiben soll sie nicht.
             try? await Task.sleep(for: .seconds(6))

@@ -10,7 +10,7 @@ S1 = skizze(1, "A browser window showing the test group page; the Join group but
     BROWSER +
     '<text class="titel" x="40" y="80">swiftly-beta</text>' +
     zeile(40, 92, 210) + zeile(40, 108, 172) +
-    '<rect x="40" y="132" width="112" height="32" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="40" y="132" width="112" height="32" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="56" y="152">Join group</text>' +
     zeiger(96, 144))
 
@@ -19,14 +19,14 @@ S2 = skizze(2, "A browser window showing the testing page; the Become a tester b
     '<text class="titel" x="40" y="80">Swiftly Player</text>' +
     '<text x="40" y="100">Test programme</text>' +
     zeile(40, 112, 196) +
-    '<rect x="40" y="136" width="146" height="32" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="40" y="136" width="146" height="32" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="56" y="156">Become a tester</text>' +
     zeiger(110, 148))
 
 S3 = skizze(3, "A phone with the app page open; the Install button is marked",
     TELEFON + MARKE +
     '<text class="titel" x="194" y="48">Swiftly</text><text x="194" y="64">Free</text>' +
-    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="176" y="99">Install</text>' +
     zeile(152, 126, 96, ".45") + zeile(152, 142, 74, ".35") + zeile(152, 158, 88, ".3") +
     tipp(238, 95))

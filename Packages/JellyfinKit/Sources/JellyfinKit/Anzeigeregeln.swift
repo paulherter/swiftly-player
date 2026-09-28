@@ -78,3 +78,17 @@ public enum Kachelmarke: Equatable, Sendable {
     case offen(Int)
     case staffeln(Int)
 }
+
+public extension Item {
+    /// **Das Zeichen, das eine Kachel ohne Bild traegt** — ein Fernseher bei
+    /// Serien und ihren Folgen, ein Filmstreifen sonst. Eine leere Flaeche
+    /// sieht aus wie ein Fehler in der App; ein Zeichen sagt, dass hier ein
+    /// Bild hingehoert und der Server keins hat.
+    ///
+    /// Stand vorher als Bedingung an jeder Aufrufstelle, einmal mit `type`,
+    /// einmal mit `seriesId` — und damit bekam je nach Stelle entweder die
+    /// Serie oder ihre Folge den Filmstreifen.
+    var kachelzeichen: String {
+        type == "Series" || seriesId != nil ? "tv" : "film"
+    }
+}

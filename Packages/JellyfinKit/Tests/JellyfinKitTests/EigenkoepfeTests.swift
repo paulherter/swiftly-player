@@ -10,6 +10,15 @@ import FoundationNetworking
 /// **Alle Werte sind erfunden**, und jeder Test nimmt einen eigenen Rechner
 /// unter `.test`: die Tafel ist geteilt, und parallel laufende Tests anderer
 /// Suiten dürfen davon nichts merken.
+/// **Die Tafel der eigenen Köpfe ist prozessweit geteilt.** `laden` ersetzt
+/// sie ganz; lief der Ablage-Test hier neben einem Weiterleiter-Test, war
+/// dessen Eintrag weg, der Vorposten antwortete 403, und der Test wurde
+/// rot — unter Last regelmäßig. Die Suiten, die sie anfassen, laufen deshalb
+/// nacheinander.
+@Suite("Geteilte Kopftafel", .serialized)
+enum GeteilteKopftafel {}
+
+extension GeteilteKopftafel {
 @Suite("Eigene Köpfe", .serialized)
 struct EigenkoepfeTests {
 
@@ -172,4 +181,5 @@ struct EigenkoepfeTests {
             #expect(lesbarerFehler(error) == Eigenkoepfe.anmeldeseiteText)
         }
     }
+}
 }

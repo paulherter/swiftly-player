@@ -10,7 +10,7 @@ import SwiftUI
 /// AppKit-Arm, und die Marke fährt damit auf allen vier Plattformen gleich
 /// auf.
 struct RootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.einziges
     @State private var vorhangDa = true
     /// Apples Bewertungsabfrage — wann, entscheidet `Gemeinschaft.anstoss`.
     @Environment(\.requestReview) private var bewerten
@@ -174,19 +174,24 @@ struct ServerView: View {
                     .padding(.top, 12)
             }
 
-            Hauptknopf(beschriftung: "Verbinden", symbol: "arrow.right",
-                       auswahl: verbinden)
+            // Die Beschriftung sagt, dass geprüft wird — wie auf dem iPhone.
+            Hauptknopf(beschriftung: model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                       symbol: "arrow.right", auswahl: verbinden)
                 .padding(.top, 24)
-                .disabled(adresse.isEmpty || model.isWorking)
+                .disabled(adresse.isEmpty || model.isWorking || model.phase == .connecting)
                 .opacity(adresse.isEmpty ? 0.4 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { imFeld = true }
+        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
+        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
     }
 
+    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
+    /// Senden während der Prüfung verwirft das Modell.
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
+        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
     }
 }
 
@@ -274,6 +279,7 @@ struct Eingabezeile: View {
                 .font(Stil.rubrikGross.weight(.regular))
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .frame(width: 20)
+                .accessibilityHidden(true)
 
             Group {
                 if geheim {

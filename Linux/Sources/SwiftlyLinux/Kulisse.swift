@@ -111,28 +111,39 @@ final class Kulisse: @unchecked Sendable {
         fertigTeiler = 1
     }
 
-    /// Nimmt ein heruntergeladenes Bild an.
-    func setzen(_ daten: Data) {
-        // Kommt das Bild nach dem Ende der Seite, gibt es nichts mehr zu malen.
-        guard lebt else { return }
-        daten.withUnsafeBytes { puffer in
+    /// Wann die Kulisse entstand — ein Bild, das gleich danach da ist (aus
+    /// dem Speicher), steht sofort; eines, das später kommt, blendet ein.
+    private let geboren = Date()
+
+    /// Die entpackten Punkte eines Bildes, über Fadengrenzen gereicht.
+    struct Entpackt: Sendable {
+        let punkte: [UInt8]
+        let breite: Int
+        let hoehe: Int
+        let takt: Int
+    }
+
+    /// Packt ein Bild aus — **abseits des Hauptfadens** aufrufbar
+    /// (`gdk_texture_new_from_bytes` ist fadensicher). Ein Kopfbild ist
+    /// 1600 Punkt breit; es auf dem Hauptfaden zu entpacken kostete beim
+    /// Öffnen einer Serie ein sichtbares Stocken.
+    static func entpacken(_ daten: Data) -> Entpackt? {
+        daten.withUnsafeBytes { puffer -> Entpackt? in
             guard let basis = puffer.baseAddress,
-                  let bytes = g_bytes_new(basis, gsize(puffer.count)) else { return }
+                  let bytes = g_bytes_new(basis, gsize(puffer.count)) else { return nil }
             defer { g_bytes_unref(bytes) }
             var fehler: UnsafeMutablePointer<GError>?
             guard let textur = gdk_texture_new_from_bytes(bytes, &fehler) else {
                 if let fehler { g_error_free(fehler) }
-                return
+                return nil
             }
             defer { g_object_unref(UnsafeMutableRawPointer(textur)) }
-
-            breite = Int(gdk_texture_get_width(textur))
-            hoehe = Int(gdk_texture_get_height(textur))
-            guard breite > 0, hoehe > 0 else { return }
-
+            let breite = Int(gdk_texture_get_width(textur))
+            let hoehe = Int(gdk_texture_get_height(textur))
+            guard breite > 0, hoehe > 0 else { return nil }
             // Cairo will die Zeilenlänge, die es selbst vorgibt.
             let takt = Int(cairo_format_stride_for_width(CAIRO_FORMAT_RGB24, Int32(breite)))
-            punkte = [UInt8](repeating: 0, count: takt * hoehe)
+            var punkte = [UInt8](repeating: 0, count: takt * hoehe)
             punkte.withUnsafeMutableBufferPointer { speicher in
                 guard let ziel = speicher.baseAddress else { return }
                 // `gdk_texture_download` liefert BGRA zu acht Bit — auf einem
@@ -140,16 +151,96 @@ final class Kulisse: @unchecked Sendable {
                 // Cairos ARGB32.
                 gdk_texture_download(textur, ziel, gsize(takt))
             }
-            flaecheLoesen()
-            fertigLoesen()
-            punkte.withUnsafeMutableBufferPointer { speicher in
-                guard let ziel = speicher.baseAddress else { return }
-                flaeche = cairo_image_surface_create_for_data(
-                    ziel, CAIRO_FORMAT_RGB24, Int32(breite), Int32(hoehe), Int32(takt))
+            return Entpackt(punkte: punkte, breite: breite, hoehe: hoehe, takt: takt)
+        }
+    }
+
+    /// Nimmt ein heruntergeladenes Bild an. Entpackt wird nebenher, gelegt
+    /// auf dem Hauptfaden.
+    func setzen(_ daten: Data) {
+        guard lebt else { return }
+        Task.detached { [self] in
+            guard let bild = Kulisse.entpacken(daten) else { return }
+            aufHauptfaden { self.auflegen(bild) }
+        }
+    }
+
+    // MARK: Dasselbe Bild beim Neubau
+
+    /// **Wer die Seite neu baut, nimmt das Bild mit.** Die Detailseite baut
+    /// sich nach der Einfahrt mit dem vollen Titel neu (``nachDemSchub``) —
+    /// samt neuer Kulisse. Die war leer, bis dasselbe Bild ein zweites Mal
+    /// geholt und entpackt war: das kurze Schwarz am Ende der Fahrt. Jetzt
+    /// steht das zuletzt entpackte Bild eines Titels im ersten Bild der neuen
+    /// Kulisse, und dieselbe Adresse wird nicht noch einmal aufgelegt.
+    /// Zwei Einträge — die Seite und die darunter; mehr wäre nur Speicher.
+    nonisolated(unsafe) private static var gemerkt: [(schluessel: String, quelle: URL, bild: Entpackt)] = []
+
+    /// Unter welchem Titel diese Kulisse ihr Bild merkt, und welches sie zeigt.
+    private var schluessel: String?
+    private(set) var quelle: URL?
+
+    /// Legt, falls vorhanden, das gemerkte Bild des Titels sofort auf.
+    func mitGemerktem(_ schluessel: String) {
+        self.schluessel = schluessel
+        guard let eintrag = Kulisse.gemerkt.first(where: { $0.schluessel == schluessel }) else { return }
+        quelle = eintrag.quelle
+        auflegen(eintrag.bild)
+    }
+
+    /// Wie ``setzen(_:)``, aber mit Adresse: dieselbe, die schon steht, wird
+    /// nicht noch einmal aufgelegt. Eine andere kommt erst, wenn sie entpackt
+    /// bereitliegt — das alte Bild bleibt bis dahin stehen, nie leer.
+    func setzen(_ daten: Data, von url: URL) {
+        guard lebt, url != quelle else { return }
+        let merken = schluessel
+        Task.detached { [self] in
+            guard let bild = Kulisse.entpacken(daten) else { return }
+            aufHauptfaden {
+                if let merken {
+                    Kulisse.gemerkt.removeAll { $0.schluessel == merken }
+                    Kulisse.gemerkt.insert((merken, url, bild), at: 0)
+                    if Kulisse.gemerkt.count > 2 { Kulisse.gemerkt.removeLast() }
+                }
+                guard self.lebt, url != self.quelle else { return }
+                let wechsel = self.quelle != nil
+                self.quelle = url
+                self.auflegen(bild)
+                // Ein wirklich anderes Bild blendet weich über, statt zu springen.
+                if wechsel {
+                    gtk_widget_set_opacity(self.anzeige, 0.4)
+                    blenden(self.anzeige, auf: 1, dauer: Blendzeiten.kopfbild, kennlinie: .easeOut)
+                }
             }
+        }
+    }
+
+    /// **Und es blendet ein**, wenn es nach dem Öffnen kommt — wie das
+    /// Kopfbild auf Apple (`Netzbild`), mit `Blendzeiten.kopfbild`. Vorher
+    /// sprang es herein.
+    private func auflegen(_ bild: Entpackt) {
+        // Kommt das Bild nach dem Ende der Seite, gibt es nichts mehr zu malen.
+        guard lebt else { return }
+        let erstes = flaeche == nil
+        breite = bild.breite
+        hoehe = bild.hoehe
+        punkte = bild.punkte
+        flaecheLoesen()
+        fertigLoesen()
+        punkte.withUnsafeMutableBufferPointer { speicher in
+            guard let ziel = speicher.baseAddress else { return }
+            flaeche = cairo_image_surface_create_for_data(
+                ziel, CAIRO_FORMAT_RGB24, Int32(breite), Int32(hoehe), Int32(bild.takt))
+        }
+        if erstes, Date().timeIntervalSince(geboren) > Kulisse.sofortFrist {
+            gtk_widget_set_opacity(anzeige, 0)
+            blenden(anzeige, auf: 1, dauer: Blendzeiten.kopfbild, kennlinie: .easeOut)
         }
         gtk_widget_queue_draw(anzeige)
     }
+
+    /// Was so schnell da ist, kam aus dem Speicher und steht einfach.
+    static let sofortFrist = 0.15
 
     /// **Die Stützstellen des Fernsehers**, dort nach vier Umbauten
     /// entstanden. Angegeben ist die Sichtbarkeit des Bildes.

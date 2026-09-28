@@ -241,7 +241,8 @@ extension App {
     private func traktRestZeigen() {
         guard let feld = traktlage.restfeld else { return }
         let sekunden = max(0, Int(traktlage.codeBis.timeIntervalSinceNow))
-        let text = String(format: uebersetzt("Läuft ab in %d:%02d"), sekunden / 60, sekunden % 60)
+        let text = String(format: uebersetzt("Läuft ab in %lld:%@"),
+                          sekunden / 60, String(format: "%02d", sekunden % 60))
         gtk_label_set_text(OpaquePointer(feld), text)
     }
 

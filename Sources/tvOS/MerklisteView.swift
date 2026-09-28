@@ -71,11 +71,11 @@ struct MerklisteView: View {
                 Rasterplatzhalter()
                     .padding(.horizontal, Stil.randSeite)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, Stil.leisteUnten + 90)
+                    .padding(.top, Stil.rasterOben)
                     .transition(.opacity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 30) {
+                    VStack(alignment: .leading, spacing: Stil.kapselreiheLuft) {
                         chipreihe
                         if stand.gestoert, stand.items.isEmpty {
                             // **Gestoert ist nicht leer.** `stand.gestoert`
@@ -103,7 +103,8 @@ struct MerklisteView: View {
                             gitter
                         }
                     }
-                    .padding(.top, Stil.erstesEnde - Stil.chipHoehe - Stil.randOben)
+                    // Oberkante wie jede Hauptseite — siehe `Stil.inhaltOben`.
+                    .padding(.top, Stil.inhaltOben - Stil.randOben)
                     .padding(.bottom, 60)
                     .padding(.horizontal, Stil.randSeite)
                 }
@@ -128,7 +129,7 @@ struct MerklisteView: View {
                            offen: tafelBindung)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: offeneTafel)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: offeneTafel)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
         // nicht — die muss `HauptView` stilllegen.
         .onChange(of: offeneTafel) { alt, neu in
@@ -150,31 +151,32 @@ struct MerklisteView: View {
             .tafelausloeser(Tafel.gattung.ausloeser)
             .accessibilityLabel(Text("Gattung, \(gattung.beschriftung)"))
 
-            // Der Strich, der hier stand, trennte die Gattung von einer
-            // zweiten Chipreihe. Die ist zur Tafel geworden und steht rechts
-            // — jetzt trennt der Abstand, und ein Strich mitten im Nichts
-            // bliebe stehen.
-            Spacer(minLength: 40)
+            // **Aufgebaut wie auf Filme und Serien** (Paul, 27.09.2026):
+            // die Wahl vorn, der Strich, dann die Sortierung mit ihrem
+            // Zeichen — links, in derselben Reihenfolge und demselben Stil.
+            // Vorher stand die Sortierung ganz rechts hinter „12 · sortiert
+            // nach", also zwei Aufbauten derselben Reihe auf Nachbarseiten.
+            // Rechts steht wie dort nur die Anzahl.
+            Kapseltrenner()
 
-            if stand.gesamt > 0 {
-                Text("\(stand.gesamt) · sortiert nach")
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
-            }
-
-            // **Derselbe Stil wie auf Filme und Serien, nicht ein eigener.**
-            // Hier stand ein `KnopfStil` mit selbst gesetztem Pfeil: andere
-            // Ecke, andere Schriftgroesse, anderer Abstand als die Kapsel
-            // eine Seite weiter — bei gleicher Aufgabe. Den Pfeil bringt
-            // `KapselStil` mit.
             Button { offeneTafel = .sortierung } label: {
                 Text(stand.sortierung.beschriftung)
             }
-            .buttonStyle(KapselStil())
+            .buttonStyle(KapselStil(symbol: "arrow.up.arrow.down"))
             .focused($amAusloeser, equals: .sortierung)
             .tafelausloeser(Tafel.sortierung.ausloeser)
             .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
+
+            Spacer(minLength: 40)
+
+            if stand.gesamt > 0 {
+                Text("\(stand.gesamt) Titel")
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
+            }
         }
+        // Dieselbe feste Hoehe wie die Reihe der Bibliothek.
+        .frame(height: Stil.chipHoehe)
         .focusSection()
     }
 
@@ -223,9 +225,11 @@ struct MerklisteView: View {
                                     art: item.type,
                                     staffeln: item.childCount,
                                     gesehen: item.userData?.played,
-                                    offeneFolgen: item.userData?.unplayedItemCount))
+                                    offeneFolgen: item.userData?.unplayedItemCount),
+                                 zeichen: item.kachelzeichen)
                 }
                 .buttonStyle(KachelStil())
+                .kachelmenue(item, model: model)
                 .onAppear {
                     guard stand.loestNachladenAus(item.id, spalten: Stil.gitterSpalten)
                     else { return }

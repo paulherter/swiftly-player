@@ -16,7 +16,7 @@
 ; `Windows\Startprogramm\startprogramm.c`.
 
 #define Name "Swiftly"
-#define Fassung "1.0.4"
+#define Fassung "1.0.5"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"
@@ -44,6 +44,13 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Ohne Adminrechte in den eigenen Ordner, mit in "Programme" — der Nutzer
 ; entscheidet, nicht wir.
 PrivilegesRequiredOverridesAllowed=dialog
+; Bei einer Aktualisierung nicht noch einmal fragen: die Wahl der ersten
+; Installation gilt weiter. Sonst reichte ein anderer Klick fuer eine zweite
+; Installation und einen zweiten Eintrag in "Apps & Features".
+UsePreviousPrivileges=yes
+; Laeuft Swiftly noch, warnt Setup, statt an der gesperrten EXE zu scheitern.
+; Die App legt beide Namen beim Start an (`main.swift`).
+AppMutex=SwiftlyPlayer,Global\SwiftlyPlayer
 
 [Languages]
 Name: "deutsch"; MessagesFile: "compiler:Languages\German.isl"

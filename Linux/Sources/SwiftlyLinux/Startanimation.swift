@@ -44,6 +44,12 @@ final class Startanimation: @unchecked Sendable {
     private let fertig: () -> Void
     private var schonFertig = false
     private var gestartet = false
+    /// **Bei „Bewegung reduzieren" das Standbild, nicht die Fahrt** — wie auf
+    /// Apple (`Sources/Shared/Startanimation.swift`): die Marke steht sofort
+    /// in ihrer Endlage und bleibt `nachlauf` lang stehen, dann blendet die
+    /// App auf wie immer.
+    private var standbild = false
+    private let nachlauf = 0.5
     private var takte = 0
     /// Welches Bild schon in der Fläche steht.
     private var gerechnet = -1
@@ -139,6 +145,7 @@ final class Startanimation: @unchecked Sendable {
         guard !gestartet else { return }
         gestartet = true
         beginn = Date()
+        standbild = bewegungReduziert()
         _ = gtk_widget_add_tick_callback(anzeige, startTakt,
                                          Unmanaged.passRetained(self).toOpaque(), nil)
     }
@@ -154,12 +161,12 @@ final class Startanimation: @unchecked Sendable {
         if takte % 40 == 1 {
         }
         let seit = Date().timeIntervalSince(beginn)
-        let neu = min(Int(seit / dauer * Double(bilder)), bilder - 1)
+        let neu = standbild ? bilder - 1 : min(Int(seit / dauer * Double(bilder)), bilder - 1)
         if neu != bild {
             bild = neu
             gtk_widget_queue_draw(anzeige)
         }
-        if seit >= dauer {
+        if seit >= (standbild ? nachlauf : dauer) {
             abschliessen()
             return false
         }

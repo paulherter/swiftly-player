@@ -26,9 +26,33 @@ struct Ladeblatt: View {
     var bilder: [String: URL] = [:]
     /// Was hinterher gezeigt werden soll, etwa eine Meldung.
     var danach: () -> Void = {}
+    /// Wenn der Download gleich nach dem Start scheitert — für den
+    /// Hinweisstreifen der Seite darunter.
+    var gescheitert: (String) -> Void = { _ in }
+    /// **Die Qualität wird hier gewählt** — beim Film, der keine Auswahl
+    /// davor hat. Eine Serie kommt aus `Ladeauswahl` und bringt ihre Wahl
+    /// schon mit; dann steht sie hier nur da.
+    var qualitaetWaehlen = false
+
+    @State private var wahl: Downloadqualitaet = .original
 
     private var verwaltung: Downloadverwaltung { model.downloads }
-    private var bytes: Int64 { posten.reduce(0) { $0 + $1.bytes } }
+    /// Die Posten in der gewählten Qualität — mit geschätzter Größe, sobald
+    /// umgewandelt wird.
+    private var fassung: [Downloadposten] {
+        qualitaetWaehlen ? posten.map { $0.inQualitaet(wahl) } : posten
+    }
+    private var bytes: Int64 { fassung.reduce(0) { $0 + $1.bytes } }
+    private var umgewandelt: Bool { fassung.contains(where: \.umgewandelt) }
+    private var angeboten: [Downloadqualitaet] {
+        Downloadqualitaet.angeboten(
+            waehlbar: model.downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.quellBitrate(posten.map { ($0.bytes, $0.laufzeitTicks) }))
+    }
+    /// Größe als Text — mit „≈", wenn sie geschätzt ist.
+    private var groessentext: String {
+        (umgewandelt ? "≈ " : "") + Downloadregeln.groesse(bytes)
+    }
     private var auskunft: Downloadregeln.Platzauskunft { verwaltung.auskunft(fuer: bytes) }
 
     var body: some View {
@@ -51,19 +75,27 @@ struct Ladeblatt: View {
     private var normalfall: some View {
         VStack(spacing: 0) {
             Blattrubrik(text: Text(verbatim: String(localized: "\(titel) laden")))
-            angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
-            if let g = guete { angabe("sparkles", "Qualität", g) }
+            angabe("internaldrive", "Größe", groessentext)
+            if qualitaetWaehlen, model.downloadqualitaetWaehlbar, angeboten.count > 1 {
+                qualitaetszeile
+            } else if let g = guete {
+                angabe("sparkles", "Qualität", g)
+            }
             angabe("externaldrive", "Danach frei", Downloadregeln.groesse(auskunft.freiDanach))
             knopf("Laden", gefuellt: true) { starten() }
             // **Erklärt die Zahl, statt sich zu entschuldigen.**
-            hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
+            if umgewandelt {
+                hinweis("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
+            } else {
+                hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
+            }
         }
     }
 
     private var ohneWLAN: some View {
         VStack(spacing: 0) {
             Blattrubrik(text: Text(verbatim: String(localized: "\(titel) laden")))
-            angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
+            angabe("internaldrive", "Größe", groessentext)
             angabe("wifi.slash", "Kein WLAN", String(localized: "Mobilfunk"), warnend: true)
             // Der obere Knopf ist die freundliche Antwort und steht deshalb
             // oben und gefüllt. Der untere ist möglich, aber man muss ihn
@@ -80,7 +112,13 @@ struct Ladeblatt: View {
     private var platzknapp: some View {
         VStack(spacing: 0) {
             Blattrubrik(text: Text("Nicht genug Platz"))
-            angabe("internaldrive", "Diese Datei", Downloadregeln.groesse(bytes))
+            angabe("internaldrive", "Diese Datei", groessentext)
+            // **Der naheliegende Ausweg ist eine kleinere Fassung.** Beim Film
+            // steht die Wahl deshalb auch hier; reicht es danach, wechselt
+            // das Blatt von selbst in den Normalfall.
+            if qualitaetWaehlen, model.downloadqualitaetWaehlbar, angeboten.count > 1 {
+                qualitaetszeile
+            }
             angabe("externaldrive", "Frei auf dem Gerät",
                    Downloadregeln.groesse(verwaltung.frei), warnend: true)
 
@@ -136,6 +174,30 @@ struct Ladeblatt: View {
         }
     }
 
+    /// **Die Qualität als Zeile mit Wahl rechts** — dieselbe Plakette wie
+    /// in der Ladeauswahl, damit Film und Serie dieselbe Stelle haben.
+    private var qualitaetszeile: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 17))
+                .foregroundStyle(Stil.schriftLeise)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text("Qualität")
+                .mitwachsend(15)
+                .foregroundStyle(Stil.schrift)
+            Spacer(minLength: 12)
+            Qualitaetsplakette(wahl: $wahl, angeboten: angeboten, waehlbar: true,
+                               groesse: { q in posten.reduce(0) {
+                                   $0 + q.geschaetzteBytes(original: $1.bytes,
+                                                           laufzeitTicks: $1.laufzeitTicks) } })
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, Stil.randAbstand)
+        .frame(minHeight: 52)
+        .overlay(alignment: .top) { Blattlinie() }
+    }
+
     private func knopf(_ text: LocalizedStringKey, gefuellt: Bool,
                        tun: @escaping () -> Void) -> some View {
         Button(action: tun) { Text(text) }
@@ -159,14 +221,23 @@ struct Ladeblatt: View {
     /// begründen. Fehlen sie, fällt die Zeile weg statt „unbekannt" zu sagen.
     private var guete: String? {
         var teile: [String] = []
-        if let c = posten.first?.container { teile.append(c.uppercased()) }
+        // Kommt die Serie umgewandelt aus der Auswahl, steht die Stufe vorn.
+        if let q = fassung.first?.guete, !q.istOriginal { teile.append(q.name + " · " + q.zusatz()) }
+        if let c = fassung.first?.container { teile.append(c.uppercased()) }
         return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 
     private func starten() {
         offen = false
-        verwaltung.anstossen(posten, bilder: bilder)
+        // Nur was neu dazukommt — ein schon gescheiterter Posten mit
+        // derselben Kennung waere sonst sofort „gescheitert".
+        let neu = fassung.map(\.id).filter { id in !verwaltung.posten.contains { $0.id == id } }
+        verwaltung.anstossen(fassung, bilder: bilder)
         danach()
+        let lager = verwaltung, melden = gescheitert
+        Task {
+            if let grund = await lager.sofortGescheitert(neu) { melden(grund) }
+        }
     }
 }
 

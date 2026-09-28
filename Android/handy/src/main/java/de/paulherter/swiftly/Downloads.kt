@@ -45,10 +45,29 @@ data class Downloadposten(
     val laufzeitTicks: Long?, val container: String?, val quelle: String?, val bytes: Long,
     val geladen: Long, val stand: String, val grund: String?, val gesehen: Boolean,
     val angelegt: Double, val nochAufDemServer: Boolean,
+    /** Rohwert von `Downloadqualitaet`; `null` heisst Original, wie in jeder Liste von vor 1.0.5. */
+    val qualitaet: String? = null,
+    /**
+     * Offline (1.0.5), alle drei vom Paket gerechnet und hier nur durchgereicht — fehlen sie beim
+     * Speichern, sind sie verloren. `abschnitte` bleibt das rohe JSON-Array (`null`: nie gefragt),
+     * `zuletzt` wie `angelegt` die Zahl, die Swift schreibt.
+     */
+    val abschnitte: String? = null,
+    val stelleTicks: Long? = null,
+    val zuletzt: Double? = null,
 ) {
-    /** Konto und Kennung (H11), die Endung des Containers, damit VLC den Demuxer erraet. */
-    val dateiname: String get() = "$konto-$id" + (container?.lowercase()?.let { ".$it" } ?: "")
-    val anteil: Double? get() = if (bytes > 0) (geladen.toDouble() / bytes).coerceIn(0.0, 1.0) else null
+    /**
+     * Konto und Kennung (H11), die Endung des Containers, damit VLC den Demuxer erraet. Muss
+     * `Downloadposten.dateiname` im Paket gleichen (der Kern sucht die Datei unter diesem Namen) —
+     * alle Teile kommen vom Server und gehen durch [Pfadteil].
+     */
+    val dateiname: String get() = "${Pfadteil.sicher(konto)}-${Pfadteil.sicher(id)}" +
+        (Pfadteil.endung(container)?.let { ".$it" } ?: "")
+    /** Vom Server umgewandelt — dann ist `bytes` bis zum Ende geschaetzt. */
+    val umgewandelt: Boolean get() = qualitaet != null && qualitaet != "original"
+    /** Wie `Downloadposten.anteil`: eine Schaetzung erreicht vor dem Ende nie ganz voll. */
+    val anteil: Double? get() = if (bytes > 0) (geladen.toDouble() / bytes).coerceIn(0.0, 1.0)
+        .let { if (umgewandelt && stand != "fertig") it.coerceAtMost(0.99) else it } else null
 
     fun json(): JSONObject = JSONObject().apply {
         put("id", id); put("konto", konto); put("art", art); put("titel", titel)
@@ -56,7 +75,16 @@ data class Downloadposten(
         putOpt("laufzeitTicks", laufzeitTicks); putOpt("container", container); putOpt("quelle", quelle)
         put("bytes", bytes); put("geladen", geladen); put("stand", stand); putOpt("grund", grund)
         put("gesehen", gesehen); put("angelegt", angelegt); put("nochAufDemServer", nochAufDemServer)
+        putOpt("qualitaet", qualitaet)
+        abschnitte?.let { put("abschnitte", JSONArray(it)) }
+        putOpt("stelleTicks", stelleTicks); putOpt("zuletzt", zuletzt)
     }
+
+    /** Ab wo die Liste abspielt — `Downloadposten.fortsetzenAb`; `null` heisst von vorn. */
+    val fortsetzenAb: Double? get() = Kern.downloadFortsetzenAb(json().toString()).takeIf { it > 0 }
+
+    /** Den Sehstand aus einem anderen Stand desselben Postens uebernehmen — gerechnet hat der Kern. */
+    fun mitSehstand(von: Downloadposten) = copy(gesehen = von.gesehen, stelleTicks = von.stelleTicks, zuletzt = von.zuletzt)
 
     companion object {
         fun lesen(o: JSONObject) = Downloadposten(
@@ -68,7 +96,11 @@ data class Downloadposten(
             o.optString("quelle").takeIf { o.has("quelle") && !o.isNull("quelle") },
             o.optLong("bytes"), o.optLong("geladen"), o.getString("stand"),
             o.optString("grund").takeIf { o.has("grund") && !o.isNull("grund") },
-            o.optBoolean("gesehen"), o.optDouble("angelegt", 0.0), o.optBoolean("nochAufDemServer", true))
+            o.optBoolean("gesehen"), o.optDouble("angelegt", 0.0), o.optBoolean("nochAufDemServer", true),
+            o.feldText("qualitaet"),
+            o.optJSONArray("abschnitte")?.toString(),
+            o.optLong("stelleTicks").takeIf { o.has("stelleTicks") && !o.isNull("stelleTicks") },
+            o.optDouble("zuletzt").takeIf { o.has("zuletzt") && !o.isNull("zuletzt") })
 
         fun liste(posten: List<Downloadposten>): String = JSONArray().apply { posten.forEach { put(it.json()) } }.toString()
     }
@@ -94,7 +126,15 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
     val posten = mutableStateOf<List<Downloadposten>>(emptyList())
     /** Ueberhaupt Netz — fuer „Wartet auf Netz" und „Kein Netz". */
     val netz = mutableStateOf(true)
-    private var imWLAN = true
+    /**
+     * Sofort aus dem geltenden Netz, nicht `true` bis zum ersten Rueckruf: der kommt erst nach
+     * dem ersten `takt()` an. Mit `true` begann ein wartender Download beim Start auch im
+     * Mobilnetz, und der Rueckruf hielt ihn gleich wieder an (GitHub-Issue #3).
+     */
+    private var imWLAN = runCatching {
+        val v = app.getSystemService(ConnectivityManager::class.java)
+        v.getNetworkCapabilities(v.activeNetwork)?.let { istWLAN(it) } ?: false
+    }.getOrDefault(false)
     private var konto = ""
 
     private val lauf = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -107,14 +147,17 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         runCatching {
             verbindung.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(n: Network, c: NetworkCapabilities) {
-                    // Ethernet zaehlt wie WLAN — beides kostet nichts.
-                    val wlan = c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-                    lauf.launch { netz.value = true; imWLAN = wlan; takt() }
+                    val wlan = istWLAN(c)
+                    lauf.launch { netz.value = true; imWLAN = wlan; kernMelden(); takt() }
                 }
-                override fun onLost(n: Network) { lauf.launch { netz.value = false; imWLAN = false; takt() } }
+                override fun onLost(n: Network) { lauf.launch { netz.value = false; imWLAN = false; kernMelden(); takt() } }
             })
         }
     }
+
+    // Ethernet zaehlt wie WLAN — beides kostet nichts.
+    private fun istWLAN(c: NetworkCapabilities) =
+        c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 
     private fun lesen(): List<Downloadposten> = runCatching {
         JSONArray(listeDatei.readText()).let { a -> (0 until a.length()).map { Downloadposten.lesen(a.getJSONObject(it)) } }
@@ -128,10 +171,18 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         neu.renameTo(listeDatei)
     }
 
-    private fun zeigen() { posten.value = alle.filter { it.konto == konto } }
+    private fun zeigen() {
+        posten.value = alle.filter { it.konto == konto }
+        kernMelden()
+    }
+
+    /** Der Kern braucht die Liste fuer „Naechste Folge", Abschnitte und Sehstand ohne Server (1.0.5). */
+    private fun kernMelden() {
+        runCatching { app.kern.downloadsBekannt(Downloadposten.liste(posten.value), ordner.path, !netz.value) }
+    }
 
     private fun teil(p: Downloadposten) = File(ordner, p.dateiname + ".teil")
-    fun bildDatei(kennung: String) = File(ordner, "$konto-$kennung.jpg")
+    fun bildDatei(kennung: String) = File(ordner, "${Pfadteil.sicher(konto)}-${Pfadteil.sicher(kennung)}.jpg")
 
     fun darfLaden(): Boolean = Kern.downloadDarfLaden(imWLAN, app.einstellungen.nurUeberWLAN)
 
@@ -268,7 +319,14 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
             val fehler = ergebnis.exceptionOrNull()
             if (fehler == null) Kern.downloadSchaetzerVergessen(p.id) else Kern.downloadSchaetzerAnhalten(p.id)
             when {
-                fehler == null -> aendern(p.id) { it.copy(stand = "fertig", geladen = ergebnis.getOrDefault(it.bytes), grund = null) }
+                // Umgewandelt weicht die Schaetzung der echten Groesse.
+                fehler == null -> {
+                    aendern(p.id) {
+                        val echt = ergebnis.getOrDefault(it.bytes)
+                        it.copy(stand = "fertig", geladen = echt, bytes = if (it.umgewandelt) echt else it.bytes, grund = null)
+                    }
+                    abschnitteHolen(p.id)
+                }
                 // Ohne Netz mit angefangener Datei: angehalten, kein Fehlertext — es geht dort weiter.
                 fehler is IOException && fehler !is Ladefehler && teil(p).length() > 0 ->
                     aendern(p.id) { it.copy(stand = "angehalten", geladen = teil(p).length()) }
@@ -279,14 +337,16 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
     }
 
     private suspend fun laden(p: Downloadposten): Long {
-        val adresse = app.kern.downloadAdresse(p.id, p.quelle.orEmpty()).await()
+        val adresse = app.kern.downloadAdresse(p.id, p.quelle.orEmpty(), p.qualitaet ?: "original").await()
         val teil = teil(p)
         val schon = if (teil.exists()) teil.length() else 0L
         val v = URL(adresse).openConnection() as HttpURLConnection
         v.connectTimeout = 15000; v.readTimeout = 30000
         // Mit den eigenen Headern des Servers (Issue #4); ohne Eintrag dieselbe Anfrage wie vorher.
         eigenkoepfeFelder(adresse).forEach { (name, wert) -> v.setRequestProperty(name, wert) }
-        if (schon > 0) v.setRequestProperty("Range", "bytes=$schon-")
+        // Eine umgewandelte Datei nimmt keine Bereichsabrufe an (`Accept-Ranges: none`) und beginnt
+        // neu; der Server antwortet dann mit 200, und unten wird die `.teil`-Datei ueberschrieben.
+        if (schon > 0 && !p.umgewandelt) v.setRequestProperty("Range", "bytes=$schon-")
         try {
             val code = v.responseCode
             // Eine Fehlerseite ist keine fertige Datei.
@@ -333,7 +393,30 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         if (jetzt - gemeldetUm > 1500) { gemeldetUm = jetzt; DownloadDienst.melden(app, p.titel, posten(p.id)?.anteil) }
     }
 
-    /** Gesehen und „noch auf dem Server" — einmal nach dem Start, nur mit Antwort. */
+    /**
+     * **Vorspann und Abspann mitnehmen**, sobald die Datei da ist — Vorlage `abschnitteHolen` in
+     * `Downloadverwaltung.swift`. Ohne Antwort bleibt das Feld leer, und `nachziehen` fragt beim
+     * naechsten Kontakt noch einmal.
+     */
+    private fun abschnitteHolen(id: String) {
+        lauf.launch {
+            val roh = runCatching { app.kern.downloadAbschnitte(id).await() }.getOrDefault("")
+            if (roh.isNotEmpty()) aendern(id) { it.copy(abschnitte = roh) }
+        }
+    }
+
+    /** Was die Stopps am Sehstand geaendert haben (`Kern.stoppsVerarbeiten`) — mit und ohne Netz. */
+    fun sehstandUebernehmen(neu: List<Downloadposten>) {
+        if (neu.isEmpty()) return
+        val karte = neu.associateBy { it.id }
+        alle = alle.map { p -> if (p.konto != konto) p else karte[p.id]?.let { p.mitSehstand(it) } ?: p }
+        zeigen(); speichern()
+    }
+
+    /** Die Posten des geltenden Kontos als JSON — fuer den Kern. */
+    fun listeJson(): String = Downloadposten.liste(posten.value)
+
+    /** Sehstand und „noch auf dem Server" — nach jedem Verbinden, nur mit Antwort. */
     suspend fun nachziehen() {
         val eigene = posten.value
         if (eigene.isEmpty()) return
@@ -344,9 +427,11 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         val karte = neu.associateBy { it.id }
         alle = alle.map { p ->
             if (p.konto != konto) p
-            else karte[p.id]?.let { p.copy(gesehen = it.gesehen, nochAufDemServer = it.nochAufDemServer) } ?: p
+            else karte[p.id]?.let { p.mitSehstand(it).copy(nochAufDemServer = it.nochAufDemServer) } ?: p
         }
         zeigen(); speichern()
+        // Fuer alles, was vor 1.0.5 geladen wurde oder beim Laden keine Antwort bekam.
+        posten.value.filter { it.stand == "fertig" && it.abschnitte == null }.forEach { abschnitteHolen(it.id) }
     }
 }
 
@@ -359,15 +444,42 @@ class DownloadDienst : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val n = nachricht(this, intent?.getStringExtra("titel").orEmpty(), intent?.getDoubleExtra("anteil", -1.0) ?: -1.0)
-        if (Build.VERSION.SDK_INT >= 29) startForeground(NUMMER, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        else startForeground(NUMMER, n)
+        // **Kann werfen** (Android 14+): ist die Frist fuer `dataSync` verbraucht, lehnt das System ab —
+        // ungefangen stuerzte die App. Der Download selbst laeuft auch ohne Dienst weiter.
+        val vorn = runCatching {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(NUMMER, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            else startForeground(NUMMER, n)
+        }.onFailure { Protokoll.schreib("[Dienst] Download nicht im Vordergrund: ${it.javaClass.simpleName}") }.isSuccess
+        if (offen > 0) offen--
+        // `aus()` kam vor diesem Aufruf: erst jetzt, nach `startForeground`, darf der Dienst enden.
+        // Mit `startId`: steht schon ein weiterer Start aus, bleibt der Dienst fuer dessen `startForeground`.
+        if (!laeuft || !vorn) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId) }
         return START_NOT_STICKY
+    }
+
+    /**
+     * **Android 15: `dataSync` darf hoechstens sechs Stunden am Tag im Vordergrund laufen.** Danach
+     * ruft das System hier an und bricht die App ab, wenn der Dienst nicht binnen Sekunden endet
+     * (`ForegroundServiceDidNotStopInTimeException`) — bei einer langen Staffel ueber Nacht erreichbar.
+     * Der Dienst endet; der Download laeuft weiter, solange Android die App laesst, und wartet sonst
+     * beim naechsten Start (`lesen()`).
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Protokoll.schreib("[Dienst] Download-Frist abgelaufen, Dienst endet")
+        laeuft = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     companion object {
         private const val KANAL = "downloads"
         private const val NUMMER = 2
         private var laeuft = false
+        /**
+         * Gestartete, deren `onStartCommand` noch aussteht. Jeder `startForegroundService` verlangt ein
+         * eigenes `startForeground` — auch beim schon laufenden Dienst (naechster Download der Schlange).
+         */
+        private var offen = 0
 
         private fun nachricht(k: Context, titel: String, anteil: Double): Notification {
             val verwalter = k.getSystemService(NotificationManager::class.java)
@@ -392,18 +504,43 @@ class DownloadDienst : Service() {
                 k.startForegroundService(Intent(k, DownloadDienst::class.java)
                     .putExtra("titel", titel).putExtra("anteil", anteil ?: -1.0))
                 laeuft = true
-            }
+                offen++
+            }.onFailure { Protokoll.schreib("[Dienst] Download-Dienst nicht gestartet: ${it.javaClass.simpleName}") }
         }
 
         fun melden(k: Context, titel: String, anteil: Double?) {
             if (!laeuft) return
+            // Ohne Mitteilungsrecht (abgelehnt, Android 13+) laeuft der Download still weiter.
+            if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(k,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
             runCatching { k.getSystemService(NotificationManager::class.java).notify(NUMMER, nachricht(k, titel, anteil ?: -1.0)) }
         }
 
         fun aus(k: Context) {
             if (!laeuft) return
             laeuft = false
-            runCatching { k.stopService(Intent(k, DownloadDienst::class.java)) }
+            // Vor `startForeground` beendet, bricht Android die App ab
+            // (ForegroundServiceDidNotStartInTimeException); dann endet der Dienst in `onStartCommand`.
+            if (offen == 0) runCatching { k.stopService(Intent(k, DownloadDienst::class.java)) }
         }
+    }
+}
+
+/**
+ * Ein Stueck Dateiname aus Serverdaten, nie ein Weg aus dem Ordner — dieselbe Regel wie `Pfadteil`
+ * im Paket (dort mit Test). Echte Werte (GUIDs, `mkv`, `mov,mp4,m4a`) bleiben unveraendert.
+ */
+internal object Pfadteil {
+    private val glied = Regex("[a-z0-9]{1,8}")
+
+    /** Buchstaben, Ziffern, `-` und `_` bleiben, alles andere wird `_`; leer wird `_`. */
+    fun sicher(teil: String): String = buildString {
+        for (z in teil) append(if (z in 'a'..'z' || z in 'A'..'Z' || z in '0'..'9' || z == '-' || z == '_') z else '_')
+    }.ifEmpty { "_" }
+
+    /** Die Endung: jedes Glied `[a-z0-9]{1,8}`, sonst `null` (dann ohne Endung). */
+    fun endung(container: String?): String? {
+        val c = container?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        return c.takeIf { t -> t.split(',').all { glied.matches(it) } }
     }
 }

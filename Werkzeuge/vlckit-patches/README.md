@@ -8,7 +8,7 @@ nicht nur auf einem Rechner.
 |---|---|
 | Grundlage | VLCKit **4.0.0-a23** |
 | VLC-Stand | der von VLCKit gepinnte `TESTEDHASH` |
-| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `0033-avcodec-…`, `0034-input-…`, `VLCKit-pause-ohne-warteschlange.patch` |
+| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `0033-avcodec-…`, `0034-input-…`, `0035-demux-mkv-…`, `0036-avsamplebuffer-…`, `0037-avsamplebuffer-…`, `0038-avsamplebuffer-…`, `VLCKit-pause-ohne-warteschlange.patch` |
 
 ## Wofür
 
@@ -191,3 +191,83 @@ ab, unabhaengig von diesem Wert.
 
 **Gehoert zu VideoLAN gemeldet** — der Fall trifft jeden Client, der Dateien
 ueber HTTP abspielt, nicht nur uns.
+
+## Anamorphes Matroska wird gestaucht — `0035`, von VideoLAN übernommen
+
+ffmpeg (und damit alles über libavformat, etwa HandBrake) schreibt anamorphe
+MKV mit `DisplayUnit = 3` (Seitenverhältnis, z. B. 16/9). Der gepinnte
+VLC-Baum rechnet daraus das Pixelverhältnis verkehrt herum: 720×576 in 16:9
+ergibt `sar 45:64` statt 64:45, VLC verlangt ein Fenster von 506×576 statt
+1024×576 (gemessen 25.09.2026, VLCKit a23, macOS). libVLC 3 rechnet richtig.
+
+Der Patch ist VideoLANs eigener Commit `74a3aae62e` („demux: mkv: fix the
+Display Aspect Ratio to Sample Aspect Ratio conversion", 18.09.2026),
+unverändert. **Noch nicht in einem Bau** — bis dahin gleicht die App den
+Fehler aus (`Seitenverhaeltnis` im Paket, `seitenverhaeltnisPruefen` in
+`VLCPlayer`), und das greift nur, solange VLC das Verhältnis genau verdreht
+meldet. Mit dem Patch im Bau wird der Ausgleich von selbst wirkungslos.
+
+
+## Ruckler nach dem Anlauf auf iPhone und Apple TV — `0036`
+
+`0036-avsamplebuffer-honour-pause-at-start-and-report-timing.patch`
+
+Beim Weiterschauen lief das Bild etwa eine halbe Sekunde, stockte einmal und
+lief dann normal; der Ton blieb ruhig. Der Mac zeigte das nie, Swiftfin mit
+derselben Datei auch nicht.
+
+**Der Unterschied liegt im Tonausgang.** Auf iOS und tvOS wählt VLC
+`avsamplebuffer` (Priorität 100), der Mac `auhal` (101). `auhal` meldet die
+Tonposition schon beim zweiten Renderaufruf an die Uhr. `avsamplebuffer`
+meldete nur über einen Sekundenbeobachter, der den Zeitpunkt null
+überspringt, und bei Tempowechseln. Bis zur ersten Meldung läuft das Bild auf
+dem Ersatzbezug der Uhr (`clock.c`, `vlc_clock_monotonic_to_system`); springt
+sie danach auf den Ton um, kommt ein Bild zu spät, und die
+`AVSampleBufferDisplayLayer` verwirft es. Dazu startete der Ausgang den
+Synchronisierer mit Tempo 1, auch wenn inzwischen pausiert war — genau der
+Fall beim Weiterschauen, das pausiert öffnet.
+
+**Belegt am Gerät, 28.09.2026:** mit `--aout=audiounit_ios` (derselbe
+Meldeweg wie `auhal`) war der Ruckler weg. Der Ausgang kam trotzdem nicht in
+Frage — der Ton blieb nach manchen Starts stumm, und Raumklang gibt es nur
+über `avsamplebuffer`.
+
+Der Patch hält den Pausenzustand unabhängig vom Zeitstrahl, startet den
+Synchronisierer in der Pause mit Tempo 0, lässt Meldungen in der Pause weg
+und meldet die Position sofort nach dem Anlauf und nach dem Fortsetzen.
+Vorbild ist SwiftVLCs Umbau desselben Ausgangs (dort Patch 0032, zusammen mit
+viel Arbeit an Mediendienst-Neustarts, die hier nicht übernommen ist).
+
+**Gebaut für iOS und tvOS.** Die macOS-Scheibe ist unverändert: dort gewinnt
+`auhal`, dieser Ausgang läuft nicht. `0035` ist weiterhin in keinem Bau.
+
+### `0037` — der Ton begann einen Block zu früh
+
+`0036` allein reichte nicht: am Gerät ruckelte es weiter. Ein Fehler steckte in
+der Startfrist des Ausgangs. Sie war „Datum des zuletzt erhaltenen Blocks
+minus alles bereits Eingereihte" — und sobald alles eingereiht ist, zählt der
+letzte Block selbst mit. Der Ton lief damit um genau einen Block zu früh an,
+bei 5.1-E-AC-3 rund 32 ms. Die erste Zeitmeldung zog die ganze Uhr um diesen
+Betrag vor, und das nächste Bild kam zu spät (im Protokoll „picture displayed
+late (missing 27 ms)").
+
+`coreaudio_common.c` (Mac, `audiounit_ios`) rechnet richtig: Datum eines
+Blocks minus das, was *vor* ihm kam. `0037` übernimmt genau diese Rechnung
+und schreibt jede Zeitmeldung sowie den tatsächlichen Startversatz ins
+Debug-Protokoll („timing report", „sample renderer started").
+
+### `0038` — die Zeitbasis läuft erst ~200 ms nach dem Start
+
+Die Zeilen aus `0037` zeigten am Gerät: die sofortige Meldung aus `0036` sagte
+„Position 0, jetzt", die erste periodische eine Sekunde später lag aber
+207 ms Systemzeit weiter, als die Position gewachsen war. Die Zeitbasis des
+Synchronisierers steht nach dem Setzen der Rate noch, bis der Renderer seinen
+Tonweg hochgefahren hat. Die sofortige Meldung war damit eine Schätzung, und
+die erste echte zog die Uhr um 0,2 s nach — das war der Ruckler.
+
+`0038` meldet nur noch aus einer laufenden Zeitbasis: nach Start und
+Fortsetzen wird sie alle 5 ms abgefragt, bis sie sich bewegt. Kam sie später
+als geplant, wird sie um die Verspätung vorgestellt (der Renderer überspringt
+so viel Ton), damit die Position zum Datum passt, das der Kern geplant hat —
+die Uhr springt dann nicht. Beides steht im Debug-Protokoll („timebase came
+up … late", „timing report (running)").

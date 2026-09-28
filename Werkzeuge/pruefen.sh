@@ -54,8 +54,8 @@ if [ "$schnell" = false ]; then
     # FEHLGESCHLAGEN da — man musste den Bau von Hand wiederholen, um zu
     # sehen, woran. Jetzt stehen die Fehlerzeilen gleich darunter.
     protokoll=$(mktemp -t pruefen)
-    for ziel in Swiftly-iOS:"platform=iOS Simulator,name=iPhone 17 Pro" \
-                Swiftly-tvOS:"platform=tvOS Simulator,name=Apple TV 4K (3rd generation)" \
+    for ziel in Swiftly-iOS:"generic/platform=iOS Simulator" \
+                Swiftly-tvOS:"generic/platform=tvOS Simulator" \
                 Swiftly-macOS:"platform=macOS"; do
         name=${ziel%%:*}; wohin=${ziel#*:}
         xcodebuild -project Swiftly.xcodeproj -scheme "$name" \
@@ -144,7 +144,14 @@ echo "── Android-Texte ─────────────────�
 if [ -d Android/handy ]; then
     fehlend=$(grep -rhoE 'uebersetzt\("[^"]+"' Android/handy/src/main/java Android/gemeinsam/src/main/java 2>/dev/null \
         | sed 's/uebersetzt("//; s/"$//' | sort -u \
-        | while IFS= read -r k; do grep -qF "\"$k\"" Sources/Shared/Localizable.xcstrings || printf '%s\n' "$k"; done)
+        | while IFS= read -r k; do
+            # Kotlin schreibt %d/%s, der Katalog %lld/%@ — texte-nach-android.py
+            # setzt das beim Erzeugen um. Beide Schreibweisen zaehlen.
+            swift=$(printf '%s' "$k" | sed -E 's/%([0-9]+\$)?d/%\1lld/g; s/%([0-9]+\$)?s/%\1@/g')
+            grep -qF "\"$k\"" Sources/Shared/Localizable.xcstrings \
+                || grep -qF "\"$swift\"" Sources/Shared/Localizable.xcstrings \
+                || printf '%s\n' "$k"
+        done)
     if [ -z "$fehlend" ]; then
         melden "Android-Schluessel im Katalog" "${gruen}alle da${aus}"
     else

@@ -16,6 +16,16 @@ import Foundation
 /// ohne. Beide kommen vor — `PremiereDate` etwa hat keine.
 enum Zeitstempel {
 
+    /// Derselbe Weg fuer einen Text, der schon da ist (``UserItemData/zuletztGespielt``).
+    static func lesen(_ text: String) -> Date? {
+        let mitBruch = ISO8601DateFormatter()
+        mitBruch.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = mitBruch.date(from: text) { return d }
+        let ohneBruch = ISO8601DateFormatter()
+        ohneBruch.formatOptions = [.withInternetDateTime]
+        return ohneBruch.date(from: text)
+    }
+
     /// **Die Formatierer entstehen je Aufruf, und das ist Absicht.**
     ///
     /// `ISO8601DateFormatter` ist nicht `Sendable`; als geteilte Statische
@@ -24,15 +34,7 @@ enum Zeitstempel {
     /// Abfrage, keine Schleife — der Preis ist nicht messbar.
     static func lesen(aus decoder: any Decoder) throws -> Date {
         let text = try decoder.singleValueContainer().decode(String.self)
-
-        let mitBruch = ISO8601DateFormatter()
-        mitBruch.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = mitBruch.date(from: text) { return d }
-
-        let ohneBruch = ISO8601DateFormatter()
-        ohneBruch.formatOptions = [.withInternetDateTime]
-        if let d = ohneBruch.date(from: text) { return d }
-
+        if let d = lesen(text) { return d }
         throw DecodingError.dataCorrupted(.init(
             codingPath: decoder.codingPath,
             debugDescription: "Kein lesbarer Zeitstempel: \(text)"))

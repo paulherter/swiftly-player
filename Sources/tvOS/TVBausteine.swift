@@ -30,15 +30,20 @@ struct KnopfStil: ButtonStyle {
     /// das Fokusverhalten bleiben trotzdem dieselben; genau die waren der
     /// Grund, sie ueberhaupt auf diesen Stil zu ziehen.
     var hoehe: CGFloat = Stil.knopfHoehe
+    /// **Aktiv traegt nur das Zeichen den Akzent** — wie am iPhone (Merkliste
+    /// an): keine eigene Flaeche, die Flaeche bleibt wie bei den Nachbarn.
+    /// Im Fokus nicht: auf der weissen Fokusflaeche steht `grund`.
+    var aktiv = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration, nurSymbol: nurSymbol, hoehe: hoehe)
+        Inhalt(configuration: configuration, nurSymbol: nurSymbol, hoehe: hoehe, aktiv: aktiv)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         let nurSymbol: Bool
         let hoehe: CGFloat
+        let aktiv: Bool
         @Environment(\.isFocused) private var fokus
         @Environment(\.isEnabled) private var freigegeben
 
@@ -67,7 +72,8 @@ struct KnopfStil: ButtonStyle {
         /// wartet, statt wie einer, der nicht reagiert.
         private var vordergrund: Color {
             guard freigegeben else { return Stil.schriftSehrLeise }
-            return fokus ? Stil.grund : Stil.schrift
+            if fokus { return Stil.grund }
+            return aktiv ? Stil.akzent : Stil.schrift
         }
 
         private var hintergrund: Color {
@@ -98,13 +104,31 @@ struct KachelStil: ButtonStyle {
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.isFocused) private var fokus
+        @Environment(\.kachelVorladen) private var vorladen
 
         var body: some View {
             configuration.label
                 .scaleEffect(fokus ? Stil.fokusLupe : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
+                // **Vor dem Klick den Stand der Serie holen**, entprellt:
+                // wer durch eine Reihe wischt, loest nichts aus; wer 150 ms
+                // auf einer Kachel steht, hat den Stand meist schon, wenn er
+                // drueckt — und der Hauptknopf der Serienseite nennt sofort
+                // die richtige Folge.
+                .task(id: fokus) {
+                    guard fokus, let vorladen else { return }
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await vorladen()
+                }
         }
     }
+}
+
+extension EnvironmentValues {
+    /// Was eine Kachel vorlaedt, wenn sie den Fokus haelt — gesetzt von
+    /// `Kachelmenue`, gelesen von `KachelStil`.
+    @Entry var kachelVorladen: (@MainActor () async -> Void)? = nil
 }
 
 /// Reiter der Kopfleiste. Drei Zustände statt zwei: ruhend, gewählt,
@@ -236,6 +260,19 @@ struct ChipStil: ButtonStyle {
     }
 }
 
+/// **Der Strich zwischen der Wahl und ihren Einstellungen** in einer
+/// Kapselreihe — Bibliothek | Filter, Sortierung auf Filme und Serien,
+/// Gattung | Sortierung auf der Merkliste. Einmal hier, damit beide Reihen
+/// denselben Strich tragen.
+struct Kapseltrenner: View {
+    var body: some View {
+        Rectangle()
+            .fill(Stil.rand)
+            .frame(width: 2, height: Stil.chipHoehe * 0.6)
+            .accessibilityHidden(true)
+    }
+}
+
 /// **Eine Kapsel, die etwas aufklappt** — Bibliothek und Sortierung in der
 /// Chipreihe der Bibliothek.
 ///
@@ -276,6 +313,7 @@ struct KapselStil: ButtonStyle {
                     Image(systemName: symbol)
                         .font(.system(size: 22, weight: .medium))
                         .opacity(0.6)
+                        .accessibilityHidden(true)
                 }
                 configuration.label
                     .lineLimit(1)
@@ -285,6 +323,7 @@ struct KapselStil: ButtonStyle {
                         // Seitentitel (BRAND 2).
                         .font(.system(size: 18, weight: .semibold))
                         .opacity(0.6)
+                        .accessibilityHidden(true)
                 }
             }
             // Dieselbe Stufe wie der `ChipStil` daneben — es ist derselbe Chip.
@@ -424,9 +463,14 @@ struct Kachelinhalt: View {
     /// die Folgenzeile auf dem iPhone. Der Haken kommt über `marke`.
     var gesehen = false
     /// **Ein Ersatz fuer das Bild** — nur an einer Sammlung ohne eigenes
-    /// Plakat (`Sammlungsmosaik`). Ueberall sonst `nil`, und hier steht genau
-    /// das Bild wie vorher.
-    var ersatz: AnyView? = nil
+    /// Plakat. Ueberall sonst `nil`, und hier steht genau das Bild wie
+    /// vorher.
+    ///
+    /// Der Typ steht fest, statt `AnyView`: es gibt nur diesen einen Ersatz,
+    /// und SwiftUI kann so vergleichen, statt jede Zelle neu aufzubauen.
+    var ersatz: Sammlungsmosaik? = nil
+    /// Das Zeichen, wenn kein Bild kommt — `Item.kachelzeichen`.
+    var zeichen: String? = nil
 
     private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
     private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
@@ -435,12 +479,17 @@ struct Kachelinhalt: View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
                 if let ersatz {
-                    ersatz.frame(width: breite, height: hoehe)
+                    ersatz
                 } else {
-                    Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+                    Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt,
+                         zeichen: zeichen)
                 }
             }
-                .opacity(gesehen ? 0.45 : 1)
+                // **Multipliziert, nicht durchsichtig** — wie `Gesehenhaken`
+                // auf dem iPhone. Mit `opacity` schien der Grund durch, und
+                // auf einer Serienseite in Bildfarbe bekam jedes gesehene
+                // Standbild deren Stich. So wird es nur dunkler.
+                .colorMultiply(Color(white: gesehen ? 0.45 : 1))
                 .overlay(alignment: .topTrailing) {
                     if let marke { Kachelplakette(marke: marke) }
                 }
@@ -454,6 +503,7 @@ struct Kachelinhalt: View {
             if mitUnterzeile, let unterzeile {
                 Text(unterzeile)
                     .font(Stil.klein)
+                    .monospacedDigit()
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(1)
                     .padding(.top, 2)
@@ -522,12 +572,28 @@ struct Kopfleiste: View {
     @Binding var bereich: Bereich
     let model: AppModel
     var aufsProfil: () -> Void
-    /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
-    var uebernahme: Fremdsitzung?
-    var uebernehmen: () -> Void
+    /// Was auf anderen Geräten läuft.
+    var uebernahme: [Fremdsitzung] = []
+    /// Offene Gruppen, denen man beitreten kann (Entwurf A: dasselbe
+    /// Abzeichen, mit Zähler).
+    var gruppen: [SyncPlayGruppe] = []
+    var abzeichenGedrueckt: () -> Void
+    /// Zählt hoch, wenn eine Tafel des Abzeichens zugeht — dann gehört der
+    /// Fokus wieder ihm (VERHALTEN E5: eine Tafel ist kein Ortswechsel).
+    var abzeichenFokus = 0
+    /// Zählt hoch nach einem Kontowechsel aus der Profilauswahl: dann steht
+    /// der Fokus auf dem Profilbild, und ein Druck öffnet das Profil wieder
+    /// (Entwurf D: „Profil sofort wieder erreichbar").
+    var profilFokus = 0
 
     /// Welcher Reiter gerade den Fokus hat — `nil`, sobald er im Inhalt steht.
     @FocusState private var amReiter: Bereich?
+    @FocusState private var amAbzeichen: Bool
+    @FocusState private var amProfil: Bool
+    @State private var profilNachziehen: Task<Void, Never>?
+    /// Gesperrt, sobald wieder eine Seite darüberliegt (`leisteDa`) — dann
+    /// holt das Nachfassen den Fokus nicht mehr her.
+    @Environment(\.isEnabled) private var freigegeben
 
     var body: some View {
         HStack(spacing: 56) {
@@ -574,18 +640,37 @@ struct Kopfleiste: View {
             // Profilbild. Die zwei gehoeren zusammen; getrennt sah es aus,
             // als haette das Abzeichen keinen Platz gefunden.
             HStack(spacing: 18) {
-                if let uebernahme {
-                    Uebernahmeabzeichen(sitzung: uebernahme, aktion: uebernehmen)
+                if !uebernahme.isEmpty || !gruppen.isEmpty {
+                    Angebotsabzeichen(weiterschauen: uebernahme, gruppen: gruppen,
+                                      aktion: abzeichenGedrueckt)
+                        .focused($amAbzeichen)
+                        // Die Auswahl wächst von hier aus (`Abzeichenursprung`).
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            Abzeichenursprung.punkt = CGPoint(x: $0.midX, y: $0.midY)
+                        }
                         .focusSection()
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
 
                 Button(action: aufsProfil) {
+                    let bild = model.benutzerbildURL()
                     Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL(),
-                                  groesse: 60)
+                                  bild: bild,
+                                  groesse: 60,
+                                  ohneBild: bild.map { Kontowechselflug.geteilt.ohneBild.contains($0) } ?? false)
+                        // **Je Bildadresse eine eigene Ansicht** — sonst
+                        // stünde bei der Landung kurz das alte Profilbild da
+                        // (wie `Profilziel` am iPhone).
+                        .id(bild)
+                        // Während das neue Profilbild hierher fliegt, steht
+                        // hier noch keins.
+                        .opacity(Kontowechselflug.geteilt.flug.map { $0.ersetzt } ?? true ? 1 : 0)
                 }
                 .buttonStyle(ProfilStil())
+                .focused($amProfil)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rahmen in
+                    Kontowechselflug.geteilt.zielMelden(rahmen)
+                }
                 // Ein Bild ohne Beschriftung ist eine namenlose Taste.
                 .accessibilityLabel(Text("Profil und Einstellungen"))
                 .focusSection()
@@ -601,57 +686,42 @@ struct Kopfleiste: View {
         // dann 80 Punkt weiter innen als der Inhalt darunter — genau die
         // Sorte Fehler, die man erst sieht, wenn sie einem auffaellt.
         .ignoresSafeArea(edges: [.top, .horizontal])
-        .animation(.easeInOut(duration: 0.25), value: uebernahme?.id)
-    }
-}
-
-/// „Läuft auf dem iPhone — hier weiterschauen."
-///
-/// **Bewusst mit Gerätenamen und Titel, nicht nur als Zeichen.** Ein Symbol
-/// allein wirft die Frage auf, was es tut; wer es dann drückt, hält
-/// versehentlich seinen Film auf dem anderen Gerät an. Der Text sagt, was
-/// passiert, bevor es passiert.
-///
-/// **In Ruhe eine Zeile, der Titel kommt im Fokus dazu.** Zwei Zeilen in 22
-/// und 18 Punkt standen neben Reitern in 31 — über dem Titelbild ging die
-/// zweite darin unter. „Hier weiterschauen" sagt schon in Ruhe, was ein Druck
-/// tut; welcher Titel es ist, steht da, bevor man drückt: im Fokus.
-struct Uebernahmeabzeichen: View {
-    let sitzung: Fremdsitzung
-    var aktion: () -> Void
-
-    var body: some View {
-        Button(action: aktion) { Inhalt(sitzung: sitzung) }
-            .buttonStyle(AbzeichenStil(anderesGeraet: true))
-            .accessibilityLabel(Text("Hier weiterschauen"))
-            .accessibilityValue(Text(sitzung.titelzeile))
-    }
-
-    private struct Inhalt: View {
-        let sitzung: Fremdsitzung
-        @Environment(\.isFocused) private var fokus
-
-        var body: some View {
-            HStack(spacing: 14) {
-                Image(systemName: sitzung.geraetezeichen)
-                    .font(Stil.kachel)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Hier weiterschauen")
-                        .font(Stil.knopf)
-                    if fokus {
-                        // Serverdaten, also `String` und nicht `LocalizedStringKey`.
-                        Text(sitzung.titelzeile)
-                            .font(Stil.klein)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+        .animation(Stil.bewegung(.easeInOut(duration: 0.25)), value: uebernahme.map(\.id))
+        .animation(Stil.bewegung(.easeInOut(duration: 0.25)), value: gruppen.map(\.id))
+        .onChange(of: abzeichenFokus) { _, _ in amAbzeichen = true }
+        // **Und nachgefasst.** Die Leiste wird im selben Zug erst wieder
+        // fokussierbar (`leisteDa`), und SwiftUI verwirft eine Zuweisung in
+        // diesem Durchlauf — dieselbe Lehre wie im Player.
+        .onChange(of: profilFokus) { _, _ in
+            amProfil = true
+            profilNachziehen?.cancel()
+            profilNachziehen = Task { @MainActor in
+                for warten in [80, 250, 600] {
+                    try? await Task.sleep(for: .milliseconds(warten))
+                    // Sitzt er einmal, oder ist inzwischen das Profil offen,
+                    // wird nicht nachgefasst — sonst holte ein später Takt
+                    // den Fokus von dort zurück, wohin man gerade ging.
+                    guard !Task.isCancelled, freigegeben else { return }
+                    if amProfil { break }
+                    amProfil = true
                 }
+                Protokoll.schreib("[Fokus] Profilbild oben nach Kontowechsel: \(amProfil)")
             }
-            .padding(.horizontal, 28)
-            .frame(height: fokus ? 76 : 64)
         }
+        #if DEBUG
+        .onChange(of: amProfil) { _, jetzt in
+            if Kontowechsellauf.an { Kontowechselflug.notiz("fokus: profilbild oben \(jetzt) · leiste frei \(freigegeben)") }
+        }
+        #endif
     }
 }
+
+// `Uebernahmeabzeichen` ist seit 1.0.5 `Angebotsabzeichen` in
+// `TVGemeinsam.swift`: dasselbe Abzeichen, jetzt auch für offene Gruppen.
+//
+// **Bewusst mit Gerätenamen und Titel, nicht nur als Zeichen** — das gilt
+// weiter. Ein Symbol allein wirft die Frage auf, was es tut; wer es dann
+// drückt, hält versehentlich seinen Film auf dem anderen Gerät an.
 
 /// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: in Ruhe eine
 /// ruhige Fläche, im Fokus die helle.
@@ -692,7 +762,7 @@ struct AbzeichenStil: ButtonStyle {
                 // Titelbild **und** die 760 Punkt breiten Geraetezeilen. Sechs
                 // Prozent waren dort fuenfundvierzig Punkte.
                 .scaleEffect(fokus ? Stil.fokusLupeBreit : 1)
-                .animation(.easeOut(duration: 0.16), value: fokus)
+                .animation(Stil.bewegung(.easeOut(duration: 0.16)), value: fokus)
         }
 
         private var vordergrund: Color {
@@ -1017,8 +1087,22 @@ struct Kopfauskunft<Schluss: View>: View {
     /// Bei Folgen steht der Folgentitel unter dem Serientitel. Er kostet
     /// eine Zeile, die dann der Beschreibung fehlt — die Gesamthöhe bleibt.
     var zweitzeile: String?
+    /// **Bei einer Folge: die Serie, deren Angaben die Zeile traegt.**
+    ///
+    /// Der grosse Titel ueber der Zeile ist bei einer Folge der Serienname,
+    /// und ein Druck auf die Folge fuehrt auf die Serienseite. Also gehoeren
+    /// Jahr, Laufzeit, Sterne und Freigabe der Serie — sonst stand auf der
+    /// Startseite 5,6 (die Folge) und eine Seite weiter 8,5 (die Serie).
+    /// Fehlt sie noch, bleibt die Zeile leer, bis sie da ist, statt kurz die
+    /// Werte der Folge zu zeigen.
+    var serie: Item?
     /// Was hinten steht: „Direct Play" auf der Detailseite, sonst nichts.
     @ViewBuilder var schluss: () -> Schluss
+
+    /// Wessen Angaben in der Zeile stehen — siehe `serie`.
+    private var angabenVon: Item? {
+        item.type == "Episode" ? serie : item
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1045,24 +1129,11 @@ struct Kopfauskunft<Schluss: View>: View {
                     .padding(.top, 10)
             }
 
-            HStack(spacing: 24) {
-                Text(angabenzeile)
-                    // **Eine Angabe, also 24.** Jahr, Laufzeit und Gattung
-                    // stehen in der Leiter auf 12 am iPhone (`Stil.klein`),
-                    // hier auf dem Doppelten. Vorher 29 — eine Zahl aus
-                    // Apples tvOS-Rampe, die auf keiner Stufe liegt.
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schrift.opacity(0.62))
-                    .lineLimit(1)
-
-                Belegzeile(direktplay: false, hinweis: nil,
-                           bewertung: item.communityRating,
-                           freigabe: item.officialRating)
-
-                schluss()
-            }
-            .frame(height: 34)
-            .padding(.top, 14)
+            // Jahr, Laufzeit, Sterne, Freigabe, Beleg — ein Baustein, siehe
+            // `Angabenreihe`.
+            Angabenreihe(titel: angabenVon, schluss: schluss)
+            .frame(height: Stil.markeHoehe)
+            .padding(.top, Stil.angabenLuft)
 
             // **Der bereinigte Text, nicht der rohe.** Jellyfin gibt
             // Beschreibungen aus, wie sie beim Anbieter standen — mit `<br>`,
@@ -1095,15 +1166,62 @@ struct Kopfauskunft<Schluss: View>: View {
                alignment: .topLeading)
     }
 
-    /// Jahr und Laufzeit — **ohne Genres**, siehe oben. Die Formatierung
-    /// kommt aus `Titelangaben`, damit „1 Std 52 Min" überall gleich
-    /// geschrieben steht.
-    private var angabenzeile: String {
-        var teile: [String] = []
-        if item.type == "Episode", let kuerzel = item.folgenkuerzel { teile.append(kuerzel) }
-        if let jahr = item.productionYear { teile.append(String(jahr)) }
-        if let sekunden = item.runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
-        return teile.joined(separator: " · ")
+}
+
+/// **Die Angabenzeile — ein Baustein, eine Reihenfolge, überall.**
+///
+/// Jahr · Laufzeit · Sterne · Freigabe · Beleg (Direct Play). Was fehlt,
+/// entfällt ohne Lücke. Startseite, Film- und Serienseite setzen sie über
+/// `Kopfauskunft`; vorher stand auf der Startseite bei einer Folge zusätzlich
+/// „S1 E3" vorn — dieselbe Angabe, die darunter im Folgentitel steht — und die
+/// Werte kamen von der Folge statt vom Titel darüber.
+///
+/// **Alles eine `Belegmarke`, an der Mitte ausgerichtet.** Mit
+/// `.firstTextBaseline` meldeten Marken mit Zeichen die Grundlinie des SF
+/// Symbols; gemessen (27.09.) lagen die Hüllen bis zu 3 Punkt versetzt.
+struct Angabenreihe<Schluss: View>: View {
+    /// Der Titel, dessen Angaben hier stehen. `nil`: noch keiner.
+    let titel: Item?
+    /// Was nach den Angaben kommt — der Beleg auf der Detailseite, die
+    /// Restzeit auf der Startseite.
+    @ViewBuilder var schluss: () -> Schluss
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Stil.angabenAbstand) {
+            if let titel, Self.hatAngaben(titel) {
+                HStack(alignment: .center, spacing: Stil.angabenAbstand) {
+                    if let jahr = titel.productionYear {
+                        Belegmarke(wort: Text(verbatim: String(jahr)), farbe: Stil.schriftLeise)
+                            .monospacedDigit()
+                    }
+                    if let sekunden = titel.runtimeSeconds, sekunden > 0 {
+                        Belegmarke(wort: Text(verbatim: laufzeit(sekunden)), farbe: Stil.schriftLeise)
+                            .monospacedDigit()
+                    }
+                    Belegmarken(bewertung: titel.communityRating,
+                                freigabe: titel.officialRating)
+                }
+                // **Ein Titelwechsel ist ein Schnitt, keine Bewegung.**
+                // Wandert der Fokus auf der Startseite von Titel zu Titel,
+                // kam der Wechsel in einer animierten Transaktion an, und die
+                // Marken glitten, schoben sich und wuchsen von einer Breite
+                // zur anderen — die Zeile, die erst leer war, ebenso. Eine
+                // Kennung je Titel macht daraus neue Marken statt
+                // verformter alter, und ohne Animation stehen sie sofort da.
+                .id(titel.id)
+                .transaction { $0.animation = nil }
+            }
+            // Der Schluss behaelt seine eigene Bewegung: die Direct-Play-Marke
+            // der Detailseite blendet weiter ein (`Detailkopf`).
+            schluss()
+        }
+    }
+
+    /// Ob der Titel ueberhaupt etwas fuer die Zeile hat — sonst stuende ein
+    /// leerer Stapel da und hielte vor dem Schluss seinen Abstand.
+    private static func hatAngaben(_ titel: Item) -> Bool {
+        titel.productionYear != nil || (titel.runtimeSeconds ?? 0) > 0
+            || titel.communityRating != nil || titel.officialRating != nil
     }
 }
 
@@ -1161,26 +1279,44 @@ struct Restzeitmarke: View {
 /// Gedeckelt, weil ein Kulissenbild in Fernsehergroesse einige Megabyte
 /// belegt: die letzten acht reichen fuer den Weg Startseite → Detailseite →
 /// zurueck, und mehr braucht niemand gleichzeitig.
+///
+/// **Die zuletzt gebrauchten, nicht die zuletzt geholten.** Bis hierher
+/// fiel das aelteste *Gemerkte* heraus, auch wenn es eben noch gezeigt
+/// wurde — die Startseitenkulisse, zu der man gleich zurueckkehrt, ging so
+/// nach acht Detailseiten verloren. Jetzt ruecken Lesen und Merken nach
+/// hinten.
 @MainActor
 final class Kulissenbilder {
     static let geteilt = Kulissenbilder()
     private var bekannt: [URL: Image] = [:]
     private var reihenfolge: [URL] = []
+    private static let hoechstens = 8
 
-    func bild(_ url: URL) -> Image? { bekannt[url] }
+    func bild(_ url: URL) -> Image? {
+        guard let bild = bekannt[url] else { return nil }
+        nachHinten(url)
+        return bild
+    }
 
     func merken(_ bild: Image, fuer url: URL) {
-        if bekannt[url] == nil { reihenfolge.append(url) }
         bekannt[url] = bild
-        while reihenfolge.count > 8 {
+        nachHinten(url)
+        while reihenfolge.count > Self.hoechstens {
             bekannt[reihenfolge.removeFirst()] = nil
         }
+    }
+
+    private func nachHinten(_ url: URL) {
+        if let stelle = reihenfolge.lastIndex(of: url) { reihenfolge.remove(at: stelle) }
+        reihenfolge.append(url)
     }
 }
 
 struct Kulisse: View {
     let url: URL?
     @State private var bild: Image?
+    /// Neuer Anlauf nach einem abgebrochenen Abruf — siehe `Bild.anlauf`.
+    @State private var anlauf = 0
 
     /// Was bekannt ist, steht sofort — nicht erst im naechsten Durchgang.
     /// Dieselbe Ueberlegung wie bei `Bildgrund`: ein nachgereichter Wert
@@ -1211,9 +1347,25 @@ struct Kulisse: View {
                                 guard let url else { return }
                                 Kulissenbilder.geteilt.merken(geladen, fuer: url)
                             }
+                    } else {
+                        // Dieselbe Regel wie bei `Bild`: ein abgebrochener
+                        // Abruf bekommt bis zu zwei neue Anlaeufe, statt die
+                        // Kulisse leer stehen zu lassen.
+                        Color.clear
+                            .task(id: Bild.abgebrochen(phase)) {
+                                guard Bild.abgebrochen(phase), anlauf < 2 else { return }
+                                anlauf += 1
+                            }
                     }
                 }
+                .id(anlauf)
             }
+        }
+        // Eine neue Adresse bei stehender Ansicht: nicht das alte Bild
+        // weiterzeigen, sondern nehmen, was fuer die neue bekannt ist.
+        .onChange(of: url) { _, neu in
+            anlauf = 0
+            bild = neu.flatMap { Kulissenbilder.geteilt.bild($0) }
         }
         .frame(width: 1180, height: 700)
         .clipped()
@@ -1399,6 +1551,7 @@ struct Staffelpille: View {
                 Image(systemName: "chevron.down")
                     .font(Stil.gruppe)
                     .opacity(0.6)
+                    .accessibilityHidden(true)
             }
         }
         // **Derselbe Stil wie die Knoepfe im Kopf.**
@@ -1431,13 +1584,16 @@ struct TVUebernahmeauswahl: View {
     let sitzungen: [Fremdsitzung]
     var waehlen: (Fremdsitzung) -> Void
     var abbrechen: () -> Void
+    /// **Der Fokus wird hineingesetzt, nicht gesucht** — das gesperrte
+    /// Abzeichen dahinter behielt ihn sonst, und nichts hier war bedienbar
+    /// (siehe `TVGemeinsamtafeln.auswahl`).
+    @FocusState private var fokus: String?
 
+    /// **Ohne eigenen Grund.** Den Schleier legt `HauptView` darunter, als
+    /// eigene Ebene: er blendet nur, die Auswahl wächst aus dem Abzeichen
+    /// (``Herkunftsauftritt``, wie am iPhone).
     var body: some View {
         ZStack {
-            // Der Grund fängt den Druck ab, damit dahinter nichts reagiert.
-            Color.black.opacity(0.72)
-                .ignoresSafeArea()
-
             VStack(spacing: 34) {
                 VStack(spacing: 10) {
                     Text("Wo weiterschauen?")
@@ -1457,7 +1613,11 @@ struct TVUebernahmeauswahl: View {
                                     .font(.system(size: 28, weight: .medium))
                                     .frame(width: 40)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(s.geraetename ?? "Gerät")
+                                    // Der Rueckfall ist unser Wort, der Name nicht:
+                                    // ohne `String(localized:)` stand „Gerät" in
+                                    // jeder Sprache deutsch da — dieselbe Falle wie
+                                    // am iPhone (`2e43f49`), Form wie in `Bausteine`.
+                                    Text(s.geraetename ?? String(localized: "Gerät"))
                                         .font(Stil.listentitel)
                                     Text(s.titelzeile)
                                         .font(Stil.klein)
@@ -1477,6 +1637,7 @@ struct TVUebernahmeauswahl: View {
                         // Abzeichen, das hierher geführt hat. „Abbrechen"
                         // darunter bleibt grau.
                         .buttonStyle(AbzeichenStil(anderesGeraet: true))
+                        .focused($fokus, equals: s.id)
                     }
                 }
                 .focusSection()
@@ -1488,6 +1649,8 @@ struct TVUebernahmeauswahl: View {
         }
         // Menü schließt, wie überall auf dem Fernseher.
         .onExitCommand(perform: abbrechen)
+        .defaultFocus($fokus, sitzungen.first?.id)
+        .task { fokus = sitzungen.first?.id }
     }
 }
 
@@ -1517,7 +1680,7 @@ struct Ladefeld: View {
                 // Aussage, nicht die Bewegung. Die iOS-Fassung macht es
                 // genauso.
                 guard !Stil.bewegungReduziert else { hell = true; return }
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                withAnimation(Stil.pulsieren) {
                     hell = true
                 }
             }

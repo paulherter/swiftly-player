@@ -53,4 +53,91 @@ public enum Nachmelderegeln {
     public static func erledigt(_ ids: [String], in ablage: [Nachmeldung]) -> [Nachmeldung] {
         ablage.filter { !ids.contains($0.id) }
     }
+
+    /// **Der neuere Stand gewinnt** (`UserData.LastPlayedDate`).
+    ///
+    /// Hat jemand den Titel seit dem Flug anderswo weitergeschaut — am
+    /// Fernseher, auf dem Mac —, traegt der Server einen juengeren Zeitpunkt.
+    /// Dann waere die Stelle aus dem Flugzeug ein Rueckschritt, und sie
+    /// verfaellt. Ohne Zeitpunkt am Server (nie gespielt) geht sie hin.
+    public static func senden(_ m: Nachmeldung, serverZuletzt: Date?) -> Bool {
+        guard let serverZuletzt else { return true }
+        return m.wann > serverZuletzt
+    }
+
+    /// **Eine Meldung ging doch noch durch** — dann ist die liegende fuer
+    /// denselben Titel dieses Kontos ueberholt und darf nie mehr hinaus.
+    /// Sonst schickte das naechste Wiederverbinden eine aeltere Stelle
+    /// hinterher, und das waere eine Doppelmeldung mit Rueckschritt.
+    public static func ueberholt(itemID: String, konto: String,
+                                 in ablage: [Nachmeldung]) -> [Nachmeldung] {
+        ablage.filter { !($0.itemID == itemID && $0.konto == konto) }
+    }
+}
+
+public extension JellyfinClient {
+
+    /// Was aus einer Nachmeldung wurde.
+    enum Nachmeldeausgang: Sendable, Equatable {
+        /// Angekommen.
+        case gesendet
+        /// Nicht gesendet und erledigt: der Server hat einen neueren Stand,
+        /// oder den Titel gibt es dort nicht mehr.
+        case verworfen
+    }
+
+    /// **Eine liegengebliebene Stelle an den Server — wenn sie noch gilt.**
+    ///
+    /// Erst den Stand am Server lesen, dann entscheiden
+    /// (``Nachmelderegeln/senden(_:serverZuletzt:)``), dann als Ende einer
+    /// Wiedergabe melden. Das Ende und nicht ein blosses Setzen der Stelle:
+    /// so wendet der Server seine eigenen Schwellen an und setzt „gesehen",
+    /// wenn die Folge im Flugzeug zu Ende lief — dieselbe Regel wie bei
+    /// einer Wiedergabe mit Netz.
+    ///
+    /// Wirft bei einem Netz- oder Serverfehler; dann bleibt die Meldung liegen.
+    func nachmelden(_ m: Nachmeldung) async throws -> Nachmeldeausgang {
+        let stand: UserItemData
+        do {
+            stand = try await nutzerdaten(itemID: m.itemID)
+        } catch JellyfinError.http(status: 404, _) {
+            return .verworfen
+        }
+        guard Nachmelderegeln.senden(m, serverZuletzt: stand.zuletztGespielt) else {
+            return .verworfen
+        }
+        // Ein Plan von der Platte reicht: gemeldet werden nur die Kennungen,
+        // und eine Sitzung gab es offline ohnehin nicht.
+        let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+        try await reportStopped(itemID: m.itemID, plan: plan, positionTicks: m.ticks)
+        // **Und wann es war.** Ein Ende ohne vorherigen Start setzt am Server
+        // kein `LastPlayedDate` (am Prüfserver gemessen, 25.09.2026) — ohne
+        // diese Zeile hätte die nächste Entscheidung nach dem Zeitstempel
+        // nichts, woran sie sich halten kann. Scheitert nur das, ist die
+        // Stelle trotzdem angekommen.
+        try? await zuletztGespieltSetzen(itemID: m.itemID, wann: m.wann)
+        return .gesendet
+    }
+
+    /// **Alles Liegengebliebene eines Kontos, aelteste zuerst.**
+    ///
+    /// Gibt die Kennungen zurueck, die erledigt sind (gesendet oder
+    /// verworfen). Beim ersten Fehler wird abgebrochen, nicht weiterprobiert:
+    /// scheitert eine, ist der Server wieder weg, und die uebrigen stuenden
+    /// danach als verloren da.
+    func nachmelden(_ offen: [Nachmeldung],
+                    protokoll: @Sendable (String) -> Void = { _ in }) async -> [String] {
+        var erledigt: [String] = []
+        for m in offen {
+            do {
+                let ausgang = try await nachmelden(m)
+                protokoll("[Melden] Nachmeldung \(m.itemID) \(m.ticks / 10_000_000) s: \(ausgang)")
+                erledigt.append(m.id)
+            } catch {
+                protokoll("[Melden] Nachmeldung \(m.itemID) gescheitert, bleibt liegen")
+                break
+            }
+        }
+        return erledigt
+    }
 }

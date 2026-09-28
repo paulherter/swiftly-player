@@ -43,8 +43,14 @@ enum Wachhalter {
         if wach {
             guard marke == 0, let fenster,
                   let neu = gtk_window_get_application(alsFenster(fenster)) else { return }
-            marke = gtk_application_inhibit(neu, alsFenster(fenster),
-                                            GTK_APPLICATION_INHIBIT_IDLE, "Wiedergabe")
+            // **Auch den Ruhezustand, nicht nur den Schoner.** Windows setzt
+            // `ES_SYSTEM_REQUIRED` mit; hier hielt nur `IDLE` den Schirm an,
+            // und eine Energieeinstellung „nach 20 min in den Ruhezustand"
+            // schickte den Rechner mitten im Film schlafen, sobald die
+            // Arbeitsumgebung Leerlauf und Ruhe getrennt fuehrt (KDE tut es).
+            let was = GtkApplicationInhibitFlags(
+                rawValue: GTK_APPLICATION_INHIBIT_IDLE.rawValue | GTK_APPLICATION_INHIBIT_SUSPEND.rawValue)
+            marke = gtk_application_inhibit(neu, alsFenster(fenster), was, uebersetzt("Wiedergabe"))
             anwendung = neu
             Protokoll.schreib("[Wach] gehemmt (\(marke))")
         } else {

@@ -16,20 +16,40 @@ struct Kulisse: View {
     let url: URL?
     var hoehe: CGFloat
 
+    /// **Was gerade steht — nicht, was gerade verlangt wird.** Nach der
+    /// Einfahrt kommt der volle Titel (`Einfahrt`), und mit ihm manchmal eine
+    /// andere Bildadresse. `Netzbild` räumt bei neuer Adresse sein Bild und
+    /// lädt neu: ein kurzes Schwarz am Ende der Fahrt. Hier bleibt das alte
+    /// Bild stehen, bis das neue entschlüsselt im Speicher liegt, und wird
+    /// dann überblendet. Dieselbe Adresse tut nichts.
+    @State private var gezeigt: URL?
+
     var body: some View {
         GeometryReader { raum in
             let breite = max(raum.size.width * 0.62, 520)
-            bild
-                .frame(width: breite, height: hoehe)
-                .clipped()
-                .kulissenblende()
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            ZStack {
+                Netzbild(url: gezeigt ?? url)
+                    .id(gezeigt ?? url)
+                    .transition(.opacity)
+            }
+            .frame(width: breite, height: hoehe)
+            .clipped()
+            .kulissenblende()
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(height: hoehe)
         .allowsHitTesting(false)
+        .task(id: url) {
+            guard let url else { return }
+            guard let alt = gezeigt else { gezeigt = url; return }
+            guard url != alt else { return }
+            // Erst laden, dann tauschen — nie leer dazwischen.
+            _ = await Bildspeicher.geteilt.laden(url)
+            guard !Task.isCancelled else { return }
+            withAnimation(Stil.einblenden) { gezeigt = url }
+        }
     }
 
-    private var bild: some View { Netzbild(url: url) }
 }
 
 extension View {

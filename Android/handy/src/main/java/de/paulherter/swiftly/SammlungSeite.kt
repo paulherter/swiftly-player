@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -115,7 +117,10 @@ fun Sammlungsmosaik(app: SwiftlyAnwendung, id: String, art: String?, hoehe: Int,
  */
 @Composable
 fun SammlungKachelAnsicht(app: SwiftlyAnwendung, s: Sammlungskachel, art: String, modifier: Modifier = Modifier, tun: () -> Unit) {
-    Column(modifier.einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    // Eine Kachel, ein Antippziel, eine Ansage — wie `RasterKachelAnsicht`.
+    val beschreibung = "${s.name}, ${sammlungsanzahl(art, s.anzahl)}"
+    Column(modifier.einblenden().antippen(tun).semantics(mergeDescendants = true) { contentDescription = beschreibung },
+        verticalArrangement = Arrangement.spacedBy(7.dp)) {
         val feld = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
         if (s.plakat == null) Sammlungsmosaik(app, s.id, art, 260, feld)
         else Box(feld.clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
@@ -123,7 +128,7 @@ fun SammlungKachelAnsicht(app: SwiftlyAnwendung, s: Sammlungskachel, art: String
             if (fehlt) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Symbol(Zeichen.Film, 22.dp, farbe = Stil.schriftSehrLeise)
             }
-            AsyncImage(model = s.plakat, contentDescription = s.name, contentScale = ContentScale.Crop,
+            AsyncImage(model = s.plakat, contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(), onError = { fehlt = true })
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -282,11 +287,12 @@ suspend fun sammlungsreihenLaden(kern: Kern, titelId: String): List<Sammlungsrei
  * die Sammlungsseite: „Teil der Sammlung" mit Pfeil, darunter der Name in 15 `schriftLeise`.
  *
  * Fehlt die Sammlung, fehlt die Reihe — wie bei den Extras. Hoechstens zwei Reihen (der Kern).
+ *
+ * **Geladen wird auf der Filmseite, nicht hier** (`sammlungsreihenLaden`) — wie iOS 83677a44: die
+ * Reihe holte sich ihre Titel selbst und drueckte sich spaeter als alles andere in die Seite.
  */
 @Composable
-fun Sammlungsreihe(app: SwiftlyAnwendung, titelId: String, oeffnen: (Ziel) -> Unit) {
-    var reihen by remember(titelId) { mutableStateOf<List<Sammlungsreihendaten>>(emptyList()) }
-    LaunchedEffect(titelId) { reihen = sammlungsreihenLaden(app.kern, titelId) }
+fun Sammlungsreihe(reihen: List<Sammlungsreihendaten>, oeffnen: (Ziel) -> Unit) {
     reihen.forEach { reihe ->
         Column(Modifier.padding(top = Stil.reihenAbstand).einblenden(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.padding(horizontal = Stil.randAbstand).antippen { oeffnen(sammlungsziel(reihe.id, reihe.name, reihe.art)) },

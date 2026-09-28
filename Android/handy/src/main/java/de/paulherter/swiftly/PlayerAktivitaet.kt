@@ -4,6 +4,7 @@ import de.paulherter.swiftly.gemeinsam.Zeichen
 import de.paulherter.swiftly.gemeinsam.Symbol
 import de.paulherter.swiftly.gemeinsam.Staerke
 import android.app.PictureInPictureParams
+import de.paulherter.swiftly.tv.zurueckTaste
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -20,8 +21,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
@@ -59,7 +64,7 @@ class PlayerAktivitaet : ComponentActivity() {
         // Richtung. Die App darunter bewegt sich nicht.
         // Auf dem Fernseher dieselbe Blende (tvOS bee033b).
         if (android.os.Build.VERSION.SDK_INT >= 34) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_ein, R.anim.halten)
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, if (Uebergabe.empfang != null) R.anim.halten else R.anim.player_ein, R.anim.halten)
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_aus)
         }
         if (!app.istFernseher) {
@@ -77,7 +82,7 @@ class PlayerAktivitaet : ComponentActivity() {
             }
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        wunsch.value = app.spiel.value ?: run { finish(); return }
+        wunsch.value = app.spiel.value ?: wiederaufnehmen(app, savedInstanceState) ?: run { finish(); return }
         // **Mit der Geste ins kleine Fenster, nicht danach.** Nach oben gewischt ging die Aktivitaet
         // zuerst in den Hintergrund; Android baute dabei die Videoflaeche ab, und das kleine Fenster
         // blieb schwarz — auch nach dem Zurueckholen. Ab Android 12 verkleinert das System selbst.
@@ -85,6 +90,17 @@ class PlayerAktivitaet : ComponentActivity() {
             runCatching { setPictureInPictureParams(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setAutoEnterEnabled(true).build()) }
         }
         setContent {
+            // **Das Kachelmenue braucht seinen eigenen Halter hier** — der Player laeuft in einer
+            // eigenen Aktivitaet, `LocalKachelmenue` aus `Hauptansicht` reicht nicht herueber. Ohne
+            // diesen Halter waere `LocalKachelmenue.current` `null` und der lange Druck auf eine
+            // Folge in der Player-Folgenliste taete nichts.
+            var kachelmenue by remember { mutableStateOf<Kachelmenuewunsch?>(null) }
+            // Fernseher: das Kachelmenue haengt an `app.blatt` (`kachelmenueTafel`), das `TvTafel`
+            // unten schon zeichnet. Telefon: eigener Halter, `Kachelmenueauflage` zeichnet ihn.
+            fun kachelmenueOeffnen(w: Kachelmenuewunsch) {
+                if (app.istFernseher) kachelmenueTafel(app, w) {} else kachelmenue = w
+            }
+            CompositionLocalProvider(LocalKachelmenue provides ::kachelmenueOeffnen) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 wunsch.value?.let { w ->
                     // Ein neuer Wunsch (aus der App, waehrend das kleine Fenster laeuft) baut den Player neu.
@@ -97,7 +113,41 @@ class PlayerAktivitaet : ComponentActivity() {
                     }
                 }
                 if (!kleinesFenster.value) if (app.istFernseher) de.paulherter.swiftly.tv.TvTafel(app) else Blattauflage(app)
+                // „Hier weiterschauen": die Karte ueber allem, auch ueber dem Player (`Uebergabe.kt`).
+                if (!kleinesFenster.value) Uebergabeebene(imPlayer = true)
+                // Auf dem Telefon: dasselbe Kachelmenue wie ueberall sonst, ueber allem. Auf dem
+                // Fernseher braucht es keinen eigenen Halter — `kachelmenueTafel` haengt sich an
+                // `app.blatt`, und das zeichnet schon `TvTafel` oben.
+                // `oeffnen`: im Player nie erreicht — die Folgenliste zeigt nur „gesehen"/„ungesehen"
+                // (`Kachelmenuewunsch.imPlayer`), kein „Zur Übersicht".
+                if (!app.istFernseher && !kleinesFenster.value) Kachelmenueauflage(app, kachelmenue, {}) { kachelmenue = null }
             }
+            }
+        }
+    }
+
+    /**
+     * **Nach dem Ende des Prozesses** baut Android diese Aktivitaet mit ihrem gesicherten Zustand neu —
+     * `app.spiel` ist dann leer. Vorher beendete sie sich sofort, und man stand ohne Wort auf der
+     * Startseite. Jetzt geht es beim Titel und an der Stelle weiter, an der der Takt zuletzt war.
+     * Die Sitzung setzt sonst erst die Hauptaktivitaet; hier liegt sie noch nicht darunter.
+     */
+    private fun wiederaufnehmen(app: SwiftlyAnwendung, zustand: Bundle?): Abspielwunsch? {
+        val id = zustand?.getString(SPIEL_ID) ?: return null
+        if (!app.sitzungWiederherstellen() && app.downloads.datei(id) == null) return null
+        val w = Abspielwunsch(id, zustand.getDouble(SPIEL_AB, 0.0).takeIf { it > 1 })
+        app.spielUebergeben = w
+        app.spiel.value = w
+        Protokoll.schreib("Player nach Prozessende wieder aufgenommen")
+        return w
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val app = application as SwiftlyAnwendung
+        (app.spielStelle?.takeIf { app.spiel.value != null } ?: app.spiel.value)?.let {
+            outState.putString(SPIEL_ID, it.id)
+            it.ab?.let { ab -> outState.putDouble(SPIEL_AB, ab) }
         }
     }
 
@@ -108,6 +158,13 @@ class PlayerAktivitaet : ComponentActivity() {
             overridePendingTransition(R.anim.halten, R.anim.player_aus)
         }
     }
+
+    // Auf dem Fernseher Zurueck an Compose vorbei an die Rueckruf-Kette (`tv/TvZurueck.kt`) — sonst
+    // schluckte eine offene Ebene die Taste vor Android 13.
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        if ((application as SwiftlyAnwendung).istFernseher)
+            de.paulherter.swiftly.tv.Tastensperre.pruefen(event) || (zurueckTaste(event) ?: super.dispatchKeyEvent(event))
+        else super.dispatchKeyEvent(event)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -137,10 +194,13 @@ class PlayerAktivitaet : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isFinishing) (application as SwiftlyAnwendung).let { it.spiel.value = null; it.spielUebergeben = null }
+        if (isFinishing) (application as SwiftlyAnwendung).let { it.spiel.value = null; it.spielUebergeben = null; it.spielStelle = null }
         (application as SwiftlyAnwendung).kleinesFenster.value = false
     }
 }
+
+private const val SPIEL_ID = "spiel.id"
+private const val SPIEL_AB = "spiel.ab"
 
 /**
  * **Wie iOS:** laeuft der Film im kleinen Fenster, zeigt die App darunter nicht sich selbst, sondern

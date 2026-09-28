@@ -36,9 +36,11 @@ import kotlinx.coroutines.flow.first
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.SystemClock
 import android.view.WindowManager
@@ -47,6 +49,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +86,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -173,7 +178,13 @@ data class Spielplan(val url: String, val lossless: Boolean, val methode: String
                      val kopfzeile: String = "", val staffelNr: Int? = null, val folgeNr: Int? = null,
                      val nebenzeile: String? = null,
                      /** Abschnittsgrenzen in Sekunden — Kerben im Zeitregler. */
-                     val marken: List<Double> = emptyList())
+                     val marken: List<Double> = emptyList(),
+                     /** Gleich mit Software-Dekoder oeffnen — `PlaybackPlan.softwareDekoder` (MPEG-4 Part 2). */
+                     val softwareDekoder: Boolean = false,
+                     /** Die naechste Folge fuer die Karte (Folgenkarte C) — Name, Kuerzel, Standbild. */
+                     val naechsteFolge: Kartenfolge? = null,
+                     /** Das Bild der Uebergabe-Karte, wenn das Standbild schwarz ist (`Uebernahmemodell.kartenbildURL`). */
+                     val kartenbild: String? = null)
 
 /** Handwahl je Serie oder Film — dieselben Schluessel wie `Spurgedaechtnis` im Paket. */
 private const val TON_JE_TITEL = "tonJeTitel"
@@ -191,8 +202,21 @@ internal fun spielplanLesen(json: String) = JSONObject(json).let { o ->
               if (o.isNull("staffelNr")) null else o.optInt("staffelNr"),
               if (o.isNull("folgeNr")) null else o.optInt("folgeNr"),
               o.optString("nebenzeile").takeIf { !o.isNull("nebenzeile") },
-              o.optJSONArray("marken")?.let { a -> (0 until a.length()).map { a.getDouble(it) } }.orEmpty())
+              o.optJSONArray("marken")?.let { a -> (0 until a.length()).map { a.getDouble(it) } }.orEmpty(),
+              o.optBoolean("softwareDekoder"),
+              o.optJSONObject("naechsteFolge")?.let { n ->
+                  Kartenfolge(n.getString("id"), n.optString("name"), n.optString("kuerzel"), n.feldText("bild"))
+              },
+              if (o.has("kartenbild")) o.feldText("kartenbild") else null)
 }
+
+/** Was die Verzoegerungszeile zeigt — Text und Anschlaege aus `Verzoegerung` im Paket (Telefon und Fernseher). */
+internal data class Verzoegerungsanzeige(val text: String, val istNull: Boolean, val amAnfang: Boolean, val amEnde: Boolean)
+
+internal fun verzoegerungsanzeige(millisekunden: Int): Verzoegerungsanzeige =
+    JSONObject(Kern.verzoegerungZustand(millisekunden.toLong(), Locale.getDefault().toLanguageTag())).let {
+        Verzoegerungsanzeige(it.getString("text"), it.getBoolean("istNull"), it.getBoolean("amAnfang"), it.getBoolean("amEnde"))
+    }
 
 /** Trickplay-Angaben zur laufenden Wiedergabe — Rechnung wie `Trickplay` im Paket (Vorlage iOS). */
 data class Trickplayangabe(val breite: Int, val hoehe: Int, val kachelnBreit: Int, val kachelnHoch: Int,
@@ -276,7 +300,17 @@ class Spielwerk(
     // Boxen (Mi Box S) geben den stumm wieder, statt ihn herunterzumischen. Die Option wirkt in libVLC
     // nur auf lineares PCM (`aout_OutputNew`), AC3/E-AC3/DTS/TrueHD gehen weiter roh durch
     // (`digitalenTonAnwenden`).
+    //
+    // **Untertitel wie auf Apple** (`Untertitelstil` in `Sources/Shared/VLCPlayer.swift`): weiss, feine
+    // Kontur (3 % der Schrifthoehe statt VLCs 4), leichter Schatten, kleiner als VLCs Vorgabe von 6,25 %
+    // der Bildhoehe, am Fernseher etwas groesser. Schrift bleibt Roboto: libVLC 3 liest auf Android nur
+    // `/system/etc/fonts.xml` und kennt dort nur 400 und 700 — eine mitgelieferte Schrift oder Roboto
+    // Medium erreicht es nicht. ASS mit eigenem Stil und Bilduntertitel bleiben unberuehrt.
     val vlc = LibVLC(kontext, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") +
+        listOf("--freetype-color=16777215", "--freetype-outline-thickness=3",
+            "--freetype-outline-opacity=230", "--freetype-shadow-opacity=120",
+            "--freetype-shadow-distance=0.04", "--freetype-shadow-angle=-70",
+            "--sub-text-scale=" + (if (app.istFernseher) 88 else 82)) +
         listOfNotNull("--stereo-mode=1".takeUnless { app.einstellungen.mehrkanalTon }) +
         listOfNotNull(Zertifikate.ordner?.let { "--gnutls-dir-trust=$it" })))
     val spieler = MediaPlayer(vlc)
@@ -298,6 +332,49 @@ class Spielwerk(
     var countdown by mutableDoubleStateOf(0.0); private set
     var countdownRest by mutableIntStateOf(0); private set
     var countdownLaenge by mutableDoubleStateOf(7.0); private set
+    /**
+     * **Nach einem Sprung faengt die Fuellung der Karte von vorn an** (`ebene.gesprungen()`, iOS
+     * `fuellungsuhr = Fuellungsuhr()`): gezaehlt, damit die Anzeige neu ansetzt statt weiterzulaufen.
+     */
+    var fuellungNeu by mutableIntStateOf(0); private set
+
+    // MARK: Folgenkarte C — Vorlage `Folgenkartenansicht`/`TVFolgenkarte`, Zeiten und Masse aus dem Kern.
+
+    /** Masse, Federn und Zeiten der Karte, fuer Handy oder Fernseher (`Kern.folgenkarte`). */
+    val kartenmasse: Kartenmasse by lazy { Kartenmasse.lesen(Kern.folgenkarte(app.istFernseher), app.istFernseher) }
+    /**
+     * **Die Karte zoomt gerade ins Bild** — festgehalten beim Start, damit sie nicht mit dem Angebot
+     * verschwindet, das der Wechsel wegnimmt (`Kartenwechsel`).
+     */
+    var kartenwechsel by mutableStateOf<Kartenwechsel?>(null); private set
+
+    /** Nach dem Zoom (oder dem Scheitern) — alles zurueck, ohne Bewegung. */
+    fun karteAufraeumen() { kartenwechsel = null }
+
+    // MARK: Gedrueckt halten = 2× — `Festhaltetempo` im Kern, nur am Telefon.
+
+    /** Es laeuft gerade mit 2× — die Pille oben. */
+    var doppelt by mutableStateOf(false); private set
+
+    /** Der Finger liegt lange genug: 2×, wenn es erlaubt ist. `true`, wenn es jetzt schneller laeuft. */
+    fun festhaltenAn(): Boolean {
+        if (!Kern.festhaltenErlaubt(app.einstellungen.festhaltenDoppelt, inGruppe || gemeinsamAn,
+                spieler.isPlaying && bildFrei && !wechselt, amSchieben || kleinesFenster)) return false
+        spieler.rate = Kern.festhaltetempo()
+        doppelt = true
+        ruck(Ruck.Leicht)
+        Protokoll.schreib("[Tempo] gehalten: ${Kern.festhaltetempo()}×")
+        return true
+    }
+
+    /** Losgelassen: zurueck ins gewaehlte Tempo. */
+    fun festhaltenAus() {
+        if (!doppelt) return
+        val danach = Kern.festhaltenDanach(tempo)
+        spieler.rate = danach
+        doppelt = false
+        Protokoll.schreib("[Tempo] losgelassen: $danach×")
+    }
     /**
      * Setzt die Oberflaeche mit der **gewollten** Sichtbarkeit der Steuerung (`Angebotsebene.steuerung`):
      * Oeffnen sagt die Karte „Naechste Folge" ab. „Intro ueberspringen" steht sechs Sekunden Laufzeit ohne
@@ -331,6 +408,57 @@ class Spielwerk(
      * nicht — sie verschwanden erst, wenn zufaellig der Takt neu zeichnete, und kamen ebenso zufaellig wieder.
      */
     var amSchieben by mutableStateOf(false)
+
+    // MARK: Verzoegerung — Vorlage `VLCPlayer.swift`, Abschnitt „Verzögerung"; die Regeln im Paket
+    // (`Verzoegerung`, ueber `Kern.verzoegerung…`). Nur lokal: SyncPlay gleicht Filmzeit ab, und die
+    // aendert sich dadurch nicht.
+    /** Millisekunden, immer ein Vielfaches des Schritts. */
+    var untertitelVerzoegerung by mutableIntStateOf(0); private set
+    var tonVerzoegerung by mutableIntStateOf(0); private set
+
+    /** − (−1) oder + (+1) in der Zeile Ton oder Untertitel — gehalten zaehlt der Kern die Reihe (`Haltezaehler`). */
+    fun verzoegerungSchieben(ton: Boolean, richtung: Int) {
+        val schritte = app.kern.verzoegerungDruck(if (ton) "ton" else "untertitel")
+        val jetzt = if (ton) tonVerzoegerung else untertitelVerzoegerung
+        verzoegerungSetzen(ton, Kern.verzoegerungVerschoben(jetzt.toLong(), richtung.toLong(), schritte).toInt())
+    }
+
+    fun verzoegerungSetzen(ton: Boolean, millisekunden: Int) {
+        if (ton) tonVerzoegerung = millisekunden else untertitelVerzoegerung = millisekunden
+        verzoegerungNachziehen()
+    }
+
+    /**
+     * **libVLC vergisst die Verzoegerung mit jedem neuen Medium** — sie haengt am Input, wie in VLCKit 4
+     * (gemessen, siehe `Verzoegerung` im Paket), auch nach einem Neuaufbau. Deshalb nicht einmal setzen,
+     * sondern nachsetzen, sobald VLC etwas anderes liest: beim Aendern, bei „spielt" und im Takt.
+     */
+    private fun verzoegerungNachziehen() {
+        if (!spieler.hasMedia()) return
+        val ut = untertitelVerzoegerung.toLong()
+        if (Kern.verzoegerungWeichtAb(ut, spieler.spuDelay)) {
+            spieler.setSpuDelay(Kern.verzoegerungMikrosekunden(ut))
+            Protokoll.schreib("[Verzögerung] Untertitel $ut ms gesetzt, VLC liest ${spieler.spuDelay} µs")
+        }
+        val ton = tonVerzoegerung.toLong()
+        if (Kern.verzoegerungWeichtAb(ton, spieler.audioDelay)) {
+            spieler.setAudioDelay(Kern.verzoegerungMikrosekunden(ton))
+            Protokoll.schreib("[Verzögerung] Ton $ton ms gesetzt, VLC liest ${spieler.audioDelay} µs")
+        }
+    }
+
+    // MARK: Gemeinsam schauen — Vorlage `gemeinsamAn`/`inGruppe` in `Sources/iOS/PlayerScreen.swift`.
+
+    /**
+     * **Die Marke aus `Kern.syncPlayAnschliessen`** — gesetzt beim Oeffnen, wenn der Titel der ist, den
+     * die Gruppe schaut; `0` heisst: allein. Mit ihr ordnet der Kern Takt, Schritte und Abtrennen zu.
+     */
+    var marke by mutableLongStateOf(0L); private set
+    val gemeinsamAn: Boolean get() = marke > 0
+    /** In der Gruppe gehen Pause, Weiter und Springen als Bitte an den Server — auch Tasten und Fernbefehle. */
+    val inGruppe: Boolean get() = gemeinsamAn && app.gemeinsam.value.gruppe != null
+    /** **In der Gruppe keine naechste Folge** — jeder schaltete sonst fuer sich weiter (iOS `nachschlagen`). */
+    val hatNaechste: Boolean get() = plan?.naechste == true && !inGruppe
 
     // MARK: Trickplay — Vorschau beim Spulen, Vorlage `Trickplaybilder` im Paket.
     var trickplayAngabe by mutableStateOf<Trickplayangabe?>(null); private set
@@ -381,6 +509,17 @@ class Spielwerk(
 
     private val zeigtBild = booleanArrayOf(false)
     private val ende = booleanArrayOf(false)
+    /** Die Videoflaeche (`VLCVideoLayout`) — ihr stehendes Bild geht bei einer Uebergabe als Karte ab. */
+    var videoflaeche: android.view.View? = null
+    /**
+     * **Diese Wiedergabe kommt aus einer Uebergabe** (`VLCPlayerView.uebergabeAufblenden`): sie startet stumm
+     * unter der Karte und blendet den Ton beim ersten Bild in 0,6 s auf. Gilt fuer genau einen Start.
+     */
+    private var uebergabeAufblenden = false
+    /** Die Wiedergabe geht gerade an ein anderes Geraet — Befehle zaehlen nicht mehr. */
+    private var gibtAb = false
+    /** VLC hat das Dateiende gemeldet — dort zaehlt der Countdown der Karte weiter, obwohl nichts laeuft. */
+    val amDateiende: Boolean get() = ende[0]
     /** Schon mit „gestoppt" gemeldet — sonst meldet das Abraeumen es (weggewischtes kleines Fenster). */
     private val beendet = booleanArrayOf(false)
     private var schlafJob: kotlinx.coroutines.Job? = null
@@ -391,13 +530,18 @@ class Spielwerk(
 
     fun installiereEreignisListener() {
         netzBeobachten()
+        tonBeobachten()
         spieler.setEventListener { e ->
             when (e.type) {
                 // **Pause und Weiter melden, wenn VLC sie meldet** — nicht im Druck, da stand noch der
                 // Zustand von davor (Audit T1-N1, wie `VLCPlayerView.laeuftGemeldet`). Einmal je Wechsel
                 // und nur fuer einen gestarteten Titel entscheidet der Kern; `Stopped` meldet nichts,
                 // das Ende geht ueber `wiedergabeBeenden`.
-                MediaPlayer.Event.Playing -> { laeuft = true; app.kern.laufzustandGemeldet(true, stelleJetzt()) }
+                // Wer von Hand weiterspielt, holt sich den Fokus zurueck (nach einem endgueltigen Verlust).
+                MediaPlayer.Event.Playing -> {
+                    laeuft = true; fokusHolen(); app.kern.laufzustandGemeldet(true, stelleJetzt()); verzoegerungNachziehen()
+                    if (uebergabeAufblenden) spieler.volume = 0
+                }
                 MediaPlayer.Event.Paused -> { laeuft = false; app.kern.laufzustandGemeldet(false, stelleJetzt()) }
                 MediaPlayer.Event.Stopped -> laeuft = false
                 MediaPlayer.Event.Vout -> if (e.voutCount > 0) zeigtBild[0] = true
@@ -426,7 +570,12 @@ class Spielwerk(
     /** VLC und die Zeichenflaeche abbauen — Gegenstueck zu `installiereEreignisListener`. */
     fun aufraeumen() {
         netzAbmelden()
-        if (!beendet[0]) app.wiedergabeBeenden((spieler.time / 1000.0).coerceAtLeast(0.0))
+        tonAbmelden()
+        // **Schliessen heisst verlassen** (Entwurf A) — ohne Nachfrage, der Streifen bietet den Rueckweg.
+        if (marke > 0) app.kern.syncPlayAbtrennen(marke)
+        if (!beendet[0]) app.wiedergabeBeenden(schlussstelle())
+        // Der Player ging zu, bevor die Karte ihn freigab (`Uebergabebuehne.spielerWeg`).
+        plan?.itemId?.let { Uebergabe.spielerWeg(app, it) }
         spieler.stop()
         spieler.detachViews()
         spieler.release()
@@ -440,13 +589,13 @@ class Spielwerk(
             override fun onSeekTo(pos: Long) { springe(pos / 1000.0) }
             override fun onFastForward() { springe(position + vorS) }
             override fun onRewind() { springe(position - zurueckS) }
-            override fun onSkipToNext() { if (plan?.naechste == true) lauf.launch { naechsteFolge() } }
+            override fun onSkipToNext() { if (hatNaechste) lauf.launch { naechsteFolge() } }
         })
         sitzung.isActive = true
     }
 
     fun sitzungAufraeumen() {
-        kontext.stopService(Intent(kontext, WiedergabeDienst::class.java))
+        WiedergabeDienst.aus(kontext)
         app.medienToken = null
         sitzung.isActive = false
         sitzung.release()
@@ -456,7 +605,7 @@ class Spielwerk(
         var aktionen = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND
         // „Nächste" nur, wenn es eine gibt; „vorige" nie — grau ist ehrlicher als ins Leere.
-        if (plan?.naechste == true) aktionen = aktionen or PlaybackState.ACTION_SKIP_TO_NEXT
+        if (hatNaechste) aktionen = aktionen or PlaybackState.ACTION_SKIP_TO_NEXT
         sitzung.setPlaybackState(PlaybackState.Builder().setActions(aktionen)
             .setState(if (laeuft) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, (position * 1000).toLong(),
                       if (laeuft) tempo else 0f).build())
@@ -474,10 +623,7 @@ class Spielwerk(
         sitzung.setMetadata(metadaten(null))
         // Benachrichtigung und Sperrbildschirm — der Dienst liest Titel und Knoepfe aus der Sitzung.
         app.medienToken = sitzung.sessionToken
-        runCatching {
-            ContextCompat.startForegroundService(kontext, Intent(kontext, WiedergabeDienst::class.java)
-                .putExtra("titel", p.titel).putExtra("untertitel", p.untertitel))
-        }
+        WiedergabeDienst.an(kontext, p.titel, p.untertitel)
         val adresse = p.bild ?: return
         val bild = runCatching {
             (SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(adresse).size(600).allowHardware(false).build())
@@ -487,6 +633,13 @@ class Spielwerk(
     }
 
     fun starte(neu: Spielplan, ab: Double?) {
+        // Verzoegerung: derselbe Titel oder dieselbe Serie behaelt sie, sonst null (iOS `folgeAnwenden`).
+        plan?.let { alt ->
+            fun behalten(ms: Int) = Kern.verzoegerungFuerNeuenTitel(ms.toLong(), alt.itemId, alt.serieId.orEmpty(),
+                                                                    neu.itemId, neu.serieId.orEmpty()).toInt()
+            untertitelVerzoegerung = behalten(untertitelVerzoegerung)
+            tonVerzoegerung = behalten(tonVerzoegerung)
+        }
         plan = neu
         lauf.launch { trickplayLaden() }
         bildFrei = false
@@ -496,10 +649,34 @@ class Spielwerk(
         position = ab ?: 0.0
         ab?.takeIf { it > 1 }?.let { app.kern.wiedergabeStelle(it) }
         stromwachtZuruecksetzen()
+        erstbildStufe = 0
+        // XviD/DivX gleich in Software: libVLC 3 gibt MPEG-4 Part 2 sonst an MediaCodec
+        // (im Protokoll „using c2.android.mpeg4.decoder"), wie VLC 4 auf Apple an VideoToolbox.
+        softwareDekoder = neu.softwareDekoder
+        erstbildHinweis = null
         stelltWiederHer = false
         wartetAufNetz = false
         letzteGuteStelle = ab ?: 0.0
+        uebergabeAufblenden = Uebergabe.empfaengt(neu.itemId)
         medienOeffnen(neu.url, ab)
+        if (uebergabeAufblenden) { spieler.volume = 0; Protokoll.schreib("[Ton] stumm unter der Übergabe-Karte") }
+        nachschlagen(neu)
+    }
+
+    /**
+     * **Naechste Folge und Abschnitte nach dem Start** — nur von der Platte; vom Server kamen beide
+     * mit dem Plan. Ohne Netz steht schon alles da, mit Netz fragt der Kern den Server
+     * (`Kern.wiedergabeNachschlagen`, Vorlage `nachschlagen(fuer:)` auf iOS).
+     */
+    private fun nachschlagen(fuer: Spielplan) {
+        if (!fuer.url.startsWith("file:")) return
+        lauf.launch {
+            val neu = runCatching { withContext(Dispatchers.IO) { app.kern.wiedergabeNachschlagen().await() } }.getOrDefault("")
+            app.protokollSchreiben()
+            if (neu.isEmpty() || beendet[0]) return@launch
+            val p = spielplanLesen(neu)
+            if (plan?.itemId == p.itemId && plan?.url == p.url) plan = p
+        }
     }
 
     /** Das Medium bauen und abspielen — beim Start und beim Neuaufbau nach einem Abriss (`neuVerbinden`). */
@@ -518,6 +695,13 @@ class Spielwerk(
         // verschob und ein falsches Ende meldete; libVLC 3 kennt das nicht, und die `anlaufruhe`
         // aus `Folgenende` faengt ein falsches Ende in den ersten Sekunden ohnehin ab.
         ab?.takeIf { it > 1 }?.let { media.addOption(":start-time=$it") }
+        // **Software-Dekoder nach der zweiten Erstbild-Rettung**, oder von Anfang an fuer MPEG-4
+        // Part 2 (`Erstbild.softwareOption`, `Erstbild.softwareVonAnfang`).
+        if (softwareDekoder) {
+            media.setHWDecoderEnabled(false, false)
+            media.addOption(Kern.erstbildSoftwareOption())
+            Protokoll.schreib("[Bild] Dekoderwahl ${Kern.erstbildSoftwareOption()}")
+        }
         // Der Puffer aus den Einstellungen; „Normal" laesst VLCs Vorgabe stehen.
         JSONArray(Kern.pufferstufen()).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
             .firstOrNull { it.getString("wert") == app.einstellungen.pufferstufe }
@@ -556,19 +740,113 @@ class Spielwerk(
         val ausgaenge = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { it.type in digitaleAusgaenge }
         // Fuers Protokoll: was der Ausgang an PCM-Kanaelen meldet (leer heisst „beliebig").
         ausgaenge.forEach { Protokoll.schreib("[VLC] Ausgang ${it.type}: Kanaele ${it.channelCounts.toList()}, " +
+            "Kodierungen ${it.encodings.map(::kodierungsname)}, " +
             "Mehrkanal-Ton ${if (app.einstellungen.mehrkanalTon) "an" else "aus"}") }
-        val kodierungen = ausgaenge
-            .flatMap { it.encodings.toList() }
-            .filter { it in bekannt }
-            .distinct()
+        val gemeldet = ausgaenge.flatMap { it.encodings.toList() }.filter { it in bekannt }.distinct()
+        // **Gemeldet heisst nicht angenommen.** `AudioDeviceInfo.encodings` ist, was das Geraet ueber den
+        // Ausgang glaubt; manche Boxen melden dort jede Kodierung, die ihr Audio-HAL kennt, auch wenn der
+        // Fernseher dahinter nur Stereo-PCM nimmt (plezy#2442: DTS kam als 2.0 an, jellyfin-androidtv#5785:
+        // E-AC3 stotterte). Ob ein Bitstrom **jetzt** ohne Umweg durchgeht, sagt nur der Direktpfad:
+        // ab Android 13 die Profile der aktuellen Route, ab 10 `isDirectPlaybackSupported`. Was dort
+        // durchfaellt, dekodiert VLC selbst — lieber PCM als Stille. Unter 10 bleibt es beim Gemeldeten.
+        val kodierungen = gemeldet.filter { direktMoeglich(manager, it) }
+        durchgereicht = kodierungen.toSet()
+        if (gemeldet.isNotEmpty()) Protokoll.schreib("[VLC] Durchreichen: ${kodierungen.map(::kodierungsname)}" +
+            (gemeldet - kodierungen.toSet()).takeIf { it.isNotEmpty() }?.let { r -> ", abgelehnt ${r.map(::kodierungsname)}" }.orEmpty())
         if (kodierungen.isEmpty()) return
         spieler.setAudioDigitalOutputEnabled(true)
         spieler.forceAudioDigitalEncodings(kodierungen.toIntArray())
     }
 
+    /** Die Kodierungen, die `digitalenTonAnwenden` zuletzt an VLC gegeben hat — fuer `tonMelden`. */
+    private var durchgereicht: Set<Int> = emptySet()
+
+    private val filmTon: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build()
+
+    /** Nimmt die aktuelle Route diesen Bitstrom direkt an? Vorbild: ExoPlayers `AudioCapabilities`. */
+    private fun direktMoeglich(manager: AudioManager, kodierung: Int): Boolean = when {
+        android.os.Build.VERSION.SDK_INT >= 33 ->
+            manager.getDirectProfilesForAttributes(filmTon).any { it.format == kodierung }
+        android.os.Build.VERSION.SDK_INT >= 29 -> AudioTrack.isDirectPlaybackSupported(
+            AudioFormat.Builder().setEncoding(kodierung).setSampleRate(48_000)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build(), filmTon)
+        else -> true
+    }
+
+    private fun kodierungsname(k: Int): String = when (k) {
+        AudioFormat.ENCODING_AC3 -> "AC3"; AudioFormat.ENCODING_E_AC3 -> "E-AC3"
+        AudioFormat.ENCODING_E_AC3_JOC -> "E-AC3-JOC"; AudioFormat.ENCODING_DTS -> "DTS"
+        AudioFormat.ENCODING_DTS_HD -> "DTS-HD"; AudioFormat.ENCODING_DOLBY_TRUEHD -> "TrueHD"
+        AudioFormat.ENCODING_PCM_16BIT -> "PCM16"; AudioFormat.ENCODING_PCM_FLOAT -> "PCMf"
+        else -> "#$k"
+    }
+
+    /**
+     * **Kommt die Spur roh durch, oder dekodiert VLC?** Das Gegenstueck zu `kanaeleNachmessen` auf Apple:
+     * ein stiller Downmix (plezy#2442) soll im Protokoll stehen, nicht erst am Wohnzimmer-Receiver
+     * auffallen. libVLC sagt nicht, was die Ausgabe tatsaechlich oeffnet; belegt wird deshalb, was
+     * gewaehlt ist, wieviele Kanaele die Datei fuehrt und ob ihr Format auf der Durchreich-Liste steht.
+     * Dekodiert und `mehrkanalTon` aus heisst: Stereo — das ist dann Absicht, nicht Fehler.
+     */
+    private fun tonMelden() {
+        val id = spieler.audioTrack
+        val spur = spieler.media?.let { m ->
+            try { (0 until m.trackCount).mapNotNull { m.getTrack(it) }.firstOrNull { it.id == id } } finally { m.release() }
+        } as? IMedia.AudioTrack ?: return
+        // Die Kennung (`i_codec`), nicht `codec`: das ist je nach libVLC eine Beschreibung. libVLC 3 meldet
+        // TrueHD als `trhd`, libVLC 4 als `mlpa` (gemessen 25.09.2026).
+        val codec = (0..3).map { ((spur.fourcc shr (8 * it)) and 0xFF).toChar() }.joinToString("").trim().lowercase()
+        val format = when (codec) {
+            "a52" -> AudioFormat.ENCODING_AC3; "eac3" -> AudioFormat.ENCODING_E_AC3
+            "dts" -> AudioFormat.ENCODING_DTS; "mlp", "mlpa", "trhd" -> AudioFormat.ENCODING_DOLBY_TRUEHD
+            else -> null
+        }
+        val roh = format != null && (format in durchgereicht ||
+            (format == AudioFormat.ENCODING_DTS && AudioFormat.ENCODING_DTS_HD in durchgereicht))
+        val weg = when {
+            roh -> "durchgereicht"
+            app.einstellungen.mehrkanalTon -> "dekodiert, bis ${spur.channels} Kanaele"
+            else -> "dekodiert, Stereo"
+        }
+        Protokoll.schreib("[Audio] beim Oeffnen: $codec ${spur.channels}ch ${spur.rate} Hz · $weg")
+    }
+
+    /**
+     * **Die Stelle fuer „gestoppt"** — vor dem Anhalten gelesen, VLC setzt seine Uhr dabei zurueck.
+     * Vor dem ersten Bild gilt die Startstelle (Vorlage iOS: `position` der Ansicht, nicht VLCs Zeit):
+     * VLC meldet dort noch 0, und wer vor dem Ende des Ladens zurueckging, setzte den Fortschritt auf
+     * dem Server auf null (findroid#896). Beim Wiederaufbau nach einem Abriss die letzte gute Stelle.
+     */
+    private fun schlussstelle(): Double = when {
+        !bildFrei -> position
+        stelltWiederHer -> letzteGuteStelle
+        else -> (spieler.time / 1000.0).coerceAtLeast(0.0)
+    }
+
+    /**
+     * **Die Wiedergabe geht an ein anderes Geraet** (`abgeben` in den `PlayerScreen.swift` von iOS, tvOS und macOS): die Stelle
+     * geht sofort an den Server — drueben wird auf sie gewartet —, das Bild steht und geht als Karte ab;
+     * geschlossen wird, wenn sie draussen ist. `false`: kein Bild — dann schliesst der Player wie sonst.
+     */
+    private suspend fun abgeben(ziel: String, schliessen: () -> Unit): Boolean {
+        if (gibtAb) return true
+        gibtAb = true
+        val stelle = schlussstelle()
+        beendet[0] = true
+        app.fertigGeschaut(stelle, dauer)
+        app.wiedergabeBeenden(stelle)
+        if (spieler.isPlaying) spieler.pause()
+        val ok = Uebergabe.abgeben(app, kontext, videoflaeche, ziel, plan, Bewegung.reduziert(kontext)) {
+            spieler.stop()
+            schliessen()
+        }
+        if (!ok) { beendet[0] = false; gibtAb = false }
+        return ok
+    }
+
     fun beenden(schliessen: () -> Unit) {
-        // Die Stelle vor dem Anhalten lesen — VLC setzt seine Uhr beim Anhalten zurueck.
-        val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
+        val stelle = schlussstelle()
         beendet[0] = true
         app.fertigGeschaut(stelle, dauer)
         app.wiedergabeBeenden(stelle)
@@ -576,7 +854,19 @@ class Spielwerk(
         schliessen()
     }
 
-    suspend fun naechsteFolge() = wechsle("", "Nächste Folge konnte nicht geladen werden.")
+    suspend fun naechsteFolge(ausKarte: Boolean = false) = wechsle("", "Nächste Folge konnte nicht geladen werden.", ausKarte = ausKarte)
+
+    /**
+     * **Die Karte wurde gedrueckt** (oder ihr Countdown lief ab): sie zoomt aufs ganze Bild und deckt den
+     * Wechsel (`zurNaechstenFolge(ausKarte:)`). `ebene.gedrueckt` im Kern, dann der Wechsel.
+     */
+    fun karteStarten() {
+        if (wechselt || kartenwechsel != null) return
+        ruck(Ruck.Leicht)
+        app.kern.angebotGedrueckt()
+        einblendung = "nichts"
+        lauf.launch { naechsteFolge(ausKarte = true) }
+    }
 
     /**
      * **Der Angebotsknopf wurde gedrueckt** — in der Einblendung oder in der Steuerung. Springen hinter
@@ -587,7 +877,8 @@ class Spielwerk(
         app.kern.angebotGedrueckt()
         einblendung = "nichts"
         val nach = angebotNach
-        if (angebotArt == "ueberspringen" && nach != null) springe(nach) else lauf.launch { naechsteFolge() }
+        // „Naechste Folge": ein leichter Tick, dass der Druck angekommen ist (Haptik, iOS 341f6a44).
+        if (angebotArt == "ueberspringen" && nach != null) springe(nach) else { ruck(Ruck.Leicht); lauf.launch { naechsteFolge() } }
         return true
     }
 
@@ -607,6 +898,14 @@ class Spielwerk(
     suspend fun wechsleZu(id: String) = wechsle(id, "Die Folge konnte nicht geladen werden.")
 
     /**
+     * **Die Folgenwahl im Player.** In der Gruppe wechselt niemand allein: sie setzt die Warteschlange neu,
+     * und jeder laedt die Folge, wie beim Anlegen (`bitteTitel`, iOS f9658bc6).
+     */
+    suspend fun folgeWaehlen(id: String) {
+        if (inGruppe) app.kern.syncPlayBitteTitel(id) else wechsleZu(id)
+    }
+
+    /**
      * **Qualität geändert — derselbe Titel, an derselben Stelle neu geladen.** Vorlage: die
      * Qualitätswahl im Player auf iOS/tvOS/macOS. Anders als `wechsle`: kein anderer Titel, und
      * die Stelle bleibt die Fortsetzstelle statt null.
@@ -617,7 +916,7 @@ class Spielwerk(
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
         try {
             val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.qualitaetWechseln(stelle).await() })
-            antwort.feldText("nachmeldung")?.let { app.nachmeldungAblegen(it) }
+            app.nachStopp(antwort.feldText("nachmeldung"))
             app.protokollSchreiben()
             when (antwort.optString("ergebnis")) {
                 "gewechselt" -> {
@@ -654,29 +953,44 @@ class Spielwerk(
      *   nach dem Schliessen an, startet ebenfalls nichts — den Stopp der neuen Folge hat das
      *   Schliessen schon gemeldet.
      */
-    private suspend fun wechsle(id: String, fehlschlag: String) {
+    private suspend fun wechsle(id: String, fehlschlag: String, ab: Double? = null, ausKarte: Boolean = false) {
         if (wechselt || beendet[0]) return
         wechselt = true
+        // **Aus der Karte: sie zoomt aufs ganze Bild** und deckt den Wechsel — nicht in der Gruppe, nicht
+        // fuer eine frei gewaehlte Folge. Getauscht wird erst, wenn sie das Bild deckt (`tausch`).
+        val folge = plan?.naechsteFolge
+        val zoomt = ausKarte && id.isEmpty() && !inGruppe && folge != null
+        if (zoomt && folge != null) {
+            kartenwechsel = Kartenwechsel(folge, SystemClock.elapsedRealtime())
+            Protokoll.schreib("[Karte] Start → ${folge.id}")
+        }
+        val tauschAb = if (zoomt) SystemClock.elapsedRealtime() + (kartenmasse.tausch * 1000).toLong() else 0L
         angebotArt = "keiner"
         einblendung = "nichts"
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
         app.fertigGeschaut(stelle, dauer)
         try {
             val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.folgeWechseln(id, stelle).await() })
-            antwort.feldText("nachmeldung")?.let { app.nachmeldungAblegen(it) }
+            app.nachStopp(antwort.feldText("nachmeldung"))
             app.protokollSchreiben()
             when (antwort.optString("ergebnis")) {
                 "gewechselt" -> {
                     val neu = antwort.feldText("spielplan")
+                    // Erst tauschen, wenn die Karte das Bild deckt — sonst stuende um sie herum Schwarz.
+                    val rest = tauschAb - SystemClock.elapsedRealtime()
+                    if (rest > 0) delay(rest)
                     if (neu != null && !beendet[0]) {
                         spieler.stop()
-                        starte(spielplanLesen(neu), null)
+                        starte(spielplanLesen(neu), ab)
+                        kartenwechsel?.let { Protokoll.schreib("[Karte] Tausch nach ${SystemClock.elapsedRealtime() - it.beginn} ms") }
                     }
                 }
                 "gescheitert" -> hinweis = fehlertext(kontext, Exception(antwort.feldText("fehler") ?: uebersetzt(fehlschlag)))
             }
+            if (antwort.optString("ergebnis") != "gewechselt") kartenwechsel?.let { kartenwechsel = it.copy(gescheitert = true) }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             hinweis = fehlertext(kontext, e)
+            kartenwechsel?.let { kartenwechsel = it.copy(gescheitert = true) }
         } finally {
             wechselt = false
         }
@@ -713,6 +1027,67 @@ class Spielwerk(
     private fun stromwachtZuruecksetzen() {
         stromStehtSeit = null; stromLetzteZeit = -1; stromGelesen = 0; stromPufferWuchs = SystemClock.elapsedRealtime()
         letzteBilder = -1; bilderStehenSeit = null; letzterRat = ""
+        erstbildLauf = 0.0; erstbildVorher = -1.0; erstbildGesehen = false
+    }
+
+    // MARK: Erstes Bild — Vorlage `VLCPlayer.erstbildPruefen`, Regel `Erstbild` im Paket (ueber den Kern).
+    // `Stromwacht.bilderStehen` schweigt, solange noch nie ein Bild kam; ein Strom mit laufender Uhr und Ton,
+    // aber ohne erstes Bild, blieb deshalb schwarz, ungemeldet und ohne Eingriff.
+
+    /** Was fuer diesen Titel schon versucht wurde (`Erstbild.Stufe` als Zahl) — je Titel, nicht je Aufbau. */
+    private var erstbildStufe = 0
+    /** Filmzeit seit dem letzten Aufbau, in der die Uhr lief. */
+    private var erstbildLauf = 0.0
+    private var erstbildVorher = -1.0
+    private var erstbildGesehen = false
+    /** Nach der zweiten Rettung bleibt es fuer den Titel beim Software-Dekoder, auch ueber einen Netz-Neuaufbau. */
+    private var softwareDekoder = false
+    /** Bild-im-Bild: dort ist ein fehlendes Bild nicht Sache der Regel. Setzt `PlayerSeite`. */
+    var kleinesFenster = false
+    /** Fuer das Technikschild; `null`, solange nicht eingegriffen wurde. */
+    var erstbildHinweis by mutableStateOf<String?>(null); private set
+
+    /** Einmal je Takt, nur bei laufender Uhr. `true`, wenn neu aufgebaut wurde. */
+    private fun erstbildPruefen(): Boolean {
+        if (beendet[0] || wechselt || !spieler.isPlaying) return false
+        val stelle = spieler.time / 1000.0
+        erstbildLauf += Kern.erstbildZuwachs(erstbildVorher, stelle)
+        erstbildVorher = stelle
+        val medium = spieler.media ?: return false
+        val werte = medium.stats
+        medium.release()
+        werte ?: return false
+        val gezeigt = werte.displayedPictures.toLong() and 0xFFFFFFFFL
+        if (gezeigt > 0) {
+            if (!erstbildGesehen && erstbildStufe != 0)
+                Protokoll.schreib("[Bild] erstes Bild nach Rettung (Stufe $erstbildStufe) bei ${stelle.toInt()} s · Dekoder ${if (softwareDekoder) "Software" else "frei"}")
+            erstbildGesehen = true
+            return false
+        }
+        val codec = app.kern.erstbildVideocodec()
+        val rat = Kern.erstbildRat(codec.isNotEmpty(), kleinesFenster, gezeigt.toInt().toLong(), erstbildLauf, erstbildStufe.toLong())
+        if (rat == "nichts" || rat == "warten") return false
+        Protokoll.schreib("[Bild] kein erstes Bild nach ${erstbildLauf.toInt()} s Laufzeit bei ${stelle.toInt()} s · Server $codec" +
+            " · dekodiert ${werte.decodedVideo}, gezeigt $gezeigt, verloren ${werte.lostPictures} · Ton gespielt ${werte.playedAbuffers}" +
+            " · Dekoder ${if (softwareDekoder) "Software" else "frei"} → $rat")
+        erstbildStufe = Kern.erstbildNaechste(rat, erstbildStufe.toLong()).toInt()
+        erstbildHinweis = Kern.erstbildHinweis(erstbildStufe.toLong()).ifEmpty { null }
+        if (rat == "aufgeben") return false
+        if (rat == "softwareDekoder") softwareDekoder = true
+        val p = plan ?: return false
+        Protokoll.schreib("[Netz] kein erstes Bild${if (softwareDekoder) ", jetzt mit Software-Dekoder" else ""} → Strom neu aufbauen bei ${stelle.toInt()} s")
+        // Wie `neuVerbinden`, aber an der Stelle, an der die Uhr gerade steht, und ohne Sperrfrist: die Regel
+        // selbst wartet je Stufe ihre Frist ab.
+        letzterNeuaufbau = SystemClock.elapsedRealtime()
+        letzteGuteStelle = stelle
+        stelltWiederHer = true
+        spurenNachAufbau = true
+        stromwachtZuruecksetzen()
+        ende[0] = false
+        spieler.stop()
+        app.kern.wiedergabeStelle(stelle)
+        medienOeffnen(p.url, stelle)
+        return true
     }
 
     private fun vonDerPlatte() = plan?.url?.startsWith("file:") != false
@@ -722,6 +1097,71 @@ class Spielwerk(
      * ein voller Puffer spielt weiter, eingegriffen wird erst, wenn das Bild wirklich steht. War die
      * Wiedergabe schon ohne Netz stehen geblieben, wird sofort nachgeholt.
      */
+    // MARK: Audiofokus und Kopfhoerer
+
+    /**
+     * **Audiofokus wie jeder Player auf Android** (findroid#536). libVLC fragt nicht selbst danach:
+     * ein Anruf, ein Wecker oder eine andere App spielte bisher einfach ueber den Film. Verloren
+     * haelt der Player an; nur kurz verloren (Anruf, Navigation) geht es danach von selbst weiter.
+     * Leiser werden fuer eine Ansage uebernimmt das System (`setWillPauseWhenDucked(false)`).
+     */
+    private var fokusAnfrage: android.media.AudioFocusRequest? = null
+    /** Nur der Fokusverlust hat angehalten — dann setzt der Wiedergewinn fort, sonst nie. */
+    private var fokusPause = false
+
+    private fun fokusHolen() {
+        val manager = kontext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val anfrage = fokusAnfrage ?: android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(filmTon)
+            .setWillPauseWhenDucked(false)
+            .setOnAudioFocusChangeListener { art ->
+                when (art) {
+                    AudioManager.AUDIOFOCUS_LOSS -> { fokusPause = false; if (spieler.isPlaying) spieler.pause() }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (spieler.isPlaying) { fokusPause = true; spieler.pause() }
+                    AudioManager.AUDIOFOCUS_GAIN -> if (fokusPause) { fokusPause = false; if (!spieler.isPlaying) spieler.play() }
+                }
+                Protokoll.schreib("[Ton] Audiofokus ${fokusname(art)}")
+            }.build().also { fokusAnfrage = it }
+        runCatching { manager.requestAudioFocus(anfrage) }
+    }
+
+    private fun fokusname(art: Int) = when (art) {
+        AudioManager.AUDIOFOCUS_GAIN -> "zurueck"
+        AudioManager.AUDIOFOCUS_LOSS -> "verloren"
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> "kurz verloren"
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> "leiser"
+        else -> art.toString()
+    }
+
+    /**
+     * **Kopfhoerer ab, Bluetooth weg: anhalten**, statt laut aus dem Lautsprecher weiterzuspielen —
+     * `ACTION_AUDIO_BECOMING_NOISY`, wie jede Medien-App.
+     */
+    private val kopfhoererWeg = object : android.content.BroadcastReceiver() {
+        override fun onReceive(k: Context?, i: Intent?) {
+            if (i?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            Protokoll.schreib("[Ton] Ausgang weg, angehalten")
+            fokusPause = false
+            if (spieler.isPlaying) spieler.pause()
+        }
+    }
+    private var kopfhoererAngemeldet = false
+
+    private fun tonBeobachten() {
+        fokusHolen()
+        if (kopfhoererAngemeldet) return
+        runCatching {
+            ContextCompat.registerReceiver(kontext, kopfhoererWeg, android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                                           ContextCompat.RECEIVER_NOT_EXPORTED)
+            kopfhoererAngemeldet = true
+        }
+    }
+
+    private fun tonAbmelden() {
+        fokusAnfrage?.let { a -> runCatching { (kontext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)?.abandonAudioFocusRequest(a) } }
+        if (kopfhoererAngemeldet) { runCatching { kontext.unregisterReceiver(kopfhoererWeg) }; kopfhoererAngemeldet = false }
+    }
+
     private fun netzBeobachten() {
         if (netzRueckruf != null) return
         val verwaltung = kontext.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return
@@ -730,6 +1170,17 @@ class Spielwerk(
             override fun onLost(netz: android.net.Network) { lauf.launch { netzWeg(netz) } }
         }
         if (runCatching { verwaltung.registerDefaultNetworkCallback(rueckruf) }.isSuccess) netzRueckruf = rueckruf
+    }
+
+    /**
+     * **Ein Netz, das nichts kostet** — fuer `Vorpuffer`: nicht getaktet (WLAN, Kabel) und ohne Datensparmodus
+     * fuer diese App. Wie `!isExpensive && !isConstrained` auf iOS.
+     */
+    private fun netzGuenstig(): Boolean {
+        val verwaltung = kontext.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
+        val faehig = verwaltung.getNetworkCapabilities(verwaltung.activeNetwork ?: return false) ?: return false
+        return faehig.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            && verwaltung.restrictBackgroundStatus != android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
     }
 
     private fun netzAbmelden() {
@@ -860,7 +1311,21 @@ class Spielwerk(
         medienOeffnen(p.url, letzteGuteStelle)
     }
 
+    /**
+     * Ein Sprung von Hand, von der Leiste, einer Taste oder einem Fernbefehl. **In der Gruppe eine Bitte**:
+     * die Anzeige steht schon am Ziel (`gesprungen(auf:)` auf iOS), gesprungen wird, wenn der Befehl kommt.
+     */
     fun springe(ziel: Double) {
+        if (inGruppe) {
+            val z = if (dauer > 0) ziel.coerceIn(0.0, dauer) else ziel.coerceAtLeast(0.0)
+            position = z
+            app.kern.syncPlayBitteSpringen(z)
+            return
+        }
+        springeWirklich(ziel)
+    }
+
+    private fun springeWirklich(ziel: Double) {
         letzterSprung = SystemClock.elapsedRealtime()
         val z = if (dauer > 0) ziel.coerceIn(0.0, dauer) else ziel.coerceAtLeast(0.0)
         spieler.time = (z * 1000).toLong()
@@ -872,6 +1337,9 @@ class Spielwerk(
             position = antwort.getDouble("position")
             angebotUebernehmen(antwort)
         }
+        // Der Countdown der Karte faengt nach einem Sprung von vorn an (gemeldet 26.09.: ans Ende gespult,
+        // sofort weiter).
+        if (einblendung == "karte") fuellungNeu++
     }
 
     private fun angebotUebernehmen(antwort: JSONObject) {
@@ -886,8 +1354,24 @@ class Spielwerk(
 
     fun umschalten() {
         ruck(Ruck.Mittel)
+        // In der Gruppe springt der Knopf erst um, wenn der Befehl zurueckkommt — dann bei allen gleichzeitig.
+        if (inGruppe) { app.kern.syncPlayBitteUmschalten(laeuft); return }
         // Gemeldet wird aus VLCs `Playing`/`Paused` (`installiereEreignisListener`).
-        if (spieler.isPlaying) spieler.pause() else spieler.play()
+        if (spieler.isPlaying) spieler.pause() else fortsetzen()
+    }
+
+    /**
+     * **Weiterspielen auf Wunsch des Zuschauers** — nach langer Pause ein Stueck zurueck
+     * (`Pausenruecksprung`, iOS `fortsetzen`). Die Stelle wird im Stehen gesetzt, dann laeuft es: das erste
+     * neue Bild ist schon das fruehere, die Anzeige uebernimmt das Ziel im selben Moment. Nicht vor dem
+     * ersten Bild (dort steht die Startstelle noch nicht) und nicht in der Gruppe.
+     */
+    fun fortsetzen() {
+        if (bildFrei && !stelltWiederHer) {
+            val ziel = app.kern.fortsetzenZiel(stelleJetzt(), inGruppe || gemeinsamAn)
+            if (ziel >= 0) springeWirklich(ziel)
+        }
+        spieler.play()
     }
 
     fun tempoSetzen(neu: Float) {
@@ -1016,6 +1500,7 @@ class Spielwerk(
         // Aktiv abschalten: die Datei bringt oft eine eigene Vorauswahl mit.
         spieler.spuTrack = antwort.optInt("untertitel", -1)
         spurenGewaehlt = true
+        tonMelden()
         app.protokollSchreiben()
         naechsteDatei()
     }
@@ -1032,13 +1517,14 @@ class Spielwerk(
         app.ablage.merken(UT_JE_TITEL, app.kern.untertitelVonHand(spurenJson(false), id.toLong(), app.ablage.merkwert(UT_JE_TITEL) ?: "{}"))
     }
 
-    /** Ton „Deutsch · AAC · 5.1", Untertitel mit Format, „Erzwungen", „Datei" — statt libVLCs „Track 1 - [English]". */
+    /** Ton „Deutsch · AAC · 5.1", Untertitel mit Format, „Erzwungen", „Hörgeschädigt", „Datei" — statt libVLCs „Track 1 - [English]". */
     fun spurliste(ton: Boolean): List<Pair<Int, String>> {
         val namen = runCatching { JSONObject(app.kern.spurnamen(spurenJson(true), spurenJson(false))) }.getOrNull() ?: return emptyList()
         val a = namen.optJSONArray(if (ton) "ton" else "untertitel") ?: return emptyList()
         return (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val teile = listOfNotNull(o.getString("text"),
                 uebersetzt("Erzwungen").takeIf { o.optBoolean("erzwungen") },
+                uebersetzt("Hörgeschädigt").takeIf { o.optBoolean("hoergeschaedigt") },
                 uebersetzt("Datei").takeIf { o.optBoolean("datei") })
             o.getInt("id") to teile.joinToString(" · ")
         }
@@ -1069,10 +1555,50 @@ class Spielwerk(
     }
 
     /**
+     * **Der Stand fuer die Gruppe, in jedem Anzeigetakt** (`brueckeNachziehen` auf iOS): Titel, ob das Bild
+     * steht und nicht gewechselt wird, die angezeigte Stelle (nach einem Sprung das Ziel, bis VLC dort ist)
+     * und ob VLC laeuft. Zwischen den Takten schreibt der Kern die Stelle mit der Uhr fort.
+     */
+    private fun gemeinsamMelden(wunsch: Abspielwunsch) {
+        val m = marke
+        if (m <= 0) return
+        app.kern.syncPlayTakt(m, plan?.itemId ?: wunsch.id, bildFrei && !wechselt && !stelltWiederHer, position, spieler.isPlaying)
+    }
+
+    /**
+     * **Die Schritte der Gruppe, sobald die Sitzung sie gibt** — zum Zeitpunkt, den sie ausgerechnet hat,
+     * nicht beim naechsten Takt. Endet, wenn der Kern den Player abgetrennt hat (leere Antwort).
+     */
+    private suspend fun schritteAusfuehren(m: Long) {
+        while (true) {
+            val roh = runCatching { withContext(Dispatchers.IO) { app.kern.syncPlaySchritt(m).await() } }.getOrNull()
+            if (roh.isNullOrEmpty() || marke != m) return
+            val o = JSONObject(roh)
+            when (o.optString("art")) {
+                // libVLC: `play()` und `pause()` setzen den Zustand, sie schalten nicht um.
+                "weiter" -> spieler.play()
+                "anhalten" -> spieler.pause()
+                "springen" -> springeWirklich(o.optDouble("wert", position))
+                // Die Gruppe schaut etwas anderes: im offenen Player wechseln, ab der Stelle der Gruppe.
+                "laden" -> {
+                    val titel = o.optString("titel")
+                    val ab = o.optDouble("wert", 0.0)
+                    if (plan?.itemId == titel) springeWirklich(ab)
+                    else lauf.launch { wechsle(titel, "Die Folge konnte nicht geladen werden.", ab) }
+                }
+            }
+        }
+    }
+
+    /**
      * Oeffnen, dann der Takt — Vorlage `beobachten()` in `Sources/tvOS/PlayerScreen.swift`, hier mit
      * der Adressenwahl (Platte vor Server) und den Fernbefehlen aus `PlayerSeite`, die es davor schon gab.
      */
     suspend fun oeffnenUndTakt(wunsch: Abspielwunsch, schliessen: () -> Unit) {
+        // **Gehoert der Titel zur Gruppe, gleich anschliessen** — vor dem Oeffnen, wie `onAppear` auf iOS.
+        // „Bereit" meldet der Takt erst, wenn das Bild steht.
+        marke = runCatching { withContext(Dispatchers.IO) { app.kern.syncPlayAnschliessen(wunsch.id).await() } }.getOrDefault(0L)
+        if (marke > 0) lauf.launch { schritteAusfuehren(marke) }
         try {
             // **Von der Platte vor jedem Server** — im Flugzeug wartet sonst ein Zeitlimit.
             val platte = app.downloads.datei(wunsch.id)
@@ -1087,8 +1613,11 @@ class Spielwerk(
             return
         }
         var nurZeit = false
+        val schliessStand = app.playerSchliessen.intValue
         while (true) {
             delay(250)
+            // Kontowechsel oder Abmelden: erst dieser Player, mit dem Stopp fuer das alte Konto.
+            if (app.playerSchliessen.intValue != schliessStand) { beenden(schliessen); return }
             // **Dazwischen nur die Zeit** (Vorlage iOS `beobachten`, 17.09.2026): im halben Sekundentakt lief
             // sie nach dem Abspielen verzoegert an und zaehlte ungleichmaessig.
             nurZeit = !nurZeit
@@ -1097,6 +1626,7 @@ class Spielwerk(
                     val z = app.kern.anzeigeZeit((spieler.time / 1000.0).coerceAtLeast(0.0), amSchieben)
                     if (z >= 0 && !amSchieben) position = z
                 }
+                gemeinsamMelden(wunsch)
                 continue
             }
             // **Befehle aus dem Dashboard oder von einem anderen Geraet** — der Socket legt sie ab.
@@ -1107,11 +1637,17 @@ class Spielwerk(
                         "pause" -> if (spieler.isPlaying) umschalten()
                         "weiter" -> if (!spieler.isPlaying) umschalten()
                         "umschalten" -> umschalten()
-                        "stopp" -> { beenden(schliessen); return }
+                        // **Ein anderes Geraet uebernimmt** (Hinweis kam kurz vorher): das Bild geht als
+                        // Karte ab (`Uebergabeabgang`). Sonst — Dashboard, andere App — wie immer.
+                        "stopp" -> {
+                            val ziel = app.kern.uebergabeZielNehmen()
+                            if (ziel.isNotEmpty() && abgeben(ziel, schliessen)) return
+                            beenden(schliessen); return
+                        }
                         "springen" -> springe(b.optDouble("wert", position))
                         "vor" -> springe(position + vorS)
                         "zurueck" -> springe(position - zurueckS)
-                        "naechste" -> if (plan?.naechste == true) naechsteFolge()
+                        "naechste" -> if (hatNaechste) naechsteFolge()
                         // Vorlage: `case .vorige: break` in `PlayerScreen.swift` (tvOS/iOS) — ohne Wirkung.
                     }
                 }
@@ -1121,25 +1657,53 @@ class Spielwerk(
             if (debugBau) app.kern.meldungenHaengen(java.io.File(kontext.filesDir, "meldungen-haengen").exists())
             app.protokollSchreiben()
             // Waehrend des Wechsels schweigt der Takt; die Zeit des alten Stroms gehoerte sonst schon der neuen Folge.
-            if (wechselt) continue
-            stromPruefen()
+            if (wechselt) { gemeinsamMelden(wunsch); continue }
+            if (!erstbildPruefen()) stromPruefen()
+            verzoegerungNachziehen()
             val laenge = (spieler.length / 1000.0).coerceAtLeast(0.0)
             // Waehrend des Neuaufbaus die letzte gute Stelle, nicht VLCs Zeit: beim Abriss springt die aufs Ende.
             val gemeldet = if (stelltWiederHer) letzteGuteStelle else (spieler.time / 1000.0).coerceAtLeast(0.0)
             val antwort = JSONObject(app.kern.wiedergabeTakt(
                 if (stelltWiederHer) maxOf(laenge, dauer) else laenge, gemeldet, zeigtBild[0], spieler.isPlaying,
                 spieler.audioTracksCount > 0, amSchieben))
-            if (antwort.optBoolean("ladeschirmWeg")) bildFrei = true
+            if (antwort.optBoolean("ladeschirmWeg")) {
+                bildFrei = true
+                // Aus einer Uebergabe: die Karte zoomt jetzt aufs Bild, der Ton blendet auf.
+                Uebergabe.bildDa(app, plan?.itemId ?: wunsch.id)
+                if (uebergabeAufblenden) {
+                    uebergabeAufblenden = false
+                    lauf.launch { for (i in 1..12) { delay(50); spieler.volume = i * 100 / 12 } }
+                    Protokoll.schreib("[Ton] blendet auf (Übergabe)")
+                }
+                // Das erste Bild der neuen Folge steht: das Vorschaubild der Karte darf ausblenden.
+                kartenwechsel?.takeIf { it.bildSeit == null }?.let {
+                    val seit = SystemClock.elapsedRealtime() - it.beginn
+                    kartenwechsel = it.copy(bildSeit = seit)
+                    Protokoll.schreib("[Karte] erstes Bild nach $seit ms")
+                }
+            }
             if (antwort.optBoolean("spurenAnwenden")) sprachenAnwenden()
             dateiFrist()
             // Nach einem Sprung liefert der Kern die Zielstelle, bis VLC dort ist.
             if (!amSchieben && antwort.has("position")) position = antwort.getDouble("position")
             if (!stelltWiederHer || laenge > 0) dauer = laenge
+            if (bildFrei && position > 0) app.spielStelle = Abspielwunsch(plan?.itemId ?: wunsch.id, position)
             sitzungMelden()
+            // Stand die Karte, zoomt sie beim Ablauf ins Bild (`zurNaechstenFolge(ausKarte: karteVorher)`).
+            val karteVorher = einblendung == "karte"
             if (antwort.has("angebot")) angebotUebernehmen(antwort)
-            // Ob automatisch, entscheidet der Kern (Karte mit Abspann, nicht abgesagt).
-            if (antwort.optBoolean("weiterschalten")) naechsteFolge()
-            else if (ende[0] && plan?.naechste != true) { beenden(schliessen); break }
+            gemeinsamMelden(wunsch)
+            // **Die naechste Folge vorbereiten**, solange diese noch laeuft — wann und ueber welches Netz,
+            // sagt der Kern (`Vorpuffer`): ab drei Minuten vor Schluss, WLAN oder Kabel ohne Datensparmodus.
+            if (!wechselt && app.kern.vorpufferFaellig(position, dauer, netzGuenstig())) {
+                lauf.launch(Dispatchers.IO) { app.kern.folgeVorbereiten().await(); app.protokollSchreiben() }
+            }
+            // Ob automatisch, entscheidet der Kern (Karte, nicht abgesagt; zaehlt sie, gehoert es ihr).
+            if (antwort.optBoolean("weiterschalten")) {
+                if (karteVorher) Protokoll.schreib("[Karte] Countdown abgelaufen")
+                naechsteFolge(ausKarte = karteVorher)
+            }
+            else if (ende[0] && !hatNaechste) { beenden(schliessen); break }
         }
     }
 }
@@ -1249,9 +1813,14 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     /** Vorlage `spulen` auf iOS: Knopf und Doppeltipp springen gleich, beide mit Rueckmeldung am Rand. */
     val spulen: (Int) -> Unit = { richtung ->
         val sekunden = if (richtung < 0) werk.zurueckS else werk.vorS
+        // Leicht, nicht mittel: ein Sprung von zehn Sekunden ist kleiner als das Absetzen des Reglers.
+        ruck(Ruck.Leicht)
         werk.springe(werk.position + richtung * sekunden.toDouble())
         if (richtung < 0) taktZurueck++ else taktVor++
-        sprung = Sprung(richtung, sekunden, if (richtung < 0) taktZurueck else taktVor)
+        // **Mehrfach getippt, zaehlt sie hoch**: +10 s, +20 s, +30 s — solange die Anzeige der vorigen
+        // Spruenge in dieselbe Richtung noch steht (iOS 341f6a44).
+        val bisher = sprung?.takeIf { it.richtung == richtung }?.sekunden ?: 0
+        sprung = Sprung(richtung, bisher + sekunden, if (richtung < 0) taktZurueck else taktVor)
         if (sichtbar) beruehrt++
     }
 
@@ -1260,12 +1829,28 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     // Ebene offen) und der stehende Titel (Steuerung oder Folgenebene). Vor dem ersten Bild keine
     // Steuerung — sonst lag sie ueber dem Ladeschirm, und beim Folgenwechsel tauchte der Titel auf und ab.
     val ebeneOffen = offeneEbene != null
+    werk.kleinesFenster = imKleinenFenster
     val schleierDa = sichtbar && werk.bildFrei && !imKleinenFenster
     val steuerungDa = schleierDa && !ebeneOffen
     val titelDa = (steuerungDa || offeneEbene == "folgen") && !imKleinenFenster
     val schleierDeckung by animateFloatAsState(if (schleierDa) 1f else 0f, blendkurve(schleierDa, false), label = "schleier")
     val steuerungDeckung by animateFloatAsState(if (steuerungDa) 1f else 0f, blendkurve(steuerungDa, ebeneOffen), label = "steuerung")
     val titelDeckung by animateFloatAsState(if (titelDa) 1f else 0f, blendkurve(titelDa, ebeneOffen), label = "titel")
+
+    // **Die Einblendung unten rechts** (Vorlage `angebotDa`/`karteDa`/`knopfDa` auf iOS): Ueberspringen steht
+    // die ersten sechs Sekunden des Abschnitts, danach nur mit der Steuerung; die Karte „Naechste Folge" bei
+    // geschlossener Steuerung — offen wartet sie (weg, Countdown haelt an), und dort steht der normale Knopf.
+    val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && offeneEbene == null
+        && !blattOffen && !imKleinenFenster && !werk.wechselt && !werk.amSchieben
+        && (werk.einblendung != "nichts" || (steuerungDa && werk.angebotArt == "naechste"))
+    val karteDa = werk.kartenwechsel != null || (angebotDa && werk.einblendung == "karte")
+    val knopfDa = angebotDa && werk.einblendung != "karte" && werk.kartenwechsel == null
+    val kartenschleier by animateFloatAsState(if (karteDa && werk.kartenwechsel == null) 1f else 0f,
+        blendkurve(karteDa, false), label = "kartenschleier")
+    LaunchedEffect(karteDa) {
+        if (werk.kartenwechsel == null) Protokoll.schreib(if (karteDa) "[Karte] erscheint bei ${werk.position.toInt()} s von ${werk.dauer.toInt()} s"
+                                                         else "[Karte] geht (abgesagt oder Steuerung)")
+    }
 
     val plan = werk.plan
     val hatFolgen = plan?.episode == true && plan.serieId != null
@@ -1280,7 +1865,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     val fussUnten = (rand.unten + Playermass.unten).coerceAtLeast(0.dp)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; werk.spieler.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 
         // **Tippflaechen** — ueber dem Bild, unter der Steuerung. Vorlage `tippflaechen` + `tippen(richtung:)`:
@@ -1290,7 +1875,9 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             .pointerInput(Unit) {
                 var letzter = 0L
                 var letzteSeite = 0
-                detectTapGestures(onTap = { stelle ->
+                val druckdauer = Kern.festhaltenDruckdauer()
+                val wegGrenze = Kern.festhaltenWegGrenze().toFloat() * density
+                fun getippt(stelle: Offset) {
                     val seite = if (stelle.x < size.width / 2) -1 else 1
                     val jetzt = SystemClock.elapsedRealtime()
                     if (jetzt - letzter < 260 && seite == letzteSeite) {
@@ -1302,7 +1889,41 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                         sichtbar = !sichtbar
                         beruehrt++
                     }
-                })
+                }
+                // **Ein Tipp, zwei Tipps oder gedrueckt halten** — neben den Tipps, nicht statt ihrer: ein Tipp
+                // ist vor der Drittelsekunde vorbei, ein Halten danach (`Festhaltetempo`). Wandert der Finger
+                // weiter oder kommt ein zweiter dazu, ist es weder Tipp noch Halten.
+                awaitEachGesture {
+                    val runter = awaitFirstDown(requireUnconsumed = false)
+                    var ausgang = ""
+                    val frueh = withTimeoutOrNull(druckdauer) {
+                        while (true) {
+                            val e = awaitPointerEvent()
+                            if (e.changes.size >= 2) return@withTimeoutOrNull "zwei"
+                            val f = e.changes.firstOrNull { it.id == runter.id } ?: return@withTimeoutOrNull "weg"
+                            if (!f.pressed) return@withTimeoutOrNull if (f.isConsumed) "weg" else "hoch"
+                            if ((f.position - runter.position).getDistance() > wegGrenze) return@withTimeoutOrNull "weg"
+                        }
+                        @Suppress("UNREACHABLE_CODE") ""
+                    }
+                    ausgang = frueh ?: "gehalten"
+                    when (ausgang) {
+                        "hoch" -> getippt(runter.position)
+                        "gehalten" -> {
+                            // Die Drittelsekunde ist um: 2×, solange der Finger liegt — dann gilt das Loslassen
+                            // nicht als Tipp.
+                            if (werk.festhaltenAn()) {
+                                try {
+                                    do { val e = awaitPointerEvent() } while (e.changes.any { it.pressed })
+                                } finally { werk.festhaltenAus() }
+                            } else {
+                                // Nicht erlaubt (angehalten, in der Gruppe): ein langer Tipp bleibt ein Tipp.
+                                val hoch = waitForUpOrCancellation()
+                                if (hoch != null) getippt(runter.position)
+                            }
+                        }
+                    }
+                }
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -1326,7 +1947,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
         // **Startschleier** — schwarz, bis VLC das erste Bild hat; Schliessen geht schon vorher, an der Stelle
         // des X der Steuerung (Vorlage `startschleier`). Geht mit 0,3 s easeOut, wie `erstesBildDa` auf iOS.
-        AnimatedVisibility(!werk.bildFrei, enter = EnterTransition.None, exit = fadeOut(tween(300, easing = EaseOut))) {
+        // Zoomt die Karte ins Bild, deckt sie den Wechsel — kein Ladeschirm darueber.
+        AnimatedVisibility(!werk.bildFrei && werk.kartenwechsel == null, enter = EnterTransition.None, exit = fadeOut(tween(300, easing = EaseOut))) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 val h = werk.hinweis
                 if (h == null) Lader(Modifier.align(Alignment.Center))
@@ -1353,8 +1975,28 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             }
         }
 
-        // `Playerschleier` — flach, reines Schwarz 42 % (iOS d75c1c7: `Stil.grund` hob HDR-Video an).
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = schleierDeckung.coerceIn(0f, 1f) }.background(Color.Black.copy(alpha = 0.42f)))
+        // `Playerschleier` — flach, reines Schwarz 42 % (iOS d75c1c7: `Stil.grund` hob HDR-Video an). **Steht die
+        // Karte der naechsten Folge, dunkelt er das Bild ab** wie bei offener Steuerung, und sie liegt davor.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = maxOf(schleierDeckung, kartenschleier).coerceIn(0f, 1f) }.background(Color.Black.copy(alpha = 0.42f)))
+
+        // **Die Karte der naechsten Folge** (Variante C) — im Baum, solange es eine naechste Folge gibt, damit
+        // Herein und Hinaus Federn aus dem jetzigen Stand sind. Ganz im sicheren Bereich, auf schmalen Geraeten
+        // schmaler (`Folgenkarte.breite`); Tippen startet, das X oder ein Wisch sagen ab.
+        if (!werk.inGruppe && !imKleinenFenster && (werk.plan?.naechsteFolge != null || werk.kartenwechsel != null)) {
+            val m = werk.kartenmasse
+            val gross = konfiguration.smallestScreenWidthDp >= 600
+            val randSeite = rand.seite
+            val randUnten = rand.unten
+            Folgenkarte(werk, karteDa, karte = { w, h, d ->
+                val sichereBreite = w / d - randSeite.value * 2
+                val breite = Kern.folgenkarteBreite(sichereBreite.toDouble(), gross, false).toFloat()
+                val hoehe = breite * 9f / 16f
+                val unten = randUnten.value + m.untenAbstand
+                val x = w / d - randSeite.value - Playermass.seite.value - breite
+                val y = h / d - unten - m.zeilen - hoehe
+                androidx.compose.ui.geometry.Rect(x * d, y * d, (x + breite) * d, (y + hoehe) * d)
+            }) { ruck(Ruck.Leicht); werk.angebotSchliessen() }
+        }
 
         // **Das Technikschild.** Eine Auskunft, kein Bedienteil. **Direkt auf dem Film** (Vorlage c85ea8bf):
         // ueber dem Schleier, damit es lesbar bleibt, aber unter Titel, Knoepfen und Leiste — und damit auch
@@ -1369,8 +2011,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             Box(Modifier.fillMaxSize()
                     .padding(start = rand.seite + Playermass.seite, top = rand.oben + Playermass.oben + Playermass.knopf + Stil.kachelAbstand)
                     .offset { IntOffset(0, -(hoch * weg).roundToInt()) }) {
-                Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
-                              app.einstellungen.technikschildMessen, fern = false)
+                Technikschild(werk.technikFest, werk.technikLive, { werk.position }, werk.dauer,
+                              app.einstellungen.technikschildMessen, fern = false, hinweis = werk.erstbildHinweis)
             }
         }
 
@@ -1394,7 +2036,13 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(titel, style = titelStil, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            meta?.let { Text(it, style = metaStil, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            // **In der Gruppe steht hier die Gruppe** (Entwurf A): wo sonst Staffel und Folge oder
+                            // Jahr und Laufzeit stehen. Das ist Zustand, also Akzent.
+                            val gruppe = if (werk.inGruppe) app.gemeinsam.value.gruppe else null
+                            if (gruppe != null) Box(Modifier.weight(1f, fill = false)) {
+                                Gruppenzeile(gruppe.name, app.gemeinsam.value.mitWem, metaStil.fontSize)
+                            }
+                            else meta?.let { Text(it, style = metaStil, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                               modifier = Modifier.weight(1f, fill = false)) }
                             if (plan != null && !plan.lossless) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Symbol(Zeichen.Warnung, 12.dp, farbe = Stil.warnung)
@@ -1413,7 +2061,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                 Spacer(Modifier.weight(1f))
                 // **Die Leiste ueber die volle Breite**, Zeit links, Restzeit rechts (Vorlage `fuss`).
                 Box(Modifier.fillMaxWidth().height(Playermass.leiste).padding(horizontal = Playermass.seite)) {
-                    Zeitzeile(werk.position, werk.dauer, werk.amSchieben, aktiv, werk.plan?.marken.orEmpty(), { werk.trickplayBild(it) },
+                    Zeitzeile(app, { werk.position }, werk.dauer, werk.amSchieben, aktiv, werk.plan?.marken.orEmpty(), { werk.trickplayBild(it) },
                               { werk.amSchieben = it; beruehrt++ }) { werk.springe(it) }
                 }
             }
@@ -1423,18 +2071,14 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         // `Sources/iOS/PlayerScreen.swift`). **An einer Stelle, egal ob die Steuerung offen ist**: rechts direkt
         // ueber der Leiste, mit denselben Massen wie der Fuss. Weg beim Spulen oder waehrend eine Ebene offen ist.
         // Absagen: Zurueck (iOS: Wischen mit zwei Fingern) — kein eigenes X, wie auf iOS.
-        val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungDa && offeneEbene == null && !blattOffen
-            && !imKleinenFenster && !werk.wechselt && !werk.amSchieben
-        val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && offeneEbene == null
-            && !blattOffen && !imKleinenFenster && !werk.wechselt && !werk.amSchieben
-            && (werk.einblendung != "nichts" || (steuerungDa && werk.angebotArt == "naechste"))
-        BackHandler(enabled = karteDa) { werk.angebotSchliessen() }
+        // Zurueck sagt die Einblendung ab — Karte oder Ueberspringen-Knopf ohne Steuerung.
+        BackHandler(enabled = werk.einblendung != "nichts" && angebotDa && !steuerungDa && werk.kartenwechsel == null) { werk.angebotSchliessen() }
         Box(Modifier.fillMaxSize().padding(start = rand.seite, end = rand.seite, bottom = fussUnten + Playermass.leiste + Playermass.ueberLeiste)
                 .padding(horizontal = Playermass.seite),
             contentAlignment = Alignment.BottomEnd) {
-            AnimatedVisibility(visible = angebotDa, enter = fadeIn(aufblenden), exit = fadeOut(zublenden)) {
-                Angebotspille(werk.angebotArt, werk.angebotText, werk.countdown.takeIf { werk.einblendung == "karte" },
-                              werk.countdownRest.takeIf { werk.einblendung == "karte" }, werk) {
+            // Der Knopf — nicht, solange dort die Karte steht. Weich ein und aus (iOS 2385baa3).
+            AnimatedVisibility(visible = knopfDa, enter = fadeIn(aufblenden), exit = fadeOut(zublenden)) {
+                Angebotspille(werk.angebotArt, werk.angebotText, null, null, werk) {
                     werk.angebotAusfuehren()
                 }
             }
@@ -1452,8 +2096,34 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             }
         }
 
+        // **Was in der Gruppe passiert, kurz oben** — damit niemand raetselt, warum der Film steht.
+        // Unter der Zeile des X, ueber allem ausser den Ebenen; nimmt keinen Tipp an.
+        val ereignis = if (werk.inGruppe && !imKleinenFenster) app.gemeinsam.value.ereignis else null
+        val gemerktesEreignis = remember { arrayOfNulls<Gemeinsamereignis>(1) }
+        ereignis?.let { gemerktesEreignis[0] = it }
+        AnimatedVisibility(ereignis != null, Modifier.align(Alignment.TopCenter).zIndex(4f)
+                .padding(top = rand.oben + Playermass.oben + Playermass.knopf + 8.dp),
+            enter = fadeIn(aufblenden), exit = fadeOut(zublenden)) {
+            gemerktesEreignis[0]?.let { e -> key(e.id) { Gruppenereignis(e) } }
+        }
+        // Eine Meldung der Gruppe (`SyncPlayFehler`) im Player dort, wo auch seine eigenen stehen.
+        val gemeinsamFehler = app.gemeinsamFehler.value
+        LaunchedEffect(gemeinsamFehler) { gemeinsamFehler?.let { werk.hinweis = it; app.gemeinsamFehler.value = null } }
+
         // Waehrend des Folgenwechsels laeuft die alte Folge weiter — der Ring sagt, dass etwas kommt.
-        if (werk.bildFrei && werk.wechselt) Lader(Modifier.align(Alignment.Center))
+        if (werk.bildFrei && werk.wechselt && werk.kartenwechsel == null) Lader(Modifier.align(Alignment.Center))
+
+        // **Die Pille oben mittig, solange es mit 2× laeuft** (gedrueckt halten, `doppeltPille`).
+        AnimatedVisibility(werk.doppelt && !imKleinenFenster, Modifier.align(Alignment.TopCenter).zIndex(4f)
+                .padding(top = rand.oben + Playermass.oben + 6.dp),
+            enter = fadeIn(tween(250, easing = Bewegung.weich)), exit = fadeOut(tween(300, easing = Bewegung.weich))) {
+            Row(Modifier.height(32.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.82f)).padding(horizontal = 14.dp)
+                    .clearAndSetSemantics { contentDescription = uebersetzt("Doppelte Geschwindigkeit") },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("2×", style = Stil.listentitel.copy(fontFeatureSettings = "tnum"), color = Stil.schrift)
+                Symbol(Zeichen.Doppeltempo, 11.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
+            }
+        }
 
         // **Die drei Ebenen** — Vollbild ueber dem Video, blenden 0,2 s easeOut; die Steuerung darunter weicht
         // im selben Takt (`blendkurve`, iOS cb6af09).
@@ -1461,12 +2131,12 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             transitionSpec = { fadeIn(ebenenKurve) togetherWith fadeOut(ebenenKurve) }, label = "ebene") { ebene ->
             when (ebene) {
                 "spuren" -> SpurenEbene(werk, rand, hochkant, ebeneSchliessen)
-                "einstellungen" -> EinstellungenEbene(app, werk, rand, hochkant, ebeneSchliessen)
+                "einstellungen" -> EinstellungenEbene(app, werk, rand, hochkant, ebeneSchliessen) { werk.beenden(schliessen) }
                 "folgen" -> {
                     val p = werk.plan
                     if (p != null && p.serieId != null) FolgenEbene(app, p.serieId, p.itemId, p.staffelId, titel, rand,
                         schliessen = ebeneSchliessen,
-                        starten = { id -> ebeneSchliessen(); if (id != p.itemId) lauf.launch { werk.wechsleZu(id) } })
+                        starten = { id -> ebeneSchliessen(); if (id != p.itemId) lauf.launch { werk.folgeWaehlen(id) } })
                 }
                 else -> Box(Modifier.fillMaxSize())
             }
@@ -1664,7 +2334,8 @@ private fun Sprungmarke(richtung: Int, sekunden: Int) {
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
         Symbol(if (richtung > 0) Zeichen.Vorspulen else Zeichen.Zurueckspulen, 32.dp, Modifier.huepfen(gedreht),
                farbe = Color.White, staerke = Staerke.Mittel)
-        Text(uebersetzt("%lld s", sekunden), style = Stil.kachel, color = Color.White)
+        // Mit Vorzeichen, weil sie hochzaehlt: +10 s, +20 s, +30 s.
+        Text((if (richtung < 0) "−" else "+") + uebersetzt("%lld s", sekunden), style = Stil.kachel.copy(fontFeatureSettings = "tnum"), color = Color.White)
     }
 }
 
@@ -1687,11 +2358,12 @@ private fun Lader(modifier: Modifier = Modifier, groesse: Dp = 34.dp, staerke: D
  * mit Zeit, knapp ueber der Trefferflaeche und ueber dem Griff.
  */
 @Composable
-private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean, marken: List<Double>,
+private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean, marken: List<Double>,
                       vorschau: (Double) -> android.graphics.Bitmap?,
                       schieben: (Boolean) -> Unit, springen: (Double) -> Unit) {
     var ziel by remember { mutableStateOf<Double?>(null) }
-    val gezeigt = ziel ?: position
+    // `position` ist ein Lambda: gelesen wird erst hier, sonst setzte jeder Takt die ganze Playerseite neu.
+    val gezeigt = ziel ?: position()
     val ziffern = Stil.kachel.copy(fontWeight = FontWeight.Normal, fontFeatureSettings = "tnum")
     val dicke by animateDpAsState(if (amSchieben) 6.dp else 4.dp, Bewegung.umschalten(), label = "spur")
     val griffSkala by animateFloatAsState(if (amSchieben) 1f else 0.4f, Bewegung.umschalten(), label = "griffSkala")
@@ -1699,6 +2371,10 @@ private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, akti
     val laenge by rememberUpdatedState(dauer)
     val schiebenJetzt by rememberUpdatedState(schieben)
     val springenJetzt by rememberUpdatedState(springen)
+    val markenJetzt by rememberUpdatedState(marken.toDoubleArray())
+    val ruck = rememberRuck()
+    // **Restzeit oder Ende — ein Tipp schaltet um** (iOS d35d05a3): „−12:34" oder „Endet um 22:41"; die Wahl bleibt.
+    var alsEnde by remember { mutableStateOf(app.ablage.merkwert("restzeitAlsEnde") == "1") }
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(zeitText(gezeigt), style = ziffern, color = Stil.schriftLeise)
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()
@@ -1708,7 +2384,16 @@ private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, akti
                 awaitEachGesture {
                     val runter = awaitFirstDown()
                     runter.consume()
-                    fun stelle(x: Float) = (x / size.width).coerceIn(0f, 1f).toDouble() * laenge
+                    // **An den Kerben rastet er ein** (`Kerbenfang`): nah genug an einer Abschnittsgrenze steht er
+                    // genau darauf, mit einem leichten Tick beim Einrasten — einmal, nicht bei jeder Bewegung darauf.
+                    var eingerastet = -1.0
+                    fun stelle(x: Float): Double {
+                        val roh = (x / size.width).coerceIn(0f, 1f).toDouble() * laenge
+                        val kerbe = Kern.kerbe(roh, laenge, markenJetzt, (size.width / density).toDouble())
+                        if (kerbe < 0) { eingerastet = -1.0; return roh }
+                        if (kerbe != eingerastet) { eingerastet = kerbe; ruck(Ruck.Leicht) }
+                        return kerbe
+                    }
                     ziel = stelle(runter.position.x)
                     schiebenJetzt(true)
                     // Auch bei Abbruch (Leiste ausgeblendet, zweiter Finger) nicht im Spulen haengen bleiben.
@@ -1775,7 +2460,19 @@ private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, akti
                 }
             }
         }
-        Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = Stil.schriftLeise)
+        val rest = (dauer - gezeigt).coerceAtLeast(0.0)
+        val kontext = LocalContext.current
+        val ende = if (alsEnde) uebersetzt("Endet um %@",
+            android.text.format.DateFormat.getTimeFormat(kontext).format(java.util.Date(System.currentTimeMillis() + (rest * 1000).toLong()))) else null
+        Text(ende ?: ("−" + zeitText(rest)), style = ziffern, color = Stil.schriftLeise, maxLines = 1,
+             modifier = Modifier.tippen {
+                 alsEnde = !alsEnde
+                 app.ablage.merken("restzeitAlsEnde", if (alsEnde) "1" else "0")
+             }.semantics {
+                 contentDescription = ende ?: uebersetzt("Restzeit")
+                 role = Role.Button
+                 onClick(label = uebersetzt("Wechselt zwischen Restzeit und Ende")) { alsEnde = !alsEnde; app.ablage.merken("restzeitAlsEnde", if (alsEnde) "1" else "0"); true }
+             })
     }
 }
 
@@ -1845,6 +2542,73 @@ private fun Ebenenzeile(text: String, gewaehlt: Boolean, tun: () -> Unit) {
     }
 }
 
+/**
+ * **Verzoegerung — letzte Zeile der Spalten Audio und Untertitel** (Vorlage `Verzoegerungszeile` in
+ * `Sources/iOS/PlayerEbenen.swift`, Begruendung dort). − und + schieben um 50 ms, gehalten wiederholen sie
+ * und werden schneller (`Haltezaehler` im Paket); der Rundpfeil setzt auf null und haelt seinen Platz, damit
+ * − Wert + beim Zuruecksetzen nicht seitlich springen. Fuer TalkBack ein Element mit Frueher/Spaeter/Zuruecksetzen.
+ */
+@Composable
+private fun Verzoegerungszeile(millisekunden: Int, schieben: (Int) -> Unit, zuruecksetzen: () -> Unit) {
+    val a = remember(millisekunden) { verzoegerungsanzeige(millisekunden) }
+    val titel = uebersetzt("Verzögerung")
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clearAndSetSemantics {
+            contentDescription = titel
+            stateDescription = a.text
+            customActions = listOf(
+                androidx.compose.ui.semantics.CustomAccessibilityAction(uebersetzt("Früher")) { schieben(-1); true },
+                androidx.compose.ui.semantics.CustomAccessibilityAction(uebersetzt("Später")) { schieben(1); true },
+                androidx.compose.ui.semantics.CustomAccessibilityAction(uebersetzt("Zurücksetzen")) { zuruecksetzen(); true })
+        }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(titel, style = Stil.klein, color = Stil.schriftSehrLeise, modifier = Modifier.padding(horizontal = 10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Verzoegerungstaste(Zeichen.Minus, a.amAnfang) { schieben(-1) }
+            Text(a.text, style = Stil.koerper.copy(fontFeatureSettings = "tnum"), textAlign = TextAlign.Center, maxLines = 1,
+                 color = if (a.istNull) Stil.schriftLeise else Stil.schrift, modifier = Modifier.weight(1f))
+            Verzoegerungstaste(Zeichen.Plus, a.amEnde) { schieben(1) }
+            val deckung by animateFloatAsState(if (a.istNull) 0f else 1f, label = "zuruecksetzen")
+            Box(Modifier.size(Playermass.knopf).symboldruck(!a.istNull, uebersetzt("Zurücksetzen"), zuruecksetzen).alpha(deckung),
+                contentAlignment = Alignment.Center) {
+                Symbol(Zeichen.Ruecksetzen, 16.dp, farbe = Stil.schriftLeise, staerke = Staerke.Mittel)
+            }
+        }
+    }
+}
+
+/**
+ * − oder + der Verzoegerungszeile: ein Druck sofort, **gehalten wiederholt** (wie `buttonRepeatBehavior` auf iOS) —
+ * nach 400 ms alle 100 ms. Der Abstand liegt unter dem `reihenabstand` des Haltezaehlers, so zaehlt der Kern die
+ * Reihe und wird schneller. Am Anschlag blass und ohne Wirkung.
+ */
+@Composable
+private fun Verzoegerungstaste(zeichen: Zeichen, gesperrt: Boolean, tun: () -> Unit) {
+    val aktuell by rememberUpdatedState(tun)
+    val gesperrtJetzt by rememberUpdatedState(gesperrt)
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val deckung by animateFloatAsState(if (gedrueckt) 0.35f else 1f,
+        if (gedrueckt) snap() else tween(200, easing = EaseOut), label = "druck")
+    Box(Modifier.size(Playermass.knopf).graphicsLayer { alpha = deckung }.pointerInput(Unit) {
+            detectTapGestures(onPress = { ort ->
+                if (gesperrtJetzt) return@detectTapGestures
+                val druck = androidx.compose.foundation.interaction.PressInteraction.Press(ort)
+                quelle.emit(druck)
+                aktuell()
+                val halten = kotlinx.coroutines.coroutineScope {
+                    val wiederholen = launch {
+                        delay(400)
+                        while (!gesperrtJetzt) { aktuell(); delay(100) }
+                    }
+                    tryAwaitRelease().also { wiederholen.cancel() }
+                }
+                quelle.emit(if (halten) androidx.compose.foundation.interaction.PressInteraction.Release(druck)
+                            else androidx.compose.foundation.interaction.PressInteraction.Cancel(druck))
+            })
+        }, contentAlignment = Alignment.Center) {
+        Symbol(zeichen, 17.dp, farbe = if (gesperrt) Stil.schriftSehrLeise else Stil.schrift, staerke = Staerke.Halbfett)
+    }
+}
+
 /** Audio & Untertitel — zwei Spalten, jede scrollt fuer sich. */
 @Composable
 private fun SpurenEbene(werk: Spielwerk, rand: Rand, hochkant: Boolean, schliessen: () -> Unit) {
@@ -1857,10 +2621,12 @@ private fun SpurenEbene(werk: Spielwerk, rand: Rand, hochkant: Boolean, schliess
         Spaltenreihe(rand, hochkant, 2) { breite ->
             Wahlspalte(uebersetzt("Audio"), breite) {
                 ton.forEach { (id, name) -> Ebenenzeile(name, id == tonWahl) { tonWahl = id; werk.tonVonHand(id) } }
+                Verzoegerungszeile(werk.tonVerzoegerung, { werk.verzoegerungSchieben(true, it) }) { werk.verzoegerungSetzen(true, 0) }
             }
             Wahlspalte(uebersetzt("Untertitel"), breite) {
                 Ebenenzeile(uebersetzt("Aus"), utWahl == -1) { utWahl = -1; werk.untertitelVonHand(-1) }
                 ut.forEach { (id, name) -> Ebenenzeile(name, id == utWahl) { utWahl = id; werk.untertitelVonHand(id) } }
+                Verzoegerungszeile(werk.untertitelVerzoegerung, { werk.verzoegerungSchieben(false, it) }) { werk.verzoegerungSetzen(false, 0) }
             }
         }
         Box(Modifier.padding(start = rand.seite, end = rand.seite, top = rand.oben)) { Ebenenkopf(schliessen) }
@@ -1869,14 +2635,37 @@ private fun SpurenEbene(werk: Spielwerk, rand: Rand, hochkant: Boolean, schliess
 
 /** Bild / Schlafzeit / Technikschild / Qualität — wie auf iOS, ohne Tempo. */
 @Composable
-private fun EinstellungenEbene(app: SwiftlyAnwendung, werk: Spielwerk, rand: Rand, hochkant: Boolean, schliessen: () -> Unit) {
+private fun EinstellungenEbene(app: SwiftlyAnwendung, werk: Spielwerk, rand: Rand, hochkant: Boolean, schliessen: () -> Unit,
+                               gruppeVerlassen: () -> Unit) {
     val e = app.einstellungen
-    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf.
-    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true
+    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf. **Nicht in der Gruppe**
+    // (iOS `qualitaetswahl`): das Neuladen meldet Stopp und Start an ihr vorbei, und man liefe allein weiter.
+    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true && !werk.inGruppe
+    val gruppe = if (werk.inGruppe) app.gemeinsam.value.gruppe else null
     val lauf = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         Ebenengrund()
-        Spaltenreihe(rand, hochkant, if (qualitaetZeigen) 4 else 3) { breite ->
+        Spaltenreihe(rand, hochkant, 3 + (if (qualitaetZeigen) 1 else 0) + (if (gruppe != null) 1 else 0)) { breite ->
+            // **Gemeinsam zuerst** (Entwurf A): wer dabei ist, und darunter der Ausgang. Die Namen tun nichts.
+            if (gruppe != null) Wahlspalte(uebersetzt("Gemeinsam · %@", gruppe.name), breite) {
+                gruppe.teilnehmer.forEach { name ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp).semantics(mergeDescendants = true) {},
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
+                            Symbol(Zeichen.PersonVoll, 14.dp, farbe = Stil.schriftSehrLeise)
+                        }
+                        Text(name, style = Stil.listentitel, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Stil.eckeFeld)).druckzeile(gruppeVerlassen)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
+                        Symbol(Zeichen.Abmelden, 14.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett)
+                    }
+                    Text(uebersetzt("Gruppe verlassen"), style = Stil.listentitel, color = Stil.akzent, maxLines = 1)
+                }
+            }
             Wahlspalte(uebersetzt("Bild"), breite) {
                 Ebenenzeile(uebersetzt("Original"), !werk.bildfuellend) { werk.bildfuellendSetzen(false) }
                 Ebenenzeile(uebersetzt("Füllen"), werk.bildfuellend) { werk.bildfuellendSetzen(true) }
@@ -1942,6 +2731,16 @@ private fun FolgenEbene(app: SwiftlyAnwendung, serieId: String, laufendeId: Stri
     // Schon im ersten Bild ungefaehr dort, wo die laufende Folge steht — danach genau mittig.
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (folgen.indexOfFirst { it.id == laufendeId } - 1).coerceAtLeast(0))
 
+    // **Nach einer Aenderung am Sehstand** (Kachelmenue) frisch holen — der Haken auf dem Bild
+    // und die Wischzeile sollen sofort stimmen, nicht erst beim naechsten Oeffnen der Ebene.
+    suspend fun folgenAuffrischen() {
+        val g = gewaehlt ?: return
+        try {
+            val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, g).await() })
+            if (gewaehlt == g) { folgen = f; app.folgenSpeicher[g] = f }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
+
     LaunchedEffect(serieId) {
         try {
             val s = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(serieId).await() })
@@ -2003,7 +2802,14 @@ private fun FolgenEbene(app: SwiftlyAnwendung, serieId: String, laufendeId: Stri
                     if (i > 0) Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
                     Box(Modifier.background(if (f.id == laufendeId) Color.White.copy(alpha = 0.08f) else Color.Transparent)
                             .semantics { selected = f.id == laufendeId }) {
-                        Folgenzeile(f) { starten(f.id) }
+                        // Langer Druck: das Kachelmenue, im Player nur mit dem Sehstand
+                        // (`Kachelmenuewunsch.imPlayer`) — die Zeile selbst startet die Folge schon.
+                        val menue = LocalKachelmenue.current
+                        val lange: (() -> Unit)? = menue?.let { m -> {
+                            m(Kachelmenuewunsch(f.id, f.titel, "Episode", f.bild, quer = true, f.unterzeile,
+                                                 imPlayer = true, nachher = { lauf.launch { folgenAuffrischen() } }))
+                        } }
+                        Folgenzeile(f, lange = lange) { starten(f.id) }
                     }
                 }
             }
@@ -2075,8 +2881,8 @@ data class Technikzeile(val name: String?, val text: String, val art: String, va
  * Nicht `private`: `tv/TvPlayer.kt` zeigt dasselbe Schild an derselben Stelle.
  */
 @Composable
-fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: Double, dauer: Double, messen: Boolean, fern: Boolean,
-                  modifier: Modifier = Modifier) {
+fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: () -> Double, dauer: Double, messen: Boolean, fern: Boolean,
+                  modifier: Modifier = Modifier, hinweis: String? = null) {
     val ziffern = "tnum"
     val schrift = Stil.klein.copy(fontFeatureSettings = ziffern)
     val kopfschrift = Stil.kachel.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = ziffern)
@@ -2098,7 +2904,13 @@ fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: Double,
             withStyle(SpanStyle(color = Stil.schrift)) { append(" $wert") }
         }, style = schrift)
     }
-    fest.forEach { z ->
+    // **Kam nie ein Bild, steht das unter dem Kopf** (Vorlage `Technikschild.swift`, `Erstbild` im Paket).
+    // Nach Kopf und Transkodiergrund, vor „Bild" — wie auf Apple.
+    val hinweisVor = fest.indexOfFirst { !it.kopf && it.name != null }.let { if (it < 0) fest.size else it }
+    fun hinweiszeile() = hinweis?.let { h -> kern { Text(h, style = schrift, color = Stil.warnung,
+        maxLines = if (messen) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis) } }
+    fest.forEachIndexed { i, z ->
+        if (i == hinweisVor) hinweiszeile()
         when {
             z.kopf -> kern { Text(z.text, style = kopfschrift, color = if (z.art == "gut") Stil.akzent else Stil.warnung) }
             z.name == null -> kern { Text(z.text, style = schrift, color = Stil.warnung, maxLines = if (messen) Int.MAX_VALUE else 2,
@@ -2106,6 +2918,7 @@ fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: Double,
             else -> kern { angabe(z.name, z.text) }
         }
     }
+    if (hinweisVor == fest.size) hinweiszeile()
     live?.let { w ->
         // **Puffer: Sekunden Vorrat und was ankommt**, eine Zeile. KiB nur beim Messen.
         val sekunden = w.feldZahl("vorratSekunden")
@@ -2120,7 +2933,7 @@ fun Technikschild(fest: List<Technikzeile>, live: JSONObject?, position: Double,
         if (messen || verlust) rest { messzeile("${uebersetzt("Verworfen")} $verworfen · ${uebersetzt("Ton weg")} $tonWeg", verlust) }
     }
     if (messen) {
-        if (dauer > 1) rest { messzeile("${uebersetzt("Stelle")} ${zeitText(position)} / ${zeitText(dauer)}", false) }
+        if (dauer > 1) rest { messzeile("${uebersetzt("Stelle")} ${zeitText(position())} / ${zeitText(dauer)}", false) }
         live?.let { w ->
             // Eine Haarlinie: darueber die Datei, darunter, was beim Laufen hochzaehlt.
             rest { Box(Modifier.padding(vertical = abstand / 2).width(if (fern) 260.dp else 150.dp).height(1.dp).background(Stil.rand)) }

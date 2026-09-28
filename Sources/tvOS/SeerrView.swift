@@ -127,7 +127,8 @@ struct Seerrkachel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Bild(url: treffer.plakat(breite: 500),
-                 breite: Stil.posterBreite, hoehe: Stil.posterHoehe)
+                 breite: Stil.posterBreite, hoehe: Stil.posterHoehe,
+                 zeichen: treffer.istSerie ? "tv" : "film")
                 .opacity(0.45)
                 .overlay(alignment: .bottomLeading) { marke.padding(10) }
 
@@ -200,6 +201,9 @@ struct SeerrDetailView: View {
     /// Der Fokus muss beim Aufklappen in die Tafel wandern — tvOS legt ihn
     /// nicht von selbst um, solange der Ausloeser stehenbleibt.
     @FocusState private var ersteZeile: Int?
+    /// Die Auftragszeile — der Fokus faellt hierher, wenn keine Staffel zu
+    /// haben ist. Sonst ging die Tafel auf, und nichts darin trug den Fokus.
+    @FocusState private var amAuftrag: Bool
     /// **Der Startfokus gehoert auf den Knopf**, und dorthin kehrt er auch
     /// zurueck, wenn die Tafel zugeht: eine Tafel ist kein Ortswechsel,
     /// sondern etwas, das ueber dem Knopf aufklappt. Dieselbe Ueberlegung
@@ -507,13 +511,16 @@ struct SeerrDetailView: View {
                 .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.schrift)
             }
             .buttonStyle(ZeilenStil())
+            .focused($amAuftrag)
         }
         .frame(width: 620)
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
         // Kein Rand, kein Schatten — siehe `TVBausteine`.
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
         .focusSection()
-        .task { ersteZeile = erstWaehlbare }
+        .task {
+            if let erste = erstWaehlbare { ersteZeile = erste } else { amAuftrag = true }
+        }
         .onExitCommand { staffelnOffen = false }
     }
 
@@ -526,6 +533,9 @@ struct SeerrDetailView: View {
             Image(systemName: zeichen(fuer: st))
                 .frame(width: 38)
                 .foregroundStyle(an ? Stil.akzent : Stil.schriftLeise)
+                // Das Zeichen ist nur Bild; „gewählt" trägt der Knopf über
+                // das Merkmal, „schon da" steht als Nachsatz auf der Zeile.
+                .accessibilityHidden(true)
             Text("Staffel \(st.nummer)")
             Spacer(minLength: 0)
             if st.folgen > 0 {
@@ -541,6 +551,10 @@ struct SeerrDetailView: View {
         // Fokus, wo die Flaeche noch heller wird, wird es nicht besser. Eine
         // schon angefragte Staffel soll leiser sein, nicht unlesbar.
         .foregroundStyle(an ? Stil.akzent : (frei ? Stil.schrift : Stil.schriftLeise))
+        // Das Kaestchenzeichen ist verborgen; der Stand muss also als Wort
+        // stehen, sonst verschwindet die einzige Auskunft dazu. `ansage`
+        // ist derselbe Satz wie auf der Detailseite (`Seerrmarke.swift`).
+        .accessibilityHint(frei ? Text("") : Text(st.stand.ansage))
     }
 
     /// Hoechstens vier Zeilen — darunter wird geschoben. Bei weniger
@@ -565,20 +579,21 @@ struct SeerrDetailView: View {
     private var besetzung: [Seerrperson] { Array((detail?.besetzung ?? []).prefix(12)) }
     private var aehnliches: [Seerrtreffer] { Array((detail?.aehnliches ?? []).prefix(20)) }
 
-    /// **Jede Kachel ist ein Knopf, auch wenn sie nirgends hinfuehrt.**
+    /// **Jede Kachel ist ein Fokusziel, aber kein Knopf.**
     ///
     /// Auf dem Fernseher bewegt der Fokus die Seite; was kein Fokusziel ist,
-    /// erreicht man nicht. Ein Kopf ohne Knopf war deshalb nicht nur nicht
-    /// anklickbar, er machte die ganze Reihe unerreichbar. `Besetzungsstreifen`
-    /// auf der Detailseite macht es genauso.
+    /// erreicht man nicht. Ein Kopf ohne Fokus machte die ganze Reihe
+    /// unerreichbar. Ein Knopf ohne Ziel war das andere Extrem: er gab beim
+    /// Druecken nach und tat nichts. Eine Personenseite gibt es fuer Koepfe
+    /// von TMDB nicht — dieselbe Grenze wie am iPhone, wo sie auch nur
+    /// dastehen.
     private var besetzungsstreifen: some View {
         streifen {
             ForEach(besetzung) { person in
-                Button {} label: {
+                Schaukachel {
                     Besetzungskachel(bild: person.bild(breite: 300),
                                      name: person.name, rolle: person.rolle)
                 }
-                .buttonStyle(KachelStil())
             }
         }
     }
@@ -623,10 +638,33 @@ struct SeerrDetailView: View {
                 staffeln = nil
             }
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
-            angefragt = true
-            stand = .wartetAufFreigabe
+            // **Den Stand lesen, nicht annehmen.** Wer freigeben darf, dessen
+            // Anfrage laedt sofort — „wartet auf Freigabe" stimmte dann
+            // nicht. Seerr sagt es in der Suche; die Staffeln kommen mit der
+            // Detailseite neu. Schweigt Seerr, bleibt es bei der Annahme.
+            gewaehlt = []
+            async let frisch = model.seerr.suchen(treffer.titel)
+            await detailLaden()
+            let neu = await frisch.first { $0.id == treffer.id && $0.art == treffer.art }?.stand
+            stand = neu ?? .wartetAufFreigabe
+            angefragt = stand == .wartetAufFreigabe
         } catch {
             fehler = lesbarerFehler(error)
         }
+    }
+}
+
+/// Ein Fokusziel ohne Handlung — waechst im Fokus wie eine Kachel, gibt
+/// beim Druecken aber nicht nach, weil nichts passiert.
+private struct Schaukachel<Inhalt: View>: View {
+    @ViewBuilder let inhalt: Inhalt
+    @FocusState private var fokus: Bool
+
+    var body: some View {
+        inhalt
+            .scaleEffect(fokus ? Stil.fokusLupe : 1)
+            .animation(Stil.fokusAnimation, value: fokus)
+            .focusable()
+            .focused($fokus)
     }
 }

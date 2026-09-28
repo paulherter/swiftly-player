@@ -53,6 +53,10 @@ enum Stil {
     static let schriftLeise = "#CCCCCC"
     static let schriftSehrLeise = "#989898"
     static let rand = "rgba(255,255,255,0.12)"
+    /// Die Ecke der Übergabekarte in ganzen Stufen 0…12 (``Uebergabelauf``).
+    static let uebergabeEcken = (0...12)
+        .map { ".swiftly-uebergabeecke-\($0) { border-radius: \($0)px; }" }
+        .joined(separator: "\n")
     /// **Der Grund jedes Profilzeichens**, das erste Paar aus
     /// `Farben.profiltoene` — die Reihe beginnt auf der Akzent-Hue und geht
     /// in 45-Grad-Schritten weiter. Linux zeigt bisher nur dieses eine Paar;
@@ -112,6 +116,10 @@ enum Stil {
     /// damit die Form rund bleibt, wenn jemand später am Maß dreht — eine
     /// feste Zahl wäre beim nächsten Maß wieder falsch, ohne dass es auffällt.
     static let eckeKapsel = 999
+    /// **Das Abzeichen „Hier weiterschauen"** — Höhe und Abstand zu jeder
+    /// Kante, an der es liegt (links, rechts, unten). Mac `Stil.abzeichenRand`.
+    static let abzeichenHoehe = 40
+    static let abzeichenRand: Int32 = 12
     // MARK: Seitenschub
 
     /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
@@ -120,26 +128,30 @@ enum Stil {
     /// Wie lange ein Bereichswechsel ueberblendet. Dieselbe Dauer, die
     /// `GtkStack` fuer seine Kreuzblende nimmt (200 ms) — sonst saehen die
     /// beiden Wege in denselben Bereich verschieden aus.
-    /// **Der Bereichswechsel blendet ineinander, nicht gleichzeitig.**
-    ///
-    /// Der Mac trennt zwei Dauern (`Sources/macOS/Stil.swift:208-210`): das
-    /// Alte geht in 0,20 s (`easeInOut`), das Neue kommt in 0,26 s
-    /// (`easeOut`) mit 0,04 s Vorlauf. Hier stand **eine** Zahl für beides —
-    /// eine gleichzeitige Kreuzblende, bei der die Seite in der Mitte auf
-    /// halber Deckung steht.
-    ///
-    /// **Ohne Skalierung und ohne Unschärfe**, und das ist derselbe Schluss
-    /// wie dort: die Vorschrift lässt das Eingehende von 92 % wachsen, und in
-    /// einem breiten Fenster verschiebt schon ein Prozent an der Kante acht
-    /// Punkte. Der Mac ersetzt sie durch 0,8 Punkt Unschärfe — die GTK nicht
-    /// lebend zeichnen kann (E19, dieselbe Grenze wie beim Glas). Bleibt die
-    /// Blende, und die trägt die Aussage allein.
-    static let zeitBlendeHinaus = 0.20
-    static let zeitBlendeHerein = 0.26
-    static let zeitBlendeVorlauf = 0.04
+    /// **Der Seitenwechsel blendet nicht über** — erst geht die alte Seite
+    /// (kurz, `easeIn`), danach kommt die neue (`easeOut`), nie beide
+    /// zugleich. Bis 27.09.2026 standen hier 0,20 s hinaus und 0,26 s herein
+    /// ab 0,04 s: eine Überblendung, bei der zwei halbe Seiten übereinander
+    /// lagen. Die Zahlen gelten jetzt für Mac, Linux und Windows und stehen
+    /// deshalb im Paket (`Blendzeiten`). Nur Deckkraft — keine Skalierung,
+    /// keine Unschärfe.
+    static let zeitBlendeHinaus = Blendzeiten.seiteHinaus
+    static let zeitBlendeHerein = Blendzeiten.seiteHerein
+    /// Was bei reduzierter Bewegung an die Stelle jeder Blende tritt: 0,14 s
+    /// linear, wie `Stil.linearReduziert` auf dem Mac
+    /// (`Sources/macOS/Stil.swift:104`).
+    static let zeitReduziert = 0.14
     /// Die Kreuzblende des Reiterstapels — dort gibt es nur **eine** Dauer,
     /// weil `GtkStack` keine zwei kennt.
     static let zeitBlende = 0.2
+    /// Der Beleg „Direct Play" blendet hinten in der Angabenzeile ein —
+    /// nur Deckkraft, 0,2 s. Er rückt nichts, also braucht er keine Kurve.
+    static let zeitBeleg = 0.2
+    /// **Der Schwebezustand** — 0,12 s `easeOut`, Mac `Stil.zeitSchweben`
+    /// (BRAND 5). Ein Wert für jede Stelle, an der der Zeiger etwas zeigt
+    /// oder ändert: im Stilblatt als ``schweben``, im Code über ``blenden``.
+    static let zeitSchweben = 0.12
+    static let schweben = "\(Int(zeitSchweben * 1000))ms ease-out"
     /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
     /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
     /// von einem Rechteck, das vorbeischiebt.
@@ -291,6 +303,16 @@ enum Stil {
                          "Noto Sans", "DejaVu Sans", sans-serif;
         }
 
+        /* **Unter dem Zeiger blendet alles, nichts springt** (`zeitSchweben`).
+           Einmal hier fuer jeden Knopf und was in ihm steht — Reiter der
+           Seitenleiste, Chips, Neben- und Aktionsknoepfe, Kacheln. Eine Regel
+           weiter unten mit eigenem `transition` gilt vor dieser. */
+        button, button > *, button image, button label {
+            transition: background-color \(schweben), color \(schweben),
+                        border-color \(schweben), box-shadow \(schweben),
+                        opacity \(schweben), transform \(schweben);
+        }
+
         window, .background, stack {
             background-color: \(grund);
             color: \(schrift);
@@ -325,9 +347,19 @@ enum Stil {
         .swiftly-titel       { font-size: \(titel)px; font-weight: \(titelGewicht); letter-spacing: -0.31px; }
         .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; letter-spacing: -0.24px; }
         .swiftly-listentitel { font-size: \(listentitel)px; font-weight: 600; }
+        /* Der Discord-Hinweis (Mac `Discordhinweis`): erhoeht, Haarlinie,
+           Ecke der Flaeche, 16 innen. Kein Schatten — nirgends (BRAND 4). */
+        .swiftly-discordkarte {
+            background-color: \(erhoeht);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFlaeche)px;
+            padding: 16px;
+        }
         .swiftly-koerper     { font-size: \(koerper)px; }
         .swiftly-kacheltitel { font-size: \(kachelTitel)px; font-weight: 500; }
-        .swiftly-zweitzeile  { font-size: \(zweitzeile)px; }
+        /* Ziffern gleich breit (iOS `Kachel`: `.monospacedDigit()`), damit „noch
+           12 Min." beim Nachladen nicht springt. */
+        .swiftly-zweitzeile  { font-size: \(zweitzeile)px; font-feature-settings: "tnum"; }
         /* Seitenleistenrubrik (Mac 984514f2): 11 Semifett in `schriftSehrLeise`,
            **keine Versalien und keine Sperrung** — gesperrt wird nur, was in
            Versalien steht, und die fallen weg. */
@@ -540,6 +572,62 @@ enum Stil {
         /* Dieselbe Blende wie die Steuerung (`.swiftly-steuerung`). */
         .swiftly-angebotblende { transition: opacity 180ms ease-out; }
 
+        /* **Die Karte der nächsten Folge** (Variante C, iOS
+           `Folgenkartenansicht`, Maße `Folgenkarte.iPhone`): herein von
+           rechts um 40 aus 94 %, hinaus schneller. Die Kurve ersetzt die
+           kritisch gedämpfte Feder ω 9 (≈ 0,5 s bis zur Ruhe). */
+        .swiftly-folgenkarte {
+            transition: opacity 260ms ease-out,
+                        transform 480ms cubic-bezier(0.2, 0.9, 0.3, 1);
+        }
+        .swiftly-folgenkarte.swiftly-folgenkarte-weg {
+            opacity: 0;
+            transform: translateX(40px) scale(0.94);
+            transition: opacity 200ms ease-in,
+                        transform 320ms cubic-bezier(0.4, 0, 0.6, 1);
+        }
+        button.swiftly-kartenbild {
+            padding: 0;
+            border: none;
+            min-width: 0;
+            min-height: 0;
+            border-radius: 12px;
+            background-color: #000000;
+            background-image: none;
+            box-shadow: 0 14px 34px rgba(0,0,0,0.6);
+            transition: transform 150ms ease-out;
+        }
+        button.swiftly-kartenbild:hover { transform: scale(1.02); }
+        button.swiftly-kartenbild:active { transform: scale(0.97); }
+        /* Das runde X: 24 rund auf `flaeche` 85 %, 6 von der Ecke. */
+        button.swiftly-kartenzu {
+            min-width: 24px;
+            min-height: 24px;
+            padding: 0;
+            margin: 6px;
+            border: none;
+            border-radius: \(eckeKapsel)px;
+            background-color: rgba(38,38,38,0.85);
+            background-image: none;
+            box-shadow: none;
+        }
+        button.swiftly-kartenzu:hover { background-color: rgba(64,64,64,0.92); }
+        .swiftly-kartenklein { font-size: 12px; font-weight: 600; color: \(schriftSehrLeise); }
+        .swiftly-kartentitel { font-size: 17px; font-weight: 600; color: \(schrift); }
+        .swiftly-tnum { font-feature-settings: "tnum"; }
+        /* Unter der Karte: abgedunkelt wie die offene Steuerung (0,42) — bei
+           offener Steuerung nicht doppelt —, dazu der Verlauf unten rechts
+           (`Kartenschleier`: Schwarz 78 % bis 0 bei 70 %). */
+        .swiftly-kartenschleier {
+            background-color: rgba(0,0,0,0.42);
+            transition: background-color 180ms ease-out;
+        }
+        .swiftly-kartenschleier.swiftly-kartenschleier-hell { background-color: transparent; }
+        .swiftly-kartenverlauf {
+            background-image: radial-gradient(ellipse farthest-corner at 88% 92%,
+                rgba(0,0,0,0.78) 0%, rgba(0,0,0,0) 70%);
+        }
+
         button.swiftly-profil {
             min-height: 40px;
             padding: 0 10px;
@@ -638,6 +726,8 @@ enum Stil {
         .swiftly-listenpfeil:hover { background-color: rgba(255,255,255,0.06); }
         /* Der Haken auf dem Folgenbild: 20 rund, dunkler Grund, 6 Abstand
            zur Ecke — die Masse des Macs (`SerienView.swift:656`). */
+        /* Gesehen: nur dunkler (iOS `Gesehenhaken`, `colorMultiply` 0,45). */
+        picture.swiftly-abgedunkelt { filter: brightness(0.45); }
         .swiftly-folgenhaken {
             color: \(schrift);
             background-color: rgba(16,16,16,0.72);
@@ -737,7 +827,7 @@ enum Stil {
         .swiftly-plakat {
             background-color: \(flaeche);
             border-radius: \(eckeKachel)px;
-            transition: transform 120ms ease-out;
+            transition: transform \(schweben);
         }
         button.swiftly-kachel { padding: 0; background-color: transparent; }
         button.swiftly-kachel:hover .swiftly-plakat { transform: scale(1.04); }
@@ -752,7 +842,7 @@ enum Stil {
             border: none; box-shadow: none; padding: 0; min-height: 0;
         }
         button.swiftly-titelwahl:hover, button.swiftly-titelwahl:active { background-color: transparent; }
-        button.swiftly-titelwahl image { color: \(schriftLeise); transition: color 120ms ease-out; }
+        button.swiftly-titelwahl image { color: \(schriftLeise); transition: color \(schweben); }
         button.swiftly-titelwahl:hover image,
         button.swiftly-titelwahl.swiftly-aktiv image { color: \(schrift); }
         button.swiftly-titelwahl:active { opacity: 0.85; transform: scale(0.97); }
@@ -763,7 +853,7 @@ enum Stil {
             border: none; box-shadow: none; padding: 0; min-height: 0;
         }
         button.swiftly-sammlungskopf:hover { background-color: transparent; }
-        button.swiftly-sammlungskopf image { color: \(schriftSehrLeise); transition: color 120ms ease-out; }
+        button.swiftly-sammlungskopf image { color: \(schriftSehrLeise); transition: color \(schweben); }
         button.swiftly-sammlungskopf:hover image { color: \(schrift); }
         button.swiftly-sammlungskopf:active { opacity: 0.85; transform: scale(0.97); }
 
@@ -779,7 +869,12 @@ enum Stil {
             background-color: \(flaeche);
             border: none;
         }
-        button.swiftly-pfeil { transition: opacity 140ms ease-out; }
+        button.swiftly-pfeil {
+            opacity: 0;
+            transition: opacity \(Int(Blendzeiten.pfeile * 1000))ms ease-in-out,
+                        background-color \(Int(Blendzeiten.pfeile * 1000))ms ease-in-out;
+        }
+        button.swiftly-pfeil.swiftly-da { opacity: 1; }
         button.swiftly-pfeil image { color: \(schrift); }
         button.swiftly-pfeil:hover { background-color: #333333; }
 
@@ -791,7 +886,7 @@ enum Stil {
             padding: 0;
             border: none;
         }
-        flowboxchild:selected, flowboxchild:focus { outline: none; box-shadow: none; }
+        flowboxchild:selected, flowboxchild:focus:not(:focus-visible) { outline: none; box-shadow: none; }
 
         /* Das Benutzerbild ist rund. 26 Punkt, wie auf dem Mac. */
         .swiftly-profilbild {
@@ -933,6 +1028,28 @@ enum Stil {
            Der Ton kommt aus ``Tonblatt`` und wechselt mit dem Titel; hier
            steht nur, was ohne Ton gilt. */
         .swiftly-seitenton { background-color: \(grund); }
+        /* **Über Bildfarbe durchsichtig statt `flaeche`** (1.0.5,
+           `Stil.flaecheDurchsichtig`, iPhone und Mac): Nebenknöpfe und Chips
+           der Detailseite weiß 8 %, aktiv ändert die Fläche nicht — den
+           Zustand trägt das Zeichen. Ein festes Grau stand auf der
+           gefärbten Seite wie ein fremder Block. */
+        /* Neu gerechnet blendet die Farbe ein (Tonlage, `Tonblatt.einblenden`);
+           schon gemerkt steht sie im ersten Bild. */
+        .swiftly-bildton button.swiftly-neben,
+        .swiftly-bildton button.swiftly-neben.swiftly-aktiv,
+        .swiftly-bildton button.swiftly-chip,
+        .swiftly-bildton button.swiftly-chip.swiftly-aktiv { background-color: rgba(255,255,255,0.08); }
+        /* **Auch aktiv dieselbe Schwebefarbe.** Ohne die beiden `.aktiv`-Zeilen
+           gewann `button.swiftly-neben.swiftly-aktiv:hover` (#333333, gleich
+           spezifisch, weiter unten) — die Merkliste leuchtete unter dem
+           Zeiger anders als Laden und „…". Den Zustand trägt das Zeichen. */
+        .swiftly-bildton button.swiftly-neben:hover,
+        .swiftly-bildton button.swiftly-neben.swiftly-aktiv:hover,
+        .swiftly-bildton button.swiftly-chip:hover,
+        .swiftly-bildton button.swiftly-chip.swiftly-aktiv:hover { background-color: rgba(255,255,255,0.14); }
+        /* Die Staffelliste deckend, im Ton der Seite (``Tonblatt``), ohne
+           Ton `grund` plus Weiß 8 %. */
+        .swiftly-bildton .swiftly-staffelliste { background-color: #232323; }
         /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
            Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
         .swiftly-blank { background-color: transparent; background-image: none; }
@@ -1017,18 +1134,19 @@ enum Stil {
         .swiftly-folgenzeile {
             background-color: transparent;
             padding: 12px \(randAbstand)px;
-            transition: background-color 120ms ease-out;
         }
-        /* Weiss zu vier Prozent — der Wert vom Mac. */
-        .swiftly-folgenzeile.swiftly-schwebt { background-color: rgba(255,255,255,0.04); }
+        /* **Unter dem Zeiger waechst das Standbild, die Zeile leuchtet
+           nicht** — wie jede Kachel (`scale(1.04)`, 120 ms, `zeitSchweben`).
+           Der volle helle Streifen war fuer eine Liste zu laut; am Mac
+           genauso geaendert. */
+        .swiftly-folgenzeile .swiftly-plakat { transition: transform \(schweben); }
+        .swiftly-folgenzeile.swiftly-schwebt .swiftly-plakat { transform: scale(1.04); }
         /* **Die laufende Folge in der Player-Folgenebene** — Weiss zu acht
            Prozent, wörtlich `.background(Color.white.opacity(0.08))` vom Mac
            (`PlayerEbenen.swift:356`). */
         .swiftly-folgenzeile.swiftly-aktiv { background-color: rgba(255,255,255,0.08); }
-        /* **Eine Haarlinie zwischen den Folgen** — der Mac hat sie
-           (`SerienView.swift:217`). Ohne sie fliessen zwei Zeilen mit langer
-           Beschreibung ineinander. */
-        .swiftly-folgenzeile { border-bottom: 1px solid \(linie); }
+        /* Keine Haarlinie zwischen den Folgen — das iPhone trennt sie nur
+           durch Luft, der Mac jetzt auch. */
         /* Der Abspielkreis, der beim Schweben ueber dem Bild erscheint. */
         .swiftly-spielkreis {
             background-color: rgba(0,0,0,0.55);
@@ -1037,16 +1155,6 @@ enum Stil {
             min-height: 34px;
         }
         .swiftly-spielkreis image { color: \(schrift); }
-        /* Rund, nicht abgerundet-eckig: der Mac nimmt hier den kleinen
-           Aktionsknopf, kein Nebenknopf der Knopfreihe. */
-        button.swiftly-hakenknopf {
-            border-radius: 17px;
-            padding: 0;
-            min-width: 34px;
-            min-height: 34px;
-            background-color: rgba(255,255,255,0.14);
-        }
-        button.swiftly-hakenknopf:hover { background-color: rgba(255,255,255,0.22); }
 
         .swiftly-kopfbild { border-radius: 42px; }
 
@@ -1184,6 +1292,42 @@ enum Stil {
             box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
         }
         .swiftly-kontopunkt { border-radius: 3px; background-color: \(akzent); }
+        /* **Der Kontowechsel als Bewegung** (Entwurf D, ``Kontoflug``): das
+           fliegende Bild rund und ohne Ring, der Ring ploppt erst bei der
+           Landung am Kreis in der Leiste (0,8 s, wie am iPhone). */
+        /* **Die Übergabe als Karte** (``Uebergabelauf``): Grund über der
+           Seite, Schwarz wie der Grund des Players, die Karte in `flaeche`
+           mit ihrer Ecke (die Stufe setzt der Bildtakt), darunter Titel und
+           Folge wie am Mac (17 halbfett, 13 leise) und die Ladelinie. */
+        .swiftly-uebergabegrund { background-color: \(grund); }
+        .swiftly-uebergabeschwarz { background-color: #000000; }
+        .swiftly-uebergabekarte { background-color: \(flaeche); }
+        .swiftly-uebergabetitel { font-size: 17px; font-weight: 600; color: \(schrift); }
+        .swiftly-uebergabeunter { font-size: 13px; color: \(schriftLeise); }
+        .swiftly-uebergabelinie { background-color: \(rand); border-radius: 1px; }
+        .swiftly-uebergabebalken { background-color: \(akzent); border-radius: 1px; }
+        \(uebergabeEcken)
+        .swiftly-kontoflug {
+            border-radius: \(eckeKapsel)px;
+            background-image: \(profilverlauf);
+        }
+        @keyframes swiftly-ringpop {
+            0%   { box-shadow: 0 0 0 1.5px \(akzent); }
+            35%  { box-shadow: 0 0 0 5px alpha(\(akzent), 0.55); }
+            100% { box-shadow: 0 0 0 1.5px \(akzent); }
+        }
+        .swiftly-ringpop { animation: swiftly-ringpop 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+        /* Die Reihen der Startseite nach dem Wechsel (`Reihenauftritt`):
+           Deckkraft linear in 0,22 s, von 14 tiefer und 96 % mit einem
+           kleinen Nachfedern. */
+        .swiftly-reihenauftritt {
+            transition: opacity \(Int(Kontowechselkurve.reihenBlende * 1000))ms linear,
+                        transform 520ms cubic-bezier(0.25, 1.25, 0.4, 1.0);
+        }
+        .swiftly-reihenauftritt.swiftly-reihe-vor {
+            opacity: 0;
+            transform: translateY(\(Int(Kontowechselkurve.reihenVersatz))px) scale(\(Kontowechselkurve.reihenMass));
+        }
         button.swiftly-kontoknopf {
             background: none;
             border: none;
@@ -1216,22 +1360,79 @@ enum Stil {
         }
 
         /* Die Hinweiszeile: drei Sekunden, dann weg. */
-        /* Die Übernahmezeile: 40 hoch, Akzent zu 6 % mit Rand zu 18 %,
-           schwebend 12 und 35 — die Werte vom Mac. */
+        /* **Das Abzeichen in der Form des Fernsehers** (tvOS
+           `AbzeichenStil`, Mac `Angebotszeile`): eine Kapsel, Akzent zu 18 %
+           ueber `grund`, kein Rand; Zeichen und Titel im Akzent. Schwebend
+           legt sich Weiss zu 6 % darueber (BRAND: Schweben ist Weiss).
+           Hoehe `abzeichenHoehe`, der Abstand zu den Kanten steht als
+           `abzeichenRand` an der Zeile. */
         button.swiftly-uebernahme {
-            min-height: 40px;
-            padding: 0 10px;
-            border-radius: \(ecke)px;
-            background-color: rgba(80,213,218,0.06);
-            border: 1px solid rgba(80,213,218,0.18);
-            transition: background-color 120ms ease-out, border-color 120ms ease-out;
+            min-height: \(abzeichenHoehe)px;
+            padding: 0 14px;
+            border-radius: \(eckeKapsel)px;
+            border: none;
+            box-shadow: none;
+            background-color: \(grund);
+            background-image: linear-gradient(alpha(\(akzent), 0.18), alpha(\(akzent), 0.18));
+            transition: background-image \(schweben);
         }
         button.swiftly-uebernahme:hover {
-            background-color: rgba(80,213,218,0.12);
-            border-color: rgba(80,213,218,0.35);
+            background-image: linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06)),
+                              linear-gradient(alpha(\(akzent), 0.18), alpha(\(akzent), 0.18));
         }
-        button.swiftly-uebernahme image { color: \(akzent); }
+        button.swiftly-uebernahme image,
+        button.swiftly-uebernahme .swiftly-kacheltitel { color: \(akzent); }
         .swiftly-uebernahmezeile { font-size: 11px; color: \(schriftSehrLeise); }
+
+        /* **Gemeinsam schauen** — Werte aus `Gemeinsamansichten.swift` (iOS).
+           Der Zähler am Abzeichen: 11 halbfett, Ziffern gleich breit,
+           `aufAkzent` auf dem Akzent, mindestens 16 × 16, Kapsel. */
+        .swiftly-zaehler {
+            font-size: 11px;
+            font-weight: 600;
+            font-feature-settings: "tnum";
+            color: \(aufAkzent);
+            background-color: \(akzent);
+            border-radius: \(eckeKapsel)px;
+            min-width: 16px;
+            min-height: 16px;
+            padding: 0 4px;
+        }
+        .swiftly-akzentschrift { color: \(akzent); }
+        /* Eine Zeile der Auswahl „Läuft gerade": 58 hoch wie im Blatt. */
+        button.swiftly-handlung.swiftly-angebotszeile { min-height: 58px; padding: 0 14px; }
+        /* Der Hinweis oben im Player: Kapsel auf `flaeche`, 44 hoch, 16 innen. */
+        .swiftly-gruppenereignis {
+            background-color: \(flaeche);
+            border-radius: \(eckeKapsel)px;
+            min-height: 44px;
+            padding: 0 16px;
+        }
+        .swiftly-gruppenereignis label { color: \(schrift); }
+        /* Die Gruppe in der Metazeile: der Name halbfett im Akzent. */
+        .swiftly-spielerzeile.swiftly-gruppenname { color: \(akzent); font-weight: 600; }
+        /* Spalte „Gemeinsam": Namen sind Auskunft, kein Knopf; der Ausgang
+           steht im Akzent. */
+        .swiftly-teilnehmer { padding: 8px 10px; }
+        .swiftly-teilnehmer label { font-size: \(listentitel)px; color: \(schriftLeise); }
+        button.swiftly-ebenenzeile.swiftly-verlassen label,
+        button.swiftly-ebenenzeile.swiftly-verlassen image { color: \(akzent); }
+        /* „Filmabend verlassen · Wieder beitreten": Kapsel auf `flaeche`,
+           18 links, 12 rechts, Text 13, Knopf 13 halbfett im Akzent. */
+        .swiftly-rueckweg {
+            background-color: \(flaeche);
+            border: 1px solid \(rand);
+            border-radius: \(eckeKapsel)px;
+            padding: 0 12px 0 18px;
+        }
+        .swiftly-rueckwegtext { font-size: 13px; color: \(schrift); }
+        button.swiftly-rueckwegknopf {
+            min-height: 44px;
+            padding: 0 4px;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-rueckwegknopf label { font-size: 13px; font-weight: 600; color: \(akzent); }
 
         .swiftly-akzentzeichen { color: \(akzent); }
         .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
@@ -1463,6 +1664,12 @@ enum Stil {
         /* Spaltentitel einer Ebene — 18 fett, weiss, wörtlich `Wahlspalte`. */
         /* 17 Semifett mit ihrer Sperrung statt 18 Bold (984514f2). */
         .swiftly-spaltentitel { font-size: \(rubrikGross)px; font-weight: 600; letter-spacing: -0.14px; color: \(schrift); }
+        /* Verzoegerungszeile (Mac: `Verzoegerungszeile`): Beschriftung
+           `Stil.klein` in `schriftSehrLeise`, der Wert `Stil.koerper` mit
+           gleich breiten Ziffern, bei null leise. */
+        .swiftly-verzugstitel { font-size: 12px; color: \(schriftSehrLeise); }
+        .swiftly-verzugswert { font-size: \(koerper)px; font-feature-settings: "tnum"; color: \(schrift); }
+        .swiftly-verzugswert.swiftly-null { color: \(schriftLeise); }
         /* Eine Zeile einer Ebenenspalte — leise Schrift, gewaehlt weiss
            halbfett (Klasse `swiftly-gewaehlt` am Knopf),
            mit einer leisen Flaeche beim Ueberfahren, die es auf iOS ohne
@@ -1521,6 +1728,22 @@ enum Stil {
         /* **Ecke 16, kein Schatten** — wie `Handlungsliste` und `Wahlknopf`
            auf dem Mac seit dem 22.09. (cb153e7f): Schatten gibt es nirgends,
            die Tafel trennt sich durch Fläche und die eine Kante in `rand`. */
+        /* **Das Kachelmenü mit Vorschau** (iOS `Kachelvorschau`): oben das
+           Bild ohne Rand und ohne Innenabstand, bündig mit der Tafel, darunter
+           Titel 15 halbfett und die Zeile leise mit gleich breiten Ziffern,
+           14 × 12 Innenrand, auf `grund`. */
+        popover.swiftly-mehr.swiftly-kachelmenue > contents { padding: 0 0 4px 0; }
+        .swiftly-kachelvorschau {
+            border-radius: \(eckeFlaeche)px \(eckeFlaeche)px 0 0;
+            background-color: \(flaeche);
+        }
+        .swiftly-kachelvorschautext { padding: 12px 14px; background-color: \(grund); }
+        .swiftly-kachelvorschautitel { font-size: \(listentitel)px; font-weight: 600; color: \(schrift); }
+        .swiftly-kachelvorschauzeile {
+            font-size: \(zweitzeile)px;
+            font-feature-settings: "tnum";
+            color: \(schriftLeise);
+        }
         popover.swiftly-mehr > contents {
             background-color: \(erhoeht);
             border: 1px solid \(rand);
@@ -1591,7 +1814,7 @@ enum Stil {
             border-radius: \(eckeFeld)px;
             color: \(schrift); font-size: \(koerper)px; font-weight: 500;
         }
-        button.swiftly-dlzeile > * { opacity: 1; transition: opacity 120ms ease-out; }
+        button.swiftly-dlzeile > * { opacity: 1; transition: opacity \(schweben); }
         button.swiftly-dlzeile:active > * { opacity: 0.6; transition: none; }
         button.swiftly-dlzeile:focus-visible { background-color: rgba(255,255,255,0.06); }
         button.swiftly-dlzeile.swiftly-bearbeiten:hover { background-color: \(flaeche); }
@@ -1611,6 +1834,20 @@ enum Stil {
             border: none;
         }
         scrollbar slider:hover { background-color: rgba(255,255,255,0.36); }
+
+        /* **Der Fokusring — ganz am Ende, damit ihn keine Knopfklasse
+           wieder abschaltet** (UX-Audit 27.09.). Der Reset oben nimmt jedem
+           eigenen Knopf Rahmen und Schatten, und mehrere Klassen setzen
+           `outline: none` ausdruecklich; wer mit Tab durch die App ging, sah
+           deshalb nirgends, wo er stand — im Raster gar nicht, dort stand
+           `flowboxchild:focus` auf nichts. `:focus-visible` heisst: nur bei
+           Tastatur, nie nach einem Mausklick. Akzent in 2 Punkt mit 2 Luft,
+           wie der Fokusring auf dem Mac. */
+        button:focus-visible, flowboxchild:focus-visible {
+            outline: 2px solid \(akzent);
+            outline-offset: 2px;
+        }
+        flowboxchild:focus-visible { border-radius: \(eckeKachel)px; }
         """
     }
 

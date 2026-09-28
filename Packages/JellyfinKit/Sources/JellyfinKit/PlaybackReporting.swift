@@ -8,8 +8,16 @@ import Foundation
 public extension JellyfinClient {
 
     /// Jellyfin rechnet in 100-Nanosekunden-Ticks.
+    ///
+    /// **Ohne Absturz bei NaN, Unendlich oder Unsinn.** `Int64(Double)`
+    /// bricht die App ab, sobald der Wert keine Zahl ist oder nicht passt.
+    /// Die Stelle meldet, was der Player sagt — und ein Player, der gerade
+    /// oeffnet oder schliesst, sagt nicht immer eine Zahl. Negatives zaehlt
+    /// als Anfang, wie bei ``Sprungziel``.
     static func ticks(fromSeconds seconds: Double) -> Int64 {
-        Int64(seconds * 10_000_000)
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        // Knapp unter Int64.max / 10^7 — ueber 29 000 Jahre.
+        return Int64(min(seconds, 900_000_000_000) * 10_000_000)
     }
 
     static func seconds(fromTicks ticks: Int64) -> Double {

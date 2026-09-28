@@ -1,0 +1,162 @@
+From 6851250ffbc04bffe504e34b3db05603437fff01 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Mon, 28 Sep 2026 19:15:09 +0200
+Subject: [PATCH] avsamplebuffer: report only from a running timebase, skip the
+ start-up lag
+
+The synchronizer's timebase does not advance the moment its rate is set;
+the renderer first brings its audio path up (about 200 ms on an iPhone,
+5.1 over the built-in speaker). The immediate report taken at that moment
+was an estimate, and the first periodic report then moved the whole clock
+by the lag, which stalled the picture once.
+
+After starting or resuming, poll the timebase until it really advances. If
+it came up later than planned, move it forward by the lag so the position
+matches the date the core planned, then report from the running timebase
+with the same formula as the periodic reports. Both steps are logged.
+---
+ modules/audio_output/apple/avsamplebuffer.m | 94 ++++++++++++++++-----
+ 1 file changed, 75 insertions(+), 19 deletions(-)
+
+diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
+index e1b4059f68..bb72d63d70 100644
+--- a/modules/audio_output/apple/avsamplebuffer.m
++++ b/modules/audio_output/apple/avsamplebuffer.m
+@@ -246,40 +246,93 @@ - (void)flush
+     _lastDate = VLC_TICK_INVALID;
+ }
+ 
+-/* Report the synchronizer's current position right away, instead of waiting
+- * for the periodic observer. Until the first report the clock runs on its
+- * monotonic fallback reference; the later switch to the audio reference made
+- * video pictures late right after starting or resuming.
++/* The synchronizer's timebase does not move the moment its rate is set: the
++ * renderer first has to bring its audio path up. Measured on an iPhone, 5.1
++ * over the built-in speaker: about 200 ms. A report taken at that moment
++ * (position 0, "now") is an estimate, and the first periodic report one
++ * second later moved the whole clock by those 200 ms -- a visible stall of
++ * the picture.
++ *
++ * So after starting or resuming, watch the timebase until it really
++ * advances. If it came up later than planned, move it forward by the lag:
++ * the renderer skips that bit of audio and the position matches the date the
++ * core planned for it, so the clock does not jump. Then report, taken from
++ * the running timebase with the same formula as the periodic reports.
++ *
++ * (refSystem, refPos) is the plan: position refPos is due at refSystem.
+  * Must be called with _bufferLock held. */
+-- (void)reportTimingSoonLocked
++- (void)watchTimebaseLocked:(vlc_tick_t)refSystem position:(vlc_tick_t)refPos
+ {
+     vlc_mutex_assert(&_bufferLock);
+     const uint64_t generation = _timelineGeneration;
++    [self pollTimebase:generation refSystem:refSystem refPos:refPos
++                 align:YES attempt:0];
++}
++
++- (void)pollTimebase:(uint64_t)generation refSystem:(vlc_tick_t)refSystem
++              refPos:(vlc_tick_t)refPos align:(BOOL)align
++             attempt:(unsigned)attempt
++{
+     __weak typeof(self) weakSelf = self;
+-    dispatch_async(_timeQueue, ^{
+-        [weakSelf reportTimingForGeneration:generation];
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, attempt ? 5 * NSEC_PER_MSEC : 0),
++                   _timeQueue, ^{
++        [weakSelf timebaseTick:generation refSystem:refSystem refPos:refPos
++                         align:align attempt:attempt];
+     });
+ }
+ 
+-- (void)reportTimingForGeneration:(uint64_t)generation
++- (void)timebaseTick:(uint64_t)generation refSystem:(vlc_tick_t)refSystem
++              refPos:(vlc_tick_t)refPos align:(BOOL)align
++             attempt:(unsigned)attempt
+ {
+     vlc_mutex_lock(&_bufferLock);
+     const BOOL current = generation == _timelineGeneration && !_stopped
+                       && !_paused && _dateReached
+                       && _firstPts != VLC_TICK_INVALID;
+-    const vlc_tick_t firstPts = _firstPts;
+-    AVSampleBufferRenderSynchronizer *sync = _sync;
+-    vlc_mutex_unlock(&_bufferLock);
+     if (!current)
++    {
++        vlc_mutex_unlock(&_bufferLock);
+         return;
+-
+-    const CMTime time = sync.currentTime;
++    }
++    const vlc_tick_t firstPts = _firstPts;
++    const CMTime time = _sync.currentTime;
+     const vlc_tick_t system_now = vlc_tick_now();
+     if (!CMTIME_IS_NUMERIC(time))
++    {
++        vlc_mutex_unlock(&_bufferLock);
+         return;
+-    const vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + firstPts;
+-    msg_Dbg(_aout, "timing report (immediate): system %" PRId64 " pts %" PRId64
+-            " position %" PRId64 " us", system_now, pos_ticks, pos_ticks - firstPts);
++    }
++    const vlc_tick_t pos = [VLCAVSample CMTimeTotick:time];
++
++    /* Not running yet: look again shortly, for at most one second. The
++     * periodic observer takes over after that. */
++    if (pos <= refPos + VLC_TICK_FROM_MS(1) && attempt < 200)
++    {
++        vlc_mutex_unlock(&_bufferLock);
++        [self pollTimebase:generation refSystem:refSystem refPos:refPos
++                     align:align attempt:attempt + 1];
++        return;
++    }
++
++    const vlc_tick_t lag = (system_now - refSystem) - (pos - refPos);
++    if (align && lag > VLC_TICK_FROM_MS(15))
++    {
++        /* Came up late: move the timeline forward by the lag. */
++        [_sync setRate:1.0f time:CMTimeAdd(time, CMTimeMake(lag, CLOCK_FREQ))];
++        vlc_mutex_unlock(&_bufferLock);
++        msg_Dbg(_aout, "timebase came up %" PRId64 " us late, skipping ahead",
++                lag);
++        /* Report from the timebase once it runs from the new position. */
++        [self pollTimebase:generation refSystem:system_now
++                    refPos:pos + lag align:NO attempt:1];
++        return;
++    }
++    vlc_mutex_unlock(&_bufferLock);
++
++    const vlc_tick_t pos_ticks = pos + firstPts;
++    msg_Dbg(_aout, "timing report (running): system %" PRId64 " pts %" PRId64
++            " position %" PRId64 " us, lag %" PRId64 " us", system_now,
++            pos_ticks, pos, lag);
+     aout_TimingReport(_aout, system_now, pos_ticks);
+ }
+ 
+@@ -295,9 +348,11 @@ - (void)pause:(BOOL)pause date:(vlc_tick_t)date
+      * startNow will pick the rate. Setting 1.0 here would start it early. */
+     if (_ptsSamples >= 0 && _dateReached)
+     {
++        const CMTime before = _sync.currentTime;
+         _sync.rate = pause ? 0.0f : 1.0f;
+-        if (!pause)
+-            [self reportTimingSoonLocked];
++        if (!pause && CMTIME_IS_NUMERIC(before))
++            [self watchTimebaseLocked:vlc_tick_now()
++                             position:[VLCAVSample CMTimeTotick:before]];
+     }
+     vlc_mutex_unlock(&_bufferLock);
+ }
+@@ -342,8 +397,9 @@ - (void)startNow:(vlc_tick_t)delta
+         [weakSelf whenTimeObserved:time];
+     }];
+ 
++    /* Position 0 was due at _firstDate. */
+     if (!_paused)
+-        [self reportTimingSoonLocked];
++        [self watchTimebaseLocked:_firstDate position:0];
+ }
+ 
+ - (void)whenDataReady
+-- 
+2.50.1 (Apple Git-155)
+

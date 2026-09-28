@@ -105,13 +105,25 @@ struct Detailkopf<Knoepfe: View>: View {
                 // Er gehoert zu dem, was neu dazukommt: auf der Startseite
                 // gibt es ihn nicht, dort ist noch kein Plan geholt.
                 if let plan {
-                    Belegzeile(direktplay: plan.isLossless,
-                               hinweis: plan.isLossless ? nil : plan.method.rawValue,
-                               bewertung: nil, freigabe: nil,
-                               belegZuletzt: true)
+                    Belegmarken(direktplay: plan.isLossless,
+                                hinweis: plan.isLossless ? nil : plan.method.rawValue,
+                                belegZuletzt: true)
                         .transition(.opacity)
                 }
             }
+            // **Die Blende haengt am Plan, nicht an der Transaktion des
+            // Aufrufers.**
+            //
+            // `.transition` allein blendet nur, wenn der Plan in einer
+            // animierten Transaktion ankommt. Die Filmseite setzt ihn in
+            // ihrem `withAnimation`; die Serienseite holt ihn seit
+            // fb4ce5a5 (24.09., „ein Einblenden statt mehrerer Stufen")
+            // nach dem gemeinsamen Einblenden ohne Animation — und seitdem
+            // sprang die Direct-Play-Marke dort herein. Hier festgemacht
+            // gilt die Blende fuer jede Seite, die den Kopf traegt, egal
+            // wie sie ihren Plan setzt. Die Marke steht zuletzt in der
+            // Zeile, es verschiebt sich also nichts.
+            .animation(Stil.bewegung(.easeOut(duration: 0.3)), value: plan != nil)
 
             // Die Knopfreihe darf breiter werden als die 1000 des Textes.
             // Deshalb liegt der Deckel am Text und nicht am ganzen Block;
@@ -136,7 +148,7 @@ struct Detailkopf<Knoepfe: View>: View {
 /// zu viel für eine Reihe.
 ///
 /// „Gesehen" ist ganz aus der Reihe heraus und steht in der Handlungstafel —
-/// siehe `gesehenHandlung`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
+/// siehe `Titelhandlung.sehstand`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
 /// Merkliste, Mehr.
 ///
 /// **Ohne Beschriftung ist die Beschriftung Pflicht.** Für VoiceOver ist ein
@@ -164,7 +176,7 @@ struct Zustandsknoepfe: View {
                 Image(systemName: gemerkt ? "bookmark.fill" : "bookmark")
                     .font(Stil.knopf)
             }
-            .buttonStyle(KnopfStil(nurSymbol: true))
+            .buttonStyle(KnopfStil(nurSymbol: true, aktiv: gemerkt))
             .accessibilityLabel(Text("Merkliste"))
             // Gefuelltes gegen leeres Symbol ist der ganze Unterschied —
             // fuer VoiceOver heissen beide „Merkliste".
@@ -173,30 +185,13 @@ struct Zustandsknoepfe: View {
     }
 }
 
-/// „Gesehen" als Eintrag der Handlungstafel statt als Pille.
-///
-/// **Anordnung, kein Verhalten** (VERHALTEN.md F): D6 verlangt, dass Gesehen
-/// sofort umschaltet und der Zustand die Antwort ist — das tut es hier
-/// weiter, nur eine Ebene tiefer. Am Fernseher zaehlt jedes Fokusziel in der
-/// Reihe, und fuenf davon nebeneinander waren zu viele.
-///
-/// Bewusst hier und nicht in `Titelhandlungen`: die Liste dort ist geteilt,
-/// und auf dem Telefon steht Gesehen weiter als eigener Knopf.
-@MainActor
-func gesehenHandlung(model: AppModel, item: Item,
-                     gesehen: Binding<Bool>,
-                     meldung: Binding<String?>) -> Titelhandlung {
-    Titelhandlung(symbol: gesehen.wrappedValue ? "checkmark.circle.fill" : "checkmark.circle",
-                  text: gesehen.wrappedValue ? "Als ungesehen merken" : "Als gesehen merken") {
-        gesehen.wrappedValue.toggle()
-        Task {
-            if let grund = await model.setzeGesehen(item, an: gesehen.wrappedValue) {
-                gesehen.wrappedValue.toggle()
-                meldung.wrappedValue = grund
-            }
-        }
-    }
-}
+// „Gesehen" steht nicht als Pille in der Knopfreihe, sondern in der
+// Handlungstafel — **Anordnung, kein Verhalten** (VERHALTEN.md F): D6 verlangt,
+// dass Gesehen sofort umschaltet und der Zustand die Antwort ist; das tut es
+// dort weiter, nur eine Ebene tiefer. Am Fernseher zaehlt jedes Fokusziel in
+// der Reihe, und fuenf davon nebeneinander waren zu viele. Der Eintrag selbst
+// kommt aus dem gemeinsamen Baustein: `Titelhandlung.sehstand` in
+// `Sources/Shared/Kachelmenue.swift`.
 
 // MARK: - Filmseite
 
@@ -213,18 +208,18 @@ struct DetailView: View {
     @State private var meldung: String?
     /// Der Player liegt im Rahmen — siehe `HauptView`.
     @Environment(\.abspielwunsch) private var abspielen
-    /// **Was neu ist, blendet beim Erscheinen ein — nicht beim Laden.**
+    /// **Alles unter dem Kopf ist beantwortet** — Sammlung, Aehnliches,
+    /// Extras, Besetzung. Gesetzt in derselben animierten Transaktion wie die
+    /// Daten, deshalb blendet es jedes Mal ein, auch wenn die Zwischenspeicher
+    /// schon alles hatten.
     ///
-    /// Vorher hing die Ueberblendung an der Ankunft der Daten. Seit die
-    /// Zwischenspeicher greifen, kommen die aber schon im ersten Durchgang
-    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es etwas
-    /// weich, ab dem zweiten hart. Das war ein Widerspruch in meinem eigenen
-    /// Aufbau — erst instant machen, dann Uebergaenge an Ereignisse haengen,
-    /// die es nicht mehr gibt.
-    ///
-    /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
-    /// schon dastehen oder nicht.
-    @State private var eingeblendet = false
+    /// Vorher hiess das `eingeblendet` und hing am Erscheinen der Seite: die
+    /// Reihen standen dann zwar weich da, aber jede fuer sich, sobald ihre
+    /// Daten kamen, und die Sammlungsreihe als eigener Abruf zuletzt. Noch
+    /// frueher hing die Ueberblendung an der Ankunft der Daten und war ab dem
+    /// zweiten Oeffnen hart — beides ist mit dem gemeinsamen Schalter erledigt.
+    @State private var untenDa = false
+    @State private var sammlungsreihen: [AppModel.Sammlungsreihendaten] = []
     /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
     ///
     /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
@@ -266,41 +261,45 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 kopf
 
-                // Ueber „Aehnliche Filme": die Sammlung ist die naehere
-                // Verwandtschaft. Nur bei Titeln, die in einer stehen.
-                Sammlungsreihe(model: model, titel: item)
-                    .opacity(eingeblendet ? 1 : 0)
+                // **Alles unter dem Kopf kommt auf einmal** — wie am iPhone
+                // (`untenDa` in `BrowseViews.swift`, 24.09.2026). Sammlung,
+                // Aehnliches, Extras und Besetzung trafen einzeln ein; die
+                // Sammlungsreihe lud sogar selbst und kam als letzte. Jetzt
+                // wartet die Seite auf alle und blendet sie gemeinsam ein.
+                if untenDa {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Ueber „Aehnliche Filme": die Sammlung ist die naehere
+                        // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                        Sammlungsreihe(model: model, titel: item, reihen: sammlungsreihen)
 
-                if !aehnliche.isEmpty {
-                    reihenabschnitt {
-                        Reihentitel(text: "Ähnliche Filme")
-                    } inhalt: {
-                        Titelstreifen(model: model, items: aehnliche)
-                    }
-                    .opacity(eingeblendet ? 1 : 0)
-                    .transition(.opacity)
-                }
-                if !extras.isEmpty {
-                    // **Der Trailer wohnt hier**, nicht als sechste Pille.
-                    // Ein Trailer ist etwas zum Abspielen, keine Auskunft —
-                    // ein Regalplatz passt besser als eine Zeile in der
-                    // Handlungstafel.
-                    reihenabschnitt {
-                        Reihentitel(text: "Extras")
-                    } inhalt: {
-                        Titelstreifen(model: model, items: extras) { extra in
-                            starte(extra, ab: 0)
+                        if !aehnliche.isEmpty {
+                            reihenabschnitt {
+                                Reihentitel(text: "Ähnliche Filme")
+                            } inhalt: {
+                                Titelstreifen(model: model, items: aehnliche)
+                            }
+                        }
+                        if !extras.isEmpty {
+                            // **Der Trailer wohnt hier**, nicht als sechste Pille.
+                            // Ein Trailer ist etwas zum Abspielen, keine Auskunft —
+                            // ein Regalplatz passt besser als eine Zeile in der
+                            // Handlungstafel.
+                            reihenabschnitt {
+                                Reihentitel(text: "Extras")
+                            } inhalt: {
+                                Titelstreifen(model: model, items: extras) { extra in
+                                    starte(extra, ab: 0)
+                                }
+                            }
+                        }
+                        if !darsteller.isEmpty {
+                            reihenabschnitt {
+                                Reihentitel(text: "Besetzung")
+                            } inhalt: {
+                                Besetzungsstreifen(model: model, leute: darsteller, herkunft: item.name)
+                            }
                         }
                     }
-                    .opacity(eingeblendet ? 1 : 0)
-                }
-                if !darsteller.isEmpty {
-                    reihenabschnitt {
-                        Reihentitel(text: "Besetzung")
-                    } inhalt: {
-                        Besetzungsstreifen(model: model, leute: darsteller, herkunft: item.name)
-                    }
-                    .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
                 }
             }
@@ -354,10 +353,14 @@ struct DetailView: View {
         // Zuweisung holt ihn zurueck.
         .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
             guard geschlossen, vorher == false else { return }
-            switch zuletztFokus {
-            case .hauptknopf: amHauptknopf = true
-            case .mehrknopf: amMehrknopf = true
-            }
+            fokusZurueck()
+        }
+        // **Dasselbe nach „Gemeinsam schauen".** Die Tafel liegt im Rahmen
+        // ueber allem und sperrt die Seite wie der Player. Geht sie zu, ohne
+        // dass ein Player aufgeht, steht der Fokus wieder am Ausloeser.
+        .onChange(of: Gemeinsammodell.geteilt.anlegenFuer == nil) { vorher, zu in
+            guard zu, vorher == false, abspielen.wrappedValue == nil else { return }
+            fokusZurueck()
         }
         .disabled(mehrOffen)
         // Unter dem Mehr-Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
@@ -369,7 +372,7 @@ struct DetailView: View {
             Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: mehrOffen)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: mehrOffen)
         .overlay(alignment: .top) {
             if let meldung {
                 Hinweisstreifen(text: meldung) { self.meldung = nil }
@@ -380,12 +383,12 @@ struct DetailView: View {
         // läuft kein zweites Mal. Siehe `AppModel.wiedergabeBeendet`.
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
         .task {
-            withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
             async let frischerTitel = model.item(id: item.id)
             async let planung = model.plan(for: item.id)
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
             async let vorschau = model.trailer(zu: item)
+            async let sammlung = model.sammlungsreihen(zu: item)
             // **Einmal aufblenden, nicht dreimal.**
             //
             // `.transition` allein greift nicht — sie wirkt nur, wenn die
@@ -412,12 +415,15 @@ struct DetailView: View {
             // Abspielen, und dafuer gibt es hier ein Regal.
             var regal = (await extra) ?? []
             if let vorschau = await vorschau { regal.insert(vorschau, at: 0) }
+            let neueSammlungen = await sammlung
 
-            withAnimation(.easeOut(duration: 0.32)) {
+            withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
                 frisch = neuerTitel
                 plan = neuerPlan
                 aehnliche = neueAehnliche
                 extras = regal
+                sammlungsreihen = neueSammlungen
+                untenDa = true
             }
             gemerkt = aktuell.userData?.isFavorite ?? false
             gesehen = aktuell.istGesehen
@@ -438,6 +444,10 @@ struct DetailView: View {
     ///
     /// Jedes davon nennt VoiceOver seinen Namen ausdruecklich — ein
     /// Symbolknopf erbt keine Beschriftung (E8).
+    ///
+    /// **Langer Druck auf den Hauptknopf: das Kachelmenü des Titels** —
+    /// dasselbe wie an seiner Kachel (``Kachelmenue``). Vorher gab es auf der
+    /// Detailseite keins.
     private var kopf: some View {
         Detailkopf(model: model, item: aktuell, plan: plan) {
             HStack(spacing: 24) {
@@ -448,6 +458,7 @@ struct DetailView: View {
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
                     .focused($amHauptknopf)
+                    .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
 
                     // Neu und ausdruecklich im Entwurf: wer schon angefangen
                     // hat, kam sonst nur ueber die Tafel an den Anfang zurueck.
@@ -464,6 +475,7 @@ struct DetailView: View {
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
                     .focused($amHauptknopf)
+                    .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
                 }
 
                 Zustandsknoepfe(model: model, item: aktuell,
@@ -478,15 +490,25 @@ struct DetailView: View {
 
     // MARK: Starten
 
+    /// Zurueck an den Knopf oder die Folge, an der man zuletzt stand.
+    private func fokusZurueck() {
+        switch zuletztFokus {
+        case .hauptknopf: amHauptknopf = true
+        case .mehrknopf: amMehrknopf = true
+        }
+    }
+
     private var mehrHandlungen: [Titelhandlung] {
         // Gesehen steht vorn — es ist das, wofuer die Tafel jetzt am
         // haeufigsten geoeffnet wird. Die geteilte Liste bleibt unangetastet.
-        [gesehenHandlung(model: model, item: aktuell,
-                         gesehen: $gesehen, meldung: $meldung)]
+        [Titelhandlung.sehstand(aktuell, model: model, gesehen: $gesehen,
+                                 melden: { meldung = $0 })]
         + Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
                                    starten: { starte(ab: $0) },
                                    melden: { meldung = $0 },
-                                   auffrischen: { await auffrischen() })
+                                   auffrischen: { await auffrischen() },
+                                   gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                                       ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
     }
 
     private func auffrischen() async {
@@ -500,25 +522,15 @@ struct DetailView: View {
         gesehen = aktuell.istGesehen
     }
 
+    /// Frisch geholt: die Position im Listeneintrag ist oft veraltet.
     private func starte(ab: Double) {
-        Task {
-            // Frisch holen: die Position im Listeneintrag ist oft veraltet.
-            let ziel = await model.item(id: aktuell.id) ?? aktuell
-            starte(ziel, ab: ab)
-        }
+        starte(aktuell, ab: ab, frisch: true)
     }
 
     /// Einen Titel starten — denselben oder ein Extra.
-    private func starte(_ titel: Item, ab: Double) {
-        guard !bereitet else { return }
-        bereitet = true
-        Task {
-            defer { bereitet = false }
-            guard let plan = await model.plan(for: titel.id) else {
-                meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
-                return
-            }
-            abspielen.wrappedValue = Abspielwunsch(item: titel, plan: plan, startAt: ab)
-        }
+    private func starte(_ titel: Item, ab: Double, frisch: Bool = false) {
+        Abspielwunsch.starten(titel, ab: ab, frisch: frisch, model: model, bereitet: $bereitet,
+                              fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              abspielen: { abspielen.wrappedValue = $0 })
     }
 }

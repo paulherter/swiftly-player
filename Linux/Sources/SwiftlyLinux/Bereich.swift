@@ -84,10 +84,10 @@ enum Bereich: CaseIterable {
     /// waren sie nirgends, weil ein Wayland-Fenster keine Menueleiste hat.
     var kuerzel: String? {
         switch self {
-        case .start:  "Strg+1"
-        case .filme:  "Strg+2"
-        case .serien: "Strg+3"
-        case .suche:  "Strg+F"
+        case .start:  String(format: uebersetzt("Strg+%@"), "1")
+        case .filme:  String(format: uebersetzt("Strg+%@"), "2")
+        case .serien: String(format: uebersetzt("Strg+%@"), "3")
+        case .suche:  String(format: uebersetzt("Strg+%@"), "F")
         default:      nil
         }
     }

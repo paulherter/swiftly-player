@@ -12,6 +12,11 @@ aussehen sollen, bringt die App sie selbst mit.
 Zwei Dateien reichen: `InterVariable.ttf` deckt alle Strichstärken ab, die
 kursive Fassung die Auszeichnungen.
 
+`Inter-SemiBold.ttf` (statisch, Inter 18pt SemiBold) ist die Schrift der
+Untertitel. libVLC 3 sucht Schriften mit einer eigenen fontconfig-Sitzung und
+wählt nur zwischen normal und fett; eine statische Datei mit eigenem
+Familiennamen findet es sicher (`Untertitelstil` in `Abspieler.swift`).
+
 **Lizenz:** SIL Open Font License 1.1, siehe `OFL.txt`. Weitergabe erlaubt,
 auch mitgeliefert in einem Programm; der Lizenztext muss dabeiliegen, und
 genau dafür ist er hier.

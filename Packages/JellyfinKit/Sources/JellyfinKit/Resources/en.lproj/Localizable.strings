@@ -39,9 +39,12 @@
 "Rückblick überspringen" = "Skip Recap";
 "Vorschau überspringen" = "Skip Preview";
 "Werbung überspringen" = "Skip Ad";
-"Nächste Folge" = "Next Episode";
+"Nächste Folge" = "Next episode";
 "Überspringen" = "Skip";
 "Der Server nennt keine abspielbare Fassung." = "The server does not offer a playable version.";
+"Der Server lässt dieses Konto den Titel nicht abspielen." = "The server doesn't let this account play this title.";
+"Der Server lässt gerade keine weitere Wiedergabe zu. Die Bandbreite für dieses Konto ist ausgeschöpft." = "The server won't start another stream right now. This account has used up its bandwidth.";
+"Der Server findet keine Fassung, die er an dieses Gerät schicken darf. Meist ist Umwandeln für dieses Konto abgeschaltet." = "The server has no version it's allowed to send to this device. Usually transcoding is turned off for this account.";
 
 /* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
 "%lld Std. %lld Min." = "%lld h %lld min";
@@ -62,8 +65,8 @@
 "Fortsetzen %@" = "Resume %@";
 "Abspielen %@" = "Play %@";
 "%lld Staffeln" = "%lld seasons";
-"Die Adresse konnte nicht gelesen werden." = "The address could not be read.";
-"Benutzername oder Passwort stimmt nicht." = "Username or password is wrong.";
+"Die Adresse konnte nicht gelesen werden." = "That address could not be read.";
+"Benutzername oder Passwort stimmt nicht." = "That username or password is wrong.";
 "Dieses Konto darf das nicht." = "This account is not allowed to do that.";
 "Das gibt es auf dem Server nicht." = "The server does not have that.";
 "Der Server hat einen Fehler gemeldet." = "The server reported an error.";
@@ -100,3 +103,39 @@
 "Die Verbindung zum Server hat nicht geklappt." = "The connection to the server failed.";
 "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password.";
 "Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein." = "There's a sign-in page in front of the server, such as Cloudflare Access or Authelia. Add the headers it asks for under “Advanced”.";
+
+"Original" = "Original";
+"Direct Play · Originalqualität" = "Direct Play · original quality";
+
+/* Anzahlen in Kacheln und Sammlungen (fehlten bis 25.09.2026, englisch stand Deutsch). */
+"%lld Filme" = "%lld movies";
+"%lld Serien" = "%lld series";
+"%lld neue Folgen" = "%lld new episodes";
+/* Gemeinsam schauen (SyncPlaySitzung) */
+"%@ ist dabei" = "%@ joined";
+"%@ ist gegangen" = "%@ left";
+"Wartet auf alle" = "Waiting for everyone";
+"Angehalten" = "Paused";
+"Geht weiter" = "Playing again";
+"Gesprungen" = "Skipped";
+"Einem in der Gruppe fehlt dieser Titel." = "Someone in the group doesn't have this title.";
+"Der Titel der Gruppe lässt sich hier nicht abspielen." = "The group's title can't be played here.";
+"Gemeinsam schauen ist für dein Konto auf dem Server nicht freigegeben." = "Watching together isn't enabled for your account on this server.";
+"Die Gruppe kam nicht zustande: vom Server kam keine Antwort über die Verbindung. Versuch es gleich noch einmal." = "The group couldn't be set up: the server didn't answer over the connection. Try again in a moment.";
+"Diese Gruppe gibt es nicht mehr." = "This group no longer exists.";
+"Filmabend" = "Movie night";
+
+/* Erstbild: tech overlay when the decoder never delivered a picture */
+"Kein Bild vom Dekoder – Wiedergabe neu aufgebaut" = "No picture from decoder – playback restarted";
+"Kein Bild vom Dekoder – Software-Dekoder aktiv" = "No picture from decoder – software decoder in use";
+"Kein Bild vom Dekoder – auch Software-Dekoder ohne Bild" = "No picture from decoder – software decoder failed too";
+
+/* Weiterschauen-Kachel: Restzeit und Folgenkürzel */
+"noch %lld Min." = "%lld min left";
+"noch %lld Std." = "%lld hr left";
+"noch %lld Std. %lld Min." = "%lld hr %lld min left";
+"S%lld · F%lld" = "S%lld · E%lld";
+
+/* Staffel-/Folgenkürzel: Deutsch „F" wie Folge, Englisch „E" wie Episode */
+"F%lld" = "E%lld";
+"S%lld • F%lld" = "S%lld • E%lld";

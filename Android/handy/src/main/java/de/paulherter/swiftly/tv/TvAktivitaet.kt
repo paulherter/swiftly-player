@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
 import de.paulherter.swiftly.Phase
 import de.paulherter.swiftly.Startvorhang
 import de.paulherter.swiftly.SwiftlyAnwendung
+import de.paulherter.swiftly.einstiegWechseln
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
 
@@ -33,6 +36,9 @@ import de.paulherter.swiftly.gemeinsam.Stil
 class TvAktivitaet : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Umgekehrt zu `MainActivity`: kommt ein Telefon hierher (etwa ueber einen swiftly://-Link),
+        // bekommt es die Telefonfassung.
+        if (!(application as SwiftlyAnwendung).istFernseher) { einstiegWechseln(de.paulherter.swiftly.MainActivity::class.java); return }
         // Messmodus des Technikschilds als Startextra, wie `-technikschildMessen YES` auf Apple.
         if (intent?.hasExtra("technikschildMessen") == true)
             (application as SwiftlyAnwendung).einstellungen.technikschildMessen = intent.getBooleanExtra("technikschildMessen", false)
@@ -42,7 +48,14 @@ class TvAktivitaet : ComponentActivity() {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
             LaunchedEffect(app.abgemeldet.intValue) { if (app.abgemeldet.intValue > 0) phase = Phase.Server }
             var gestartet by rememberSaveable { mutableStateOf(false) }
+            // Der Schirm als aufgezeichnete Ebene — daraus das Standbild des Kontowechsels (`Kontowechselflug`).
+            val schirm = androidx.compose.ui.graphics.rememberGraphicsLayer()
+            SideEffect { de.paulherter.swiftly.Kontowechselflug.schirm = schirm }
             Box(Modifier.fillMaxSize().background(Stil.grund)) {
+                Box(Modifier.fillMaxSize().drawWithContent {
+                    schirm.record { this@drawWithContent.drawContent() }
+                    drawLayer(schirm)
+                }) {
                 when (val p = phase) {
                     // Vorlage: `RootView` auf tvOS — echte TV-Seiten statt der Telefonseiten, die
                     // hier vorher standen (`ServerSeite`, `AnmeldeSeite`, `QuickConnectAnmeldung`).
@@ -53,6 +66,11 @@ class TvAktivitaet : ComponentActivity() {
                     // Nach einem Kontowechsel frisch — G4: die Stapel gehoeren dem vorigen Konto.
                     Phase.Start -> key(app.kontowechsel.intValue) { TvHaupt(app) }
                 }
+                }
+                // Der Kontowechsel (Entwurf D): Standbild, fliegendes Profilbild, Ring — ueber allem.
+                de.paulherter.swiftly.Kontowechselebene()
+                // „Hier weiterschauen": die Karte waechst aus dem Abzeichen (`Uebergabe.kt`).
+                de.paulherter.swiftly.Uebergabeebene(imPlayer = false)
                 // Der einmalige Discord-Hinweis, erst wenn der Player zu ist — wie `RootView` auf tvOS.
                 var discordHinweis by remember { mutableStateOf(false) }
                 LaunchedEffect(app.discordHinweisFaellig.value, app.spiel.value == null) {
@@ -69,6 +87,10 @@ class TvAktivitaet : ComponentActivity() {
             }
         }
     }
+
+    // Zurueck an Compose vorbei an die Rueckruf-Kette (`TvZurueck.kt`).
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        Tastensperre.pruefen(event) || (zurueckTaste(event) ?: super.dispatchKeyEvent(event))
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

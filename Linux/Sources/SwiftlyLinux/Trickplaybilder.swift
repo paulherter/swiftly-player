@@ -89,10 +89,20 @@ final class Trickplaybilder: @unchecked Sendable {
         Task.detached { [self] in
             let daten = await client.trickplayBlatt(itemID: titel, mediaSourceID: quelle,
                                                      breite: angabe.breite, blatt: nummer)
+            // **Hier entpacken, nicht auf dem Hauptfaden** (Audit 27.09.,
+            // PERFORMANCE #5). Ein Blatt sind bis 9 MB Pixel; wer schnell am
+            // Zeitstrahl zieht, hielt die Wiedergabe-Oberflaeche sonst je
+            // neuem Blatt kurz an. GdkPixbuf gehoert nicht zu GTK und darf
+            // auf jedem Faden entpacken, solange niemand sonst den Lader
+            // anfasst — er lebt nur in dieser Funktion.
+            let gepackt = daten.flatMap(Self.pixbuf(aus:)).map(Blattkiste.init)
             aufHauptfaden {
-                guard self.titel == titel else { return }
+                guard self.titel == titel else {
+                    if let gepackt { g_object_unref(UnsafeMutableRawPointer(gepackt.blatt)) }
+                    return
+                }
                 self.unterwegs.remove(nummer)
-                guard let daten, let blatt = Self.pixbuf(aus: daten) else { return }
+                guard let blatt = gepackt?.blatt else { return }
                 self.blaetter[nummer] = blatt
                 self.reihenfolge.append(nummer)
                 // Nie das letzte wegwerfen — dieselbe Regel wie ``Bildspeicher``.
@@ -105,9 +115,12 @@ final class Trickplaybilder: @unchecked Sendable {
         }
     }
 
-    /// Ein JPEG-Blatt entschlüsseln — abseits des Hauptfadens ist hier nichts
-    /// zu holen: `GdkPixbufLoader` packt ohnehin nur auf dem Faden aus, auf
-    /// dem er lebt, und der ist hier GTKs Hauptfaden.
+    /// Ein fertiges Blatt ueber die Fadengrenze — dieselbe Zusicherung wie
+    /// ``Zeigerkiste``: nach der Uebergabe fasst nur noch der Hauptfaden es an.
+    private struct Blattkiste: @unchecked Sendable { let blatt: OpaquePointer }
+
+    /// Ein JPEG-Blatt entschlüsseln. Der Lader lebt nur in diesem Aufruf und
+    /// packt auf dem Faden aus, auf dem er gerufen wird.
     private static func pixbuf(aus daten: Data) -> OpaquePointer? {
         guard let lader = gdk_pixbuf_loader_new() else { return nil }
         defer { g_object_unref(UnsafeMutableRawPointer(lader)) }

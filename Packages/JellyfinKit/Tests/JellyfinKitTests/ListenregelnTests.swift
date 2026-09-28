@@ -34,6 +34,16 @@ struct ListenregelnTests {
         #expect(Listenregeln.anhaengen(neu, an: da).map(\.id) == ["a", "b", "c"])
     }
 
+    @Test("Volle Eintraege stehen in der Reihenfolge der schlanken, Verschwundene fallen heraus")
+    func inReihenfolge() {
+        let schlank = [item("c"), item("a"), item("b")]
+        let voll = [item("a", "voll a"), item("b", "voll b"), item("c", "voll c"), item("z")]
+        let ergebnis = Listenregeln.inReihenfolge(voll, wie: schlank)
+        #expect(ergebnis.map(\.id) == ["c", "a", "b"])
+        #expect(ergebnis.first?.name == "voll c")
+        #expect(Listenregeln.inReihenfolge([item("a")], wie: schlank).map(\.id) == ["a"])
+    }
+
     // MARK: Nachladen
 
     @Test("Jede Kachel der letzten drei Reihen loest aus")

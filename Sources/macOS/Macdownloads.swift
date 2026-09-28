@@ -41,6 +41,7 @@ struct Downloadring: View {
         }
             .buttonStyle(Stil.Druckknopf())
             .onHover { schwebt = $0 }
+            .animation(Stil.zeitSchweben, value: schwebt)
             .help(hilfe)
             .accessibilityLabel(Text(hilfe))
     }
@@ -132,9 +133,30 @@ struct Ladetafel: View {
     let titel: String
     var bilder: [String: URL] = [:]
     @Binding var offen: Bool
+    /// **Die Qualität wird hier gewählt** — beim Film, der keine Auswahl
+    /// davor hat. Eine Serie kommt aus `MacLadeauswahl` und bringt ihre Wahl
+    /// mit. Wie `Ladeblatt` auf dem iPhone.
+    var qualitaetWaehlen = false
+    /// Wenn der Download gleich nach dem Start scheitert — wie beim iPhone.
+    var gescheitert: (String) -> Void = { _ in }
+
+    @State private var wahl: Downloadqualitaet = .original
 
     private var verwaltung: Downloadverwaltung { model.downloads }
-    private var bytes: Int64 { posten.reduce(0) { $0 + $1.bytes } }
+    private var fassung: [Downloadposten] {
+        qualitaetWaehlen ? posten.map { $0.inQualitaet(wahl) } : posten
+    }
+    private var bytes: Int64 { fassung.reduce(0) { $0 + $1.bytes } }
+    private var umgewandelt: Bool { fassung.contains(where: \.umgewandelt) }
+    private var angeboten: [Downloadqualitaet] {
+        Downloadqualitaet.angeboten(
+            waehlbar: model.downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.quellBitrate(posten.map { ($0.bytes, $0.laufzeitTicks) }))
+    }
+    /// Größe als Text — mit „≈", wenn sie geschätzt ist.
+    private var groessentext: String {
+        (umgewandelt ? "≈ " : "") + Downloadregeln.groesse(bytes)
+    }
     private var auskunft: Downloadregeln.Platzauskunft { verwaltung.auskunft(fuer: bytes) }
 
     var body: some View {
@@ -149,7 +171,12 @@ struct Ladetafel: View {
             Rectangle().fill(Stil.rand).frame(height: 1)
 
             if !auskunft.reicht {
-                angabe("internaldrive", "Diese Datei", Downloadregeln.groesse(bytes))
+                angabe("internaldrive", "Diese Datei", groessentext)
+                // Der naheliegende Ausweg ist eine kleinere Fassung — reicht es
+                // danach, wechselt die Tafel von selbst in den Normalfall.
+                if qualitaetWaehlen, model.downloadqualitaetWaehlbar, angeboten.count > 1 {
+                    qualitaetszeile
+                }
                 angabe("externaldrive", "Frei auf diesem Mac",
                        Downloadregeln.groesse(verwaltung.frei), warnend: true)
                 if auskunft.reichtNachAufraeumen, !auskunft.entbehrlich.isEmpty {
@@ -165,19 +192,25 @@ struct Ladetafel: View {
                 abbrechen
             } else if !Downloadregeln.darfLaden(imWLAN: verwaltung.imWLAN,
                                                nurUeberWLAN: verwaltung.nurUeberWLAN) {
-                angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
+                angabe("internaldrive", "Größe", groessentext)
                 angabe("wifi.slash", "Kein WLAN", String(localized: "Mobilfunk"), warnend: true)
                 knopf("In die Warteschlange") { starten() }
                 abbrechen
             } else {
-                angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
-                if let c = posten.first?.container {
-                    angabe("sparkles", "Qualität", c.uppercased())
+                angabe("internaldrive", "Größe", groessentext)
+                if qualitaetWaehlen, model.downloadqualitaetWaehlbar, angeboten.count > 1 {
+                    qualitaetszeile
+                } else if let g = guete {
+                    angabe("sparkles", "Qualität", g)
                 }
                 angabe("externaldrive", "Danach frei",
                        Downloadregeln.groesse(auskunft.freiDanach))
                 knopf("Laden") { starten() }
-                hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
+                if umgewandelt {
+                    hinweis("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
+                } else {
+                    hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
+                }
                 abbrechen
             }
         }
@@ -223,6 +256,7 @@ struct Ladetafel: View {
                 .font(Stil.koerper)
                 .foregroundStyle(warnend ? Stil.warnung : Stil.schriftLeise)
                 .frame(width: 20)
+                .accessibilityHidden(true)
             Text(was)
                 .font(Stil.koerper)
                 .foregroundStyle(warnend ? Stil.warnung : Stil.schrift)
@@ -234,6 +268,36 @@ struct Ladetafel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+    }
+
+    /// Stufe und Container, wie sie ohne Wahl dastehen.
+    private var guete: String? {
+        var teile: [String] = []
+        if let q = fassung.first?.guete, !q.istOriginal { teile.append(q.name + " · " + q.zusatz()) }
+        if let c = fassung.first?.container { teile.append(c.uppercased()) }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
+    }
+
+    /// Die Qualität mit der Wahl rechts — dieselbe Plakette wie in der
+    /// Auswahl der Serie.
+    private var qualitaetszeile: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(Stil.koerper)
+                .foregroundStyle(Stil.schriftLeise)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text("Qualität")
+                .font(Stil.koerper)
+                .foregroundStyle(Stil.schrift)
+            Spacer(minLength: 10)
+            MacQualitaetsplakette(wahl: $wahl, angeboten: angeboten, waehlbar: true,
+                                  groesse: { q in posten.reduce(0) {
+                                      $0 + q.geschaetzteBytes(original: $1.bytes,
+                                                              laufzeitTicks: $1.laufzeitTicks) } })
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
     }
 
     private func knopf(_ text: LocalizedStringKey, tun: @escaping () -> Void) -> some View {
@@ -254,7 +318,12 @@ struct Ladetafel: View {
 
     private func starten() {
         offen = false
-        verwaltung.anstossen(posten, bilder: bilder)
+        let neu = fassung.map(\.id).filter { id in !verwaltung.posten.contains { $0.id == id } }
+        verwaltung.anstossen(fassung, bilder: bilder)
+        let lager = verwaltung, melden = gescheitert
+        Task {
+            if let grund = await lager.sofortGescheitert(neu) { melden(grund) }
+        }
     }
 }
 
@@ -449,6 +518,9 @@ struct MacDownloadzeile: View {
     @State private var schwebt = false
     @Environment(Abspielsteuerung.self) private var steuerung
     private var verwaltung: Downloadverwaltung { model.downloads }
+    /// Der Posten mit dem laufenden Stand. **Nur hier gelesen**, damit eine
+    /// Fortschrittsmeldung diese eine Zeile neu zeichnet und nicht die Liste.
+    private var jetzt: Downloadposten { verwaltung.aktuell(posten) }
     /// Haelt den Schaetzer ueber die Neuzeichnungen; beobachtet wird er
     /// nicht, die Zeitleiste fragt ihn je Bild.
     @State private var schaetzer = Schaetzerhalter()
@@ -468,13 +540,13 @@ struct MacDownloadzeile: View {
                     zeile(geladen: schaetzer.s.wert(um: takt.date))
                 }
             } else if posten.stand == .angehalten || posten.stand == .laedt {
-                zeile(geladen: max(schaetzer.s.wert(um: Date()), posten.geladen))
+                zeile(geladen: max(schaetzer.s.wert(um: Date()), jetzt.geladen))
             } else {
-                zeile(geladen: posten.geladen)
+                zeile(geladen: jetzt.geladen)
             }
         }
-        .onChange(of: posten.geladen, initial: true) { _, neu in
-            schaetzer.s.melden(neu, gesamt: posten.bytes, um: Date())
+        .onChange(of: jetzt.geladen, initial: true) { _, neu in
+            schaetzer.s.melden(neu, gesamt: jetzt.bytes, um: Date())
             if !kommtWas { schaetzer.s.anhalten() }
         }
         .onChange(of: kommtWas) { _, an in
@@ -487,7 +559,7 @@ struct MacDownloadzeile: View {
     }
 
     private func anteil(_ geladen: Int64) -> Double? {
-        posten.bytes > 0 ? Double(geladen) / Double(posten.bytes) : posten.anteil
+        jetzt.bytes > 0 ? Double(geladen) / Double(jetzt.bytes) : jetzt.anteil
     }
 
     private func zeile(geladen: Int64) -> some View {
@@ -517,6 +589,8 @@ struct MacDownloadzeile: View {
             Bildflaeche(bild: bildadresse,
                         breite: quer ? 142 : 76, hoehe: quer ? 80 : 114,
                         zeichen: quer ? "tv" : "film")
+                // Gesehen wie in der Folgenliste — auch ohne Netz (1.0.5).
+                .gesehenHaken(gruppe == nil && posten.gesehen, kante: 20, abstand: 6)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: gruppe?.titel ?? posten.titel)
@@ -558,7 +632,7 @@ struct MacDownloadzeile: View {
                                                            : .isButton)
 
             if gruppe == nil {
-                Downloadring(posten: posten, anteilJetzt: anteil(geladen)) {
+                Downloadring(posten: jetzt, anteilJetzt: anteil(geladen)) {
                     ringGeklickt(posten, verwaltung) {}
                 }
             } else {
@@ -566,6 +640,7 @@ struct MacDownloadzeile: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Stil.schriftSehrLeise)
                     .frame(width: 36)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 12)
@@ -574,6 +649,7 @@ struct MacDownloadzeile: View {
                     in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
         .animation(Stil.sprung, value: bearbeiten)
     }
 
@@ -599,9 +675,12 @@ struct MacDownloadzeile: View {
             let bytes = g.folgen.reduce(Int64(0)) { $0 + $1.bytes }
             return String(localized: "\(g.folgen.count) Folgen") + " · "
                 + Downloadregeln.groesse(bytes)
+                + (Downloadqualitaet.gemeinsam(g.folgen).map { " · " + $0.name } ?? "")
         }
         var teile: [String] = []
-        if let s = posten.staffel, let f = posten.folge { teile.append("S\(s) F\(f)") }
+        // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand
+        // hier fest als „F", auch auf Englisch (gemeldet 27.09.2026).
+        if let s = posten.staffel, let f = posten.folge { teile.append(String(localized: "S\(s) F\(f)")) }
         else if let t = posten.laufzeitTicks, t > 0 {
             teile.append(laufzeit(Double(t) / 10_000_000))
         }
@@ -611,14 +690,24 @@ struct MacDownloadzeile: View {
             // Laden von „845 MB" auf „1 GB" und „1,01 GB" — die Zeile wurde
             // bei jedem Schritt anders breit. Die Gesamtgröße gibt die
             // Einheit vor.
-            let f = Downloadregeln.fortschritt(geladen: geladen, von: posten.bytes)
-            teile = [String(localized: "\(f.geladen) von \(f.gesamt)")]
-        case .wartet:      teile.append(String(localized: "wartet"))
-        case .angehalten:  teile.append(String(localized: "angehalten"))
+            let f = Downloadregeln.fortschritt(geladen: geladen, von: jetzt.bytes)
+            // Umgewandelt ist das Ende geschätzt — dann steht „≈" davor.
+            teile = [String(localized: "\(f.geladen) von \((posten.umgewandelt ? "≈ " : "") + f.gesamt)")]
+        case .wartet:
+            teile.append(String(localized: "wartet"))
+            if posten.umgewandelt { teile.append(posten.guete.name) }
+        case .angehalten:
+            teile.append(String(localized: "angehalten"))
+            if posten.umgewandelt { teile.append(posten.guete.name) }
         case .fehler:      teile = [posten.grund ?? String(localized: "Fehlgeschlagen")]
         case .fertig:
-            teile.append(Downloadregeln.groesse(posten.bytes))
-            if let c = posten.container { teile.append(c.uppercased()) }
+            teile.append(Downloadregeln.groesse(jetzt.bytes))
+            // Die gewählte Stufe steht, wo sonst der Container steht.
+            if posten.umgewandelt {
+                teile.append(posten.guete.name)
+            } else if let c = posten.container {
+                teile.append(c.uppercased())
+            }
             if !posten.nochAufDemServer {
                 teile.append(String(localized: "nicht mehr auf dem Server"))
             }
@@ -906,14 +995,17 @@ struct MacLadeauswahl: View {
     /// Die Folgen, die die Serienseite schon hat — meist die gewählte Staffel.
     let vorgeladen: [String: [Item]]
     @Binding var offen: Bool
-    /// Was die Auswahl hergibt: die Folgen, die geladen werden sollen.
-    let weiter: ([Item]) -> Void
+    /// Was die Auswahl hergibt: die Folgen, die geladen werden sollen, und
+    /// in welcher Qualität.
+    let weiter: ([Item], Downloadqualitaet) -> Void
 
     @State private var folgen: [String: [Item]] = [:]
     @State private var gewaehlt: Set<String> = []
     @State private var offeneStaffel: String?
     @State private var nurUngesehene = false
     @State private var laedt = true
+    /// Original, bis jemand die Plakette anklickt und etwas anderes nimmt.
+    @State private var qualitaet: Downloadqualitaet = .original
     /// **Der Fehlfall gehört dazu.** Scheitert der Abruf, darf die Auswahl
     /// nicht leer dastehen — dann wüsste niemand, ob die Serie keine Folgen
     /// hat oder der Server nicht antwortet.
@@ -991,8 +1083,23 @@ struct MacLadeauswahl: View {
     }
 
     private var gewaehlteFolgen: [Item] { alleFolgen.filter { gewaehlt.contains($0.id) } }
-    private var bytes: Int64 {
-        gewaehlteFolgen.reduce(0) { $0 + Int64($1.mediaSources?.first?.size ?? 0) }
+    /// Der Fuß rechnet in der gewählten Qualität — wie auf dem iPhone.
+    private var bytes: Int64 { bytes(in: qualitaet) }
+
+    private func bytes(in q: Downloadqualitaet) -> Int64 {
+        gewaehlteFolgen.reduce(0) {
+            $0 + q.geschaetzteBytes(original: Int64($1.mediaSources?.first?.size ?? 0),
+                                    laufzeitTicks: $1.runTimeTicks)
+        }
+    }
+
+    private var angeboten: [Downloadqualitaet] {
+        let basis = gewaehlteFolgen.isEmpty ? alleFolgen : gewaehlteFolgen
+        return Downloadqualitaet.angeboten(
+            waehlbar: model.downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.quellBitrate(basis.map {
+                (Int64($0.mediaSources?.first?.size ?? 0), $0.runTimeTicks)
+            }))
     }
 
     // MARK: Die Karten
@@ -1150,25 +1257,22 @@ struct MacLadeauswahl: View {
             .padding(.horizontal, 16)
             // **Die Qualität steht dabei, nicht im Kleingedruckten.** Swiftly
             // lädt die Originaldatei — bei 35 GB ist das die Erklärung für
-            // die Zahl darüber und kein Nebensatz.
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("Direct Play · Originalqualität").font(Stil.klein)
-            }
-            .foregroundStyle(Stil.akzent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Stil.akzent.opacity(0.15),
-                        in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
+            // die Zahl darüber und kein Nebensatz. Darf der Server umwandeln,
+            // ist die Plakette zugleich die Wahl einer kleineren Fassung.
+            MacQualitaetsplakette(wahl: $qualitaet, angeboten: angeboten,
+                                  waehlbar: model.downloadqualitaetWaehlbar,
+                                  groesse: { gewaehlt.isEmpty ? 0 : bytes(in: $0) })
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .onChange(of: angeboten) { _, neu in
+                    if !neu.contains(qualitaet) { qualitaet = .original }
+                }
 
             Hauptknopf(beschriftung: gewaehlt.isEmpty ? "Laden"
                                                      : LocalizedStringKey("\(gewaehltZahl) laden"),
                        symbol: "arrow.down") {
                 offen = false
-                weiter(gewaehlteFolgen)
+                weiter(gewaehlteFolgen, qualitaet)
             }
             .disabled(gewaehlt.isEmpty)
             .padding(.horizontal, 16)
@@ -1264,6 +1368,7 @@ struct MacLadeauswahl: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Stil.schriftSehrLeise)
                             .rotationEffect(.degrees(aufgeklappt ? 0 : -90))
+                            .accessibilityHidden(true)
                     }
                 }
                 .contentShape(Rectangle())
@@ -1371,5 +1476,83 @@ struct MacLadeauswahl: View {
         // Was seit dem letzten Öffnen geladen wurde, ist nicht mehr wählbar —
         // sonst zählte der Fuß es noch mit.
         neuRechnen()
+    }
+}
+
+/// **Die Plakette unter einer Ladeauswahl — und die Wahl der Qualität.**
+/// Dasselbe wie `Qualitaetsplakette` auf dem iPhone: Original ist die
+/// Vorgabe; darf der Server umwandeln, öffnet ein Klick ein Menü mit den
+/// kleineren Stufen und ihrer geschätzten Größe. Sonst bleibt die Plakette
+/// stehen, und ein Satz sagt, warum nichts zu wählen ist.
+struct MacQualitaetsplakette: View {
+    @Binding var wahl: Downloadqualitaet
+    let angeboten: [Downloadqualitaet]
+    let waehlbar: Bool
+    /// Geschätzte Größe je Stufe für die Auswahl. 0 heißt: keine Angabe.
+    let groesse: (Downloadqualitaet) -> Int64
+
+    var body: some View {
+        if waehlbar, angeboten.count > 1 {
+            Menu {
+                ForEach(angeboten) { q in
+                    Button {
+                        withAnimation(Stil.umschalten) { wahl = q }
+                    } label: {
+                        if q == wahl {
+                            Label(zeile(q), systemImage: "checkmark")
+                        } else {
+                            Text(verbatim: zeile(q))
+                        }
+                    }
+                }
+            } label: {
+                plakette(aufklappbar: true)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(Text("Qualität"))
+            .accessibilityValue(Text(verbatim: wahl.plakette()))
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                plakette(aufklappbar: false)
+                if !waehlbar {
+                    Text("Kleinere Fassungen gibt der Server für dieses Konto nicht frei.")
+                        .font(Stil.klein)
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// „720p · 4 Mbit/s · ≈ 1,5 GB" — im Mac-Menü gibt es keine zweite
+    /// Zeile, also steht die Größe hinten dran.
+    private func zeile(_ q: Downloadqualitaet) -> String {
+        let g = groesse(q)
+        let teile = [q.name, q.zusatz()]
+            + (g > 0 ? [(q.istOriginal ? "" : "≈ ") + Downloadregeln.groesse(g)] : [])
+        return teile.joined(separator: " · ")
+    }
+
+    private func plakette(aufklappbar: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: wahl.istOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: 11, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(verbatim: wahl.plakette()).font(Stil.klein).monospacedDigit()
+            if aufklappbar {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(Stil.akzent)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Stil.akzent.opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
+        .contentShape(Rectangle())
     }
 }

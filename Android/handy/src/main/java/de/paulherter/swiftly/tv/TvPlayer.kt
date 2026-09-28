@@ -83,6 +83,9 @@ import de.paulherter.swiftly.Folge
 import de.paulherter.swiftly.R
 import de.paulherter.swiftly.Spielplan
 import de.paulherter.swiftly.Spielwerk
+import de.paulherter.swiftly.Gemeinsamereignis
+import de.paulherter.swiftly.Gruppenereignis
+import de.paulherter.swiftly.Gruppenzeile
 import de.paulherter.swiftly.Staffel
 import de.paulherter.swiftly.SwiftlyAnwendung
 import de.paulherter.swiftly.Technikschild
@@ -148,6 +151,15 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     DisposableEffect(lebenslauf) {
         val beobachter = androidx.lifecycle.LifecycleEventObserver { _, ereignis ->
             if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) werk.hintergrundMelden()
+            // **Home heisst anhalten** (Issue #5). Der Fernseher hat kein kleines Fenster, in das der
+            // Player ausweichen koennte: ohne das hier lief VLC hinter dem Startbildschirm weiter, nur
+            // noch zu hoeren. Wie tvOS, das eine App im Hintergrund anhaelt. Angehalten meldet VLCs
+            // `Paused` den Stand; in einer Gruppe geht die Bitte an alle (`umschalten`).
+            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_STOP && werk.spieler.isPlaying
+                && aktivitaet?.isChangingConfigurations != true && aktivitaet?.isInPictureInPictureMode != true) {
+                Protokoll.schreib("[Player] verlassen: anhalten")
+                werk.umschalten()
+            }
             if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !werk.spieler.vlcVout.areViewsAttached()) {
                 flaeche[0]?.let { werk.spieler.attachViews(it, null, true, false) }
             }
@@ -188,6 +200,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
 
     var sichtbar by remember { mutableStateOf(true) }
     var beruehrt by remember { mutableIntStateOf(0) }
+    // **Restzeit oder Ende** (1.0.5, wie am Telefon und auf Apple TV): „−12:34" oder „Endet um
+    // 22:41", dieselbe Stelle; die Wahl bleibt. Runter auf der Leiste schaltet um (`taste`), wie tvOS.
+    var alsEnde by remember { mutableStateOf(app.ablage.merkwert("restzeitAlsEnde") == "1") }
+    fun alsEndeSetzen(an: Boolean) { alsEnde = an; app.ablage.merken("restzeitAlsEnde", if (an) "1" else "0") }
     /** `spuren`, `folgen` oder `einstellungen` — Vorlage `Playerebene`. */
     var offeneEbene by remember { mutableStateOf<String?>(null) }
     val ebeneOffen = offeneEbene != null
@@ -230,15 +246,25 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     }
 
     fun laufenSetzen(soll: Boolean, quelle: String) {
+        // **In der Gruppe eine Bitte** (iOS `ausfuehren`/`spielenUmschalten`): der Knopf springt erst um, wenn
+        // der Befehl zurueckkommt — dann bei allen gleichzeitig.
+        if (werk.inGruppe) {
+            markeVerwerfen()
+            if (soll != werk.laeuft) app.kern.syncPlayBitteUmschalten(werk.laeuft)
+            Protokoll.schreib("[Taste] $quelle: Bitte an die Gruppe")
+            zeigen()
+            return
+        }
         gewollt[0] = soll
         zuletztBefohlen[0] = SystemClock.elapsedRealtime()
         // Anhalten/Weiter heisst „hier", nicht „dorthin" — eine Marke wird verworfen.
         markeVerwerfen()
-        if (soll) werk.spieler.play() else werk.spieler.pause()
+        // Weiter nach langer Pause ein Stueck zurueck (`Pausenruecksprung`, ueber `werk.fortsetzen`).
+        if (soll) werk.fortsetzen() else werk.spieler.pause()
         Protokoll.schreib("[Taste] $quelle: ${if (soll) "abspielen" else "anhalten"}")
         zeigen()
     }
-    fun umschalten(quelle: String) = laufenSetzen(!gewollt[0], quelle)
+    fun umschalten(quelle: String) = laufenSetzen(if (werk.inGruppe) !werk.laeuft else !gewollt[0], quelle)
 
     val fernbedienung = remember { FocusRequester() }
     val knopfSpuren = remember { FocusRequester() }
@@ -267,7 +293,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         label = "steuerung")
     // Unter einer offenen Ebene bleibt die Steuerung eingehaengt (unsichtbar): der Knopf, der die
     // Ebene geoeffnet hat, muss den Fokus beim Schliessen annehmen koennen, **bevor** die Ebene weggeht.
-    val werkzeugeDa = deckung > 0.01f || ebeneOffen
+    // **Auch im Bild nach dem Schliessen:** dort steht `deckung` noch auf 0, die Einblendung beginnt erst.
+    // Ohne `steuerungZiel` fiel die Steuerung fuer dieses eine Bild heraus, der Knopf mit dem Fokus ging
+    // mit, und der Fokus landete auf der Leiste statt auf dem Knopf (gemessen im TV-Emulator).
+    val werkzeugeDa = deckung > 0.01f || ebeneOffen || steuerungZiel
     val titelZiel = steuerungZiel || offeneEbene == "folgen"
     val titelDeckung by animateFloatAsState(if (titelZiel) 1f else 0f, tween(200), label = "titel")
 
@@ -304,6 +333,15 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     // liegt der Fokus auf ihr. Danach an die Fernbedienungsflaeche, nicht an einen Knopf (Plezy #1890) —
     // auch, wenn „Intro ueberspringen" nach sechs Sekunden Laufzeit von selbst ausblendet (VERHALTEN B6a).
     val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungZiel && !ebeneOffen && !werk.wechselt
+    // **Die Karte der naechsten Folge** (Variante C, `TVFolgenkarte`) — der Countdown-Fall der Einblendung, oder
+    // sie zoomt gerade. Mit offener Steuerung wartet sie (`Angebotsebene.karteWartetBeiSteuerung`).
+    val folgenkarteDa = werk.kartenwechsel != null || (karteDa && werk.einblendung == "karte")
+    LaunchedEffect(folgenkarteDa) {
+        if (werk.kartenwechsel == null) Protokoll.schreib(if (folgenkarteDa) "[Karte] erscheint bei ${werk.position.toInt()} s von ${werk.dauer.toInt()} s"
+                                                         else "[Karte] geht (Zurück oder Steuerung)")
+    }
+    // Aus der Karte bleibt die Steuerung zu, der Fokus geht an die Ruhe (`fokus = .ruhe`).
+    LaunchedEffect(werk.kartenwechsel == null) { if (werk.kartenwechsel == null && !steuerungZiel && !ebeneOffen) runCatching { fernbedienung.requestFocus() } }
     LaunchedEffect(karteDa) {
         if (karteDa) {
             runCatching { angebotFokus.requestFocus() }
@@ -362,12 +400,14 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             Key.DirectionRight -> spulen(werk.vorS)
             Key.MediaRewind -> spulen(-werk.zurueckS)
             Key.MediaFastForward -> spulen(werk.vorS)
-            Key.MediaNext -> if (werk.plan?.naechste == true) lauf.launch { werk.naechsteFolge() }
+            Key.MediaNext -> if (werk.hatNaechste) lauf.launch { werk.naechsteFolge() }
             // **Hoch fuehrt direkt zu den Symbolen** — auch beim ersten Druck, wenn die Steuerung
             // noch aus ist (tvOS 5a5f3cd). Steht die Pille ueber der Leiste, liegt sie dazwischen.
             Key.DirectionUp -> if (sichtbar && angebotDa) runCatching { angebotFokus.requestFocus() } else nachOben()
-            Key.Menu -> if (werk.bildFrei) ebeneOeffnen("einstellungen")
-            Key.DirectionDown -> { sichtbar = !sichtbar; beruehrt++ }
+            Key.Menu -> if (werk.bildFrei && e.nativeKeyEvent.repeatCount == 0) ebeneOeffnen("einstellungen")
+            // **Runter schaltet die Restzeit um** (Vorlage `Zeitleiste.onMoveCommand`, tvOS): „−12:34" oder
+            // „Endet um 22:41". Ohne Steuerung holt Runter sie erst, wie jede Richtung auf tvOS.
+            Key.DirectionDown -> if (steuerungZiel) { alsEndeSetzen(!alsEnde); zeigen() } else zeigen()
             else -> return false
         }
         return true
@@ -391,10 +431,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     Box(Modifier.fillMaxSize().background(Color.Black).onPreviewKeyEvent { wiedergabetaste(it) }) {
     Box(Modifier.fillMaxSize()
             .focusRequester(fernbedienung).onFocusChanged { leisteFokus = it.isFocused }.focusable().onKeyEvent { taste(it) }) {
-        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.spieler.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 
-        if (!werk.bildFrei) {
+        if (!werk.bildFrei && werk.kartenwechsel == null) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 if (werk.hinweis == null) TvLader(groesse = 64.dp)
             }
@@ -402,8 +442,31 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
 
         // **Nur noch der Ring, kein Pausezeichen** — angehalten zeigt die Leiste (Vorlage tvOS). Auch, solange
         // der Strom nach einem Abriss neu aufgebaut wird (tvOS: `zeitSteht || stelltWiederHer`).
-        if (werk.bildFrei && (werk.wechselt || werk.stelltWiederHer || (werk.laeuft && werk.puffert))) {
+        if (werk.bildFrei && werk.kartenwechsel == null && (werk.wechselt || werk.stelltWiederHer || (werk.laeuft && werk.puffert))) {
             Box(Modifier.align(Alignment.Center)) { TvLader(groesse = 64.dp) }
+        }
+
+        // **Steht die Karte, dunkelt der Schleier das Bild ab** wie bei offener Steuerung, und sie liegt davor.
+        val kartenschleier by animateFloatAsState(if (folgenkarteDa && werk.kartenwechsel == null) 1f else 0f,
+            if (folgenkarteDa) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich), label = "kartenschleier")
+        if (kartenschleier > 0.01f && !werkzeugeDa) Box(Modifier.fillMaxSize().graphicsLayer { alpha = kartenschleier }.background(Color.Black.copy(alpha = 0.42f)))
+        if (!werk.inGruppe && (werk.plan?.naechsteFolge != null || werk.kartenwechsel != null)) {
+            val m = werk.kartenmasse
+            Box(Modifier.fillMaxSize().onPreviewKeyEvent { e ->
+                    // Ohne Steuerung holt jede Richtung sie — die Karte wartet dann (weg, Countdown steht).
+                    val richtung = e.key == Key.DirectionUp || e.key == Key.DirectionDown || e.key == Key.DirectionLeft || e.key == Key.DirectionRight
+                    if (!richtung || !folgenkarteDa || werk.kartenwechsel != null) return@onPreviewKeyEvent false
+                    if (e.type == KeyEventType.KeyDown) { Protokoll.schreib("[Karte] Richtungstaste holt die Steuerung"); zeigen() }
+                    true
+                }) {
+                de.paulherter.swiftly.Folgenkarte(werk, folgenkarteDa, karte = { w, h, d ->
+                    val breite = m.breite
+                    val hoehe = breite * 9f / 16f
+                    val x = w / d - TvStil.randSeite.value - breite
+                    val y = h / d - TvStil.randOben.value - m.zeilen - hoehe
+                    androidx.compose.ui.geometry.Rect(x * d, y * d, (x + breite) * d, (y + hoehe) * d)
+                }, fokus = angebotFokus) { werk.angebotSchliessen() }
+            }
         }
 
         if (werkzeugeDa) {
@@ -417,7 +480,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(TvPlayermass.titelAbstand)) {
                         Text(titel, style = TvPlayermass.titel, maxLines = 1, modifier = Modifier.alpha(0f))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            meta?.let { Text(it, style = TvPlayermass.meta, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            // **In der Gruppe steht hier die Gruppe** (Entwurf A) — Zustand, also Akzent.
+                            val gruppe = if (werk.inGruppe) app.gemeinsam.value.gruppe else null
+                            if (gruppe != null) Gruppenzeile(gruppe.name, app.gemeinsam.value.mitWem, TvPlayermass.meta.fontSize)
+                            else meta?.let { Text(it, style = TvPlayermass.meta, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             if (plan != null && !plan.lossless && plan.methode.isNotEmpty()) {
                                 Symbol(Zeichen.Warnung, 12.dp, farbe = Stil.warnung)
                                 Text(plan.methode, style = TvPlayermass.meta, color = Stil.warnung, maxLines = 1)
@@ -442,7 +508,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                         LaunchedEffect(Unit) {
                             if (obenWunsch[0]) {
                                 obenWunsch[0] = false
-                                repeat(5) { if (runCatching { knopfSpuren.requestFocus() }.isSuccess) return@LaunchedEffect; delay(30) }
+                                repeat(5) { if (runCatching { knopfSpuren.requestFocus() }.isSuccess) return@LaunchedEffect; delay(TvStil.fokusFrist) }
                             }
                         }
                     }
@@ -452,13 +518,14 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                             contentDescription = uebersetzt("Abspielstelle")
                             stateDescription = zeitText(werk.position) + " / " + zeitText(werk.dauer)
                         }) {
-                    TvZeitleiste(werk.position, werk.dauer, spulziel, werk.laeuft) { werk.trickplayBild(it) }
+                    TvZeitleiste({ werk.position }, werk.dauer, spulziel, werk.laeuft, alsEnde) { werk.trickplayBild(it) }
                 }
             }
         }
 
         // **Der Angebotsknopf**, rechts direkt ueber der Leiste — mit und ohne Steuerung an derselben Stelle.
-        AnimatedVisibility(visible = angebotDa, modifier = Modifier.align(Alignment.BottomEnd),
+        // Nicht, solange dort die Karte steht.
+        AnimatedVisibility(visible = angebotDa && werk.einblendung != "karte" && werk.kartenwechsel == null, modifier = Modifier.align(Alignment.BottomEnd),
             enter = fadeIn(tween(180, easing = Bewegung.weich)),
             exit = fadeOut(tween(340, easing = Bewegung.weich))) {
             Box(Modifier.padding(end = TvStil.randSeite, bottom = TvStil.randOben + TvPlayermass.leiste + TvPlayermass.ueberLeiste)
@@ -480,8 +547,8 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                         true
                     }) {
                 TvAngebotspille(werk.angebotText,
-                    anteil = werk.countdown.takeIf { werk.einblendung == "karte" },
-                    sekunden = werk.countdownRest.takeIf { werk.einblendung == "karte" },
+                    anteil = null,
+                    sekunden = null,
                     laeuft = werk.laeuft, laenge = werk.countdownLaenge,
                     modifier = Modifier.focusRequester(angebotFokus)) {
                     Protokoll.schreib("Angebot: gedrückt (${werk.angebotArt})")
@@ -489,6 +556,19 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                 }
             }
         }
+
+        // **Was in der Gruppe passiert, kurz oben** — damit niemand raetselt, warum der Film steht.
+        val ereignis = if (werk.inGruppe) app.gemeinsam.value.ereignis else null
+        val gemerktesEreignis = remember { arrayOfNulls<Gemeinsamereignis>(1) }
+        ereignis?.let { gemerktesEreignis[0] = it }
+        AnimatedVisibility(ereignis != null, Modifier.align(Alignment.TopCenter)
+                .padding(top = TvStil.randOben + TvPlayermass.knopf + 8.dp),
+            enter = fadeIn(tween(180, easing = Bewegung.weich)), exit = fadeOut(tween(340, easing = Bewegung.weich))) {
+            gemerktesEreignis[0]?.let { e -> androidx.compose.runtime.key(e.id) { Gruppenereignis(e, stil = TvStil.koerper, zeichen = 20.dp, hoehe = 56.dp) } }
+        }
+        // Eine Meldung der Gruppe (`SyncPlayFehler`) dort, wo auch die eigenen des Players stehen.
+        val gemeinsamFehler = app.gemeinsamFehler.value
+        LaunchedEffect(gemeinsamFehler) { gemeinsamFehler?.let { werk.hinweis = it; app.gemeinsamFehler.value = null } }
 
         werk.hinweis?.let {
             Text(it, style = TvStil.koerper.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = Stil.schrift,
@@ -503,7 +583,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             val hoch by animateFloatAsState(if (steuerungZiel) 0f else 1f,
                 if (reduziert) snap() else tween(200, easing = EaseInOut), label = "technikschild")
             val weg = with(LocalDensity.current) { (TvPlayermass.knopf + TvStil.kachelAbstand).toPx() }
-            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
+            Technikschild(werk.technikFest, werk.technikLive, { werk.position }, werk.dauer,
                 app.einstellungen.technikschildMessen, fern = true,
                 Modifier.align(Alignment.TopStart)
                     .padding(start = TvStil.randSeite, top = TvStil.randOben + TvPlayermass.knopf + TvStil.kachelAbstand)
@@ -517,7 +597,9 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         AnimatedVisibility(visible = ebeneOffen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
             @OptIn(ExperimentalComposeUiApi::class)
             Box(Modifier.fillMaxSize()
-                    .focusProperties { exit = { if (ebenenAusgang[0]) FocusRequester.Default else FocusRequester.Cancel } }
+                    // **Offen fuer eine Tafel darueber** (Kachelmenue einer Folge): sonst sperrte `Cancel`
+                    // auch ihr `requestFocus`, sie stuende ohne Fokus da, und OK ginge an die Kachel darunter.
+                    .focusProperties { exit = { if (ebenenAusgang[0] || app.blatt.value != null) FocusRequester.Default else FocusRequester.Cancel } }
                     .focusGroup()) {
                 // **Kein Weichzeichner:** VLC zeichnet in eine `SurfaceView`, die das System getrennt
                 // zusammensetzt — ein `RenderEffect` erreicht sie nicht (dieselbe Lage wie am Handy,
@@ -525,12 +607,12 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)))
                 when (offeneEbene ?: zuletztEbene) {
                     "spuren" -> TvSpurenEbene(werk)
-                    "einstellungen" -> TvEinstellungsEbene(werk, app, ebeneSchliessen = { ebeneSchliessen() })
+                    "einstellungen" -> TvEinstellungsEbene(werk, app, ebeneSchliessen = { ebeneSchliessen() }) { werk.beenden(schliessen) }
                     "folgen" -> plan?.takeIf { hatFolgen }?.let { p ->
                         TvFolgenEbene(app, p, titel) { f ->
                             ebeneSchliessen()
                             // Die laufende Folge waehlen heisst: weiterschauen.
-                            if (f.id != p.itemId) lauf.launch { werk.wechsleZu(f.id) }
+                            if (f.id != p.itemId) lauf.launch { werk.folgeWaehlen(f.id) }
                         }
                     }
                 }
@@ -568,6 +650,8 @@ private object TvPlayermass {
     val leiste = 20.dp
     val spalte = 250.dp
     val spaltenAbstand = 57.dp
+    /** Wenn die Spalten sonst nicht ins Bild passen (Einstellungen mit Qualitaet oder Gruppe). */
+    val spaltenAbstandEng = 20.dp
     val spaltenOben = 76.dp
     fun symbolreihe(anzahl: Int) = knopf * anzahl + knopfAbstand * (anzahl - 1)
 }
@@ -625,10 +709,12 @@ private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuf
  * erscheint in Akzentfarbe, darueber das Trickplay-Bild mit der Zielzeit (ohne Trickplay nur die Zeit).
  */
 @Composable
-private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft: Boolean,
+private fun TvZeitleiste(position: () -> Double, dauer: Double, marke: Double?, laeuft: Boolean, alsEnde: Boolean,
                          vorschau: (Double) -> android.graphics.Bitmap?) {
     val spult = marke != null
-    val gezeigt = marke ?: position
+    // `position` ist ein Lambda: gelesen wird erst hier, nicht je Takt im ganzen Player.
+    val jetzt = position()
+    val gezeigt = marke ?: jetzt
     fun anteil(s: Double): Float = if (dauer > 0) (s / dauer).coerceIn(0.0, 1.0).toFloat() else 0f
     val balken by animateDpAsState(if (spult) 6.dp else 4.dp, tween(180), label = "balken")
     val griffSkala by animateFloatAsState(if (spult) 1f else 0.4f, tween(180), label = "griffSkala")
@@ -642,11 +728,11 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
                                exit = fadeOut(tween(180)) + shrinkHorizontally(tween(180))) {
                 Symbol(Zeichen.Pause, 12.dp, Modifier.padding(end = 8.dp), farbe = Stil.schrift, staerke = Staerke.Mittel)
             }
-            Text(zeitText(position), style = ziffern, color = Stil.schriftLeise)
+            Text(zeitText(jetzt), style = ziffern, color = Stil.schriftLeise)
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
             val breite = maxWidth
-            val stand = anteil(position)
+            val stand = anteil(jetzt)
             val ziel = anteil(gezeigt)
             Box(Modifier.fillMaxWidth().height(balken).clip(CircleShape).background(TvPlayermass.leisteGrund))
             // Bis zur wirklichen Stelle: das ist gesehen.
@@ -681,7 +767,12 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
                 }
             }
         }
-        Text("−" + zeitText((dauer - position).coerceAtLeast(0.0)), style = ziffern, color = Stil.schriftLeise)
+        val rest = (dauer - jetzt).coerceAtLeast(0.0)
+        val kontext = LocalContext.current
+        val text = if (alsEnde) uebersetzt("Endet um %@",
+            android.text.format.DateFormat.getTimeFormat(kontext).format(java.util.Date(System.currentTimeMillis() + (rest * 1000).toLong())))
+            else "−" + zeitText(rest)
+        Text(text, style = ziffern, color = Stil.schriftLeise, maxLines = 1)
     }
 }
 
@@ -689,20 +780,35 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
 
 /** Fokus in eine Ebene legen: die erste Anforderung faellt oft in den Durchlauf, der das Ziel erst einhaengt. */
 private suspend fun fokusLegen(ziel: FocusRequester) {
-    repeat(6) { if (runCatching { ziel.requestFocus() }.isSuccess) return; delay(30) }
+    repeat(6) { if (runCatching { ziel.requestFocus() }.isSuccess) return; delay(TvStil.fokusFrist) }
 }
 
-/** Spalten nebeneinander, mittig; unten enden sie am Bildrand, was darueber hinausgeht, scrollt. */
+/** Breite einer `Wahlspalte` — setzt `Spaltenreihe`, damit alle Spalten ins Bild passen. */
+private val LocalSpaltenbreite = compositionLocalOf { TvPlayermass.spalte }
+
+/**
+ * Spalten nebeneinander, mittig; unten enden sie am Bildrand, was darueber hinausgeht, scrollt.
+ * **Alle Spalten stehen im Bild.** Vier oder fuenf Spalten zu 250 dp sind breiter als der Fernseher
+ * (960 dp); die Reihe lief rechts hinaus, und `Row` gab den letzten Spalten keine Breite mehr — dort
+ * kam der Fokus nie an. Passen sie nicht, rueckt die Reihe enger und die Spalten werden schmaler.
+ */
 @Composable
-private fun Spaltenreihe(inhalt: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxSize().padding(top = TvPlayermass.spaltenOben),
-        horizontalArrangement = Arrangement.spacedBy(TvPlayermass.spaltenAbstand, Alignment.CenterHorizontally), content = inhalt)
+private fun Spaltenreihe(anzahl: Int, inhalt: @Composable RowScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite).padding(top = TvPlayermass.spaltenOben)) {
+        val n = anzahl.coerceAtLeast(1)
+        val weit = TvPlayermass.spalte * n + TvPlayermass.spaltenAbstand * (n - 1)
+        val abstand = if (weit <= maxWidth) TvPlayermass.spaltenAbstand else TvPlayermass.spaltenAbstandEng
+        val breite = minOf(TvPlayermass.spalte, (maxWidth - abstand * (n - 1)) / n)
+        CompositionLocalProvider(LocalSpaltenbreite provides breite) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(abstand, Alignment.CenterHorizontally), content = inhalt)
+        }
+    }
 }
 
 /** Feste Ueberschrift, nur die Zeilen darunter scrollen — per Fokus, jede Spalte fuer sich. */
 @Composable
 private fun Wahlspalte(titel: String, liste: LazyListState, inhalt: LazyListScope.() -> Unit) {
-    Column(Modifier.width(TvPlayermass.spalte).fillMaxHeight()) {
+    Column(Modifier.width(LocalSpaltenbreite.current).fillMaxHeight()) {
         Text(titel, style = TvStil.unterseitentitel, color = Stil.schrift, maxLines = 1,
              modifier = Modifier.padding(start = 13.dp, bottom = 11.dp).semantics { heading() })
         LazyColumn(Modifier.weight(1f).focusGroup(), state = liste, verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -730,6 +836,56 @@ private fun Ebenenzeile(text: String, gewaehlt: Boolean, modifier: Modifier = Mo
 }
 
 /**
+ * **Verzoegerung — letzte Zeile der Spalten Audio und Untertitel.** Vorlage `Verzoegerungszeile` in
+ * `Sources/tvOS/PlayerEbenen.swift`: drei eigene Fokusziele — −, + und Zuruecksetzen — statt einer Zeile, die
+ * links/rechts abfaengt, denn links und rechts wechseln hier die Spalte. Gehalten wiederholt die Fernbedienung
+ * die Taste; jeder Druck geht durch den `Haltezaehler` im Paket und wird so schneller. Nach dem Zuruecksetzen
+ * verschwindet der Rundpfeil, der Fokus geht auf +.
+ */
+@Composable
+private fun TvVerzoegerungszeile(millisekunden: Int, schieben: (Int) -> Unit, zuruecksetzen: () -> Unit) {
+    val a = remember(millisekunden) { de.paulherter.swiftly.verzoegerungsanzeige(millisekunden) }
+    val plus = remember { FocusRequester() }
+    Column(Modifier.fillMaxWidth().padding(top = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(uebersetzt("Verzögerung"), style = TvStil.klein, color = Stil.schriftSehrLeise, modifier = Modifier.padding(horizontal = 13.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TvVerzoegerungstaste(Zeichen.Minus, uebersetzt("Früher"), a.amAnfang, true) { schieben(-1) }
+            Text(a.text, style = TvStil.knopf.copy(fontFeatureSettings = "tnum"), textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+                 color = if (a.istNull) Stil.schriftLeise else Stil.schrift,
+                 modifier = Modifier.weight(1f).semantics { stateDescription = a.text })
+            TvVerzoegerungstaste(Zeichen.Plus, uebersetzt("Später"), a.amEnde, true, Modifier.focusRequester(plus)) { schieben(1) }
+            TvVerzoegerungstaste(Zeichen.Ruecksetzen, uebersetzt("Zurücksetzen"), false, false,
+                                 Modifier.focusProperties { canFocus = !a.istNull }.alpha(if (a.istNull) 0f else 1f)) {
+                if (!a.istNull) { zuruecksetzen(); runCatching { plus.requestFocus() } }
+            }
+        }
+    }
+}
+
+/**
+ * Eine Taste der Verzoegerungszeile — weiss im Fokus wie `TvSymbolknopf`. **Am Anschlag bleibt sie fokussierbar**
+ * (nur blass): verschwaende der Fokus mitten im Halten, spraenge er in eine andere Spalte. `wiederholen`: jedes
+ * KeyDown der Mitte-Taste zaehlt, auch die Wiederholungen beim Halten — `clickable` loest erst beim Loslassen
+ * und nur einmal aus.
+ */
+@Composable
+private fun TvVerzoegerungstaste(symbol: Zeichen, beschreibung: String, gesperrt: Boolean, wiederholen: Boolean,
+                                 modifier: Modifier = Modifier, tun: () -> Unit) {
+    val mitte = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
+    Fokusflaeche(modifier.semantics { contentDescription = beschreibung }
+            .onPreviewKeyEvent { e ->
+                if (!wiederholen || e.key !in mitte) false
+                else { if (e.type == KeyEventType.KeyDown) tun(); true }
+            }, lupe = TvStil.fokusLupeKlein, tun = tun) { hat ->
+        Box(Modifier.size(TvPlayermass.knopf).clip(RoundedCornerShape(TvStil.ecke))
+                .background(if (hat) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
+            Symbol(symbol, 16.dp, Modifier.alpha(if (gesperrt) 0.4f else 1f),
+                   farbe = if (hat) Stil.grund else Stil.schrift, staerke = Staerke.Halbfett)
+        }
+    }
+}
+
+/**
  * Audio & Untertitel — zwei Spalten, jede scrollt fuer sich. Die eigene Wahl steht sofort, unabhaengig
  * von VLC, das die Auswahl erst einen Takt spaeter nachzieht. Beim Oeffnen auf der gewaehlten Tonspur.
  */
@@ -747,12 +903,15 @@ private fun TvSpurenEbene(werk: Spielwerk) {
     val utListe = rememberLazyListState((utStart - 2).coerceAtLeast(0))
     LaunchedEffect(Unit) { fokusLegen(start) }
 
-    Spaltenreihe {
+    Spaltenreihe(2) {
         Wahlspalte(uebersetzt("Audio"), tonListe) {
             itemsIndexed(ton, key = { _, s -> "t${s.first}" }) { i, (id, name) ->
                 Ebenenzeile(name, tonWahl == id, if (i == tonStart) Modifier.focusRequester(start) else Modifier) {
                     tonWahl = id; werk.tonVonHand(id)
                 }
+            }
+            item(key = "vt") {
+                TvVerzoegerungszeile(werk.tonVerzoegerung, { werk.verzoegerungSchieben(true, it) }) { werk.verzoegerungSetzen(true, 0) }
             }
         }
         Wahlspalte(uebersetzt("Untertitel"), utListe) {
@@ -766,21 +925,58 @@ private fun TvSpurenEbene(werk: Spielwerk) {
                     utWahl = id; werk.untertitelVonHand(id)
                 }
             }
+            item(key = "vu") {
+                TvVerzoegerungszeile(werk.untertitelVerzoegerung, { werk.verzoegerungSchieben(false, it) }) { werk.verzoegerungSetzen(false, 0) }
+            }
         }
     }
 }
 
-/** Einstellungen — Bild, Schlafzeit, Technikschild, Qualität (Vorlage `EinstellungsEbene`). Fokus auf dem gewaehlten Bild. */
+/**
+ * Einstellungen — Bild, Schlafzeit, Technikschild, Qualität (Vorlage `EinstellungsEbene`). Fokus auf dem gewaehlten Bild.
+ * **Restzeit steht hier nicht** — wie auf tvOS schaltet Runter auf der Leiste sie um (`taste`).
+ */
 @Composable
-private fun TvEinstellungsEbene(werk: Spielwerk, app: SwiftlyAnwendung, ebeneSchliessen: () -> Unit) {
+private fun TvEinstellungsEbene(werk: Spielwerk, app: SwiftlyAnwendung,
+                                ebeneSchliessen: () -> Unit, gruppeVerlassen: () -> Unit) {
     val e = app.einstellungen
     val start = remember { FocusRequester() }
     val fuellendAmStart = remember { werk.bildfuellend }
     LaunchedEffect(Unit) { fokusLegen(start) }
-    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf.
-    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true
+    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf — **nicht in der Gruppe**:
+    // das Neuladen ginge an ihr vorbei, und man liefe allein weiter (iOS `qualitaetswahl`).
+    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true && !werk.inGruppe
+    val gruppe = if (werk.inGruppe) app.gemeinsam.value.gruppe else null
     val lauf = rememberCoroutineScope()
-    Spaltenreihe {
+    // Reihenfolge wie auf dem Apple TV: (Gemeinsam), Bild, Schlafzeit, Technikschild, (Qualitaet).
+    Spaltenreihe(3 + (if (gruppe != null) 1 else 0) + (if (qualitaetZeigen) 1 else 0)) {
+        // **Gemeinsam zuerst** (Entwurf A): wer dabei ist — eine Auskunft, keine Knoepfe —, darunter der Ausgang.
+        if (gruppe != null) Wahlspalte(uebersetzt("Gemeinsam · %@", gruppe.name), rememberLazyListState()) {
+            gruppe.teilnehmer.forEachIndexed { i, name ->
+                item(key = "t$i") {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                        Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
+                            Symbol(Zeichen.PersonVoll, 15.dp, farbe = Stil.schriftSehrLeise)
+                        }
+                        Text(name, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            item(key = "verlassen") {
+                Fokusflaeche(Modifier.fillMaxWidth(), lupe = 1f, tun = gruppeVerlassen) { fokus ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvStil.eckeKachel))
+                            .background(if (fokus) TvStil.fokusflaeche else Color.Transparent)
+                            .padding(horizontal = 13.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                        Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
+                            Symbol(Zeichen.Abmelden, 15.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett)
+                        }
+                        Text(uebersetzt("Gruppe verlassen"), style = TvStil.knopf, color = Stil.akzent, maxLines = 1)
+                    }
+                }
+            }
+        }
         // Zwei Bildformate wie auf dem iPhone: das ganze Bild und formatfuellend.
         Wahlspalte(uebersetzt("Bild"), rememberLazyListState()) {
             item(key = "b0") {
@@ -869,6 +1065,16 @@ private fun TvFolgenEbene(app: SwiftlyAnwendung, plan: Spielplan, titel: String,
     val wahlAusgang = remember { booleanArrayOf(false) }
     fun wahlZu() { wahlAusgang[0] = true; runCatching { pille.requestFocus() }; wahl = null }
     BackHandler(enabled = wahl != null) { wahlZu() }
+
+    // **Nach einer Aenderung am Sehstand** (Kachelmenue) frisch holen — derselbe Nachtrag wie
+    // in der Folgenebene am Telefon (`FolgenEbene.folgenAuffrischen`).
+    suspend fun folgenAuffrischen() {
+        val g = gewaehlt ?: return
+        try {
+            val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, g).await() })
+            if (gewaehlt == g) { folgen = f; app.folgenSpeicher[g] = f }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
 
     LaunchedEffect(serieId) {
         try {
@@ -960,7 +1166,15 @@ private fun TvFolgenEbene(app: SwiftlyAnwendung, plan: Spielplan, titel: String,
                     contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
                     horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
                 itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
-                    TvFolgenkachel(f, if (i == start) Modifier.focusRequester(laufende) else Modifier) { starten(f) }
+                    // Langes OK oder die Menue-Taste: das Kachelmenue, im Player nur mit dem
+                    // Sehstand (`Kachelmenuewunsch.imPlayer`) — die Kachel selbst startet die Folge schon.
+                    val menue = de.paulherter.swiftly.LocalKachelmenue.current
+                    val lange: (() -> Unit)? = menue?.let { m -> {
+                        m(de.paulherter.swiftly.Kachelmenuewunsch(f.id, f.name.ifEmpty { f.titel }, "Episode",
+                            f.bild, true, f.unterzeile, imPlayer = true,
+                            nachher = { lauf.launch { folgenAuffrischen() } }))
+                    } }
+                    TvFolgenkachel(f, if (i == start) Modifier.focusRequester(laufende) else Modifier, lange = lange) { starten(f) }
                 }
             }
         }

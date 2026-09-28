@@ -147,12 +147,14 @@ extension App {
             let konto = vorgaben?.naechsteFolgeAutomatisch
             let recht = vorgaben?.downloadrecht ?? .unbekannt
             let umwandeln = vorgaben?.umwandelnErlaubt ?? true
+            let qualitaet = vorgaben?.downloadqualitaetWaehlbar ?? true
             aufHauptfaden {
                 // Inzwischen ein anderes Konto: dessen Vorgabe kommt selbst.
                 guard self.client === c else { return }
                 self.naechsteAutomatischKonto = konto
                 self.downloadrecht = recht
                 self.umwandelnErlaubt = umwandeln
+                self.downloadqualitaetWaehlbar = qualitaet
                 Protokoll.schreib("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch), Downloads: \(recht.rawValue)")
                 fflush(nil)
                 // Die offene Seite hat den Knopf vielleicht schon gebaut.
@@ -208,8 +210,12 @@ extension App {
             gtk_widget_set_can_target(fuss, 0)
         }
 
+        karteNachfuehren(countdown: countdown)
+
         guard let ebene = spielerAngebot, ebene.knopf != nil else { return }
-        let zeigen = angebotDa
+        // **Steht die Karte, weicht der Knopf** (iOS `knopfDa`): der Knopf
+        // „Nächste Folge" steht nur bei offener Steuerung, ohne Countdown.
+        let zeigen = angebotDa && countdown == nil
         // **An die Stelle des Knopfs im Fuß.** Geht die Steuerung auf, weil
         // der Zeiger sich zum Knopf bewegt, steht dort derselbe Knopf — der
         // Klick trifft, statt ins Leere zu gehen.
@@ -224,16 +230,86 @@ extension App {
             }
         }
         let vorher = gtk_widget_get_opacity(ebene.knopf) > 0.5 && gtk_widget_get_visible(ebene.knopf) != 0
-        ebene.setzen(jetzigesAngebot, sichtbar: zeigen,
-                     fuellung: countdown == nil ? nil : angebotsuhr, blende: true)
+        ebene.setzen(jetzigesAngebot, sichtbar: zeigen, fuellung: nil, blende: true)
         if vorher != zeigen {
             Protokoll.schreib("[Angebot] Einblendung \(zeigen ? "an" : "aus"): \(jetzigesAngebot.beschriftung)\(countdown != nil ? " mit Countdown" : "") bei \(Int(spielstand.position)) s, Steuerung \(steuerungDa ? "offen" : "zu")")
             fflush(nil)
         }
     }
 
+    /// **Die Karte der nächsten Folge nachführen** (Variante C, iOS
+    /// `kartenebene`): sie steht, solange die Ebene ihren Countdown zeigt —
+    /// nicht in der Gruppe, nicht unter einer Tafel, nicht beim Wechsel.
+    /// Öffnet der Zeiger die Steuerung nur nebenbei, bleibt sie und rückt über
+    /// die Zeitleiste; bewusst geöffnet (Klick, Taste) geht sie weg, und der
+    /// Countdown wartet (``Angebotsebene/karteWartetBeiSteuerung``).
+    private func karteNachfuehren(countdown: Double?) {
+        guard let karte = spielerKarte, karte.huelle != nil else { return }
+        let da = angebotDa && countdown != nil && !inGruppe
+        let folge = vorgeholteFolge
+        var bild: URL?
+        if let folge, let adressen {
+            if let marke = folge.imageTags?["Primary"] {
+                bild = adressen.bauen(itemID: folge.id, marke: marke, mass: .hoechstensHoch(Int(karte.breite)))
+            } else {
+                bild = Bildwahl.quer(folge, adressen: adressen, breite: Int(karte.breite) * 2)?.url
+            }
+        }
+        let fensterbreite = spielerRahmen.map { gtk_widget_get_width($0) } ?? 0
+        karte.setzen(folge: folge, bild: bild, da: da,
+                     uhr: countdown == nil ? nil : angebotsuhr,
+                     rest: angebotsebene.countdownRest,
+                     fensterbreite: fensterbreite > 0 ? fensterbreite : 1280)
+        // Über die Zeitleiste, solange die Steuerung steht; sonst im
+        // sicheren Abstand zum Rand wie auf dem iPhone.
+        var unten = Playermass.unten + Int32(Folgenkarte.untenAbstand)
+        if steuerungDa, let regler = spielerRegler, let rahmen = spielerRahmen {
+            var r = graphene_rect_t()
+            if gtk_widget_compute_bounds(regler, rahmen, &r) != 0, r.size.height > 0 {
+                unten = Int32((Double(gtk_widget_get_height(rahmen)) - Double(r.origin.y)).rounded()) + 12
+            }
+        }
+        karte.unten(unten)
+        // Der Schleier: abgedunkelt, solange die Karte steht und die
+        // Steuerung ihn nicht schon gibt (iOS `abgedunkelt`); der Verlauf
+        // unten rechts bleibt auch unter der Steuerung.
+        if let schleier = spielerKartenschleier {
+            let an = da
+            if an { gtk_widget_add_css_class(schleier, "swiftly-kartenschleier-an") }
+            else { gtk_widget_remove_css_class(schleier, "swiftly-kartenschleier-an") }
+            if steuerungDa { gtk_widget_add_css_class(schleier, "swiftly-kartenschleier-hell") }
+            else { gtk_widget_remove_css_class(schleier, "swiftly-kartenschleier-hell") }
+            if abs(gtk_widget_get_opacity(schleier) - (an ? 1 : 0)) > 0.01 {
+                blenden(schleier, auf: an ? 1 : 0, dauer: an ? 0.18 : 0.34,
+                        kennlinie: an ? .easeOut : .easeInOut)
+            }
+        }
+    }
+
+    /// Absagen — X an der Karte (iOS `abbrechen`): Countdown weg, am
+    /// Dateiende kein Weiterschalten mehr (`Angebotsebene.weiterAbgesagt`).
+    func karteAbbrechen() {
+        angebotsebene.schliessen()
+        Protokoll.schreib("[Angebot] Karte abgesagt, weiter abgesagt: \(angebotsebene.weiterAbgesagt)")
+        fflush(nil)
+        angebotNachfuehren()
+    }
+
     /// Die Ebene über dem Bild anlegen — über der Steuerung, unten rechts.
     func angebotsebeneBauen(in rahmen: Widget!) {
+        let karte = Folgenkartenansicht(ausloesen: { [weak self] in
+            guard let self else { return }
+            Protokoll.schreib("[Karte] Start")
+            fflush(nil)
+            self.angebotsebene.gedrueckt()
+            self.angebotNachfuehren()
+            self.naechsteFolge()
+        }, abbrechen: { [weak self] in self?.karteAbbrechen() })
+        gtk_widget_set_margin_end(karte.huelle, Playermass.seite)
+        gtk_widget_set_margin_bottom(karte.huelle, Playermass.unten + Int32(Folgenkarte.untenAbstand))
+        gtk_overlay_add_overlay(OpaquePointer(rahmen), karte.huelle)
+        spielerKarte = karte
+
         let ebene = Angebotsknopf { [weak self] in self?.angebotAusfuehren() }
         gtk_widget_set_halign(ebene.knopf, GTK_ALIGN_END)
         gtk_widget_set_valign(ebene.knopf, GTK_ALIGN_END)

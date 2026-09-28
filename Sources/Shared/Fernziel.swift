@@ -68,7 +68,14 @@ final class Fernziel {
         zielname = stand.name
         guard stand.airplay != aufAirPlay else { return }
         aufAirPlay = stand.airplay
-        Protokoll.schreib("[Ziel] \(stand.airplay ? "AirPlay" : "Gerät") — \(stand.name ?? "?")")
+        // **Die Tonverzoegerung des Ziels mit ins Protokoll.** Lehnt AirPlay
+        // den Strom ab, spielt VLC weiter und schickt nur den Ton hinueber;
+        // Bild und Ton bleiben dann nur beisammen, wenn VLC diese Latenz
+        // ausgleicht (audiounit_ios liest `outputLatency`). Ein gemeldeter
+        // Versatz ist mit dieser Zahl am Geraet zu pruefen statt zu raten.
+        let latenz = Int(AVAudioSession.sharedInstance().outputLatency * 1000)
+        Protokoll.schreib("[Ziel] \(stand.airplay ? "AirPlay" : "Gerät") — \(stand.name ?? "?")"
+            + " · Tonlatenz \(latenz) ms")
         gewechselt?(stand.airplay)
     }
 

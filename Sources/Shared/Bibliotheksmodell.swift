@@ -30,6 +30,10 @@ final class Bibliotheksmodell {
     /// Neustart da. Von der Mac-Sitzung gefunden und dort in der Ansicht
     /// behoben; hier steht die Hälfte, die alle Plattformen teilen.
     private var fuerKonto = 0
+    /// Zählt jeden Ladelauf; nur der jüngste schreibt. Sonst überholen sich
+    /// Läufe aus `.task(id:)`, Kontowechsel und „Erneut versuchen", und ein
+    /// spät ankommender älterer schrieb seinen Stand über den neueren.
+    private var lauf = 0
 
     /// Gehört, was hier steht, noch zum angemeldeten Konto?
     ///
@@ -122,6 +126,18 @@ final class Bibliotheksmodell {
     /// Dasselbe mit fertiger Quelle — „Alle" quer über die Bibliotheken oder
     /// eine Sammlung. `nil` heißt: in diesem Bereich gibt es nichts.
     func laden(_ model: AppModel, aus quelle: Regalquelle?) async {
+        lauf += 1
+        let meiner = lauf
+        // **Nach einem Kontowechsel sofort leer.** Die Titel des vorigen
+        // Kontos blieben sonst stehen, bis die Antwort da war, und wurden
+        // dann ausgetauscht. So stehen die Platzhalter, bis das neue Konto
+        // in einem Zug einblendet.
+        if veraltet(model) {
+            items = []
+            gesamt = 0
+            sieb = nil
+            geladenFuer = nil
+        }
         laedt = items.isEmpty
         gestoert = false
         fuerKonto = model.kontowechsel
@@ -134,13 +150,16 @@ final class Bibliotheksmodell {
             return
         }
         if quelle.siebt {
-            await gesiebtLaden(model, aus: quelle)
-            laedt = false
+            await gesiebtLaden(model, aus: quelle, lauf: meiner)
+            if meiner == lauf { laedt = false }
             return
         }
         sieb = nil
-        if let seite = await model.items(aus: quelle, sortierung: sortierung,
-                                         filter: filter, ab: 0) {
+        let antwort = await model.items(aus: quelle, sortierung: sortierung,
+                                        filter: filter, ab: 0)
+        // Ein juengerer Lauf ist unterwegs — er schreibt, dieser nicht.
+        guard meiner == lauf else { return }
+        if let seite = antwort {
             // Beim Zurückkommen von einer Detailseite läuft das hier erneut —
             // und darf nicht auf die erste Seite kürzen, siehe `auffrischen`.
             let fuer = "\(quelle.schluessel)|\(kennung)|\(fuerKonto)"
@@ -209,15 +228,18 @@ final class Bibliotheksmodell {
     /// Detailseite wird so weit neu geholt, wie schon geblättert war — in
     /// einem Zug, damit die Liste nicht auf die erste Seite schrumpft und der
     /// Fortschritt der Kacheln trotzdem frisch ist.
-    private func gesiebtLaden(_ model: AppModel, aus quelle: Regalquelle) async {
+    private func gesiebtLaden(_ model: AppModel, aus quelle: Regalquelle, lauf meiner: Int) async {
         let fuer = "\(quelle.schluessel)|\(kennung)|\(fuerKonto)"
-        guard var neuesSieb = await model.titelsieb(quelle, filter: filter) else {
+        let geholt = await model.titelsieb(quelle, filter: filter)
+        guard meiner == lauf else { return }
+        guard var neuesSieb = geholt else {
             if !Task.isCancelled { gestoert = items.isEmpty }
             return
         }
         let erste = max(AppModel.seitengroesse, geladenFuer == fuer ? rohVersatz : 0)
-        guard let (neu, versatz, roh) = await fuellen(model, aus: quelle, sieb: &neuesSieb,
-                                                      ab: 0, erste: erste) else {
+        let gefuellt = await fuellen(model, aus: quelle, sieb: &neuesSieb, ab: 0, erste: erste)
+        guard meiner == lauf else { return }
+        guard let (neu, versatz, roh) = gefuellt else {
             if !Task.isCancelled { gestoert = items.isEmpty }
             return
         }

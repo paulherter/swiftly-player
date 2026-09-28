@@ -21,6 +21,10 @@ struct SucheView: View {
     @State private var gesucht = false
     /// Der Server hat nicht geantwortet — anders als „nichts gefunden".
     @State private var gestoert = false
+    /// Die laufende Suche. Ein neuer Begriff bricht sie ab — sonst kam die
+    /// Antwort auf „Ga" gelegentlich nach der auf „Game" an und ueberschrieb
+    /// sie.
+    @State private var suchlauf: Task<Void, Never>?
     /// **Was zuletzt gesucht wurde** — dieselbe Liste wie auf dem iPhone, die
     /// Regel steht in `Suchverlauf`. Mit der Fernbedienung ist jedes getippte
     /// Wort teuer; eines, das man nicht noch einmal tippen muss, ist hier mehr
@@ -119,9 +123,11 @@ struct SucheView: View {
                                                 staffeln: item.childCount,
                                                 gesehen: item.userData?.played,
                                                 offeneFolgen: item.userData?
-                                                    .unplayedItemCount))
+                                                    .unplayedItemCount),
+                                             zeichen: item.kachelzeichen)
                             }
                             .buttonStyle(KachelStil())
+                            .kachelmenue(item, model: model)
                         }
                     }
                     .padding(.horizontal, Stil.randSeite)
@@ -197,28 +203,41 @@ struct SucheView: View {
         // Leistenunterkante. Weniger, und der Titel rutscht beim Anspringen
         // einer Reihe wieder darunter.
         //
-        // **Das Feld endet bei 264**, wie das oberste Element jeder anderen
-        // Seite — siehe `Stil.erstesEnde`. Zurueckgerechnet aus seiner
-        // eigenen Hoehe: 264 − 76 = 188, davon der obere sichere Rand ab.
+        // **Das Feld beginnt bei `Stil.inhaltOben`**, wie das oberste
+        // Element jeder anderen Hauptseite — davon der obere sichere Rand
+        // ab, an dem die Flaeche beginnt. Vorher war die Unterkante
+        // gleichgezogen (264), siehe dort.
         //
         // Das fruehere Mindestmass von 150 galt fuer Reihen **mit** Titel:
         // es hielt Reihentitel (46) und Abstand (36) frei. Das Suchgitter
         // hat keinen Titel ueber sich, sondern das Feld — und das soll beim
         // Anspringen einer Kachel sichtbar bleiben, nicht mehr.
         .safeAreaInset(edge: .top) {
-            Color.clear.frame(height: Stil.erstesEnde - Stil.knopfHoehe - Stil.randOben)
+            Color.clear.frame(height: Stil.inhaltOben - Stil.randOben)
         }
-        // Auf tvOS kommt der Text erst, wenn die Systemtastatur schließt —
-        // eine Verzögerung wie auf dem iPhone wäre hier sinnlos.
+        // **Je Tastendruck ein Anlauf, aber nur der letzte zaehlt.** Die
+        // Tastatur meldet jeden Buchstaben; ohne Pause und Abbruch ging fuer
+        // jeden eine Abfrage an Server und Seerr, und die Antworten kamen in
+        // beliebiger Reihenfolge zurueck. 250 ms, wie am iPhone.
+        //
+        // Kein `.task(id: begriff)`: der liefe bei jeder Rueckkehr von einer
+        // Detailseite erneut und suchte dasselbe noch einmal.
         .onChange(of: begriff) { _, neu in
+            suchlauf?.cancel()
             guard !neu.isEmpty else {
                 treffer = []
                 gesucht = false
                 gestoert = false
+                laeuft = false
                 return
             }
-            Task { await suchen() }
+            suchlauf = Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                await suchen()
+            }
         }
+        .onDisappear { suchlauf?.cancel() }
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         // **Gemerkt wird, wer mit Treffern das Feld verlässt.** Hier wird schon
@@ -257,6 +276,7 @@ struct SucheView: View {
                                 .font(.system(size: 26, weight: .medium))
                                 .foregroundStyle(Stil.schriftSehrLeise)
                                 .frame(width: 34)
+                                .accessibilityHidden(true)
                             // Getippt, also kein Katalogtext.
                             Text(verbatim: wort)
                                 .lineLimit(1)
@@ -270,6 +290,7 @@ struct SucheView: View {
                         Image(systemName: "trash")
                             .font(.system(size: 26, weight: .medium))
                             .frame(width: 34)
+                            .accessibilityHidden(true)
                         Text("Verlauf löschen")
                     }
                 }
@@ -306,6 +327,8 @@ struct SucheView: View {
         async let eigene = model.suche(wort)
         async let fremde = model.seerr.suchen(wort)
         let (a, b) = await (eigene, fremde)
+        // Ueberholt: ein neuerer Begriff sucht schon.
+        guard !Task.isCancelled else { return }
         // **Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.**
         //
         // Am 07.09.2026 gemeldet: ein Druck auf eine Serie oeffnete die

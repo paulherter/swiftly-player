@@ -73,13 +73,36 @@ final class Orientierung {
         }
     }
 
+    /// **Während einer Übergabe bleibt es hochkant** („Hier weiterschauen").
+    /// Der Player geht unter der Karte auf; gedreht werden darf erst, wenn
+    /// sie aufs Bild gezoomt hat und weg ist (``uebergabeFreigeben(querformatFest:)``).
+    /// Drei verworfene Anläufe davor haben gezeigt, was sonst passiert: die
+    /// Seite darunter wurde mitgedreht.
+    private(set) var uebergabeHaelt = false
+
+    func uebergabeHalten() { uebergabeHaelt = true }
+
+    /// Die Karte ist weg: jetzt dreht der Player, wie es seine Einstellung will.
+    func uebergabeFreigeben(querformatFest: Bool) {
+        guard uebergabeHaelt else { return }
+        uebergabeHaelt = false
+        guard let rahmen = Playerrahmen.aktiv else { return }
+        playerGeoeffnet(querformatFest: querformatFest)
+        rahmen.setNeedsUpdateOfSupportedInterfaceOrientations()
+    }
+
     func playerGeoeffnet(querformatFest: Bool, anfordern: Bool = true) {
         tonExklusiv(true)
+        if uebergabeHaelt {
+            setzen(.portrait, anfordern: false)
+            return
+        }
         setzen(querformatFest ? .landscape : [.portrait, .landscape], anfordern: anfordern)
     }
 
     /// Zurück zur App: wieder hochkant.
     func playerGeschlossen(anfordern: Bool = true) {
+        uebergabeHaelt = false
         tonExklusiv(false)
         setzen(.portrait, anfordern: anfordern)
     }
@@ -173,6 +196,11 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil)
         -> Bool {
         bilderspeicherVergroessern()
+        #if DEBUG
+        if Erstbildlauf.an { Erstbildlauf.starten() }
+        if Kartenlauf.an { Kartenlauf.starten() }
+        if Tempolauf.an { Tempolauf.starten() }
+        #endif
 
         let sitzung = AVAudioSession.sharedInstance()
         do {

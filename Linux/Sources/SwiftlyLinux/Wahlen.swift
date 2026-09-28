@@ -88,6 +88,9 @@ struct Wahlen: Codable {
     /// steht sie in `@AppStorage("bildfuellend")`; hier liegt sie in
     /// derselben Datei wie die uebrigen Wahlen.
     var bildfuellend = false
+    /// **Restzeit oder Ende** im Player: „−12:34" oder „Endet um 22:41", ein
+    /// Klick schaltet um, die Wahl bleibt (iOS `@AppStorage("restzeitAlsEnde")`).
+    var restzeitAlsEnde = false
     /// **Das Technikschild — die Auskunft, die stehenbleibt.**
     ///
     /// Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Der Schalter
@@ -134,6 +137,13 @@ struct Wahlen: Codable {
     /// einer Stelle steht und nicht in drei Ansichten.
     var suchverlauf = ""
 
+    /// **Zu Ende geschaute Titel, nur auf diesem Rechner gezaehlt** — fuer den
+    /// Discord-Hinweis nach dem fuenften (`Gemeinschaft.anstoss`). Nichts
+    /// davon geht nach draussen.
+    var fertigGeschaut = 0
+    /// Kam der Hinweis schon? Einmal je Installation.
+    var discordHinweisGezeigt = false
+
     /// **Welche Gattung die Merkliste zeigt** — „Filme & Serien", „Filme"
     /// oder „Serien". Sie war ein reiner Speicherwert und damit nach jedem
     /// Start wieder `alle`; auf dem Mac liegt sie in `UserDefaults`, mit der
@@ -173,6 +183,12 @@ struct Wahlen: Codable {
     var filterJeOrt: [String: String] = [:]
     /// Welche Bibliothek ein Bereich zeigt, wenn es mehrere gibt (D9).
     var bibliothekJeGattung: [String: String] = [:]
+    /// **Das Fenster, wie es beim Schliessen war** (UX-Audit 27.09., GNOME
+    /// HIG: „Fenster sollten ihre Groesse behalten"). 0 heisst: noch nie
+    /// gemerkt, die Vorgabe gilt.
+    var fensterBreite = 0
+    var fensterHoehe = 0
+    var fensterMaximiert = false
 
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
 
@@ -217,12 +233,15 @@ struct Wahlen: Codable {
         vorSekunden            = w(.vorSekunden, 30)
         fortschrittAufKacheln  = w(.fortschrittAufKacheln, true)
         bildfuellend           = w(.bildfuellend, false)
+        restzeitAlsEnde        = w(.restzeitAlsEnde, false)
         technikschild          = w(.technikschild, false)
         downloadsAn            = w(.downloadsAn, false)
         nurUeberWLAN           = w(.nurUeberWLAN, true)
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
         suchverlauf            = w(.suchverlauf, "")
+        fertigGeschaut         = w(.fertigGeschaut, 0)
+        discordHinweisGezeigt  = w(.discordHinweisGezeigt, false)
         merkgattung            = w(.merkgattung, "")
         startReihen            = w(.startReihen, [])
         startAus               = w(.startAus, [])
@@ -231,6 +250,9 @@ struct Wahlen: Codable {
         sortierungJeOrt        = w(.sortierungJeOrt, [:])
         filterJeOrt            = w(.filterJeOrt, [:])
         bibliothekJeGattung    = w(.bibliothekJeGattung, [:])
+        fensterBreite          = w(.fensterBreite, 0)
+        fensterHoehe           = w(.fensterHoehe, 0)
+        fensterMaximiert       = w(.fensterMaximiert, false)
     }
 
     /// Schluessel frueherer Fassungen, die nur noch gelesen werden.
@@ -248,9 +270,10 @@ struct Wahlen: Codable {
         case wiedergabeJeServer
         case tonSprache, untertitelSprache, untertitelAutomatisch, neuzugaengeGetrennt,
              naechsteAutomatischGewaehlt, zurueckSekunden, vorSekunden, fortschrittAufKacheln,
-             bildfuellend, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
-             discordAnzeigen, suchverlauf, merkgattung, startReihen, startAus, startGenres,
-             genreChips, sortierungJeOrt, filterJeOrt, bibliothekJeGattung
+             bildfuellend, restzeitAlsEnde, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
+             discordAnzeigen, suchverlauf, fertigGeschaut, discordHinweisGezeigt, merkgattung, startReihen, startAus, startGenres,
+             genreChips, sortierungJeOrt, filterJeOrt, bibliothekJeGattung,
+             fensterBreite, fensterHoehe, fensterMaximiert
     }
 
     func encode(to encoder: Encoder) throws {
@@ -267,12 +290,15 @@ struct Wahlen: Codable {
         try c.encode(vorSekunden, forKey: .vorSekunden)
         try c.encode(fortschrittAufKacheln, forKey: .fortschrittAufKacheln)
         try c.encode(bildfuellend, forKey: .bildfuellend)
+        try c.encode(restzeitAlsEnde, forKey: .restzeitAlsEnde)
         try c.encode(technikschild, forKey: .technikschild)
         try c.encode(downloadsAn, forKey: .downloadsAn)
         try c.encode(nurUeberWLAN, forKey: .nurUeberWLAN)
         try c.encode(pufferstufe, forKey: .pufferstufe)
         try c.encode(discordAnzeigen, forKey: .discordAnzeigen)
         try c.encode(suchverlauf, forKey: .suchverlauf)
+        try c.encode(fertigGeschaut, forKey: .fertigGeschaut)
+        try c.encode(discordHinweisGezeigt, forKey: .discordHinweisGezeigt)
         try c.encode(merkgattung, forKey: .merkgattung)
         try c.encode(startReihen, forKey: .startReihen)
         try c.encode(startAus, forKey: .startAus)
@@ -281,6 +307,9 @@ struct Wahlen: Codable {
         try c.encode(sortierungJeOrt, forKey: .sortierungJeOrt)
         try c.encode(filterJeOrt, forKey: .filterJeOrt)
         try c.encode(bibliothekJeGattung, forKey: .bibliothekJeGattung)
+        try c.encode(fensterBreite, forKey: .fensterBreite)
+        try c.encode(fensterHoehe, forKey: .fensterHoehe)
+        try c.encode(fensterMaximiert, forKey: .fensterMaximiert)
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
@@ -292,10 +321,15 @@ struct Wahlen: Codable {
     }
 
     static func lesen() -> Wahlen {
-        guard let daten = try? Data(contentsOf: datei),
-              let w = try? JSONDecoder().decode(Wahlen.self, from: daten)
-        else { return Wahlen() }
-        return w
+        guard let daten = try? Data(contentsOf: datei) else { return Wahlen() }
+        // Der Decoder oben verzeiht fehlende Schluessel; was hier noch
+        // scheitert, ist keine JSON mehr. Zur Seite statt still ueberschreiben
+        // — siehe ``Speicher/beiseitelegen(_:weil:)``.
+        do { return try JSONDecoder().decode(Wahlen.self, from: daten) }
+        catch {
+            Speicher.beiseitelegen(datei, weil: error)
+            return Wahlen()
+        }
     }
 
     func sichern() {

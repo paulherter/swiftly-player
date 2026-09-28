@@ -118,7 +118,37 @@ extension App {
         // Verlauf liegt jetzt als **ein** Anstrich auf der ganzen Seite: Ton
         // über die Höhe der Kopfzone, dann 260 Punkte nach `grund` — dieselbe
         // Länge wie auf dem Mac.
-        gtk_widget_add_css_class(seite, "swiftly-seitenton")
+        // **Die Farbe des Kopfbilds unter der ganzen Seite** (1.0.5, wie
+        // iPhone und Mac `Stimmungsgrund`): je Seite eine eigene Klasse, damit
+        // die neue nicht in der Farbe der vorigen einfährt (``Tonblatt``).
+        // `swiftly-bildton` trägt, was über Bildfarbe gilt — Knöpfe weiß 8 %.
+        let klasse = Tonblatt.neueKlasse()
+        gtk_widget_add_css_class(seite, "swiftly-bildton")
+        gtk_widget_add_css_class(seite, klasse)
+
+        // **Der Ton liegt auf einer eigenen Lage unter der Seite** und
+        // blendet ein, wenn er nach dem Öffnen kommt — wie auf Apple
+        // (`Stimmungslader`, 0,55 s). Vorher trug die Seite ihn selbst als
+        // Hintergrundbild, und das sprang: ein `transition` auf
+        // `background-image` greift in GTK nicht, wenn eine Regel neu
+        // hinzukommt. Die Deckung einer Lage blendet zuverlässig.
+        // Der Grund darunter (`lagen`) ist `grund`; die Seite selbst ist
+        // durchsichtig. Die Seite misst, die Lage folgt ihr.
+        let tonlage: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(tonlage, "swiftly-seitenton")
+        gtk_widget_add_css_class(tonlage, klasse)
+        gtk_widget_set_can_target(tonlage, 0)
+        let lagen: Widget! = gtk_overlay_new()
+        gtk_widget_add_css_class(lagen, "swiftly-seitenton")
+        gtk_overlay_set_child(OpaquePointer(lagen), tonlage)
+        gtk_overlay_add_overlay(OpaquePointer(lagen), seite)
+        gtk_overlay_set_measure_overlay(OpaquePointer(lagen), seite, 1)
+        Tonblatt.lageMerken(tonlage, klasse: klasse)
+        if let schon = Tonblatt.merkt(item.id) {
+            Tonblatt.setzen(schon, klasse: klasse)
+        } else {
+            gtk_widget_set_opacity(tonlage, 0)
+        }
 
         // **Der Ton gehört zum Kopf, nicht zur Seite.**
         //
@@ -140,7 +170,7 @@ extension App {
         // der Kopfzone.
 
         let scroller = seitenscroller()
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), seite)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), lagen)
         detailScroller = scroller
         beiSignal(scroller, "destroy") { [weak self] in
             if self?.detailScroller == scroller { self?.detailScroller = nil }
@@ -160,12 +190,21 @@ extension App {
         gtk_widget_set_valign(hinweisfeld, GTK_ALIGN_END)
         gtk_widget_set_margin_bottom(hinweisfeld, 32)
         gtk_overlay_add_overlay(OpaquePointer(ueber), hinweisfeld)
+        // **Das Feld stirbt mit der Seite.** Ohne das zeigte `hinweisfeld`
+        // nach dem Verlassen der Seite ins Leere, und ein spaeter Fehler
+        // (Serienseite, ``melden(_:)`` nach einer Antwort) oder die Frist des
+        // Ausblendens griff auf freigegebenen Speicher — ein Absturz, der nur
+        // auftritt, wenn man schnell genug zurueckgeht.
+        let dieses = hinweisfeld
+        beiSignal(hinweisfeld, "destroy") { [weak self] in
+            if self?.hinweisfeld == dieses { self?.hinweisfeld = nil }
+        }
         anhaengen(detailhuelle, ueber)
 
         // Der magere Listeneintrag steht sofort, der volle Satz kommt nach.
         // **Der Kopf hat feste Plätze** — es wandert nichts, wenn ein Text
         // nachkommt, also darf er kommen, wann er kommt.
-        aufbauenMit(item, in: seite)
+        aufbauenMit(item, in: seite, mager: true)
         titelNachladen(item, in: seite)
         // Den Titel oben einblenden, sobald der grosse unter der Leiste
         // verschwindet: ab 98 − 24 = 74, über die 42 Punkt seiner Höhe.
@@ -216,11 +255,74 @@ extension App {
         }
     }
 
-    private func reihenplatz(in unten: Widget!) -> Widget! {
-        let platz = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
-        gtk_widget_set_visible(platz, 0)
-        anhaengen(unten, platz)
-        return platz
+    /// **Alles unter der Beschreibung kommt auf einmal** (iPhone `83677a44`,
+    /// `ItemDetailView.untenDa`).
+    ///
+    /// Besetzung, Extras, Teil der Sammlung, Ähnliches und der Dateiauszug
+    /// hatten hier je einen eigenen Platz und je einen eigenen Abruf; sie
+    /// trafen einzeln ein, drückten sich in die Seite und schoben den Rest
+    /// vor sich her. Jetzt wartet die Seite auf alle Antworten und den Plan
+    /// und blendet sie gemeinsam ein, zusammen mit dem Beleg im Kopf — keine
+    /// Platzhalter, kein Leerhinweis, solange noch geladen wird. Was fehlt,
+    /// fehlt als Reihe; ein Störhinweis stand hier auch vorher nicht.
+    private func untenNachladen(_ titel: Item, in block: Widget!, beleg: Widget!) {
+        guard let client else { return }
+        let blockKiste = gehalten(block)
+        let gattung = Bibliotheksgattung.art(zuTyp: titel.type)
+        // Derselbe Auftrag wie der Beleg oben — kein zweiter POST.
+        let planauftrag = planAuftrag(titel)
+        Task.detached { [self] in
+            async let planung = planauftrag?.value
+            async let extraRoh = try? await client.extras(itemID: titel.id)
+            async let aehnlichRoh = try? await client.aehnliche(itemID: titel.id, zu: titel)
+            async let sammlungRoh = self.sammlungsreihenHolen(titel, art: gattung, client: client)
+            let plan = await planung
+            // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
+            // fehlt die Reihe.
+            let extras = (await extraRoh) ?? []
+            // Doppelte Kennungen raus — dieselbe Regel wie in Suche,
+            // Startseite und Merkliste (iPhone `ItemDetailView`).
+            let aehnliche = Listenregeln.ohneDoppelte((await aehnlichRoh) ?? [])
+            let sammlungen = await sammlungRoh
+            nachDemSchub {
+                defer { losgelassen(blockKiste) }
+                guard let block = blockKiste.widget else { return }
+                if !titel.darsteller.isEmpty {
+                    anhaengen(block, self.besetzungsreihe(titel.darsteller, herkunft: titel.name))
+                }
+                if !extras.isEmpty {
+                    anhaengen(block, self.reiheBauen(titel: uebersetzt("Extras"), art: .neu,
+                                                     items: extras))
+                }
+                // Über „Ähnliches": die Sammlung ist die nähere Verwandtschaft.
+                for (sammlung, andere) in sammlungen {
+                    if let gattung {
+                        anhaengen(block, self.sammlungsreihe(sammlung, titel: andere, art: gattung))
+                    }
+                }
+                if !aehnliche.isEmpty {
+                    anhaengen(block, self.reiheBauen(titel: uebersetzt("Ähnliches"), art: .neu,
+                                                     items: aehnliche))
+                }
+                // **Der Dateiauszug ganz unten** — er beantwortet eine Frage,
+                // die man erst später stellt. Derselbe Plan trägt die Quelle,
+                // der Auszug kostet keinen zweiten Abruf.
+                if let quelle = plan?.quelle {
+                    let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+                    gtk_widget_set_margin_start(raum, Int32(Stil.randAbstand))
+                    gtk_widget_set_margin_end(raum, Int32(Stil.randAbstand))
+                    anhaengen(raum, self.dateizeile(quelle))
+                    anhaengen(block, raum)
+                }
+                // **Ein Einblenden, nicht fünf.** Der Beleg oben kommt für
+                // sich (``planNachladen``) — er wartete sonst auf alles hier.
+                if gtk_widget_get_first_child(block) != nil {
+                    gtk_widget_set_opacity(block, 0)
+                    gtk_widget_set_visible(block, 1)
+                    blenden(block, auf: 1, dauer: Stil.zeitBlendeHerein)
+                }
+            }
+        }
     }
 
     /// **„Teil der Sammlung"** — die anderen Titel der Sammlung, in ihrer
@@ -229,40 +331,37 @@ extension App {
     /// Sammlungsseite. Hoechstens zwei Reihen; steht ein Film in mehr
     /// Sammlungen, sind die uebrigen meist automatisch angelegte Doppel.
     /// Fehlt die Sammlung, fehlt die Reihe — wie bei den Extras.
-    private func sammlungsreihenNachladen(_ titel: Item, in raum: Widget!) {
-        guard let gattung = Bibliotheksgattung.art(zuTyp: titel.type) else { return }
-        let kiste = gehalten(raum)
-        angebotLaden { [weak self] in
-            guard let self, let client = self.client, self.angebotFuer != nil,
-                  let verzeichnis = self.sammlungsverzeichnis
-            else { losgelassen(kiste); return }
-            let sammlungen = Array(verzeichnis.sammlungen(mit: titel).prefix(2))
-            guard !sammlungen.isEmpty else { losgelassen(kiste); return }
-            Task.detached { [self] in
-                var gefunden: [(Sammlung, [Item])] = []
-                for sammlung in sammlungen {
-                    let quelle = Regalquelle(eltern: sammlung.id, art: gattung, sammlung: true)
-                    guard let liste = try? await client.items(parentID: quelle.eltern, limit: 100,
-                                                              sortBy: Sortierung.erscheinung.feld,
-                                                              sortOrder: quelle.richtung(.erscheinung),
-                                                              recursive: quelle.rekursiv,
-                                                              includeItemTypes: quelle.typen).items
-                    else { continue }
-                    let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
-                    if !andere.isEmpty { gefunden.append((sammlung, andere)) }
-                }
-                let reihen = gefunden
-                nachDemSchub {
-                    defer { losgelassen(kiste) }
-                    let gefunden = reihen
-                    guard let ziel = kiste.widget, !gefunden.isEmpty else { return }
-                    for (sammlung, andere) in gefunden {
-                        anhaengen(ziel, self.sammlungsreihe(sammlung, titel: andere, art: gattung))
+    ///
+    /// Das Verzeichnis kommt über ``angebotLaden(dann:)``, das auf dem
+    /// Hauptfaden zurückruft; bis dahin wartet dieser Abruf, die übrigen
+    /// laufen daneben.
+    private func sammlungsreihenHolen(_ titel: Item, art gattung: String?,
+                                      client: JellyfinClient) async -> [(Sammlung, [Item])] {
+        guard let gattung else { return [] }
+        let sammlungen: [Sammlung] = await withCheckedContinuation { fertig in
+            aufHauptfaden {
+                self.angebotLaden {
+                    guard self.angebotFuer != nil, let verzeichnis = self.sammlungsverzeichnis else {
+                        fertig.resume(returning: [])
+                        return
                     }
-                    gtk_widget_set_visible(ziel, 1)
+                    fertig.resume(returning: Array(verzeichnis.sammlungen(mit: titel).prefix(2)))
                 }
             }
         }
+        var gefunden: [(Sammlung, [Item])] = []
+        for sammlung in sammlungen {
+            let quelle = Regalquelle(eltern: sammlung.id, art: gattung, sammlung: true)
+            guard let liste = try? await client.items(parentID: quelle.eltern, limit: 100,
+                                                      sortBy: Sortierung.erscheinung.feld,
+                                                      sortOrder: quelle.richtung(.erscheinung),
+                                                      recursive: quelle.rekursiv,
+                                                      includeItemTypes: quelle.typen).items
+            else { continue }
+            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
+            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
+        }
+        return gefunden
     }
 
     /// Kopf „Teil der Sammlung" mit Winkel, darunter der Name, dann die Reihe.
@@ -303,26 +402,6 @@ extension App {
         // Namenszeile kommt dazu.
         gtk_widget_set_size_request(reihe, -1, -1)
         return reihe
-    }
-
-    /// **Extras** — Featurettes, entfallene Szenen, Making-of.
-    ///
-    /// Der Mac hat die Reihe (`DetailView.swift:133`), Linux nicht. Sie ist
-    /// leer bei den meisten Titeln und genau deshalb leicht zu übersehen: wo
-    /// nichts ist, fällt nichts auf.
-    private func extrasNachladen(_ titel: Item, in raum: Widget!) {
-        guard let client else { return }
-        let kiste = gehalten(raum)
-        Task.detached { [self] in
-            let extras = (try? await client.extras(itemID: titel.id)) ?? []
-            nachDemSchub {
-                defer { losgelassen(kiste) }
-                guard !extras.isEmpty else { return }
-                anhaengen(kiste.widget, self.reiheBauen(titel: uebersetzt("Extras"), art: .neu,
-                                                        items: extras))
-                gtk_widget_set_visible(kiste.widget, 1)
-            }
-        }
     }
 
     /// **Der Dateiauszug — der Beleg für das Versprechen dieser App.**
@@ -368,7 +447,11 @@ extension App {
         let kiste = gehalten(seite)
         Task.detached { [self] in
             let voll = try? await client.item(id: item.id)
-            aufHauptfaden {
+            // **Erst, wenn die Seite steht.** Der volle Satz baut die ganze
+            // Seite neu, samt Kopf und Kulisse — und kam fast immer mitten in
+            // der Fahrt an. Dort kostete er die Bilder, in denen die Seite
+            // nach ein, zwei Zentimetern stehen blieb (Mac: `Einfahrt`).
+            nachDemSchub {
                 defer { losgelassen(kiste) }
                 // Nur nachtragen, wenn diese Seite noch die oberste ist.
                 // **Was der Nutzer schon gewählt hat, wird nicht
@@ -378,8 +461,17 @@ extension App {
                 // Mac tauscht nur den Titel und behält den Zustand; hier
                 // wird stattdessen nicht mehr neu gebaut, sobald jemand
                 // etwas angefasst hat.
-                guard let voll, !self.detailBeruehrt,
-                      self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
+                guard self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
+                // **Ohne Neubau laedt die magere Fassung ihren Unterbau
+                // selbst.** Sonst liefen alle Abrufe darunter zweimal: einmal
+                // fuer die magere Seite, die gleich wieder verschwindet, und
+                // einmal fuer die volle.
+                guard let voll, !self.detailBeruehrt else {
+                    self.magererUnterbau?()
+                    self.magererUnterbau = nil
+                    return
+                }
+                self.magererUnterbau = nil
                 leeren(kiste.widget)
                 self.aufbauenMit(voll, in: kiste.widget)
             }
@@ -389,12 +481,17 @@ extension App {
     /// **Nach `item.type` verzweigen**, nicht nach dem nachgeladenen Satz:
     /// die Art steht schon in der Liste, und den Zweig unterwegs zu wechseln
     /// hiesse, die halbe Seite wegzuwerfen und neu zu bauen.
-    private func aufbauenMit(_ titel: Item, in seite: Widget!) {
+    ///
+    /// - Parameter mager: Der Listeneintrag vor dem vollen Satz. Dann steht
+    ///   der Unterbau nur als Platz da; gebaut und geladen wird er erst, wenn
+    ///   ``titelNachladen`` ohne Neubau zurueckkommt (``magererUnterbau``).
+    private func aufbauenMit(_ titel: Item, in seite: Widget!, mager: Bool = false) {
         // Der volle Satz, wie er gerade gezeigt wird — das ``Fernsteuerpult``
         // braucht ihn, weil auf dem Seitenstapel nur der magere
         // Listeneintrag liegt und der keine Besetzung traegt.
         letzterVollerTitel = titel
-        anhaengen(seite, heldenkopf(titel))
+        belegraum = nil
+        anhaengen(seite, heldenkopf(titel, klasse: Tonblatt.klasse(von: seite)))
 
 
         // **Der Auslauf ist ein Anstrich, kein Widget.**
@@ -411,27 +508,35 @@ extension App {
         gtk_widget_set_margin_bottom(unten, Int32(Stil.randAbstand))
         anhaengen(seite, unten)
 
+        let beleg = belegraum
+        magererUnterbau = nil
+        guard !mager else {
+            // Gehalten, bis der Auftrag laeuft oder verworfen wird — die
+            // Huelle gibt beim Verwerfen frei.
+            let platz = Festgehalten(unten)
+            let belegPlatz = beleg.map(Festgehalten.init)
+            magererUnterbau = { [weak self] in
+                self?.unterbauBauen(titel, in: platz.widget, beleg: belegPlatz?.widget)
+            }
+            return
+        }
+        unterbauBauen(titel, in: unten, beleg: beleg)
+    }
+
+    private func unterbauBauen(_ titel: Item, in unten: Widget!, beleg: Widget!) {
         if titel.type == "Series" {
             serienunterbau(titel, in: unten)
         } else {
-            if !titel.darsteller.isEmpty {
-                anhaengen(unten, besetzungsreihe(titel.darsteller, herkunft: titel.name))
-            }
-            // **Je Reihe ein fester Platz** — Extras, Teil der Sammlung,
-            // Aehnliches, in dieser Folge wie auf dem Mac; welche Antwort
-            // zuerst kommt, aendert die Reihenfolge nicht. Leer steht ein
-            // Platz unsichtbar da und bringt keinen Abstand mit.
-            extrasNachladen(titel, in: reihenplatz(in: unten))
-            sammlungsreihenNachladen(titel, in: reihenplatz(in: unten))
-            aehnlicheNachladen(titel, in: reihenplatz(in: unten))
-            // **Der Dateiauszug steht ganz unten, und nur beim Film** — bei
-            // einer Serie gibt es keine Datei, nur die ihrer Folgen. Der
-            // Raum steht schon, gefüllt wird er, wenn der Plan kommt.
-            let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            gtk_widget_set_margin_start(raum, Int32(Stil.randAbstand))
-            gtk_widget_set_margin_end(raum, Int32(Stil.randAbstand))
-            dateiraum = raum
-            anhaengen(unten, raum)
+            // **Ein Block für alles unter dem Kopf** — Besetzung, Extras,
+            // Teil der Sammlung, Ähnliches und ganz unten der Dateiauszug, in
+            // dieser Folge wie auf dem Mac. Er steht unsichtbar da, bis alle
+            // Antworten beisammen sind (``untenNachladen``). Der Dateiauszug
+            // nur beim Film: bei einer Serie gibt es keine Datei, nur die
+            // ihrer Folgen.
+            let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
+            gtk_widget_set_visible(block, 0)
+            anhaengen(unten, block)
+            untenNachladen(titel, in: block, beleg: beleg)
         }
     }
 
@@ -471,6 +576,7 @@ extension App {
 
         let pfeil: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
+        beschriften(pfeil, uebersetzt("Zurück"))
         gtk_button_set_child(alsKnopf(pfeil), gtk_image_new_from_icon_name("go-previous-symbolic"))
         beiSignal(pfeil, "clicked") { [weak self] in self?.zurueck() }
         anhaengen(leiste, pfeil)
@@ -489,7 +595,7 @@ extension App {
     // MARK: - Heldenkopf
 
     /// Kulisse rechts, Block links. Höhe 380 (`Stil.heldHoehe`).
-    private func heldenkopf(_ titel: Item) -> Widget! {
+    private func heldenkopf(_ titel: Item, klasse: String?) -> Widget! {
         let kopf: Widget! = gtk_overlay_new()
         gtk_widget_set_hexpand(kopf, 1)
 
@@ -507,10 +613,11 @@ extension App {
         // Fehler. Wer es nachbaut, braucht eine Lage **unter** dem Scroller,
         // nicht im Kopf.
         let bild = Kulisse()
+        bild.mitGemerktem(titel.id)
         gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 
-        tonUndBildNachladen(titel, in: bild)
+        tonUndBildNachladen(titel, in: bild, klasse: klasse)
         return kopf
     }
 
@@ -523,20 +630,32 @@ extension App {
     /// nichts — Bild da, Ton nicht, und unter der Kulisse stand eine harte
     /// Kante gegen den blanken Grund. Der Mac hat den Fall nicht: dort
     /// bedient **eine** Adresse (`AppModel.kopfbildURL`) beides.
-    private func tonUndBildNachladen(_ titel: Item, in kulisse: Kulisse) {
+    private func tonUndBildNachladen(_ titel: Item, in kulisse: Kulisse, klasse: String?) {
         guard let adressen, let client else { return }
         Task.detached { [self] in
-            guard let paar = await client.kopfbildPaar(fuer: titel, adressen: adressen)
+            // Klein wie auf Apple: 48 Punkt reichen für das Histogramm der
+            // Töne (`Bildton.toeneAus`).
+            guard let paar = await client.kopfbildPaar(fuer: titel, adressen: adressen, klein: 48)
             else { return }
-            if let daten = await Bildlager.shared.laden(paar.klein,
+            if let klasse,
+               let daten = await Bildlager.shared.laden(paar.klein,
                                                         schluessel: Bildschluessel.fuer(paar.klein)),
-               let ton = Bildfarbe.ton(aus: daten) {
-                aufHauptfaden { Tonblatt.setzen(ton) }
+               let toene = Bildfarbe.toene(aus: daten) {
+                // Das Stilblatt neu zu laden stellt jedes Widget der App neu
+                // (``Schubsperre``) — nicht während die Seite fährt. Die Lage
+                // blendet danach ohnehin erst ein.
+                nachDemSchub {
+                    let schon = Tonblatt.merkt(titel.id)
+                    Tonblatt.merken(titel.id, toene)
+                    if schon != toene { Tonblatt.setzen(toene, klasse: klasse) }
+                    Tonblatt.einblenden(klasse)
+                }
             }
             guard let daten = await Bildlager.shared.laden(paar.gross,
                                                            schluessel: Bildschluessel.fuer(paar.gross))
             else { return }
-            aufHauptfaden { kulisse.setzen(daten) }
+            let gross = paar.gross
+            aufHauptfaden { kulisse.setzen(daten, von: gross) }
         }
     }
 
@@ -600,23 +719,16 @@ extension App {
     /// Jahr, Laufzeit, Genres, Bewertung, Freigabe und der Beleg — **eine
     /// Zeile**, nicht drei.
     private func angabenreihe(_ titel: Item) -> Widget! {
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        // **8 zwischen den Marken, 14 nach dem Text** — wie der Mac
+        // (`FilmView.angabenReihe`) und `Belegzeile` am iPhone. 14 überall
+        // war zwischen drei kleinen Plaketten ein Loch.
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         gtk_widget_set_halign(reihe, GTK_ALIGN_START)
 
         let zeile = beschriftung(titel.nebenzeile, stil: "swiftly-angaben")
         gtk_widget_add_css_class(zeile, "dim-label")
+        gtk_widget_set_margin_end(zeile, 6)
         anhaengen(reihe, zeile)
-
-        // **Der Beleg.** Läuft alles verlustfrei, steht „Direct Play" im
-        // Akzent, ohne Erklärung (D1). Nur die Abweichung meldet sich lauter,
-        // in Warnorange, mit Grund (D2). **Reihenfolge Beleg, Bewertung,
-        // Freigabe** — wie `Belegzeile` und der Mac seit 28d314fd.
-        let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
-        gtk_widget_set_visible(beleg, 0)
-        gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
-        gtk_widget_set_valign(beleg, GTK_ALIGN_CENTER)
-        anhaengen(reihe, beleg)
-        planNachladen(titel, in: beleg)
 
         // **In derselben Huelle wie Direct Play** (Mac ec0383c8,
         // `DetailView.swift` `marke`): Stern und Zahl in `schriftLeise`,
@@ -636,6 +748,27 @@ extension App {
         }
 
         if let freigabe = titel.officialRating { anhaengen(reihe, plakette(freigabe)) }
+
+        // **Der Beleg steht hinten** — Jahr · Laufzeit · Sterne · FSK ·
+        // Direct Play, wie am Fernseher (`Belegmarken(belegZuletzt:)`). Er
+        // kommt als Letzter, also schiebt sein Erscheinen nichts: davor steht
+        // alles schon, dahinter ist nichts. Läuft alles verlustfrei, steht
+        // „Direct Play" im Akzent (D1), sonst die Abweichung in Warnorange (D2).
+        //
+        // **Der Plan kommt nicht mehr mit allem unter dem Kopf.** Er wartete
+        // auf Extras, Ähnliches und die Sammlung und ploppte dann auf. Jetzt
+        // wird er beim Öffnen geholt — oder schon beim Überfahren der Kachel
+        // (``planVorholenBald(_:)``); liegt er vor, steht er im ersten Bild.
+        let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+        gtk_widget_set_visible(beleg, 0)
+        gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
+        gtk_widget_set_valign(beleg, GTK_ALIGN_CENTER)
+        anhaengen(reihe, beleg)
+        if let fertig = planfertig[planschluessel(titel)] {
+            belegZeigen(fertig, in: beleg, sofort: true)
+        } else {
+            planNachladen(titel, in: beleg)
+        }
         return reihe
     }
 
@@ -644,43 +777,81 @@ extension App {
     /// `PlaybackInfo` ist ein POST, bei dem der Server die Datei anfasst:
     /// der teuerste Abruf der App, hier umsonst.
     private func planNachladen(_ titel: Item, in beleg: Widget!) {
-        guard let client else { return }
+        guard let auftrag = planAuftrag(titel) else { return }
         let kiste = gehalten(beleg)
-        // Die Grenze vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
-        let grenze = wahlen.profilBitrate
-        Task.detached { [self] in
-            let ziel: Item?
-            if titel.type == "Series" {
-                ziel = try? await client.naechsteFolgeDerSerie(seriesID: titel.id)
-            } else {
-                ziel = titel
-            }
-            let plan: PlaybackPlan? = await {
-                guard let ziel else { return nil }
-                return try? await client.playbackPlan(for: ziel.id,
-                                                      profile: .vlc(maxBitrate: grenze))
-            }()
+        Task.detached {
+            let plan = await auftrag.value
             aufHauptfaden {
                 defer { losgelassen(kiste) }
-                guard let plan else { return }
-                let ziel = kiste.widget
-                let zeichen: Widget! = gtk_image_new_from_icon_name(
-                    plan.isLossless ? "object-select-symbolic" : "dialog-warning-symbolic")
-                gtk_image_set_pixel_size(OpaquePointer(zeichen), 11)
-                anhaengen(ziel, zeichen)
-                let text = beschriftung(plan.isLossless ? "Direct Play" : plan.method.rawValue,
-                                        stil: "swiftly-kacheltitel")
-                anhaengen(ziel, text)
-                gtk_widget_add_css_class(ziel, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
-                gtk_widget_set_visible(ziel, 1)
-                // Derselbe Plan trägt die Quelle — der Auszug kostet keinen
-                // zweiten Abruf.
-                if let quelle = plan.quelle, let raum = self.dateiraum {
-                    leeren(raum)
-                    anhaengen(raum, self.dateizeile(quelle))
-                }
+                self.belegZeigen(plan, in: kiste.widget)
             }
         }
+    }
+
+    /// Unter welchem Schlüssel ein Plan gilt: Titel und Bitratengrenze.
+    func planschluessel(_ titel: Item) -> String { "\(titel.id)|\(wahlen.profilBitrate)" }
+
+    /// **Ein Abruf je Titel, geteilt.** Beleg, Dateiauszug und das Vorholen
+    /// beim Überfahren warten auf denselben Auftrag. Nur auf dem Hauptfaden.
+    func planAuftrag(_ titel: Item) -> Task<PlaybackPlan?, Never>? {
+        guard let client else { return nil }
+        let schluessel = planschluessel(titel)
+        if let laeuft = planauftraege[schluessel] { return laeuft }
+        let grenze = wahlen.profilBitrate
+        let auftrag = Task.detached { [self] () -> PlaybackPlan? in
+            let plan = await self.planHolen(titel, client: client, grenze: grenze)
+            aufHauptfaden {
+                if let plan { self.planfertig[schluessel] = plan }
+                // Ein gescheiterter Abruf darf beim nächsten Öffnen neu.
+                else { self.planauftraege[schluessel] = nil }
+            }
+            return plan
+        }
+        planauftraege[schluessel] = auftrag
+        return auftrag
+    }
+
+    /// **Vorholen beim Überfahren, mit Frist.** Der Plan ist ein POST, bei dem
+    /// der Server die Datei anfasst — wer mit dem Zeiger über ein Raster
+    /// fährt, soll nicht zwanzig davon auslösen. Erst nach 0,3 s auf
+    /// derselben Kachel.
+    func planVorholenBald(_ item: Item) {
+        guard item.type == "Movie" || item.type == "Series" else { return }
+        planWunsch = item.id
+        nachFrist(0.3) { [weak self] in
+            guard let self, self.planWunsch == item.id else { return }
+            _ = self.planAuftrag(item)
+        }
+    }
+
+    /// Bei einer Serie der Plan der Folge, die als Nächstes liefe.
+    private func planHolen(_ titel: Item, client: JellyfinClient, grenze: Int) async -> PlaybackPlan? {
+        let ziel: Item?
+        if titel.type == "Series" {
+            ziel = try? await client.naechsteFolgeDerSerie(seriesID: titel.id)
+        } else {
+            ziel = titel
+        }
+        guard let ziel else { return nil }
+        return try? await client.playbackPlan(for: ziel.id, profile: .vlc(maxBitrate: grenze))
+    }
+
+    /// Setzt den Beleg und blendet ihn ein. Ohne Plan bleibt er weg.
+    private func belegZeigen(_ plan: PlaybackPlan?, in beleg: Widget!, sofort: Bool = false) {
+        guard let plan, let ziel = beleg, gtk_widget_get_visible(ziel) == 0 else { return }
+        let zeichen: Widget! = gtk_image_new_from_icon_name(
+            plan.isLossless ? "object-select-symbolic" : "dialog-warning-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(zeichen), 11)
+        anhaengen(ziel, zeichen)
+        let text = beschriftung(plan.isLossless ? "Direct Play" : plan.method.rawValue,
+                                stil: "swiftly-kacheltitel")
+        anhaengen(ziel, text)
+        gtk_widget_add_css_class(ziel, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
+        gtk_widget_set_visible(ziel, 1)
+        guard !sofort else { gtk_widget_set_opacity(ziel, 1); return }
+        // Nur Deckkraft, 0,2 s — er steht hinten, es rückt nichts.
+        gtk_widget_set_opacity(ziel, 0)
+        blenden(ziel, auf: 1, dauer: Stil.zeitBeleg)
     }
 
     /// Vier Ziele wie auf dem Apple TV: Fortsetzen, Von vorn, Merkliste, Mehr.
@@ -718,11 +889,19 @@ extension App {
         // Solange das Ziel nicht feststeht, ist nichts zu starten.
         gtk_widget_set_sensitive(haupt, ziel.titel == nil ? 0 : 1)
         anhaengen(reihe, haupt)
+        // **Rechtsklick oder langer Druck: das Kachelmenü des Titels**, wie an
+        // seiner Kachel (Apple: `.kachelmenue(titel, …)` am Hauptknopf).
+        // Danach fragt der Knopf sein Ziel neu.
+        let plakat = adressen.flatMap { Bildwahl.hochkant(titel, adressen: $0,
+                                                          maxHoehe: Stil.kachelHoehe * 2) }
+        kachelmenueAnlegen(haupt, Kachelmenueangabe(
+            item: titel, bild: plakat, kante: Stil.kachelHoehe * 2,
+            nachher: { [weak self] _ in self?.kopfAuffrischen?.tun() }))
 
         // **„Von vorn" nur bei angefangenen Titeln.** Wo es das nicht gibt,
         // rückt der Rest auf; eine leere Lücke stehen zu lassen wäre
         // schlimmer als der kleine Versatz.
-        let vorn = nebenknopf("view-refresh-symbolic")
+        let vorn = nebenknopf("view-refresh-symbolic", name: uebersetzt("Von vorn abspielen"))
         gtk_widget_set_visible(vorn, angefangen != nil ? 1 : 0)
         beiSignal(vorn, "clicked") { [weak self] in
             guard let self, let was = ziel.titel else { return }
@@ -854,7 +1033,7 @@ extension App {
         // **Vier Ziele, nicht fünf.** „Gesehen" und „Trailer" sind in die
         // Mehr-Liste gewandert; fünf beschriftete Knöpfe waren zu viel für
         // eine Reihe. So steht es auf dem Apple TV und auf dem Mac.
-        let mehr = nebenknopf("view-more-horizontal-symbolic")
+        let mehr = nebenknopf("view-more-horizontal-symbolic", name: uebersetzt("Mehr"))
         beiSignal(mehr, "clicked") { [weak self] in self?.mehrZeigen(titel, an: mehr) }
         anhaengen(reihe, mehr)
         return reihe
@@ -921,21 +1100,41 @@ extension App {
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.starte(stand, ab: 0)
                 })
+                // **„Nächste Folge" weicht für „Gemeinsam schauen"** (Entwurf A,
+                // wie `Titelhandlungen.fuerSerie` auf iOS): die Liste soll
+                // nicht länger werden, die nächste Folge erreicht man ebenso
+                // über die Folgen.
+                if gemeinsam.lage.darfAnlegen {
+                    anhaengen(liste, handlungszeile("system-users-symbolic",
+                                                    uebersetzt("Gemeinsam schauen")) {
+                        [weak self] in
+                        gtk_popover_popdown(alsTafel(tafel))
+                        guard let self else { return }
+                        // Nach dem Signal: die neue Tafel ersetzt diese.
+                        let anker = Zeigerkiste(knopf), lebt = Lebenszeichen(knopf)
+                        aufHauptfaden(solange: lebt) { [self] in self.gemeinsamAnlegenZeigen(stand, an: anker.widget) }
+                    })
+                } else {
                 anhaengen(liste, handlungszeile("media-skip-forward-symbolic",
                                                 uebersetzt("Nächste Folge abspielen")) {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     guard let self, let client = self.client,
                           let serie = stand.seriesId else { return }
+                    // Ohne Server die naechste geladene Folge (`Downloadregeln`).
+                    let posten = self.downloads.posten
                     Task.detached { [self] in
-                        guard let naechste = try? await client.folgeNach(itemID: stand.id,
-                                                                        seriesID: serie) else {
+                        guard let naechste = await Downloadregeln.folgeNach(
+                            stand, aus: posten, ohneNetz: false, server: {
+                                try await client.folgeNach(itemID: stand.id, seriesID: serie)
+                            }) else {
                             aufHauptfaden { self.melden(uebersetzt("Danach kommt nichts mehr.")) }
                             return
                         }
                         aufHauptfaden { self.starte(naechste, ab: 0) }
                     }
                 })
+                }
             }
             if let staffel = offeneStaffel {
                 anhaengen(liste, handlungszeile("object-select-symbolic",
@@ -972,6 +1171,17 @@ extension App {
                     aufHauptfaden { self.sehstandVergessen(titel) }
                 }
                 self.melden(uebersetzt("Der Fortschritt ist zurückgesetzt."))
+            })
+        }
+        // **Gemeinsam schauen**, vor den Metadaten — dieselbe Stelle wie in
+        // `Titelhandlungen.fuerFilm`.
+        if titel.type != "Series", gemeinsam.lage.darfAnlegen {
+            anhaengen(liste, handlungszeile("system-users-symbolic", uebersetzt("Gemeinsam schauen")) {
+                [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                guard let self else { return }
+                let anker = Zeigerkiste(knopf), lebt = Lebenszeichen(knopf)
+                aufHauptfaden(solange: lebt) { [self] in self.gemeinsamAnlegenZeigen(titel, an: anker.widget) }
             })
         }
         anhaengen(liste, handlungszeile("view-refresh-symbolic", uebersetzt("Metadaten auffrischen")) {
@@ -1111,16 +1321,50 @@ extension App {
             return
         }
 
+        ladetafelNeu(titel, liste: liste, tafel: tafel, wahl: .original, offen: false)
+        gtk_popover_popup(alsTafel(tafel))
+    }
+
+    /// Der Inhalt der Nachfrage fuer einen neuen Download — **neu gezeichnet,
+    /// sobald eine andere Qualitaet gewaehlt wird**, damit Groesse und „Danach
+    /// frei" mitgehen.
+    private func ladetafelNeu(_ titel: Item, liste: Widget!, tafel: Widget!,
+                              wahl: Downloadqualitaet, offen: Bool) {
+        leeren(liste)
         // **Die Groesse kommt aus der Quelle, die auch der Player naehme.**
         // Steht dort keine, wird trotzdem geladen — dann gibt es eben keinen
         // Balken, sondern nur die wachsende Zahl. `Downloadposten.anteil`
         // liefert dafuer `nil`, und die Zeile weiss damit umzugehen.
+        //
+        // **In der gewaehlten Qualitaet** (Mac `Ladetafel.fassung`): beim
+        // Original die echte Groesse, sonst die Schaetzung aus Bitrate mal
+        // Laufzeit, mit „≈" davor.
         let quelle = titel.mediaSources?.first
-        let bytes = quelle?.size ?? 0
+        let original = quelle?.size ?? 0
+        let bytes = wahl.geschaetzteBytes(original: original, laufzeitTicks: titel.runTimeTicks)
+        let umgewandelt = !wahl.istOriginal
         let auskunft = downloads.auskunft(fuer: bytes)
+        let angeboten = Downloadqualitaet.angeboten(
+            waehlbar: downloadqualitaetWaehlbar,
+            quellBitrate: Downloadqualitaet.bitrate(bytes: original, laufzeitTicks: titel.runTimeTicks))
+        let wahlZeigen = downloadqualitaetWaehlbar && angeboten.count > 1
+        let neu: (Downloadqualitaet, Bool) -> Void = { [weak self] q, auf in
+            self?.ladetafelNeu(titel, liste: liste, tafel: tafel, wahl: q, offen: auf)
+        }
+        let qualitaetszeile: () -> Void = { [weak self] in
+            guard let self else { return }
+            let feld = self.qualitaetswahlBauen(
+                wahl: wahl, angeboten: angeboten, waehlbar: true, offen: offen,
+                groesse: { $0.geschaetzteBytes(original: original, laufzeitTicks: titel.runTimeTicks) },
+                umschalten: { neu(wahl, !offen) }, waehlen: { neu($0, false) })
+            gtk_widget_set_margin_start(feld, 14)
+            gtk_widget_set_margin_end(feld, 14)
+            gtk_widget_set_margin_bottom(feld, 6)
+            anhaengen(liste, feld)
+        }
 
         anhaengen(liste, ladeangabe(uebersetzt("Diese Datei"),
-                                    bytes > 0 ? Downloadregeln.groesse(bytes)
+                                    bytes > 0 ? (umgewandelt ? "≈ " : "") + Downloadregeln.groesse(bytes)
                                               : uebersetzt("Unbekannt")))
         if !auskunft.reicht {
             anhaengen(liste, ladeangabe(uebersetzt("Frei auf diesem Rechner"),
@@ -1128,6 +1372,8 @@ extension App {
                                                                    + bytes
                                                                    + Downloadregeln.luft)),
                                         warnend: true))
+            // Der naheliegende Ausweg ist eine kleinere Fassung.
+            if wahlZeigen { qualitaetszeile() }
             if auskunft.reichtNachAufraeumen, !auskunft.entbehrlich.isEmpty {
                 let text = String(format: uebersetzt("%d gesehene Titel könnten weichen (%@)."),
                                   auskunft.entbehrlich.count,
@@ -1135,7 +1381,6 @@ extension App {
                 anhaengen(liste, ladehinweis(text))
             } else {
                 anhaengen(liste, ladehinweis(uebersetzt("Nicht genug Platz")))
-                gtk_popover_popup(alsTafel(tafel))
                 return
             }
         }
@@ -1151,9 +1396,8 @@ extension App {
             anhaengen(liste, handlungszeile("folder-download-symbolic",
                                             uebersetzt("In die Warteschlange")) { [weak self] in
                 gtk_popover_popdown(alsTafel(tafel))
-                self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
+                self?.ladenAnstossen(titel, quelle: quelle, bytes: original, qualitaet: wahl)
             })
-            gtk_popover_popup(alsTafel(tafel))
             return
         }
         // **Drei Zahlen, ein Knopf** (H3). Groesse, Qualitaet und was danach
@@ -1163,7 +1407,9 @@ extension App {
         // es knapp wurde, und der Erklaersatz zur Originalqualitaet fehlte
         // ganz — dabei ist er der Grund, warum es keine Qualitaetswahl gibt.
         else {
-            if let c = quelle?.container, !c.isEmpty {
+            if wahlZeigen {
+                qualitaetszeile()
+            } else if let c = quelle?.container, !c.isEmpty {
                 anhaengen(liste, ladeangabe(uebersetzt("Qualität"), c.uppercased()))
             }
             anhaengen(liste, ladeangabe(uebersetzt("Danach frei"),
@@ -1173,12 +1419,13 @@ extension App {
         anhaengen(liste, handlungszeile("folder-download-symbolic",
                                         uebersetzt("Laden")) { [weak self] in
             gtk_popover_popdown(alsTafel(tafel))
-            self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
+            self?.ladenAnstossen(titel, quelle: quelle, bytes: original, qualitaet: wahl)
         })
         if auskunft.reicht {
-            anhaengen(liste, ladehinweis(uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")))
+            anhaengen(liste, ladehinweis(umgewandelt
+                ? uebersetzt("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt.")
+                : uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")))
         }
-        gtk_popover_popup(alsTafel(tafel))
     }
 
     private func ladeangabe(_ was: String, _ wert: String, warnend: Bool = false) -> Widget! {
@@ -1209,7 +1456,8 @@ extension App {
     /// Aus dem Eintrag wird ein Posten. Was hier hineinkommt, muss reichen,
     /// um den Titel **ohne Server** zu zeigen und abzuspielen — deshalb
     /// Laufzeit, Container und die Serienangaben.
-    func ladenAnstossen(_ titel: Item, quelle: MediaSource?, bytes: Int64) {
+    func ladenAnstossen(_ titel: Item, quelle: MediaSource?, bytes: Int64,
+                        qualitaet: Downloadqualitaet = .original) {
         // H11: ohne Konto kein Posten. Leer heisst hier „nicht angemeldet",
         // und ein Download ohne Konto liefe unter derselben Datei wie der
         // eines zweiten Nutzers.
@@ -1227,7 +1475,10 @@ extension App {
             container: quelle?.container,
             quelle: quelle?.id,
             bytes: bytes,
-            gesehen: titel.istGesehen)
+            // Der ganze Sehstand, nicht nur der Haken: ohne Netz faengt die
+            // Downloadliste an der Stelle an, die der Server kannte.
+            sehstand: titel.userData,
+            bildcodec: quelle?.bildcodec).inQualitaet(qualitaet)
 
         var bilder: [String: URL] = [:]
         if let adressen {
@@ -1249,13 +1500,14 @@ extension App {
     /// **Was schon da ist, kommt nicht noch einmal in die Schlange**, und die
     /// Reihenfolge macht `Downloadregeln.naechster` — hier wird nur
     /// eingereiht.
-    func staffelLaden(_ folgen: [Item]) {
+    func staffelLaden(_ folgen: [Item], qualitaet: Downloadqualitaet = .original) {
         let offene = folgen.filter { downloads.posten(fuer: $0.id) == nil }
         guard !offene.isEmpty else { return }
         for folge in offene {
             ladenAnstossen(folge, quelle: folge.mediaSources?.first,
-                           bytes: folge.mediaSources?.first?.size ?? 0)
+                           bytes: folge.mediaSources?.first?.size ?? 0, qualitaet: qualitaet)
         }
-        melden(String(format: uebersetzt("%d Folgen werden geladen."), offene.count))
+        melden(zahlwort(offene.count, eins: uebersetzt("1 Folge wird geladen."),
+                        viele: uebersetzt("%d Folgen werden geladen.")))
     }
 }

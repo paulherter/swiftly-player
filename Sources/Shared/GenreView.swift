@@ -36,11 +36,7 @@ struct GenreView: View {
                 // gibt beides getrennt zurueck, und hier stand `?? []` — der
                 // Unterschied wurde also weggeworfen, und ein Netzfehler
                 // wurde zur Aussage „in diesem Genre gibt es nichts".
-                Leerzustand(
-                    symbol: "externaldrive.badge.xmark",
-                    kopfzeile: "Server ist abgetaucht",
-                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    hauptknopf: ("Erneut versuchen", { Task { await holen() } }))
+                Leerzustand.serverAbgetaucht(model, erneut: { Task { await holen() } })
             } else if !laedt, items.isEmpty {
                 Leerzustand(symbol: "tag",
                             kopfzeile: "Nichts in diesem Genre",
@@ -107,6 +103,7 @@ struct GenreView: View {
                         PosterTile(model: model, item: item, breite: nil)
                     }
                     .buttonStyle(Stil.Druckknopf())
+                    .kachelmenue(item, model: model)
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))

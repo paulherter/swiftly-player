@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **Nichts in die Sicherung und nichts beim Geräteumzug** (Android 12+; darunter
+  `allowBackup="false"` im Manifest).
+
+  Was die App ablegt, taugt auf einem anderen Gerät nicht:
+  - Sitzung und Konten sind mit einem Keystore-Schlüssel verschlüsselt, der das
+    Gerät nie verlässt — wiederhergestellt lassen sie sich nicht lesen.
+  - Die Gerätekennung muss je Gerät eine eigene sein. Jellyfin führt Sitzungen
+    unter ihr; zwei Geräte mit derselben Kennung melden sich gegenseitig ab.
+  - Downloads (oft Gigabyte) sprengen die 25 MB der Sicherung, dann sichert
+    Android gar nichts; ihre Liste ohne die Dateien wäre nur verwirrend.
+  Übrig blieben Serveradresse und Sortierung — dafür lohnt es keine Kopie.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

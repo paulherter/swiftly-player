@@ -16,6 +16,7 @@ import FoundationNetworking
 /// Steckdosen blockieren; liefen sie parallel auf dem kooperativen Pool,
 /// wäre der voll, und `URLSession` im Weiterleiter käme nicht mehr dran
 /// (gemessen: alle Verbindungen hingen in `warteAufAntwort`).
+extension GeteilteKopftafel {
 @Suite("Stromweiterleiter", .serialized)
 struct StromweiterleiterTests {
 
@@ -46,7 +47,12 @@ struct StromweiterleiterTests {
         let a = roh(url: umgelenkt)
         #expect(a.status == 200)
         #expect(a.felder["content-length"] == "\(Self.datei.count)")
-        #expect(a.koerper == Self.datei)
+        // Als Wahrheitswert verglichen, nicht als `Data`: schlaegt der
+        // Vergleich fehl, rechnet Swift Testing sonst den Unterschied zweier
+        // MiB Byte fuer Byte aus — quadratisch. Unter Last haengte der ganze
+        // Testlauf daran minutenlang statt rot zu werden.
+        #expect(a.koerper.count == Self.datei.count)
+        #expect(a.koerper.elementsEqual(Self.datei))
         #expect(posten.letzteAbfrage == "static=true&api_key=geheim")
     }
 
@@ -63,7 +69,8 @@ struct StromweiterleiterTests {
                 #expect(a.status == 206)
                 #expect(a.felder["content-range"] == "bytes \(von)-\(bis)/\(Self.datei.count)")
                 #expect(a.felder["accept-ranges"] == "bytes")
-                #expect(a.koerper == Self.datei.subdata(in: von..<(bis + 1)))
+                #expect(a.koerper.elementsEqual(Self.datei.subdata(in: von..<(bis + 1))),
+                        "\(a.koerper.count) Byte statt \(bis + 1 - von)")
                 fertig.signal()
             }.start()
         }
@@ -210,6 +217,7 @@ struct StromweiterleiterTests {
         #expect(k.koepfe["user-agent"] == "VLC")
     }
 }
+}
 
 // MARK: - Werkzeug
 
@@ -345,7 +353,7 @@ private final class Vorposten: @unchecked Sendable {
             Stecker.senden(v, Data("HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(d.count)\r\nConnection: close\r\n\r\n".utf8))
             Stecker.senden(v, d)
         default:
-            let datei = StromweiterleiterTests.datei
+            let datei = GeteilteKopftafel.StromweiterleiterTests.datei
             var von = 0, bis = datei.count - 1, status = "200 OK", bereich = ""
             if let r = a.koepfe["range"], r.hasPrefix("bytes=") {
                 let z = r.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)

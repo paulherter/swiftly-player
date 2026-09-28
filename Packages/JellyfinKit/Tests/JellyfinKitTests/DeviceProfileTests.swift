@@ -36,6 +36,25 @@ struct DeviceProfileTests {
         #expect(!profile.subtitleProfiles.contains { $0.method == "Encode" })
     }
 
+    @Test("Externe PGS-Datei wird roh geholt, externes VobSub nicht zugesagt")
+    func externeBitmapUntertitel() {
+        let extern = DeviceProfile.vlc().subtitleProfiles.filter { $0.method == "External" }.map(\.format)
+        // Ohne diesen Eintrag antwortet Jellyfin fuer eine .sup-Datei mit `Encode`.
+        #expect(extern.contains("pgssub"))
+        // Das koennte der Server nicht ausliefern, nur umwandeln — und daran scheitern.
+        #expect(!extern.contains("dvdsub"))
+    }
+
+    @Test("Reine Audiodateien: Matroska, WavPack, AIFF und rohe Bitstroeme spielen direkt")
+    func audioContainer() {
+        let audio = Set(DeviceProfile.vlc().directPlayProfiles.filter { $0.type == "Audio" }.map(\.container))
+        for container in ["mkv", "wv", "aiff", "caf", "w64", "tta", "ac3", "eac3", "dts", "truehd", "webm"] {
+            #expect(audio.contains(container), "\(container)")
+        }
+        #expect(DeviceProfile.vlc().directPlayProfiles.filter { $0.type == "Audio" }
+            .allSatisfy { $0.audioCodec == nil })
+    }
+
     @Test("Bitrate ist standardmäßig praktisch unbegrenzt")
     func bitrateIsUnbounded() throws {
         // 1 Gbit/s liegt weit über jedem Remux — löst also nie Transcode aus.
@@ -137,5 +156,22 @@ struct ProfilLueckenTests {
         let profil = DeviceProfile.vlc()
         #expect(profil.maxStreamingBitrate >= 1_000_000_000)
         #expect(profil.maxStaticBitrate >= 1_000_000_000)
+    }
+
+    @Test("AirPlay: HEVC nur als hvc1/dvh1 direkt, sonst umpacken")
+    func airplayHevcKennung() throws {
+        let profil = DeviceProfile.airplay()
+        let hevc = try #require(profil.codecProfiles.first { $0.codec == "hevc" })
+        let bedingung = try #require(hevc.conditions.first)
+        #expect(bedingung.property == "VideoCodecTag")
+        #expect(bedingung.condition == "EqualsAny")
+        #expect(bedingung.value == "hvc1|dvh1")
+        // Matroska traegt keine Kennung; Pflicht wuerde es mitsperren.
+        #expect(bedingung.isRequired == false)
+        // Und es muss so beim Server ankommen.
+        let json = String(decoding: try JSONEncoder().encode(profil), as: UTF8.self)
+        #expect(json.contains(#""Property":"VideoCodecTag""#))
+        // Das Umpacken darf HEVC weiter kopieren.
+        #expect(profil.transcodingProfiles.first?.videoCodec.contains("hevc") == true)
     }
 }

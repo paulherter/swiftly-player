@@ -106,11 +106,11 @@ struct BibliothekView: View {
                 Rasterplatzhalter()
                     .padding(.horizontal, Stil.randSeite)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, Stil.leisteUnten + 90)
+                    .padding(.top, Stil.rasterOben)
                     .transition(.opacity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 30) {
+                    VStack(alignment: .leading, spacing: Stil.kapselreiheLuft) {
                         if let sammlung {
                             // Der Name kommt vom Server und wird nicht
                             // übersetzt — wie der Titel der Genreseite.
@@ -129,24 +129,20 @@ struct BibliothekView: View {
                             gitter
                         }
                     }
-                    // **Die Chipreihe endet bei 264**, wie das oberste
-                    // Element jeder anderen Seite — siehe `Stil.erstesEnde`.
+                    // **Die Kapselreihe beginnt bei `Stil.inhaltOben`**, wo
+                    // auf der Startseite der Titel beginnt — davon der obere
+                    // sichere Rand ab, an dem die Scrollflaeche beginnt.
                     //
-                    // Zurueckgerechnet aus ihrer eigenen Hoehe: 264 − 48 =
-                    // 216, davon der obere sichere Rand ab, an dem die
-                    // Scrollflaeche beginnt.
-                    //
-                    // Vorher stand hier der Anfang (190). Bei verschieden
-                    // hohen Elementen richtet ein gemeinsamer Anfang nichts
-                    // aus — die Chips endeten 26 Punkt hoeher als der Titel
-                    // der Startseite.
+                    // Vorher war die Unterkante gleichgezogen (264 − 48 =
+                    // 216): die Kapseln standen 20 tiefer als der Titel der
+                    // Startseite, und ueber ihnen war zu viel Kopfraum.
                     //
                     // Die Sammlungsseite traegt ihren Namen darueber und
                     // beginnt deshalb wie die Genreseite.
                     .padding(.top, sammlung != nil
                              ? Stil.kopfversatzDetail + 40 - Stil.randOben
                              : bibliothek == nil
-                             ? Stil.erstesEnde - Stil.chipHoehe - Stil.randOben
+                             ? Stil.inhaltOben - Stil.randOben
                              : Stil.randOben)
                     .padding(.bottom, 60)
                 }
@@ -203,7 +199,7 @@ struct BibliothekView: View {
                            rubrik: tafelrubrik)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: offeneTafel)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: offeneTafel)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
         // nicht — die muss `HauptView` stilllegen. Sonst stieg der Fokus aus
         // der offenen Tafel nach oben auf die Bereichsknoepfe.
@@ -332,11 +328,7 @@ struct BibliothekView: View {
                 // Senkrechter Strich statt Abstand: Wahl und Filter
                 // nebeneinander sehen sonst aus wie eine Reihe. Ohne Filter
                 // („Sammlungen") trennt er nichts und faellt weg.
-                if wahl != .sammlungen {
-                    Rectangle()
-                        .fill(Stil.rand)
-                        .frame(width: 2, height: Stil.chipHoehe * 0.6)
-                }
+                if wahl != .sammlungen { Kapseltrenner() }
             }
 
             // **Filter und Sortierung nebeneinander, mit Zeichen — wie die
@@ -403,9 +395,11 @@ struct BibliothekView: View {
                                     art: item.type,
                                     staffeln: item.childCount,
                                     gesehen: item.userData?.played,
-                                    offeneFolgen: item.userData?.unplayedItemCount))
+                                    offeneFolgen: item.userData?.unplayedItemCount),
+                                 zeichen: item.kachelzeichen)
                 }
                 .buttonStyle(KachelStil())
+                .kachelmenue(item, model: model)
                 .focused($amTitel, equals: item.id)
                 // Nachladen, sobald eine der letzten drei Reihen auftaucht —
                 // dann steht der Nachschub, bevor der Fokus unten ankommt.
@@ -469,8 +463,8 @@ struct BibliothekView: View {
                                  titel: eintrag.item.name,
                                  unterzeile: anzahltext(eintrag.anzahl(art: art ?? "")),
                                  ersatz: eintrag.item.imageTags?["Primary"] == nil
-                                     ? AnyView(Sammlungsmosaik(model: model, sammlung: eintrag,
-                                                               art: art ?? ""))
+                                     ? Sammlungsmosaik(model: model, sammlung: eintrag,
+                                                       art: art ?? "")
                                      : nil)
                 }
                 .buttonStyle(KachelStil())
@@ -578,10 +572,16 @@ struct SammlungRoute: Hashable {
 ///
 /// Die Fugen sind doppelt so breit wie am iPhone (2 → 4), wie jedes Mass auf
 /// dem Fernseher; die Plakate kommen in halber Kachelgroesse.
+///
+/// **Die Groesse steht fest**, die der Plakatkachel. Hier stand ein
+/// `GeometryReader` je Zelle, der sie bei jedem Durchgang neu mass — fuer
+/// ein Mass, das sich nie aendert.
 struct Sammlungsmosaik: View {
     let model: AppModel
     let sammlung: Sammlung
     let art: String
+    var breite: CGFloat = Stil.posterBreite
+    var hoehe: CGFloat = Stil.posterHoehe
 
     @State private var titel: [Item] = []
 
@@ -593,16 +593,14 @@ struct Sammlungsmosaik: View {
     }
 
     var body: some View {
-        GeometryReader { rahmen in
-            let platz = reihen.isEmpty ? [[]] : reihen
-            let hoehe = (rahmen.size.height - CGFloat(platz.count - 1) * Self.fuge)
-                / CGFloat(platz.count)
-            VStack(spacing: Self.fuge) {
-                ForEach(Array(platz.enumerated()), id: \.offset) { _, stapel in
-                    zeile(stapel, breite: rahmen.size.width, hoehe: hoehe)
-                }
+        let platz = reihen.isEmpty ? [[]] : reihen
+        let zeilenhoehe = (hoehe - CGFloat(platz.count - 1) * Self.fuge) / CGFloat(platz.count)
+        VStack(spacing: Self.fuge) {
+            ForEach(Array(platz.enumerated()), id: \.offset) { _, stapel in
+                zeile(stapel, breite: breite, hoehe: zeilenhoehe)
             }
         }
+        .frame(width: breite, height: hoehe)
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
         .task(id: sammlung.id) {
             let gefunden = await model.sammlungstitel(sammlung, art: art)

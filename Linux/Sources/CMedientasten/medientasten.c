@@ -16,6 +16,16 @@ static void  (*rueckruf)(int);
 /* Die eigene Fensterprozedur. Alles, was uns nicht angeht, geht unverändert
  * an die vorherige weiter — sonst hört GTK auf zu arbeiten. */
 static LRESULT CALLBACK unsereProzedur(HWND h, UINT n, WPARAM w, LPARAM l) {
+    /* Ruhezustand und Aufwachen. Nach dem Aufwachen ist die Tonausgabe von
+     * WASAPI oft nicht mehr gueltig, und der Strom zum Server ist ohnehin
+     * abgerissen; die App baut beides neu auf (App.medienGriff). Das
+     * Aufwachen kommt je nach Anlass als AUTOMATIC oder SUSPEND - beide
+     * melden, die App nimmt nur das erste. */
+    if (n == WM_POWERBROADCAST && rueckruf) {
+        if (w == PBT_APMSUSPEND) rueckruf(MT_SCHLAEFT);
+        else if (w == PBT_APMRESUMEAUTOMATIC || w == PBT_APMRESUMESUSPEND) rueckruf(MT_AUFGEWACHT);
+        return TRUE;
+    }
     if (n == WM_HOTKEY && rueckruf) {
         rueckruf((int)w);
         return 0;

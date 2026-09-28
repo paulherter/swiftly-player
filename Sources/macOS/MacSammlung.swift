@@ -128,7 +128,7 @@ struct Sammlungsmosaik: View {
 /// nur zum Laden dastünde, bekäme diesen Abstand mit, und unter den Extras
 /// klaffte eine Lücke. `ForEach` über nichts steht dagegen gar nicht da.
 struct Sammlungsreihe: View {
-    typealias Reihe = (sammlung: Sammlung, titel: [Item])
+    typealias Reihe = AppModel.Sammlungsreihendaten
 
     let model: AppModel
     let reihe: Reihe
@@ -151,6 +151,7 @@ struct Sammlungsreihe: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(schwebt ? Stil.schrift : Stil.schriftSehrLeise)
+                            .accessibilityHidden(true)
                     }
                     Text(verbatim: reihe.sammlung.item.name)
                         .font(Stil.koerper)
@@ -175,25 +176,12 @@ struct Sammlungsreihe: View {
                                         staffeln: eintrag.childCount,
                                         gesehen: eintrag.userData?.played,
                                         offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                     zeichen: eintrag.type == "Series" ? "tv" : "film")
+                                     zeichen: eintrag.kachelzeichen)
                     }
                     .buttonStyle(Stil.Druckknopf())
+                    .kachelmenue(eintrag, model: model)
                 }
             }
         }
-    }
-
-    /// Die Reihen zu einem Titel — höchstens zwei. Steht ein Film in mehr
-    /// Sammlungen, sind die übrigen meist automatisch angelegte Doppel.
-    static func laden(_ model: AppModel, titel: Item) async -> [Reihe] {
-        guard let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return [] }
-        await model.angebotLaden()
-        var gefunden: [Reihe] = []
-        for sammlung in model.sammlungen(mit: titel).prefix(2) {
-            guard let liste = await model.sammlungstitel(sammlung, art: art) else { continue }
-            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
-            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
-        }
-        return gefunden
     }
 }

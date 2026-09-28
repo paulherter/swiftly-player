@@ -50,10 +50,12 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun Hauptknopf(text: String, freigegeben: Boolean = true, dehnt: Boolean = true,
-               modifier: Modifier = Modifier, aktion: () -> Unit) {
+               modifier: Modifier = Modifier,
+               /** Gesperrt auf einem Blatt: `erhoeht` — `flaeche` waere dort unsichtbar (`HauptknopfStil(gesperrtFlaeche:)`). */
+               gesperrtFlaeche: Color = Stil.flaeche, aktion: () -> Unit) {
     val quelle = remember { MutableInteractionSource() }
     val gedrueckt by quelle.collectIsPressedAsState()
-    val flaeche = if (!freigegeben) Stil.flaeche else Color.White.copy(alpha = if (gedrueckt) 0.75f else 1f)
+    val flaeche = if (!freigegeben) gesperrtFlaeche else Color.White.copy(alpha = if (gedrueckt) 0.75f else 1f)
     val mass by animateFloatAsState(if (gedrueckt) Bewegung.DRUCKMASS else 1f, Bewegung.loslassen(), label = "druck")
     Box(
         modifier
@@ -138,6 +140,7 @@ fun Eingabefeld(
     // **Die ganze Flaeche nimmt den Tipp an**, nicht nur die Textzeile — wie auf
     // dem iPhone. Vorher setzte ein Tipp neben die Zeile keinen Cursor.
     val fokus = remember { FocusRequester() }
+    if (geheim) Sichtschutz()
     Row(
         Modifier.fillMaxWidth().height(Stil.knopfHoehe).background(Stil.flaeche, RoundedCornerShape(Stil.eckeFeld))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { fokus.requestFocus() }

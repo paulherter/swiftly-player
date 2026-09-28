@@ -10,7 +10,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -72,12 +71,16 @@ private fun langesDatum(iso: String): String? =
 fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     var stand by remember(ziel.id) { mutableStateOf(app.personenSpeicher[ziel.id]) }
     var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    // **Ohne Antwort nicht ewig Platzhalter** (Audit 27.09.): der Fehler wurde verschluckt, die Seite
+    // blieb leer und bot kein „Erneut versuchen".
+    var fehlgeschlagen by remember(ziel.id) { mutableStateOf(false) }
     LaunchedEffect(ziel.id, versuch) {
+        fehlgeschlagen = false
         try {
             val neu = personLesen(withContext(Dispatchers.IO) { app.kern.person(ziel.id).await() })
             stand = neu
             app.personenSpeicher[ziel.id] = neu
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { fehlgeschlagen = true }
     }
     val s = stand
     // Seerrs Filmografie kommt nach — ohne das, was unter anderem Namen schon auf dem Server liegt.
@@ -87,8 +90,10 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     LaunchedEffect(tmdb, seerrDa) {
         if (tmdb == null || !seerrDa) return@LaunchedEffect
         val eigene = s?.titel.orEmpty().mapTo(HashSet()) { it.titel.lowercase() }
-        anfragbar = seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() })
-            .filter { it.titel.lowercase() !in eigene }
+        anfragbar = try {
+            seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() })
+                .filter { it.titel.lowercase() !in eigene }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     val seerrFertig = anfragbar != null || !seerrDa || (s != null && tmdb == null)
     val ein by animateFloatAsState(if (s != null) 1f else 0f, Bewegung.einblenden(), label = "person")
@@ -150,7 +155,9 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             }
 
             // Solange nichts da ist, drei Platzhalter in der Form der Reihe.
-            if (s == null) {
+            if (s == null && fehlgeschlagen) {
+                Stoerhinweis(app.serveradresse(), abstandOben = 26.dp, erneut = { versuch++ })
+            } else if (s == null) {
                 Row(Modifier.padding(horizontal = Stil.randAbstand).padding(top = Stil.reihenAbstand),
                     horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
                     repeat(3) { Ladefeld(Modifier.size(Stil.kachelBreite, Stil.kachelHoehe)) }
@@ -160,14 +167,14 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                 if (s.titel.isNotEmpty()) {
                     Box(Modifier.alpha(ein)) {
                         Abschnitt(uebersetzt("Auf deinem Server"), Stil.kachelAbstand) {
-                            items(s.titel) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+                            kachelnMitSchluessel(s.titel, { it.id }) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                         }
                     }
                 }
                 // Unter dem eigenen Server, damit darueber nichts nachrutscht.
                 anfragbar?.takeIf { it.isNotEmpty() }?.let { liste ->
                     Abschnitt(uebersetzt("Kann angefragt werden"), Stil.kachelAbstand) {
-                        items(liste) { t ->
+                        kachelnMitSchluessel(liste, { it.schluessel }) { t ->
                             SeerrkachelAnsicht(t, Modifier.width(Stil.kachelBreite)) {
                                 app.seerrTreffer[t.schluessel] = t
                                 oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))

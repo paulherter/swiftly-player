@@ -10,6 +10,21 @@ import UIKit
 @Observable
 final class AppModel {
 
+    /// **Eines je Prozess — nicht eines je `RootView.init`.**
+    ///
+    /// `@State private var model = AppModel()` wertet den Ausdruck bei jedem
+    /// Anlegen der `RootView` aus; SwiftUI behaelt nur das erste und wirft
+    /// die anderen weg. Jedes weggeworfene hatte aber schon alles getan:
+    /// Schluesselbund gelesen, Sitzung wiederhergestellt, Anfragen an den
+    /// Server geschickt, eine zweite Hintergrundsitzung mit derselben
+    /// Kennung angelegt. Und weil `init` im `body` der App laeuft, merkte
+    /// sich SwiftUI dessen Lesezugriffe: lief beim Start ein Download im
+    /// System weiter, aenderte die Uebernahme danach `posten`, die App baute
+    /// ihren `body` neu, legte eine neue `RootView` an — und die ein neues
+    /// Modell. Gemessen im iOS-Simulator: rund 70 Modelle je Sekunde, ohne
+    /// Ende, solange die App offen war.
+    static let einziges = AppModel()
+
     enum Phase: Equatable {
         case disconnected
         case connecting
@@ -154,6 +169,10 @@ final class AppModel {
     /// Darf der Server für dieses Konto Video umwandeln? Sonst bietet der
     /// Player keine Bitratengrenze an — sie bliebe ohne Wirkung.
     private(set) var umwandelnErlaubt = true
+    /// **Ob beim Laden eine kleinere Qualität zur Wahl steht** — Bild und Ton
+    /// umwandeln, entschieden im Paket (`Downloadqualitaet.waehlbar`). Ohne
+    /// Antwort erlaubt, wie beim Player.
+    private(set) var downloadqualitaetWaehlbar = true
 
     /// **Ob ein Ladeknopf ueberhaupt erscheint** — der Schalter oben *und*
     /// das Recht am Konto, entschieden im Paket.
@@ -265,8 +284,9 @@ final class AppModel {
 
     /// Holt Sammlungen und Anteile gemischter Bibliotheken.
     ///
-    /// **Nur auf Zuruf**, nicht in `loadViews`: gefragt wird erst, wenn eine
-    /// Seite es braucht.
+    /// **Nicht in `loadViews`**, aber nach der Startseite: `Startseitenmodell`
+    /// stößt es an, wenn die Reihen stehen — damit die erste Detail- oder
+    /// Bibliotheksseite nicht darauf wartet.
     ///
     /// **Nicht nur einmal je Konto.** Die erste Fassung merkte sich das
     /// Ergebnis, bis sich Konto oder Bibliotheken änderten; wer auf dem
@@ -360,6 +380,42 @@ final class AppModel {
         return gefunden
     }
 
+    /// Eine Reihe „Teil der Sammlung": die Sammlung und ihre übrigen Titel.
+    typealias Sammlungsreihendaten = (sammlung: Sammlung, titel: [Item])
+
+    /// Die Reihen „Teil der Sammlung" zu einem Titel — leer, wenn er in
+    /// keiner Sammlung steht. Die Filmseite holt sie zusammen mit Extras und
+    /// Ähnlichem und blendet alles auf einmal ein.
+    ///
+    /// **Einmal hier, nicht je Plattform.** Dieselbe Schleife stand in drei
+    /// `Sammlungsreihe`-Ansichten (iPhone, Mac, Fernseher) — die Ansichten
+    /// bleiben getrennt, weil Zeiger, Fokus und Finger den Weg zur
+    /// Sammlungsseite verschieden brauchen; was sie zeigen, entscheidet nur
+    /// diese Funktion.
+    func sammlungsreihen(zu titel: Item) async -> [Sammlungsreihendaten] {
+        guard let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return [] }
+        // **Ein vorhandenes Verzeichnis reicht, aufgefrischt wird nebenher.**
+        // Die Detailseite wartet mit dem Einblenden auf diese Reihen; mit
+        // `await` hing sie beim ersten Öffnen (und nach jeder Minute) an zwei
+        // Abrufen hintereinander — `UserViews` mit Verborgenen und alle
+        // Sammlungen. Am 26.09.2026 gemessen: Filmseite 417–527 ms, davon
+        // der Rest nach Titel und Plan nur dieses Warten.
+        if angebotFuer == angebotsschluessel {
+            Task { await angebotLaden() }
+        } else {
+            await angebotLaden()
+        }
+        var gefunden: [Sammlungsreihendaten] = []
+        // Höchstens zwei Reihen. Steht ein Film in mehr Sammlungen, sind die
+        // übrigen meist automatisch angelegte Doppel.
+        for sammlung in sammlungen(mit: titel).prefix(2) {
+            guard let liste = await sammlungstitel(sammlung, art: art) else { continue }
+            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
+            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
+        }
+        return gefunden
+    }
+
     /// Die gemerkte Wahl dieses Bereichs, geprüft gegen das Angebot.
     func bereichswahl(art: String) -> Bereichswahl {
         bereichsangebot(art: art)
@@ -389,7 +445,12 @@ final class AppModel {
     /// haengengeblieben. `session` steht dabei schon richtig: `bund` wird
     /// auf jedem der fuenf Wege vor `client` gesetzt.
     private(set) var client: JellyfinClient? {
-        didSet { downloads.anmelden(client: client, konto: session?.userID) }
+        didSet {
+            downloads.anmelden(client: client, konto: session?.userID)
+            // Die Gruppe hängt am Konto: beim Wechsel und Abmelden mit dem
+            // alten Client verlassen (`Gemeinsammodell.kontoGewechselt`).
+            if client !== oldValue { Gemeinsammodell.geteilt.kontoGewechselt(alt: oldValue) }
+        }
     }
     private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { wiedergabeLaden() } } }
 
@@ -561,6 +622,10 @@ final class AppModel {
         // von Hand durchgereicht werden, sonst laedt die Verwaltung beim
         // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
         downloads.nurUeberWLAN = nurUeberWLAN
+        // Aus demselben Grund der Pfadbeobachter: ohne ihn blieb die
+        // Verwaltung nach jedem Neustart bei „WLAN" und „Netz da" stehen —
+        // „Nur über WLAN" griff erst, wenn jemand einen Schalter anfasste.
+        if downloadsAn { downloads.netzBeobachten() }
 
         // **Das Paket bekommt einen Faden nach draussen.**
         //
@@ -576,14 +641,47 @@ final class AppModel {
         // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste
         // Abruf die eigenen Header — und die ersten Plakate gleich danach.
         Self.eigeneKoepfeLaden()
+        #if DEBUG
+        testsitzungSetzen()
+        #endif
         restoreSession()
     }
+
+    #if DEBUG
+    /// **Selbsttest ohne Anmeldemaske.** Legt ein Konto an einer
+    /// Testadresse an, als wäre es angemeldet — für Start- und Lastproben
+    /// gegen einen nachgebauten Server, ohne Passwort und ohne Bedienung:
+    ///
+    ///     xcrun simctl launch <geraet> de.paulherter.swiftly -testsitzung http://127.0.0.1:8899
+    private func testsitzungSetzen() {
+        let argumente = ProcessInfo.processInfo.arguments
+        guard let i = argumente.firstIndex(of: "-testsitzung"), i + 1 < argumente.count,
+              let adresse = URL(string: argumente[i + 1]) else { return }
+        let s = Session(accessToken: "testmerkmal", userID: "testnutzer",
+                        userName: "Test", serverURL: adresse)
+        // `-testsitzung2`: ein zweites Konto am selben Testserver — für den
+        // Kontowechsel-Selbsttest (`Kontowechsellauf`). Zuerst aufgenommen, damit
+        // das erste Konto das angemeldete bleibt.
+        var vorher = bundLaden()
+        if argumente.contains("-testsitzung2") {
+            let zweites = Session(accessToken: "testmerkmal2", userID: "testnutzer2",
+                                  userName: "Test 2", serverURL: adresse)
+            vorher = Kontenbund.aufnehmen(zweites, in: vorher).bund
+        }
+        bund = Kontenbund.aufnehmen(s, in: vorher).bund
+        bundSichern()
+        Protokoll.schreib("[Selbsttest] Testsitzung an \(adresse.absoluteString)")
+    }
+    #endif
 
     /// Prüft, ob der Server antwortet, und zieht dabei Name und Fassung nach.
     func verbindungPruefen() async -> String {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
             let info = try await client.publicSystemInfo()
+            // Inzwischen auf einen anderen Server gewechselt: dessen Name
+            // nicht mit dem von eben überschreiben.
+            guard self.client === client else { return String(localized: "Nicht angemeldet.") }
             serverName = info.serverName ?? serverName
             serverVersion = info.version ?? serverVersion
             // **Hier und nicht in einem eigenen Takt.** Das ist der eine
@@ -594,6 +692,32 @@ final class AppModel {
             return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
         } catch {
             return lesbar(error)
+        }
+    }
+
+    /// **„Verbindung prüfen" für den Knopf** — mit Frist.
+    ///
+    /// Die Prüfung selbst kann länger dauern als der Abruf: nach der Antwort
+    /// werden noch die liegengebliebenen Meldungen verschickt, und die hängen
+    /// am selben Netz. Bis dahin stand „Moment…" neben einem gesperrten Knopf,
+    /// ohne Ende in Sicht. Nach `frist` gibt es eine Antwort und der Knopf ist
+    /// wieder frei; die Prüfung darf im Hintergrund zu Ende laufen.
+    func verbindungPruefen(frist: Duration) async -> String {
+        @MainActor final class Einmal { var fertig = false }
+        let einmal = Einmal()
+        return await withCheckedContinuation { fortsetzung in
+            Task { @MainActor in
+                let antwort = await self.verbindungPruefen()
+                guard !einmal.fertig else { return }
+                einmal.fertig = true
+                fortsetzung.resume(returning: antwort)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: frist)
+                guard !einmal.fertig else { return }
+                einmal.fertig = true
+                fortsetzung.resume(returning: String(localized: "Der Server hat nicht geantwortet."))
+            }
         }
     }
 
@@ -620,9 +744,47 @@ final class AppModel {
 
     // MARK: - Verbinden
 
+    /// Welche Adressprüfung gerade gilt — siehe ``Pruefstand``.
+    @ObservationIgnored private var pruefstand = Pruefstand()
+    @ObservationIgnored private var pruefaufgabe: Task<Void, Never>?
+
+    /// **Startet die Prüfung einer eingetippten Adresse** — vom Knopf wie von
+    /// der Senden-Taste der Tastatur.
+    ///
+    /// Läuft schon eine, bleibt es bei ihr: der Knopf ist dann gesperrt, die
+    /// Tastatur war es nicht, und ihr zweites Senden startete eine zweite
+    /// Prüfung neben der ersten. Wer die Adresse ändert, bricht die laufende
+    /// über ``adresseGeaendert(_:)`` ab, bevor er neu sendet.
+    func verbindenStarten(_ raw: String, koepfe: [Eigenkopf] = []) {
+        guard pruefstand.laufend == nil else { return }
+        let marke = pruefstand.beginnen(raw)
+        pruefaufgabe = Task { await connect(to: raw, koepfe: koepfe, marke: marke) }
+    }
+
+    /// Die Adresse wurde während der Prüfung geändert: die Prüfung abbrechen
+    /// und die Maske wieder freigeben. Ihre Antwort kommt nicht mehr an.
+    ///
+    /// Steht im Feld noch die geprüfte Adresse, bleibt es bei der Prüfung —
+    /// „Zuletzt verbunden" setzt das Feld und startet im selben Zug, und die
+    /// Änderungsmeldung des Feldes kommt erst danach an.
+    func adresseGeaendert(_ adresse: String) {
+        guard let laufend = pruefstand.laufend, laufend.adresse != adresse else { return }
+        pruefaufgabe?.cancel()
+        pruefaufgabe = nil
+        pruefstand.verwerfen()
+        if phase == .connecting { phase = .disconnected }
+        errorMessage = nil
+    }
+
     /// `koepfe` kommen aus „Erweitert" auf der Anmeldeseite — leer für fast
     /// alle, und dann bleibt, was für diese Adresse schon eingetragen ist.
-    func connect(to raw: String, koepfe: [Eigenkopf] = []) async {
+    ///
+    /// **Jede Zuweisung nach einem `await` fragt erst die Marke.** Eine
+    /// Prüfung, die inzwischen überholt ist, fasst weder Phase noch Meldung
+    /// an — sonst setzte ihr später Fehler die App auf die Adressmaske
+    /// zurück, obwohl die nächste Prüfung längst zur Anmeldung geführt hatte.
+    private func connect(to raw: String, koepfe: [Eigenkopf], marke: Pruefmarke) async {
+        defer { pruefstand.abschliessen(marke) }
         errorMessage = nil
         phase = .connecting
 
@@ -640,7 +802,8 @@ final class AppModel {
         // dann, und nur dann, ist ein zweiter Versuch über `http` sinnvoll.
         // Bei einer Antwort mit Fehlercode wäre er falsch: der Server ist ja
         // da, er sagt nur etwas anderes.
-        if await verbindeMit(url, koepfe: koepfe) { return }
+        if await verbindeMit(url, koepfe: koepfe, marke: marke) { return }
+        guard pruefstand.gilt(marke) else { return }
 
         // Den Grund des **ersten** Versuchs festhalten.
         //
@@ -652,22 +815,37 @@ final class AppModel {
         // finden war.
         let echterGrund = errorMessage
 
+        // **Nicht nach jedem Fehler.** Gibt es den Namen nicht oder lief die
+        // Frist ab, scheitert `http` genauso — nur noch einmal so spät.
         if raw.contains("://") == false,
+           let erster = letzterAnschlussfehler,
+           Adresspruefung.ausweichenLohnt(nach: erster),
            let ausweich = AppModelURLNormalizer.andersHerum(url),
-           await verbindeMit(ausweich, koepfe: koepfe) { return }
+           await verbindeMit(ausweich, koepfe: koepfe, marke: marke) { return }
+        guard pruefstand.gilt(marke) else { return }
 
         errorMessage = echterGrund
         phase = .disconnected
     }
 
-    /// - Returns: `true`, wenn der Server geantwortet hat.
-    private func verbindeMit(_ url: URL, koepfe: [Eigenkopf] = []) async -> Bool {
+    /// Der rohe Fehler des letzten Versuchs in ``verbindeMit(_:koepfe:marke:)``
+    /// — für die Frage, ob der Ausweichversuch lohnt.
+    @ObservationIgnored private var letzterAnschlussfehler: (any Error)?
+
+    /// - Returns: `true`, wenn der Server geantwortet hat. Bei überholter
+    ///   Marke `false`, ohne etwas anzufassen.
+    private func verbindeMit(_ url: URL, koepfe: [Eigenkopf] = [], marke: Pruefmarke) async -> Bool {
         let c = JellyfinClient(baseURL: url, deviceID: Self.deviceID, deviceName: Self.deviceName)
         let vorher = Eigenkoepfe.eingetragen(fuer: url)
         let neu = Eigenkoepfe.bereinigt(koepfe)
         if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: url) }
+        letzterAnschlussfehler = nil
         do {
-            let info = try await c.publicSystemInfo()
+            let info = try await c.erreichbarkeitPruefen()
+            guard pruefstand.gilt(marke) else {
+                if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
+                return false
+            }
             // Erst jetzt ablegen: fuer eine Adresse, unter der nichts
             // antwortet, bleibt nichts im Schluesselbund liegen.
             if !neu.isEmpty { eigeneKoepfeSichern(neu, fuer: url) }
@@ -683,6 +861,8 @@ final class AppModel {
             return true
         } catch {
             if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
+            guard pruefstand.gilt(marke) else { return false }
+            letzterAnschlussfehler = error
             errorMessage = anschlussfehler(error, adresse: url)
             return false
         }
@@ -720,8 +900,14 @@ final class AppModel {
     /// Nimmt eine frische Sitzung an. Gibt zurück, ob es ein **Kontowechsel**
     /// war — dann hat diese Funktion bereits aufgeräumt und neu geladen, und
     /// der Aufrufer soll nicht noch einmal laden.
+    ///
+    /// `angemeldetMit` ist der Client, auf dem angemeldet wurde, wenn es
+    /// nicht der laufende war (``anmeldeclient()``). Er wird erst hier
+    /// übernommen, **nach** dem Bund — so geht `client.didSet` mit dem
+    /// richtigen Konto an die Downloads, und die Gruppe wird noch mit dem
+    /// Merkmal des vorigen Kontos verlassen.
     @discardableResult
-    func sitzungUebernehmen(_ s: Session) -> Bool {
+    func sitzungUebernehmen(_ s: Session, angemeldetMit neuer: JellyfinClient? = nil) -> Bool {
         // **Die Regel steht im Paket**, nicht hier: derselbe Server heisst
         // dazunehmen und wechseln, ein anderer heisst von vorn. Beide
         // Fassungen — diese und die von GTK — hatten sie sich selbst
@@ -729,10 +915,10 @@ final class AppModel {
         let (neuerBund, warAngemeldet) = Kontenbund.aufnehmen(s, in: bund)
         bund = neuerBund
         bundSichern()
+        if let neuer, neuer !== client { client = neuer }
         phase = .ready
         // **War die App schon angemeldet, ist das ein Kontowechsel.** Der
-        // Client trägt nach dem Anmelden bereits das neue Merkmal; was fehlt,
-        // ist alles andere. Ohne das Aufräumen bleiben Bibliotheken und
+        // Client ist schon der des neuen Kontos; was fehlt, ist alles andere. Ohne das Aufräumen bleiben Bibliotheken und
         // Startseite beim vorigen Konto stehen — und mit dem neuen Merkmal
         // abgefragt gibt der Server sie nicht heraus. Genau so kam
         // „Anmeldung abgelehnt", nachdem ein zweites Konto dazukam.
@@ -765,6 +951,10 @@ final class AppModel {
         Task { await loadViews() }
         errorMessage = nil
         sammlungstitelSpeicher.removeAll()
+        // Der Ersatz fürs Kopfbild hängt an der nächsten Folge — und die ist
+        // je Konto eine andere.
+        kopfbildErsatz.removeAll()
+        kopfbildSucht.removeAll()
         kontowechsel += 1
         #if os(tvOS)
         Regal.leeren()
@@ -773,19 +963,27 @@ final class AppModel {
         // Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
         // bleibt beim Wechsel aber stehen, und dann meldete sich das Gerät
         // weiter mit dem Merkmal des vorigen Kontos am Server.
-        Task {
-            await fernsteuerungBeenden()
-            await fernsteuerungStarten()
-        }
+        fernsteuerungNeuStarten()
     }
 
+    /// Der Client, auf dem eine Anmeldung laufen soll.
+    ///
+    /// **Immer ein frischer.** `authenticate` setzt das Merkmal des Clients
+    /// um, auf dem es läuft. Lief die Anmeldung auf dem laufenden Client,
+    /// blieb dieselbe Instanz stehen und `client.didSet` feuerte nie: bei
+    /// „Weiteres Konto hinzufügen" wurde die Gruppe des vorigen Kontos nicht
+    /// verlassen, und die Downloads blieben beim vorigen Konto (bei der
+    /// ersten Anmeldung ohne Konto). ``sitzungUebernehmen(_:angemeldetMit:)``
+    /// übernimmt ihn erst, wenn die Anmeldung geklappt hat.
+    func anmeldeclient() -> JellyfinClient? { client?.ohneKonto() }
+
     func login(username: String, password: String) async {
-        guard let client else { return }
+        guard let anmelder = anmeldeclient() else { return }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            let s = try await client.authenticate(username: username, password: password)
+            let s = try await anmelder.authenticate(username: username, password: password)
             // **Nicht zusätzlich laden, wenn es ein Wechsel war** — gleiche
             // Begründung wie bei Quick Connect: `sitzungUebernehmen` räumt
             // dann selbst auf und stösst das Neuladen an, und ein zweiter
@@ -797,7 +995,7 @@ final class AppModel {
             // auf iPhone, iPad und dem Schreibtisch — also genau dort, wo
             // gleich vier Plattformen darauf gestossen wären. Von der
             // Mac-Sitzung beim Nachlesen gefunden, nicht durch einen Fehler.
-            if !sitzungUebernehmen(s) { await loadViews() }
+            if !sitzungUebernehmen(s, angemeldetMit: anmelder) { await loadViews() }
         } catch {
             errorMessage = lesbar(error)
         }
@@ -833,9 +1031,12 @@ final class AppModel {
             let vorher = Eigenkoepfe.eingetragen(fuer: adresse)
             if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: adresse) }
             let info: PublicSystemInfo
-            do { info = try await c.publicSystemInfo() } catch {
+            do { info = try await c.erreichbarkeitPruefen() } catch {
                 letzter = error
                 if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: adresse) }
+                // Kein Name, keine Antwort in der Frist: `http` scheitert
+                // genauso, nur noch einmal so spät.
+                if !Adresspruefung.ausweichenLohnt(nach: error) { break }
                 continue
             }
             do {
@@ -925,8 +1126,46 @@ final class AppModel {
 
     /// Die offene Socket-Verbindung, über die Befehle vom Server kommen.
     @ObservationIgnored private var fern: Fernsteuerung?
+    /// **Starten und Beenden laufen nacheinander, nie nebeneinander.**
+    ///
+    /// Angestossen wird von mehreren Stellen: die Hauptansicht beim
+    /// Erscheinen und Verschwinden, `signOut`, und der Kontowechsel. Jeder
+    /// Anstoss war eine eigene Aufgabe, und zwischen ihren `await`s konnten
+    /// sie sich überholen: ein Start sah `fern == nil`, ein zweiter auch, und
+    /// es standen zwei Leitungen — oder ein Beenden lief vor dem Start des
+    /// vorigen Kontos durch, und dessen Leitung blieb offen. Jeder Schritt
+    /// wartet jetzt auf den vorigen.
+    @ObservationIgnored private var fernkette: Task<Void, Never>?
+
+    /// Hängt einen Schritt hinten an die Kette und gibt ihn zurück.
+    private func fernEinreihen(_ schritt: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let vorher = fernkette
+        let aufgabe = Task { @MainActor in
+            await vorher?.value
+            await schritt()
+        }
+        fernkette = aufgabe
+        return aufgabe
+    }
     /// Setzt der Player, solange er auf dem Schirm ist.
     @ObservationIgnored var fernbefehl: ((Fernbefehl) -> Void)?
+    /// Setzt, wer gemeinsam schauen kann (bisher nur das iPhone und iPad).
+    /// Kommt über denselben Kanal wie die Fernbefehle.
+    @ObservationIgnored var syncPlayNachricht: ((SyncPlayNachricht) -> Void)?
+    /// **Wer gerade übernimmt** — kommt als Hinweis kurz vor dem Stopp
+    /// (``JellyfinClient/uebergabeHinweis(an:geraet:)``). Der Player liest es
+    /// beim Stopp: mit frischem Hinweis geht das Bild als Karte ab und fliegt
+    /// hinaus; ohne war es ein Stopp aus dem Dashboard, und er schließt wie
+    /// immer. Der Name steht nur im Protokoll.
+    @ObservationIgnored var uebergabeZiel: (name: String, zeit: Date)?
+
+    /// Der Name des übernehmenden Geräts, wenn der letzte Hinweis frisch ist
+    /// — und nur einmal: der Hinweis gilt für genau diesen Stopp.
+    func uebergabeZielNehmen() -> String? {
+        guard let ziel = uebergabeZiel else { return nil }
+        uebergabeZiel = nil
+        return Uebernahme.istUebergabe(hinweisVor: Date().timeIntervalSince(ziel.zeit)) ? ziel.name : nil
+    }
 
     /// Fähigkeiten melden und zuhören.
     ///
@@ -934,6 +1173,23 @@ final class AppModel {
     /// die Meldung bleiben dort die Knöpfe grau, ohne den Socket kommen die
     /// Befehle nie an.
     func fernsteuerungStarten() async {
+        await fernEinreihen { [weak self] in await self?.fernStarten() }.value
+    }
+
+    func fernsteuerungBeenden() async {
+        await fernEinreihen { [weak self] in await self?.fernBeenden() }.value
+    }
+
+    /// Nach einem Kontowechsel: die Leitung des vorigen Kontos zu, die des
+    /// neuen auf — als **ein** Schritt, damit nichts dazwischenkommt.
+    private func fernsteuerungNeuStarten() {
+        _ = fernEinreihen { [weak self] in
+            await self?.fernBeenden()
+            await self?.fernStarten()
+        }
+    }
+
+    private func fernStarten() async {
         guard let client, fern == nil else { return }
         do {
             try await client.faehigkeitenMelden()
@@ -942,7 +1198,22 @@ final class AppModel {
             Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
         }
         guard let steuerung = try? await client.fernsteuerung() else { return }
+        // Inzwischen gewechselt oder abgemeldet: diese Leitung gehört einem
+        // Konto, das nicht mehr gilt.
+        guard self.client === client else {
+            await steuerung.beenden()
+            return
+        }
         fern = steuerung
+        await steuerung.syncPlayHoeren { [weak self] nachricht in
+            Task { @MainActor in self?.syncPlayNachricht?(nachricht) }
+        }
+        await steuerung.uebergabeHoeren { [weak self] name in
+            Task { @MainActor in
+                self?.uebergabeZiel = (name, Date())
+                Protokoll.schreib("[Uebergabe] Hinweis: übernimmt \(name)")
+            }
+        }
         await steuerung.starten { [weak self] befehl in
             Task { @MainActor in
                 // Gemeldet wird, was der Befehl ausloest: Pause und Weiter
@@ -955,18 +1226,32 @@ final class AppModel {
         }
     }
 
-    func fernsteuerungBeenden() async {
-        await fern?.beenden()
+    private func fernBeenden() async {
+        let alte = fern
         fern = nil
+        await alte?.beenden()
+    }
+
+    /// Bibliotheken aus der Startseitenablage — nur, solange noch keine vom
+    /// Server da sind. `loadViews()` ersetzt sie.
+    func bibliothekenVorab(_ vorab: [Item]) {
+        if views.isEmpty { views = vorab }
     }
 
     func loadViews() async {
         guard let client else { return }
+        // **Gilt nur für das Konto, für das gefragt wurde.** Die Kaltstart-
+        // Ablage stösst das Laden an, bevor jemand das Konto wechseln kann;
+        // kam die Antwort des vorigen Kontos nach der des neuen, standen
+        // dessen Bibliotheken und Downloadrechte unter dem neuen.
+        let konto = kontowechsel
+        func gilt() -> Bool { konto == kontowechsel && self.client === client }
         isWorking = true
         defer { isWorking = false }
         // Nebenher und ohne Fehlermeldung: kommt nichts, bleibt es wie es war.
         Task {
             let vorgaben = await client.kontovorgaben()
+            guard gilt() else { return }
             naechsteAutomatischKonto = vorgaben?.naechsteFolgeAutomatisch
             // Ohne Antwort `.unbekannt`, also erlaubt: ein Netzfehler nimmt
             // niemandem etwas weg. Den harten Riegel haelt ohnehin
@@ -975,11 +1260,15 @@ final class AppModel {
             downloadrecht = vorgaben?.downloadrecht ?? .unbekannt
             // Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im Player.
             umwandelnErlaubt = vorgaben?.umwandelnErlaubt ?? true
+            downloadqualitaetWaehlbar = vorgaben?.downloadqualitaetWaehlbar ?? true
             Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto)), Downloads: \(downloadrecht.rawValue)")
         }
         do {
-            views = try await client.userViews()
+            let neu = try await client.userViews()
+            guard gilt() else { return }
+            views = neu
         } catch {
+            guard gilt() else { return }
             errorMessage = lesbar(error)
         }
     }
@@ -1104,8 +1393,19 @@ final class AppModel {
         if let ersatz = kopfbildErsatz[item.id] { return ersatz }
         guard !kopfbildSucht.contains(item.id) else { return nil }
         kopfbildSucht.insert(item.id)
+        let konto = kontowechsel
         Task { [weak self] in
-            guard let self, let url = await self.kopfbildErsatzSuchen(for: item) else { return }
+            guard let self else { return }
+            let (url, gestoert) = await self.kopfbildErsatzSuchen(for: item)
+            // Die Antwort des vorigen Kontos gehört nicht in den Speicher des
+            // neuen (der beim Wechsel geleert wurde).
+            guard konto == self.kontowechsel else { return }
+            // **Nach einem Netzaussetzer wieder freigeben.** Die Marke blieb
+            // sonst stehen, und diese Seite suchte bis zum Neustart nie
+            // wieder. Hat der Titel schlicht kein Bild, bleibt sie stehen —
+            // sonst fragte jedes Neuzeichnen erneut.
+            if gestoert { self.kopfbildSucht.remove(item.id) }
+            guard let url else { return }
             self.kopfbildErsatz[item.id] = url
         }
         return nil
@@ -1119,15 +1419,21 @@ final class AppModel {
         return Bildwahl.kopf(item, adressen: bilder, breite: 1200)
     }
 
-    private func kopfbildErsatzSuchen(for item: Item) async -> URL? {
-        guard let bilder else { return nil }
+    /// `gestoert`: keine der Abfragen kam durch — dann lohnt ein neuer Versuch.
+    private func kopfbildErsatzSuchen(for item: Item) async -> (URL?, gestoert: Bool) {
+        guard let bilder else { return (nil, false) }
         var folge: Item?
+        var gestoert = false
         if item.type == "Series", let client {
-            if let naechste = try? await client.naechsteFolgeDerSerie(seriesID: item.id) { folge = naechste }
-            if folge == nil { folge = (try? await client.folgen(seriesID: item.id))?.first }
+            var fehler = 0
+            do { folge = try await client.naechsteFolgeDerSerie(seriesID: item.id) } catch { fehler += 1 }
+            if folge == nil {
+                do { folge = try await client.folgen(seriesID: item.id).first } catch { fehler += 1 }
+            }
+            gestoert = fehler == 2
         }
         // Welches Bild gilt, steht im Paket — dieselbe Regel wie auf Android.
-        return Bildwahl.kopfMitErsatz(item, folge: folge, adressen: bilder)
+        return (Bildwahl.kopfMitErsatz(item, folge: folge, adressen: bilder), gestoert)
     }
 
     /// Der eine Ort, an dem Bildadressen entstehen.
@@ -1187,9 +1493,13 @@ final class AppModel {
     /// gebraucht wird. Bricht ein Teilstueck ab, bleibt alles, wie es war.
     func downloadsNachziehen() async {
         guard let client, !downloads.posten.isEmpty else { return }
+        // **Erst melden, dann lesen.** Sonst hört die Liste vom Server den
+        // Stand von vor dem Flug — und der Haken der offline gesehenen Folge
+        // verschwände, bis die Nachmeldung durch ist.
+        await nachmeldungenAbschicken()
         let ids = downloads.posten.map(\.id)
         var vorhanden: Set<String> = []
-        var gesehen: Set<String> = []
+        var sehstand: [String: UserItemData] = [:]
         // Hundert Kennungen je Anfrage — dasselbe Mass, mit dem auch die
         // Bibliotheksseiten blaettern. Bei zehn Downloads ist es eine.
         for ab in stride(from: 0, to: ids.count, by: 100) {
@@ -1198,10 +1508,11 @@ final class AppModel {
                                                         ids: stueck) else { return }
             for titel in antwort.items {
                 vorhanden.insert(titel.id)
-                if titel.istGesehen { gesehen.insert(titel.id) }
+                sehstand[titel.id] = titel.userData
             }
         }
-        downloads.nachziehen(vorhanden: vorhanden, gesehen: gesehen)
+        downloads.nachziehen(vorhanden: vorhanden, sehstand: sehstand)
+        downloads.abschnitteNachholen()
     }
 
     @discardableResult
@@ -1220,6 +1531,19 @@ final class AppModel {
             //
             // Bei einer Folge und bei einer Staffel ist die Serie betroffen,
             // bei einer Serie sie selbst.
+            Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
+            sehstandGeaendert += 1
+            return nil
+        } catch { return lesbar(error) }
+    }
+
+    /// Aus „Weiterschauen" nehmen — die Stelle auf null, gesehen bleibt.
+    /// Gibt einen lesbaren Grund zurück, wenn es scheitert.
+    @discardableResult
+    func ausWeiterschauenNehmen(_ item: Item) async -> String? {
+        guard let client else { return String(localized: "Nicht angemeldet.") }
+        do {
+            try await client.stelleZuruecksetzen(itemID: item.id)
             Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
             sehstandGeaendert += 1
             return nil
@@ -1304,6 +1628,13 @@ final class AppModel {
         return Bildwahl.quer(item, adressen: bilder, breite: breite)
     }
 
+    /// **Das Bild einer Folge, quer** — für die Karte von „Hier
+    /// weiterschauen". `nil` ohne eigenes Bild.
+    func folgenbildURL(for item: Item, breite: Int = 1280) -> URL? {
+        guard let marke = item.imageTags?["Primary"] else { return nil }
+        return bilder?.bauen(itemID: item.id, marke: marke, mass: .hoechstensBreit(breite))
+    }
+
     /// Das Bild fuer den Sperrbildschirm und das Kontrollzentrum.
     ///
     /// **Bei Folgen das Standbild der Folge, nicht das Plakat der Serie.**
@@ -1321,16 +1652,16 @@ final class AppModel {
         return imageURL(for: item, maxHeight: hoehe, hochkant: true)
     }
 
-    func backdropURL(for item: Item) -> URL? {
-        guard let tag = item.backdropImageTags?.first else { return nil }
-        return bilder?.bauen(itemID: item.id, art: .hintergrund, marke: tag,
-                             mass: .hoechstensBreit(1200), guete: 85)
-    }
-
     /// Die Folge nach dieser.
     func folgeNach(_ item: Item) async -> Item? {
-        guard let client, let serie = item.seriesId else { return nil }
-        return try? await client.folgeNach(itemID: item.id, seriesID: serie)
+        // **Ohne Server die nächste geladene Folge**, mit Server wie bisher —
+        // die Regel liegt im Paket (`Downloadregeln.folgeNach`).
+        let client = self.client
+        return await Downloadregeln.folgeNach(item, aus: downloads.posten,
+                                              ohneNetz: downloads.keinNetz) {
+            guard let client, let serie = item.seriesId else { return nil }
+            return try await client.folgeNach(itemID: item.id, seriesID: serie)
+        }
     }
 
     /// Angefangene Titel.
@@ -1457,7 +1788,10 @@ final class AppModel {
 
     /// Fragt den Server, wie er diesen Titel ausliefern würde.
     ///
-    func plan(for itemID: String) async -> PlaybackPlan? {
+    /// `still`: ein Fehler landet nur im Protokoll, nicht als Meldung — für
+    /// das Vorbereiten im Hintergrund (``Folgenvorbereitung``), um das niemand
+    /// gebeten hat.
+    func plan(for itemID: String, still: Bool = false) async -> PlaybackPlan? {
         // **H8 — liegt die Datei hier, braucht es den Server nicht.**
         //
         // Und zwar vor dem `guard`: ohne Netz ist `client` zwar da, aber
@@ -1469,7 +1803,8 @@ final class AppModel {
         // Der Nutzer merkt davon nichts — kein zweiter Knopf, keine Wahl.
         if let datei = downloads.datei(fuer: itemID) {
             let p = downloads.posten(fuer: itemID)
-            return .vonDerPlatte(datei, container: p?.container, mediaSourceID: p?.quelle)
+            return .vonDerPlatte(datei, container: p?.container, mediaSourceID: p?.quelle,
+                                 bildcodec: p?.bildcodec)
         }
         guard let client else { return nil }
         do {
@@ -1483,7 +1818,7 @@ final class AppModel {
             return plan
         } catch {
             Self.log.error("PlaybackInfo fehlgeschlagen für \(itemID, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            errorMessage = lesbar(error)
+            if !still { errorMessage = lesbar(error) }
             return nil
         }
     }
@@ -1507,8 +1842,12 @@ final class AppModel {
     /// Leer heißt: der Server weiß nichts davon — kein Plugin, keine Analyse,
     /// oder eine ältere Fassung. Dann bleibt alles wie vorher.
     func abschnitte(fuer itemID: String) async -> [JellyfinKit.Abschnitt] {
-        guard let client else { return [] }
-        return await client.abschnitte(fuer: itemID)
+        // Die beim Download abgelegten zuerst — ohne Netz gibt es keine
+        // anderen (`Downloadregeln.abschnitte`).
+        let client = self.client
+        return await Downloadregeln.abschnitte(abgelegt: downloads.posten(fuer: itemID)?.abschnitte) {
+            await client?.abschnitte(fuer: itemID) ?? []
+        }
     }
 
     /// Vorschaubilder beim Spulen — `nil` ohne Trickplay am Server.
@@ -1595,6 +1934,7 @@ final class AppModel {
         // Sperre beim Einreihen frei.
         laufenderTitel = (item, plan)
         gemeldetPausiert = false
+        Startmessung.geteilt.marke("Start an den Server")
         meldungen.melden(meldung(.start, item: item, plan: plan, seconds: seconds))
         trakt.start(item: item, client: client, sekunden: seconds)
     }
@@ -1744,6 +2084,14 @@ final class AppModel {
     /// nicht (Stoppsperre in der Reihe).
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
         let ticks = JellyfinClient.ticks(fromSeconds: seconds)
+        // Das Konto von jetzt, nicht das nach dem Warten — wechselt es
+        // dazwischen, gehört die Stelle trotzdem dem, der geschaut hat.
+        let konto = session?.userID
+        // Der gemerkte Stand der Serie ist ab jetzt alt — siehe
+        // `Serienspeicher.standVergessen`.
+        if let serie = item.seriesId { Serienspeicher.geteilt.standVergessen(serie) }
+        // Mit und ohne Netz: der Download kennt seinen Stand selbst (1.0.5).
+        downloads.wiedergabeVermerken(item.id, ticks: ticks)
         // Auch nach einer Nachmeldung: die Seite soll dann wenigstens den
         // Stand des letzten Takts zeigen, nicht den von vor dem Abspielen.
         defer { wiedergabeBeendet += 1 }
@@ -1763,6 +2111,10 @@ final class AppModel {
         case .gesendet:
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
             Protokoll.schreib("[Melden] Stopped \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")")
+            // Eine ältere Stelle aus dem Flugzeug darf danach nicht mehr hinaus.
+            if let konto {
+                nachmeldungen = Nachmelderegeln.ueberholt(itemID: item.id, konto: konto, in: nachmeldungen)
+            }
         case .verworfen:
             Protokoll.schreib("[Melden] Stopped doppelt verworfen \(item.id) session \(plan.playSessionID ?? "nil")")
         case .gescheitert, .zeitUeberschritten:
@@ -1774,7 +2126,7 @@ final class AppModel {
             // zu Hause liefe die Folge von vorn los. H8, zweite Hälfte.
             Self.log.error("Ende-Meldung nicht durch (\(String(describing: ergebnis), privacy: .public)), wird nachgemeldet")
             Protokoll.schreib("[Melden] Stopped \(ergebnis) → Nachmeldung \(item.id)")
-            nachmelden(item.id, ticks)
+            nachmelden(item.id, ticks, konto: konto)
         }
     }
 
@@ -1794,8 +2146,20 @@ final class AppModel {
         }
     }
 
-    private func nachmelden(_ itemID: String, _ ticks: Int64) {
+    #if DEBUG
+    /// Für den Selbsttest (`Offlinelauf`).
+    var nachmeldungenFuerLauf: [Nachmeldung] { nachmeldungen }
+    /// Eine Meldung von früher unterschieben — prüft „der neuere Stand gewinnt".
+    func nachmeldungUnterschieben(_ itemID: String, ticks: Int64, wann: Date) {
         guard let konto = session?.userID else { return }
+        nachmeldungen = Nachmelderegeln.aufnehmen(
+            Nachmeldung(itemID: itemID, konto: konto, ticks: ticks, wann: wann), in: nachmeldungen)
+    }
+    var laufenderTitelKennung: String? { laufenderTitel?.item.id }
+    #endif
+
+    private func nachmelden(_ itemID: String, _ ticks: Int64, konto: String?) {
+        guard let konto else { return }
         nachmeldungen = Nachmelderegeln.aufnehmen(
             Nachmeldung(itemID: itemID, konto: konto, ticks: ticks),
             in: nachmeldungen)
@@ -1803,31 +2167,27 @@ final class AppModel {
 
     /// Alles Liegengebliebene abschicken. Läuft nach jeder erfolgreichen
     /// Verbindungsprüfung — also genau dann, wenn der Server nachweislich
-    /// wieder da ist, statt in einem eigenen Takt zu raten.
+    /// wieder da ist, statt in einem eigenen Takt zu raten — und vor dem
+    /// Nachziehen der Downloads.
+    ///
+    /// **Was gilt, entscheidet das Paket** (`JellyfinClient.nachmelden`):
+    /// älteste zuerst, ein neuerer Stand am Server gewinnt, beim ersten
+    /// Fehler bleibt der Rest liegen. **Nie zweimal gleichzeitig** — die
+    /// Prüfung läuft nach Verbinden, Anmelden und Kontowechsel, und zwei
+    /// Durchgänge nebeneinander schickten dieselbe Stelle doppelt.
     func nachmeldungenAbschicken() async {
-        guard let client, let konto = session?.userID else { return }
+        guard !nachmeldenLaeuft, let client, let konto = session?.userID else { return }
         let offen = Nachmelderegeln.faellig(nachmeldungen, konto: konto)
         guard !offen.isEmpty else { return }
-        var geschafft: [String] = []
-        for m in offen {
-            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
-            // nur die Kennungen, und die Sitzung gab es offline ohnehin nicht.
-            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
-            do {
-                try await client.reportStopped(itemID: m.itemID, plan: plan,
-                                               positionTicks: m.ticks)
-                geschafft.append(m.id)
-            } catch {
-                // **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist
-                // der Server wieder weg; die übrigen scheiterten auch und
-                // stünden danach als verloren da.
-                break
-            }
-        }
-        guard !geschafft.isEmpty else { return }
-        nachmeldungen = Nachmelderegeln.erledigt(geschafft, in: nachmeldungen)
-        Self.log.info("\(geschafft.count) Stellen nachgemeldet")
+        nachmeldenLaeuft = true
+        defer { nachmeldenLaeuft = false }
+        let erledigt = await client.nachmelden(offen) { Protokoll.schreib($0) }
+        guard !erledigt.isEmpty else { return }
+        nachmeldungen = Nachmelderegeln.erledigt(erledigt, in: nachmeldungen)
+        Self.log.info("\(erledigt.count) Stellen nachgemeldet")
     }
+
+    @ObservationIgnored private var nachmeldenLaeuft = false
 
     /// Auf ein anderes Konto desselben Servers umschalten.
     ///
@@ -1879,14 +2239,19 @@ final class AppModel {
         // Nutzer gerade loswerden wollte. Seit die Fernsteuerung sich nach
         // einem Abriss selbst wieder aufbaut, hätte sie das auch getan.
         let alter = client
+        // Sofort eingereiht, nicht erst in der Aufgabe: sonst kann der
+        // Neustart für das nächste Konto (`neuVerbinden` unten) vor diesem
+        // Beenden in der Kette stehen.
+        let beendet = fernEinreihen { [weak self] in await self?.fernBeenden() }
         Task {
-            await fernsteuerungBeenden()
+            await beendet.value
             await alter?.abmelden()
         }
         // **Abmelden trifft nur das aktive Konto.** Sind noch andere da,
         // schaltet die App auf das nächste um, statt zur Serveranmeldung
         // zurückzufallen — wer den Server ganz verlassen will, meldet jedes
         // Konto einzeln ab. Ein Knopf, eine Bedeutung.
+        if let konto = session?.kontoschluessel { Startseitenmodell.ablageLoeschen(konto) }
         if let rest = bund?.entfernt(bund?.aktiveKennung ?? "") {
             bund = rest
             bundSichern()
@@ -1969,6 +2334,13 @@ final class AppModel {
             // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
             // von dort gibt es keinen Weg zurück außer über das Profilmenü.
             guard await neuer.sitzungGiltNoch() else {
+                // **Nur, wenn dieses Konto noch das aktive ist.** Die Prüfung
+                // kann langsam sein; wer in der Zwischenzeit auf ein anderes
+                // Konto gewechselt hat, würde sonst mit ihrem Ergebnis
+                // abgemeldet — das neue Konto statt des widerrufenen.
+                // `client` wird bei jedem Wechsel neu angelegt; ist es nicht
+                // mehr dieser, gilt die Antwort niemandem mehr.
+                guard client === neuer else { return }
                 let name = session?.userName
                 signOut()
                 // **Nach dem Abmelden kann noch ein Konto da sein.** Seit es

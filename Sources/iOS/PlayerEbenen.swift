@@ -52,6 +52,9 @@ struct Playermass {
     let ueberLeiste: CGFloat = 20
     /// Höhe der Zeitzeile — die Trefferfläche des Reglers.
     let leiste: CGFloat = 44
+    /// Einzug der Zeilen auf den Ebenen — Spaltentitel, Wahlzeile und
+    /// Verzögerung stehen damit auf einer Textkante.
+    static let einzug: CGFloat = 10
 }
 
 /// Die drei Ebenen über dem Bild.
@@ -153,7 +156,7 @@ private struct Wahlspalte<Inhalt: View>: View {
                 .minimumScaleFactor(0.7)
                 // Vorher rohes `.white`; gelesen wird `schrift`.
                 .foregroundStyle(Stil.schrift)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, Playermass.einzug)
                 .padding(.bottom, 8)
                 .accessibilityAddTraits(.isHeader)
             ScrollView {
@@ -183,6 +186,7 @@ private struct Ebenenzeile: View {
                     .font(.system(size: mass.pad ? 15 : 14, weight: .semibold))
                     .opacity(gewaehlt ? 1 : 0)
                     .frame(width: 18)
+                    .accessibilityHidden(true)
                 // Spurnamen kommen aus der Datei — wörtlich, nicht nachschlagen.
                 Text(verbatim: text)
                     .lineLimit(1)
@@ -198,7 +202,9 @@ private struct Ebenenzeile: View {
             // Auswaehlen mehr als vorher**. Gewaehlt sagt jetzt der Ton.
             .font(Stil.listentitel)
             .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
-            .padding(.horizontal, 10)
+            // Der Haken wandert weich von Zeile zu Zeile, statt zu springen.
+            .animation(Stil.umschalten, value: gewaehlt)
+            .padding(.horizontal, Playermass.einzug)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -206,6 +212,31 @@ private struct Ebenenzeile: View {
         .buttonStyle(Stil.Druckzeile())
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
         .accessibilityAddTraits(gewaehlt ? .isSelected : [])
+    }
+}
+
+/// Ein Name in der Spalte „Gemeinsam" — eine Auskunft, kein Knopf.
+private struct Teilnehmerzeile: View {
+    let name: String
+    let mass: Playermass
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "person.fill")
+                .font(.system(size: mass.pad ? 15 : 14))
+                .foregroundStyle(Stil.schriftSehrLeise)
+                .frame(width: 18)
+            // Ein Benutzername vom Server — wörtlich.
+            Text(verbatim: name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(Stil.listentitel)
+        .foregroundStyle(Stil.schriftLeise)
+        .padding(.horizontal, Playermass.einzug)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -226,6 +257,80 @@ private struct Spaltenreihe<Inhalt: View>: View {
     }
 }
 
+/// **Verzögerung — letzte Zeile der Spalten Audio und Untertitel.**
+///
+/// Kein eigener Knopf in der Leiste: wer eine Spur verschiebt, hat gerade
+/// die Spur gewählt, und genau dort steht die Zeile. − und + schieben um
+/// 50 ms, gehalten wiederholen sie und werden schneller
+/// (`Verzoegerung.Haltezaehler`); das Rund-Pfeil-Symbol setzt auf null.
+/// Für VoiceOver ist die Zeile ein Element, das man nach oben und unten
+/// wischt.
+struct Verzoegerungszeile: View {
+    let wert: Verzoegerung
+    let mass: Playermass
+    let setzen: (Verzoegerung) -> Void
+    @State private var halten = Verzoegerung.Haltezaehler()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Verzögerung")
+                .font(Stil.klein)
+                .foregroundStyle(Stil.schriftSehrLeise)
+                .padding(.horizontal, Playermass.einzug)
+            HStack(spacing: 0) {
+                taste("minus", richtung: -1, gesperrt: wert.amAnfang)
+                Text(verbatim: wert.text())
+                    .font(Stil.listentitel.monospacedDigit())
+                    .foregroundStyle(wert.istNull ? Stil.schriftLeise : Stil.schrift)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+                taste("plus", richtung: 1, gesperrt: wert.amEnde)
+                Button { setzen(.null) } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: mass.symbol - 3, weight: .medium))
+                        .foregroundStyle(Stil.schriftLeise)
+                        .frame(width: mass.knopf, height: mass.knopf)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(Stil.Druckknopf())
+                // Platz bleibt stehen, damit − Wert + beim Zurücksetzen nicht
+                // seitlich springen.
+                .opacity(wert.istNull ? 0 : 1)
+                .disabled(wert.istNull)
+                .animation(Stil.umschalten, value: wert.istNull)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Verzögerung"))
+        .accessibilityValue(Text(verbatim: wert.text()))
+        .accessibilityAdjustableAction { richtung in
+            switch richtung {
+            case .increment: setzen(wert.verschoben(1))
+            case .decrement: setzen(wert.verschoben(-1))
+            @unknown default: break
+            }
+        }
+        .accessibilityAction(named: Text("Zurücksetzen")) { setzen(.null) }
+    }
+
+    private func taste(_ symbol: String, richtung: Int, gesperrt: Bool) -> some View {
+        Button {
+            setzen(wert.verschoben(richtung, schritte: halten.druck()))
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: mass.symbol - 2, weight: .semibold))
+                .foregroundStyle(gesperrt ? Stil.schriftSehrLeise : Stil.schrift)
+                .frame(width: mass.knopf, height: mass.knopf)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(Stil.Druckknopf())
+        // Gehalten wiederholt das System; schneller wird es über den Zähler.
+        .buttonRepeatBehavior(.enabled)
+        .disabled(gesperrt)
+    }
+}
+
 // MARK: - Audio & Untertitel
 
 struct SpurenEbene: View {
@@ -242,6 +347,10 @@ struct SpurenEbene: View {
     /// Die Ebene wird bei jedem Öffnen neu gebaut, dann gilt wieder VLCs Stand.
     @State private var tonWahl: String?
     @State private var untertitelWahl: String??
+    /// Wie bei der Spurwahl: was eingestellt wurde, wissen wir selbst —
+    /// die Fläche ist keine beobachtete Größe.
+    @State private var tonVerzug: Verzoegerung?
+    @State private var untertitelVerzug: Verzoegerung?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -255,6 +364,12 @@ struct SpurenEbene: View {
                             surface?.waehleTonspur(spur)
                         }
                     }
+                    Verzoegerungszeile(wert: tonVerzug ?? surface?.tonVerzoegerung ?? .null,
+                                       mass: mass) { neu in
+                        tonVerzug = neu
+                        surface?.tonVerzoegerung = neu
+                    }
+                    .padding(.top, Stil.kachelAbstand)
                 }
                 Wahlspalte(titel: "Untertitel", mass: mass) {
                     Ebenenzeile(text: String(localized: "Aus"), gewaehlt: untertitelJetzt == nil,
@@ -270,6 +385,12 @@ struct SpurenEbene: View {
                             surface?.waehleUntertitel(spur)
                         }
                     }
+                    Verzoegerungszeile(wert: untertitelVerzug ?? surface?.untertitelVerzoegerung ?? .null,
+                                       mass: mass) { neu in
+                        untertitelVerzug = neu
+                        surface?.untertitelVerzoegerung = neu
+                    }
+                    .padding(.top, Stil.kachelAbstand)
                 }
             }
             Ebenenkopf(mass: mass, schliessen: schliessen) { EmptyView() }
@@ -300,6 +421,9 @@ struct EinstellungsEbene: View {
     @Binding var schlafminuten: Int?
     /// Nur bei Wiedergabe vom Server — eine heruntergeladene Datei hat keine Wahl.
     let qualitaet: Qualitaetswahl?
+    /// Nur in einer Gruppe: wer dabei ist, und der Weg hinaus.
+    var gemeinsam: Gemeinsammodell? = nil
+    var gruppeVerlassen: () -> Void = {}
     let schliessen: () -> Void
 
     @AppStorage("technikschild") private var technikschild = false
@@ -309,6 +433,31 @@ struct EinstellungsEbene: View {
         ZStack(alignment: .top) {
             Ebenengrund()
             Spaltenreihe(mass: mass) {
+                // **Gemeinsam zuerst** (Entwurf A, Schritt 5): wer dabei ist,
+                // und darunter der Ausgang. Die Namen tun nichts.
+                if let gemeinsam, let gruppe = gemeinsam.gruppe {
+                    Wahlspalte(titel: "Gemeinsam · \(gruppe.name)", mass: mass) {
+                        ForEach(Array(gruppe.teilnehmer.enumerated()), id: \.offset) { paar in
+                            Teilnehmerzeile(name: paar.element, mass: mass)
+                        }
+                        Button(action: gruppeVerlassen) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(width: 18)
+                                Text("Gruppe verlassen")
+                            }
+                            .font(Stil.listentitel)
+                            .foregroundStyle(Stil.akzent)
+                            .padding(.horizontal, Playermass.einzug)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(Stil.Druckzeile())
+                        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
+                    }
+                }
                 // **Zwei Bildformate, nicht drei.** Der Player kennt das ganze
                 // Bild und formatfüllend (auch per Zwei-Finger-Geste); ein
                 // gestrecktes Bild gibt es nicht.
@@ -405,7 +554,7 @@ struct FolgenEbene: View {
         guard let serie = item.seriesId,
               let gemerkt = Serienspeicher.geteilt.stand(serie, mit: model),
               !gemerkt.staffeln.isEmpty else { return }
-        let staffel = Self.passendeStaffel(zu: item, in: gemerkt.staffeln)
+        let staffel = Staffelwahlregel.waehle(aus: gemerkt.staffeln, stand: item)
         _staffeln = State(initialValue: gemerkt.staffeln)
         _gewaehlteStaffel = State(initialValue: staffel)
         _folgen = State(initialValue: staffel.flatMap { gemerkt.folgen[$0.id] } ?? [])
@@ -422,7 +571,7 @@ struct FolgenEbene: View {
         // Wahrheit — ein zwischengespeicherter Netzfehler.
         guard let staffeln = await model.staffeln(serie), !staffeln.isEmpty else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.staffeln = staffeln }
-        guard let staffel = passendeStaffel(zu: item, in: staffeln) else { return }
+        guard let staffel = Staffelwahlregel.waehle(aus: staffeln, stand: item) else { return }
         guard let folgen = await model.folgen(serie: serieID, staffel: staffel.id) else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.folgen[staffel.id] = folgen }
     }
@@ -463,7 +612,9 @@ struct FolgenEbene: View {
 
                 ScrollViewReader { leser in
                     ScrollView {
-                        VStack(spacing: 0) {
+                        // Lazy: eine Staffel mit vielen Folgen baute sonst
+                        // jede Zeile samt Standbild schon beim Öffnen.
+                        LazyVStack(spacing: 0) {
                             ForEach(folgen) { folge in
                                 Button { starten(folge) } label: {
                                     // Die laufende Folge traegt ein groesseres
@@ -480,6 +631,10 @@ struct FolgenEbene: View {
                                 // Liste sieht das nach Verrutschen aus. So hält
                                 // es auch `Wischzeile` auf der Serienseite.
                                 .buttonStyle(Stil.Druckzeile())
+                                // Langer Druck: das Kachelmenü, im Player nur
+                                // mit dem Sehstand (`Kachelmenue.imPlayer`).
+                                .kachelmenue(folge, model: model, quer: true, imPlayer: true,
+                                             nachher: { await folgenLaden() })
                                 .accessibilityAddTraits(folge.id == item.id ? .isSelected : [])
                                 .id(folge.id)
                                 .transition(.opacity)
@@ -489,9 +644,18 @@ struct FolgenEbene: View {
                     }
                     .scrollIndicators(.hidden)
                     // **Die laufende Folge in Sicht**, sobald die Liste steht.
-                    .onChange(of: folgen.map(\.id), initial: true) { _, ids in
+                    // Beim Öffnen steht sie gleich dort; kommt die Liste
+                    // später (Server, Staffelwechsel), gleitet sie hin —
+                    // mit reduzierter Bewegung springt sie.
+                    .onChange(of: folgen.map(\.id), initial: true) { alt, ids in
                         guard ids.contains(item.id) else { return }
-                        leser.scrollTo(item.id, anchor: .center)
+                        if alt == ids || alt.isEmpty || Stil.bewegungReduziert {
+                            leser.scrollTo(item.id, anchor: .center)
+                        } else {
+                            withAnimation(.smooth(duration: 0.35)) {
+                                leser.scrollTo(item.id, anchor: .center)
+                            }
+                        }
                     }
                     .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in
                         if staffellisteOffen { staffellisteOffen = false }
@@ -511,26 +675,16 @@ struct FolgenEbene: View {
         guard let serie = Item.vorlaeufigeSerie(zu: item) else { return }
         if let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model), !gemerkt.staffeln.isEmpty {
             staffeln = gemerkt.staffeln
-            gewaehlteStaffel = passendeStaffel(in: gemerkt.staffeln)
+            gewaehlteStaffel = Staffelwahlregel.waehle(aus: gemerkt.staffeln, stand: item)
             if let id = gewaehlteStaffel?.id, let liste = gemerkt.folgen[id] { folgen = liste }
         }
         // `nil` heisst gestoert: dann bleibt stehen, was der Speicher hatte.
         guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
-            gewaehlteStaffel = passendeStaffel(in: frisch)
+            gewaehlteStaffel = Staffelwahlregel.waehle(aus: frisch, stand: item)
         }
         await folgenLaden()
-    }
-
-    private func passendeStaffel(in liste: [Item]) -> Item? {
-        Self.passendeStaffel(zu: item, in: liste)
-    }
-
-    private static func passendeStaffel(zu item: Item, in liste: [Item]) -> Item? {
-        liste.first { $0.id == item.seasonId }
-            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == item.parentIndexNumber }
-            ?? liste.first
     }
 
     /// Überblendet wird nur beim Staffelwechsel; beim Öffnen steht die

@@ -202,6 +202,19 @@ struct SeriesDetailView: View {
                 // sonst die ganze Seite — und eine Seite, die breiter ist als
                 // ihre Scrollfläche, lässt sich seitwärts ziehen.
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                // **Die Farbe des Kopfbilds unter der Seite** (Versuch
+                // `experiment-glas`), schmal wie breit. Breit trägt `Heldkopf`
+                // sein Bild als Grund und blendet es über `aufBildfarbe` mit
+                // einer Maske aus statt mit `grund` — darunter liegt dasselbe
+                // Netz, gerechnet ab seiner Mindesthöhe (iPad, 1.0.5).
+                .background(alignment: .top) {
+                    Stimmungsgrund(url: model.kopfbildURL(for: serie),
+                                   ab: breit ? Stil.heldHoeheBreit : Stil.heldHoehe)
+                }
+                // Darüber durchsichtige statt fester Flächen — siehe
+                // `Stil.flaecheDurchsichtig`.
+                .environment(\.aufBildfarbe, true)
+                .environment(\.bildfarbeQuelle, model.kopfbildURL(for: serie))
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
@@ -248,15 +261,16 @@ struct SeriesDetailView: View {
             // `Ladeblatt` traegt leere Posten ohne Weiteres — `bytes` ist
             // dann 0, und geschlossen zeichnet es ohnehin nichts.
             Ladeblatt(offen: $ladeblatt, model: model, posten: ladeposten,
-                      titel: ladetitel, bilder: ladebilder)
+                      titel: ladetitel, bilder: ladebilder,
+                      gescheitert: { meldung = $0 })
                 .zIndex(20)
             // **Die Auswahl steht vor dem Ladeblatt, nicht daneben.** Sie
             // sammelt nur Folgen; Platz, WLAN und die Groesse rechnet weiter
             // `Ladeblatt`.
             Ladeauswahl(offen: $auswahlOffen, model: model, serie: serie,
                         staffeln: staffeln,
-                        vorgeladen: gewaehlteStaffel.map { [$0.id: folgen] } ?? [:]) { gewaehlt in
-                let neue = gewaehlt.compactMap { posten($0) }
+                        vorgeladen: gewaehlteStaffel.map { [$0.id: folgen] } ?? [:]) { gewaehlt, qualitaet in
+                let neue = gewaehlt.compactMap { posten($0)?.inQualitaet(qualitaet) }
                 guard !neue.isEmpty else { return }
                 blattZeigen(neue, titel: serie.name)
             }
@@ -268,8 +282,8 @@ struct SeriesDetailView: View {
 
             Detailkopfleser(titel: serie.name, weg: weg) { zurueck() }
         }
-        .animation(.easeOut(duration: 0.14), value: staffellisteOffen)
-        .animation(.easeInOut(duration: 0.16), value: reiter)
+        .animation(Stil.sprung, value: staffellisteOffen)
+        .animation(Stil.bereichswechsel, value: reiter)
         // Breit hängt die Tafel am Knopf statt am unteren Bildrand. Der
         // Anker kommt aus `alsHandlungsanker()`; über feste Koordinaten
         // ginge es nicht, weil die Knopfreihe mit der Länge der
@@ -310,8 +324,7 @@ struct SeriesDetailView: View {
             guard !selbstGewaehlt, let neu,
                   let treffer = staffeln.first(where: { $0.id == neu }),
                   treffer.id != gewaehlteStaffel?.id else { return }
-            gewaehlteStaffel = treffer
-            Task { await folgenLaden() }
+            staffelWechseln(treffer)
         }
     }
 
@@ -328,6 +341,13 @@ struct SeriesDetailView: View {
         async let a = model.standInSerie(serie)
         async let b = model.staffeln(serie)
         async let c = model.aehnliche(serie)
+        // **Die Serie selbst frisch.** Gemerkt und gesehen standen aus dem
+        // Eintrag, mit dem die Seite geoeffnet wurde — und der aendert sich
+        // nie. Nach „Serie als gesehen" lud die Seite neu, las wieder den
+        // alten Eintrag, und der Knopf fiel auf „nicht gesehen" zurueck; ein
+        // zweiter Tipp markierte alles noch einmal, statt es zurueckzusetzen.
+        // Fernseher und Mac holen die Serie hier seit jeher frisch.
+        async let d = model.item(id: serie.id)
         // Doppelte Kennungen raus — siehe `ItemDetailView`.
         //
         // **`nil` ist keine leere Liste.** Bleibt der Server stumm, behaelt die
@@ -378,10 +398,11 @@ struct SeriesDetailView: View {
             + "vorhanden=[\(staffeln.map { "\($0.name)=\($0.id)" }.joined(separator: " "))]")
         // Fuer den naechsten Weg auf dieselbe Serie — und fuer den Weg von
         // einer Folge aus, der sonst die Serie jedes Mal nachholt.
-        Serienspeicher.geteilt.merken(serie)
+        let aktuell = await d ?? serie
+        Serienspeicher.geteilt.merken(aktuell)
         Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = staffeln }
-        gemerkt = serie.userData?.isFavorite ?? false
-        gesehen = serie.userData?.played ?? false
+        gemerkt = aktuell.userData?.isFavorite ?? false
+        gesehen = aktuell.userData?.played ?? false
         // Der Plan ohne Animation, nur das Einblenden mit: im animierten
         // Zug schob die neue Direct-Play-Marke Bewertung und Freigabe
         // sichtbar nach rechts, die Zeile glitt von links herein.
@@ -400,7 +421,7 @@ struct SeriesDetailView: View {
 
     private var hero: some View {
         Heldbild(url: model.kopfbildURL(for: serie))
-            .overlay(alignment: .bottom) { Heldauslauf() }
+            .overlay(alignment: .bottom) { Heldauslauf(bild: model.kopfbildURL(for: serie)) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(serie.name)
@@ -494,6 +515,8 @@ struct SeriesDetailView: View {
                 .accessibilityLabel(Text(knopftext))
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
+            // Langer Druck: das Kachelmenü der Serie, wie an ihrer Kachel.
+            .kachelmenue(serie, model: model, nachher: { await auffrischen() })
             // **Waehrend geladen wird bleibt er an und zeigt „Laedt…".**
             //
             // Auf tvOS ist ein abgeschalteter Knopf kein Fokusziel: kam man aus
@@ -621,8 +644,7 @@ struct SeriesDetailView: View {
                               istGewaehlt: { $0.id == gewaehlteStaffel?.id },
                               waehlen: { staffel in
                                   selbstGewaehlt = true
-                                  gewaehlteStaffel = staffel
-                                  Task { await folgenLaden() }
+                                  staffelWechseln(staffel)
                               },
                               offen: $staffellisteOffen)
                     .padding(.leading, Stil.rand(breit: breit))
@@ -688,6 +710,12 @@ struct SeriesDetailView: View {
                                     // faellt, waere dort eine zweite Auskunft.
                                     laufend: false)
                     }
+                    // **Langer Druck: das Kachelmenü**, wie an jeder Kachel
+                    // (``Kachelmenue``) — Abspielen, gesehen/ungesehen, Laden,
+                    // Gemeinsam schauen. Vorher stand hier nur „Gemeinsam
+                    // schauen".
+                    .kachelmenue(folge, model: model, quer: true,
+                                 nachher: { await folgenLaden() })
                     // **Keine Trennlinie mehr.** Das Standbild trennt die
                     // Zeilen schon; eine Haarlinie daneben sagt dasselbe ein
                     // zweites Mal. Wo die Liste ueberhaupt eine Marke braucht —
@@ -695,6 +723,11 @@ struct SeriesDetailView: View {
                     // die sitzt in `Folgenzeile`.
                 }
             }
+            // **Eine Staffel ersetzt die andere, sie mischt sich nicht mit
+            // ihr.** Ohne eigene Kennung hielt SwiftUI die Zeilen fuer
+            // dieselben und tauschte nur ihren Inhalt — mit der Kennung
+            // blendet die alte Liste aus und die neue ein.
+            .id(gewaehlteStaffel?.id)
             .transition(.opacity)
             }
         }
@@ -705,8 +738,23 @@ struct SeriesDetailView: View {
         let leute = (stand?.darsteller.isEmpty == false ? stand!.darsteller : serie.darsteller)
         if leute.isEmpty && laedt {
             // Die Serie aus der Liste traegt oft keine Besetzung; die kommt
-            // mit dem Stand. Bis dahin kein „Keine Besetzung".
-            Color.clear.frame(height: 1)
+            // mit dem Stand. Bis dahin kein „Keine Besetzung" — und **eine
+            // Reihe in der Form der Kacheln**, nicht ein Punkt Hoehe: sonst
+            // wuchs der Reiter beim Eintreffen um eine ganze Reihe.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
+                      spacing: 20) {
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    VStack(spacing: 7) {
+                        Ladefeld(ecke: 38).frame(width: 76, height: 76)
+                        Ladefeld(ecke: 4).frame(width: 60, height: 12)
+                    }
+                    .frame(width: 84)
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.top, 20)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Lädt")
         } else if leute.isEmpty {
             leerhinweis("Keine Besetzung hinterlegt.")
         } else {
@@ -730,7 +778,13 @@ struct SeriesDetailView: View {
         if aehnlicheGestoert && aehnliche.isEmpty {
             Stoerhinweis(model: model) { Task { await laden() } }
         } else if aehnliche.isEmpty && laedt {
-            Color.clear.frame(height: 1)
+            // Eine Reihe in derselben Spaltenrechnung wie das Raster darunter.
+            Rasterplatzhalter(spalten: Stil.spalten(nutzbar: rasterbreite - 2 * Stil.rand(breit: breit),
+                                                    breit: breit),
+                              reihen: 1)
+                .padding(.horizontal, Stil.rand(breit: breit))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rasterbreite = $0 }
+                .padding(.top, 20)
         } else if aehnliche.isEmpty {
             leerhinweis("Nichts Ähnliches gefunden.")
         } else {
@@ -784,8 +838,27 @@ struct SeriesDetailView: View {
 
     private func folgenLaden() async {
         folgenLaedt = true
-        let geholt = await model.folgen(serie: serie.id, staffel: gewaehlteStaffel?.id)
+        let fuer = gewaehlteStaffel?.id
+        let geholt = await model.folgen(serie: serie.id, staffel: fuer)
+        // Wer inzwischen eine andere Staffel gewaehlt hat, bekommt nicht die
+        // Folgen der alten unter den Namen der neuen.
+        guard gewaehlteStaffel?.id == fuer else { return }
         withAnimation(Stil.einblenden) { folgenAnnehmen(geholt) }
+    }
+
+    /// **Die Folgen der alten Staffel gehen sofort.** Vorher blieben sie
+    /// stehen, bis die neue Antwort kam: oben stand schon „Staffel 3", unten
+    /// noch die Folgen der zweiten. Was gemerkt ist, steht gleich da; sonst
+    /// ist die Liste leer, bis die Folgen kommen.
+    private func staffelWechseln(_ staffel: Item) {
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)?.folgen[staffel.id]
+        withAnimation(Stil.einblenden) {
+            gewaehlteStaffel = staffel
+            folgen = gemerkt ?? []
+            folgenGestoert = false
+            folgenLaedt = gemerkt == nil
+        }
+        Task { await folgenLaden() }
     }
 
     private func folgenAnnehmen(_ geholt: [Item]?) {
@@ -803,12 +876,6 @@ struct SeriesDetailView: View {
 
     // MARK: Downloads
 
-    /// Liegt schon jede Folge dieser Staffel auf dem Gerät? Dann fällt der
-    /// Chip weg — ein Knopf, der nichts mehr tut, ist schlechter als keiner.
-    private var staffelVollstaendig: Bool {
-        !folgen.isEmpty && folgen.allSatisfy { model.downloads.posten(fuer: $0.id) != nil }
-    }
-
     /// Ein `Downloadposten` aus einer Folge. **Dieselbe Quelle, die der
     /// Player nähme** — H2, es ist dieselbe Datei.
     private func posten(_ folge: Item) -> Downloadposten? {
@@ -821,7 +888,7 @@ struct SeriesDetailView: View {
             folge: folge.indexNumber,
             laufzeitTicks: folge.runTimeTicks, container: quelle?.container,
             quelle: quelle?.id, bytes: quelle?.size ?? 0,
-            gesehen: folge.userData?.played ?? false)
+            sehstand: folge.userData, bildcodec: quelle?.bildcodec)
     }
 
     /// Das Plakat der Serie plus das Querbild jeder Folge, die geladen wird —
@@ -847,16 +914,6 @@ struct SeriesDetailView: View {
             }
         }
         return karte
-    }
-
-    /// **Die ganze Staffel, der Reihe nach.** Gleichzeitig gäbe es nicht: H4
-    /// lässt immer nur einen laufen, der Rest wartet sichtbar. Was schon da
-    /// ist, kommt nicht noch einmal in die Schlange.
-    private func staffelLaden() {
-        let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
-        let neue = offene.compactMap { posten($0) }
-        guard !neue.isEmpty else { return }
-        blattZeigen(neue, titel: gewaehlteStaffel?.name ?? serie.name)
     }
 
     /// **Erst den Inhalt setzen, dann zeigen — und zwar einen Durchgang
@@ -900,13 +957,7 @@ struct SeriesDetailView: View {
         // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
         // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
         Stil.ruck(.mittel)
-        bereitet = true
-        Task {
-            defer { bereitet = false }
-            guard let plan = await model.plan(for: folge.id) else { return }
-            abspielen = Abspielwunsch(item: folge, plan: plan,
-                                      startAt: folge.fortsetzenAb ?? 0)
-        }
+        Abspielwunsch.starten(folge, model: model, bereitet: $bereitet) { abspielen = $0 }
     }
 }
 
@@ -1025,6 +1076,19 @@ struct Folgenzeile: View {
             vorschau
         }
         .contentShape(Rectangle())
+        // **Eine Ansage je Folge.** Vorher las VoiceOver die Bruchstücke
+        // einzeln, dazu „Häkchen" für das Gesehen-Zeichen im Bild — und ob
+        // die Folge geladen ist, kam gar nicht vor.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: [
+            folge.indexNumber.map { String(localized: "Folge \($0)") },
+            folge.name,
+            nebenzeile.isEmpty ? nil : nebenzeile,
+        ].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityValue(Text(verbatim: [
+            folge.kachelzustand,
+            geladen?.stand == .fertig ? String(localized: "geladen") : "",
+        ].filter { !$0.isEmpty }.joined(separator: ", ")))
     }
 
     /// Das Vorschaubild traegt den Sehstand: angefangen als Balken, gesehen
@@ -1044,26 +1108,7 @@ struct Folgenzeile: View {
              // zweimal.
              fortschritt: gesehen ? nil
                                   : folge.userData?.playedPercentage.map { $0 / 100 })
-            .opacity(gesehen ? 0.45 : 1)
-            .overlay(alignment: .topTrailing) {
-                if gesehen {
-                    Image(systemName: "checkmark")
-                        // Plakettengrad: 10 Semifett. Vorher 9 in `.heavy` —
-                        // die Stufe gibt es nicht, und das Gewicht ist
-                        // gestrichen; es sind drei, nicht fuenf.
-                        .font(Stil.plakette)
-                        .foregroundStyle(Stil.schrift)
-                        .frame(width: 18, height: 18)
-                        // **0,78 wie jede andere dunkle Scheibe auf einem
-                        // Bild** — dieselbe Zahl, die die Kachelmarke traegt.
-                        // Hier standen 0,72, im Technikschild 0,88: drei Werte
-                        // fuer dieselbe Aufgabe, und dieser Haken liegt im
-                        // Raster neben einer Kachelmarke.
-                        .background(Stil.grund.opacity(0.78), in: Circle())
-                        .padding(5)
-                }
-            }
-            .animation(Stil.einblenden, value: gesehen)
+            .gesehenHaken(gesehen)
     }
 
 
@@ -1137,6 +1182,9 @@ struct SeasonView: View {
                                    tippen: { starte(folge) }) {
                             Folgenzeile(model: model, folge: folge)
                         }
+                        // Dasselbe Kachelmenü wie auf der Serienseite.
+                        .kachelmenue(folge, model: model, quer: true,
+                                     nachher: { await folgenLaden() })
                         // Keine Trennlinie: das Standbild trennt schon. Hier
                         // stand dieselbe von Hand gebaute Linie wie auf der
                         // Serienseite — beide sind weg.
@@ -1172,13 +1220,7 @@ struct SeasonView: View {
         // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
         // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
         Stil.ruck(.mittel)
-        bereitet = true
-        Task {
-            defer { bereitet = false }
-            guard let plan = await model.plan(for: folge.id) else { return }
-            abspielen = Abspielwunsch(item: folge, plan: plan,
-                                      startAt: folge.fortsetzenAb ?? 0)
-        }
+        Abspielwunsch.starten(folge, model: model, bereitet: $bereitet) { abspielen = $0 }
     }
 }
 
@@ -1234,7 +1276,9 @@ extension SeriesDetailView {
                                               model: model,
                                               folgeStarten: { folgeStarten($0, ab: $1) },
                                               melden: { meldung = $0 },
-                                              auffrischen: { await auffrischen() })
+                                              auffrischen: { await auffrischen() },
+                                              gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                                                  ? { Gemeinsammodell.geteilt.anlegenFuer = $0 } : nil)
         // Der Trailer, wenn Laden seinen Platz in der Reihe hat. Nicht
         // andersherum: sonst stuende er zweimal da.
         if model.downloadKnopfZeigen {

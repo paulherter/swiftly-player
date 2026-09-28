@@ -9,9 +9,13 @@ public protocol Startseitenquelle: Sendable {
     func nextUp(limit: Int) async throws -> [Item]
     func zuletztHinzugefuegt(in bibliothek: String?, holen: Int, zeigen: Int) async -> [Item]?
     func titel(gattung: String, limit: Int) async -> [Item]?
+    /// Die Bibliotheken des Kontos — `nil`, wenn der Abruf nicht durchkam.
+    func bibliotheken() async -> [Item]?
 }
 
-extension JellyfinClient: Startseitenquelle {}
+extension JellyfinClient: Startseitenquelle {
+    public func bibliotheken() async -> [Item]? { try? await userViews() }
+}
 
 /// **Was auf der Startseite steht — fertig, bevor es eine Oberflaeche sieht.**
 ///
@@ -70,14 +74,44 @@ public enum Startseitenlader {
     /// die Genres danach — wer beides auf einmal holt, laesst die festen Reihen
     /// auf den langsamsten Genre-Abruf warten. In der gewaehlten Folge, leere
     /// fallen weg, ohne Doppelte.
+    ///
+    /// **Alle Genres zugleich, nicht eins nach dem anderen.** Nacheinander
+    /// dauerte die letzte Reihe so viele Netzwege, wie Genres gewaehlt sind;
+    /// jetzt dauern alle zusammen so lange wie der langsamste. Die Reihenfolge
+    /// kommt aus `namen`, nicht aus der Ankunft.
     public static func gattungsreihen(von quelle: some Startseitenquelle,
                                       namen: [String]) async -> [Startseite.Gattungsreihe] {
-        var reihen: [Startseite.Gattungsreihe] = []
-        for name in namen {
-            guard let titel = await quelle.titel(gattung: name, limit: 24), !titel.isEmpty else { continue }
-            reihen.append(.init(name: name, items: Listenregeln.ohneDoppelte(titel)))
+        let geholt = await withTaskGroup(of: (Int, [Item]?).self) { gruppe in
+            for (i, name) in namen.enumerated() {
+                gruppe.addTask { (i, await quelle.titel(gattung: name, limit: 24)) }
+            }
+            var je: [Int: [Item]] = [:]
+            for await (i, titel) in gruppe { if let titel { je[i] = titel } }
+            return je
         }
-        return reihen
+        return namen.indices.compactMap { i in
+            guard let titel = geholt[i], !titel.isEmpty else { return nil }
+            return .init(name: namen[i], items: Listenregeln.ohneDoppelte(titel))
+        }
+    }
+
+    /// **Eine getrennte Neuzugangsreihe fragt nie ohne Bibliothek.**
+    ///
+    /// Ohne `ParentId` liefert der Server die Neuzugaenge **aller**
+    /// Bibliotheken — und „Neue Serien" zeigte dieselben Filme wie „Neue
+    /// Filme". So auf Linux und Windows beim Start: die Startseite laedt dort
+    /// vor den Bibliotheken, beide Kennungen waren noch leer. Deshalb sucht der
+    /// Lader die erste Bibliothek der Art selbst (wie
+    /// `AppModel.gewaehlteBibliothek(art:)`), und gibt es keine, bleibt die
+    /// Reihe leer statt gemischt.
+    static func neu(von quelle: some Startseitenquelle, in bibliothek: String?,
+                    art: String) async -> [Item]? {
+        if let bibliothek {
+            return await quelle.zuletztHinzugefuegt(in: bibliothek, holen: 200, zeigen: 24)
+        }
+        guard let alle = await quelle.bibliotheken() else { return nil }
+        guard let erste = alle.first(where: { $0.collectionType == art }) else { return [] }
+        return await quelle.zuletztHinzugefuegt(in: erste.id, holen: 200, zeigen: 24)
     }
 
     public static func laden(von quelle: some Startseitenquelle, _ wunsch: Wunsch) async -> Startseite {
@@ -86,9 +120,9 @@ public enum Startseitenlader {
         async let gemeinsam = wunsch.getrennt ? nil
             : quelle.zuletztHinzugefuegt(in: nil, holen: 200, zeigen: 24)
         async let filme = wunsch.getrennt
-            ? quelle.zuletztHinzugefuegt(in: wunsch.filmBibliothek, holen: 200, zeigen: 24) : nil
+            ? neu(von: quelle, in: wunsch.filmBibliothek, art: "movies") : nil
         async let serien = wunsch.getrennt
-            ? quelle.zuletztHinzugefuegt(in: wunsch.serienBibliothek, holen: 200, zeigen: 24) : nil
+            ? neu(von: quelle, in: wunsch.serienBibliothek, art: "tvshows") : nil
 
         let a = await angefangen
         let schonDa = Set((a ?? wunsch.bisherWeiterschauen).map(\.id))

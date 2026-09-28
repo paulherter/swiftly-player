@@ -93,13 +93,15 @@ extension App {
     /// Titelzeile, zu an den oberen Rand, wo sie stand — um `knopf +
     /// kachelAbstand` nach oben. Bewegung statt Blende, dieselbe Kurve und
     /// Dauer wie die Steuerung (`steuerungSichtbarkeit`, `titelstandNachfuehren`).
-    /// Reduzierte Bewegung fragt Linux nirgends ab, also gibt es hier keinen
-    /// Sonderweg.
+    /// Bei reduzierter Bewegung gleitet es so kurz wie die Blende der
+    /// Steuerung (`Stil.zeitReduziert`), statt mitzufahren.
     func technikschildLage(dauer: Double? = nil, sofort: Bool = false) {
         guard let feld = technikschild else { return }
         let offen = steuerungOffen && offeneEbeneArt == nil
         let ziel = schildOben - (offen ? 0 : Playermass.knopf + Int32(Stil.kachelAbstand))
-        schildGleiten(feld, auf: ziel, dauer: sofort ? 0 : dauer ?? (offen ? 0.18 : 0.34),
+        let voll = dauer ?? (offen ? 0.18 : 0.34)
+        let zeit = bewegungReduziert() ? min(voll, Stil.zeitReduziert) : voll
+        schildGleiten(feld, auf: ziel, dauer: sofort ? 0 : zeit,
                       kennlinie: dauer != nil || offen ? .easeOut : .easeInOut)
     }
 
@@ -248,6 +250,12 @@ extension App {
             }
         }
 
+        // Immer, nicht nur im Messmodus: wer hier nachsieht, weil es ruckelt,
+        // soll den Grund lesen koennen (siehe ``Abspieler/rendererMelden()``).
+        if abspieler.zeichnetOhneGPU {
+            zeilen.append(messzeile(uebersetzt("Ohne Grafikbeschleunigung"), auffaellig: true))
+        }
+
         guard messen else { return zeilen }
         // Wo im Film wir stehen — damit ein Bildschirmfoto eine Stelle nennt.
         if abspieler.dauer > 1 {
@@ -336,10 +344,12 @@ private final class Gleitlauf {
     let von: Double, nach: Double, dauer: Double
     let kennlinie: Kennlinie
     let nummer: Int
+    let schluessel: UnsafeMutableRawPointer
     let beginn = Date()
-    init(von: Double, nach: Double, dauer: Double, kennlinie: Kennlinie, nummer: Int) {
+    init(von: Double, nach: Double, dauer: Double, kennlinie: Kennlinie, nummer: Int,
+         schluessel: UnsafeMutableRawPointer) {
         self.von = von; self.nach = nach; self.dauer = dauer
-        self.kennlinie = kennlinie; self.nummer = nummer
+        self.kennlinie = kennlinie; self.nummer = nummer; self.schluessel = schluessel
     }
 }
 
@@ -365,7 +375,14 @@ nonisolated(unsafe) private let gleitTakt: @convention(c) (
 
 nonisolated(unsafe) private let gleitFreigeben: @convention(c) (gpointer?) -> Void = { daten in
     guard let daten else { return }
-    Unmanaged<Gleitlauf>.fromOpaque(daten).release()
+    // **Auch wenn der Lauf nie am Ziel ankam.** Geht das Schild mitten im
+    // Gleiten mit dem Player zu, nimmt GTK den Takt ab, ohne dass er `t >= 1`
+    // sieht — der Eintrag blieb dann fuer immer in `gleitstand` stehen,
+    // einer je geschlossenem Player.
+    let lauf = Unmanaged<Gleitlauf>.fromOpaque(daten)
+    let l = lauf.takeUnretainedValue()
+    if gleitstand[l.schluessel] == l.nummer { gleitstand[l.schluessel] = nil }
+    lauf.release()
 }
 
 /// Schiebt die obere Kante im Bildtakt des Fensters. Ist das Widget nicht
@@ -382,7 +399,7 @@ private func schildGleiten(_ widget: Widget, auf ziel: Int32, dauer: Double, ken
         return
     }
     let lauf = Gleitlauf(von: Double(von), nach: Double(ziel), dauer: dauer,
-                         kennlinie: kennlinie, nummer: nummer)
+                         kennlinie: kennlinie, nummer: nummer, schluessel: schluessel)
     _ = gtk_widget_add_tick_callback(widget, gleitTakt,
                                      Unmanaged.passRetained(lauf).toOpaque(), gleitFreigeben)
 }

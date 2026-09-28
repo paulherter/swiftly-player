@@ -159,6 +159,8 @@ def artikel_laden(ordner=QUELLEN, seiten=False):
             "bloecke": bloecke, "woerter": len(re.findall(r"\w+", rumpf)),
             "url": f"{DOMAIN}/blog/{slug}/", "pfad": f"/blog/{slug}/", "seite": seiten,
             "bild": f"/blog/titel/{slug}.jpg", "kategorie": kopf.get("kategorie") or "",
+            # index: nein -> noindex, nicht in Sitemap und llms.txt; fuer Leser bleibt die Seite da.
+            "index": str(kopf.get("index", "ja")).lower() not in ("nein", "no", "false", "0"),
         })
         if seiten:
             ziel = str(kopf.get("pfad") or "")
@@ -638,23 +640,23 @@ STIL = """
 /* Farben und Leiste wie index.html. Die Startseite kennt nur dunkel,
    also auch der Blog. */
 :root {
-  --grund: #0B0B0D; --tief: #08080A; --flaeche: #161619; --erhoeht: #1E1E22;
-  --akzent: #5CD1C2; --kuehl: #7E9BFF; --warm: #E8833A; --marke: #2FDBC0;
-  --schrift: #FFFFFF; --leise: rgba(255,255,255,.64); --sehr-leise: rgba(255,255,255,.40);
-  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.13);
+  --grund: #101010; --tief: #101010; --flaeche: #1E1E1E; --erhoeht: #262626; --akzent-leise: #113435; --auf-akzent: #061212;
+  --akzent: #50D5DA; --kuehl: var(--akzent); --warm: var(--akzent); --marke: var(--akzent);
+  --schrift: #FFFFFF; --leise: #CCCCCC; --sehr-leise: #989898;
+  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.12);
   --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --bahn: 1280px; --lesen: 820px; --leiste: 312px; --seitenrand: clamp(24px, 4vw, 40px);
   --raus: cubic-bezier(.23, 1, .32, 1);
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scrollbar-color: #2f2f33 var(--grund); }
+html { scroll-behavior: smooth; scrollbar-color: #303030 var(--grund); }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body { margin: 0; background: var(--grund); color: var(--schrift); font-family: var(--schriftart);
   font-size: 18px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; }
 a { color: inherit; text-decoration: none; }
 p { margin: 0; }
-::selection { background: rgba(92,209,194,.32); color: var(--schrift); }
+::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
 :focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
 .nur-fuer-leser { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .bahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
@@ -663,47 +665,43 @@ p { margin: 0; }
 .leiste { position: absolute; top: 10px; left: 0; right: 0; z-index: 60; display: flex; justify-content: center;
   padding-inline: var(--seitenrand); pointer-events: none; }
 .leiste__kapsel { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 24px;
-  border-radius: 999px; border: 1px solid var(--rand); background: rgba(22,22,25,.72);
-  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+  border-radius: 999px; background: var(--flaeche); }
 .leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
 .leiste__marke img { height: 21px; width: auto; }
-.leiste__punkt { padding: 10px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 500; color: var(--leise);
+.leiste__punkt { padding: 10px 16px; border-radius: 10px; font-size: 14.5px; font-weight: 500; color: var(--leise);
   transition: color 160ms var(--raus), background-color 160ms var(--raus); }
 .leiste__punkt[aria-current] { color: var(--schrift); }
-.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px;
-  background: var(--schrift); color: var(--grund); font-family: inherit; font-weight: 600; line-height: 1.2;
+.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 10px;
+  background: var(--schrift); color: var(--auf-akzent); font-family: inherit; font-weight: 600; line-height: 1.2;
   cursor: pointer; transition: transform 160ms var(--raus), background-color 160ms var(--raus); }
-.knopf--leiste { padding: 11px 22px; font-size: 14.5px; }
-.knopf--gross { padding: 17px 30px; font-size: 16.5px; }
+.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
+.knopf--gross { min-height: 48px; padding: 0 28px; font-size: 17px; }
 .knopf--leise { padding: 10px 21px; font-size: 14.5px; background: transparent; color: var(--schrift);
   box-shadow: inset 0 0 0 1px var(--rand); }
 .leiste__burger { display: none; }
 .menue { display: none; position: fixed; z-index: 55; left: 20px; right: 20px; top: 12px; padding: 78px 0 22px;
-  border-radius: 30px; border: 1px solid var(--rand); background: rgba(22,22,25,.92);
-  backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow: 0 12px 30px rgba(0,0,0,.5); transform-origin: top center; opacity: 0;
+  border-radius: 16px; background: var(--flaeche); transform-origin: top center; opacity: 0;
   transform: scaleY(.86) translateY(-10px); pointer-events: none;
   transition: opacity 220ms var(--raus), transform 320ms var(--raus); }
 .menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
 .menue a { display: block; padding: 15px 20px; color: var(--leise); font-size: 19px; font-weight: 500; }
 .menue a[aria-current] { color: var(--schrift); }
-.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--grund); }
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
 
 /* Kopf der Seite. Licht wie die Aurora der Startseite, schwaecher:
    hier soll gelesen werden. Liegt unter dem Text (DESIGN.md 2). */
 main { position: relative; padding: 140px 0 110px; }
-.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .55;
+.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .8;
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
   background:
-    radial-gradient(ellipse 30% 46% at 50.7% 30%, rgba(92,209,194,.40), rgba(92,209,194,.16) 62%, rgba(92,209,194,0) 100%),
-    radial-gradient(ellipse 26% 42% at 27% 40%, rgba(126,155,255,.34), rgba(126,155,255,.13) 62%, rgba(126,155,255,0) 100%),
-    radial-gradient(ellipse 28% 42% at 80% 38%, rgba(232,131,58,.28), rgba(232,131,58,.11) 62%, rgba(232,131,58,0) 100%); }
+    radial-gradient(ellipse 46% 70% at 0% 100%, rgba(80,213,218,.42), rgba(80,213,218,.16) 55%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 46% 70% at 100% 100%, rgba(80,213,218,.34), rgba(80,213,218,.13) 55%, rgba(80,213,218,0) 100%); }
 main > :not(.schein) { position: relative; z-index: 6; }
 .pfad { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; padding: 0; list-style: none;
   font-size: 14.5px; color: var(--sehr-leise); }
 .pfad a { color: var(--leise); transition: color 160ms var(--raus); }
 .pfad li + li::before { content: "/"; margin-right: 8px; color: var(--sehr-leise); }
-.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 600; line-height: 1.04; letter-spacing: -.03em;
+.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; line-height: 1.04; letter-spacing: -.021em;
   margin: 0; text-wrap: balance; }
 .seitenkopf .unter { margin-top: 18px; color: var(--leise); font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; text-wrap: pretty; }
 .seitenkopf--mitte { text-align: center; }
@@ -719,7 +717,7 @@ main > :not(.schein) { position: relative; z-index: 6; }
 /* Artikel */
 .artikel .seitenkopf h1 { font-size: clamp(34px, 3.7vw, 52px); line-height: 1.06; }
 .artikel .seitenkopf .unter { font-size: clamp(17px, 1.3vw, 19px); }
-.titelbild { margin: 34px 0 0; border-radius: 24px; overflow: hidden; border: 1px solid var(--linie); background: var(--tief); }
+.titelbild { margin: 34px 0 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--linie); background: var(--tief); }
 .titelbild img { display: block; width: 100%; height: auto; }
 .offenlegung { margin: 30px 0 0; padding: 2px 0 2px 16px; border-left: 2px solid var(--rand);
   color: var(--leise); font-size: 15px; line-height: 1.55; }
@@ -727,13 +725,13 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .text { margin-top: 40px; font-size: 18px; line-height: 1.7; color: var(--leise); }
 .text > * + * { margin-top: 20px; }
 .text h2 { margin-top: 64px; font-size: clamp(26px, 2.6vw, 34px); font-weight: 600; line-height: 1.1;
-  letter-spacing: -.03em; color: var(--schrift); scroll-margin-top: 90px; }
-.text h3 { margin-top: 38px; font-size: clamp(20px, 1.8vw, 23px); font-weight: 600; line-height: 1.2; letter-spacing: -.02em;
+  letter-spacing: -.014em; color: var(--schrift); scroll-margin-top: 90px; }
+.text h3 { margin-top: 38px; font-size: clamp(20px, 1.8vw, 23px); font-weight: 600; line-height: 1.2; letter-spacing: -.012em;
   color: var(--schrift); scroll-margin-top: 90px; }
 .text h4 { margin-top: 28px; font-size: 18px; font-weight: 600; letter-spacing: -.014em; color: var(--schrift); }
 .text h2 + *, .text h3 + *, .text h4 + * { margin-top: 14px; }
 .text strong { color: var(--schrift); font-weight: 600; }
-.text a { color: var(--akzent); text-decoration: underline; text-decoration-color: rgba(92,209,194,.35);
+.text a { color: var(--akzent); text-decoration: underline; text-decoration-color: rgba(80,213,218,.35);
   text-underline-offset: 3px; transition: text-decoration-color 160ms var(--raus); }
 .text ul, .text ol { padding-left: 1.3em; }
 .text li + li { margin-top: 8px; }
@@ -741,7 +739,7 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .text li::marker { color: var(--sehr-leise); }
 .text code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .86em;
   padding: .12em .4em; border-radius: 6px; background: var(--erhoeht); color: var(--schrift); }
-.text pre { margin-top: 24px; padding: 20px 22px; overflow-x: auto; border-radius: 18px; background: var(--tief);
+.text pre { margin-top: 24px; padding: 20px 22px; overflow-x: auto; border-radius: 14px; background: var(--tief);
   border: 1px solid var(--linie); font-size: 15px; line-height: 1.55; }
 .text pre code { padding: 0; background: none; font-size: inherit; }
 /* Kopieren-Knopf im Codekasten. Er sitzt oben rechts, bestaetigt sichtbar
@@ -764,12 +762,12 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .text hr { border: 0; height: 1px; background: var(--linie); margin-block: 48px; }
 .text figure { margin: 34px 0 0; }
 .text figure + * { margin-top: 30px; }
-.text .abbildung { display: block; margin-inline: auto; max-width: 100%; height: auto; border-radius: 18px; }
+.text .abbildung { display: block; margin-inline: auto; max-width: 100%; height: auto; border-radius: 14px; }
 .text .abbildung.hoch { max-height: 620px; width: auto; }
 .text figcaption { margin-top: 12px; text-align: center; font-size: 14px; line-height: 1.5; color: var(--sehr-leise); text-wrap: balance; }
 .text figcaption .quelle { white-space: nowrap; }
 .text figcaption .quelle::before { content: "· "; }
-.tabelle { margin-top: 28px; overflow-x: auto; border-radius: 18px; background: var(--flaeche); border: 1px solid var(--linie); }
+.tabelle { margin-top: 28px; overflow-x: auto; border-radius: 14px; background: var(--flaeche); }
 .tabelle table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.45; }
 .tabelle th, .tabelle td { padding: 14px 18px; text-align: left; vertical-align: top; }
 .tabelle th { color: var(--sehr-leise); font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase;
@@ -778,14 +776,14 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .tabelle tbody tr + tr td { border-top: 1px solid var(--linie); }
 
 /* TL;DR: ein Blatt, Ueberschrift klein wie die Spaltenkoepfe im Fuss */
-.kurz { margin-top: 36px; padding: 26px 30px; border-radius: 32px; background: var(--flaeche); border: 1px solid var(--linie); }
+.kurz { margin-top: 36px; padding: 26px 30px; border-radius: 16px; background: var(--flaeche); }
 .text .kurz h2 { margin: 0; font-size: 12px; line-height: 1.3; letter-spacing: .13em; text-transform: uppercase; color: var(--akzent); }
 .text .kurz > * + * { margin-top: 12px; }
 .text .kurz h2 + * { margin-top: 14px; }
 
 /* FAQ: wie "Common questions" auf der Startseite, als details, damit es ohne
    Skript geht (DESIGN.md 9). Die erste Antwort steht offen. */
-.fragen__blatt { margin-top: 28px; border-radius: 32px; background: var(--flaeche); border: 1px solid var(--linie); overflow: hidden; }
+.fragen__blatt { margin-top: 28px; border-radius: 16px; background: var(--flaeche); overflow: hidden; }
 .frage + .frage { border-top: 1px solid var(--linie); }
 .frage__knopf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px;
   cursor: pointer; list-style: none; transition: background-color 160ms var(--raus); }
@@ -797,8 +795,8 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .frage__antwort > * + * { margin-top: 12px; }
 
 /* :::swiftly im Text: kurz, die Knoepfe stehen in der Seitenleiste */
-.swiftly { position: relative; margin-top: 40px; padding: 22px 26px 24px; border-radius: 24px; overflow: hidden;
-  background: radial-gradient(ellipse 70% 90% at 0% 0%, rgba(92,209,194,.12), rgba(92,209,194,0) 70%), var(--flaeche);
+.swiftly { position: relative; margin-top: 40px; padding: 22px 26px 24px; border-radius: 16px; overflow: hidden;
+  background: radial-gradient(ellipse 70% 90% at 0% 0%, rgba(80,213,218,.12), rgba(80,213,218,0) 70%), var(--flaeche);
   border: 1px solid var(--linie); color: var(--leise); }
 .text .swiftly > * + * { margin-top: 10px; }
 .swiftly__marke { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; letter-spacing: .13em;
@@ -818,15 +816,12 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .inhaltsliste { margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--linie); }
 .inhaltsliste a { display: block; margin-left: -1px; padding: 6px 0 6px 15px; border-left: 1px solid transparent;
   font-size: 14.5px; line-height: 1.35; color: var(--leise); transition: color 160ms var(--raus), border-color 160ms var(--raus); }
-.leistenkasten { padding: 22px 20px 20px; border-radius: 24px; border: 1px solid var(--linie);
-  background: radial-gradient(ellipse 80% 70% at 0% 0%, rgba(92,209,194,.13), rgba(92,209,194,0) 70%), var(--flaeche); }
+.leistenkasten { padding: 22px 20px 20px; border-radius: 16px; border: 1px solid var(--linie);
+  background: radial-gradient(ellipse 80% 70% at 0% 0%, rgba(80,213,218,.13), rgba(80,213,218,0) 70%), var(--flaeche); }
 .leistenkasten__marke { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; letter-spacing: -.014em; }
 .leistenkasten__marke img { width: 28px; height: 28px; }
 .leistenkasten__satz { margin-top: 10px; font-size: 14.5px; line-height: 1.5; color: var(--leise); }
 .knoepfe { display: grid; gap: 8px; margin-top: 18px; }
-.knoepfe > :nth-child(2) { --farbe: var(--akzent); }
-.knoepfe > :nth-child(3) { --farbe: var(--kuehl); }
-.knoepfe > :nth-child(4) { --farbe: var(--warm); }
 /* Alle vier Wege sind gleich gebaut: ruhige Flaeche, ein Ring im Akzent,
    das Logo einfarbig in einem Kreis ohne Kontur, Kreis zu Zeichen 2 zu 1.
    Der erste (der zum Geraet passende) ist eine Stufe betonter, nicht
@@ -860,8 +855,8 @@ main > :not(.schein) { position: relative; z-index: 6; }
 /* Uebersicht */
 .karten { display: grid; gap: 20px; margin: 0; padding: 0; list-style: none; }
 .karten--raster { grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: 60px; }
-.karte { display: flex; flex-direction: column; height: 100%; border-radius: 28px; overflow: hidden;
-  background: var(--flaeche); border: 1px solid var(--linie);
+.karte { display: flex; flex-direction: column; height: 100%; border-radius: 16px; overflow: hidden;
+  background: var(--flaeche);
   transition: transform 200ms var(--raus), box-shadow 200ms var(--raus), border-color 200ms var(--raus); }
 .karte__bild { display: block; background: var(--tief); border-bottom: 1px solid var(--linie); }
 .karte__bild img { display: block; width: 100%; height: auto; }
@@ -869,7 +864,7 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .karte__kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; color: var(--sehr-leise); }
 .karte__kopf > span:first-child { color: var(--akzent); font-weight: 600; }
 .karte__kopf .geplant { margin: 0; padding: 3px 10px; font-size: 12px; }
-.karte h2, .karte h3 { margin: 10px 0 0; font-size: clamp(19px, 1.5vw, 22px); font-weight: 600; line-height: 1.22; letter-spacing: -.02em; }
+.karte h2, .karte h3 { margin: 10px 0 0; font-size: clamp(19px, 1.5vw, 22px); font-weight: 600; line-height: 1.22; letter-spacing: -.012em; }
 .karte p { margin-top: 10px; font-size: 15px; line-height: 1.55; color: var(--leise); }
 .karte__weiter { margin-top: auto; padding-top: 18px; font-size: 14.5px; font-weight: 600; color: var(--akzent); }
 .leer { margin-top: 60px; text-align: center; color: var(--leise); }
@@ -945,15 +940,15 @@ main > :not(.schein) { position: relative; z-index: 6; }
   .text pre { font-size: 14px; }
   .tabelle table { font-size: 14px; }
   .tabelle th, .tabelle td { padding: 11px 14px; }
-  .kurz { padding: 22px; border-radius: 24px; }
-  .fragen__blatt { border-radius: 24px; }
+  .kurz { padding: 22px; border-radius: 16px; }
+  .fragen__blatt { border-radius: 16px; }
   .frage__knopf { padding: 18px; }
   .text .frage__knopf h3 { font-size: 15.5px; }
   .frage__antwort { padding: 0 18px 20px; font-size: 16px; }
   .swiftly { padding: 20px 20px 20px; }
-  .titelbild { margin-top: 26px; border-radius: 18px; }
+  .titelbild { margin-top: 26px; border-radius: 14px; }
   .artikel .seitenkopf h1 { font-size: 34px; }
-  .karte { border-radius: 24px; }
+  .karte { border-radius: 16px; }
   .fuss__raster, .fuss__raster--fuenf { grid-template-columns: 1fr 1fr; padding-block: 48px 40px; }
   .fuss__marke { grid-column: 1 / -1; }
   .fuss__spalte:last-child { grid-column: 1 / -1; }
@@ -1041,6 +1036,96 @@ main > :not(.schein) { position: relative; z-index: 6; }
   .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
   .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
 }
+
+/* ---- Wie die Startseite (Designsystem): eine Flaeche je Weg, kein Ring, kein
+   Anheben, kein Schatten. Druck: Flaeche wird dunkler, Massstab .98. ---- */
+.laden { border-radius: 14px; box-shadow: none; background: #262626; min-height: 56px; }
+.knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 34%, #101010); box-shadow: none; }
+.knoepfe > :first-child .laden__zeichen { background: rgba(255,255,255,.12); color: var(--schrift); }
+.leistenkasten { border: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover { transform: none; box-shadow: none; }
+  .laden:hover { background: #303030; }
+  .knoepfe > :first-child:hover { background: color-mix(in srgb, var(--akzent) 42%, #101010); }
+  .karte:hover { background: #262626; }
+}
+.knopf:active { background: rgba(255,255,255,.75); }
+.laden:active { background: #3A3A3A; }
+.knoepfe > :first-child:active { background: color-mix(in srgb, var(--akzent) 26%, #101010); }
+.karte:active { background: #303030; }
+
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
+}
+
+/* ================= Feinschliff 27.09. =================
+   Uebersicht in Rubriken, Karten ohne Titelbild, Landingpages mit Geraet.
+   Dieselben Masse wie die Startseite: Karte #1E1E1E, Ecke 16, kein Schatten. */
+.sprung { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 28px; }
+.sprung a { padding: 9px 16px; border-radius: 999px; background: #1E1E1E; color: var(--leise);
+  font-size: 14.5px; font-weight: 500; text-decoration: none; transition: background-color 160ms var(--raus), color 160ms var(--raus); }
+@media (hover: hover) and (pointer: fine) { .sprung a:hover { background: #262626; color: var(--schrift); } }
+
+.rubrik { margin-top: 88px; scroll-margin-top: 24px; }
+.rubrik__kopf { display: grid; gap: 8px; max-width: 640px; }
+.rubrik__kopf h2 { margin: 0; font-size: clamp(26px, 2.6vw, 36px); font-weight: 600; letter-spacing: -.018em; line-height: 1.12; }
+.rubrik__kopf p { margin: 0; color: var(--leise); font-size: 16.5px; line-height: 1.5; }
+.rubrik .karten--raster { margin-top: 28px; gap: 14px; }
+
+.karte { background: #1E1E1E; border: 0; }
+.karte__rumpf { padding: 24px 26px 24px; }
+.karte h3 { margin: 12px 0 0; font-size: clamp(18px, 1.35vw, 20px); font-weight: 600; line-height: 1.25; letter-spacing: -.012em; text-wrap: balance; }
+.karte p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+.leitkarte { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center;
+  min-height: 340px; margin-top: 64px; border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit;
+  background: radial-gradient(ellipse 70% 80% at 100% 100%, rgba(80,213,218,.22), rgba(80,213,218,0) 70%), #1E1E1E;
+  transition: background-color 160ms var(--raus); }
+.leitkarte__text { position: relative; z-index: 2; padding: 44px 0 44px 44px; display: grid; gap: 14px; }
+.leitkarte__marke { justify-self: start; padding: 5px 10px; border-radius: 8px; background: var(--akzent-leise); color: var(--akzent);
+  font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.leitkarte h2 { margin: 0; font-size: clamp(26px, 2.8vw, 40px); font-weight: 600; letter-spacing: -.021em; line-height: 1.08; text-wrap: balance; }
+.leitkarte p { margin: 0; color: var(--leise); font-size: 17px; line-height: 1.5; max-width: 46ch; }
+.leitkarte .karte__weiter { padding-top: 6px; }
+.leitkarte__bild { position: relative; align-self: stretch; }
+.leitkarte__bild .geraet { position: absolute; }
+.leitkarte__bild .geraet--mac { right: 1%; bottom: 13%; width: 70%; }
+.leitkarte__bild .geraet--fon { left: 12%; bottom: -30%; width: 24%; z-index: 3; }
+
+/* Geraete, wortgleich zur Startseite: der Schirm liegt im Loch des Rahmens. */
+.geraet { position: relative; display: block; container-type: inline-size; }
+.geraet__rahmen { position: relative; z-index: 2; display: block; width: 100%; height: auto; }
+.geraet__schirm { position: absolute; z-index: 1; object-fit: cover; background: #000; }
+.geraet--fon .geraet__schirm { left: 5.16%; top: 2.36%; width: 89.6%; height: 95.3%; border-radius: 12.4cqw; }
+.geraet--mac .geraet__schirm { left: 10.70%; top: 11.20%; width: 78.6%; height: 77.6%; border-radius: .2cqw; }
+.geraet--pad .geraet__schirm { left: 4.17%; top: 5.64%; width: 91.67%; height: 88.72%; border-radius: 1.4cqw; }
+.wandtv { padding: 5px; border-radius: 10px; background: #101010; box-shadow: inset 0 0 0 1px var(--rand); }
+.wandtv img { display: block; width: 100%; height: auto; border-radius: 5px; }
+.wandtv--fenster { border-radius: 12px; padding: 0; overflow: hidden; }
+.wandtv--fenster img { border-radius: 12px; }
+
+.geraetebild { position: relative; margin: 34px 0 0; padding: 40px 40px 0; border-radius: 16px; overflow: hidden;
+  display: flex; justify-content: center; align-items: flex-end; min-height: 240px;
+  background: radial-gradient(ellipse 80% 70% at 50% 110%, rgba(80,213,218,.24), rgba(80,213,218,0) 70%), #1E1E1E; }
+.geraetebild .wandtv, .geraetebild .geraet--mac { width: 86%; margin-bottom: 40px; }
+.geraetebild .geraet--mac { margin-bottom: -2%; }
+.geraetebild--jellyfin-client-iphone-ipad { padding-top: 34px; }
+.geraetebild--jellyfin-client-iphone-ipad .geraet--pad { width: 78%; margin-bottom: -8%; }
+.geraetebild--jellyfin-client-iphone-ipad .geraet--fon { position: absolute; right: 7%; bottom: -16%; width: 25%; z-index: 3; }
+
+@media (max-width: 900px) {
+  .rubrik { margin-top: 64px; }
+  .leitkarte { grid-template-columns: 1fr; margin-top: 44px; }
+  .leitkarte__text { padding: 30px 24px 0; }
+  .leitkarte__bild { min-height: 0; aspect-ratio: 16 / 11; margin-top: 18px; overflow: hidden; }
+  .leitkarte__bild .geraet--mac { right: -6%; bottom: 10%; width: 86%; }
+  .leitkarte__bild .geraet--fon { left: 5%; bottom: -34%; width: 27%; }
+  .geraetebild { padding: 24px 20px 0; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .leitkarte:hover { background: radial-gradient(ellipse 70% 80% at 100% 100%, rgba(80,213,218,.28), rgba(80,213,218,0) 70%), #262626; }
+}
 """
 
 SKRIPT = """(function () {
@@ -1115,13 +1200,21 @@ def json_ld(daten):
 SEITEN = []          # Landingpages, von main() gefuellt; Fusszeile verlinkt sie
 
 
+# Die Fusszeile verlinkt die Anleitungen, die im Index stehen, nicht die
+# Landingpages je Plattform: die sehen einander zu aehnlich (Brueckenseiten).
+FUSS_GUIDES = [("/blog/best-jellyfin-client/", "Best Jellyfin client"),
+               ("/blog/best-jellyfin-client-apple-tv/", "Apple TV"),
+               ("/blog/best-jellyfin-client-iphone/", "iPhone"),
+               ("/blog/jellyfin-android-tv-clients-compared/", "Android TV"),
+               ("/blog/best-jellyfin-client-mac/", "Mac"),
+               ("/blog/why-is-jellyfin-transcoding/", "Why it transcodes")]
+
+
 def fuss_seiten():
-    if not SEITEN:
-        return ""
-    punkte = "".join(f'<li><a href="{a["pfad"]}">{e(a.get("kurzname") or a["titel"])}</a></li>' for a in SEITEN)
+    punkte = "".join(f'<li><a href="{p}">{e(t)}</a></li>' for p, t in FUSS_GUIDES)
     return f"""
       <div class="fuss__spalte">
-        <h2>Jellyfin clients</h2>
+        <h2>Guides</h2>
         <ul>{punkte}</ul>
       </div>"""
 
@@ -1158,7 +1251,7 @@ def seite(titel, beschreibung, url, inhalt, og_typ="website", zusatz_kopf="", ld
 <meta name="twitter:title" content="{e(titel)}">
 <meta name="twitter:description" content="{e(beschreibung)}">
 <meta name="twitter:image" content="{e(bild_url)}">
-<meta name="theme-color" content="#0B0B0D">
+<meta name="theme-color" content="#101010">
 {zusatz_kopf}<link rel="alternate" type="application/rss+xml" title="Swiftly Player blog" href="/blog/feed.xml">
 <link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
 <link rel="icon" href="/symbol.svg" type="image/svg+xml">
@@ -1177,10 +1270,10 @@ def seite(titel, beschreibung, url, inhalt, og_typ="website", zusatz_kopf="", ld
     <a class="leiste__marke" href="/" aria-label="Swiftly Player, home">
       <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
     </a>
+    <a class="leiste__punkt" href="/music/">Music</a>
     <a class="leiste__punkt" href="/blog/"{aktuell}>Blog</a>
     <a class="leiste__punkt" href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
     <a class="leiste__punkt" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
-    <a class="knopf knopf--leiste nur-desktop" href="/#downloads">Download</a>
     <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
       <span></span><span></span><span></span>
     </button>
@@ -1188,6 +1281,7 @@ def seite(titel, beschreibung, url, inhalt, og_typ="website", zusatz_kopf="", ld
 </header>
 
 <nav class="menue" id="menue" aria-label="Menu">
+  <a href="/music/">Swiftly Music</a>
   <a href="/blog/"{aktuell}>Blog</a>
   <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
   <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
@@ -1219,6 +1313,7 @@ def seite(titel, beschreibung, url, inhalt, og_typ="website", zusatz_kopf="", ld
       <div class="fuss__spalte">
         <h2>Elsewhere</h2>
         <ul>
+          <li><a href="/about/">About</a></li>
           <li><a href="/blog/">Blog</a></li>
           <li><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>
@@ -1326,7 +1421,20 @@ def text_umriss(text, gewicht, groesse, x, y, farbe, sperrung=0.0):
 SCHLAGWORT_NAMEN = {"android tv": "Android TV", "google tv": "Google TV", "intro skipper": "Intro Skipper",
                     "syncplay": "SyncPlay", "quick connect": "Quick Connect", "12.0": "Jellyfin 12",
                     "apple tv": "Apple TV", "windows": "Windows", "linux": "Linux", "macos": "macOS",
-                    "ios": "iPhone", "ipad": "iPad", "multi-device": "Multi-device"}
+                    "ios": "iPhone", "ipad": "iPad", "multi-device": "Multi-device",
+                    "iphone": "iPhone", "fire tv": "Fire TV", "samsung tv": "Samsung TV", "lg tv": "LG TV",
+                    "mkv": "MKV", "hdr": "HDR", "dolby vision": "Dolby Vision", "atmos": "Atmos",
+                    "truehd": "TrueHD", "dts": "DTS", "picture in picture": "Picture in Picture",
+                    "pip": "Picture in Picture", "nas": "NAS", "seerr": "Seerr", "docker": "Docker",
+                    "mac": "Mac", "tvos": "tvOS", "vs": "Comparison", "plex": "Plex vs Emby"}
+
+
+def schlagwort_name(s):
+    """Bekannte Namen wie geschrieben, sonst jedes Wort gross; Abkuerzungen bleiben."""
+    if s in SCHLAGWORT_NAMEN:
+        return SCHLAGWORT_NAMEN[s]
+    return " ".join(w.upper() if len(w) <= 3 and w.isalpha() and w not in ("and", "for", "the") else w.capitalize()
+                    for w in s.split())
 
 
 def kategorie(a):
@@ -1334,7 +1442,7 @@ def kategorie(a):
         return a["kategorie"]
     for s in a["schlagworte"]:
         if s not in ("jellyfin", "clients"):
-            return SCHLAGWORT_NAMEN.get(s, s.title())
+            return schlagwort_name(s)
     return "Jellyfin"
 
 
@@ -1368,18 +1476,16 @@ def titelbild_svg(a):
                 f'<stop offset="1" stop-color="{farbe}" stop-opacity="0"/></radialGradient>')
     teile = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">',
-        "<defs>" + schein("a", 960 + spiel(0, 180), 90 + spiel(1, 100), 600, "#5CD1C2", .44)
-        + schein("b", 120 + spiel(2, 160), 20 + spiel(3, 80), 520, "#7E9BFF", .30)
-        + schein("c", 1150 + spiel(4, 120), 640 + spiel(5, 80), 480, "#E8833A", .26) + "</defs>",
-        '<rect width="1200" height="630" fill="#0B0B0D"/>',
-        '<rect width="1200" height="630" fill="url(#b)"/><rect width="1200" height="630" fill="url(#a)"/>'
-        '<rect width="1200" height="630" fill="url(#c)"/>',
+        "<defs>" + schein("a", 960 + spiel(0, 180), 90 + spiel(1, 100), 600, "#50D5DA", .34)
+        + "</defs>",
+        '<rect width="1200" height="630" fill="#101010"/>',
+        '<rect width="1200" height="630" fill="url(#a)"/>',
         '<g transform="translate(72 64) scale(.0547)"><rect width="1024" height="1024" rx="230" fill="#17181b" '
-        'stroke="#ffffff" stroke-opacity=".16" stroke-width="18"/><path fill="#2fdbc0" d="M440.1,280l285,163.2c38,'
+        'stroke="#ffffff" stroke-opacity=".16" stroke-width="18"/><path fill="#50d5da" d="M440.1,280l285,163.2c38,'
         '21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-'
         '10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z"/></g>',
         text_umriss("Swiftly Player", 600, 30, 144, 102, "#FFFFFF"),
-        text_umriss(kategorie(a).upper(), 700, 22, 74, kat_y, "#5CD1C2", sperrung=.12),
+        text_umriss(kategorie(a).upper(), 700, 22, 74, kat_y, "#50D5DA", sperrung=.12),
     ]
     for i, z in enumerate(zeilen):
         teile.append(text_umriss(z, 700, groesse, 70, erste + i * abstand, "#FFFFFF"))
@@ -1407,13 +1513,81 @@ def titelbild_schreiben(a, ordner, name):
 # ------------------------------------------------------------------ Seiten
 
 def karte(a, stufe="h2", heute=None):
+    """Karte ohne Titelbild: das Bild wiederholte nur den Titel darunter."""
     geplant = '<span class="geplant">Scheduled</span>' if heute and not a["seite"] and a["datum"] > heute else ""
     return (f'<li><a class="karte" href="{a["pfad"]}">'
-            f'<span class="karte__bild"><img src="{a["bild"]}" alt="" width="1200" height="630" loading="lazy" decoding="async"></span>'
             f'<span class="karte__rumpf"><span class="karte__kopf"><span>{e(kategorie(a))}</span>'
             f'<time datetime="{a["datum"].isoformat()}">{datum_text(a["datum"])}</time>{geplant}</span>'
             f'<{stufe}>{e(a["titel"])}</{stufe}><p>{e(a["beschreibung"])}</p>'
             f'<span class="karte__weiter" aria-hidden="true">Read</span></span></a></li>')
+
+
+# Drei Rubriken fuer die Uebersicht. Wer landet, sucht entweder eine App,
+# hat ein Problem beim Abspielen, oder baut an seinem Server.
+RUBRIKEN = [
+    ("kc", "clients", "Pick a client", "The best Jellyfin app for each device, compared with sources."),
+    ("kw", "wiedergabe", "Fix playback", "Why a file transcodes, and how subtitles, HDR, audio and downloads behave."),
+    ("ks", "server", "Run your server", "Install, update and extend Jellyfin, and reach it from outside."),
+]
+SERVER_WORTE = ("docker", "synology", "set-up", "setup", "plugin", "remote", "hardware", "seerr", "unraid",
+                "truenas", "raspberry", "backup", "naming", "metadata", "tailscale", "cloudflare", "caddy",
+                "requirements", "12-whats-new", "vs-plex", "vs-kodi", "migrate", "live-tv", "iptv", "anime",
+                "parental", "trakt", "collections")
+LEITARTIKEL = "best-jellyfin-client"
+
+
+# Was die meisten suchen, steht vorn; der Rest nach Datum, neu zuerst.
+VORRANG = ["best-jellyfin-client-apple-tv", "best-jellyfin-client-iphone", "jellyfin-android-tv-clients-compared",
+           "best-jellyfin-client-android", "best-jellyfin-client-mac", "best-jellyfin-client-windows",
+           "best-jellyfin-client-linux", "jellyfin-ipad-client", "best-jellyfin-client-fire-tv", "jellyfin-roku",
+           "jellyfin-samsung-lg-tv", "swiftfin-alternatives", "infuse-alternatives-jellyfin",
+           "why-is-jellyfin-transcoding", "jellyfin-mkv-iphone-apple-tv", "jellyfin-subtitles-guide",
+           "jellyfin-dolby-vision-hdr", "jellyfin-atmos-truehd-passthrough",
+           "how-to-set-up-jellyfin", "jellyfin-docker-compose-setup", "jellyfin-vs-plex-vs-emby"]
+
+
+def vorrang(a):
+    i = VORRANG.index(a["slug"]) if a["slug"] in VORRANG else len(VORRANG)
+    return (i, -a["datum"].toordinal(), a["slug"])
+
+
+def rubrik(a):
+    if a.get("rubrik"):
+        return a["rubrik"]
+    slug = a["slug"]
+    if any(w in slug for w in SERVER_WORTE):
+        return "server"
+    if slug.startswith("best-jellyfin") or "clients" in slug or "alternatives" in slug or slug in (
+            "jellyfin-ipad-client", "jellyfin-roku", "jellyfin-samsung-lg-tv"):
+        return "clients"
+    return "wiedergabe"
+
+
+def leitkarte(a):
+    return (f'<a class="leitkarte" href="{a["pfad"]}">'
+            f'<span class="leitkarte__text"><span class="leitkarte__marke">Start here</span>'
+            f'<h2>{e(a["titel"])}</h2><p>{e(a["beschreibung"])}</p>'
+            f'<span class="karte__weiter" aria-hidden="true">Read the guide</span></span>'
+            f'<span class="leitkarte__bild" aria-hidden="true">'
+            f'<span class="geraet geraet--mac"><img class="geraet__schirm" src="/bilder/macos-start.webp" alt="" loading="lazy">'
+            f'<img class="geraet__rahmen" src="/bilder/rahmen-macbook.webp" alt="" width="1400" height="921" loading="lazy"></span>'
+            f'<span class="geraet geraet--fon"><img class="geraet__schirm" src="/bilder/ios-start.webp" alt="" loading="lazy">'
+            f'<img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431" loading="lazy"></span>'
+            f'</span></a>')
+
+
+# Landingpages zeigen das Geraet, um das es geht, statt eines Titelbilds.
+GERAETEBILD = {
+    "/jellyfin-client-apple-tv/": '<div class="wandtv"><img src="/bilder/tvos-start.webp" alt="Swiftly Player on Apple TV" width="1600" height="900" fetchpriority="high"></div>',
+    "/jellyfin-client-iphone-ipad/": ('<div class="geraet geraet--pad"><img class="geraet__schirm" src="/bilder/ipados-start.webp" alt="" fetchpriority="high">'
+                                      '<img class="geraet__rahmen" src="/bilder/rahmen-ipad.webp" alt="Swiftly Player on iPad" width="1400" height="997"></div>'
+                                      '<div class="geraet geraet--fon"><img class="geraet__schirm" src="/bilder/ios-start.webp" alt="">'
+                                      '<img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="Swiftly Player on iPhone" width="700" height="1431"></div>'),
+    "/jellyfin-client-mac/": ('<div class="geraet geraet--mac"><img class="geraet__schirm" src="/bilder/macos-start.webp" alt="" fetchpriority="high">'
+                              '<img class="geraet__rahmen" src="/bilder/rahmen-macbook.webp" alt="Swiftly Player on a MacBook" width="1400" height="921"></div>'),
+    "/jellyfin-client-windows/": '<div class="wandtv wandtv--fenster"><img src="/bilder/windows-start.webp" alt="Swiftly Player on Windows" width="1280" height="751" fetchpriority="high"></div>',
+    "/jellyfin-client-linux/": '<div class="wandtv wandtv--fenster"><img src="/bilder/linux-start.webp" alt="Swiftly Player on Linux" width="1600" height="985" fetchpriority="high"></div>',
+}
 
 
 def verwandte(a, alle):
@@ -1467,6 +1641,8 @@ def artikel_seite(a, alle, heute=None):
     pfad = ('<ol class="pfad"><li><a href="/">Swiftly Player</a></li><li><a href="/blog/">Blog</a></li></ol>'
             if not a["seite"] else '<ol class="pfad"><li><a href="/">Swiftly Player</a></li></ol>')
     leiste, rel_html = seitenleiste(rumpf, verwandte(a, alle), "Other devices" if a["seite"] else "Related articles")
+    gb = GERAETEBILD.get(a.get("pfad", "")) if a["seite"] else None
+    bild_html = f'<figure class="geraetebild geraetebild--{a["slug"]}">{gb}</figure>' if gb else ""
     inhalt = f"""<div class="schein" aria-hidden="true"></div>
 <div class="artikelbahn">
 <article class="artikel">
@@ -1476,7 +1652,7 @@ def artikel_seite(a, alle, heute=None):
     <p class="unter">{e(a["beschreibung"])}</p>
     <p class="angaben">{"".join(angaben)}</p>
   </header>
-  <figure class="titelbild"><img src="{a["bild"]}" alt="" width="1200" height="630" fetchpriority="high" decoding="async"></figure>
+  {bild_html}
   {offen}<div class="text">
 {rumpf}
   </div>
@@ -1507,32 +1683,43 @@ def artikel_seite(a, alle, heute=None):
             f'<meta property="article:modified_time" content="{(a["aktualisiert"] or a["datum"]).isoformat()}">\n'
             f'<meta property="article:author" content="{HERAUSGEBER}">\n'
             + "".join(f'<meta property="article:tag" content="{e(t)}">\n' for t in a["schlagworte"]))
-    robots = '<meta name="robots" content="noindex">\n' if geplant else ""
+    robots = '<meta name="robots" content="noindex">\n' if geplant else (
+        "" if a["index"] else '<meta name="robots" content="noindex, follow">\n')
     return seite(f'{a["titel"]} | Swiftly Player', a["beschreibung"], a["url"], inhalt,
                  og_typ="article", zusatz_kopf=kopf, ld=ld, robots=robots,
                  bild=a["bild"], bild_alt=a["titel"], blog_aktiv=not a["seite"])
 
 
 def uebersicht(liste, heute=None):
-    beschreibung = "Guides and comparisons for Jellyfin: clients, Direct Play, Apple TV, Android TV and more, from the developer of Swiftly Player."
-    karten = "".join(gated("karte", a["datum"], karte(a, "h2", heute)) for a in liste)
+    beschreibung = "Jellyfin guides: the best client for Apple TV, Android TV, iPhone, Mac, Windows and Linux, why files transcode, and server setup."
+    leit = next((a for a in liste if a["slug"] == LEITARTIKEL and not a["seite"]), None)
+    oben = gated("kf", leit["datum"], leitkarte(leit)) if leit else ""
+    rest = [a for a in liste if a is not leit]
+    sprung = "".join(f'<a href="#{anker}">{titel}</a>' for _, anker, titel, _ in RUBRIKEN)
+    abschnitte = ""
+    for gruppe, anker, titel, satz in RUBRIKEN:
+        karten = "".join(gated(gruppe, a["datum"], karte(a, "h3", heute))
+                         for a in sorted((x for x in rest if rubrik(x) == anker), key=vorrang))
+        abschnitte += (f'<!--wennvoll:{gruppe}--><section class="rubrik" id="{anker}" aria-labelledby="r-{anker}">'
+                       f'<div class="rubrik__kopf"><h2 id="r-{anker}">{titel}</h2><p>{satz}</p></div>'
+                       f'<ul class="karten karten--raster">{karten}</ul></section><!--/wennvoll:{gruppe}-->\n')
     inhalt = f"""<div class="schein" aria-hidden="true"></div>
 <div class="bahn">
   <header class="seitenkopf seitenkopf--mitte">
     <ol class="pfad"><li><a href="/">Swiftly Player</a></li></ol>
-    <h1>Blog</h1>
-    <p class="unter">Guides and comparisons for people who run their own Jellyfin server. Written by the developer of Swiftly Player.</p>
+    <h1>Jellyfin guides and client comparisons</h1>
+    <p class="unter">Which Jellyfin client to use on which device, why a file transcodes, and how to set up the server around it. Written by the developer of Swiftly Player.</p>
+    <nav class="sprung" aria-label="Topics">{sprung}</nav>
   </header>
-  <!--wennvoll:karte--><ul class="karten karten--raster">{karten}</ul><!--/wennvoll:karte-->
-  <!--wennleer:karte--><p class="leer">Nothing here yet.</p><!--/wennleer:karte-->
+  <!--wennvoll:kf-->{oben}<!--/wennvoll:kf-->
+  {abschnitte}
 </div>"""
     url = DOMAIN + "/blog/"
     ld = [json_ld({"@context": "https://schema.org", "@type": "Blog", "name": "Swiftly Player blog", "url": url,
                    "inLanguage": "en", "author": {"@type": "Organization", "name": HERAUSGEBER, "url": DOMAIN + "/"},
                    "publisher": ORGANISATION}),
           json_ld(breadcrumb([("Swiftly Player", DOMAIN + "/"), ("Blog", url)]))]
-    robots = '<!--wennleer:karte--><meta name="robots" content="noindex">\n<!--/wennleer:karte-->'
-    return seite("Blog | Swiftly Player", beschreibung, url, inhalt, ld=ld, robots=robots)
+    return seite("Jellyfin guides and client comparisons | Swiftly Player blog", beschreibung, url, inhalt, ld=ld)
 
 
 def seite_404():
@@ -1823,6 +2010,9 @@ if ($liste) {
     echo '  <url><loc>', DOMAIN, '/blog/</loc><lastmod>', $neueste, "</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>\n";
 }
 foreach ($liste as $a) {
+    if (($a['index'] ?? true) === false) {
+        continue;
+    }
     echo '  <url><loc>', DOMAIN, '/blog/', $a['slug'], '/</loc><lastmod>', $a['aktualisiert'] ?: $a['datum'],
         "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n";
 }
@@ -1841,6 +2031,9 @@ echo implode("\n", daten()['llms'] ?? []), "\n";
 if ($liste) {
     echo "## Blog\n\n";
     foreach ($liste as $a) {
+        if (($a['index'] ?? true) === false) {
+            continue;
+        }
         echo '- [', $a['titel'], '](', DOMAIN, '/blog/', $a['slug'], '/): ', $a['beschreibung'], "\n";
     }
     echo "\n";
@@ -1853,6 +2046,8 @@ DirectoryIndex index.php
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteBase /blog/
+RewriteCond %{HTTP_HOST} ^www\.swiftlyplayer\.com$ [NC]
+RewriteRule ^(.*)$ https://swiftlyplayer.com/blog/$1 [R=301,L]
 RewriteRule ^_artikel(/.*)?$ - [R=404,L]
 RewriteRule ^feed\.xml$ feed.php [L]
 RewriteRule ^sitemap\.xml$ sitemap.php [L]
@@ -1873,6 +2068,10 @@ HTACCESS_GESPERRT = "# Erzeugt von Werkzeuge/blog-bauen.py. Nur fuer PHP lesbar.
 HTACCESS_WURZEL = r"""# BEGIN swiftly-blog
 <IfModule mod_rewrite.c>
 RewriteEngine On
+RewriteCond %{HTTP_HOST} ^www\.swiftlyplayer\.com$ [NC]
+RewriteRule ^(.*)$ https://swiftlyplayer.com/$1 [R=301,L]
+RewriteCond %{THE_REQUEST} \s/+((?:[^\s?]*/)?)index\.html[\s?]
+RewriteRule ^ https://swiftlyplayer.com/%1 [R=301,L]
 RewriteRule ^sitemap\.xml$ blog/sitemap.php [L]
 RewriteRule ^llms\.txt$ blog/llms.php [L]
 </IfModule>
@@ -1924,12 +2123,12 @@ def sitemap_text(eintraege):
 def sitemap_eintraege(liste, seiten):
     eintraege = [u for u in feste_seiten() if not any(u["loc"] == s["url"] for s in seiten)]
     eintraege += [{"loc": s["url"], "lastmod": (s["aktualisiert"] or s["datum"]).isoformat(),
-                   "changefreq": "monthly", "priority": "0.7"} for s in seiten]
+                   "changefreq": "monthly", "priority": "0.7"} for s in seiten if s["index"]]
     if liste:
         neueste = max((a["aktualisiert"] or a["datum"]) for a in liste)
         eintraege.append({"loc": DOMAIN + "/blog/", "lastmod": neueste.isoformat(), "changefreq": "weekly", "priority": "0.7"})
         eintraege += [{"loc": a["url"], "lastmod": (a["aktualisiert"] or a["datum"]).isoformat(),
-                       "changefreq": "monthly", "priority": "0.6"} for a in liste]
+                       "changefreq": "monthly", "priority": "0.6"} for a in liste if a["index"]]
     return eintraege
 
 
@@ -2056,10 +2255,10 @@ def startseite_pflegen(seiten):
     s = re.sub(r"<!-- seiten:anfang.*?<!-- seiten:ende -->\n\n      ", "", s, flags=re.S)
     s = s.replace('<div class="fuss__raster fuss__raster--fuenf">', '<div class="fuss__raster">')
     anker = '<div class="fuss__spalte">\n        <h2>Elsewhere</h2>'
-    if seiten and anker in s:
-        punkte = "".join(f'\n          <li><a href="{x["pfad"]}">{e(x["kurzname"])}</a></li>' for x in seiten)
+    if anker in s:
+        punkte = "".join(f'\n          <li><a href="{p}">{e(t)}</a></li>' for p, t in FUSS_GUIDES)
         s = s.replace(anker, '<!-- seiten:anfang (blog-bauen.py) -->\n      <div class="fuss__spalte">\n'
-                      f'        <h2>Jellyfin clients</h2>\n        <ul>{punkte}\n        </ul>\n      </div>\n'
+                      f'        <h2>Guides</h2>\n        <ul>{punkte}\n        </ul>\n      </div>\n'
                       '      <!-- seiten:ende -->\n\n      ' + anker, 1)
         s = s.replace('<div class="fuss__raster">', '<div class="fuss__raster fuss__raster--fuenf">', 1)
 
@@ -2092,7 +2291,7 @@ def bauen_live(artikel, seiten):
         "artikel": [{"slug": a["slug"], "titel": a["titel"], "beschreibung": a["beschreibung"],
                      "datum": a["datum"].isoformat(),
                      "aktualisiert": a["aktualisiert"].isoformat() if a["aktualisiert"] else "",
-                     "bild": a["bild"], "schlagworte": a["schlagworte"]} for a in liste],
+                     "bild": a["bild"], "schlagworte": a["schlagworte"], "index": a["index"]} for a in liste],
         "seiten": [s["pfad"] for s in seiten],
         "sitemap": sitemap_eintraege([], seiten),
         "llms": llms_kopf(seiten),

@@ -42,6 +42,9 @@
 "Nächste Folge" = "Nächste Folge";
 "Überspringen" = "Überspringen";
 "Der Server nennt keine abspielbare Fassung." = "Der Server nennt keine abspielbare Fassung.";
+"Der Server lässt dieses Konto den Titel nicht abspielen." = "Der Server lässt dieses Konto den Titel nicht abspielen.";
+"Der Server lässt gerade keine weitere Wiedergabe zu. Die Bandbreite für dieses Konto ist ausgeschöpft." = "Der Server lässt gerade keine weitere Wiedergabe zu. Die Bandbreite für dieses Konto ist ausgeschöpft.";
+"Der Server findet keine Fassung, die er an dieses Gerät schicken darf. Meist ist Umwandeln für dieses Konto abgeschaltet." = "Der Server findet keine Fassung, die er an dieses Gerät schicken darf. Meist ist Umwandeln für dieses Konto abgeschaltet.";
 
 /* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
 "%lld Std. %lld Min." = "%lld Std. %lld Min.";
@@ -102,3 +105,39 @@
 "Die Verbindung zum Server hat nicht geklappt." = "Die Verbindung zum Server hat nicht geklappt.";
 "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an.";
 "Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein." = "Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein.";
+
+"Original" = "Original";
+"Direct Play · Originalqualität" = "Direct Play · Originalqualität";
+
+/* Anzahlen in Kacheln und Sammlungen (fehlten bis 25.09.2026, englisch stand Deutsch). */
+"%lld Filme" = "%lld Filme";
+"%lld Serien" = "%lld Serien";
+"%lld neue Folgen" = "%lld neue Folgen";
+/* Gemeinsam schauen (SyncPlaySitzung) */
+"%@ ist dabei" = "%@ ist dabei";
+"%@ ist gegangen" = "%@ ist gegangen";
+"Wartet auf alle" = "Wartet auf alle";
+"Angehalten" = "Angehalten";
+"Geht weiter" = "Geht weiter";
+"Gesprungen" = "Gesprungen";
+"Einem in der Gruppe fehlt dieser Titel." = "Einem in der Gruppe fehlt dieser Titel.";
+"Der Titel der Gruppe lässt sich hier nicht abspielen." = "Der Titel der Gruppe lässt sich hier nicht abspielen.";
+"Gemeinsam schauen ist für dein Konto auf dem Server nicht freigegeben." = "Gemeinsam schauen ist für dein Konto auf dem Server nicht freigegeben.";
+"Die Gruppe kam nicht zustande: vom Server kam keine Antwort über die Verbindung. Versuch es gleich noch einmal." = "Die Gruppe kam nicht zustande: vom Server kam keine Antwort über die Verbindung. Versuch es gleich noch einmal.";
+"Diese Gruppe gibt es nicht mehr." = "Diese Gruppe gibt es nicht mehr.";
+"Filmabend" = "Filmabend";
+
+/* Erstbild: Technikschild, wenn der Dekoder nie ein Bild geliefert hat */
+"Kein Bild vom Dekoder – Wiedergabe neu aufgebaut" = "Kein Bild vom Dekoder – Wiedergabe neu aufgebaut";
+"Kein Bild vom Dekoder – Software-Dekoder aktiv" = "Kein Bild vom Dekoder – Software-Dekoder aktiv";
+"Kein Bild vom Dekoder – auch Software-Dekoder ohne Bild" = "Kein Bild vom Dekoder – auch Software-Dekoder ohne Bild";
+
+/* Weiterschauen-Kachel: Restzeit und Folgenkürzel */
+"noch %lld Min." = "noch %lld Min.";
+"noch %lld Std." = "noch %lld Std.";
+"noch %lld Std. %lld Min." = "noch %lld Std. %lld Min.";
+"S%lld · F%lld" = "S%lld · F%lld";
+
+/* Staffel-/Folgenkürzel: Deutsch „F" wie Folge, Englisch „E" wie Episode */
+"F%lld" = "F%lld";
+"S%lld • F%lld" = "S%lld • F%lld";

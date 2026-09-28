@@ -2,11 +2,10 @@
 
 "%@ als gesehen" = "Mark %@ as watched";
 "%@ ist als gesehen vermerkt." = "%@ is marked as watched.";
-"%d Sekunden vor" = "Forward %d seconds";
-"%d Sekunden zurück" = "Back %d seconds";
+"%lld Sekunden vor" = "Skip forward %lld seconds";
+"%lld Sekunden zurück" = "Skip back %lld seconds";
 "Abmelden" = "Sign out";
 "Abspielen" = "Play";
-"Abspielen oder anhalten" = "Play or pause";
 "Abspielstelle" = "Playback position";
 "Als gesehen markieren" = "Mark as watched";
 "Als ungesehen markieren" = "Mark as unwatched";
@@ -68,7 +67,7 @@
 "Metadaten auffrischen" = "Refresh metadata";
 "Mit Code anmelden" = "Sign in with a code";
 "Mit dieser Adresse kann ich nichts anfangen." = "That address cannot be read.";
-"Moment …" = "One moment …";
+"Moment…" = "One moment…";
 "Neue Filme" = "New movies";
 "Neue Filme und neue Serien in eigenen Reihen" = "Separate rows for new movies and new shows";
 "Neue Serien" = "New series";
@@ -106,12 +105,12 @@
 "Trailer" = "Trailer";
 "Untertitel" = "Subtitles";
 "Untertitel automatisch" = "Subtitles automatically";
-"Verbinde …" = "Connecting …";
+"Verbinde…" = "Connecting…";
 "Verbinden" = "Connect";
 "Verbindung prüfen" = "Check connection";
 "Verhalten" = "Behavior";
-"Vollbild" = "Full screen";
-"Vollbild verlassen" = "Exit full screen";
+"Vollbild" = "Fullscreen";
+"Vollbild verlassen" = "Exit Fullscreen";
 "Von vorn abspielen" = "Play from the start";
 "Vorspulen" = "Skip forward";
 "Weiterschauen" = "Continue watching";
@@ -174,14 +173,14 @@
 "Anfragen über Seerr" = "Request via Seerr";
 "Angefragt" = "Requested";
 "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst." = "Requested. Once it is approved, it downloads on its own.";
-"Wird angefragt …" = "Requesting …";
+"Wird angefragt…" = "Requesting…";
 "wartet" = "waiting";
 "angefragt" = "requested";
 "teilweise" = "partly";
 
 /* Downloads */
-"%d Folgen" = "%d episodes";
-"%d Titel" = "%d titles";
+"%lld Folgen" = "%lld episodes";
+"%lld Titel" = "%lld titles";
 "%d Titel auf diesem Rechner" = "%d titles on this computer";
 "%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?" = "%d titles are on this computer (%@). What should happen to them?";
 "%d gesehene Titel könnten weichen (%@)." = "%d watched titles could go (%@).";
@@ -217,8 +216,8 @@
 "Wird geladen." = "Downloading.";
 
 /* Seerr-Seite und Downloads */
-"%d Min." = "%d min";
-"%d Staffeln anfragen" = "Request %d seasons";
+"%lld Min." = "%lld min";
+"%lld Staffeln anfragen" = "Request %lld seasons";
 "Abwählen" = "Deselect";
 "Anfragen, was noch nicht da ist" = "Request what isn’t there yet";
 "Auf deinem Server" = "On your server";
@@ -226,8 +225,8 @@
 "Auswählen" = "Select";
 "Integration" = "Integration";
 "Nicht auf deinem Server" = "Not on your server";
-"Staffel %d" = "Season %d";
-"Staffel %d · Folge %d" = "Season %d · Episode %d";
+"Staffel %lld" = "Season %lld";
+"Staffel %lld · Folge %lld" = "Season %lld · Episode %lld";
 "Teilweise vorhanden" = "Partly available";
 "Wartet auf Freigabe" = "Waiting for approval";
 "Welche Staffeln?" = "Which seasons?";
@@ -289,7 +288,7 @@
 "nicht mehr auf dem Server" = "no longer on the server";
 "Filme & Serien" = "Movies & Shows";
 "Allgemein" = "General";
-"Startseite, Reihen und Genres" = "Home screen, rows and genres";
+"Startseite, Reihen, Genres" = "Home screen, rows, genres";
 "Filme, Serien und Folgen durchsuchen" = "Search films, series and episodes";
 "Kann angefragt werden" = "Can be requested";
 "Technische Daten im Player" = "Technical info in the player";
@@ -310,7 +309,7 @@
 "Film" = "Movie";
 "Serie" = "Series";
 "Wirklich anfragen?" = "Really request it?";
-"Läuft ab in %d:%02d" = "Expires in %d:%02d";
+"Läuft ab in %lld:%@" = "Expires in %1$lld:%2$@";
 "Läuft in Originalqualität. Der Server wandelt nichts um." = "Playing in original quality. The server isn’t converting anything.";
 "Titel, Serie, Person" = "Title, series, person";
 "Kein WLAN" = "No Wi-Fi";
@@ -322,6 +321,7 @@
 
 /* Stufe 4: Spurwahl und Uebernahmeauswahl */
 "Erzwungen" = "Forced";
+"Hörgeschädigt" = "SDH";
 "Datei" = "File";
 "Wo weiterschauen?" = "Where do you want to continue?";
 "Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter." = "Playback stops on the other device and continues here at the same spot.";
@@ -381,7 +381,7 @@
 "Geh auf %@ und gib diesen Code ein." = "Go to %@ and enter this code.";
 "Trakt öffnen" = "Open Trakt";
 "Neuer Code" = "New code";
-"Der Code ist abgelaufen. Hol dir einen neuen." = "The code expired. Get a new one.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "The code has expired. Get a new one.";
 "Trakt hat die Verbindung nicht freigegeben." = "Trakt didn't approve the connection.";
 "Trakt bremst gerade. Versuch es in ein paar Minuten noch mal." = "Trakt is holding back right now. Try again in a few minutes.";
 "Trakt ist gerade nicht erreichbar." = "Can't reach Trakt right now.";
@@ -396,8 +396,8 @@
 "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse." = "For a service in front of your server, like Cloudflare Access, Authelia or Pangolin. Swiftly only sends these headers to this address.";
 "Die letzte Stunde, ohne Zugangsdaten" = "The last hour, without sign-in details";
 "Protokoll teilen" = "Share Log";
-"%d Filme" = "%d movies";
-"%d Serien" = "%d series";
+"%lld Filme" = "%lld movies";
+"%lld Serien" = "%lld series";
 "%@ zu wenig" = "%@ short";
 "Alle Filme" = "All Movies";
 "Alle Serien" = "All Series";
@@ -412,3 +412,63 @@
 /* Downloads: Ladeauswahl und Serienseite (Mac 89299260, cc4e6e75) */
 "%@ von %@" = "%@ of %@";
 "Download entfernen" = "Remove download";
+"Swiftly hat einen Discord" = "Swiftly has a Discord";
+"Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst." = "Ask questions and report bugs there. New builds show up there first, too.";
+
+"Kleinere Fassungen gibt der Server für dieses Konto nicht frei." = "The server doesn’t allow smaller versions for this account.";
+"Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt." = "The server converts the file while it downloads. The size is an estimate.";
+
+/* Bedienhilfe: Namen für Bildschirmleser, Tastenkürzel. */
+"Gesehen" = "Watched";
+"Nach oben" = "Move up";
+"Nach unten" = "Move down";
+"Weiterblättern" = "Next page";
+"Zurückblättern" = "Previous page";
+"Zu %@ wechseln" = "Switch to %@";
+"%lld Prozent gesehen" = "%lld percent watched";
+"Strg+%@" = "Ctrl+%@";
+/* Player: subtitle and audio delay */
+"Verzögerung" = "Delay";
+"Zurücksetzen" = "Reset";
+"Früher" = "Earlier";
+"Später" = "Later";
+"Untertitelverzögerung %@" = "Subtitle delay %@";
+"Tonverzögerung %@" = "Audio delay %@";
+"Ohne Grafikbeschleunigung" = "No graphics acceleration";
+/* Watch together (SyncPlay) — wording from the Xcode catalog. */
+"Gemeinsam schauen" = "Watch together";
+"Filmabend" = "Movie night";
+"Name der Gruppe" = "Group name";
+"Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle." = "Everyone on your server can see the group and join in. Pausing and skipping then apply to everyone.";
+"Gruppe öffnen" = "Open group";
+"Pause und Springen gelten für alle." = "Pausing and skipping apply to everyone.";
+"Beitreten" = "Join";
+"Läuft gerade" = "Playing now";
+"Noch niemand dabei" = "Nobody here yet";
+"noch niemand dabei" = "nobody else yet";
+"%@ schaut gerade" = "%@ is watching";
+"%@ schauen gerade" = "%@ are watching";
+"Wartet auf alle" = "Waiting for everyone";
+"%@ verlassen" = "Left %@";
+"Wieder beitreten" = "Rejoin";
+"mit %@" = "with %@";
+"Gemeinsam · %@" = "Together · %@";
+"Gruppe verlassen" = "Leave group";
+
+/* Einzahl (UX-Audit 27.09.) */
+"1 Titel" = "1 title";
+"1 Staffel anfragen" = "Request 1 season";
+"1 Serie" = "1 series";
+"1 Film" = "1 movie";
+"1 Folge wird geladen." = "1 episode is downloading.";
+"1 Titel auf diesem Rechner" = "1 title on this computer";
+
+/* 1.0.5: Neuerungen vom iPhone */
+"Endet um %@" = "Ends at %@";
+"Restzeit" = "Time remaining";
+"Wechselt zwischen Restzeit und Ende" = "Switches between time remaining and end time";
+"Karte schließen" = "Close card";
+"Nächste Folge abspielen: %@" = "Play next episode: %@";
+"in %lld s" = "in %lld s";
+"Aus Weiterschauen entfernen" = "Remove from Continue Watching";
+"Zur Übersicht" = "Back to overview";

@@ -3,6 +3,9 @@ import ImageIO
 import JellyfinKit
 import OSLog
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Ein Bild aus dem Netz — geholt, **abseits des Hauptlaufs entschlüsselt**,
 /// gemerkt und eingeblendet.
@@ -48,7 +51,18 @@ final class Bildspeicher {
         /// Wie lange das Holen und das Wandeln gedauert haben — nur fuer die
         /// Messung, sonst unbenutzt.
         var holen: Double = 0
+        /// **Nur das Rechnen**, ohne die Zeit in der Schleuse.
         var wandeln: Double = 0
+        /// **Nur das Warten** auf einen Einlass zum Wandeln.
+        ///
+        /// Die beiden getrennt zu fuehren ist keine Feinheit. Gemessen am
+        /// 22.09.2026 stieg die gemeldete Wandeldauer bei sechs Bildern in
+        /// Folge von 12 auf 64 ms — in der Reihenfolge des Eintreffens. Das
+        /// ist die Signatur einer Warteschlange, nicht die von Rechenarbeit:
+        /// sechs Bilder in 64 ms sind rund 11 ms echte Arbeit je Bild, also
+        /// dieselbe Last wie vorher, nur anders verteilt. Wer beides in einer
+        /// Zahl fuehrt, haelt jede Umverteilung fuer eine Verbesserung.
+        var warten: Double = 0
     }
 
     private var bekannt: [URL: Eintrag] = [:]
@@ -299,7 +313,14 @@ final class Bildspeicher {
                    Bildablage.lesen(platte)
                }).value {
                 daten = abgelegt
-            } else if aufGeraet, let abgelegt = Geraeteablage.lesen(merkmal) {
+            } else if aufGeraet,
+                      // **Abseits gelesen, wie die Poster darueber.** Das
+                      // Profilbild lag als einziger Plattenzugriff noch auf
+                      // dem Hauptlauf — beim Oeffnen der Kontoliste einmal
+                      // je Konto.
+                      let abgelegt = await Task.detached(priority: .userInitiated, operation: {
+                          Geraeteablage.lesen(merkmal)
+                      }).value {
                 // Vom Gerät, sofort — und im Hintergrund frisch geholt, damit
                 // ein neues Profilbild beim nächsten Mal da ist.
                 daten = abgelegt
@@ -313,7 +334,7 @@ final class Bildspeicher {
                 daten = geholt
                 let ok = (antwort as? HTTPURLResponse)?.statusCode == 200
                 if aufGeraet, ok {
-                    Geraeteablage.schreiben(geholt, merkmal)
+                    Task.detached(priority: .utility) { Geraeteablage.schreiben(geholt, merkmal) }
                 }
                 if let platte, ok {
                     Task.detached(priority: .utility) { Bildablage.schreiben(geholt, platte) }
@@ -327,7 +348,9 @@ final class Bildspeicher {
             // **Und jetzt durch die zweite Schleuse.** Siehe dort: das
             // Wandeln war unbegrenzt, und neun gleichzeitige Laeufe haben den
             // Hauptlauf beim Scrollen um seinen Takt gebracht.
+            let vorDerSchleuse = Date()
             await wandelEinlass()
+            let gewartet = Date().timeIntervalSince(vorDerSchleuse)
             defer { wandelEinlassZurueck() }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
@@ -351,7 +374,8 @@ final class Bildspeicher {
             let byte = kiste.bild.width * kiste.bild.height * 4
             return Eintrag(bild: Image(decorative: kiste.bild, scale: 1), byte: byte,
                            holen: geholt.timeIntervalSince(begonnen),
-                           wandeln: Date().timeIntervalSince(geholt))
+                           wandeln: Date().timeIntervalSince(geholt) - gewartet,
+                           warten: gewartet)
         }
 
         laufend[merkmal] = lauf
@@ -367,8 +391,9 @@ final class Bildspeicher {
             // die niemand lesen kann, ist keine. `%@` traegt den Namen des
             // Bildes — das ist bei Jellyfin fuer **jedes** Plakat „Primary",
             // weshalb neun Zeilen gleich aussehen und doch neun Bilder sind.
-            let zeile = String(format: "Bild %.0f ms holen, %.0f ms wandeln, %d KB · gleichzeitig bis %d · %@ · %@",
-                               (ergebnis.holen) * 1000, (ergebnis.wandeln) * 1000,
+            let zeile = String(format: "Bild %.0f ms holen, %.0f ms warten, %.0f ms rechnen, %d KB · gleichzeitig bis %d · %@ · %@",
+                               (ergebnis.holen) * 1000, (ergebnis.warten) * 1000,
+                               (ergebnis.wandeln) * 1000,
                                ergebnis.byte / 1024, spitzeWandeln,
                                merkmal.lastPathComponent,
                                merkmal.deletingLastPathComponent()
@@ -399,6 +424,33 @@ final class Bildspeicher {
             belegt -= bekannt.removeValue(forKey: raus)?.byte ?? 0
         }
     }
+
+    // MARK: Speicherwarnung
+
+    /// **Bei einer Speicherwarnung loslassen.** Die entschluesselten Bilder
+    /// sind der groesste Posten, den die App selbst in der Hand hat — bis
+    /// zur `speichergrenze` —, und alle liegen auf der Platte noch einmal.
+    /// Vorher hoerte niemand auf die Warnung; das System beendete die App
+    /// dann eher, als dass wir etwas freigaben. Laufende Abrufe bleiben.
+    #if canImport(UIKit)
+    private var warnung: NSObjectProtocol?
+
+    private init() {
+        warnung = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { Bildspeicher.geteilt.leeren() }
+        }
+    }
+    #endif
+
+    func leeren() {
+        bekannt.removeAll()
+        reihenfolge.removeAll()
+        schluesselspeicher.removeAll()
+        belegt = 0
+    }
 }
 
 struct Netzbild: View {
@@ -428,6 +480,9 @@ struct Netzbild: View {
     /// kaum. Sie greift bei den grossen: in Pauls Protokoll standen ein
     /// `Backdrop` mit 792 KB und ein `Primary` mit 1599 KB.
     var anzeigekante: CGFloat?
+    /// Groesse des Zeichens — auf dem Fernseher doppelt so gross, dort
+    /// steht der Schirm drei Meter weg.
+    var zeichengroesse: CGFloat = 22
 
     @State private var bild: Image?
     @State private var sichtbar = false
@@ -440,12 +495,14 @@ struct Netzbild: View {
     /// Ein nachgereichter Wert kommt zu spät, der leere Durchgang hat dann
     /// schon stattgefunden, und genau der ist das Aufblitzen.
     @MainActor init(url: URL?, art: ContentMode = .fill, zeichen: String? = nil,
-                    vorrang: Bool = false, anzeigekante: CGFloat? = nil) {
+                    vorrang: Bool = false, anzeigekante: CGFloat? = nil,
+                    zeichengroesse: CGFloat = 22) {
         self.url = url
         self.art = art
         self.zeichen = zeichen
         self.vorrang = vorrang
         self.anzeigekante = anzeigekante
+        self.zeichengroesse = zeichengroesse
         let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
         _bild = State(initialValue: sofort)
         _sichtbar = State(initialValue: sofort != nil)
@@ -459,14 +516,25 @@ struct Netzbild: View {
                     .opacity(sichtbar ? 1 : 0)
             } else if ohneBild, let zeichen {
                 Image(systemName: zeichen)
-                    .font(.system(size: 22))
+                    .font(.system(size: zeichengroesse))
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
         }
         .task(id: url) {
-            guard let url else { ohneBild = true; return }
-            guard bild == nil else { return }
+            guard let url else { bild = nil; ohneBild = true; return }
             ohneBild = false
+            // **Eine neue Adresse ersetzt das alte Bild** — wie in `Bild`.
+            // Hier stand `guard bild == nil`, und das hielt jedes Bild fest,
+            // das die Ansicht einmal hatte: wechselte die Adresse bei
+            // stehender Ansicht (anderes Konto, andere Folge), blieb das
+            // alte stehen.
+            if let da = Bildspeicher.geteilt.bild(url) {
+                bild = da
+                sichtbar = true
+                return
+            }
+            bild = nil
+            sichtbar = false
             // Der Bildschirm hat hoechstens drei Bildpunkte je Punkt; etwas
             // dazu, damit nichts ausfranst, und mehr braucht niemand.
             let noetig = anzeigekante.map { Int($0 * 3.2) }
@@ -505,7 +573,7 @@ struct Netzbild: View {
 /// Cache-Ordner — räumt das System dort auf, kommt das Bild beim nächsten
 /// Mal eben wieder vom Server.
 enum Geraeteablage {
-    private static var ordner: URL? {
+    nonisolated private static var ordner: URL? {
         guard let basis = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
         else { return nil }
         let ordner = basis.appendingPathComponent("Profilbilder", isDirectory: true)
@@ -515,15 +583,15 @@ enum Geraeteablage {
 
     /// Ein stabiler Dateiname aus der Adresse ohne Zugangsschlüssel (FNV-1a,
     /// 64 Bit). `hashValue` taugt nicht: der wechselt mit jedem Programmstart.
-    private static func datei(_ merkmal: URL) -> URL? {
+    nonisolated private static func datei(_ merkmal: URL) -> URL? {
         ordner?.appendingPathComponent(dateiname(merkmal.absoluteString))
     }
 
-    static func lesen(_ merkmal: URL) -> Data? {
+    nonisolated static func lesen(_ merkmal: URL) -> Data? {
         datei(merkmal).flatMap { try? Data(contentsOf: $0) }
     }
 
-    static func schreiben(_ daten: Data, _ merkmal: URL) {
+    nonisolated static func schreiben(_ daten: Data, _ merkmal: URL) {
         guard let ziel = datei(merkmal) else { return }
         try? daten.write(to: ziel, options: .atomic)
     }
@@ -537,15 +605,8 @@ enum Geraeteablage {
     }
 }
 
-/// FNV-1a, 64 Bit, als Dateiname. Stabil über Programmstarts hinweg.
-private func dateiname(_ text: String) -> String {
-    var wert: UInt64 = 0xcbf29ce484222325
-    for byte in text.utf8 {
-        wert ^= UInt64(byte)
-        wert &*= 0x100000001b3
-    }
-    return String(wert, radix: 16)
-}
+/// Stabiler Dateiname — die Regel liegt im Paket (`Bildplatte.dateiname`).
+private func dateiname(_ text: String) -> String { Bildplatte.dateiname(text) }
 
 /// **Poster und Hintergründe auf der Platte** (Audit Teil 3, #11).
 ///
@@ -568,54 +629,25 @@ enum Bildablage {
         #endif
     }()
 
-    private static let ordner: URL? = {
+    /// Ordner, Lesen, Schreiben und Aufräumen stehen im Paket
+    /// (`Bildplatte`), damit Linux und Windows dieselbe Ablage haben.
+    private static let platte: Bildplatte? = {
         guard let basis = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
         else { return nil }
-        let ordner = basis.appendingPathComponent("Bilder", isDirectory: true)
-        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
-        return ordner
+        return Bildplatte(ordner: basis.appendingPathComponent("Bilder", isDirectory: true), grenze: grenze)
     }()
 
-    /// Der Dateiname zu einem Bildschlüssel, `nil` ohne `tag` — die Regel
-    /// liegt im Paket (`Bildablageschluessel`).
-    static func name(_ merkmal: URL) -> String? {
-        Bildablageschluessel.fuer(merkmal).map(dateiname)
-    }
+    /// Der Dateiname zu einem Bildschlüssel, `nil` ohne `tag`.
+    static func name(_ merkmal: URL) -> String? { Bildplatte.name(merkmal) }
 
-    /// Liest und frischt das Datum auf, damit `aufraeumen` das zuletzt
-    /// Gezeigte behält. Nicht auf dem Hauptlauf aufrufen.
-    nonisolated static func lesen(_ name: String) -> Data? {
-        guard let datei = ordner?.appendingPathComponent(name),
-              let daten = try? Data(contentsOf: datei) else { return nil }
-        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: datei.path)
-        return daten
-    }
+    /// Liest und frischt das Datum auf. Nicht auf dem Hauptlauf aufrufen.
+    nonisolated static func lesen(_ name: String) -> Data? { platte?.lesen(name) }
 
     nonisolated static func schreiben(_ daten: Data, _ name: String) {
-        guard let ziel = ordner?.appendingPathComponent(name) else { return }
-        try? daten.write(to: ziel, options: .atomic)
+        platte?.schreiben(daten, name)
         _ = aufgeraeumt
     }
 
     /// Einmal je Start, beim ersten Schreiben.
-    private static let aufgeraeumt: Void = aufraeumen()
-
-    private static func aufraeumen() {
-        guard let ordner else { return }
-        let felder: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        guard let dateien = try? FileManager.default.contentsOfDirectory(
-            at: ordner, includingPropertiesForKeys: felder) else { return }
-        var liste = dateien.compactMap { datei -> (URL, Int, Date)? in
-            guard let werte = try? datei.resourceValues(forKeys: Set(felder)) else { return nil }
-            return (datei, werte.fileSize ?? 0, werte.contentModificationDate ?? .distantPast)
-        }
-        var summe = liste.reduce(0) { $0 + $1.1 }
-        guard summe > grenze else { return }
-        // Bis auf drei Viertel, damit nicht jeder Start wieder räumt.
-        liste.sort { $0.2 < $1.2 }
-        for (datei, groesse, _) in liste where summe > grenze * 3 / 4 {
-            try? FileManager.default.removeItem(at: datei)
-            summe -= groesse
-        }
-    }
+    private static let aufgeraeumt: Void = { _ = platte?.aufraeumen() }()
 }

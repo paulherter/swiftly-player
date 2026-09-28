@@ -93,23 +93,22 @@ public enum Fremdbefehl: String, Sendable {
 
 public extension Fremdsitzung {
 
-    /// „Adults · S2 E1" — was auf der anderen Seite läuft.
+    /// „Adults · S2 F1" auf Deutsch, „Adults · S2 E1" auf Englisch — was auf
+    /// der anderen Seite läuft.
     ///
     /// **Lag in `Sources/Shared` und war fuer Linux unerreichbar.** Dort
     /// stand deshalb eine eigene, kuerzere Fassung: Titel oben, Geraet
     /// darunter. Dieselbe Auskunft, anders zusammengesetzt — genau die Sorte
     /// Abweichung, die niemand meldet.
     ///
-    /// Uebersetzt wird hier nichts: Serienname und Folgennummer kommen vom
-    /// Server, und „S2 E1" steht in jeder Sprache so da.
+    /// **Das Kürzel kommt aus `folgenkuerzel`**, nicht mehr von Hand gebaut:
+    /// stand hier einmal fest als „E", auch auf Deutsch (gemeldet 27.09.2026).
     var titelzeile: String {
         guard let t = laeuft else { return geraetename ?? "" }
         var teile: [String] = []
         if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
         else { teile.append(t.name) }
-        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
-            teile.append("S\(staffel) E\(folge)")
-        }
+        if let kuerzel = t.folgenkuerzel { teile.append(kuerzel) }
         return teile.joined(separator: " · ")
     }
 
@@ -155,6 +154,30 @@ public enum Uebernahme {
     /// führt, ist schlechter als keins. Der Fortschrittsbericht kommt alle
     /// zehn Sekunden, also sind neunzig Sekunden reichlich Luft.
     public static let stillefrist: TimeInterval = 90
+
+    /// Kopf des Übernahme-Hinweises (`DisplayMessage`) an den Abgeber.
+    public static let hinweisKopf = "Swiftly-Uebernahme"
+
+    /// Versteht die Sitzung den Übernahme-Hinweis? Nur der Swiftly-Player
+    /// („Swiftly Player", früher „Swiftly") — andere Programme zeigen eine
+    /// `DisplayMessage` als Text an, und Swiftly Music übernimmt nichts.
+    public static func nimmtHinweis(_ s: Fremdsitzung) -> Bool {
+        let p = s.programm ?? ""
+        return p.hasPrefix("Swiftly") && p != "Swiftly Music"
+    }
+
+    /// **Gehört ein Stopp zu einer Übernahme?** Nur dann geht das Bild als
+    /// Karte ab. Der Hinweis kommt **vor** dem Stopp; ein Stopp aus dem
+    /// Dashboard oder von einer anderen App kommt ohne — dann wird schlicht
+    /// geschlossen.
+    /// - Parameter hinweisVor: Sekunden seit dem Hinweis, `nil` ohne Hinweis.
+    public static func istUebergabe(hinweisVor: TimeInterval?) -> Bool {
+        guard let hinweisVor else { return false }
+        return hinweisVor >= 0 && hinweisVor < hinweisfrist
+    }
+
+    /// So lange gilt ein Hinweis als Ankündigung des nächsten Stopps.
+    public static let hinweisfrist: TimeInterval = 3
 
     /// Alles, was übernommen werden kann — jüngste Regung zuerst.
     ///

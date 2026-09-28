@@ -30,6 +30,10 @@ public final class Kern: @unchecked Sendable {
     /// Der Client eines Servers, der gerade aufgenommen wird — `AppModel.aufnahme`. Die laufende
     /// Sitzung bleibt dabei unberuehrt; bricht die Aufnahme ab, ist nichts passiert.
     private var _aufnahme: JellyfinClient?
+    /// Welche Adressprüfung gerade gilt — siehe ``Pruefstand`` im Paket. Eine
+    /// neue Prüfung macht die vorige ungültig; deren späte Antwort setzt dann
+    /// keinen Client mehr.
+    private var _pruefstand = Pruefstand()
     /// Der laufende Quick-Connect-Vorgang. Der geheime Teil verlaesst Swift nie.
     private var _quickconnect: Anmeldecode?
     /// Das laufende Warten auf die Freigabe — der Code, fuer den es gilt, und wie es abgebrochen wird.
@@ -42,8 +46,46 @@ public final class Kern: @unchecked Sendable {
     /// Der Socket, ueber den Jellyfin Befehle schickt — ohne ihn keine Knoepfe im Dashboard.
     private var _fern: Fernsteuerung?
     private let fernablage = Befehlsablage()
+    /// **Gemeinsam schauen** — die Sitzung aus dem Paket, eine fuer die Laufzeit der App
+    /// (`Gemeinsammodell` auf Apple). Entsteht beim ersten Zugriff (``gemeinsam``).
+    private var _gemeinsam: SyncPlaySitzung?
+    /// Das Aufräumen nach dem letzten Setzen. Das nächste wartet darauf —
+    /// wie `gemeinsamKette` auf Linux.
+    private var _gemeinsamKette: Task<Void, Never>?
+    private let gemeinsamTafel = Lagetafel()
+    /// Die Gruppe setzt einen Titel, und kein Player ist angeschlossen: Kotlin oeffnet ihn.
+    private let gemeinsamWunsch = Wartefach()
+    private var _gemeinsamSpieler: Kernspieler?
+    private var _gemeinsamMarke = 0
+    private var _gemeinsamTaktLaeuft = false
+    private var _gemeinsamLage = SyncPlayLage()
+    private var _gemeinsamFehler: String?
+    private var _gemeinsamFehlerNummer = 0
+    private var _gemeinsamAngenommen = 0
+    /// **In der Gruppe keine naechste Folge** — jeder schaltete sonst fuer sich weiter, und die
+    /// Gruppe liefe auseinander (iOS `nachschlagen`). Gilt, solange ein Player angeschlossen ist.
+    private var _ohneNaechste = false
     private var _immerDirectPlay = true
     private var _megabit = 0
+    /// **Die Downloads des geltenden Kontos, wie Kotlin sie haelt** — fuer „Naechste Folge", die
+    /// Abschnitte und den Sehstand ohne Server (1.0.5). Kotlin gibt sie nach jeder Aenderung herein
+    /// (`downloadsBekannt`); die Liste selbst lebt weiter in Kotlin.
+    private var _downloads: [Downloadposten] = []
+    private var _downloadOrdner = ""
+    /// Der Netzbeobachter der Downloads meldet: gar kein Netz. Dann wird nicht erst gefragt.
+    private var _ohneNetz = false
+    /// Was bei jedem Stopp anfiel — Kotlin holt es ab (`stoppsVerarbeiten`).
+    private var _stopps: [Stoppvermerk] = []
+    /// Nie zwei Nachmeldedurchgaenge gleichzeitig — sonst ginge dieselbe Stelle doppelt hinaus.
+    private var _nachmeldenLaeuft = false
+    /// **Die naechste Folge, in den letzten Minuten vorbereitet** (`Vorpuffer`, wie `Folgenvorbereitung`
+    /// auf iOS): Plan, Abschnitte und die Folge danach, mit dem Zeitpunkt. ``folgeWechseln(id:position:)``
+    /// nimmt sie, statt zu fragen.
+    private var _vorbereitet: (w: Wiedergabe, wann: Date)?
+    /// Fuer welche Folge schon angefangen wurde — einmal je Folge, auch wenn es scheitert.
+    private var _vorbereitungFuer: String?
+    /// Je Zeile der Spurenebene (`ton`, `untertitel`) ein Zaehler fuers Gedrueckthalten.
+    private var _haltezaehler: [String: Verzoegerung.Haltezaehler] = [:]
 
     /// Was dem Server als Grenze gemeldet wird — `AppModel.profilBitrate`, die Rechnung im Paket.
     private var profilBitrate: Int {
@@ -67,13 +109,32 @@ public final class Kern: @unchecked Sendable {
         let start = Date()
         /// „Intro ueberspringen" / „Naechste Folge" ueber dem Bild — je Folge neu, weil jeder Wechsel
         /// eine neue `Wiedergabe` setzt (`Angebotsebene.neueFolge` braucht es deshalb nicht).
-        var ebene = Angebotsebene()
+        var ebene: Angebotsebene = {
+            // **Die Karte wartet bei offener Steuerung** (Folgenkarte C, wie iPhone und Fernseher):
+            // sie geht weg, der Countdown haelt an, mit dem Schliessen kommt sie zurueck.
+            var e = Angebotsebene()
+            e.karteWartetBeiSteuerung = true
+            return e
+        }()
+        /// Seit wann VLC angehalten hat — fuer ``Pausenruecksprung`` (``fortsetzenZiel(position:inGruppe:)``).
+        var pausiertSeit: Date?
         /// Stufe 4: externe Untertitel des Plans (Merkmal setzt Kotlin), die laufenden Spuren als
         /// Jellyfin-Index fuer die Meldungen, und eine gewaehlte Datei, deren Spur VLC noch nicht meldet.
         /// Je Folge neu, wie auf Apple bei jedem `play(url:)`.
         var dateien: [Untertiteldatei] = []
         var spuren = Spurindizes()
         var offenerUntertitel: Int?
+        /// Das abgelegte Bild eines Downloads fuer die Mediensteuerung — sonst das vom Server.
+        var bild: String?
+    }
+
+    /// Ein Stopp — fuer den Sehstand des Downloads und die liegende Nachmeldung desselben Titels.
+    private struct Stoppvermerk: Sendable {
+        let itemID: String
+        let konto: String
+        let ticks: Int64
+        let wann: Date
+        let gesendet: Bool
     }
 
     public init(geraeteID: String, geraeteName: String, fassung: String, programm: String) {
@@ -90,8 +151,40 @@ public final class Kern: @unchecked Sendable {
     private var adressen: Bildadresse? {
         get { sperre.lock(); defer { sperre.unlock() }; return _adressen }
     }
+    private func pruefungBeginnen(_ adresse: String) -> Pruefmarke {
+        sperre.lock(); defer { sperre.unlock() }
+        return _pruefstand.beginnen(adresse)
+    }
+
+    private func pruefungGilt(_ marke: Pruefmarke) -> Bool {
+        sperre.lock(); defer { sperre.unlock() }
+        return _pruefstand.gilt(marke)
+    }
+
+    @discardableResult
+    private func pruefungAbschliessen(_ marke: Pruefmarke) -> Bool {
+        sperre.lock(); defer { sperre.unlock() }
+        return _pruefstand.abschliessen(marke)
+    }
+
     private func setzen(_ c: JellyfinClient?, _ a: Bildadresse?, _ s: Session? = nil) {
-        sperre.lock(); _client = c; _adressen = a; _sitzung = s; sperre.unlock()
+        sperre.lock(); defer { sperre.unlock() }
+        let alt = _client
+        _client = c; _adressen = a; _sitzung = s
+        // **Jede Aenderung des Clients beendet „Gemeinsam schauen"** (Wechsel, Abmelden, Anmelden) —
+        // verlassen mit dem Client des alten Kontos, dann das Recht des neuen (`AppModel`, f9658bc6).
+        // **Nacheinander**, nicht je Setzen eine freie Aufgabe: Abmelden setzt zweimal kurz
+        // hintereinander (`abmelden`, dann `sitzungSetzen` fuer das naechste Konto). Liefe das
+        // `beenden` des ersten nach dem `rechtHolen` des zweiten, verloere das naechste Konto
+        // sein SyncPlay-Recht; umgekehrt ginge das `Leave` im Namen des naechsten raus.
+        if let gemeinsam = _gemeinsam, alt !== c {
+            let vorher = _gemeinsamKette
+            _gemeinsamKette = Task {
+                await vorher?.value
+                await gemeinsam.beenden(alterClient: alt)
+                if c != nil { await gemeinsam.rechtHolen() }
+            }
+        }
     }
 
     /// Das Profilbild des angemeldeten Kontos — dieselbe Adresse wie
@@ -199,16 +292,23 @@ public final class Kern: @unchecked Sendable {
             if let anders = AppModelURLNormalizer.andersHerum(url) { kandidaten.append(anders) }
             var letzter: Error = Kernfehler.adresse(adresse)
             let eigene = Self.koepfeLesen(koepfe)
+            let marke = pruefungBeginnen(adresse)
             for kandidat in kandidaten {
                 let c = neuerClient(kandidat)
                 do {
-                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.publicSystemInfo() }
+                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.erreichbarkeitPruefen() }
+                    // Überholt: eine neuere Prüfung läuft, diese setzt nichts mehr.
+                    guard pruefungAbschliessen(marke) else { throw CancellationError() }
                     setzen(c, Bildadresse(basis: kandidat, token: nil))
                     return try json(Serverantwort(name: info.serverName ?? kandidat.host() ?? "",
                                                   version: info.version ?? "",
                                                   adresse: kandidat.absoluteString))
-                } catch { letzter = error }
+                } catch {
+                    letzter = error
+                    if !Adresspruefung.ausweichenLohnt(nach: error) { break }
+                }
             }
+            pruefungAbschliessen(marke)
             throw letzter
         }
     }
@@ -252,14 +352,20 @@ public final class Kern: @unchecked Sendable {
             if let anders = AppModelURLNormalizer.andersHerum(url) { kandidaten.append(anders) }
             var letzter: Error = Kernfehler.adresse(adresse)
             let eigene = Self.koepfeLesen(koepfe)
+            let marke = pruefungBeginnen(adresse)
+            defer { pruefungAbschliessen(marke) }
             for kandidat in kandidaten {
                 let c = neuerClient(kandidat)
                 do {
-                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.publicSystemInfo() }
+                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.erreichbarkeitPruefen() }
+                    guard pruefungGilt(marke) else { throw CancellationError() }
                     sperre.lock(); _aufnahme = c; sperre.unlock()
                     return try json(Serverantwort(name: info.serverName ?? kandidat.host() ?? "", version: info.version ?? "",
                                                   adresse: kandidat.absoluteString))
-                } catch { letzter = error }
+                } catch {
+                    letzter = error
+                    if !Adresspruefung.ausweichenLohnt(nach: error) { break }
+                }
             }
             throw letzter
         }
@@ -428,14 +534,10 @@ public final class Kern: @unchecked Sendable {
                            gattungen: [String], alsChips: Bool) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
-            // Ohne gemerkte Wahl die erste Sammlung ihrer Art — wie
-            // `AppModel.gewaehlteBibliothek(art:)` auf Apple.
-            var filme = filmBibliothek.isEmpty ? nil : filmBibliothek
-            var serien = serienBibliothek.isEmpty ? nil : serienBibliothek
-            if getrennt, filme == nil || serien == nil, let sammlungen = try? await c.userViews() {
-                filme = filme ?? sammlungen.first { $0.collectionType == "movies" }?.id
-                serien = serien ?? sammlungen.first { $0.collectionType == "tvshows" }?.id
-            }
+            // Ohne gemerkte Wahl sucht der Lader die erste Bibliothek ihrer
+            // Art selbst (`Startseitenlader.neu`) — wie auf Linux und Apple.
+            let filme = filmBibliothek.isEmpty ? nil : filmBibliothek
+            let serien = serienBibliothek.isEmpty ? nil : serienBibliothek
             let stand = await Startseitenlader.laden(von: c, .init(
                 getrennt: getrennt, filmBibliothek: filme, serienBibliothek: serien,
                 gattungen: alsChips ? nil : gattungen))
@@ -495,7 +597,7 @@ public final class Kern: @unchecked Sendable {
             quer: Bildwahl.quer(i, adressen: a)?.url.absoluteString,
             fortschritt: i.gesehenerAnteil, marke: marke, markenzahl: zahl,
             angabenzeile: angaben.isEmpty ? nil : angaben.joined(separator: " · "),
-            restzeit: i.restzeitText, gesehen: i.istGesehen,
+            restzeit: i.restzeitText, weiterschauenzeile: i.weiterschauenzeile, gesehen: i.istGesehen,
             folgenname: i.type == "Episode" ? i.name : nil,
             // **Nur fuer Android TV** (`TvWeiterschauenRegal.kt`, Watch-Next-Reihe): die
             // Fortschrittsanzeige dort will echte Millisekunden, nicht nur den Anteil, sonst
@@ -678,7 +780,7 @@ public final class Kern: @unchecked Sendable {
             for f in liste {
                 let gesehen = f.userData?.played ?? false
                 let zeit: String? = Anzeigeregeln.laufzeitZeigen(sekunden: f.runtimeSeconds)
-                    ? (f.restzeitText ?? "\(Int((f.runtimeSeconds ?? 0) / 60)) min") : nil
+                    ? (f.restzeitText ?? "\(Int(gekappt: (f.runtimeSeconds ?? 0) / 60)) min") : nil
                 let bild = await c.imageURL(for: f, maxHeight: 220)
                 zeilen.append(Folgenantwort(
                     id: f.id, titel: f.indexNumber.map { "\($0). \(f.name)" } ?? f.name, unterzeile: zeit,
@@ -691,7 +793,7 @@ public final class Kern: @unchecked Sendable {
                     // zusaetzlich, statt `titel`/`unterzeile` zu aendern und beide
                     // Plattformen zu verstellen.
                     name: f.name, nummer: f.indexNumber,
-                    laufzeitMin: (f.runtimeSeconds ?? 0) > 0 ? Int((f.runtimeSeconds ?? 0) / 60) : nil,
+                    laufzeitMin: (f.runtimeSeconds ?? 0) > 0 ? Int(gekappt: (f.runtimeSeconds ?? 0) / 60) : nil,
                     restzeit: f.restzeitText))
             }
             return try json(zeilen)
@@ -887,7 +989,8 @@ public final class Kern: @unchecked Sendable {
     public func wiedergabeOeffnen(id: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             let w = try await wiedergabeHolen(id: id)
-            sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel(); sperre.unlock()
+            sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel()
+            _vorbereitet = nil; _vorbereitungFuer = nil; sperre.unlock()
             return try spielplanantwort(w)
         }
     }
@@ -895,15 +998,20 @@ public final class Kern: @unchecked Sendable {
     /// Nur holen, nichts setzen — damit ein Folgenwechsel die alte Wiedergabe stehen lassen kann,
     /// bis die neue sicher da ist (Audit T2-M2).
     private func wiedergabeHolen(id: String) async throws -> Wiedergabe {
+        // **Liegt die Folge hier, braucht es den Server nicht** — `AppModel.plan(for:)`. Sonst lief
+        // „Naechste Folge" im Flugzeug in die Frist des Servers, obwohl die Datei da ist.
+        if let w = sperreLesen({ platte(id: id) }) { return w }
         guard let c = client else { throw Kernfehler.nichtVerbunden }
         // Die Faehigkeiten gehen mit der Startmeldung (`meldereihe`) — hier warteten sie vor dem Plan.
         let item = try await c.item(id: id)
         let grenze = profilBitrate
         async let geplant = c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))
-        async let teile = c.abschnitte(fuer: id)
+        async let teile = abschnitte(fuer: id, c)
         async let danach = naechsteFolge(nach: item, c)
         guard let plan = try await geplant else { throw URLError(.resourceUnavailable) }
-        var w = Wiedergabe(item: item, plan: plan, abschnitte: await teile, naechste: await danach)
+        let naechste = await danach
+        var w = Wiedergabe(item: item, plan: plan, abschnitte: await teile,
+                           naechste: sperreLesen({ _ohneNaechste }) ? nil : naechste)
         // Externe Untertitel (T1-H4) — `AppModel.untertiteldateien`. Von der Platte keine.
         if let s = sperreLesen({ _sitzung }), !plan.url.isFileURL {
             w.dateien = Untertiteldatei.aus(stroeme: plan.quelle?.mediaStreams ?? [], server: s.serverURL,
@@ -931,7 +1039,7 @@ public final class Kern: @unchecked Sendable {
             dateizeile: dateizeile(plan),
             // Fuer die Mediensteuerung: bei einer Folge ihr Standbild — es zeigt, wo man ist —, sonst das Plakat.
             serie: item.seriesName, kuerzel: item.folgenkuerzel,
-            bild: { () -> String? in
+            bild: w.bild ?? { () -> String? in
                 let u: URL? = a?.bauen(itemID: item.id, marke: item.imageTags?["Primary"], mass: .hoechstensHoch(600))
                 return u?.absoluteString
             }(),
@@ -939,7 +1047,18 @@ public final class Kern: @unchecked Sendable {
             kopfzeile: kopfzeile, staffelNr: istFolge ? item.parentIndexNumber : nil,
             folgeNr: istFolge ? item.indexNumber : nil,
             nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile),
-            marken: w.abschnitte.flatMap { [$0.von, $0.bis] }))
+            marken: w.abschnitte.flatMap { [$0.von, $0.bis] },
+            softwareDekoder: plan.softwareDekoder,
+            naechsteFolge: w.naechste.map { f in
+                // Wie `Folgenkartenansicht.kuerzel`/`kartenbild` auf iOS: „S6 • F11", sonst der Name;
+                // das Standbild der Folge, sonst ein Querbild. Aus `folgenkuerzel` im Paket, nicht mehr
+                // von Hand — stand hier fest als „F", auch auf Englisch (gemeldet 27.09.2026).
+                let kuerzel = f.folgenkuerzel ?? f.name
+                let bild = a?.bauen(itemID: f.id, marke: f.imageTags?["Primary"], mass: .hoechstensHoch(1080))
+                    ?? a.flatMap { Bildwahl.quer(f, adressen: $0, breite: 1920)?.url }
+                return Folgenkartenantwort(id: f.id, name: f.name, kuerzel: kuerzel, bild: bild?.absoluteString)
+            },
+            kartenbild: a.flatMap { Self.kartenbild(item, adressen: $0) }))
     }
     /// „MKV · 1080p · H.264 · German · AAC · Stereo" — Vorlage: `dateizeile` in
     /// `Sources/tvOS/Wiedergabeblatt.swift`. Einmal hier, damit Kotlin sie nicht selbst aus
@@ -960,9 +1079,74 @@ public final class Kern: @unchecked Sendable {
         sperre.lock(); _wiedergabe?.stand.position = ab; sperre.unlock()
     }
 
-    private func naechsteFolge(nach item: Item, _ c: JellyfinClient) async -> Item? {
-        guard item.type == "Episode", let serie = item.seriesId else { return nil }
-        return try? await c.folgeNach(itemID: item.id, seriesID: serie)
+    /// **„Naechste Folge" — online wie bisher, ohne Server die naechste geladene**
+    /// (`Downloadregeln.folgeNach`, wie `AppModel.folgeNach`).
+    private func naechsteFolge(nach item: Item, _ c: JellyfinClient?) async -> Item? {
+        guard item.type == "Episode" else { return nil }
+        let (liste, ohneNetz) = sperreLesen { (_downloads, _ohneNetz) }
+        return await Downloadregeln.folgeNach(item, aus: liste, ohneNetz: ohneNetz) {
+            guard let c, let serie = item.seriesId else { return nil }
+            return try await c.folgeNach(itemID: item.id, seriesID: serie)
+        }
+    }
+
+    /// Die Abschnitte — die beim Download abgelegten zuerst (`Downloadregeln.abschnitte`, wie
+    /// `AppModel.abschnitte(fuer:)`).
+    private func abschnitte(fuer id: String, _ c: JellyfinClient?) async -> [Abschnitt] {
+        let abgelegt = sperreLesen { _downloads.first { $0.id == id }?.abschnitte }
+        return await Downloadregeln.abschnitte(abgelegt: abgelegt) { await c?.abschnitte(fuer: id) ?? [] }
+    }
+
+    /// Unter der Sperre: die fertige, abgelegte Datei dieses Titels als Wiedergabe, sonst `nil`.
+    private func platte(id: String) -> Wiedergabe? {
+        guard !_downloadOrdner.isEmpty,
+              let p = _downloads.first(where: { $0.id == id && $0.stand == .fertig }) else { return nil }
+        let ordner = URL(fileURLWithPath: _downloadOrdner)
+        let datei = ordner.appendingPathComponent(p.dateiname)
+        guard FileManager.default.fileExists(atPath: datei.path) else { return nil }
+        // Das Bild legt Kotlin unter Konto und Kennung ab (`Downloadverwaltung.bildDatei`).
+        let bild = ordner.appendingPathComponent(Downloadposten.bildname(konto: p.konto, kennung: p.id))
+        return Self.platte(p, datei: datei, aus: _downloads,
+                           bild: FileManager.default.fileExists(atPath: bild.path) ? bild.absoluteString : nil)
+    }
+
+    /// **Was ohne Server feststeht**: die abgelegten Abschnitte und die naechste geladene Folge. Was
+    /// der Server dazu sagt, kommt nach dem Start (`wiedergabeNachschlagen`) — hier wartet keine Frist.
+    private static func platte(_ p: Downloadposten, datei: URL, aus liste: [Downloadposten], bild: String?) -> Wiedergabe {
+        let plan = PlaybackPlan.vonDerPlatte(datei, container: p.container, mediaSourceID: p.quelle,
+                                              bildcodec: p.bildcodec)
+        var w = Wiedergabe(item: p.alsItem, plan: plan, abschnitte: p.abschnitte ?? [],
+                           naechste: Downloadregeln.folgeNach(p.id, aus: liste)?.alsItem)
+        w.bild = bild
+        return w
+    }
+
+    /// **Naechste Folge und Abschnitte nach dem Start** — Vorlage `nachschlagen(fuer:)` in
+    /// `Sources/iOS/PlayerScreen.swift`, fuer eine Wiedergabe von der Platte (vom Server kam beides
+    /// schon mit dem Plan). Ein Ergebnis, das zu spaet fuer seinen Titel kommt, verwirft
+    /// `Folgenwechsel.nachschlagen`. Antwort: der Spielplan neu, leer wenn sich nichts aenderte.
+    public func wiedergabeNachschlagen() async -> String {
+        sperre.lock(); let w = _wiedergabe; let wechsel = _folgenwechsel; let c = _client; sperre.unlock()
+        guard let w, w.plan.url.isFileURL else { return "" }
+        let titel = w.item, schluessel = Self.schluessel(w)
+        var geaendert = false
+        func setzen(_ tun: (inout Wiedergabe) -> Bool) {
+            sperre.lock(); defer { sperre.unlock() }
+            guard var jetzt = _wiedergabe, Self.schluessel(jetzt) == schluessel else { return }
+            if tun(&jetzt) { _wiedergabe = jetzt; geaendert = true }
+        }
+        await wechsel.nachschlagen(holen: { [self] in await naechsteFolge(nach: titel, c) },
+                                   uebernehmen: { neu in setzen { w in
+                                       guard w.naechste?.id != neu?.id else { return false }
+                                       w.naechste = neu; return true } })
+        await wechsel.nachschlagen(holen: { [self] in await abschnitte(fuer: titel.id, c) },
+                                   uebernehmen: { neu in setzen { w in
+                                       guard w.abschnitte != neu else { return false }
+                                       w.abschnitte = neu; return true } })
+        guard geaendert, let jetzt = sperreLesen({ _wiedergabe }), Self.schluessel(jetzt) == schluessel
+        else { return "" }
+        protokoll("Nachgeschlagen \(titel.id): naechste \(jetzt.naechste?.id ?? "keine"), Abschnitte \(jetzt.abschnitte.count)")
+        return (try? spielplanantwort(jetzt)) ?? ""
     }
 
     /// Ein Takt alle 500 ms — `Wiedergabetakt.rechnen` wie auf iOS. Start und Fortschritt gehen
@@ -987,7 +1171,9 @@ public final class Kern: @unchecked Sendable {
         // **Die Einblendung** (Countdown) — im Stehen, beim Schieben und vor dem ersten Bild haelt er
         // an. `taktlaenge` ist der Abstand, in dem Kotlin fragt.
         let countdownFertig = Self.angebotNachziehen(&w, laeuft: laeuft && zeigtBild && !amSchieben,
-                                                     vergangen: Wiedergabetakt.taktlaenge / .seconds(1))
+                                                     vergangen: Wiedergabetakt.taktlaenge / .seconds(1),
+                                                     amEnde: Folgenende.amEnde(position: stelle, dauer: w.stand.dauer)
+                                                         && !amSchieben)
         _wiedergabe = w
         sperre.unlock()
 
@@ -1003,7 +1189,10 @@ public final class Kern: @unchecked Sendable {
         let weiter = w.naechste != nil
             && (countdownFertig || (w.ebene.weiterAmEnde
                 && Folgenende.weiterschalten(position: stelle, dauer: w.stand.dauer,
-                                             seitOeffnen: Date().timeIntervalSince(w.start))))
+                                             seitOeffnen: Date().timeIntervalSince(w.start),
+                                             // Zaehlt die Karte, gehoert das Weiterschalten ihr (26.09.:
+                                             // ans Ende gespult, und das Dateiende wechselte sofort).
+                                             karteZaehlt: w.ebene.karteZaehlt)))
         let lage = Self.angebotslage(w)
         return (try? json(Taktantwort(ladeschirmWeg: auftrag.ladeschirmWeg, spurenAnwenden: auftrag.spurenAnwenden,
                                       position: stelle, angebot: lage.art, nach: lage.nach,
@@ -1015,14 +1204,22 @@ public final class Kern: @unchecked Sendable {
 
     /// Angebot und Einblendung an die Stelle des Stands anpassen — im Takt, und mit `vergangen: 0`
     /// direkt nach einem Sprung. `true`, wenn der Countdown jetzt abgelaufen ist.
-    private static func angebotNachziehen(_ w: inout Wiedergabe, laeuft: Bool, vergangen: Double) -> Bool {
+    private static func angebotNachziehen(_ w: inout Wiedergabe, laeuft: Bool, vergangen: Double,
+                                          amEnde: Bool = false) -> Bool {
         let stelle = w.stand.position, dauer = w.stand.dauer
         let angebot = Abschnittslogik.angebot(position: stelle, dauer: dauer,
                                               abschnitte: w.abschnitte, hatNaechsteFolge: w.naechste != nil)
+        // **Ohne Abspann-Abschnitt die letzten 30 s** (`Folgenkarte.restfenster`, wie iPhone und
+        // Fernseher) — dann laeuft der Countdown bis ans Dateiende.
         let faellig = Abschnittslogik.karteFaellig(position: stelle, dauer: dauer,
-                                                   abschnitte: w.abschnitte, hatNaechsteFolge: w.naechste != nil)
+                                                   abschnitte: w.abschnitte, hatNaechsteFolge: w.naechste != nil,
+                                                   restfenster: Folgenkarte.restfenster)
         return w.ebene.takt(angebot: angebot, karteFaellig: faellig, laeuft: laeuft, vergangen: vergangen,
-                            countdown: Abschnittslogik.countdown(position: stelle, dauer: dauer))
+                            countdown: Abschnittslogik.countdown(position: stelle, dauer: dauer,
+                                                                 abschnitte: w.abschnitte,
+                                                                 restfenster: Folgenkarte.restfenster),
+                            // Am Dateiende zaehlt der Countdown weiter, obwohl nichts mehr laeuft.
+                            amEnde: amEnde)
     }
 
     private static func angebotslage(_ w: Wiedergabe)
@@ -1094,16 +1291,177 @@ public final class Kern: @unchecked Sendable {
         return Weiterschalten.gilt(eigeneWahl: lesen(wahl), konto: lesen(konto))
     }
 
-    /// Was das geltende Konto vorgibt, **aus einer Anfrage**: `"<naechste>|<download>|<umwandeln>"`
+    // MARK: Neuerungen 1.0.5 — die Regeln aus dem Paket, fuer Handy und Fernseher
+    //
+    // Vorlage iOS (`qol-1.0.5`, `experiment-glas`). Kotlin haelt nur Bild, Finger und Fokus; wann
+    // etwas gilt, steht hier bzw. im Paket.
+
+    /// **Nach langer Pause ein Stueck zurueck** (`Pausenruecksprung`, iOS `VLCPlayerView.resume`):
+    /// Kotlin fragt vor dem Weiterspielen auf Wunsch des Zuschauers und setzt die Stelle im Stehen,
+    /// dann spielt es — das erste Bild ist schon das fruehere. `-1`: nicht zurueck. Seit wann
+    /// angehalten ist, weiss der Kern aus ``laufzustandGemeldet(laeuft:position:)``.
+    public func fortsetzenZiel(position: Double, inGruppe: Bool) -> Double {
+        sperre.lock()
+        let seit = _wiedergabe?.pausiertSeit
+        _wiedergabe?.pausiertSeit = nil
+        sperre.unlock()
+        guard let z = Pausenruecksprung.ziel(position: position, pausiertSeit: seit, jetzt: Date(),
+                                             inGruppe: inGruppe) else { return -1 }
+        protokoll("Fortsetzen nach \(Int(gekappt: Date().timeIntervalSince(seit ?? Date()))) s Pause — vorher auf \(Int(gekappt: z)) s")
+        return z
+    }
+
+    /// **Ob die naechste Folge jetzt vorbereitet wird** (`Vorpuffer.jetzt`, iOS `Folgenvorbereitung`):
+    /// ab drei Minuten vor Schluss oder ab dem Abspann, nur ueber ein guenstiges Netz, einmal je Folge,
+    /// nicht in der Gruppe, nicht fuer eine Folge auf dem Geraet.
+    public func vorpufferFaellig(position: Double, dauer: Double, netzGuenstig: Bool) -> Bool {
+        sperreLesen {
+            guard let w = _wiedergabe, let n = w.naechste, !_ohneNaechste, _vorbereitungFuer != n.id,
+                  _folgenwechsel.meldungenErlaubt, platte(id: n.id) == nil else { return false }
+            return Vorpuffer.jetzt(position: position, dauer: dauer,
+                                   abspannVon: w.abschnitte.first { $0.art == .abspann }?.von,
+                                   netzGuenstig: netzGuenstig)
+        }
+    }
+
+    /// **Die naechste Folge vorbereiten**: Plan (samt Abschnitten und der Folge danach) holen und den
+    /// Anfang der Datei einmal anfordern (`Vorpuffer.anfangAnfordern`). ``folgeWechseln(id:position:)``
+    /// nimmt den Plan, solange er frisch ist. Einmal je Folge, auch wenn es scheitert.
+    public func folgeVorbereiten() async {
+        let n: Item? = sperreLesen {
+            guard let n = _wiedergabe?.naechste, _vorbereitungFuer != n.id else { return nil }
+            _vorbereitungFuer = n.id
+            _vorbereitet = nil
+            return n
+        }
+        guard let n else { return }
+        let beginn = Date()
+        func ms() -> Int { Int(gekappt: Date().timeIntervalSince(beginn) * 1000) }
+        guard let w = try? await wiedergabeHolen(id: n.id) else {
+            protokoll("Vorpuffer: Plan fuer \(n.id) nicht geholt")
+            return
+        }
+        let gilt: Bool = sperreLesen {
+            guard _wiedergabe?.naechste?.id == n.id, _vorbereitungFuer == n.id else { return false }
+            _vorbereitet = (w, Date())
+            return true
+        }
+        guard gilt else { return }
+        protokoll("Vorpuffer: Plan bereit nach \(ms()) ms · \(w.plan.method.rawValue)")
+        guard Vorpuffer.anfangLaden(adresse: w.plan.url, methode: w.plan.method) else { return }
+        do {
+            let bytes = try await Vorpuffer.anfangAnfordern(w.plan.url)
+            protokoll("Vorpuffer: Anfang vorgeladen \(bytes / 1024) KB nach \(ms()) ms")
+        } catch {
+            protokoll("Vorpuffer: Anfang nicht geladen (\(type(of: error)))")
+        }
+    }
+
+    /// **Gedrueckt halten = 2×** (`Festhaltetempo`, nur Handy): ob ein langer Druck jetzt beschleunigt.
+    /// Kein AirPlay auf Android — ein fremder Abspieler kommt hier nicht vor.
+    public static func festhaltenErlaubt(eingeschaltet: Bool, inGruppe: Bool, laeuft: Bool, spult: Bool) -> Bool {
+        Festhaltetempo.erlaubt(eingeschaltet: eingeschaltet, inGruppe: inGruppe, fremderAbspieler: false,
+                               laeuft: laeuft, spult: spult)
+    }
+    public static func festhaltetempo() -> Float { Festhaltetempo.tempo }
+    /// So lange muss der Finger liegen, in Millisekunden.
+    public static func festhaltenDruckdauer() -> Int { Int(Festhaltetempo.druckdauer * 1000) }
+    /// So weit darf er wandern, in Punkt (dp).
+    public static func festhaltenWegGrenze() -> Double { Festhaltetempo.wegGrenze }
+    public static func festhaltenDanach(vorher: Float) -> Float { Festhaltetempo.danach(vorher: vorher) }
+
+    /// **Der Regler rastet an den Kerben ein** (`Kerbenfang`): die Kerbe in Sekunden, `-1` wenn keine
+    /// nah genug ist. `breite` in dp, wie die Fangweite.
+    public static func kerbe(wert: Double, bis: Double, marken: [Double], breite: Double) -> Double {
+        Kerbenfang.kerbe(wert: wert, bis: bis, marken: marken, breite: breite) ?? -1
+    }
+
+    /// **Die Folgenkarte** (Variante C): Zeiten, Federn und Masse aus `Folgenkarte`, als JSON — fuer
+    /// Handy (`iPhone`-Masse) oder Fernseher. Federn als Eigenfrequenz ω, kritisch gedaempft: in Compose
+    /// `spring(dampingRatio = 1f, stiffness = ω²)`.
+    public static func folgenkarte(fernseher: Bool) -> String {
+        let m = fernseher ? Folgenkarte.fernseher : Folgenkarte.iPhone
+        return kodiert(Folgenkartenmasse(
+            breite: m.breite, ecke: m.ecke, ring: m.ring, abstand: m.abstand, klein: m.klein, titel: m.titel,
+            erscheinenOmega: Folgenkarte.erscheinenOmega, erscheinenVerzug: Folgenkarte.erscheinenVerzug,
+            wegOmega: Folgenkarte.wegOmega, zoomOmega: Folgenkarte.zoomOmega,
+            angabenAus: Folgenkarte.angabenAus, tausch: Folgenkarte.tausch, bildBlende: Folgenkarte.bildBlende,
+            versatz: Folgenkarte.versatz, startmass: Folgenkarte.startmass, fokusmass: Folgenkarte.fokusmass,
+            klickDruck: Folgenkarte.klickDruck, klickDauer: Folgenkarte.klickDauer,
+            untenAbstand: Folgenkarte.untenAbstand))
+    }
+    /// Die Kartenbreite fuer eine sichere Breite (dp) — auf schmalen Geraeten schmaler.
+    public static func folgenkarteBreite(sichereBreite: Double, gross: Bool, fernseher: Bool) -> Double {
+        Folgenkarte.breite(fernseher ? Folgenkarte.fernseher : Folgenkarte.iPhone,
+                           sichereBreite: sichereBreite, gross: gross)
+    }
+    /// Der Versatz beim Ziehen, eine Achse: vorwaerts (rechts, unten) frei, rueckwaerts zaeh.
+    public static func folgenkarteGezogen(_ weg: Double) -> Double { Folgenkarte.gezogen(weg, 0).x }
+    /// Ob ein Wisch die Karte wegschiebt (Weg und Schwung in dp).
+    public static func folgenkarteWeggewischt(x: Double, y: Double, schwungX: Double, schwungY: Double) -> Bool {
+        Folgenkarte.weggewischt(x: x, y: y, schwungX: schwungX, schwungY: schwungY)
+    }
+    /// Wann das Vorschaubild auszublenden beginnt, ab dem Start (s) — `Folgenkarte.blendeAb`.
+    public static func folgenkarteBlendeAb(bildSeit: Double) -> Double { Folgenkarte.blendeAb(bildSeit: bildSeit) }
+
+    /// **Die Bildfarbe** (`Bildtonrechnung`): bis zu fuenf Toene aus den Punkten eines Bildes (RGBA,
+    /// je vier Byte, hoechstens 48 Punkt Kante).
+    public static func bildtoene(rgba: [UInt8]) -> [Double] { Bildtonrechnung.toene(rgba: rgba) }
+    /// Das Netz einer Seite als ARGB-Punkte, `spalten` × `zeilen` — siehe `Bildtonrechnung.punkte`.
+    /// Ohne Auslauf (`auslauf` 0) der Grund einer ganzen Seite wie auf dem Fernseher.
+    public static func bildtonPunkte(toene: [Double], spalten: Int, zeilen: Int, hoehe: Double,
+                                     farbhoehe: Double, ab: Double, auslauf: Double) -> [Int32] {
+        Bildtonrechnung.punkte(toene, spalten: spalten, zeilen: zeilen, hoehe: hoehe,
+                               farbhoehe: farbhoehe, ab: ab, auslauf: auslauf)
+    }
+    /// Die Farbe an einer Stelle der Flaeche als ARGB — fuer die Staffelliste im Seitenton.
+    public static func bildtonFarbe(toene: [Double], x: Double, y: Double) -> Int32 {
+        let c = Bildtonrechnung.farbe(toene, x: x, y: y)
+        func k(_ w: Double) -> UInt32 { UInt32(max(0, min(255, (w * 255).rounded()))) }
+        return Int32(bitPattern: 0xFF00_0000 | (k(c.r) << 16) | (k(c.g) << 8) | k(c.b))
+    }
+
+    /// **Der Flug des Profilbilds beim Kontowechsel** (Entwurf D, `Kontowechselkurve`): die Bahn als Stuetzpunkte,
+    /// 120 je Sekunde bis zur Ruhe (`bahn`: x, y, Groesse je Punkt, in dp), dazu die Zeiten (Wechsel, Tausch,
+    /// Landung, Ringende) und der Ring (`ring`: Mass, Deckung je Punkt, 120 je Sekunde ueber 0,8 s).
+    public static func kontowechselKurve(vonX: Double, vonY: Double, groesse: Double, nachX: Double, nachY: Double,
+                                         zielgroesse: Double) -> String {
+        let k = Kontowechselkurve(vonX: vonX, vonY: vonY, groesse: groesse, nachX: nachX, nachY: nachY,
+                                  zielgroesse: zielgroesse)
+        let schritte = max(2, Int(k.tausch * 120))
+        var bahn: [Double] = []
+        bahn.reserveCapacity((schritte + 1) * 3)
+        for i in 0 ... schritte {
+            let b = k.lage(k.tausch * Double(i) / Double(schritte))
+            bahn += [b.x, b.y, b.s]
+        }
+        var ring: [Double] = []
+        for i in 0 ... 96 {
+            let r = Kontowechselkurve.ring(0.8 * Double(i) / 96)
+            ring += [r.mass, r.deckung]
+        }
+        return kodiert(Kontowechselantwort(tausch: k.tausch, landung: k.landung, ringEnde: k.ringEnde,
+                                           wechsel: k.wechsel, wachsen: Kontowechselkurve.wachsen,
+                                           zielgroesse: k.ziel, bahn: bahn, ring: ring))
+    }
+
+    /// **Aus „Weiterschauen" nehmen** — die Stelle auf null, gesehen bleibt (`stelleZuruecksetzen`).
+    public func ausWeiterschauenNehmen(id: String) async -> String {
+        await erledigen { try await $0.stelleZuruecksetzen(itemID: id) }
+    }
+
+    /// Was das geltende Konto vorgibt, **aus einer Anfrage**: `"<naechste>|<download>|<umwandeln>|<qualitaet>"`
+    /// — das vierte Feld ist `"1"`/`"0"`: ob beim Laden eine kleinere Qualitaet waehlbar ist
+    /// (`Downloadqualitaet.waehlbar`, Bild- und Tonrecht).
     /// — `EnableNextEpisodeAutoPlay`, `EnableContentDownloading` und
     /// `EnableVideoPlaybackTranscoding`, je `"1"`, `"0"` oder leer, wenn der Server nichts sagt.
     /// Wirft nie; ohne Antwort kommt `"||"`, und dann bleibt es bei der eigenen Wahl bzw. „an"
     /// und beim Recht `unbekannt`, also erlaubt.
     public func kontovorgaben() async -> String {
         func text(_ wert: Bool?) -> String { wert.map { $0 ? "1" : "0" } ?? "" }
-        guard let c = client, let v = await c.kontovorgaben() else { return "||" }
+        guard let c = client, let v = await c.kontovorgaben() else { return "|||1" }
         protokoll("Konto: Naechste Folge automatisch \(text(v.naechsteFolgeAutomatisch)), Downloads \(v.downloadrecht.rawValue)")
-        return "\(text(v.naechsteFolgeAutomatisch))|\(text(v.downloadsErlaubt))|\(text(v.umwandelnErlaubt))"
+        return "\(text(v.naechsteFolgeAutomatisch))|\(text(v.downloadsErlaubt))|\(text(v.umwandelnErlaubt))|\(v.downloadqualitaetWaehlbar ? "1" : "0")"
     }
 
     /// **Ob ein Ladeknopf erscheint** — der Schalter H1 *und* das Recht am Konto. Die Entscheidung
@@ -1119,8 +1477,13 @@ public final class Kern: @unchecked Sendable {
     /// Knopfdruck: dort stand noch der Zustand von davor. Einmal je Wechsel; vor dem Start, nach
     /// dem Stopp und waehrend eines Folgenwechsels nichts.
     public func laufzustandGemeldet(laeuft: Bool, position: Double) {
+        // Die Pause fuer den Ruecksprung — auch vor dem Start und ohne Meldung.
+        sperre.lock()
+        if laeuft { _wiedergabe?.pausiertSeit = nil }
+        else if _wiedergabe?.pausiertSeit == nil { _wiedergabe?.pausiertSeit = Date() }
+        sperre.unlock()
         guard let w = meldbar(), sperreLesen({ _gemeldetPausiert }) == laeuft else { return }
-        protokoll("sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(position)) s")
+        protokoll("sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(gekappt: position)) s")
         fortschrittMelden(w, sekunden: position, pausiert: !laeuft)
     }
 
@@ -1134,6 +1497,8 @@ public final class Kern: @unchecked Sendable {
         sperre.lock()
         guard var w = _wiedergabe else { sperre.unlock(); return "{}" }
         Wiedergabetakt.gesprungen(&w.stand, ziel: ziel)
+        // Ein Sprung in den Abspann oder ans Ende: der Countdown der Karte faengt von vorn an.
+        w.ebene.gesprungen()
         _ = Self.angebotNachziehen(&w, laeuft: false, vergangen: 0)
         _wiedergabe = w
         sperre.unlock()
@@ -1153,7 +1518,7 @@ public final class Kern: @unchecked Sendable {
     /// naechsten Takt. Der Wiedergabedienst haelt den Prozess am Leben; gewartet wird nicht.
     public func hintergrundMelden(position: Double, pausiert: Bool) {
         guard let w = meldbar() else { return }
-        protokoll("Hintergrund: \(Int(position)) s pausiert \(pausiert)")
+        protokoll("Hintergrund: \(Int(gekappt: position)) s pausiert \(pausiert)")
         fortschrittMelden(w, sekunden: position, pausiert: pausiert)
     }
 
@@ -1212,12 +1577,12 @@ public final class Kern: @unchecked Sendable {
                     zeilen.schreiben("Faehigkeiten nicht gemeldet")
                 }
                 try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, spuren: inhalt.spuren)
-                zeilen.schreiben("Start \(Int(inhalt.sekunden)) s \(item.id) session \(plan.playSessionID ?? "nil")"
+                zeilen.schreiben("Start \(Int(gekappt: inhalt.sekunden)) s \(item.id) session \(plan.playSessionID ?? "nil")"
                     + " Spuren \(spurtext(inhalt.spuren))")
             case let .fortschritt(pausiert):
                 try await client.reportProgress(itemID: item.id, plan: plan, positionTicks: ticks, paused: pausiert,
                                                 spuren: inhalt.spuren)
-                zeilen.schreiben("Progress \(Int(inhalt.sekunden)) s pausiert \(pausiert) \(item.id)"
+                zeilen.schreiben("Progress \(Int(gekappt: inhalt.sekunden)) s pausiert \(pausiert) \(item.id)"
                     + " Spuren \(spurtext(inhalt.spuren))")
             case .stopp:
                 try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
@@ -1272,10 +1637,18 @@ public final class Kern: @unchecked Sendable {
     private func stoppMelden(_ w: Wiedergabe, stelle: Double) async -> String {
         let s = sperreLesen { _sitzung }
         let ticks = JellyfinClient.ticks(fromSeconds: stelle)
+        let wann = Date()
         let ergebnis = await meldungen.meldenUndWarten(meldung(.stopp, w, sekunden: stelle))
+        // **Mit und ohne Netz**: der Download kennt seinen Stand selbst (1.0.5), und eine Meldung,
+        // die doch durchging, raeumt die liegende desselben Titels (`Nachmelderegeln.ueberholt`).
+        if let konto = s?.userID {
+            let vermerk = Stoppvermerk(itemID: w.item.id, konto: konto, ticks: ticks, wann: wann,
+                                       gesendet: ergebnis == .gesendet)
+            sperre.lock(); _stopps.append(vermerk); sperre.unlock()
+        }
         switch ergebnis {
         case .gesendet:
-            protokoll("Stopped \(Int(stelle)) s \(w.item.id) session \(w.plan.playSessionID ?? "nil")")
+            protokoll("Stopped \(Int(gekappt: stelle)) s \(w.item.id) session \(w.plan.playSessionID ?? "nil")")
             return ""
         case .verworfen:
             protokoll("Stopped doppelt verworfen \(w.item.id) session \(w.plan.playSessionID ?? "nil")")
@@ -1377,7 +1750,9 @@ public final class Kern: @unchecked Sendable {
     /// weil `wiedergabeWahlen` vorher die Bitratengrenze gesetzt hat — und die Stelle ist die
     /// Fortsetzstelle, nicht null. Antwort wie dort.
     public func qualitaetWechseln(position: Double) async -> String {
-        sperre.lock(); let wechsel = _folgenwechsel; let alt = _wiedergabe; sperre.unlock()
+        // Ein vorbereiteter Plan der naechsten Folge traegt die alte Wahl.
+        sperre.lock(); let wechsel = _folgenwechsel; let alt = _wiedergabe
+        _vorbereitet = nil; _vorbereitungFuer = nil; sperre.unlock()
         guard let alt else { return Self.kodiert(Wechselantwort(ergebnis: "gescheitert")) }
         let ablage = Wechselablage()
         let ergebnis = await wechsel.ausfuehren(Folgenwechsel.Schritte<Wiedergabe>(
@@ -1401,7 +1776,7 @@ public final class Kern: @unchecked Sendable {
                 if let w = _wiedergabe, Self.schluessel(w) == Self.schluessel(alt) { _wiedergabe?.stand.startGemeldet = false }
                 sperre.unlock()
             }))
-        protokoll("Qualität \(ergebnis) → \(alt.item.id) bei \(Int(position)) s")
+        protokoll("Qualität \(ergebnis) → \(alt.item.id) bei \(Int(gekappt: position)) s")
         var antwort = Wechselantwort(ergebnis: "\(ergebnis)")
         antwort.nachmeldung = ablage.nachmeldung
         switch ergebnis {
@@ -1420,10 +1795,27 @@ public final class Kern: @unchecked Sendable {
         guard let ziel = id.isEmpty ? alt.naechste?.id : id else {
             return Self.kodiert(Wechselantwort(ergebnis: "gescheitert"))
         }
+        // In den letzten Minuten schon geholt (`Vorpuffer`)? Dann wartet der Wechsel nicht noch einmal
+        // auf den Server — wie `Folgenvorbereitung.nimm` auf iOS. Einmal genommen, ist er verbraucht.
+        let vorbereitet: Wiedergabe? = sperreLesen {
+            defer { _vorbereitet = nil }
+            guard let v = _vorbereitet, v.w.item.id == ziel, Vorpuffer.frisch(vorbereitet: v.wann, jetzt: Date())
+            else { return nil }
+            return v.w
+        }
+        protokoll("Wechsel Beginn → \(ziel) · Plan vorbereitet: \(vorbereitet != nil ? "ja" : "nein")")
         let ablage = Wechselablage()
         let ergebnis = await wechsel.ausfuehren(Folgenwechsel.Schritte<Wiedergabe>(
             stoppen: { [self] in ablage.setzen(nachmeldung: await stoppMelden(alt, stelle: position)) },
             planen: { [self] in
+                if let vorbereitet {
+                    // Neu aufgesetzt, damit Start und Takt ab jetzt zaehlen, nicht ab der Vorbereitung.
+                    var n = Wiedergabe(item: vorbereitet.item, plan: vorbereitet.plan,
+                                       abschnitte: vorbereitet.abschnitte, naechste: vorbereitet.naechste)
+                    n.dateien = vorbereitet.dateien
+                    n.bild = vorbereitet.bild
+                    return n
+                }
                 do { return try await wiedergabeHolen(id: ziel) } catch {
                     ablage.setzen(fehler: kernFehlertext(error))
                     return nil
@@ -1606,7 +1998,7 @@ public final class Kern: @unchecked Sendable {
 
     /// Lesbare Namen fuer die Spurlisten. Ton: „Deutsch · AAC · 5.1" (b1b5f82) — aus der Spur selbst,
     /// fehlt dort der Codec, aus dem zugeordneten Strom. Untertitel: Sprache, bei gleichen Namen oder
-    /// einer Datei das Format; `erzwungen`/`datei` haengt Kotlin uebersetzt an. libVLC 3 nennt Spuren
+    /// einer Datei das Format; `erzwungen`/`hoergeschaedigt`/`datei` haengt Kotlin uebersetzt an. libVLC 3 nennt Spuren
     /// sonst „Track 1 - [English]".
     public func spurnamen(ton: String, untertitel: String) -> String {
         let tonspuren = Self.spuren(ton), utspuren = Self.spuren(untertitel)
@@ -1637,7 +2029,8 @@ public final class Kern: @unchecked Sendable {
             let doppelt = utStroeme.filter { ($0?.sprachname ?? "") == (strom.sprachname ?? "") }.count > 1
             let teile = [sprache, doppelt || strom.isExternal == true ? Technikangaben.codecname(strom.codec) : nil]
             return Spurname(id: eingabe.id, text: teile.compactMap { $0 }.joined(separator: " · "),
-                            erzwungen: strom.isForced == true, datei: strom.isExternal == true)
+                            erzwungen: strom.isForced == true, datei: strom.isExternal == true,
+                            hoergeschaedigt: strom.isHearingImpaired == true)
         }
         return Self.kodiert(Spurnamenantwort(ton: tonnamen, untertitel: utnamen))
     }
@@ -1814,6 +2207,102 @@ public final class Kern: @unchecked Sendable {
     /// Wie lange ein Netzwechsel als frisch gilt — ein Abriss am Filmende ohne Laenge zaehlt nur dann.
     public static func stromwachtNetzwechselFrist() -> Double { Stromwacht.netzwechselFrist }
 
+    // MARK: Erstbild — Vorlage `VLCPlayer.erstbildPruefen` auf Apple, Regel `Erstbild` im Paket
+
+    /// Rat fuer einen Strom, der noch nie ein Bild gezeigt hat. `bisher` ist ``Erstbild/Stufe`` als Zahl.
+    /// Antwort: `nichts`, `warten`, `ausgabeNeu`, `softwareDekoder` oder `aufgeben`.
+    public static func erstbildRat(hatVideospur: Bool, ausgenommen: Bool, gezeigt: Int, laufzeit: Double,
+                                   bisher: Int) -> String {
+        let stufe = Erstbild.Stufe(rawValue: bisher) ?? .keine
+        switch Erstbild.rat(hatVideospur: hatVideospur, ausgenommen: ausgenommen,
+                            gezeigt: UInt64(max(gezeigt, 0)), laufzeit: laufzeit, bisher: stufe) {
+        case .nichts: return "nichts"
+        case .warten: return "warten"
+        case .ausgabeNeu: return "ausgabeNeu"
+        case .softwareDekoder: return "softwareDekoder"
+        case .aufgeben: return "aufgeben"
+        }
+    }
+
+    /// Die Stufe nach einem Rat aus ``erstbildRat(hatVideospur:ausgenommen:gezeigt:laufzeit:bisher:)``.
+    public static func erstbildNaechste(rat: String, bisher: Int) -> Int {
+        let stufe = Erstbild.Stufe(rawValue: bisher) ?? .keine
+        let r: Erstbild.Rat = switch rat {
+        case "ausgabeNeu": .ausgabeNeu
+        case "softwareDekoder": .softwareDekoder
+        case "aufgeben": .aufgeben
+        default: .nichts
+        }
+        return Erstbild.naechste(nach: r, bisher: stufe).rawValue
+    }
+
+    /// Gelaufene Filmzeit zwischen zwei Blicken; `vorher` < 0: noch kein Vorwert.
+    public static func erstbildZuwachs(vorher: Double, jetzt: Double) -> Double {
+        Erstbild.zuwachs(vorher: vorher < 0 ? nil : vorher, jetzt: jetzt)
+    }
+
+    /// Der Hinweis fuers Technikschild, leer, solange nicht eingegriffen wurde.
+    public static func erstbildHinweis(stufe: Int) -> String {
+        Erstbild.hinweis(Erstbild.Stufe(rawValue: stufe) ?? .keine) ?? ""
+    }
+
+    /// Die `codec`-Option fuer den Software-Dekoder.
+    public static func erstbildSoftwareOption() -> String { Erstbild.softwareOption }
+
+    /// Codec der Bildspur laut Server, leer ohne Bildspur — dann greift die Erstbild-Regel nicht.
+    public func erstbildVideocodec() -> String {
+        sperre.lock(); let w = _wiedergabe; sperre.unlock()
+        guard let q = w?.plan.quelle, let v = Dateiangaben.videospur(q) else { return "" }
+        return v.codec ?? "?"
+    }
+
+    // MARK: Verzoegerung — Vorlage `Verzoegerung` im Paket, `VLCPlayer.verzoegerungNachziehen` auf Apple
+    //
+    // Der Wert reist als Millisekunden (immer ein Vielfaches des Schritts); jede Regel — Schritt,
+    // Grenze, Rundung, Anzeige, Behalten beim Folgenwechsel, Nachsetzen — steht im Paket.
+
+    /// Anzeige und Anschlaege: `{millisekunden, text, istNull, amAnfang, amEnde}`. `sprache` ist die
+    /// Geraetesprache (`de-DE`) — das Dezimalzeichen kommt aus ihr, nicht aus `Locale.current`.
+    public static func verzoegerungZustand(millisekunden: Int, sprache: String) -> String {
+        let v = Verzoegerung(millisekunden: millisekunden)
+        return kodiert(Verzoegerungsantwort(millisekunden: v.millisekunden,
+                                            text: v.text(locale: Locale(identifier: sprache)),
+                                            istNull: v.istNull, amAnfang: v.amAnfang, amEnde: v.amEnde))
+    }
+
+    /// Frueher (−1) oder spaeter (+1), um `schritte` Schritte (aus ``verzoegerungDruck(zeile:)``).
+    public static func verzoegerungVerschoben(millisekunden: Int, richtung: Int, schritte: Int) -> Int {
+        Verzoegerung(millisekunden: millisekunden).verschoben(richtung, schritte: schritte).millisekunden
+    }
+
+    /// Ein Druck auf − oder + in `zeile` — wie viele Schritte er zaehlt (`Haltezaehler`: gehalten schneller).
+    public func verzoegerungDruck(zeile: String) -> Int {
+        sperre.lock(); defer { sperre.unlock() }
+        var zaehler = _haltezaehler[zeile] ?? Verzoegerung.Haltezaehler()
+        let schritte = zaehler.druck()
+        _haltezaehler[zeile] = zaehler
+        return schritte
+    }
+
+    /// Beim Wechsel auf einen anderen Titel: derselbe Titel oder dieselbe Serie behaelt, sonst null.
+    /// Leere Serie heisst: keine.
+    public static func verzoegerungFuerNeuenTitel(millisekunden: Int, alterTitel: String, alteSerie: String,
+                                                  neuerTitel: String, neueSerie: String) -> Int {
+        Verzoegerung.fuerNeuenTitel(Verzoegerung(millisekunden: millisekunden),
+                                    alterTitel: alterTitel, alteSerie: alteSerie.isEmpty ? nil : alteSerie,
+                                    neuerTitel: neuerTitel, neueSerie: neueSerie.isEmpty ? nil : neueSerie).millisekunden
+    }
+
+    /// Fuer libVLC (`setSpuDelay`/`setAudioDelay`).
+    public static func verzoegerungMikrosekunden(millisekunden: Int) -> Int {
+        Verzoegerung(millisekunden: millisekunden).mikrosekunden
+    }
+
+    /// Liest libVLC etwas anderes als gewollt? Dann nachsetzen.
+    public static func verzoegerungWeichtAb(millisekunden: Int, gelesenMikrosekunden: Int) -> Bool {
+        Verzoegerung(millisekunden: millisekunden).weichtAb(vonMikrosekunden: gelesenMikrosekunden)
+    }
+
     // MARK: Fernsteuerung
 
     /// **Faehigkeiten melden und zuhoeren** — `AppModel.fernsteuerungStarten`. Beides ist noetig:
@@ -1830,19 +2319,193 @@ public final class Kern: @unchecked Sendable {
         _fern = steuerung
         sperre.unlock()
         let ablage = fernablage
+        // Gemeinsam schauen haengt am selben Kanal — vor `starten`, damit nichts verloren geht.
+        let sitzung = gemeinsam
+        await steuerung.syncPlayHoeren { sitzung.annehmen($0) }
+        // Der Hinweis zur Uebernahme kommt vor dem Stopp — `AppModel.uebergabeZiel` auf Apple.
+        await steuerung.uebergabeHoeren { ablage.hinweisAblegen($0) }
         await steuerung.starten { befehl in ablage.ablegen(befehl) }
+        await sitzung.rechtHolen()
     }
 
     /// Beim Abmelden und Kontowechsel — zuerst vergessen, damit ein neuer Start nicht an der alten haengt.
     public func fernsteuerungBeenden() async {
         sperre.lock(); let alt = _fern; _fern = nil; sperre.unlock()
+        await alt?.syncPlayHoeren(nil)
+        await alt?.uebergabeHoeren(nil)
         await alt?.beenden()
         _ = fernablage.abholen()
+        // Die Gruppe verlaesst schon `setzen`, mit dem Client des alten Kontos; ein offener Wunsch gehoert ihm auch.
+        gemeinsamWunsch.leeren()
     }
 
     /// Was seit dem letzten Abholen ankam — der Player holt es in seinem Takt ab.
     public func fernbefehle() -> String {
         Self.kodiert(fernablage.abholen())
+    }
+
+    // MARK: Gemeinsam schauen — Vorlage `Gemeinsammodell` (Sources/Shared), Ablauf in `SyncPlaySitzung`
+
+    /// Die Sitzung, beim ersten Zugriff angelegt. Sie fragt bei jedem Schritt nach dem Client, der
+    /// gerade gilt; ihre Mitteilungen landen als JSON in ``gemeinsamTafel``.
+    private var gemeinsam: SyncPlaySitzung {
+        sperre.lock(); defer { sperre.unlock() }
+        if let s = _gemeinsam { return s }
+        let s = SyncPlaySitzung(
+            client: { [weak self] in self?.client },
+            ich: { [weak self] in self?.sperreLesen { self?._sitzung?.userName } },
+            titelLaden: { [weak self] titel, ab in await self?.gemeinsamTitelLaden(titel, ab: ab) ?? false })
+        _gemeinsam = s
+        Task { [weak self] in
+            for await m in s.mitteilungen { self?.gemeinsamMitteilung(m) }
+        }
+        return s
+    }
+
+    private func gemeinsamMitteilung(_ m: SyncPlayMitteilung) {
+        sperre.lock()
+        switch m {
+        case let .lage(neu): _gemeinsamLage = neu
+        case let .fehler(f): _gemeinsamFehler = f.text; _gemeinsamFehlerNummer += 1
+        }
+        sperre.unlock()
+        gemeinsamVeroeffentlichen()
+    }
+
+    private func gemeinsamVeroeffentlichen() {
+        sperre.lock()
+        let antwort = Gemeinsamantwort(_gemeinsamLage, ich: _sitzung?.userName, fehler: _gemeinsamFehler,
+                                       fehlerNummer: _gemeinsamFehlerNummer, angenommen: _gemeinsamAngenommen)
+        sperre.unlock()
+        gemeinsamTafel.setzen(Self.kodiert(antwort))
+    }
+
+    /// Der Server hat Anlegen oder Beitreten angenommen — das Blatt darf zu, waehrend noch auf den
+    /// Steuerkanal gewartet wird.
+    private func gemeinsamAngenommen() {
+        sperre.lock(); _gemeinsamAngenommen += 1; sperre.unlock()
+        gemeinsamVeroeffentlichen()
+    }
+
+    /// **Die Gruppe setzt einen Titel** (`Gemeinsammodell.titelLaden`): ist ein Player angeschlossen,
+    /// wechselt er dort (`laden`-Schritt); sonst legt der Kern einen Wunsch ab, und Kotlin oeffnet den
+    /// Player. `false`, wenn es den Titel fuer dieses Konto nicht gibt.
+    private func gemeinsamTitelLaden(_ titel: String, ab: Double) async -> Bool {
+        guard let c = client, (try? await c.item(id: titel)) != nil else { return false }
+        sperre.lock(); let spieler = _gemeinsamSpieler; sperre.unlock()
+        if let spieler {
+            spieler.laden(titel, ab: ab)
+        } else {
+            gemeinsamWunsch.legen(Self.kodiert(Gemeinsamwunsch(titel: titel, ab: ab)))
+        }
+        return true
+    }
+
+    /// **Die Lage, sobald sie neuer ist als `nach`** — sofort, wenn sie es schon ist, sonst beim
+    /// naechsten Wechsel. `{"stand": n, "lage": {…}}`, die Lage wie ``Gemeinsamantwort``.
+    public func syncPlayLage(nach: Int) async -> String {
+        _ = gemeinsam
+        return await gemeinsamTafel.holen(nach: nach)
+    }
+
+    /// **Wartet, bis die Gruppe einen Player oeffnen will** — `{"titel": …, "ab": …}`. Leer, wenn der
+    /// Wunsch verworfen wurde (Abmelden) oder ein zweiter Aufruf diesen abloest.
+    public func syncPlayWunsch() async -> String {
+        await gemeinsamWunsch.holen()
+    }
+
+    /// Einmal nach Gruppen fragen — im Takt von „Hier weiterschauen", nicht solange der Player laeuft.
+    public func syncPlayAngeboteFragen() async {
+        await gemeinsam.angeboteFragen()
+    }
+
+    /// Gruppe oeffnen und gleich den Titel setzen. Ein leerer Name wird „Filmabend" (im Paket).
+    public func syncPlayAnlegen(name: String, titel: String) async -> Bool {
+        await gemeinsam.anlegen(name: name, titel: titel, angenommen: { [weak self] in self?.gemeinsamAngenommen() })
+    }
+
+    /// Einer Gruppe aus ``Gemeinsamantwort/angebote`` beitreten.
+    public func syncPlayBeitreten(gruppe: String) async -> Bool {
+        let s = gemeinsam
+        guard let g = await s.lage.angebote.first(where: { $0.id == gruppe }) else { return false }
+        return await s.beitreten(g, angenommen: { [weak self] in self?.gemeinsamAngenommen() })
+    }
+
+    /// „Wieder beitreten" im Streifen nach dem Verlassen.
+    public func syncPlayWiederBeitreten() async {
+        await gemeinsam.wiederBeitreten()
+    }
+
+    /// **Der Player ist offen.** Gehoert der Titel zu dem, was die Gruppe schaut, wird er angeschlossen,
+    /// und die Antwort ist eine Marke (> 0), mit der Kotlin Takt, Schritte und Abtrennen zuordnet.
+    /// `0`: nicht in der Gruppe — dann spielt der Player allein.
+    public func syncPlayAnschliessen(titel: String) async -> Int {
+        let s = gemeinsam
+        guard await s.lage.gehoertZurGruppe(titel) else { return 0 }
+        sperre.lock()
+        _gemeinsamMarke += 1
+        let spieler = Kernspieler(titel: titel, marke: _gemeinsamMarke)
+        let alt = _gemeinsamSpieler
+        _gemeinsamSpieler = spieler
+        _ohneNaechste = true
+        _wiedergabe?.naechste = nil
+        sperre.unlock()
+        alt?.schritte.leeren()
+        await s.anschliessen(spieler)
+        return spieler.marke
+    }
+
+    /// **Der Player geht zu — das ist das Verlassen** (Entwurf A).
+    public func syncPlayAbtrennen(marke: Int) {
+        sperre.lock()
+        guard let spieler = _gemeinsamSpieler, spieler.marke == marke, let s = _gemeinsam else { sperre.unlock(); return }
+        _gemeinsamSpieler = nil
+        _ohneNaechste = false
+        sperre.unlock()
+        spieler.schritte.leeren()
+        Task { await s.abtrennen() }
+    }
+
+    /// **Der Stand des Players, im Anzeigetakt** — und der Takt fuer die Sitzung (Puffern melden).
+    public func syncPlayTakt(marke: Int, titel: String, bereit: Bool, stelle: Double, laeuft: Bool) {
+        sperre.lock()
+        guard let spieler = _gemeinsamSpieler, spieler.marke == marke, let s = _gemeinsam else { sperre.unlock(); return }
+        let anstossen = !_gemeinsamTaktLaeuft
+        if anstossen { _gemeinsamTaktLaeuft = true }
+        sperre.unlock()
+        spieler.takt(titel: titel, bereit: bereit, stelle: stelle, laeuft: laeuft)
+        guard anstossen else { return }
+        Task { [weak self] in
+            await s.spielertakt()
+            self?.sperre.lock(); self?._gemeinsamTaktLaeuft = false; self?.sperre.unlock()
+        }
+    }
+
+    /// **Der naechste Schritt fuer den Player** — `{"art": "weiter"|"anhalten"|"springen"|"laden",
+    /// "wert": Sekunden, "titel": …}`. Kommt zurueck, sobald die Sitzung ihn gibt; leer, wenn der
+    /// Player abgetrennt ist.
+    public func syncPlaySchritt(marke: Int) async -> String {
+        sperre.lock(); let spieler = _gemeinsamSpieler; sperre.unlock()
+        guard let spieler, spieler.marke == marke else { return "" }
+        return await spieler.schritte.holen()
+    }
+
+    /// Anhalten und Weiter als Bitte an den Server. Der Knopf springt erst um, wenn der Befehl kommt.
+    public func syncPlayBitteUmschalten(laeuftGerade: Bool) {
+        let s = gemeinsam
+        Task { await s.bitteUmschalten(laeuftGerade: laeuftGerade) }
+    }
+
+    /// **Eine andere Folge, fuer alle** — die Folgenwahl im Player setzt in der Gruppe die Warteschlange
+    /// neu, statt allein zu wechseln (`SyncPlaySitzung.bitteTitel`).
+    public func syncPlayBitteTitel(titel: String) {
+        let s = gemeinsam
+        Task { await s.bitteTitel(titel) }
+    }
+
+    public func syncPlayBitteSpringen(auf sekunden: Double) {
+        let s = gemeinsam
+        Task { await s.bitteSpringen(auf: max(0, sekunden)) }
     }
 
     // MARK: Hier weiterschauen
@@ -1851,7 +2514,7 @@ public final class Kern: @unchecked Sendable {
     /// (`Uebernahme.angebote`: nicht wir, dasselbe Konto, nimmt Befehle, in den letzten 90 s bewegt)
     /// steht im Paket. **Ein Fehler ist hier kein Fehler**: dann gibt es eben kein Angebot.
     public func uebernahmeAngebote() async -> String {
-        sperre.lock(); let c = _client; let s = _sitzung; sperre.unlock()
+        sperre.lock(); let c = _client; let s = _sitzung; let a = _adressen; sperre.unlock()
         guard let c, let s, let alle = try? await c.fremdsitzungen() else { return "[]" }
         let angebote = Uebernahme.angebote(aus: alle, eigeneGeraeteID: geraeteID, eigeneBenutzerID: s.userID)
         return Self.kodiert(angebote.compactMap { f -> Angebotantwort? in
@@ -1866,11 +2529,74 @@ public final class Kern: @unchecked Sendable {
             }
             let stelle = f.stand?.stelle ?? 0
             return Angebotantwort(id: f.id, itemID: titel.id, geraet: f.geraetename, art: art,
-                                  titelzeile: f.titelzeile, stelle: stelle, stelleText: zeitText(stelle))
+                                  titelzeile: f.titelzeile, stelle: stelle, stelleText: zeitText(stelle),
+                                  bild: a.flatMap { Self.kartenbild(titel, adressen: $0) }, name: titel.name,
+                                  serie: titel.seriesName, staffelNr: titel.parentIndexNumber, folgeNr: titel.indexNumber)
         })
     }
 
-    /// Das andere Geraet anhalten. **Leer heisst: angehalten** — erst dann startet Android hier.
+    /// **Uebernehmen wie auf Apple** (`Uebernahmemodell.uebernehmen`): erst der Hinweis an den Abgeber
+    /// (nur an Swiftly, `Uebernahme.nimmtHinweis`), dann der Stopp, dann bis 1,5 s in 100-ms-Schritten
+    /// auf die Stelle warten, die der Abgeber beim Beenden meldet (`Uebernahme.startstelle`).
+    /// `eigenerName`: wie dieses Geraet im Hinweis heisst („Android", „Android TV") — der Abgeber
+    /// waehlt danach die Abflugrichtung (`Uebergabekarte.abflugNachOben`).
+    /// Antwort `{"grund": "", "ab": Sekunden}`; ein nicht leerer Grund heisst: hier nicht starten.
+    public func uebergeben(sitzung: String, itemID: String, stelle: Double, eigenerName: String) async -> String {
+        guard let c = client else { return Self.kodiert(Uebergabeantwort(grund: "nichtVerbunden", ab: stelle)) }
+        let uhr = Date()
+        func zeit(_ was: String) { protokoll("[Uebergabe] +\(Int(Date().timeIntervalSince(uhr) * 1000)) ms \(was)") }
+        zeit("Tipp")
+        async let gespeichertAbruf = try? c.item(id: itemID)
+        async let sitzungenAbruf = try? c.fremdsitzungen()
+        let vorher = await gespeichertAbruf?.userData?.playbackPositionTicks
+        let frisch = await sitzungenAbruf?.first { $0.id == sitzung }
+        let sitzungsstelle = frisch?.stand?.stelle ?? stelle
+        if let frisch, Uebernahme.nimmtHinweis(frisch) {
+            do { try await c.uebergabeHinweis(an: sitzung, geraet: eigenerName); zeit("Hinweis gesendet") }
+            catch { protokoll("[Uebergabe] Hinweis nicht gesendet: \(error)") }
+        }
+        do { try await c.fremdbefehl(.beenden, an: sitzung) }
+        catch { return Self.kodiert(Uebergabeantwort(grund: kernFehlertext(error), ab: stelle)) }
+        zeit("Stopp angenommen")
+        var nachher: Int64?
+        for _ in 0 ..< 15 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            let jetzt = (try? await c.item(id: itemID))?.userData?.playbackPositionTicks
+            if jetzt != vorher { nachher = jetzt; break }
+        }
+        let ab = Uebernahme.startstelle(sitzung: sitzungsstelle, gespeichertVorher: vorher, gespeichertNachher: nachher)
+        zeit(nachher == nil ? "Stelle nicht gemeldet" : "Stelle gemeldet")
+        protokoll("[Uebernahme] Sitzung \(Int(sitzungsstelle)) s, nach Stopp "
+            + "\(nachher.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(ab)) s")
+        return Self.kodiert(Uebergabeantwort(grund: "", ab: ab))
+    }
+
+    /// **Wer gerade uebernimmt**, wenn der letzte Hinweis frisch ist (`Uebernahme.istUebergabe`) — und nur
+    /// einmal: er gilt fuer genau diesen Stopp (`AppModel.uebergabeZielNehmen`). Leer: ein gewoehnlicher Stopp.
+    public func uebergabeZielNehmen() -> String {
+        fernablage.hinweisNehmen() ?? ""
+    }
+
+    // MARK: Uebergabe-Karte — Zeiten, Federn und Masse aus `Uebergabekarte` im Paket
+
+    /// Masse, Lagen und Zeiten fuer einen Schirm von `breite` × `hoehe` dp. `fernseher`: die Masse des
+    /// Fernsehers, in tvOS-Punkten gerechnet und halbiert (Android TV rechnet in der Haelfte).
+    public static func uebergabeLagen(breite: Double, hoehe: Double, fernseher: Bool) -> String {
+        kodiert(Uebergabebahn.lagen(breite: breite, hoehe: hoehe, fernseher: fernseher))
+    }
+
+    /// Wohin die Karte des Abgebers fliegt: zum groesseren Geraet nach oben (`Uebergabekarte.abflugNachOben`).
+    public static func uebergabeNachOben(von: String, nach: String) -> Bool {
+        Uebergabekarte.abflugNachOben(von: von, nach: nach)
+    }
+
+    /// **Die Bahn als Stuetzpunkte**, 120 je Sekunde — `Uebergabebahn.rechnen`. Eingabe und Antwort JSON, in dp.
+    public static func uebergabeBahn(eingabe: String) -> String {
+        guard let e = try? JSONDecoder().decode(Uebergabebahn.Eingabe.self, from: Data(eingabe.utf8)) else { return "{}" }
+        return kodiert(Uebergabebahn.rechnen(e))
+    }
+
+    /// Das Geraet anhalten. **Leer heisst: angehalten** — erst dann startet Android hier.
     /// Laeuft es dort weiter, stuenden zwei Tonspuren im Raum.
     public func uebernehmen(sitzung: String) async -> String {
         guard let c = client else { return "nichtVerbunden" }
@@ -1907,7 +2633,7 @@ public final class Kern: @unchecked Sendable {
                 serie: folge ? i.seriesName : nil, serienId: folge ? i.seriesId : nil,
                 staffel: folge ? i.parentIndexNumber : nil, folge: folge ? i.indexNumber : nil,
                 laufzeitTicks: i.runTimeTicks, container: q?.container, quelle: q?.id, bytes: q?.size ?? 0,
-                gesehen: i.userData?.played ?? false)
+                sehstand: i.userData, bildcodec: q?.bildcodec)
             let bild: URL? = folge ? await c.imageURL(for: i, maxHeight: 220)
                                    : a.bauen(itemID: i.id, marke: i.imageTags?["Primary"], mass: .hoechstensHoch(600))
             let serienbild: URL? = folge ? i.seriesId.flatMap { a.bauen(itemID: $0, marke: nil, mass: .hoechstensHoch(600)) } : nil
@@ -1918,11 +2644,59 @@ public final class Kern: @unchecked Sendable {
 
     /// Dieselbe Adresse wie beim Streamen, ohne Sitzung — sonst stuende das Geraet am Server als
     /// „spielt gerade" da. Nicht `/Items/{id}/Download`: das braucht ein eigenes Recht.
-    public func downloadAdresse(id: String, quelle: String) async throws -> String {
+    /// `qualitaet` ist der Rohwert von `Downloadqualitaet` (`"original"`, `"hd720"` …); leer oder
+    /// unbekannt gilt als Original. Umgewandelt kommt `/Videos/{id}/stream.mkv` mit `static=false`.
+    public func downloadAdresse(id: String, quelle: String, qualitaet: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let c = client else { throw Kernfehler.nichtVerbunden }
-            return try await c.downloadURL(itemID: id, mediaSourceID: quelle.isEmpty ? nil : quelle).absoluteString
+            return try await c.downloadURL(itemID: id, mediaSourceID: quelle.isEmpty ? nil : quelle,
+                                           qualitaet: Downloadqualitaet(rawValue: qualitaet) ?? .original).absoluteString
         }
+    }
+
+    // MARK: Qualitaet beim Laden — alles aus `Downloadqualitaet`, damit Kotlin nichts nachrechnet
+
+    private struct Qualitaetsantwort: Encodable { let id, zeile, plakette: String }
+
+    /// Die Stufen fuer eine Auswahl, Original zuerst. `dateien` ist JSON `[[bytes, ticks], …]` — die
+    /// hoechste Quellbitrate entscheidet, welche Stufen kleiner machen.
+    public static func downloadQualitaeten(waehlbar: Bool, dateien: String) -> String {
+        let paare = (try? JSONDecoder().decode([[Int64]].self, from: Data(dateien.utf8))) ?? []
+        let quelle = Downloadqualitaet.quellBitrate(paare.compactMap {
+            $0.count == 2 ? (bytes: $0[0], laufzeitTicks: $0[1] > 0 ? $0[1] : nil) : nil
+        })
+        return kodiert(Downloadqualitaet.angeboten(waehlbar: waehlbar, quellBitrate: quelle).map {
+            Qualitaetsantwort(id: $0.rawValue, zeile: $0.name + " · " + $0.zusatz(), plakette: $0.plakette())
+        })
+    }
+
+    /// Geschaetzte Groesse in einer Stufe — beim Original `bytes` selbst.
+    public static func downloadGeschaetzt(qualitaet: String, bytes: Int64, ticks: Int64) -> Int64 {
+        (Downloadqualitaet(rawValue: qualitaet) ?? .original)
+            .geschaetzteBytes(original: bytes, laufzeitTicks: ticks > 0 ? ticks : nil)
+    }
+
+    /// Was auf der Plakette steht: „Direct Play · Originalqualitaet" oder „720p · 4 Mbit/s".
+    public static func downloadPlakette(qualitaet: String) -> String {
+        (Downloadqualitaet(rawValue: qualitaet) ?? .original).plakette()
+    }
+
+    /// „720p" — fuer die Downloadliste; leer beim Original.
+    public static func downloadQualitaetName(qualitaet: String) -> String {
+        guard let q = Downloadqualitaet(rawValue: qualitaet), !q.istOriginal else { return "" }
+        return q.name
+    }
+
+    /// Die Posten (JSON-Liste, wie `downloadPosten` sie liefert) in einer anderen Qualitaet —
+    /// Matroska und geschaetzte Groesse (`Downloadposten.inQualitaet`).
+    public static func downloadInQualitaet(liste: String, qualitaet: String) -> String {
+        let q = Downloadqualitaet(rawValue: qualitaet) ?? .original
+        return kodiert(postenLesen(liste).map { $0.inQualitaet(q) })
+    }
+
+    /// Die Stufe, die alle Folgen einer Gruppe tragen — sonst leer (`Downloadqualitaet.gemeinsam`).
+    public static func downloadGemeinsam(liste: String) -> String {
+        Downloadqualitaet.gemeinsam(postenLesen(liste))?.name ?? ""
     }
 
     private static func postenLesen(_ roh: String) -> [Downloadposten] {
@@ -1965,49 +2739,82 @@ public final class Kern: @unchecked Sendable {
 
     public static func downloadGroesse(bytes: Int64) -> String { Downloadregeln.groesse(bytes) }
 
-    /// Gesehen und „noch auf dem Server" nachziehen. **Ohne Antwort bleibt alles, wie es war** —
+    /// Sehstand und „noch auf dem Server" nachziehen. **Ohne Antwort bleibt alles, wie es war** —
     /// unterwegs antwortet kein Server, und sonst stuende an jedem Titel „nicht mehr auf dem Server".
+    /// Ein neuerer Stand von hier bleibt (`Downloadregeln.nachziehen`, wie `Downloadverwaltung.nachziehen`).
     public func downloadsNachziehen(liste: String) async -> String {
         guard let c = client else { return liste }
         var posten = Self.postenLesen(liste)
         guard !posten.isEmpty else { return liste }
         let ids = posten.map(\.id)
         var vorhanden: Set<String> = []
-        var gesehen: Set<String> = []
+        var sehstand: [String: UserItemData] = [:]
         for ab in stride(from: 0, to: ids.count, by: 100) {
             let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
             guard let antwort = try? await c.items(limit: stueck.count, ids: stueck) else { return liste }
             for t in antwort.items {
                 vorhanden.insert(t.id)
-                if t.istGesehen { gesehen.insert(t.id) }
+                sehstand[t.id] = t.userData
             }
         }
         for i in posten.indices {
             posten[i].nochAufDemServer = vorhanden.contains(posten[i].id)
-            if vorhanden.contains(posten[i].id) { posten[i].gesehen = gesehen.contains(posten[i].id) }
+            if vorhanden.contains(posten[i].id) { posten[i] = Downloadregeln.nachziehen(posten[i], sehstand: sehstand[posten[i].id]) }
         }
         return Self.kodiert(posten)
     }
 
+    /// **Die Downloads des geltenden Kontos und die Netzlage** — nach jeder Aenderung der Liste und
+    /// jedem Netzwechsel. `ordner` ist der Ordner, in dem die Dateien liegen.
+    public func downloadsBekannt(liste: String, ordner: String, ohneNetz: Bool) {
+        let posten = Self.postenLesen(liste)
+        sperre.lock(); _downloads = posten; _downloadOrdner = ordner; _ohneNetz = ohneNetz; sperre.unlock()
+    }
+
+    /// **Vorspann und Abspann zum Ablegen** — nach dem Laden und fuer aeltere Downloads beim naechsten
+    /// Kontakt (`Downloadverwaltung.abschnitteHolen`). Leer heisst: keine Antwort, spaeter noch einmal;
+    /// sonst die Abschnitte als JSON, in der Form, in der `Downloadposten.abschnitte` sie traegt.
+    public func downloadAbschnitte(id: String) async -> String {
+        guard let c = client, let teile = await c.abschnitteZumAblegen(fuer: id) else { return "" }
+        protokoll("Abschnitte fuer \(id): \(teile.count)")
+        return Self.kodiert(teile)
+    }
+
+    /// Ab wo die Downloadliste abspielt, in Sekunden — `Downloadposten.fortsetzenAb`; 0 heisst von vorn.
+    public static func downloadFortsetzenAb(posten: String) -> Double {
+        (try? JSONDecoder().decode(Downloadposten.self, from: Data(posten.utf8)))?.fortsetzenAb ?? 0
+    }
+
+    /// **Was die Stopps seit dem letzten Abholen bedeuten** — Vorlage `AppModel.reportStopped`:
+    /// jeder Stopp eines Downloads vermerkt Stelle, gesehen und Zeitpunkt am Posten
+    /// (`Downloadposten.nachWiedergabe`), und ein angekommener raeumt die liegende Nachmeldung
+    /// desselben Titels (`Nachmelderegeln.ueberholt`). Antwort: `ablage` (die Nachmeldungen neu) und
+    /// `posten` (nur die geaenderten).
+    public func stoppsVerarbeiten(ablage: String, liste: String) -> String {
+        sperre.lock(); let stopps = _stopps; _stopps = []; sperre.unlock()
+        var meldungen = Self.nachmeldungenLesen(ablage)
+        var posten = Self.postenLesen(liste)
+        var geaendert: Set<String> = []
+        for s in stopps {
+            if s.gesendet { meldungen = Nachmelderegeln.ueberholt(itemID: s.itemID, konto: s.konto, in: meldungen) }
+            if let i = posten.firstIndex(where: { $0.id == s.itemID && $0.konto == s.konto }) {
+                posten[i] = posten[i].nachWiedergabe(ticks: s.ticks, wann: s.wann)
+                geaendert.insert(posten[i].id)
+            }
+        }
+        return Self.kodiert(Stoppantwort(ablage: Self.kodiert(meldungen), posten: posten.filter { geaendert.contains($0.id) }))
+    }
+
     /// Wiedergabe von der Platte — **vor jedem Server**, damit im Flugzeug kein Zeitlimit wartet.
-    /// `bild` ist die abgelegte Datei fuer die Mediensteuerung.
+    /// `bild` ist die abgelegte Datei fuer die Mediensteuerung. Abschnitte und naechste Folge stehen
+    /// sofort da, soweit sie ohne Server feststehen; den Rest bringt `wiedergabeNachschlagen`.
     public func wiedergabeVonDerPlatte(posten: String, pfad: String, bild: String) throws -> String {
         let p = try JSONDecoder().decode(Downloadposten.self, from: Data(posten.utf8))
-        let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: pfad), container: p.container, mediaSourceID: p.quelle)
-        let item = p.alsItem
-        let w = Wiedergabe(item: item, plan: plan, abschnitte: [], naechste: nil)
-        sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel(); sperre.unlock()
-        let istFolge = item.type == "Episode"
-        let kopfzeile = (istFolge && !(item.seriesName ?? "").isEmpty) ? item.seriesName! : item.name
-        return try json(Spielplanantwort(
-            url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
-            titel: item.name, untertitel: item.kontextzeile ?? "",
-            naechste: false, dateizeile: dateizeile(plan), serie: item.seriesName, kuerzel: item.folgenkuerzel,
-            bild: bild.isEmpty ? nil : bild,
-            itemId: item.id, episode: istFolge, serieId: item.seriesId, staffelId: item.seasonId,
-            kopfzeile: kopfzeile, staffelNr: istFolge ? item.parentIndexNumber : nil,
-            folgeNr: istFolge ? item.indexNumber : nil,
-            nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile)))
+        sperre.lock()
+        let w = Self.platte(p, datei: URL(fileURLWithPath: pfad), aus: _downloads, bild: bild.isEmpty ? nil : bild)
+        _wiedergabe = w; _folgenwechsel = Folgenwechsel()
+        sperre.unlock()
+        return try spielplanantwort(w)
     }
 
     // MARK: Nachmeldungen
@@ -2022,23 +2829,34 @@ public final class Kern: @unchecked Sendable {
         return kodiert(Nachmelderegeln.aufnehmen(m, in: nachmeldungenLesen(ablage)))
     }
 
-    /// Nach einer erfolgreichen Verbindung. **Beim ersten Fehler abbrechen** — dann ist der Server
-    /// wieder weg, und die uebrigen stuenden danach als verloren da.
+    /// Nach einer erfolgreichen Verbindung, vor dem Nachziehen der Downloads. **Was gilt, entscheidet
+    /// das Paket** (`JellyfinClient.nachmelden`): aelteste zuerst, ein neuerer Stand am Server gewinnt,
+    /// beim ersten Fehler bleibt der Rest liegen. **Nie zweimal gleichzeitig** — Vorlage
+    /// `AppModel.nachmeldungenAbschicken`. Antwort: die erledigten Kennungen als JSON; Kotlin nimmt sie
+    /// aus der Ablage, wie sie **dann** ist (`nachmeldungenErledigt`) — waehrend des Wartens kann eine
+    /// neue dazugekommen sein.
     public func nachmeldungenAbschicken(ablage: String) async -> String {
-        sperre.lock(); let c = _client; let s = _sitzung; sperre.unlock()
-        let alle = Self.nachmeldungenLesen(ablage)
-        guard let c, let konto = s?.userID else { return ablage }
-        let offen = Nachmelderegeln.faellig(alle, konto: konto)
-        guard !offen.isEmpty else { return ablage }
-        var geschafft: [String] = []
-        for m in offen {
-            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
-            do {
-                try await c.reportStopped(itemID: m.itemID, plan: plan, positionTicks: m.ticks)
-                geschafft.append(m.id)
-            } catch { break }
+        sperre.lock()
+        let c = _client, s = _sitzung, frei = !_nachmeldenLaeuft
+        if frei, c != nil, s != nil { _nachmeldenLaeuft = true }
+        sperre.unlock()
+        guard frei, let c, let konto = s?.userID else { return "[]" }
+        defer { sperre.lock(); _nachmeldenLaeuft = false; sperre.unlock() }
+        let offen = Nachmelderegeln.faellig(Self.nachmeldungenLesen(ablage), konto: konto)
+        guard !offen.isEmpty else { return "[]" }
+        let zeilen = protokollzeilen
+        let erledigt = await c.nachmelden(offen) { zeile in
+            zeilen.schreiben(zeile)
+            Protokollring.geteilt.anhaengen(zeile)
         }
-        return Self.kodiert(Nachmelderegeln.erledigt(geschafft, in: alle))
+        return Self.kodiert(erledigt)
+    }
+
+    /// Die erledigten Nachmeldungen aus der Ablage nehmen (`Nachmelderegeln.erledigt`).
+    public static func nachmeldungenErledigt(ablage: String, erledigt: String) -> String {
+        let ids = (try? JSONDecoder().decode([String].self, from: Data(erledigt.utf8))) ?? []
+        guard !ids.isEmpty else { return ablage }
+        return kodiert(Nachmelderegeln.erledigt(ids, in: nachmeldungenLesen(ablage)))
     }
 
     // MARK: Seerr
@@ -2267,7 +3085,7 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Ladeauswahl und Downloadfortschritt
 
-    private struct Ladeauswahlfolge: Encodable { let id, name: String; let gesehen: Bool; let bytes: Int64 }
+    private struct Ladeauswahlfolge: Encodable { let id, name: String; let gesehen: Bool; let bytes: Int64; let ticks: Int64 }
     private struct Fussplatzantwort: Encodable { let reicht: Bool; let bytes: Int64 }
     private struct Naechstefolgeantwort: Encodable { let id, knopftext: String }
 
@@ -2280,7 +3098,7 @@ public final class Kern: @unchecked Sendable {
             let liste = try await c.folgen(seriesID: serie, seasonID: staffel.isEmpty ? nil : staffel)
             return try json(liste.map {
                 Ladeauswahlfolge(id: $0.id, name: $0.name, gesehen: $0.userData?.played ?? false,
-                                 bytes: $0.mediaSources?.first?.size ?? 0)
+                                 bytes: $0.mediaSources?.first?.size ?? 0, ticks: $0.runTimeTicks ?? 0)
             })
         }
     }
@@ -2639,6 +3457,14 @@ public final class Kern: @unchecked Sendable {
 
 // MARK: Antworten — was Kotlin liest
 
+struct Verzoegerungsantwort: Encodable {
+    let millisekunden: Int
+    let text: String
+    let istNull: Bool
+    let amAnfang: Bool
+    let amEnde: Bool
+}
+
 struct Serverantwort: Encodable { let name, version, adresse: String }
 struct Startseitenantwort: Encodable { let reihen: [Reihenantwort]; let gestoert: Bool }
 struct Reihenantwort: Encodable {
@@ -2752,6 +3578,22 @@ struct Spielplanantwort: Encodable {
     let nebenzeile: String?
     /// Die Grenzen der Abschnitte (Vorspann, Abspann …) — Kerben im Zeitregler, wie am iPhone.
     var marken: [Double] = []
+    /// ``PlaybackPlan/softwareDekoder`` — XviD/DivX gleich ohne MediaCodec.
+    var softwareDekoder = false
+    /// Die Karte der naechsten Folge (Folgenkarte C): Kennung, Name, „S6 • F11", Standbild.
+    var naechsteFolge: Folgenkartenantwort? = nil
+    /// Das Bild der Uebergabe-Karte, falls das Standbild schwarz ist (`Uebernahmemodell.kartenbildURL`).
+    var kartenbild: String? = nil
+}
+struct Folgenkartenantwort: Encodable { let id, name, kuerzel: String; let bild: String? }
+struct Kontowechselantwort: Encodable {
+    let tausch, landung, ringEnde, wechsel, wachsen, zielgroesse: Double
+    let bahn, ring: [Double]
+}
+struct Folgenkartenmasse: Encodable {
+    let breite, ecke, ring, abstand, klein, titel: Double
+    let erscheinenOmega, erscheinenVerzug, wegOmega, zoomOmega: Double
+    let angabenAus, tausch, bildBlende, versatz, startmass, fokusmass, klickDruck, klickDauer, untenAbstand: Double
 }
 struct Wechselantwort: Encodable {
     let ergebnis: String
@@ -2836,6 +3678,8 @@ struct Kachelantwort: Encodable {
     let angabenzeile: String?
     /// „Noch 50 Minuten" — wie `Restzeitmarke`. `nil` heisst: nichts angefangen.
     let restzeit: String?
+    /// „S2 · F5 · noch 12 Min." unter einer Weiterschauen-Kachel (Entwurf D) — `Item.weiterschauenzeile`.
+    var weiterschauenzeile: String? = nil
     let gesehen: Bool
     /// Nur bei einer Folge gesetzt — der Serienname steht schon in `name`.
     let folgenname: String?
@@ -2853,6 +3697,7 @@ struct Kachelantwort: Encodable {
 }
 
 struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }
+struct Stoppantwort: Encodable { let ablage: String; let posten: [Downloadposten] }
 struct Platzantwort: Encodable {
     let reicht: Bool
     let freiDanach: Int64
@@ -2863,9 +3708,19 @@ struct Platzantwort: Encodable {
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
 struct Planantwort: Encodable { let lossless: Bool; let methode: String }
 struct Trickplayantwort: Encodable { let breite, hoehe, kachelnBreit, kachelnHoch, anzahl, intervall: Int }
-struct Angebotantwort: Encodable { let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String }
+struct Angebotantwort: Encodable {
+    let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String
+    /// Fuer die Uebergabe-Karte: ihr Bild (`Uebernahmemodell.kartenbildURL`) und die Zeilen darunter
+    /// (`Uebergabestil.zeilen`: Serie und „Staffel · Folge", sonst der Titel).
+    var bild: String? = nil
+    var name: String = ""
+    var serie: String? = nil
+    var staffelNr: Int? = nil
+    var folgeNr: Int? = nil
+}
 
 struct Fernbefehlantwort: Encodable { let art: String; let wert: Double? }
+struct Gemeinsamwunsch: Encodable { let titel: String; let ab: Double }
 
 /// Nimmt Befehle aus dem Socket entgegen, bis der Player sie abholt. Eigene Sperre — der Socket ruft
 /// von seinem eigenen Faden aus.
@@ -2896,6 +3751,20 @@ final class Befehlsablage: @unchecked Sendable {
         befehle = []
         return alle
     }
+
+    /// Der Uebernahme-Hinweis: wer gleich uebernimmt, und wann er kam (`AppModel.uebergabeZiel`).
+    private var hinweis: (name: String, zeit: Date)?
+
+    func hinweisAblegen(_ name: String) {
+        sperre.lock(); hinweis = (name, Date()); sperre.unlock()
+    }
+
+    /// Einmal abholen; nur, wenn er frisch ist (`Uebernahme.istUebergabe`).
+    func hinweisNehmen() -> String? {
+        sperre.lock(); let h = hinweis; hinweis = nil; sperre.unlock()
+        guard let h else { return nil }
+        return Uebernahme.istUebergabe(hinweisVor: Date().timeIntervalSince(h.zeit)) ? h.name : nil
+    }
 }
 
 /// Eine Spur aus libVLC, wie Kotlin sie hereinreicht.
@@ -2924,5 +3793,5 @@ struct Spureingabe: Decodable {
 }
 struct Untertiteldateiantwort: Encodable { let index: Int; let adresse: String }
 struct Spurwahlantwort: Encodable { let ton: Int?; let untertitel: Int }
-struct Spurname: Encodable { let id: Int; let text: String; let erzwungen: Bool; let datei: Bool }
+struct Spurname: Encodable { let id: Int; let text: String; let erzwungen: Bool; let datei: Bool; var hoergeschaedigt = false }
 struct Spurnamenantwort: Encodable { let ton: [Spurname]; let untertitel: [Spurname] }

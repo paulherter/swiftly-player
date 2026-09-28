@@ -59,7 +59,7 @@ fun TvErweitert(zeilen: SnapshotStateList<Kopfzeile>, aufgeklappt: Boolean = fal
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                             TvFeld(zeile.name, { zeile.name = it }, uebersetzt("Header-Name"), Modifier.weight(1f))
                             TvFeld(zeile.wert, { zeile.wert = it }, uebersetzt("Wert"), Modifier.weight(1f), geheim = true)
-                            TvKnopf(null, Zeichen.Minus) { zeilen.removeAll { it.id == zeile.id } }
+                            TvKnopf(null, Zeichen.Minus, beschreibung = uebersetzt("Entfernen")) { zeilen.removeAll { it.id == zeile.id } }
                         }
                         if (zeile.gesperrt) Text(uebersetzt("Den setzt Swiftly selbst."), style = TvStil.klein, color = Stil.warnung)
                     }

@@ -1,6 +1,9 @@
 import Foundation
 import JellyfinKit
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Hält nach, ob auf einem anderen Gerät gerade etwas läuft.
 ///
@@ -151,6 +154,7 @@ final class Uebernahmemodell {
             }
         } else {
             letzterGrund = nil
+            kartenbilderVorladen(model)
         }
     }
 
@@ -183,6 +187,16 @@ final class Uebernahmemodell {
               let client = model.client, !uebernimmt else { return nil }
         uebernimmt = true
         defer { uebernimmt = false }
+        // **Jeder Schritt mit seiner Zeit ab dem Tipp.** Die Karte schwebt,
+        // bis das erste Bild steht; wie lange das dauert und woran es hängt,
+        // steht so im Protokoll.
+        let uhr = ContinuousClock.now
+        func zeit(_ was: String) {
+            let d = ContinuousClock.now - uhr
+            let ms = Int(d.components.seconds * 1000 + d.components.attoseconds / 1_000_000_000_000_000)
+            Protokoll.schreib("[Uebergabe] +\(ms) ms \(was)")
+        }
+        zeit("Tipp auf \(sitzung.geraetename ?? "?")")
 
         async let planAbruf = model.plan(for: titel.id)
         async let gespeichertAbruf = model.item(id: titel.id)
@@ -193,34 +207,81 @@ final class Uebernahmemodell {
                          model: model)
             return nil
         }
+        zeit("Plan da")
         let vorher = await gespeichertAbruf?.userData?.playbackPositionTicks
         // Die frischeste Stelle, die die Sitzung kennt — die aus dem Abzeichen
         // kann eine Abfrage alt sein.
         let frisch = await sitzungenAbruf?.first { $0.id == sitzung.id }?.stand?.stelle
         let sitzungsstelle = frisch ?? sitzung.stand?.stelle ?? 0
 
+        // **Erst der Hinweis, dann der Stopp.** Nur so weiß der Abgeber,
+        // dass sein Stopp eine Übergabe ist — dann geht sein Bild als Karte
+        // ab und er zeigt, wo es weiterläuft. Scheitert der Hinweis, schließt
+        // er eben wie bei einem Stopp aus dem Dashboard; die Übergabe selbst
+        // hängt nicht daran.
+        if Uebernahme.nimmtHinweis(sitzung) {
+            do {
+                try await client.uebergabeHinweis(an: sitzung.id, geraet: Self.eigenerName)
+                zeit("Hinweis gesendet")
+            } catch {
+                Protokoll.schreib("[Uebergabe] Hinweis nicht gesendet: \(error)")
+            }
+        }
         do {
             try await client.fremdbefehl(.beenden, an: sitzung.id)
         } catch {
             fehlerZeigen(lesbarerFehler(error), model: model)
             return nil
         }
+        zeit("Stopp angenommen")
 
         // Auf den Stopp des anderen Geräts warten, höchstens anderthalb
-        // Sekunden. Kommt nichts, gilt die Sitzungsstelle.
+        // Sekunden. Kommt nichts, gilt die Sitzungsstelle. In Schritten von
+        // 100 ms statt 250: jeder verschlafene Schritt verzögerte den Start.
         var nachher: Int64?
-        for _ in 0..<6 {
-            try? await Task.sleep(for: .milliseconds(250))
+        for _ in 0..<15 {
+            try? await Task.sleep(for: .milliseconds(100))
             let jetzt = await model.item(id: titel.id)?.userData?.playbackPositionTicks
             if jetzt != vorher { nachher = jetzt; break }
         }
         let ab = Uebernahme.startstelle(sitzung: sitzungsstelle, gespeichertVorher: vorher,
                                         gespeichertNachher: nachher)
+        zeit(nachher == nil ? "Stelle nicht gemeldet" : "Stelle gemeldet")
         Protokoll.schreib("[Uebernahme] Sitzung \(Int(sitzungsstelle)) s, nach Stopp "
             + "\(nachher.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(ab)) s")
         // Damit das Abzeichen nicht noch einen Takt lang stehenbleibt.
         angebote = []
         return (titel, ab, plan)
+    }
+
+    /// Wie dieses Gerät im Hinweis an den Abgeber heißt (dort im Protokoll).
+    /// Produktnamen, nicht übersetzt.
+    static var eigenerName: String {
+        #if os(tvOS)
+        "Apple TV"
+        #elseif os(macOS)
+        "Mac"
+        #else
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        #endif
+    }
+
+    /// **Das Bild der Karte** — bei Folgen das Bild der Folge (es zeigt,
+    /// *wo* man ist), sonst das Querbild des Titels.
+    static func kartenbildURL(_ titel: Item, model: AppModel) -> URL? {
+        if titel.seriesId != nil, titel.imageTags?["Primary"] != nil {
+            return model.folgenbildURL(for: titel)
+        }
+        return model.querbildURL(for: titel, breite: 1280)
+    }
+
+    /// Holt die Bilder der Angebote vorab, damit die Karte beim Tipp nicht
+    /// auf das Netz wartet.
+    private func kartenbilderVorladen(_ model: AppModel) {
+        for s in angebote.prefix(2) {
+            guard let titel = s.laeuft, let url = Self.kartenbildURL(titel, model: model) else { continue }
+            Task { _ = await Bildspeicher.geteilt.laden(url, kante: 1280) }
+        }
     }
 
     /// Bisher landete `fehler` nirgends — die Ansichten lesen ihn nicht.

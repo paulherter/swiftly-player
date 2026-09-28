@@ -41,6 +41,32 @@ struct HomeView: View {
     /// Wo die Seite steht — als eigenes Objekt, damit ein Scrolltakt nicht den
     /// ganzen Rumpf neu auswertet. Begründung an `Kopfstand`.
     @State private var kopfstand = Kopfstand()
+    /// Der laufende Ladevorgang — **es gibt immer nur einen.** Kontowechsel,
+    /// Einstellung, Rückkehr ins Fenster und Ende der Wiedergabe stiessen
+    /// vorher je einen eigenen an, und die liefen nebeneinander her.
+    @State private var ladeaufgabe: Task<Void, Never>?
+
+    /// **Ein Kontowechsel läuft** (Entwurf D, wie am iPhone): die Reihen
+    /// sind aus und kommen erst, wenn Inhalt da ist und das Bild gelandet ist
+    /// — dann gestaffelt (``Reihenauftritt``).
+    @State private var wechsel = false
+    @State private var aufbau = false
+    /// Die Reihen stehen — kein Wechsel unterwegs. Beim Klick in der
+    /// Profilseite gehen sie sofort aus, noch bevor das Konto wechselt.
+    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
+    /// Die Reihen stehen im Baum — außer zwischen Klick und Freigabe: was
+    /// mitten im Flug ankommt, wird nicht gesetzt und nicht entschlüsselt.
+    private var gebaut: Bool { zeigen || aufbau }
+    /// Es gibt etwas zu zeigen, und nichts liegt mehr davor.
+    private var freigegeben: Bool {
+        (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
+    }
+
+    private var festeReihen: [Startreihe] {
+        model.startReihen.filter {
+            !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -68,18 +94,19 @@ struct HomeView: View {
 
                 // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
                 // Einstieg, kein Inhalt: ein Klick öffnet das Genre.
-                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+                if gebaut {
+                if model.genreChips, !model.startGenres.isEmpty {
+                    gattungschips.reihenauftritt(0, da: zeigen)
+                }
 
                 // **Die festen Reihen in der eingestellten Reihenfolge**, ohne
                 // die ausgeblendeten — Einstellungen → Darstellung → Startseite.
-                ForEach(model.startReihen.filter {
-                    !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
-                }) { reihe in
-                    feste(reihe)
+                ForEach(Array(festeReihen.enumerated()), id: \.element) { i, reihe in
+                    feste(reihe).reihenauftritt(i + 1, da: zeigen)
                 }
 
                 // Die gewählten Genres als eigene Reihen, nach den festen.
-                ForEach(stand.gattungsreihen) { gattung in
+                ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, gattung in
                     Reihe(name: gattung.name) {
                         ForEach(gattung.items, id: \.id) { titel in
                             Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
@@ -88,11 +115,17 @@ struct HomeView: View {
                                              bild: model.imageURL(for: titel, hochkant: true),
                                              fortschritt: fortschritt(titel),
                                              zeichen: zeichen(titel),
-                                             vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
+                                             vorholen: {
+                Serienspeicher.geteilt.vorholen(titel, mit: model)
+                Planvorrat.vorholen(titel, mit: model)
+            })
                             }
                             .buttonStyle(Stil.Druckknopf())
+                            .kachelmenue(titel, model: model)
                         }
                     }
+                    .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                }
                 }
 
                 // **Gestört ist nicht leer.** Das Modell weiss den
@@ -158,7 +191,10 @@ struct HomeView: View {
         // erst nach einer neuen Abfrage fest. Ohne das sah man seine eigene
         // Einstellung erst beim nächsten Start und hielt sie für wirkungslos.
         .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
-            await auffrischen()
+            // Läuft ein Kontowechsel, lädt der — nicht das Erscheinen, das
+            // mit ihm zusammenfällt (sonst holte es noch das alte Konto).
+            if Kontowechselflug.geteilt.wartet { return }
+            await alleinAuffrischen()
         }
         // **Der Kontowechsel hängt nicht an `phase`.**
         //
@@ -172,7 +208,19 @@ struct HomeView: View {
         // Und es geht über `auffrischen()`, nicht über `laden()`: das würde
         // an `stand.geladen` abprallen. Geleert wird nichts — `Startseiten-
         // modell` ersetzt die Reihen selbst, sobald die neuen da sind.
-        .onChange(of: model.kontowechsel) { _, _ in Task { await auffrischen() } }
+        // **Erst aus, dann laden, dann gestaffelt ein** (Entwurf D, wie am
+        // iPhone).
+        .onChange(of: model.kontowechsel) { _, _ in
+            Kontowechselflug.notiz("wechsel: startseite blendet aus")
+            wechsel = true
+            Task {
+                await alleinAuffrischen()
+                if wechsel, freigegeben { einblenden() }
+            }
+        }
+        .onChange(of: freigegeben) { _, jetzt in
+            if jetzt, wechsel { einblenden() }
+        }
         // **Auch beim Zurückkommen ins Fenster** (D8).
         //
         // `.task` deckt „Ansicht erscheint" ab — also den Leistenwechsel und
@@ -189,7 +237,7 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             guard stand.brauchtAuffrischung else { return }
-            Task { await auffrischen() }
+            neuAuffrischen()
         }
         // **Und beim Schliessen des Players** (D8) — die zweite Haelfte der
         // Regel, und sie fehlte.
@@ -209,7 +257,7 @@ struct HomeView: View {
         // **Nach der Endmeldung, nicht beim Zumachen.** Beim Zumachen ist sie
         // noch unterwegs; die Abfrage bekam den Stand des letzten Takts.
         // Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in neuAuffrischen() }
     }
 
     /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
@@ -221,7 +269,11 @@ struct HomeView: View {
             if !weiter.isEmpty {
                 Reihe(titel: "Weiterschauen", quer: true) {
                     ForEach(weiter, id: \.id) { titel in
-                        Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
+                        // **Die Zeile nennt die Restzeit** (Entwurf D, wie am
+                        // iPhone): „S2 · F5 · noch 12 Min." — das Bild bleibt
+                        // frei, die Angabe steht, wo das Kürzel ohnehin stand.
+                        Querkachel(titel: kopf(titel),
+                                   zweitzeile: titel.weiterschauenzeile ?? titel.kontextzeile,
                                    // **Fehlt das waagerechte Bild, tritt das
                                    // Plakat ein** — beschnitten, aber immer
                                    // noch das Cover und kein Standbild.
@@ -231,8 +283,13 @@ struct HomeView: View {
                                    fortschritt: fortschritt(titel),
                                    zeichen: zeichen(titel),
                                    auswahl: { steuerung.starte(titel) },
-                                   uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
-                                   vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
+                                   vorholen: {
+                Serienspeicher.geteilt.vorholen(titel, mit: model)
+                Planvorrat.vorholen(titel, mit: model)
+            })
+                            // Ein Klick startet; die Übersicht steht im Menü.
+                            .kachelmenue(titel, model: model, weiterschauen: true,
+                                         uebersicht: { navigator.oeffne(.titel(titel), in: bereich) })
                     }
                 }
             }
@@ -257,9 +314,13 @@ struct HomeView: View {
                                          zweitzeile: folge.folgenkuerzel,
                                          bild: model.imageURL(for: folge, hochkant: true),
                                          zeichen: zeichen(folge),
-                                         vorholen: { Serienspeicher.geteilt.vorholen(folge, mit: model) })
+                                         vorholen: {
+                Serienspeicher.geteilt.vorholen(folge, mit: model)
+                Planvorrat.vorholen(folge, mit: model)
+            })
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(folge, model: model)
                     }
                 }
             }
@@ -288,9 +349,13 @@ struct HomeView: View {
                                      zweitzeile: eintrag.neuzugangszeile,
                                      bild: model.imageURL(for: eintrag, hochkant: true),
                                      zeichen: zeichen(eintrag),
-                                     vorholen: { Serienspeicher.geteilt.vorholen(eintrag, mit: model) })
+                                     vorholen: {
+                Serienspeicher.geteilt.vorholen(eintrag, mit: model)
+                Planvorrat.vorholen(eintrag, mit: model)
+            })
                     }
                     .buttonStyle(Stil.Druckknopf())
+                    .kachelmenue(eintrag, model: model)
                 }
             }
         }
@@ -342,11 +407,39 @@ struct HomeView: View {
 
     /// Fernseher für alles, was zu einer Serie gehört, sonst Filmstreifen —
     /// dieselbe Unterscheidung wie in der iPhone-Fassung.
-    private func zeichen(_ titel: Item) -> String { titel.seriesId != nil ? "tv" : "film" }
+    private func zeichen(_ titel: Item) -> String { titel.kachelzeichen }
 
     private func laden() async {
         guard !stand.geladen else { return }
-        await auffrischen()
+        await alleinAuffrischen()
+    }
+
+    /// Startet `auffrischen()` neu und bricht den vorigen Lauf ab.
+    /// Die Reihen einmal unsichtbar bauen, dann gestaffelt zeigen — wie am
+    /// iPhone.
+    private func einblenden() {
+        guard !aufbau else { return }
+        Kontowechselflug.notiz("wechsel 6: reihen werden gebaut")
+        aufbau = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            Kontowechselflug.notiz("wechsel 7: reihen kommen gestaffelt")
+            wechsel = false
+            aufbau = false
+        }
+    }
+
+    private func neuAuffrischen() {
+        Task { await alleinAuffrischen() }
+    }
+
+    /// `auffrischen()` als einziger Lauf: der vorige wird abgebrochen, und
+    /// wird dieser abgebrochen (`.task(id:)`), geht der Abbruch weiter.
+    private func alleinAuffrischen() async {
+        ladeaufgabe?.cancel()
+        let aufgabe = Task { await auffrischen() }
+        ladeaufgabe = aufgabe
+        await withTaskCancellationHandler { await aufgabe.value } onCancel: { aufgabe.cancel() }
     }
 
     /// Holt neu, ohne die Reihen vorher zu leeren — der alte Stand bleibt

@@ -41,6 +41,9 @@ enum Playermass {
     static let spalte: CGFloat = 500
     static let spaltenAbstand: CGFloat = 114
     static let spaltenOben: CGFloat = 152
+    /// Einzug der Zeilen auf den Ebenen — Spaltentitel, Wahlzeile und
+    /// Verzögerung stehen damit auf einer Textkante.
+    static let einzug: CGFloat = 26
 
     /// Wie breit die Symbolreihe ist — der stehende Titel hält ihr den Platz frei.
     static func symbolreihe(anzahl: Int) -> CGFloat {
@@ -139,7 +142,7 @@ private struct Wahlspalte<Inhalt: View>: View {
                 .tracking(Stil.sperrungUnterseite)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
-                .padding(.horizontal, 26)
+                .padding(.horizontal, Playermass.einzug)
                 .padding(.bottom, 22)
                 .accessibilityAddTraits(.isHeader)
             ScrollView {
@@ -180,9 +183,12 @@ private struct Ebenenzeile: View {
         var body: some View {
             HStack(spacing: 22) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(Stil.listentitel)
                     .opacity(gewaehlt ? 1 : 0)
                     .frame(width: 42)
+                    // Der Haken ist nur Bild; gewählt sagt VoiceOver über
+                    // den Zustand der Zeile (`.isSelected` am Knopf).
+                    .accessibilityHidden(true)
                 // Spurnamen kommen aus der Datei — wörtlich, nicht nachschlagen.
                 Text(verbatim: text)
                     .lineLimit(1)
@@ -191,10 +197,35 @@ private struct Ebenenzeile: View {
             }
             .font(.system(size: 30, weight: gewaehlt ? .semibold : .regular))
             .foregroundStyle(gewaehlt || fokus ? Stil.schrift : Stil.schriftLeise)
-            .padding(.horizontal, 26)
+            .padding(.horizontal, Playermass.einzug)
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// Ein Name in der Spalte „Gemeinsam" — eine Auskunft, kein Knopf.
+private struct Teilnehmerzeile: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 22) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(Stil.schriftSehrLeise)
+                .frame(width: 42)
+            // Ein Benutzername vom Server — wörtlich.
+            Text(verbatim: name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .font(Stil.koerper)
+        .foregroundStyle(Stil.schriftLeise)
+        .padding(.horizontal, Playermass.einzug)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -210,6 +241,71 @@ private struct Spaltenreihe<Inhalt: View>: View {
     }
 }
 
+/// **Verzögerung — letzte Zeile der Spalten Audio und Untertitel.**
+///
+/// Gegenstück zu `Verzoegerungszeile` auf iOS (Begründung dort). Am Fernseher
+/// drei eigene Fokusziele — −, + und Zurücksetzen — statt einer Zeile, die
+/// links/rechts abfängt: links und rechts wechseln hier die Spalte.
+/// Gedrückt halten wiederholt, schneller über `Verzoegerung.Haltezaehler`.
+struct Verzoegerungszeile: View {
+    let wert: Verzoegerung
+    /// Fokuskennung der Zeile, `"v" + Spalte`; die Tasten hängen `-`, `+`
+    /// und `0` an.
+    let kennung: String
+    let fokus: FocusState<String?>.Binding
+    let setzen: (Verzoegerung) -> Void
+    @State private var halten = Verzoegerung.Haltezaehler()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Verzögerung")
+                .font(Stil.klein)
+                .foregroundStyle(Stil.schriftSehrLeise)
+                .padding(.horizontal, Playermass.einzug)
+            HStack(spacing: 0) {
+                taste("minus", "-", gesperrt: wert.amAnfang) {
+                    setzen(wert.verschoben(-1, schritte: halten.druck()))
+                }
+                .accessibilityLabel(Text("Früher"))
+                Text(verbatim: wert.text())
+                    .font(Stil.listentitel.monospacedDigit())
+                    .foregroundStyle(wert.istNull ? Stil.schriftLeise : Stil.schrift)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityHidden(true)
+                taste("plus", "+", gesperrt: wert.amEnde) {
+                    setzen(wert.verschoben(1, schritte: halten.druck()))
+                }
+                .accessibilityLabel(Text("Später"))
+                // Nach dem Zurücksetzen verschwindet der Knopf; der Fokus
+                // geht auf +, statt irgendwohin zu springen.
+                taste("arrow.counterclockwise", "0", gesperrt: false, wiederholen: false) {
+                    setzen(.null)
+                    fokus.wrappedValue = kennung + "+"
+                }
+                .accessibilityLabel(Text("Zurücksetzen"))
+                .opacity(wert.istNull ? 0 : 1)
+                .disabled(wert.istNull)
+            }
+            .accessibilityValue(Text(verbatim: wert.text()))
+        }
+    }
+
+    private func taste(_ symbol: String, _ endung: String, gesperrt: Bool, wiederholen: Bool = true,
+                       aktion: @escaping () -> Void) -> some View {
+        Button(action: aktion) {
+            Image(systemName: symbol)
+                .font(.system(size: Playermass.symbol - 6, weight: .semibold))
+                .opacity(gesperrt ? 0.4 : 1)
+        }
+        .buttonStyle(SymbolknopfStil())
+        .buttonRepeatBehavior(wiederholen ? .enabled : .disabled)
+        // Am Anschlag bleibt die Taste fokussierbar — verschwände der Fokus
+        // mitten im Halten, spränge er in eine andere Spalte.
+        .focused(fokus, equals: kennung + endung)
+    }
+}
+
 // MARK: - Audio & Untertitel
 
 struct SpurenEbene: View {
@@ -220,6 +316,8 @@ struct SpurenEbene: View {
     @State private var tonWahl: String?
     @State private var untertitelWahl: String??
     @FocusState private var fokus: String?
+    @State private var tonVerzug: Verzoegerung?
+    @State private var untertitelVerzug: Verzoegerung?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -233,6 +331,12 @@ struct SpurenEbene: View {
                         }
                         .focused($fokus, equals: "t" + spur.trackId)
                     }
+                    Verzoegerungszeile(wert: tonVerzug ?? flaeche?.tonVerzoegerung ?? .null,
+                                       kennung: "vt", fokus: $fokus) { neu in
+                        tonVerzug = neu
+                        flaeche?.tonVerzoegerung = neu
+                    }
+                    .padding(.top, Stil.reihenLuft)
                 }
                 Wahlspalte(titel: "Untertitel") {
                     Ebenenzeile(text: String(localized: "Aus"), gewaehlt: untertitelJetzt == nil) {
@@ -249,6 +353,12 @@ struct SpurenEbene: View {
                         }
                         .focused($fokus, equals: "u" + spur.trackId)
                     }
+                    Verzoegerungszeile(wert: untertitelVerzug ?? flaeche?.untertitelVerzoegerung ?? .null,
+                                       kennung: "vu", fokus: $fokus) { neu in
+                        untertitelVerzug = neu
+                        flaeche?.untertitelVerzoegerung = neu
+                    }
+                    .padding(.top, Stil.reihenLuft)
                 }
             }
         }
@@ -281,6 +391,9 @@ struct EinstellungsEbene: View {
     @Binding var schlafminuten: Int?
     /// Nur bei Wiedergabe vom Server — eine heruntergeladene Datei hat keine Wahl.
     let qualitaet: Qualitaetswahl?
+    /// Nur in einer Gruppe: wer dabei ist, und der Weg hinaus.
+    var gemeinsam: Gemeinsammodell? = nil
+    var gruppeVerlassen: () -> Void = {}
 
     @AppStorage("technikschild") private var technikschild = false
     @AppStorage("bildfuellend") private var bildfuellend = false
@@ -290,6 +403,32 @@ struct EinstellungsEbene: View {
         ZStack(alignment: .top) {
             Ebenengrund()
             Spaltenreihe {
+                // **Gemeinsam zuerst** (Entwurf A, wie am iPhone): wer dabei
+                // ist, und darunter der Ausgang. Die Namen tun nichts — sie
+                // sind kein Fokusziel, der Fokus springt über sie hinweg auf
+                // „Gruppe verlassen".
+                if let gemeinsam, let gruppe = gemeinsam.gruppe {
+                    Wahlspalte(titel: "Gemeinsam · \(gruppe.name)") {
+                        ForEach(Array(gruppe.teilnehmer.enumerated()), id: \.offset) { paar in
+                            Teilnehmerzeile(name: paar.element)
+                        }
+                        Button(action: gruppeVerlassen) {
+                            HStack(spacing: 22) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 28, weight: .semibold))
+                                    .frame(width: 42)
+                                Text("Gruppe verlassen")
+                                Spacer(minLength: 0)
+                            }
+                            .font(Stil.listentitel)
+                            .foregroundStyle(Stil.akzent)
+                            .padding(.horizontal, Playermass.einzug)
+                            .padding(.vertical, 18)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(FolgenStil())
+                    }
+                }
                 // Zwei Bildformate wie auf dem iPhone: das ganze Bild und
                 // formatfüllend. Ein gestrecktes Bild gibt es nicht.
                 Wahlspalte(titel: "Bild") {
@@ -372,6 +511,27 @@ enum Ebenenfokus {
 
 // MARK: - Folgen
 
+/// **Die Ebene zeichnet sich nicht bei jedem Takt des Players neu.**
+///
+/// Der Player rechnet seinen `body` alle 0,5 s neu (Stelle, Balken), und
+/// `starten` ist dabei jedes Mal ein neuer Block — SwiftUI kann ihn nicht
+/// vergleichen und rechnete deshalb die ganze Ebene samt Folgenstreifen neu.
+/// Solange nur Kacheln dastanden, sah man das nicht. Mit dem Kachelmenü
+/// (27.09.2026) schon: tvOS baute das **offene** Kontextmenü bei jedem Takt
+/// neu, alle Einträge flackerten zwischen fokussiert und nicht, und danach
+/// kam die Zurück-Taste nicht mehr beim Player an. Dieselbe Ursache wie bei
+/// der Staffelwahl (`tafelhandlungen`), eine Ebene höher.
+///
+/// Verglichen wird, was die Ebene zeigt: die laufende Folge und die
+/// Titelzeile. `starten` liest seinen Zustand beim Aufruf, ein älterer Block
+/// tut also dasselbe wie ein neuer.
+extension FolgenEbene: @MainActor Equatable {
+    static func == (links: FolgenEbene, rechts: FolgenEbene) -> Bool {
+        links.item.id == rechts.item.id && links.titel == rechts.titel
+            && links.model === rechts.model
+    }
+}
+
 /// Die Folgen der Serie — derselbe Kachelstreifen wie auf der Serienseite.
 ///
 /// Der Titel steht genau dort, wo er im Player stand (`stehenderTitel` im
@@ -409,7 +569,7 @@ struct FolgenEbene: View {
         guard let serie = item.seriesId,
               let gemerkt = Serienspeicher.geteilt.stand(serie, mit: model),
               !gemerkt.staffeln.isEmpty else { return }
-        let staffel = Self.passendeStaffel(zu: item, in: gemerkt.staffeln)
+        let staffel = Staffelwahlregel.waehle(aus: gemerkt.staffeln, stand: item)
         _staffeln = State(initialValue: gemerkt.staffeln)
         _gewaehlteStaffel = State(initialValue: staffel)
         _folgen = State(initialValue: staffel.flatMap { gemerkt.folgen[$0.id] } ?? [])
@@ -426,7 +586,7 @@ struct FolgenEbene: View {
         // Wahrheit — ein zwischengespeicherter Netzfehler.
         guard let staffeln = await model.staffeln(serie), !staffeln.isEmpty else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.staffeln = staffeln }
-        guard let staffel = passendeStaffel(zu: item, in: staffeln) else { return }
+        guard let staffel = Staffelwahlregel.waehle(aus: staffeln, stand: item) else { return }
         guard let folgen = await model.folgen(serie: serieID, staffel: staffel.id) else { return }
         Serienspeicher.geteilt.merken(serieID) { $0.folgen[staffel.id] = folgen }
     }
@@ -460,7 +620,8 @@ struct FolgenEbene: View {
                     if !folgen.isEmpty {
                         Folgenstreifen(model: model, folgen: folgen,
                                        weiterMit: folgen.contains { $0.id == item.id } ? item.id : nil,
-                                       amFolge: $amFolge) { folge in
+                                       amFolge: $amFolge, imPlayer: true,
+                                       nachher: { await folgenLaden() }) { folge in
                             starten(folge)
                         }
                         .id(folgen.first?.id ?? "leer")
@@ -480,7 +641,7 @@ struct FolgenEbene: View {
                 Handlungstafel(handlungen: tafelhandlungen, offen: $staffelwahlOffen)
                     .transition(.opacity)
             }
-            .animation(.easeInOut(duration: 0.18), value: staffelwahlOffen)
+            .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: staffelwahlOffen)
         }
         .focusSection()
         // **Der Fokus liegt beim Öffnen auf der laufenden Folge.**
@@ -523,7 +684,7 @@ struct FolgenEbene: View {
         guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
-            gewaehlteStaffel = Self.passendeStaffel(zu: item, in: frisch)
+            gewaehlteStaffel = Staffelwahlregel.waehle(aus: frisch, stand: item)
         }
         let leerGeoeffnet = folgen.isEmpty
         await folgenLaden()
@@ -531,12 +692,6 @@ struct FolgenEbene: View {
         if leerGeoeffnet, amFolge == nil, !amStaffelpille, !staffelwahlOffen {
             await Ebenenfokus.legen { amFolge = startfolge }
         }
-    }
-
-    private static func passendeStaffel(zu item: Item, in liste: [Item]) -> Item? {
-        liste.first { $0.id == item.seasonId }
-            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == item.parentIndexNumber }
-            ?? liste.first
     }
 
     /// Überblendet wird nur beim Staffelwechsel; beim Öffnen steht die
@@ -550,7 +705,7 @@ struct FolgenEbene: View {
         // Wer inzwischen eine andere Staffel gewählt hat, bekommt deren Folgen.
         guard staffel == gewaehlteStaffel?.id else { return }
         if staffelGewechselt {
-            withAnimation(.easeOut(duration: 0.25)) { folgen = geladen }
+            withAnimation(Stil.bewegung(.easeOut(duration: 0.25))) { folgen = geladen }
         } else {
             // Dieselbe erste Folge heißt dieselbe `id` des Streifens: er wird
             // nicht neu aufgebaut und behält den Fokus.

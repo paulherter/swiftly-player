@@ -103,6 +103,14 @@ struct ProfilView: View {
             // offen — und eine halb aufgeklappte Liste sieht aus wie ein
             // Zustand, den man selbst hinterlassen hat, ohne es zu wissen.
             .onDisappear { offen = nil }
+            // **Geht die Seite mitten im Kontowechsel auf** — der Fokus steht
+            // danach sofort auf dem Profilbild oben, ein Druck öffnet sie
+            // wieder —, ist er sofort fertig: neues Konto aktiv, Profilbild
+            // an seinem Platz. Wie am iPhone, `Kontowechselflug.abschliessen`.
+            .onAppear {
+                Kontowechselflug.geteilt.abschliessen()
+                Kontowechselflug.notiz("profil offen: angemeldet \(model.session?.userName ?? "-")")
+            }
             // Dasselbe beim Wechsel des Bereichs: die Zeile, die offen war,
             // gibt es auf der neuen Seite gar nicht mehr.
             .onChange(of: bereich) { _, _ in offen = nil }
@@ -214,7 +222,7 @@ struct ProfilView: View {
                         guard let neu else { return }
                         // Dieselbe Kurve und Dauer wie das Aufklappen —
                         // sonst laufen zwei Bewegungen gegeneinander.
-                        withAnimation(.easeInOut(duration: 0.28)) {
+                        withAnimation(Stil.bewegung(.easeInOut(duration: 0.28))) {
                             leser.scrollTo(neu, anchor: .top)
                         }
                     }
@@ -240,7 +248,7 @@ struct ProfilView: View {
                 .onChange(of: drin) { _, jetzt in
                     if jetzt, rechts == nil { rechts = .oben }
                 }
-                .animation(.easeInOut(duration: 0.2), value: drin)
+                .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: drin)
             }
         }
         .padding(.horizontal, Stil.randSeite)
@@ -561,7 +569,7 @@ struct ProfilView: View {
             Handlungszeile(titel: "Eigene Header") { eigeneKoepfe = true }
             Trennlinie()
             Handlungszeile(titel: "Verbindung prüfen") {
-                Task { pruefung = await model.verbindungPruefen() }
+                Task { pruefung = await model.verbindungPruefen(frist: .seconds(12)) }
             }
             .focused($rechts, equals: .oben)
 
@@ -604,7 +612,7 @@ struct ProfilView: View {
                 // unten rutschten langsam nach, und dazwischen überlappten
                 // sie sich. Ein `withAnimation` an der Änderung selbst legt
                 // alle in **eine** Bewegung — die Liste rückt als ein Stück.
-                withAnimation(.easeInOut(duration: 0.28)) {
+                withAnimation(Stil.bewegung(.easeInOut(duration: 0.28))) {
                     offen = offen == schluessel ? nil : schluessel
                 }
             }
@@ -764,6 +772,7 @@ struct Handlungszeile: View {
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(Stil.schriftSehrLeise)
                         .opacity(bedienbar ? 1 : 0.5)
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -893,7 +902,7 @@ struct Schalter: View {
                 .frame(width: 40, height: 40)
                 .padding(.horizontal, 5)
         }
-        .animation(bedienbar ? .easeInOut(duration: 0.15) : nil, value: an)
+        .animation(bedienbar ? Stil.bewegung(.easeInOut(duration: 0.15)) : nil, value: an)
     }
 
     /// Gedaempft, nicht durchscheinend: der Schalter behaelt seine Stellung
@@ -934,6 +943,30 @@ private struct Kontenstreifen: View {
 
     private let groesse: CGFloat = 60
 
+    /// Wo die Profilbilder stehen, global: der Kontowechsel hebt das
+    /// gewählte von dort ab. In einer schlichten Klasse, damit Fokusschritte
+    /// nicht bei jedem Rahmen neu bauen — wie am iPhone.
+    @State private var kreise = Kreisablage()
+    private final class Kreisablage {
+        var rahmen: [String: CGRect] = [:]
+    }
+
+    /// **Wechseln, mit Bewegung** (Entwurf D) — siehe ``Kontowechselflug``.
+    /// Das Bild fliegt als fertige Ebene von hier zum Profilbild oben
+    /// rechts, die Seite blendet aus, die Startseite kommt gestaffelt.
+    private func wechseln(zu konto: Session) {
+        let von = kreise.rahmen[konto.kontoschluessel] ?? .zero
+        let adresse = model.benutzerbildURL(fuer: konto)
+        let ohneBild = adresse.map { Bildspeicher.geteilt.bild($0) == nil } ?? true
+        Kontowechselflug.geteilt.starten(
+            konto: konto.kontoschluessel,
+            bild: Profilzeichen(name: konto.userName, bild: adresse,
+                                groesse: max(von.width, 1) * 1.06, ohneBild: ohneBild),
+            von: von, flaeche: Stil.grund, adresse: adresse) {
+            model.kontoWechseln(zu: konto.kontoschluessel)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 20) {
             // **Alle Konten, nicht nur die dieses Servers.** Seit dem
@@ -943,11 +976,14 @@ private struct Kontenstreifen: View {
             ForEach(model.konten.filter { $0.kontoschluessel != model.session?.kontoschluessel },
                     id: \.kontoschluessel) { konto in
                 Button {
-                    model.kontoWechseln(zu: konto.kontoschluessel)
+                    wechseln(zu: konto)
                 } label: {
                     Profilzeichen(name: konto.userName,
                                   bild: model.benutzerbildURL(fuer: konto),
                                   groesse: groesse)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            kreise.rahmen[konto.kontoschluessel] = $0
+                        }
                 }
                 .buttonStyle(KontostreifenStil(groesse: groesse))
                 .accessibilityLabel(Text("Zu \(konto.userName) wechseln"))
@@ -967,6 +1003,24 @@ private struct Kontenstreifen: View {
             .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
         }
         .focusSection()
+        #if DEBUG
+        // **Selbsttest** (`-kontowechsellauf`): derselbe Weg wie ein Druck,
+        // ohne Bedienung; ein zweiter Druck mitten im Wechsel muss ins Leere.
+        .task {
+            guard Kontowechsellauf.an, !Kontowechsellauf.getippt else { return }
+            Kontowechsellauf.getippt = true
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let s = model.session,
+                  let ziel = model.konten(auf: s.serverURL)
+                      .first(where: { $0.kontoschluessel != s.kontoschluessel })
+            else { return }
+            Kontowechselflug.notiz("selbsttest: druck auf \(ziel.userName)")
+            wechseln(zu: ziel)
+            try? await Task.sleep(for: .milliseconds(200))
+            Kontowechselflug.notiz("selbsttest: zweiter druck")
+            wechseln(zu: ziel)
+        }
+        #endif
     }
 }
 

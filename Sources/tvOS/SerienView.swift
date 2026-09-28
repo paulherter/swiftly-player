@@ -48,7 +48,23 @@ struct SerienView: View {
 
         let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         _staffeln = State(initialValue: gemerkt?.staffeln ?? [])
-        _weiterMit = State(initialValue: gemerkt?.weiterMit ?? startFolge)
+        // **Nie eine geratene Folge, aber sofort die richtige** (Paul,
+        // 27.09.2026). `startFolge` ist die Kachel, ueber die man kam — aus
+        // „Weiterschauen" und „Naechste Folge" die richtige, aus „Zuletzt
+        // hinzugefuegt" aber die neueste: Outer Banks stand eine Sekunde auf
+        // „Abspielen S5 F10", bis der Stand F1 sagte.
+        //
+        // Deshalb zuerst der Vorrat: die Startseite merkt sich die Folgen
+        // aus „Weiterschauen" und „Naechste Folge", und eine Kachel unter dem
+        // Fokus holt den Stand ihrer Serie vor dem Klick
+        // (`Serienspeicher.naechsteVorladen`). Eine angefangene Startfolge
+        // gilt auch ohne ihn. Sonst steht der Knopf neutral da, bis
+        // `laden()` den Stand bringt.
+        let angefangen = (startFolge?.userData?.playbackPositionTicks ?? 0) > 0
+        let anfang = Serienspeicher.geteilt.naechsteFolge(serie.id, mit: model)
+            ?? (angefangen ? startFolge : nil)
+        _weiterMit = State(initialValue: anfang)
+        _standDa = State(initialValue: anfang != nil)
 
         // Die Staffel, die auch `laden()` waehlen wuerde — sonst stuende
         // beim Wiederkommen die erste vorn statt der zuletzt gesehenen.
@@ -57,7 +73,7 @@ struct SerienView: View {
         let staffel = Staffelwahlregel.waehle(aus: gemerkt?.staffeln ?? [],
                                               hinweisID: startStaffelID ?? startFolge?.seasonId,
                                               hinweisNummer: startFolge?.parentIndexNumber,
-                                              stand: gemerkt?.weiterMit)
+                                              stand: anfang)
         _gewaehlteStaffel = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -82,6 +98,12 @@ struct SerienView: View {
     @State private var plan: PlaybackPlan?
     @State private var staffeln: [Item]
     @State private var gewaehlteStaffel: Item?
+    /// **Hat man die Staffel selbst gewaehlt?** Nur dann bleibt sie beim
+    /// Laden stehen. Die Wahl aus `init` kommt aus dem `Serienspeicher` und
+    /// damit aus dem alten Stand: ist man seitdem in die naechste Staffel
+    /// weitergerutscht, stand die alte da, `folgeVorn` war `nil` (die Folge
+    /// liegt nicht in der gezeigten Staffel), und die Reihe begann bei F1.
+    @State private var staffelSelbstGewaehlt = false
     @State private var folgen: [Item]
     @State private var laedtFolgen: Bool
     @State private var gemerkt = false
@@ -91,6 +113,9 @@ struct SerienView: View {
     @Environment(\.abspielwunsch) private var abspielen
     @State private var bereitet = false
     @State private var weiterMit: Item?
+    /// Ob `weiterMit` ein Stand ist — aus dem Speicher, einer angefangenen
+    /// Startfolge oder vom Server. Bis dahin heisst der Knopf „Abspielen".
+    @State private var standDa: Bool
     @State private var aehnliche: [Item] = []
     /// **Leer und gestoert sind zwei Lagen.** Ohne diese Flaggen sagte die
     /// Seite „Keine Folgen in dieser Staffel", wenn der Server geschwiegen
@@ -225,8 +250,8 @@ struct SerienView: View {
             Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: mehrOffen)
-        .animation(.easeInOut(duration: 0.18), value: staffelwahlOffen)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: mehrOffen)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: staffelwahlOffen)
         .overlay(alignment: .top) {
             if let meldung {
                 Hinweisstreifen(text: meldung) { self.meldung = nil }
@@ -260,21 +285,27 @@ struct SerienView: View {
         // — dieselbe Zuweisung holt ihn zurueck.
         .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
             guard geschlossen, vorher == false else { return }
-            switch zuletztFokus {
-            case .hauptknopf: amHauptknopf = true
-            case .mehrknopf: amMehrknopf = true
-            case .folge(let id): amFolge = id
-            }
+            fokusZurueck()
+        }
+        // **Dasselbe nach „Gemeinsam schauen".** Die Tafel liegt im Rahmen
+        // ueber allem und sperrt die Seite wie der Player. Geht sie zu, ohne
+        // dass ein Player aufgeht, steht der Fokus wieder am Ausloeser.
+        .onChange(of: Gemeinsammodell.geteilt.anlegenFuer == nil) { vorher, zu in
+            guard zu, vorher == false, abspielen.wrappedValue == nil else { return }
+            fokusZurueck()
         }
         .task {
             // Erst den Fokus setzen, dann aufblenden: ein Knopf mit
             // Deckkraft 0 ist fuer tvOS kein Ziel, und der Startfokus ginge
             // sonst verloren.
             amHauptknopf = true
-            withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
+            withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) { eingeblendet = true }
             await laden()
         }
-        .task(id: gewaehlteStaffel?.id) { await folgenLaden() }
+        // **Die Folgen der ersten Staffel holt `laden()` mit**, nicht ein
+        // eigenes `.task(id:)`. Das lief neben `laden()` her: der
+        // Staffelkopf stand da, die Folgen ruckelten nach. Spaetere Wechsel
+        // laedt die Staffelwahl selbst, siehe `staffelhandlungen`.
         // **Nach dem Player neu holen.** Er liegt als Ebene über dieser
         // Seite, sie verschwindet dabei nie, und `.task` oben läuft kein
         // zweites Mal — Fortschritt und „gesehen" blieben auf dem Stand von
@@ -319,7 +350,20 @@ struct SerienView: View {
             // `startFolge`.
             HStack(spacing: 24) {
                 Button { starte(weiterMit) } label: {
-                    Label(hauptknopftext, systemImage: "play.fill")
+                    // **Ohne Stand die Breite mit Folge freihalten**, damit
+                    // die Pille nicht springt, wenn sie dazukommt: der
+                    // versteckte Platzhalter „Abspielen S00 • F00" gibt die
+                    // Breite vor, das Wort steht links darin.
+                    ZStack(alignment: .leading) {
+                        if !standDa {
+                            Label(String(localized: "Abspielen \("S00 • F00")"),
+                                  systemImage: "play.fill")
+                                .hidden()
+                                .accessibilityHidden(true)
+                        }
+                        Label(hauptknopftext, systemImage: "play.fill")
+                    }
+                    .transaction { $0.animation = nil }
                 }
                 .buttonStyle(KnopfStil())
                 // **Nicht abschalten, solange geladen wird.**
@@ -347,8 +391,11 @@ struct SerienView: View {
                 // Abgeschaltet bleibt er, wenn wirklich nichts da ist
                 // („Keine Folgen") und waehrend `bereitet` — das ist der
                 // kurze Moment nach dem Druck.
-                .disabled(bereitet || (weiterMit == nil && !laedtFolgen))
+                .disabled(bereitet || (weiterMit == nil && standDa && !laedtFolgen))
                 .focused($amHauptknopf)
+                // Langer Druck: das Kachelmenü der Serie, wie an ihrer
+                // Kachel (``Kachelmenue``).
+                .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
 
                 // Nur, wenn ueberhaupt etwas fortzusetzen ist — sonst meinte
                 // „Von vorn" dasselbe wie der Knopf daneben.
@@ -385,7 +432,10 @@ struct SerienView: View {
     /// Kopie daraus wurde; damit faellt unsere weg. Genau der Weg, den die
     /// Regel vorsieht: geteilte Logik zuerst nach iOS, dann uebernehmen.
     private var hauptknopftext: String {
-        Item.serienknopf(folge: weiterMit, laedt: laedtFolgen)
+        // Noch kein Stand: neutral, ohne Folge. Die Folge kommt mit dem
+        // Stand in der Blende von `laden()` dazu.
+        guard standDa else { return String(localized: "Abspielen") }
+        return Item.serienknopf(folge: weiterMit, laedt: laedtFolgen)
     }
 
     // MARK: Folgen
@@ -420,9 +470,13 @@ struct SerienView: View {
                     .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
             } else {
                 Folgenstreifen(model: model, folgen: folgen,
-                               weiterMit: folgeVorn, amFolge: $amFolge) { folge in
+                               weiterMit: folgeVorn, amFolge: $amFolge,
+                               nachher: { await auffrischen() }) { folge in
                     starte(folge)
                 }
+                // Nicht bei jedem Zustand der Seite neu — siehe
+                // `Folgenstreifen.==`.
+                .equatable()
                 .id(folgen.first?.id ?? "leer")
                 .transition(.opacity)
             }
@@ -459,26 +513,85 @@ struct SerienView: View {
             Titelhandlung(symbol: gewaehlteStaffel?.id == staffel.id
                                   ? "checkmark.circle.fill" : "circle",
                           text: "\(staffel.name)") {
+                guard gewaehlteStaffel?.id != staffel.id else { return }
+                staffelSelbstGewaehlt = true
                 gewaehlteStaffel = staffel
+                Task { await folgenLaden() }
             }
         }
     }
 
     // MARK: Beschriftung und Laden
 
+    /// **Ein Einblenden, nicht fuenf** — wie am iPhone (`SeriesDetailView`,
+    /// 23.09.2026). Serie, Stand, Staffeln, Aehnliches und die Folgen der
+    /// gewaehlten Staffel kommen zusammen und in derselben Transaktion auf
+    /// die Seite. Vorher setzte die Seite jede Antwort einzeln, die Staffel
+    /// loeste danach ein eigenes `.task(id:)` fuer die Folgen aus, und
+    /// „Aehnliches" kam als letztes mit eigener Blende. Der Plan laeuft
+    /// daneben; eingeblendet wird er im `Detailkopf`, der die Blende an den
+    /// Plan selbst haengt.
     private func laden() async {
         async let frischeSerie = model.item(id: serie.id)
         async let liste = model.staffeln(serie)
         async let stand = model.standInSerie(serie)
+        async let aehnlich = model.aehnliche(serie)
 
-        frisch = await frischeSerie
+        let neueSerie = await frischeSerie
         // **`nil` heisst gestoert.** Eine leere Liste in den
         // `Serienspeicher` zu schreiben hiesse, einen Netzfehler
         // zwischenzuspeichern: die naechste Ansicht haelt ihn fuer die
         // Wahrheit.
         let geholteStaffeln = await liste
-        if let geholteStaffeln { staffeln = geholteStaffeln }
-        weiterMit = await stand
+        let staffelnJetzt = geholteStaffeln ?? staffeln
+        let neuerStand = await stand
+
+        // Über eine Folge gekommen: deren Staffel steht vorn. Sonst die,
+        // in der es weitergeht — und erst dann die erste (A10, Paket).
+        // Die alte Kopie prüfte die Kennung des Stands vor der Nummer
+        // der Folge; ohne `SeasonId` stand die laufende Staffel da.
+        // Beim Auffrischen bleibt nur eine selbst getroffene Wahl stehen;
+        // die aus dem Speicher wird
+        // mit dem frischen Stand neu getroffen, siehe `staffelSelbstGewaehlt`.
+        let wahl = (staffelSelbstGewaehlt ? gewaehlteStaffel : nil)
+            ?? Staffelwahlregel.waehle(aus: staffelnJetzt,
+                                       hinweisID: startStaffelID ?? startFolge?.seasonId,
+                                       hinweisNummer: startFolge?.parentIndexNumber,
+                                       stand: neuerStand)
+        async let p = planHolen(neuerStand?.id)
+        // Ohne Staffeln gehoeren alle Folgen der Serie in die Liste — wie am
+        // iPhone, wo `staffel: nil` genau dafuer steht.
+        let holen = wahl != nil || (geholteStaffeln?.isEmpty ?? false)
+        let geholteFolgen = holen ? await model.folgen(serie: serie.id, staffel: wahl?.id) : nil
+        let neueAehnliche = await aehnlich
+
+        // **Der Stand setzt sich ohne Bewegung.** Kam er erst jetzt, stand
+        // der Knopf auf „Abspielen"; die Folge kommt dazu, ohne dass die
+        // Pille waechst oder die Nachbarn gleiten (Paul: „weich dazu ist
+        // komisch").
+        var sofort = Transaction()
+        sofort.disablesAnimations = true
+        withTransaction(sofort) {
+            weiterMit = neuerStand
+            standDa = true
+        }
+        Serienspeicher.geteilt.naechsteMerken(neuerStand, fuer: serie.id)
+        withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) {
+            frisch = neueSerie
+            if let geholteStaffeln { staffeln = geholteStaffeln }
+            aehnlicheGestoert = neueAehnliche == nil
+            if let neueAehnliche { aehnliche = neueAehnliche }
+            // Hat man waehrenddessen selbst eine Staffel gewaehlt, gehoert
+            // die Liste dieser Wahl, nicht dieser Antwort.
+            if !staffelSelbstGewaehlt || gewaehlteStaffel?.id == wahl?.id {
+                gewaehlteStaffel = wahl
+                if holen {
+                    folgenAnnehmen(geholteFolgen, staffel: wahl)
+                } else {
+                    laedtFolgen = false
+                }
+            }
+        }
         if geholteStaffeln != nil {
             Serienspeicher.geteilt.merken(serie.id) {
                 $0.serie = frisch ?? serie
@@ -488,62 +601,75 @@ struct SerienView: View {
         }
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.userData?.played ?? false
+        if neuerStand != nil { plan = await p }
+    }
 
-        if gewaehlteStaffel == nil {
-            // Über eine Folge gekommen: deren Staffel steht vorn. Sonst die,
-            // in der es weitergeht — und erst dann die erste (A10, Paket).
-            // Die alte Kopie prüfte die Kennung des Stands vor der Nummer
-            // der Folge; ohne `SeasonId` stand die laufende Staffel da.
-            gewaehlteStaffel = Staffelwahlregel.waehle(aus: staffeln,
-                                                       hinweisID: startStaffelID ?? startFolge?.seasonId,
-                                                       hinweisNummer: startFolge?.parentIndexNumber,
-                                                       stand: weiterMit)
-        }
-        if let ziel = weiterMit {
-            plan = await model.plan(for: ziel.id)
-        }
-        await aehnlicheLaden()
+    private func planHolen(_ folgeID: String?) async -> PlaybackPlan? {
+        guard let folgeID else { return nil }
+        return await model.plan(for: folgeID)
     }
 
     private func aehnlicheLaden() async {
         let neueAehnliche = await model.aehnliche(serie)
-        withAnimation(.easeOut(duration: 0.3)) {
+        withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) {
             aehnlicheGestoert = neueAehnliche == nil
             if let neueAehnliche { aehnliche = neueAehnliche }
         }
     }
 
+    /// Die Folgen der gewaehlten Staffel — beim Staffelwechsel und bei
+    /// „Erneut versuchen". Beim Oeffnen holt sie `laden()` mit.
     private func folgenLaden() async {
-        guard let staffel = gewaehlteStaffel else { return }
-        if folgen.isEmpty { laedtFolgen = true }
-        let antwort = await model.folgen(serie: serie.id, staffel: staffel.id)
-        folgenGestoert = antwort == nil
-        guard let geholt = antwort else {
+        guard let staffel = gewaehlteStaffel else {
             laedtFolgen = false
             return
         }
+        if folgen.isEmpty { laedtFolgen = true }
+        let antwort = await model.folgen(serie: serie.id, staffel: staffel.id)
+        // Inzwischen eine andere Staffel gewaehlt: deren Abruf gilt. Das
+        // `.task(id:)` brach den alten Abruf ab; ein `Task` tut es nicht.
+        guard gewaehlteStaffel?.id == staffel.id else { return }
 
         // Ein Zug, eine Kurve. Den Wechsel von Hand zu fuehren — ausblenden,
         // warten, tauschen, einblenden — war der falsche Weg: er flackerte,
         // weil ihm die Ansicht unter den Haenden getauscht wurde. Siehe die
         // Kennung am Streifen.
-        withAnimation(.easeInOut(duration: 0.28)) {
-            folgen = geholt
-            laedtFolgen = false
+        withAnimation(Stil.bewegung(.easeInOut(duration: 0.28))) {
+            folgenAnnehmen(antwort, staffel: staffel)
         }
-        Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel.id] = geholt }
+    }
+
+    private func folgenAnnehmen(_ antwort: [Item]?, staffel: Item?) {
+        folgenGestoert = antwort == nil
+        laedtFolgen = false
+        guard let geholt = antwort else { return }
+        folgen = geholt
+        if let staffel {
+            Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel.id] = geholt }
+        }
+    }
+
+    /// Zurueck an den Knopf oder die Folge, an der man zuletzt stand.
+    private func fokusZurueck() {
+        switch zuletztFokus {
+        case .hauptknopf: amHauptknopf = true
+        case .mehrknopf: amMehrknopf = true
+        case .folge(let id): amFolge = id
+        }
     }
 
     private var mehrHandlungen: [Titelhandlung] {
         // Gesehen steht vorn, wie auf der Filmseite — aus der Knopfreihe
-        // heraus und eine Ebene tiefer. Siehe `gesehenHandlung`.
-        [gesehenHandlung(model: model, item: aktuell,
-                         gesehen: $gesehen, meldung: $meldung)]
+        // heraus und eine Ebene tiefer. Siehe `Titelhandlung.sehstand`.
+        [Titelhandlung.sehstand(aktuell, model: model, gesehen: $gesehen,
+                                 melden: { meldung = $0 })]
         + Titelhandlungen.fuerSerie(aktuell, stand: weiterMit, staffel: gewaehlteStaffel,
                                   model: model,
                                   folgeStarten: { folgeStarten($0, ab: $1) },
                                   melden: { meldung = $0 },
-                                  auffrischen: { await auffrischen() })
+                                  auffrischen: { await auffrischen() },
+                                  gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                                      ? { Gemeinsammodell.geteilt.anlegenFuer = $0 } : nil)
     }
 
     private func folgeStarten(_ folge: Item, ab: Double) {
@@ -565,28 +691,20 @@ struct SerienView: View {
     ///
     /// Deshalb ueber `laden()`: was beim Oeffnen geholt wird, muss auch beim
     /// Auffrischen geholt werden, sonst laufen die beiden Wege auseinander.
-    /// Die gewaehlte Staffel bleibt dabei stehen.
+    /// Die gewaehlte Staffel bleibt dabei stehen; ihre Folgen holt `laden()`
+    /// seit dem gemeinsamen Einblenden selbst mit.
     private func auffrischen() async {
         await laden()
-        await folgenLaden()
     }
 
     /// `ab` uebersteuert die gemerkte Stelle — das ist „Von vorn".
     ///
     /// Ohne Angabe gilt A5: eine Folge startet an **ihrer eigenen** Stelle.
     private func starte(_ folge: Item?, ab: Double? = nil) {
-        guard let folge, !bereitet else { return }
-        bereitet = true
-        Task {
-            defer { bereitet = false }
-            let ziel = await model.item(id: folge.id) ?? folge
-            guard let plan = await model.plan(for: ziel.id) else {
-                meldung = String(localized: "Der Server hat keine Datei zu dieser Folge.")
-                return
-            }
-            abspielen.wrappedValue = Abspielwunsch(item: ziel, plan: plan,
-                                      startAt: ab ?? ziel.fortsetzenAb ?? 0)
-        }
+        guard let folge else { return }
+        Abspielwunsch.starten(folge, ab: ab, frisch: true, model: model, bereitet: $bereitet,
+                              fehlt: { meldung = String(localized: "Der Server hat keine Datei zu dieser Folge.") },
+                              abspielen: { abspielen.wrappedValue = $0 })
     }
 }
 

@@ -41,9 +41,11 @@ struct GenreView: View {
                                             art: item.type,
                                             staffeln: item.childCount,
                                             gesehen: item.userData?.played,
-                                            offeneFolgen: item.userData?.unplayedItemCount))
+                                            offeneFolgen: item.userData?.unplayedItemCount),
+                                         zeichen: item.kachelzeichen)
                         }
                         .buttonStyle(KachelStil())
+                        .kachelmenue(item, model: model)
                     }
                 }
                 .padding(.horizontal, Stil.randSeite)

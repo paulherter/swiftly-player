@@ -176,8 +176,16 @@ struct ServerAufnahmeView: View {
     private func pruefen() {
         guard !adresse.isEmpty, !pruefe else { return }
         pruefe = true
+        let geprueft = adresse
         Task {
             let antwort = await model.serverPruefen(adresse, koepfe: koepfe.koepfe)
+            // Inzwischen eine andere Adresse im Feld: die Antwort gehört zur
+            // alten und bleibt liegen.
+            guard adresse == geprueft else {
+                model.errorMessage = nil
+                pruefe = false
+                return
+            }
             withAnimation(Stil.einblenden) { server = antwort }
             pruefe = false
         }
