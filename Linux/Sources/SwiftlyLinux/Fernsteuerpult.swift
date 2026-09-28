@@ -52,6 +52,11 @@ enum Fernsteuerpult {
     /// schnell genug, um nicht darauf zu warten.
     static func lauschen(_ app: App) {
         #if DEBUG
+        // Wo das Pult horcht, steht im Protokoll: unter Windows haengt der
+        // Ort an `NSTemporaryDirectory()`, und der muss nicht `$env:TEMP`
+        // der Sitzung sein, die den Befehl schreibt. Fehlt die Zeile ganz,
+        // ist es kein Debug-Bau.
+        Protokoll.schreib("[Pult] horcht auf \(anstoss.path)")
         _ = g_timeout_add_seconds(2, pultTakten, Unmanaged.passUnretained(app).toOpaque())
         #endif
     }
@@ -189,12 +194,26 @@ extension App {
                 while let w = k { kinder += 1; k = gtk_widget_get_next_sibling(w) }
                 return "\(n) Kacheln, \(gezeichnet) gezeichnet, \(kinder) Kinder, sichtbar=\(gtk_widget_get_visible(r))"
             }
-            Protokoll.schreib("[Fern] Suche eigen: \(zaehlen(suchraster)) · Seerr: \(zaehlen(seerrRaster)) Zahl=\(widgetTexte(seerrZahl).joined())")
+            Protokoll.schreib("[Fern] Suche eigen: \(zaehlen(suchraster)) · Seerr: \(zaehlen(seerrRaster)) Zahl=\(widgetTexte(seerrZahl).joined()) leer=\(gtk_widget_get_visible(suchleer)) gestoert=\(gtk_widget_get_visible(suchstoerung))")
 
         case "steuerung":  steuerungZeigen()
 
         /// Den Player wieder schliessen.
         case "spielerZu":  spielerSchliessen()
+
+        /// **Verzoegerung messen ohne Server.** `verzugdatei:/pfad.mkv`
+        /// spielt eine lokale Datei (keine Meldung, kein Wiedergabestand);
+        /// ein zweites Mal dieselbe Datei ist derselbe Titel und behaelt den
+        /// Wert. `verzug:u:250` / `verzug:t:-500` setzt Untertitel oder Ton
+        /// in ms. Das Protokoll zeigt, was libVLC danach liest.
+        case "verzugdatei" where teile.count > 1:
+            spielerOeffnen(Item(id: "verzugtest", name: "Verzögerung", type: "Movie"), ab: 0,
+                           ausDatei: URL(fileURLWithPath: teile[1]))
+        case "verzug" where teile.count > 1:
+            let rest = teile[1].split(separator: ":").map(String.init)
+            guard rest.count == 2, let ms = Int(rest[1]) else { break }
+            if rest[0] == "u" { abspieler.untertitelVerzoegerung = Verzoegerung(millisekunden: ms) }
+            else { abspieler.tonVerzoegerung = Verzoegerung(millisekunden: ms) }
 
         /// Die Wiedergabetafel im Player auf- und zuklappen.
         case "spurwahl":   ebeneOeffnen(.spuren)
@@ -379,9 +398,13 @@ extension App {
             // — so laesst sich messen, was ein laufender Strom beim Anhalten
             // kostet, ohne einen fremden Sehstand anzufassen.
             if pfad.hasPrefix("http") {
+                guard let adresse = URL(string: pfad) else {
+                    Protokoll.schreib("[Pult] dateispielen: keine gueltige Adresse \(pfad)")
+                    break
+                }
                 Protokoll.schreib("[Pult] dateispielen \(pfad)")
                 let item = Item(id: "probe", name: "Probe", type: "Movie")
-                spielerOeffnen(item, ab: 0, ausDatei: URL(string: pfad)!)
+                spielerOeffnen(item, ab: 0, ausDatei: adresse)
                 break
             }
             guard FileManager.default.fileExists(atPath: pfad) else {
@@ -494,6 +517,82 @@ extension App {
                   "bilder \(Bildspeicher.anzahl) \(Pruefzaehler.bilder)")
             fflush(nil)
 
+        /// **Die Karte der nächsten Folge** (Variante C): was die Ebene
+        /// zeigt, ob die Karte steht, was darauf steht, und der Schleier.
+        case "karte":
+            let karte = spielerKarte
+            let texte = karte?.huelle.map { widgetTexte($0) } ?? []
+            print("[Pult] karte anzeige \(angebotsebene.anzeige) angebot \(jetzigesAngebot.beschriftung) "
+                  + "da \(karte?.da ?? false) zaehlt \(angebotsebene.karteZaehlt) "
+                  + "abgesagt \(angebotsebene.weiterAbgesagt) rest \(angebotsebene.countdownRest) "
+                  + "uhr \(String(format: "%.2f", angebotsuhr.anteil())) steuerung \(steuerungOffen) "
+                  + "schleier \(spielerKartenschleier.map { String(format: "%.2f", gtk_widget_get_opacity($0)) } ?? "-") "
+                  + "unten \(karte?.huelle.map { gtk_widget_get_margin_bottom($0) } ?? -1) "
+                  + "stelle \(Int(spielstand.position))/\(Int(spielstand.dauer)) texte \(texte)")
+            fflush(nil)
+
+        /// Die Steuerung wie per Zeiger holen (nebenbei) statt bewusst.
+        case "zeiger":
+            steuerungZeigen(durch: .nebenbei)
+
+        /// Den Knopf der Karte drücken, oder ihr X.
+        case "karteStart":
+            angebotsebene.gedrueckt(); angebotNachfuehren(); naechsteFolge()
+        case "karteX":
+            karteAbbrechen()
+
+        /// Weiter wie Knopf und Leertaste — mit dem Rücksprung nach langer
+        /// Pause. `pausiertVor:900` tut so, als stünde es seit 900 s.
+        case "weiter":
+            abspielenUmschalten()
+        case "pausiertVor" where teile.count > 1:
+            #if DEBUG
+            if let s = Double(teile[1]) { abspieler.pausiertSeitVorstellen(s) }
+            #endif
+            print("[Pult] pausiert seit \(abspieler.pausiertSeit.map { Int(Date().timeIntervalSince($0)) } ?? -1) s")
+            fflush(nil)
+
+        /// Was unter der Zeitleiste rechts steht.
+        case "restzeit":
+            print("[Pult] restzeit \(widgetTexte(spielerRest)) alsEnde \(wahlen.restzeitAlsEnde)")
+            fflush(nil)
+
+        /// Die Farbe der offenen Detailseite: Klasse, Regeln im Blatt.
+        case "bildton":
+            let klasse = detailScroller.flatMap { s in
+                gtk_scrolled_window_get_child(OpaquePointer(s)).flatMap { v in
+                    Tonblatt.klasse(von: gtk_widget_get_first_child(v) ?? v) } }
+            print("[Pult] bildton klasse \(klasse ?? "-") \(Tonblatt.stand)")
+            fflush(nil)
+
+        /// **Kontowechsel mit Flug** über den echten Weg: das Profil öffnen
+        /// und den ersten Kontoknopf auslösen, wie ein Klick. `kontoflug:profil:<ms>`
+        /// öffnet danach mitten im Flug das Profil.
+        case "kontoflug":
+            unterseiteOeffnen(.profil)
+            let profilNach = teile.count > 1 ? Double(teile[1].split(separator: ":").last ?? "") : nil
+            nachFrist(1.0) { [weak self] in
+                guard let self, let knopf = ersterKnopf(self.detailhuelle, klasse: "swiftly-kontoknopf") else {
+                    print("[Pult] kontoflug: kein Kontoknopf"); fflush(nil); return
+                }
+                _ = gtk_widget_activate(knopf)
+                if let ms = profilNach {
+                    nachFrist(ms / 1000) { [weak self] in self?.unterseiteOeffnen(.profil) }
+                }
+            }
+
+        /// Was die Startseite zeigt: Zahl der Reihen und ihre Deckkraft.
+        case "reihen":
+            var zeilen: [String] = []
+            var kind = gtk_widget_get_first_child(reihenstapel)
+            while let k = kind {
+                zeilen.append(String(format: "%.2f%@", gtk_widget_get_opacity(k),
+                                     gtk_widget_has_css_class(k, "swiftly-reihe-vor") != 0 ? "v" : ""))
+                kind = gtk_widget_get_next_sibling(k)
+            }
+            print("[Pult] reihen \(zeilen.count): \(zeilen.joined(separator: " ")) konto \(benutzername) flug \(kontoflug != nil)")
+            fflush(nil)
+
         /// Die erste Person der Besetzung öffnen.
         case "erstePerson":
             // **Der volle Satz, nicht der Stapeleintrag.** Auf dem Stapel
@@ -524,6 +623,18 @@ enum Pruefzaehler {
         else { art = "anderes" }
         bilder["\(art)-\(gelesen ? "ok" : "fehler")", default: 0] += 1
     }
+}
+
+/// Der erste Knopf mit dieser Klasse unter einem Widget, in Baumreihenfolge.
+func ersterKnopf(_ w: Widget!, klasse: String) -> Widget? {
+    guard let w else { return nil }
+    if gtk_widget_has_css_class(w, klasse) != 0 { return w }
+    var kind = gtk_widget_get_first_child(w)
+    while let k = kind {
+        if let treffer = ersterKnopf(k, klasse: klasse) { return treffer }
+        kind = gtk_widget_get_next_sibling(k)
+    }
+    return nil
 }
 
 /// Alle sichtbaren Beschriftungen unter einem Widget, in Baumreihenfolge —

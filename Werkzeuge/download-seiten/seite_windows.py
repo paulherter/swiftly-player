@@ -9,7 +9,7 @@ S1 = skizze(1, "A browser window with its download list open; the file Swiftly-S
     zeile(40, 78, 120) + zeile(40, 96, 92) + zeile(40, 114, 108) + zeile(40, 132, 76) +
     '<rect x="196" y="62" width="180" height="104" rx="12" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     '<text x="208" y="82">Downloads</text>' +
-    '<rect x="206" y="92" width="160" height="34" rx="10" fill="rgba(92,209,194,.16)" stroke="var(--akzent)"/>' +
+    '<rect x="206" y="92" width="160" height="34" rx="10" fill="rgba(80,213,218,.16)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="218" y="113">Swiftly-Setup.exe</text>' +
     zeile(206, 136, 120, ".4") +
     zeiger(300, 104))
@@ -20,7 +20,7 @@ S2 = skizze(2, "A warning window from Windows; the words More info are marked",
     '<path d="M82 51v5m0 3v.6" stroke="var(--warm)" stroke-width="1.8" stroke-linecap="round"/>' +
     '<text class="titel" x="104" y="58">Windows protected your PC</text>' +
     zeile(72, 78, 206) + zeile(72, 94, 168) +
-    '<rect x="66" y="112" width="86" height="26" rx="8" fill="rgba(92,209,194,.16)" stroke="var(--akzent)"/>' +
+    '<rect x="66" y="112" width="86" height="26" rx="8" fill="rgba(80,213,218,.16)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="78" y="129">More info</text>' +
     '<rect x="262" y="150" width="76" height="26" rx="8" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     '<text x="277" y="167">Don&#8217;t run</text>' +
@@ -32,7 +32,7 @@ S3 = skizze(3, "The same warning window, now with the button Run anyway marked",
     zeile(72, 68, 206) + zeile(72, 84, 150) +
     '<text x="72" y="116">App: Swiftly-Setup.exe</text>' +
     zeile(72, 126, 120, ".4") +
-    '<rect x="176" y="148" width="92" height="30" rx="9" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="176" y="148" width="92" height="30" rx="9" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="191" y="167">Run anyway</text>' +
     '<rect x="276" y="148" width="62" height="30" rx="9" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     '<text x="290" y="167">Cancel</text>' +
@@ -40,12 +40,12 @@ S3 = skizze(3, "The same warning window, now with the button Run anyway marked",
 
 S4 = skizze(4, "The Swiftly Player installer with the Install button marked",
     '<rect x="52" y="18" width="296" height="174" rx="16" fill="var(--flaeche)" stroke="var(--rand)"/>' +
-    '<rect x="74" y="44" width="38" height="38" rx="12" fill="rgba(47,219,192,.18)" stroke="var(--marke)"/>' +
+    '<rect x="74" y="44" width="38" height="38" rx="12" fill="rgba(80,213,218,.18)" stroke="var(--marke)"/>' +
     '<path d="M86 56h14m-14 7h14m-14 7h9" stroke="var(--marke)" stroke-width="1.6" stroke-linecap="round"/>' +
     '<text class="titel" x="124" y="60">Swiftly Player</text>' +
     '<text x="124" y="78">Version for Windows</text>' +
     zeile(74, 104, 200) + zeile(74, 120, 160) +
-    '<rect x="204" y="146" width="88" height="30" rx="9" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="204" y="146" width="88" height="30" rx="9" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="230" y="165">Install</text>' +
     zeiger(258, 158))
 

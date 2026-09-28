@@ -92,6 +92,7 @@ extension App {
 
         let pfeil: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
+        beschriften(pfeil, uebersetzt("Zurück"))
         gtk_button_set_child(alsKnopf(pfeil), gtk_image_new_from_icon_name("go-previous-symbolic"))
         beiSignal(pfeil, "clicked") { [weak self] in self?.unterseiteZurueck() }
         anhaengen(leiste, pfeil)
@@ -174,7 +175,7 @@ extension App {
         var stuecke: [String] = []
         if let j = t.jahr { stuecke.append(String(j)) }
         if let min = d?.laufzeit, min > 0 {
-            stuecke.append(String(format: uebersetzt("%d Min."), min))
+            stuecke.append(String(format: uebersetzt("%lld Min."), min))
         }
         if let g = d?.genres, !g.isEmpty { stuecke.append(g.prefix(2).joined(separator: ", ")) }
         if let b = d?.bewertung, b > 0 {
@@ -232,11 +233,12 @@ extension App {
         // (`SeerrDetailView.swift:40-43`, `SeerrKachelUndSeite.swift:370-386`).
         let titel: String
         if seerrLaeuft {
-            titel = uebersetzt("Wird angefragt …")
+            titel = uebersetzt("Wird angefragt…")
         } else if t.istSerie {
             titel = seerrGewaehlteStaffeln.isEmpty
                 ? uebersetzt("Staffeln wählen")
-                : String(format: uebersetzt("%d Staffeln anfragen"), seerrGewaehlteStaffeln.count)
+                : zahlwort(seerrGewaehlteStaffeln.count, eins: uebersetzt("1 Staffel anfragen"),
+                           viele: uebersetzt("%lld Staffeln anfragen"))
         } else {
             titel = seerrBestaetigt ? uebersetzt("Wirklich anfragen?") : uebersetzt("Anfragen")
         }
@@ -365,8 +367,8 @@ extension App {
         for (i, st) in d.staffeln.enumerated() where !st.istSpecials {
             if i > 0 { anhaengen(raum.raum, zeilenstrich()) }
             let gewaehlt = seerrGewaehlteStaffeln.contains(st.nummer)
-            let name = String(format: uebersetzt("Staffel %d"), st.nummer)
-            let unter = String(format: uebersetzt("%d Folgen"), st.folgen)
+            let name = String(format: uebersetzt("Staffel %lld"), st.nummer)
+            let unter = zahlwort(st.folgen, eins: uebersetzt("1 Folge"), viele: uebersetzt("%lld Folgen"))
             let zeile = wertezeile(symbol: gewaehlt ? "object-select-symbolic" : "tv-symbolic",
                                    titel: name, unter: unter,
                                    wert: st.stand.schonDa ? uebersetzt("Auf deinem Server") : nil,

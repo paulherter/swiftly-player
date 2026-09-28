@@ -5,11 +5,10 @@
 
 "%@ als gesehen" = "%@ als gesehen";
 "%@ ist als gesehen vermerkt." = "%@ ist als gesehen vermerkt.";
-"%d Sekunden vor" = "%d Sekunden vor";
-"%d Sekunden zurück" = "%d Sekunden zurück";
+"%lld Sekunden vor" = "%lld Sekunden vor";
+"%lld Sekunden zurück" = "%lld Sekunden zurück";
 "Abmelden" = "Abmelden";
 "Abspielen" = "Abspielen";
-"Abspielen oder anhalten" = "Abspielen oder anhalten";
 "Abspielstelle" = "Abspielstelle";
 "Als gesehen markieren" = "Als gesehen markieren";
 "Als ungesehen markieren" = "Als ungesehen markieren";
@@ -71,7 +70,7 @@
 "Metadaten auffrischen" = "Metadaten auffrischen";
 "Mit Code anmelden" = "Mit Code anmelden";
 "Mit dieser Adresse kann ich nichts anfangen." = "Mit dieser Adresse kann ich nichts anfangen.";
-"Moment …" = "Moment …";
+"Moment…" = "Moment…";
 "Neue Filme" = "Neue Filme";
 "Neue Filme und neue Serien in eigenen Reihen" = "Neue Filme und neue Serien in eigenen Reihen";
 "Neue Serien" = "Neue Serien";
@@ -109,7 +108,7 @@
 "Trailer" = "Trailer";
 "Untertitel" = "Untertitel";
 "Untertitel automatisch" = "Untertitel automatisch";
-"Verbinde …" = "Verbinde …";
+"Verbinde…" = "Verbinde…";
 "Verbinden" = "Verbinden";
 "Verbindung prüfen" = "Verbindung prüfen";
 "Verhalten" = "Verhalten";
@@ -177,14 +176,14 @@
 "Anfragen über Seerr" = "Anfragen über Seerr";
 "Angefragt" = "Angefragt";
 "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst." = "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst.";
-"Wird angefragt …" = "Wird angefragt …";
+"Wird angefragt…" = "Wird angefragt…";
 "wartet" = "wartet";
 "angefragt" = "angefragt";
 "teilweise" = "teilweise";
 
 /* Downloads */
-"%d Folgen" = "%d Folgen";
-"%d Titel" = "%d Titel";
+"%lld Folgen" = "%lld Folgen";
+"%lld Titel" = "%lld Titel";
 "%d Titel auf diesem Rechner" = "%d Titel auf diesem Rechner";
 "%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?" = "%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?";
 "%d gesehene Titel könnten weichen (%@)." = "%d gesehene Titel könnten weichen (%@).";
@@ -220,8 +219,8 @@
 "Wird geladen." = "Wird geladen.";
 
 /* Seerr-Seite und Downloads */
-"%d Min." = "%d Min.";
-"%d Staffeln anfragen" = "%d Staffeln anfragen";
+"%lld Min." = "%lld Min.";
+"%lld Staffeln anfragen" = "%lld Staffeln anfragen";
 "Abwählen" = "Abwählen";
 "Anfragen, was noch nicht da ist" = "Anfragen, was noch nicht da ist";
 "Auf deinem Server" = "Auf deinem Server";
@@ -229,8 +228,8 @@
 "Auswählen" = "Auswählen";
 "Integration" = "Integration";
 "Nicht auf deinem Server" = "Nicht auf deinem Server";
-"Staffel %d" = "Staffel %d";
-"Staffel %d · Folge %d" = "Staffel %d · Folge %d";
+"Staffel %lld" = "Staffel %lld";
+"Staffel %lld · Folge %lld" = "Staffel %lld · Folge %lld";
 "Teilweise vorhanden" = "Teilweise vorhanden";
 "Wartet auf Freigabe" = "Wartet auf Freigabe";
 "Welche Staffeln?" = "Welche Staffeln?";
@@ -292,7 +291,7 @@
 "nicht mehr auf dem Server" = "nicht mehr auf dem Server";
 "Filme & Serien" = "Filme & Serien";
 "Allgemein" = "Allgemein";
-"Startseite, Reihen und Genres" = "Startseite, Reihen und Genres";
+"Startseite, Reihen, Genres" = "Startseite, Reihen, Genres";
 "Filme, Serien und Folgen durchsuchen" = "Filme, Serien und Folgen durchsuchen";
 "Kann angefragt werden" = "Kann angefragt werden";
 "Technische Daten im Player" = "Technische Daten im Player";
@@ -313,7 +312,7 @@
 "Film" = "Film";
 "Serie" = "Serie";
 "Wirklich anfragen?" = "Wirklich anfragen?";
-"Läuft ab in %d:%02d" = "Läuft ab in %d:%02d";
+"Läuft ab in %lld:%@" = "Läuft ab in %lld:%@";
 "Läuft in Originalqualität. Der Server wandelt nichts um." = "Läuft in Originalqualität. Der Server wandelt nichts um.";
 "Titel, Serie, Person" = "Titel, Serie, Person";
 "Kein WLAN" = "Kein WLAN";
@@ -325,6 +324,7 @@
 
 /* Stufe 4: Spurwahl und Uebernahmeauswahl */
 "Erzwungen" = "Erzwungen";
+"Hörgeschädigt" = "Hörgeschädigt";
 "Datei" = "Datei";
 "Wo weiterschauen?" = "Wo weiterschauen?";
 "Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter." = "Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.";
@@ -399,8 +399,8 @@
 "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse." = "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse.";
 "Die letzte Stunde, ohne Zugangsdaten" = "Die letzte Stunde, ohne Zugangsdaten";
 "Protokoll teilen" = "Protokoll teilen";
-"%d Filme" = "%d Filme";
-"%d Serien" = "%d Serien";
+"%lld Filme" = "%lld Filme";
+"%lld Serien" = "%lld Serien";
 "%@ zu wenig" = "%@ zu wenig";
 "Alle Filme" = "Alle Filme";
 "Alle Serien" = "Alle Serien";
@@ -415,3 +415,63 @@
 /* Downloads: Ladeauswahl und Serienseite (Mac 89299260, cc4e6e75) */
 "%@ von %@" = "%@ von %@";
 "Download entfernen" = "Download entfernen";
+"Swiftly hat einen Discord" = "Swiftly hat einen Discord";
+"Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst." = "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.";
+
+"Kleinere Fassungen gibt der Server für dieses Konto nicht frei." = "Kleinere Fassungen gibt der Server für dieses Konto nicht frei.";
+"Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt." = "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt.";
+
+/* Bedienhilfe: Namen für Bildschirmleser, Tastenkürzel. */
+"Gesehen" = "Gesehen";
+"Nach oben" = "Nach oben";
+"Nach unten" = "Nach unten";
+"Weiterblättern" = "Weiterblättern";
+"Zurückblättern" = "Zurückblättern";
+"Zu %@ wechseln" = "Zu %@ wechseln";
+"%lld Prozent gesehen" = "%lld Prozent gesehen";
+"Strg+%@" = "Strg+%@";
+/* Player: Untertitel- und Tonverzoegerung */
+"Verzögerung" = "Verzögerung";
+"Zurücksetzen" = "Zurücksetzen";
+"Früher" = "Früher";
+"Später" = "Später";
+"Untertitelverzögerung %@" = "Untertitelverzögerung %@";
+"Tonverzögerung %@" = "Tonverzögerung %@";
+"Ohne Grafikbeschleunigung" = "Ohne Grafikbeschleunigung";
+/* Gemeinsam schauen (SyncPlay) — Wortlaut aus dem Xcode-Katalog. */
+"Gemeinsam schauen" = "Gemeinsam schauen";
+"Filmabend" = "Filmabend";
+"Name der Gruppe" = "Name der Gruppe";
+"Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle." = "Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle.";
+"Gruppe öffnen" = "Gruppe öffnen";
+"Pause und Springen gelten für alle." = "Pause und Springen gelten für alle.";
+"Beitreten" = "Beitreten";
+"Läuft gerade" = "Läuft gerade";
+"Noch niemand dabei" = "Noch niemand dabei";
+"noch niemand dabei" = "noch niemand dabei";
+"%@ schaut gerade" = "%@ schaut gerade";
+"%@ schauen gerade" = "%@ schauen gerade";
+"Wartet auf alle" = "Wartet auf alle";
+"%@ verlassen" = "%@ verlassen";
+"Wieder beitreten" = "Wieder beitreten";
+"mit %@" = "mit %@";
+"Gemeinsam · %@" = "Gemeinsam · %@";
+"Gruppe verlassen" = "Gruppe verlassen";
+
+/* Einzahl (UX-Audit 27.09.) */
+"1 Titel" = "1 Titel";
+"1 Staffel anfragen" = "1 Staffel anfragen";
+"1 Serie" = "1 Serie";
+"1 Film" = "1 Film";
+"1 Folge wird geladen." = "1 Folge wird geladen.";
+"1 Titel auf diesem Rechner" = "1 Titel auf diesem Rechner";
+
+/* 1.0.5: Neuerungen vom iPhone */
+"Endet um %@" = "Endet um %@";
+"Restzeit" = "Restzeit";
+"Wechselt zwischen Restzeit und Ende" = "Wechselt zwischen Restzeit und Ende";
+"Karte schließen" = "Karte schließen";
+"Nächste Folge abspielen: %@" = "Nächste Folge abspielen: %@";
+"in %lld s" = "in %lld s";
+"Aus Weiterschauen entfernen" = "Aus Weiterschauen entfernen";
+"Zur Übersicht" = "Zur Übersicht";

@@ -95,4 +95,12 @@ struct KachelmarkeTests {
         #expect(Anzeigeregeln.kachelmarke(art: nil, staffeln: nil,
                                           gesehen: nil, offeneFolgen: nil) == nil)
     }
+
+    @Test("Serie und Folge tragen den Fernseher, alles andere den Filmstreifen")
+    func kachelzeichen() {
+        #expect(Item(id: "s", name: "S", type: "Series").kachelzeichen == "tv")
+        #expect(Item(id: "e", name: "E", type: "Episode", seriesId: "s").kachelzeichen == "tv")
+        #expect(Item(id: "f", name: "F", type: "Movie").kachelzeichen == "film")
+        #expect(Item(id: "x", name: "X").kachelzeichen == "film")
+    }
 }

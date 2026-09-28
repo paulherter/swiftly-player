@@ -32,7 +32,9 @@ final class Abspielsteuerung {
             // weitergeschaut, am Mac geklickt, bevor die Startseite neu lud —
             // und der Film begann an der alten Stelle. iOS und tvOS holen sie
             // schon so; hier nebenher zum Plan, damit es nicht länger dauert.
-            async let frisch = ab == nil ? model.item(id: item.id) : nil
+            // Ohne Netz gar nicht erst fragen — die Anfrage liefe in ihre Frist.
+            let fragen = ab == nil && !model.downloads.keinNetz
+            async let frisch = fragen ? model.item(id: item.id) : nil
             guard let plan = await model.plan(for: item.id) else {
                 // Der Fehler nennt den Server, nicht nur „ging nicht" — sonst
                 // weiß man bei mehreren Servern nicht, welcher gemeint ist.
@@ -41,7 +43,10 @@ final class Abspielsteuerung {
                 return
             }
             let frischer = await frisch
-            let stelle = ab ?? (frischer ?? item).fortsetzenAb ?? 0
+            // Ohne Antwort die Stelle, die ein Download sich gemerkt hat (1.0.5).
+            let stelle = ab ?? frischer.map { $0.fortsetzenAb ?? 0 }
+                ?? model.downloads.posten(fuer: item.id)?.fortsetzenAb
+                ?? item.fortsetzenAb ?? 0
             wunsch = Abspielwunsch(item: item, plan: plan, startAt: stelle)
         }
     }

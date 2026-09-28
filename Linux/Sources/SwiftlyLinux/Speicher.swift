@@ -172,7 +172,28 @@ enum Speicher {
 
     static func downloadsLesen() -> [Downloadposten] {
         guard let daten = try? Data(contentsOf: downloaddatei) else { return [] }
-        return (try? JSONDecoder().decode([Downloadposten].self, from: daten)) ?? []
+        do {
+            return try JSONDecoder().decode([Downloadposten].self, from: daten)
+        } catch {
+            beiseitelegen(downloaddatei, weil: error)
+            return []
+        }
+    }
+
+    /// **Eine unlesbare Datei wird zur Seite gelegt, nicht ueberschrieben.**
+    ///
+    /// Vorher gab `try?` eine leere Liste zurueck, und der naechste
+    /// Fortschritt schrieb sie hin: eine einzige beschaedigte Datei (Strom
+    /// weg beim Schreiben, voller Datentraeger) und **alle** Downloads waren
+    /// aus der Liste verschwunden, waehrend die Filme weiter auf der Platte
+    /// lagen — unsichtbar und ohne Weg, sie zu loeschen. Jetzt liegt die
+    /// alte Datei daneben, und im Protokoll steht, warum.
+    static func beiseitelegen(_ datei: URL, weil fehler: Error) {
+        let stempel = Int(Date().timeIntervalSince1970)
+        let ziel = datei.deletingLastPathComponent()
+            .appendingPathComponent("\(datei.lastPathComponent).kaputt-\(stempel)")
+        try? FileManager.default.moveItem(at: datei, to: ziel)
+        Protokoll.schreib("[Ablage] \(datei.lastPathComponent) unlesbar, beiseitegelegt: \(fehler)")
     }
 
     static func downloadsSchreiben(_ posten: [Downloadposten]) {
@@ -339,26 +360,49 @@ enum Nachmeldezettel {
 
     /// Alles Liegengebliebene abschicken.
     ///
-    /// **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist der Server
-    /// wieder weg; die übrigen scheiterten auch und stünden danach als
-    /// verloren da. Wörtlich `AppModel.nachmeldungenAbschicken()`.
+    /// **Was gilt, entscheidet das Paket** (`JellyfinClient.nachmelden`):
+    /// älteste zuerst, ein neuerer Stand am Server gewinnt, beim ersten
+    /// Fehler bleibt der Rest liegen. **Nie zweimal gleichzeitig** — gerufen
+    /// wird beim Laden der Startseite und vor dem Nachziehen der Downloads,
+    /// und zwei Durchgänge nebeneinander schickten dieselbe Stelle doppelt.
+    /// Wie `AppModel.nachmeldungenAbschicken()`.
     static func abschicken(_ client: JellyfinClient, konto: String) async {
         guard !konto.isEmpty else { return }
         let offen = Nachmelderegeln.faellig(Speicher.nachmeldungenLesen(), konto: konto)
-        guard !offen.isEmpty else { return }
-        var geschafft: [String] = []
-        for m in offen {
-            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
-            // nur die Kennungen, und eine Sitzung gab es offline ohnehin nicht.
-            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
-            do {
-                try await client.reportStopped(itemID: m.itemID, plan: plan,
-                                               positionTicks: m.ticks)
-                geschafft.append(m.id)
-            } catch { break }
-        }
-        guard !geschafft.isEmpty else { return }
+        guard !offen.isEmpty, sperre.nehmen() else { return }
+        defer { sperre.freigeben() }
+        let erledigt = await client.nachmelden(offen) { Protokoll.schreib($0) }
+        guard !erledigt.isEmpty else { return }
         Speicher.nachmeldungenSchreiben(
-            Nachmelderegeln.erledigt(geschafft, in: Speicher.nachmeldungenLesen()))
+            Nachmelderegeln.erledigt(erledigt, in: Speicher.nachmeldungenLesen()))
+    }
+
+    /// Eine später doch angekommene Ende-Meldung räumt die liegende ab —
+    /// eine ältere Stelle darf danach nicht mehr hinaus.
+    static func ueberholt(_ itemID: String, konto: String) {
+        guard !konto.isEmpty else { return }
+        Speicher.nachmeldungenSchreiben(
+            Nachmelderegeln.ueberholt(itemID: itemID, konto: konto,
+                                      in: Speicher.nachmeldungenLesen()))
+    }
+
+    /// Ein Durchgang zur Zeit, über Fäden hinweg.
+    private static let sperre = Durchgangssperre()
+}
+
+/// Ein Schalter mit Schloss: `nehmen` gelingt nur, solange niemand drin ist.
+private final class Durchgangssperre: @unchecked Sendable {
+    private let schloss = NSLock()
+    private var belegt = false
+
+    func nehmen() -> Bool {
+        schloss.lock(); defer { schloss.unlock() }
+        guard !belegt else { return false }
+        belegt = true
+        return true
+    }
+
+    func freigeben() {
+        schloss.lock(); belegt = false; schloss.unlock()
     }
 }

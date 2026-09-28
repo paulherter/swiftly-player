@@ -26,7 +26,14 @@ import Foundation
 final class Medienleiste: @unchecked Sendable {
 
     /// Was die Leiste auslöst. Dieselben Griffe wie am Knopf.
-    enum Griff { case abspielen, anhalten, umschalten, beenden, weiter, zurueck }
+    /// `vorholen` und `schliessen` sind MPRIS' `Raise` und `Quit`: die Leiste
+    /// sagt `CanRaise`/`CanQuit`, also muessen sie auch etwas tun.
+    ///
+    /// `schlaeft` und `aufgewacht` sind keine Tasten, kommen aber auf demselben
+    /// Weg: unter Linux von logind (`PrepareForSleep`), unter Windows als
+    /// `WM_POWERBROADCAST` an die Fensterprozedur der Medientasten.
+    enum Griff { case abspielen, anhalten, umschalten, beenden, weiter, zurueck,
+                      vorholen, schliessen, schlaeft, aufgewacht }
 
     /// **`GVariantType` und `GDBusConnection` sind unvollstaendige Typen** und
     /// kommen in Swift als `OpaquePointer` an — dieselbe Falle wie bei
@@ -97,7 +104,33 @@ final class Medienleiste: @unchecked Sendable {
 
     // MARK: Anmelden
 
+    private var systembus: OpaquePointer?
+    private var schlafabo: guint = 0
+
+    /// **Ruhezustand und Aufwachen, von logind.** Kurz vor dem Schlafen
+    /// sendet es `PrepareForSleep(true)`, nach dem Aufwachen
+    /// `PrepareForSleep(false)` — auf dem Systembus, nicht dem der Sitzung.
+    /// Ohne das lief ein Film nach dem Aufwachen stumm oder gar nicht
+    /// weiter: die Tonausgabe war neu verhandelt, der Strom zum Server
+    /// abgerissen, und die App wusste von beidem nichts.
+    private func schlafAnmelden() {
+        #if !os(Windows)
+        var fehler: UnsafeMutablePointer<GError>?
+        guard let bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nil, &fehler) else {
+            if let fehler { g_error_free(fehler) }
+            return
+        }
+        systembus = bus
+        schlafabo = g_dbus_connection_signal_subscribe(
+            bus, "org.freedesktop.login1", "org.freedesktop.login1.Manager",
+            "PrepareForSleep", "/org/freedesktop/login1", nil,
+            GDBusSignalFlags(rawValue: 0), schlafRuf,
+            Unmanaged.passUnretained(self).toOpaque(), nil)
+        #endif
+    }
+
     private func anmelden() {
+        schlafAnmelden()
         var fehler: UnsafeMutablePointer<GError>?
         guard let bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nil, &fehler) else {
             // **Still.** Ohne Sitzungsbus — in einer abgeschotteten Umgebung,
@@ -137,6 +170,10 @@ final class Medienleiste: @unchecked Sendable {
     }
 
     private func abmelden() {
+        if let systembus, schlafabo != 0 {
+            g_dbus_connection_signal_unsubscribe(systembus, schlafabo)
+            schlafabo = 0
+        }
         guard let bus = verbindung else { return }
         if stamm != 0 { g_dbus_connection_unregister_object(bus, stamm) }
         if spieler != 0 { g_dbus_connection_unregister_object(bus, spieler) }
@@ -166,7 +203,7 @@ final class Medienleiste: @unchecked Sendable {
         let bauer = Medienleiste.mitTyp("a{sv}") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(bauer) }
         Medienleiste.eintragen(bauer, "PlaybackStatus",
-                               g_variant_new_string(laeuft ? "Playing" : "Paused"))
+                               g_variant_new_string(status))
         Medienleiste.eintragen(bauer, "Metadata", metadaten())
 
         let leer = Medienleiste.mitTyp("as") { g_variant_builder_new($0) }
@@ -186,9 +223,23 @@ final class Medienleiste: @unchecked Sendable {
     }
 
     /// Die Angaben, die die Kachel anzeigt.
+    /// **Ohne Titel ist nichts pausiert, sondern nichts da.** Hier stand
+    /// nach dem Schliessen des Players „Paused" mit leerem Titel — die
+    /// Medienkachel der Arbeitsumgebung blieb dann mit einer leeren Zeile
+    /// stehen, bis die App ging. MPRIS kennt dafuer `Stopped` und die
+    /// Spur `NoTrack`.
+    fileprivate var status: String {
+        titel.isEmpty ? "Stopped" : (laeuft ? "Playing" : "Paused")
+    }
+
     fileprivate func metadaten() -> OpaquePointer? {
         let bauer = Medienleiste.mitTyp("a{sv}") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(bauer) }
+        guard !titel.isEmpty else {
+            Medienleiste.eintragen(bauer, "mpris:trackid",
+                                   g_variant_new_object_path("/org/mpris/MediaPlayer2/TrackList/NoTrack"))
+            return g_variant_builder_end(bauer)
+        }
         // Eine Kennung ist Pflicht; ohne sie halten manche Umgebungen den
         // Eintrag für unfertig und zeigen ihn gar nicht.
         Medienleiste.eintragen(bauer, "mpris:trackid",
@@ -259,12 +310,26 @@ nonisolated(unsafe) private let mprisAufruf: @convention(c) (
     case "Stop":      leiste.loesen(.beenden)
     case "Next":      leiste.loesen(.weiter)
     case "Previous":  leiste.loesen(.zurueck)
-    // „Raise" holt das Fenster nach vorn; „Quit" beendet die App. Beides
-    // beantworten wir, ohne etwas zu tun — sonst meldet die Umgebung einen
-    // Fehler, und manche blenden den Eintrag daraufhin aus.
+    // „Raise" holt das Fenster nach vorn, „Quit" schliesst es. Beides wurde
+    // quittiert, ohne etwas zu tun — waehrend `CanRaise`/`CanQuit` wahr
+    // meldeten: ein Klick auf die Kachel holte die App nicht hervor.
+    case "Raise":     leiste.loesen(.vorholen)
+    case "Quit":      leiste.loesen(.schliessen)
     default: break
     }
     if let aufruf { g_dbus_method_invocation_return_value(aufruf, nil) }
+}
+
+/// logind: `PrepareForSleep(b)` — wahr vor dem Schlafen, falsch danach.
+nonisolated(unsafe) private let schlafRuf: @convention(c) (
+    OpaquePointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, OpaquePointer?, gpointer?
+) -> Void = { _, _, _, _, _, werte, daten in
+    guard let daten, let werte, let wert = g_variant_get_child_value(werte, 0) else { return }
+    let schlaeft = g_variant_get_boolean(wert) != 0
+    g_variant_unref(wert)
+    Unmanaged<Medienleiste>.fromOpaque(daten).takeUnretainedValue()
+        .loesen(schlaeft ? .schlaeft : .aufgewacht)
 }
 
 nonisolated(unsafe) private let mprisLesen: @convention(c) (
@@ -284,7 +349,7 @@ nonisolated(unsafe) private let mprisLesen: @convention(c) (
         defer { g_variant_builder_unref(leer) }
         return g_variant_builder_end(leer)
     case "PlaybackStatus":
-        return g_variant_new_string(leiste.laeuft ? "Playing" : "Paused")
+        return g_variant_new_string(leiste.status)
     case "Metadata":            return leiste.metadaten()
     case "Position":            return g_variant_new_int64(gint64(leiste.stelle * 1_000_000))
     case "CanPlay", "CanPause", "CanControl":
@@ -319,6 +384,8 @@ private let tastenrueckruf: @convention(c) (Int32) -> Void = { kennung in
     case 1:  griff = .beenden
     case 2:  griff = .weiter
     case 3:  griff = .zurueck
+    case 4:  griff = .schlaeft
+    case 5:  griff = .aufgewacht
     default: griff = .umschalten
     }
     tastenziel?(griff)

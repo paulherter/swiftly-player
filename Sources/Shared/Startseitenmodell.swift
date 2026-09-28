@@ -45,8 +45,18 @@ final class Startseitenmodell {
     /// unverändert alt ist.
     private(set) var zuletztGeladen: Date?
 
+    /// **Wie viele Läufe gerade unterwegs sind.** Nur für
+    /// ``brauchtAuffrischung``: solange einer läuft, ist nichts fällig.
+    private var laufendeLaeufe = 0
+
     /// Zu welchem Kontostand der Inhalt gehört.
     private var fuerKonto = 0
+    /// Zählt jeden Ladelauf. **Nur der jüngste schreibt.** Angestossen wird
+    /// von mehreren Stellen — Kontowechsel, Einstellung, Rückkehr aus dem
+    /// Player, Ziehen zum Aktualisieren —, und die Läufe überholen sich: ein
+    /// älterer, der später ankommt, schrieb sonst seinen Stand über den
+    /// neueren, nach einem Kontowechsel sogar den des vorigen Kontos.
+    private var lauf = 0
 
     /// **Auch die Genrereihen zählen.** Wer alle festen Reihen ausblendet
     /// und nur Genres als Reihen zeigt, hat eine volle Startseite — ohne
@@ -59,7 +69,35 @@ final class Startseitenmodell {
 
     func laden(_ model: AppModel) async {
         let diesesKonto = model.kontowechsel
-        if model.views.isEmpty { await model.loadViews() }
+        laufendeLaeufe += 1
+        defer { laufendeLaeufe -= 1 }
+        lauf += 1
+        let meiner = lauf
+        /// Nach jedem `await`: gilt dieser Lauf noch?
+        func gilt() -> Bool { meiner == lauf && diesesKonto == model.kontowechsel }
+        // **Nach einem Kontowechsel sofort leer**, nicht erst, wenn die
+        // Antwort da ist. Bis dahin stand die Startseite des vorigen Kontos
+        // unter dem neuen Profilbild, und dann wechselte Reihe um Reihe.
+        // Jetzt stehen die Platzhalter, und das neue Konto blendet in einem
+        // Zug ein (siehe unten).
+        if diesesKonto != fuerKonto, geladen || !alleLeer { leeren() }
+        // **Erst der Stand vom letzten Mal, dann der Server** — siehe
+        // `Startseitenablage`. Nur, solange noch nichts dasteht: beim
+        // Auffrischen bleibt ohnehin der alte Stand stehen, bis der neue da ist.
+        if !geladen, alleLeer, let konto = model.session?.kontoschluessel,
+           let ablage = await Self.ablageLesen(konto) {
+            guard gilt() else { return }
+            if alleLeer { vorschauZeigen(ablage, model: model) }
+            fuerKonto = diesesKonto
+        }
+        if model.views.isEmpty {
+            await model.loadViews()
+        } else if !geladenVomServer {
+            // Die Bibliotheken kamen aus der Ablage: frisch holen, aber nicht
+            // darauf warten — die Reihen brauchen nur ihre Kennungen.
+            Task { await model.loadViews() }
+        }
+        guard gilt() else { return }
         // Ohne Client kam nichts an — wie vorher, als die Hilfsfunktionen dann `nil` gaben.
         guard let client = model.client else {
             gestoert = !Task.isCancelled
@@ -96,6 +134,15 @@ final class Startseitenmodell {
             serienBibliothek: model.gewaehlteBibliothek(art: "tvshows")?.id,
             gattungen: nil,
             bisherWeiterschauen: weiterschauen))
+        guard gilt() else { return }
+        // **Beim ersten Einblenden alles in einem Zug.** Steht noch nichts
+        // da — erster Start oder frisch nach einem Kontowechsel —, wartet die
+        // Seite auch auf die Genres, statt sie einen Moment spaeter unter die
+        // festen Reihen zu schieben. Sie laufen ohnehin nebenher (oben);
+        // beim Auffrischen einer stehenden Seite bleibt es beim Nachreichen.
+        let ersteMal = !geladen
+        let vorab: [Gattungsreihe]? = ersteMal ? await gattungen : nil
+        guard gilt() else { return }
         let wechsel = diesesKonto != fuerKonto
         fuerKonto = diesesKonto
         func uebernehmen(_ neu: [Item]?, _ alt: [Item]) -> [Item] {
@@ -123,14 +170,134 @@ final class Startseitenmodell {
         // `uebernehmen` fuer alle anderen Reihen seit jeher trifft: ein leeres
         // Ergebnis nach einem Kontowechsel heisst leer, sonst heisst es „der
         // Abruf kam nicht durch".
-        let frische = await gattungen
-        if !frische.isEmpty || wechsel || model.genreChips { gattungsreihen = frische }
+        if let vorab {
+            gattungsreihen = vorab
+        } else {
+            let frische = await gattungen
+            guard gilt() else { return }
+            if !frische.isEmpty || wechsel || model.genreChips { gattungsreihen = frische }
+        }
+        // **Nicht auf dem Fernseher.** Das Vorholen fuellt den Vorrat, den
+        // `Serienspeicher.serie(fuer:mit:)` liest — und das tun nur iPhone,
+        // iPad und Mac auf dem Weg von einer Folge zu ihrer Serie. tvOS geht
+        // ueber `Serienspeicher.stand` und `Item.vorlaeufigeSerie`. Gemessen
+        // am 25.09.2026 im tvOS-Simulator: 18 Einzelabrufe `Items/<id>`
+        // gleichzeitig mit den ersten Plakaten, deren Ergebnis niemand las.
+        if !gestoert {
+            geladenVomServer = true
+            if let konto = model.session?.kontoschluessel { ablageSchreiben(konto, model: model) }
+            // Sammlungen und Anteile gemischter Bibliotheken vorab — die
+            // Detailseite zeigt ihre Sammlungsreihe sonst erst nach zwei
+            // weiteren Abrufen.
+            Task { await model.angebotLaden() }
+        }
+        #if !os(tvOS)
         Serienspeicher.geteilt.vorholen(
             weiterschauen + naechsteFolge + zuletzt + neueSerien, mit: model)
+        #else
+        // **Wo es weitergeht, steht in diesen Reihen schon da** — die Folge
+        // in „Naechste Folge" und „Weiterschauen" ist die vom Server. Der
+        // Hauptknopf der Serienseite nennt sie damit sofort. Weiterschauen
+        // zuletzt: eine angefangene Folge geht vor.
+        Serienspeicher.geteilt.naechsteMerken(aus: naechsteFolge)
+        Serienspeicher.geteilt.naechsteMerken(aus: weiterschauen)
+        // **Auf dem Fernseher gebuendelt, je Reihe eine Anfrage** — fuer die
+        // Angabenzeile im Kopf. Niedrige Prioritaet und erst jetzt, nach dem
+        // Laden der Reihen: die Plakate gehen vor. Siehe
+        // `Serienspeicher.vorholenGebuendelt`.
+        for reihe in [weiterschauen, naechsteFolge, zuletzt] where !reihe.isEmpty {
+            Task(priority: .utility) {
+                await Serienspeicher.geteilt.vorholenGebuendelt(reihe, mit: model)
+            }
+        }
+        #endif
+    }
+
+    // MARK: - Ablage
+
+    /// Ob dieser Stand schon einmal vom Server kam — bis dahin stammen die
+    /// Bibliotheken womöglich aus der Ablage und werden nebenher aufgefrischt.
+    private var geladenVomServer = false
+
+    private func vorschauZeigen(_ ablage: Startseitenablage, model: AppModel) {
+        model.bibliothekenVorab(ablage.bibliotheken)
+        let getrennt = model.neuzugangGetrennt
+        weiterschauen = ablage.weiterschauen
+        naechsteFolge = ablage.naechsteFolge
+        zuletzt = getrennt ? [] : ablage.zuletzt
+        neueFilme = getrennt ? ablage.neueFilme : []
+        neueSerien = getrennt ? ablage.neueSerien : []
+        // Nur Genres, die noch gewählt sind, in der gewählten Reihenfolge.
+        let je = Dictionary(ablage.gattungsreihen.map { ($0.name, $0.items) },
+                            uniquingKeysWith: { a, _ in a })
+        gattungsreihen = model.genreChips ? [] : model.startGenres.compactMap { name in
+            je[name].map { Gattungsreihe(name: name, items: $0) }
+        }
+        geladen = true
+    }
+
+    private static var ablageOrdner: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Startseite", isDirectory: true)
+    }
+
+    private static func ablageLesen(_ konto: String) async -> Startseitenablage? {
+        guard let ordner = ablageOrdner else { return nil }
+        let datei = ordner.appendingPathComponent(Startseitenablage.dateiname(konto: konto))
+        return await Task.detached(priority: .userInitiated) {
+            (try? Data(contentsOf: datei)).flatMap(Startseitenablage.lesen)
+        }.value
+    }
+
+    private func ablageSchreiben(_ konto: String, model: AppModel) {
+        guard let ordner = Self.ablageOrdner else { return }
+        let ablage = Startseitenablage(
+            bibliotheken: model.views, weiterschauen: weiterschauen,
+            naechsteFolge: naechsteFolge, zuletzt: zuletzt, neueFilme: neueFilme,
+            neueSerien: neueSerien,
+            gattungsreihen: gattungsreihen.map { .init(name: $0.name, items: $0.items) })
+        Task.detached(priority: .utility) {
+            guard let daten = try? ablage.daten() else { return }
+            try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+            try? daten.write(to: ordner.appendingPathComponent(Startseitenablage.dateiname(konto: konto)),
+                             options: .atomic)
+        }
+    }
+
+    /// Beim Abmelden: der Stand eines Kontos, das nicht mehr auf dem Gerät
+    /// ist, bleibt nicht liegen.
+    static func ablageLoeschen(_ konto: String) {
+        guard let ordner = ablageOrdner else { return }
+        try? FileManager.default.removeItem(
+            at: ordner.appendingPathComponent(Startseitenablage.dateiname(konto: konto)))
+    }
+
+    /// Zurück auf „noch nichts geladen" — die Seite zeigt ihre Platzhalter.
+    private func leeren() {
+        weiterschauen = []
+        naechsteFolge = []
+        zuletzt = []
+        neueFilme = []
+        neueSerien = []
+        gattungsreihen = []
+        geladen = false
+        gestoert = false
+        zuletztGeladen = nil
+        // Nach einem Kontowechsel oder Abmelden gilt wieder: was aus der
+        // Ablage kommt, wird nebenher vom Server aufgefrischt.
+        geladenVomServer = false
     }
 
     /// Muss beim Zurückkommen in den Vordergrund neu geholt werden?
+    ///
+    /// **Nicht, solange ein Lauf unterwegs ist.** Beim Kaltstart schlägt die
+    /// Phase auf „aktiv", während der erste Lauf noch wartet — `zuletztGeladen`
+    /// ist dann `nil`, also galt alles als fällig, und ein zweiter Lauf holte
+    /// Bibliotheken und alle Reihen noch einmal. Gemessen am 25.09.2026 im
+    /// tvOS-Simulator: bis zu fünf doppelte Anfragen je Start, der erste Lauf
+    /// wurde verworfen. Der Mac hängt an derselben Frage
+    /// (`didBecomeActiveNotification`).
     var brauchtAuffrischung: Bool {
-        Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztGeladen)
+        laufendeLaeufe == 0 && Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztGeladen)
     }
 }

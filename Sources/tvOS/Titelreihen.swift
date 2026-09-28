@@ -63,6 +63,7 @@ func reihenabschnitt<Kopf: View, Inhalt: View>(
 /// werden.
 func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
                             hoehe: CGFloat? = nil,
+                            auslauf: CGFloat? = nil,
                             @ViewBuilder _ inhalt: () -> Inhalt) -> some View {
     let flaeche = ScrollView(.horizontal) {
         // Waagerecht bleibt der faule Stapel: hier setzt niemand den Fokus
@@ -120,7 +121,12 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
     // Sichtbar nur dort, wo eine Bindung uebergeben wird; die Startseite
     // ohne `stand` sah immer richtig aus. `contentMargins` gehoert der
     // Flaeche, nicht dem Inhalt, und wird beim Anfahren mitgerechnet.
-    .contentMargins(.horizontal, Stil.randSeite, for: .scrollContent)
+    .contentMargins(.leading, Stil.randSeite, for: .scrollContent)
+    // **Rechts so viel Luft, dass auch die letzte Kachel vorn stehen kann**
+    // (`auslauf`). Ohne sie hoerte die Flaeche auf, sobald die letzte Kachel
+    // rechts anschlug: in einer Staffel mit zehn Folgen liess sich F8 nicht
+    // an die erste Stelle fahren, und `scrollPosition` blieb davor stehen.
+    .contentMargins(.trailing, auslauf ?? Stil.randSeite, for: .scrollContent)
     // Ohne das sucht tvOS senkrecht nach einer Kachel in derselben Spalte.
     // Reihen verschiedener Laenge lassen den Fokus dann zwei Reihen tief
     // fallen. Als Abschnitt gilt die Reihe als Ganzes.
@@ -199,7 +205,8 @@ struct Titelstreifen: View {
                     Button { starten(item) } label: {
                         Kachelinhalt(bild: model.querbildURL(for: item, breite: 900)
                                            ?? model.imageURL(for: item, maxHeight: 600),
-                                     titel: item.name, quer: true)
+                                     titel: item.name, quer: true,
+                                     zeichen: item.kachelzeichen)
                     }
                     .buttonStyle(KachelStil())
                 } else {
@@ -214,9 +221,11 @@ struct Titelstreifen: View {
                                         art: item.type,
                                         staffeln: item.childCount,
                                         gesehen: item.userData?.played,
-                                        offeneFolgen: item.userData?.unplayedItemCount))
+                                        offeneFolgen: item.userData?.unplayedItemCount),
+                                     zeichen: item.kachelzeichen)
                     }
                     .buttonStyle(KachelStil())
+                    .kachelmenue(item, model: model)
                 }
             }
         }
@@ -238,23 +247,58 @@ struct Folgenstreifen: View {
     /// Meldet nach oben, welche Folge unter dem Fokus steht — und nimmt den
     /// Startfokus entgegen.
     @FocusState.Binding var amFolge: String?
+    /// **Langer Druck: das Kachelmenü, wie an jeder anderen Folge**
+    /// (``Kachelmenue``) — gesehen/ungesehen, Gemeinsam schauen. Vorher
+    /// stand hier nur „Gemeinsam schauen", im Player gar nichts.
+    ///
+    /// Im Player ohne Abspielen und Gemeinsam — siehe `Kachelmenue.imPlayer`.
+    var imPlayer = false
+    /// Nach einer Änderung am Sehstand, damit Haken und Balken nachziehen.
+    var nachher: (() async -> Void)? = nil
 
     /// Welche Kachel vorn steht. Beim Erscheinen die Folge, bei der es
     /// weitergeht — danach fuehrt die Scrollflaeche den Wert selbst nach.
     ///
-    /// Als Anfangswert und nicht in `onAppear`: gesetzt heisst hier auch
-    /// angewandt, weil die Bindung schon im ersten Zeichendurchgang steht.
-    /// Nachgereicht waere es wieder ein Wettlauf mit dem Fokusmotor.
+    /// **Nicht als Anfangswert, sondern gleich danach gesetzt** (siehe
+    /// `anfahren()`). Als Anfangswert stand hier seit 1.0.0 die Behauptung
+    /// „gesetzt heisst angewandt" — am Apple TV (27.09.) stimmte das nicht:
+    /// die Bindung trug die Folge, `defaultFocus` fand sie auch, aber die
+    /// Reihe stand bei F1. Vermutlich liest `scrollPosition` den
+    /// Anfangswert, bevor der faule Stapel etwas ausgemessen hat, und
+    /// verwirft ihn; eine **Aenderung** der Bindung faehrt an. Frueher fiel das
+    /// nicht auf, weil der Startfokus auf der Folge lag und der Fokusmotor
+    /// sie ins Bild holte (entfernt in 87dd181e).
     @State private var vorne: String?
+    /// Ob man schon selbst in der Reihe war. Bis dahin steht die Folge, bei
+    /// der es weitergeht, vorn — auch wenn der Stand erst spaeter kommt.
+    /// Danach gehoert der Scrollstand dem Nutzer.
+    @State private var selbstDagewesen = false
+    /// Die Folge, bei der es weitergeht, wie die Seite sie gerade kennt.
+    ///
+    /// **Sie kann sich nach dem Erscheinen noch aendern** — und genau das
+    /// war der Fehler bei „From" (27.09.). Die Serienseite baut den Streifen
+    /// beim zweiten Besuch sofort aus dem `Serienspeicher`, samt dem
+    /// gemerkten Stand. Der ist alt, sobald man seitdem weitergeschaut hat;
+    /// der frische kommt erst mit `laden()`. `vorne` nahm aber nur den
+    /// Anfangswert, und `.equatable()` liess die Aenderung gar nicht erst
+    /// durch: die Reihe blieb bei F1 (oder der alten Folge) stehen, obwohl
+    /// der Knopf darueber schon die neue Folge nannte. Wo Speicher und
+    /// Server uebereinstimmen oder die Seite zum ersten Mal aufgeht, fiel es
+    /// nicht auf — so bei The Mentalist.
+    let weiterMit: String?
 
     init(model: AppModel, folgen: [Item], weiterMit: String?,
          amFolge: FocusState<String?>.Binding,
+         imPlayer: Bool = false,
+         nachher: (() async -> Void)? = nil,
          starten: @escaping (Item) -> Void) {
         self.model = model
         self.folgen = folgen
+        self.imPlayer = imPlayer
+        self.nachher = nachher
         self.starten = starten
         self._amFolge = amFolge
-        _vorne = State(initialValue: weiterMit)
+        self.weiterMit = weiterMit
     }
 
     var body: some View {
@@ -264,7 +308,9 @@ struct Folgenstreifen: View {
         // Streifen zentriert darin: es wurde schlimmer, nicht besser.
         //
         // Der eigentliche Befund lag ohnehin woanders, siehe unten.
-        streifen(stand: $vorne) {
+        streifen(stand: $vorne,
+                 // Die letzte Folge darf vorn stehen — siehe `auslauf`.
+                 auslauf: Stil.schirmBreite - Stil.randSeite - Stil.querBreite) {
             ForEach(folgen) { folge in
                 Button { starten(folge) } label: {
                     // `querbildURL` baut die Adresse aus `seriesId ?? id` —
@@ -281,28 +327,98 @@ struct Folgenstreifen: View {
                                  // dieselbe Auskunft zweimal.
                                  fortschritt: folge.istGesehen ? nil : folge.gesehenerAnteil,
                                  marke: folge.istGesehen ? .gesehen : nil,
-                                 gesehen: folge.istGesehen)
+                                 gesehen: folge.istGesehen,
+                                 zeichen: folge.kachelzeichen)
                 }
                 .buttonStyle(KachelStil())
                 .focused($amFolge, equals: folge.id)
+                .kachelmenue(folge, model: model, quer: true,
+                             imPlayer: imPlayer, nachher: nachher)
             }
+        }
+        // **Kein Nachziehen im Streifen.** Beim Oeffnen kommt die Liste der
+        // Staffel zweimal: aus dem `Serienspeicher` sofort, frisch vom
+        // Server in der animierten Transaktion von `laden()`. Dieselben
+        // Folgen, aber mit neuem Sehstand, anderer Restzeit, mal einem
+        // anderen Bild — und jede dieser Aenderungen lief animiert durch
+        // den Streifen. Unterschiedlich breite Beschriftungen schoben die
+        // Nachbarn im faulen Stapel hin und her, und der Stand vorne wurde
+        // nachgefahren: das Zittern beim Oeffnen, das nur kam, wenn sich
+        // zwischen Speicher und Server etwas geaendert hatte — also selten.
+        //
+        // Eingeblendet wird der Streifen weiter, aber von aussen (die
+        // Uebergaenge an der Serienseite und am Player). Innen steht er
+        // still; die Fokuskurven der Kacheln haengen an ihrem eigenen Wert
+        // und gelten weiter.
+        .transaction { $0.animation = nil }
+        // **Runter aus dem Kopf landet auf der Folge vorn** — beim Oeffnen
+        // ist das die, bei der es weitergeht. tvOS sucht sonst geometrisch
+        // und nahm die Kachel unter dem Hauptknopf, also meist F1.
+        // `.userInitiated`, weil genau der Druck nach unten gemeint ist.
+        // Hat man selbst gescrollt, ist `vorne` die Kachel, die jetzt vorn
+        // steht — der Fokus springt nicht zurueck an eine unsichtbare Stelle.
+        .defaultFocus($amFolge, vorne ?? weiterMit, priority: .userInitiated)
+        // **Beim Erscheinen und bei jedem spaeteren Stand vorn**, solange
+        // man nicht selbst in der Reihe war. Der Streifen blendet von aussen
+        // ein; der Zug nach vorn faellt in dessen ersten Augenblick und ist
+        // unanimiert (`.transaction` oben), es rutscht also nichts sichtbar
+        // nach.
+        .task(id: weiterMit) { await anfahren() }
+        .onChange(of: amFolge) { _, jetzt in
+            if jetzt != nil { selbstDagewesen = true }
         }
     }
 
+    /// Faehrt die Folge, bei der es weitergeht, an die erste Stelle.
+    private func anfahren() async {
+        guard !selbstDagewesen, let ziel = weiterMit else { return }
+        // Einen Durchgang abwarten: dann steht die Scrollflaeche, und die
+        // Aenderung der Bindung faehrt an, statt wie ein Anfangswert
+        // verworfen zu werden.
+        await Task.yield()
+        // Abgelöst (neuer Stand kam nach): dessen Lauf fährt an, nicht dieser.
+        guard !Task.isCancelled, !selbstDagewesen, vorne != ziel else { return }
+        vorne = ziel
+    }
+
     private func kopfzeile(_ folge: Item) -> String {
+        // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand
+        // hier fest als „F", auch auf Englisch (gemeldet 27.09.2026).
         guard let nummer = folge.indexNumber else { return folge.name }
-        return "F\(nummer) · \(folge.name)"
+        return String(localized: "F\(nummer)") + " · " + folge.name
     }
 
     /// „52 Min", und wo etwas angefangen ist, dahinter der Rest.
     private func dauerzeile(_ folge: Item) -> String? {
         var teile: [String] = []
-        if let sekunden = folge.runtimeSeconds, sekunden > 0 {
+        // Die Regel aus dem Paket, nicht eine eigene Pruefung daneben.
+        if Anzeigeregeln.laufzeitZeigen(sekunden: folge.runtimeSeconds),
+           let sekunden = folge.runtimeSeconds {
             teile.append(String(localized: "\(Int(sekunden / 60)) Min"))
         }
         // „Gesehen" steht als Haken im Bild, nicht als Wort.
         if let rest = folge.restzeitText { teile.append(rest) }
         return teile.isEmpty ? nil : teile.joined(separator: " · ")
+    }
+}
+
+/// **Der Streifen zeichnet sich nur neu, wenn sich seine Folgen aendern.**
+///
+/// Dasselbe Muster wie `FolgenEbene` im Player (27.09.2026): `starten` und
+/// `nachher` sind bei jedem Durchgang der Seite neue Bloecke, SwiftUI kann
+/// sie nicht vergleichen und rechnete deshalb den ganzen Streifen samt
+/// Kachelmenues neu — auf der Serienseite bei jedem Zustand, der sich beim
+/// Oeffnen setzt: Fokus, Plan, Merkliste, Gesehen, Einblenden. Siehe den
+/// Kommentar zu `tafelhandlungen` in `PlayerEbenen.swift`.
+///
+/// Verglichen wird, was der Streifen zeigt. `starten` und `nachher` lesen
+/// ihren Zustand beim Aufruf, ein aelterer Block tut dasselbe wie ein neuer.
+/// `weiterMit` zaehlt mit: der frische Stand muss durchkommen, siehe dort.
+extension Folgenstreifen: @MainActor Equatable {
+    static func == (links: Folgenstreifen, rechts: Folgenstreifen) -> Bool {
+        links.folgen == rechts.folgen && links.imPlayer == rechts.imPlayer
+            && links.weiterMit == rechts.weiterMit
+            && links.model === rechts.model
     }
 }
 
@@ -319,19 +435,20 @@ struct Folgenstreifen: View {
 /// eine Ueberschrift kein Fokusziel, und ein Weg, den der Fokus nicht
 /// erreicht, ist keiner (VERHALTEN F, Eingabe). Die Kapsel traegt den Namen
 /// der Sammlung — dieselbe Angabe, die am iPhone darunter steht.
+///
+/// **Geladen wird auf der Filmseite, nicht hier** — wie am iPhone seit
+/// 24.09.2026. Die Reihe holte sich ihre Titel selbst und kam spaeter als
+/// alles andere; jetzt wartet die Filmseite auf sie wie auf Extras und
+/// Aehnliches und blendet alles zusammen ein.
 struct Sammlungsreihe: View {
     let model: AppModel
     let titel: Item
-
-    @State private var reihen: [(sammlung: Sammlung, titel: [Item])] = []
+    let reihen: [AppModel.Sammlungsreihendaten]
 
     private var art: String? { Bibliotheksgattung.art(zuTyp: titel.type) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Ein Anker, damit `.task` auch dann laeuft, wenn noch keine
-            // Reihe dasteht.
-            Color.clear.frame(height: 0)
             ForEach(reihen, id: \.sammlung.id) { reihe in
                 reihenabschnitt {
                     HStack(alignment: .center, spacing: 24) {
@@ -347,18 +464,5 @@ struct Sammlungsreihe: View {
                 }
             }
         }
-        .task(id: "\(titel.id)|\(model.kontowechsel)") { await laden() }
-    }
-
-    private func laden() async {
-        guard let art else { return }
-        await model.angebotLaden()
-        var gefunden: [(sammlung: Sammlung, titel: [Item])] = []
-        for sammlung in model.sammlungen(mit: titel).prefix(2) {
-            guard let liste = await model.sammlungstitel(sammlung, art: art) else { continue }
-            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
-            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
-        }
-        withAnimation(Stil.einblenden) { reihen = gefunden }
     }
 }

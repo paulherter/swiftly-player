@@ -60,6 +60,19 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     private var laufend: String?
     private var ziel: FileHandle?
     private var zielpfad: URL?
+    /// **Die Datei gehoert dem Auftrag, der sie beschreibt — und nur ihm.**
+    ///
+    /// `ziel` wird auf dem Hauptfaden geschlossen (Anhalten, Entfernen,
+    /// Abschluss), beschrieben aber in der Warteschlange der Sitzung. Ohne
+    /// Schloss schrieb ein spaetes Stueck in eine gerade geschlossene Datei,
+    /// und nach einem Anhalten mit sofort folgendem naechsten Download sogar
+    /// in die Datei des **naechsten** Titels. Hier stehen Auftrag und Datei
+    /// zusammen; ein Rueckruf, dessen Auftrag nicht mehr dieser ist, schreibt
+    /// nichts.
+    private let schreibschloss = NSLock()
+    private var schreibauftrag: URLSessionTask?
+    private var schreibziel: FileHandle?
+    private var schreibVorher: Int64 = 0
     /// Wie viel bei diesem Anlauf schon dastand. Der Fortschritt zaehlt
     /// darauf, sonst faengt der Balken beim Fortsetzen wieder bei null an.
     private var vorher: Int64 = 0
@@ -133,8 +146,10 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// **Geloescht wird hier nichts.** Das andere Konto findet seine Titel
     /// wieder, wenn es sich anmeldet.
     private func laden() {
-        guard let konto else { posten = []; return }
-        posten = Speicher.downloadsLesen().filter { $0.konto == konto }
+        let alle = Speicher.downloadsLesen()
+        guard let konto else { posten = []; fremde = alle; return }
+        posten = alle.filter { $0.konto == konto }
+        fremde = alle.filter { $0.konto != konto }
         // Was beim letzten Mal mitten im Laden war, wartet jetzt wieder.
         for i in posten.indices where posten[i].stand == .laedt {
             posten[i].stand = .wartet
@@ -172,12 +187,24 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// schreibt, loescht die Titel des anderen Kontos von der Platte —
     /// waehrend die Dateien liegenbleiben und niemand mehr weiss, wem sie
     /// gehoeren.
+    ///
+    /// **Einmal beim Anmelden gelesen, nicht bei jedem Sichern** (Audit
+    /// 27.09., PERFORMANCE #8). Hier stand `Speicher.downloadsLesen()` —
+    /// waehrend eines Downloads also einmal je Sekunde die ganze Liste von
+    /// der Platte, nur um die Posten anderer Konten mitzuschreiben. Die
+    /// aendert niemand sonst: nur diese Verwaltung schreibt die Datei, und
+    /// die App laeuft nur einmal.
     private func sichern() {
+        // Vor dem ersten Anmelden gibt es keine gemerkten — dann wie frueher
+        // von der Platte, sonst gingen die Titel aller Konten verloren.
         let meins = konto
-        let fremde = Speicher.downloadsLesen().filter { $0.konto != meins }
-        Speicher.downloadsSchreiben(fremde + posten)
+        let andere = fremde ?? Speicher.downloadsLesen().filter { $0.konto != meins }
+        Speicher.downloadsSchreiben(andere + posten)
         melden()
     }
+
+    /// Die Posten der anderen Konten, wie beim Anmelden gelesen.
+    private var fremde: [Downloadposten]?
 
     /// **Der Rueckruf wird auf dem Hauptfaden gelesen, nicht mitgenommen.**
     /// Ihn hier zu fassen und drueben aufzurufen hiesse, eine Funktion ueber
@@ -231,7 +258,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     // MARK: Die Bilder
 
     private static func bildweg(_ konto: String, _ kennung: String) -> URL {
-        Speicher.downloadordner.appendingPathComponent("\(konto)-\(kennung).jpg")
+        Speicher.downloadordner.appendingPathComponent(Downloadposten.bildname(konto: konto, kennung: kennung))
     }
 
     /// Das Bild auf der Platte — oder `nil`, dann bleibt das Zeichen stehen.
@@ -359,11 +386,54 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         sichern()
     }
 
-    func gesehen(_ id: String, _ an: Bool) {
-        guard let i = posten.firstIndex(where: { $0.id == id }), posten[i].gesehen != an
-        else { return }
-        posten[i].gesehen = an
+    /// Nachziehen, was der Server ueber den Sehstand sagt — damit H6 weiss,
+    /// was gesehen ist, und die Liste ohne Netz dasselbe zeigt wie mit.
+    /// Ein neuerer Stand von hier bleibt (``Downloadregeln/nachziehen(_:sehstand:)``).
+    private func sehstand(_ id: String, _ stand: UserItemData?) {
+        guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+        let neu = Downloadregeln.nachziehen(posten[i], sehstand: stand)
+        guard neu != posten[i] else { return }
+        posten[i] = neu
         sichern()
+    }
+
+    // MARK: Sehstand auf dem Geraet
+
+    /// **Eine Wiedergabe vermerken — auch ohne Netz.** So zeigt die Liste den
+    /// Haken, sobald eine Folge ohne Server zu Ende lief, und faengt an der
+    /// gemerkten Stelle an. Die Schwellen sind die des Servers
+    /// (``Downloadposten/nachWiedergabe(ticks:wann:)``). Nur auf GTKs Faden.
+    func wiedergabeVermerken(_ id: String, ticks: Int64, wann: Date = Date()) {
+        guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+        posten[i] = posten[i].nachWiedergabe(ticks: ticks, wann: wann)
+        sichern()
+    }
+
+    // MARK: Abschnitte fuer offline
+
+    /// **Vorspann und Abspann mitnehmen**, sobald die Datei da ist — sonst
+    /// gibt es ohne Server weder „Intro ueberspringen" noch die Karte
+    /// „Naechste Folge". Keine Antwort (`nil`) laesst das Feld leer, und
+    /// ``abschnitteNachholen()`` fragt beim naechsten Kontakt noch einmal.
+    private func abschnitteHolen(_ id: String) {
+        guard let client else { return }
+        Task.detached { [self] in
+            guard let teile = await client.abschnitteZumAblegen(fuer: id) else { return }
+            aufHauptfaden {
+                guard let i = self.posten.firstIndex(where: { $0.id == id }) else { return }
+                self.posten[i].abschnitte = teile
+                self.sichern()
+                Protokoll.schreib("[Download] Abschnitte fuer \(id): \(teile.count)")
+            }
+        }
+    }
+
+    /// Fuer alles, was vor 1.0.5 geladen wurde oder beim Laden keine Antwort
+    /// bekam. Laeuft nur mit Server (``nachziehen()``).
+    private func abschnitteNachholen() {
+        for p in posten where p.stand == .fertig && p.abschnitte == nil {
+            abschnitteHolen(p.id)
+        }
     }
 
     /// **Was der Server inzwischen sagt** — H6 und H9.
@@ -380,25 +450,32 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     func nachziehen() {
         guard let client, !posten.isEmpty else { return }
         let ids = posten.map(\.id)
+        let konto = konto ?? ""
         Task.detached { [self] in
+            // **Erst melden, dann lesen.** Sonst hoert die Liste vom Server
+            // den Stand von vor der Zeit ohne Netz — und der Haken der
+            // offline gesehenen Folge verschwaende, bis die Nachmeldung
+            // durch ist.
+            await Nachmeldezettel.abschicken(client, konto: konto)
             var vorhanden: Set<String> = []
-            var gesehene: Set<String> = []
+            var sehstaende: [String: UserItemData] = [:]
             for ab in stride(from: 0, to: ids.count, by: 100) {
                 let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
                 guard let antwort = try? await client.items(limit: stueck.count, ids: stueck)
                 else { return }
                 for titel in antwort.items {
                     vorhanden.insert(titel.id)
-                    if titel.istGesehen { gesehene.insert(titel.id) }
+                    sehstaende[titel.id] = titel.userData
                 }
             }
-            let da = vorhanden, gs = gesehene
+            let da = vorhanden, stand = sehstaende
             aufHauptfaden {
                 for id in self.posten.map(\.id) {
-                    self.gesehen(id, gs.contains(id))
+                    if da.contains(id) { self.sehstand(id, stand[id]) }
                     // **Was zurueckkommt, gibt es; was fehlt, nicht mehr.**
                     if !da.contains(id) { self.nichtMehrAufDemServer(id) }
                 }
+                self.abschnitteNachholen()
             }
         }
     }
@@ -427,14 +504,26 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         laufend = p.id
         sichern()
 
-        Task { [weak self] in
-            guard let self else { return }
-            guard let adresse = try? await client.downloadURL(itemID: p.id,
-                                                              mediaSourceID: p.quelle) else {
-                self.gescheitert(p.id, grund: uebersetzt("Keine Adresse vom Server."))
-                return
+        // **Zurueck auf den Hauptfaden, und nur, wenn es noch dieser ist.**
+        //
+        // Hier stand ein blosses `Task {}`: die Klasse ist kein Hauptakteur,
+        // also lief der Rest auf dem Fadenpool — `posten` wurde von dort
+        // geaendert und `melden()` baute GTK-Zeilen ausserhalb von GTKs Faden.
+        // Und wer in der Wartezeit anhielt, bekam den naechsten Titel
+        // abgebrochen: `gescheitert` sah den angehaltenen Posten und rief
+        // `abbrechen()` — auf den Download, der inzwischen lief.
+        Task.detached { [self] in
+            let adresse = try? await client.downloadURL(itemID: p.id,
+                                                        mediaSourceID: p.quelle,
+                                                        qualitaet: p.guete)
+            aufHauptfaden {
+                guard self.laufend == p.id else { return }
+                guard let adresse else {
+                    self.gescheitert(p.id, grund: uebersetzt("Keine Adresse vom Server."))
+                    return
+                }
+                self.auftragStarten(p, adresse: adresse)
             }
-            self.auftragStarten(p, adresse: adresse)
         }
     }
 
@@ -451,6 +540,13 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         // Liste kann aelter sein als die Datei, wenn die App weg war,
         // waehrend geschrieben wurde.
         vorher = (try? FileManager.default.attributesOfItem(atPath: pfad.path)[.size] as? Int64) ?? 0
+        // **Eine umgewandelte Datei beginnt von vorn.** Der Server nimmt bei
+        // ihr keine Bereichsabrufe an (`Accept-Ranges: none`); was vorher
+        // dastand, gilt nicht mehr.
+        if p.umgewandelt, vorher > 0 {
+            try? FileManager.default.removeItem(at: pfad)
+            vorher = 0
+        }
 
         var anfrage = URLRequest.mitEigenenKoepfen(adresse)
         if vorher > 0 { anfrage.setValue("bytes=\(vorher)-", forHTTPHeaderField: "Range") }
@@ -468,14 +564,28 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
 
         let a = sitzung.dataTask(with: anfrage)
         auftrag = a
+        schreibschloss.lock()
+        schreibauftrag = a
+        schreibziel = handle
+        schreibVorher = vorher
+        schreibschloss.unlock()
         a.resume()
     }
 
     /// Bricht ab, was laeuft — ohne den Stand zu setzen. Wer abbricht, sagt
     /// selbst, was danach gilt.
+    /// Ist das der Auftrag, der gerade laeuft? Nur auf dem Hauptfaden.
+    fileprivate func istLaufend(_ kennung: ObjectIdentifier) -> Bool {
+        auftrag.map(ObjectIdentifier.init) == kennung
+    }
+
     private func abbrechen() {
         auftrag?.cancel()
         auftrag = nil
+        schreibschloss.lock()
+        schreibauftrag = nil
+        schreibziel = nil
+        schreibschloss.unlock()
         try? ziel?.close()
         ziel = nil
         zielpfad = nil
@@ -539,7 +649,10 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
            let groesse = try? FileManager.default
                .attributesOfItem(atPath: pfad.path)[.size] as? Int64 {
             posten[i].geladen = groesse
+            // Umgewandelt weicht die Schaetzung der echten Groesse.
+            if posten[i].umgewandelt { posten[i].bytes = groesse }
         }
+        abschnitteHolen(id)
         abbrechen()
         sichern()
         takt()
@@ -577,6 +690,7 @@ extension Downloadverwaltung: URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        let kennung = ObjectIdentifier(dataTask)
         guard let http = response as? HTTPURLResponse else {
             completionHandler(.allow); return
         }
@@ -584,19 +698,23 @@ extension Downloadverwaltung: URLSessionDataDelegate {
         // Der Server schickt dann von vorn. Haengten wir das an, staende ab
         // der Fortsetzstelle derselbe Anfang ein zweites Mal in der Datei —
         // und die waere still unbrauchbar. Also von vorn schreiben.
-        if vorher > 0 && http.statusCode == 200 {
-            aufHauptfaden { [weak self] in
-                guard let self, let pfad = self.zielpfad else { return }
-                try? self.ziel?.truncate(atOffset: 0)
-                try? self.ziel?.seek(toOffset: 0)
-                self.vorher = 0
-                _ = pfad
-            }
+        //
+        // **Hier, nicht auf dem Hauptfaden.** Das Kuerzen lief vorher ueber
+        // `aufHauptfaden` — also irgendwann, waehrend hier schon die ersten
+        // Stuecke hinter den alten Stand geschrieben wurden. Danach kuerzte
+        // der Hauptfaden die Datei unter ihnen weg.
+        schreibschloss.lock()
+        if dataTask === schreibauftrag, schreibVorher > 0, http.statusCode == 200 {
+            try? schreibziel?.truncate(atOffset: 0)
+            try? schreibziel?.seek(toOffset: 0)
+            schreibVorher = 0
+            aufHauptfaden { [weak self] in self?.vorher = 0 }
         }
+        schreibschloss.unlock()
         if http.statusCode >= 400 {
             let code = http.statusCode
             aufHauptfaden { [weak self] in
-                guard let self, let id = self.laufend else { return }
+                guard let self, self.istLaufend(kennung), let id = self.laufend else { return }
                 self.gescheitert(id, grund: String(format: uebersetzt("Der Server antwortete mit %d."), code))
             }
             completionHandler(.cancel)
@@ -606,26 +724,41 @@ extension Downloadverwaltung: URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let ziel else { return }
+        let kennung = ObjectIdentifier(dataTask)
+        schreibschloss.lock()
+        guard dataTask === schreibauftrag, let ziel = schreibziel else {
+            schreibschloss.unlock()
+            return
+        }
+        let stand: Int64
         do {
             try ziel.write(contentsOf: data)
+            stand = (try? ziel.offset()).map(Int64.init) ?? 0
+            schreibschloss.unlock()
         } catch {
+            schreibschloss.unlock()
             let text = lesbarerFehler(error)
             aufHauptfaden { [weak self] in
-                guard let self, let id = self.laufend else { return }
+                guard let self, self.istLaufend(kennung), let id = self.laufend else { return }
                 self.gescheitert(id, grund: text)
             }
             dataTask.cancel()
             return
         }
-        let stand = (try? ziel.offset()).map(Int64.init) ?? 0
-        aufHauptfaden { [weak self] in self?.fortschritt(stand) }
+        aufHauptfaden { [weak self] in
+            guard let self, self.istLaufend(kennung) else { return }
+            self.fortschritt(stand)
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let text = error.map(lesbarerFehler)
+        let kennung = ObjectIdentifier(task)
+        // **Nur der eigene Auftrag.** Ein angehaltener meldet sein Ende als
+        // „abgebrochen" nach — da lief oft schon der naechste Titel, und der
+        // stand dann mit einem Fehler da, den er nie hatte.
         aufHauptfaden { [weak self] in
-            guard let self, let id = self.laufend else { return }
+            guard let self, self.istLaufend(kennung), let id = self.laufend else { return }
             if let text {
                 self.gescheitert(id, grund: text)
             } else {

@@ -10,6 +10,17 @@ import Foundation
 /// unterscheidet, steht deshalb hier.
 enum Plattform {
 
+    /// Wie das System heißt — im Übernahme-Hinweis an das andere Gerät
+    /// (``Uebergabekarte/abflugNachOben(von:nach:)`` zählt beide als
+    /// Schreibtisch wie den Mac). Produktnamen, nicht übersetzt.
+    static var system: String {
+        #if os(Windows)
+        return "Windows"
+        #else
+        return "Linux"
+        #endif
+    }
+
     /// Der Pfad des laufenden Programms.
     ///
     /// **Auf Linux über `/proc/self/exe`**, nicht über `Bundle.main`: der
@@ -66,6 +77,26 @@ enum Plattform {
         let basis = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
             .map { URL(fileURLWithPath: $0) }
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config")
+        return basis.appendingPathComponent("swiftly")
+        #endif
+    }
+
+    /// Wo die App ablegt, was sie jederzeit neu holen kann — Bilder.
+    ///
+    /// Nicht neben den Einstellungen: `%APPDATA%` wandert unter Windows mit
+    /// dem Profil übers Netz, und `~/.config` sichert mancher mit. Linux
+    /// nimmt `XDG_CACHE_HOME`, Windows `%LOCALAPPDATA%` — dort, wo beide
+    /// Systeme Wegwerfbares erwarten.
+    static var zwischenspeicherordner: URL {
+        #if os(Windows)
+        let basis = ProcessInfo.processInfo.environment["LOCALAPPDATA"]
+            .map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("AppData/Local")
+        return basis.appendingPathComponent("Swiftly")
+        #else
+        let basis = ProcessInfo.processInfo.environment["XDG_CACHE_HOME"]
+            .map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".cache")
         return basis.appendingPathComponent("swiftly")
         #endif
     }

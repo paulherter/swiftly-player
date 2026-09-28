@@ -44,7 +44,7 @@ fun discordHinweisZeigen(app: SwiftlyAnwendung, context: android.content.Context
                 Text(uebersetzt("Discord beitreten"), style = Stil.rubrikGross.copy(fontWeight = FontWeight.Normal), color = Stil.schrift)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
-            Row(Modifier.fillMaxWidth().height(54.dp).druckzeile(schliessen), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).druckzeile(schliessen), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(uebersetzt("Abbrechen"), style = Stil.rubrikGross.copy(fontWeight = FontWeight.Normal),
                      color = Stil.schriftLeise)

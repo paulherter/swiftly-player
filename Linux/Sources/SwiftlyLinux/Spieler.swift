@@ -38,13 +38,26 @@ extension App {
     /// ihm die Meldungen an den Server: es gibt niemanden, dem man melden
     /// koennte. Alles Uebrige — Steuerung, Sprungzeichen, Technikschild — ist
     /// derselbe Weg.
+    /// - Parameter vorgeplant: Der Plan, wenn er schon geholt ist — die
+    ///   Gruppe holt ihn, um zu wissen, ob der Titel hier abspielbar ist.
+    /// - Parameter gruppe: Die Gruppe öffnet diesen Player (Gemeinsam schauen).
     func spielerOeffnen(_ item: Item, ab: Double, ausDatei datei: URL? = nil,
-                        stelleFrisch: Bool = false) {
+                        stelleFrisch: Bool = false, vorgeplant: PlaybackPlan? = nil,
+                        gruppe: Bool = false) {
         guard client != nil || datei != nil else { return }
+        // Verzoegerung: derselbe Titel oder dieselbe Serie behaelt sie, sonst
+        // null — vor dem Schliessen unten, das `laufenderTitel` leert.
+        abspieler.verzoegerungFuerNeuenTitel(alterTitel: laufenderTitel?.id ?? "",
+                                             alteSerie: laufenderTitel?.seriesId,
+                                             neuerTitel: item.id, neueSerie: item.seriesId)
         // **Der Fensterstand von vorher** — nur beim ersten Oeffnen gemerkt,
         // nicht bei einem Folgenwechsel im laufenden Player.
         if laufenderTitel == nil {
             vollbildVorDemPlayer = gtk_window_is_fullscreen(alsFenster(fenster)) != 0
+            // Ein neuer Player zaehlt neu (Mac: `gezaehlt` je `PlayerScreen`),
+            // und der Discord-Hinweis liegt nicht ueber dem Bild.
+            gezaehlterTitel = nil
+            discordkarteWeg()
         }
         Protokoll.mitUhr("Player schliessen") {
             spielerSchliessen(melden: true, fensterZurueck: false)
@@ -59,8 +72,15 @@ extension App {
         angebotsebene.neueFolge()
 
         laufenderTitel = item
+        abrisse = 0
         spielstand = Wiedergabetakt.Stand()
         seitOeffnen = Date()
+        // **Gemeinsam schauen**: gehört der Titel zu dem, was die Gruppe
+        // schaut, hängt der Player an ihr — vor dem Aufbau, damit Metazeile
+        // und Einstellungen die Gruppe gleich zeigen (iOS `onAppear`).
+        if datei == nil, gruppe || gemeinsam.lage.gehoertZurGruppe(item.id) {
+            gemeinsamAnschliessen()
+        }
         letzterTakt = nil
         // **Der Weg vom Tippen bis zum Bild, Stueck fuer Stueck.**
         //
@@ -88,9 +108,11 @@ extension App {
         gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler-\(spielerZaehler)")
         // **Überblenden, 0,3 s** — wie auf dem Mac (`HauptView.swift`,
         // `.animation(.easeInOut(duration: 0.3), value: steuerung.wunsch?.id)`),
-        // auf iPhone und Apple TV: der Player blendet ein und aus.
+        // auf iPhone und Apple TV: der Player blendet ein und aus. **Unter
+        // der Übergabekarte ohne Blende** — die Karte ist der Übergang.
         gtk_stack_set_transition_type(OpaquePointer(seiten),
-                                      GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+                                      uebergabe?.rolle == .empfaenger ? GTK_STACK_TRANSITION_TYPE_NONE
+                                                                      : GTK_STACK_TRANSITION_TYPE_CROSSFADE)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 300)
         Schubsperre.fuer(0.3)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler-\(spielerZaehler)")
@@ -103,11 +125,19 @@ extension App {
         if let datei {
             laufenderPlan = nil
             spurlageNeu(item, plan: nil)
-            abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer)
+            // Ohne Plan steht der Bildcodec im Posten (``Downloadposten/bildcodec``).
+            abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer,
+                              softwareDekoder: PlaybackPlan.vonDerPlatte(
+                                  datei, container: nil,
+                                  bildcodec: downloads.posten(fuer: item.id)?.bildcodec).softwareDekoder)
             abspieler.bildfuellend(wahlen.bildfuellend)
             technikschildSetzen(wahlen.technikschild)
             spielstand.position = ab
             taktStarten()
+            // **Abschnitte und naechste Folge auch ohne Server** (1.0.5):
+            // die Abschnitte liegen am Posten, die naechste Folge ist die
+            // naechste geladene. Mit Server fragt das Paket ihn zuerst.
+            nachschlagen(fuer: item, wechsel: folgenwechsel, client: client)
             return
         }
         guard let client else { return }
@@ -128,12 +158,35 @@ extension App {
         // schliesst oder einen anderen Titel oeffnet, bekam sonst den Film
         // ohne Player zu hoeren, oder das Bild des ersten im zweiten.
         let meiner = spielerZaehler
+        // **Und zu genau diesem Konto.** Wer waehrend der Frage das Konto
+        // wechselt oder sich abmeldet, bekaeme sonst die Adresse des vorigen
+        // Kontos samt Merkmal in den Player — die Oberflaeche zeigte da schon
+        // das neue. Stand vor dem Warten merken, danach vergleichen, wie an
+        // den anderen Ladestellen in `App.swift`.
+        let stand = kontowechsel
         let gedrueckt = Date()
         Protokoll.schreib("[Spieler] frage Abspielplan beim Server")
         Task.detached { [self] in
             // Neben dem Plan, nicht davor: es kostet keine Wartezeit extra.
             async let frisch = stelleFrisch ? try? await client.item(id: item.id) : nil
-            let plan = try? await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: grenze))
+            // Lehnt der Server mit Grund ab (`ErrorCode`), steht der Grund in
+            // der Meldung statt „kamen keine Daten" — wie auf Apple über
+            // `AppModel.plan`. Den Plan kann die Gruppe schon geholt haben.
+            let plan: PlaybackPlan?
+            var ablehnung: String?
+            if let vorgeplant {
+                plan = vorgeplant
+            } else {
+                do {
+                    plan = try await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: grenze))
+                } catch let fehler as JellyfinError {
+                    plan = nil
+                    if case .wiedergabeAbgelehnt = fehler { ablehnung = lesbarerFehler(fehler) }
+                } catch {
+                    plan = nil
+                }
+            }
+            let abgelehnt = ablehnung
             let planNach = Date().timeIntervalSince(gedrueckt)
             let geholt = await frisch
             let allesNach = Date().timeIntervalSince(gedrueckt)
@@ -144,8 +197,9 @@ extension App {
             }
             aufHauptfaden {
                 guard self.spielerZaehler == meiner, self.laufenderTitel?.id == item.id,
-                      self.folgenwechsel === wechsel else {
-                    Protokoll.schreib("[Spieler] Plan verworfen, Player zu oder anderer Titel \(item.id)")
+                      self.folgenwechsel === wechsel,
+                      self.kontowechsel == stand, self.client === client else {
+                    Protokoll.schreib("[Spieler] Plan verworfen, Player zu, anderer Titel oder Konto \(item.id)")
                     fflush(nil)
                     return
                 }
@@ -156,6 +210,10 @@ extension App {
                     // nicht".** Bei mehreren Servern weiss man sonst nicht,
                     // welcher gemeint ist. Wörtlich der Satz vom Mac
                     // (`Abspielsteuerung.starte`).
+                    if let abgelehnt {
+                        self.spielerMeldung(abgelehnt)
+                        return
+                    }
                     let wo = self.servername.isEmpty ? uebersetzt("dem Server") : self.servername
                     self.spielerMeldung(
                         String(format: uebersetzt("Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen."), wo))
@@ -170,7 +228,8 @@ extension App {
                 self.spielerTrickplay?.laden(client: client, item: item, plan: plan)
                 self.warnungZeigen(plan)
                 Protokoll.mitUhr("VLC oeffnen") {
-                    self.abspieler.oeffnen(plan.url, ab: stelle, puffer: self.wahlen.puffer)
+                    self.abspieler.oeffnen(plan.url, ab: stelle, puffer: self.wahlen.puffer,
+                                          softwareDekoder: plan.softwareDekoder)
                 }
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
@@ -181,8 +240,58 @@ extension App {
         }
     }
 
+    /// **Fenster zu, waehrend ein Film laeuft.**
+    ///
+    /// Es gab dafuer keinen Weg: GTK raeumte das Fenster ab, die App war weg,
+    /// und die Endmeldung an den Server kam nie an — der Film stand beim
+    /// naechsten Start an der Stelle der letzten Zwischenmeldung, bis zu
+    /// einer halben Minute zu frueh. Jetzt verschwindet das Fenster sofort,
+    /// der Player schliesst wie ueber den Knopf, und erst nach der
+    /// Endmeldung (oder nach fuenf Sekunden, falls der Server schweigt) geht
+    /// die App. Scheitert die Meldung, liegt sie als Nachmeldung auf der
+    /// Platte (H8) und geht beim naechsten Start raus.
+    ///
+    /// Downloads brauchen hier nichts: was mitten im Laden stand, wartet
+    /// beim naechsten Start wieder (``Downloadverwaltung``), und die Datei
+    /// wird ab dem Stand fortgesetzt, der auf der Platte liegt.
+    func fensterSchliessenGewuenscht() -> Bool {
+        guard laufenderTitel != nil, !schliesstNachStopp else { return false }
+        schliesstNachStopp = true
+        Protokoll.schreib("[Fenster] zu waehrend der Wiedergabe, erst die Endmeldung")
+        gtk_widget_set_visible(fenster, 0)
+        let zu = gehalten(fenster)
+        nachDemStopp = {
+            Protokoll.schreib("[Fenster] Endmeldung durch, App geht")
+            fflush(nil)
+            gtk_window_destroy(alsFenster(zu.widget))
+            losgelassen(zu)
+        }
+        spielerSchliessen(fensterZurueck: false)
+        // Der Ton soll nicht aus einem unsichtbaren Fenster weiterlaufen.
+        abspieler.beenden(nurMedium: true)
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            aufHauptfaden { self.stoppErledigt() }
+        }
+        return true
+    }
+
+    /// Einmal, egal wer zuerst kommt: die Endmeldung oder die Frist.
+    func stoppErledigt() {
+        guard let danach = nachDemStopp else { return }
+        nachDemStopp = nil
+        danach()
+    }
+
     func spielerSchliessen(melden: Bool = true, fensterZurueck: Bool = true) {
         guard laufenderTitel != nil else { return }
+        // Nach dem Schauen kann die nächste Folge eine andere Datei sein — die
+        // gemerkten Wiedergabepläne gelten nicht mehr (``planAuftrag``).
+        planauftraege = [:]
+        planfertig = [:]
+        // Schliessen heisst verlassen (Entwurf A) — ohne Nachfrage; der
+        // Streifen „Wieder beitreten" führt zurück.
+        if gemeinsam.an { gemeinsamAbtrennen() }
         // **Nach dem Player steht das Fenster so da wie vorher** — wie auf
         // dem Mac (30aef4a3). Wer im Player auf Vollbild ging, egal ob mit
         // dem Knopf, F oder dem Fenstermanager, bekommt beim Schliessen das
@@ -204,17 +313,38 @@ extension App {
         // Endmeldung auf** (wie d8492ca auf Apple) — vorher holte die
         // Startseite ihre Reihen, bevor der Server die Stelle kannte.
         let gespielt = laufenderTitel!
+        uebergabeSpielerWeg(gespielt.id)
+        vorbereitung.vergessen()
+        fertigZaehlen(gespielt, position: spielstand.position, dauer: spielstand.dauer)
         if melden, spielstand.startGemeldet,
            let client, let plan = laufenderPlan, let titel = laufenderTitel {
             let ticks = Int64(spielstand.position * 10_000_000)
             let konto = benutzerID
             folgenwechsel.schliessen { [self] in
                 await self.meldeStopp(client, titel: titel, plan: plan, ticks: ticks, konto: konto)
-                aufHauptfaden { self.nachDemPlayerAuffrischen(titel) }
+                aufHauptfaden {
+                    self.nachDemPlayerAuffrischen(titel)
+                    self.stoppErledigt()
+                }
             }
         } else {
+            // **Aus der Datei gab es keine Sitzung** — die Stelle bleibt
+            // trotzdem nicht liegen (1.0.5): der Posten vermerkt sie, und der
+            // Zettel meldet sie nach, sobald der Server da ist. Dort gewinnt
+            // der neuere Stand (`JellyfinClient.nachmelden`).
+            if melden, spielstand.startGemeldet, laufenderPlan == nil,
+               downloads.posten(fuer: gespielt.id) != nil {
+                let ticks = Int64(spielstand.position * 10_000_000)
+                downloads.wiedergabeVermerken(gespielt.id, ticks: ticks)
+                let konto = benutzerID
+                Nachmeldezettel.aufnehmen(gespielt.id, ticks: ticks, konto: konto)
+                Protokoll.schreib("[Melden] Datei \(ticks / 10_000_000) s \(gespielt.id) → Nachmeldung")
+            }
             folgenwechsel.schliessen {}
-            aufHauptfaden { self.nachDemPlayerAuffrischen(gespielt) }
+            aufHauptfaden {
+                self.nachDemPlayerAuffrischen(gespielt)
+                self.stoppErledigt()
+            }
         }
         taktBeenden()
         ebeneSchliessen()
@@ -225,6 +355,8 @@ extension App {
         // eintreffendes Ereignis die Aufräumarbeit wieder umstossen.
         laufenderTitel = nil
         Discordstand.abraeumen()
+        // Nie bei offenem Player (`Gemeinschaft.anstoss`) — also erst jetzt.
+        discordHinweisPruefen()
         spielerSteuerung = nil
         steuerungOffen = false
         spielerMitte = nil
@@ -233,6 +365,8 @@ extension App {
         spielerTitelplatz = nil
         spielerWeiter = nil
         spielerAngebot = nil
+        spielerKarte = nil
+        spielerKartenschleier = nil
         spielerTitelstand = nil
         spielerTrickplay = nil
         angebotsebene.neueFolge()
@@ -414,6 +548,23 @@ extension App {
             gtk_overlay_add_overlay(OpaquePointer(ueber), marke.anzeige)
         }
 
+        // **Unter der Steuerung: der Schleier der Karte** (iOS `abgedunkelt`)
+        // — steht die Karte der nächsten Folge, dunkelt er das Bild ab wie
+        // die offene Steuerung, dazu ein Verlauf unten rechts, damit die
+        // Schrift auf jedem Abspann liest.
+        let kartenschleier = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(kartenschleier, "swiftly-kartenschleier")
+        gtk_widget_set_can_target(kartenschleier, 0)
+        gtk_widget_set_opacity(kartenschleier, 0)
+        let verlauf = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(verlauf, "swiftly-kartenverlauf")
+        gtk_widget_set_hexpand(verlauf, 1)
+        gtk_widget_set_vexpand(verlauf, 1)
+        gtk_widget_set_can_target(verlauf, 0)
+        anhaengen(kartenschleier, verlauf)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), kartenschleier)
+        spielerKartenschleier = kartenschleier
+
         let steuerung: Widget! = gtk_overlay_new()
         gtk_widget_add_css_class(steuerung, "swiftly-steuerung")
         gtk_widget_set_opacity(steuerung, 0)
@@ -432,6 +583,9 @@ extension App {
 
         gtk_overlay_add_overlay(OpaquePointer(ueber), spielerVorschauBauen())
         angebotsebeneBauen(in: ueber)
+        // Was in der Gruppe passiert, kurz oben — damit niemand rätselt,
+        // warum der Film steht.
+        gtk_overlay_add_overlay(OpaquePointer(ueber), gemeinsamEreignisBauen())
         gtk_overlay_add_overlay(OpaquePointer(ueber), spielerTitelstandBauen(item))
 
         beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen(durch: .nebenbei) },
@@ -544,8 +698,12 @@ extension App {
 
     private func metazeileFuellen(_ zeile: Widget!, _ item: Item) {
         var text: String?
-        if item.type == "Episode", let staffel = item.parentIndexNumber, let folge = item.indexNumber {
-            text = String(format: uebersetzt("Staffel %d · Folge %d"), staffel, folge)
+        // **In der Gruppe steht hier die Gruppe** (Entwurf A): wo sonst
+        // Staffel und Folge stehen.
+        if gemeinsamGruppenzeile(zeile) {
+            text = nil
+        } else if item.type == "Episode", let staffel = item.parentIndexNumber, let folge = item.indexNumber {
+            text = String(format: uebersetzt("Staffel %lld · Folge %lld"), staffel, folge)
         } else if let t = item.kontextzeile ?? (item.nebenzeile.isEmpty ? nil : item.nebenzeile) {
             text = t
         }
@@ -568,6 +726,14 @@ extension App {
         anhaengen(zeile, warnung)
     }
 
+    /// Nur die Metazeile neu — wenn die Gruppe kommt, geht oder sich ändert.
+    func metazeileAuffrischen() {
+        guard let meta = spielerMetazeile, let item = laufenderTitel else { return }
+        leeren(meta)
+        metazeileFuellen(meta, item)
+        if let plan = laufenderPlan { warnungZeigen(plan) }
+    }
+
     /// Beim Wechsel der Folge: Titel, Platzhalter und Metazeile neu.
     private func titelstandAuffrischen(_ item: Item) {
         let text = laufenderTitelzeile
@@ -584,13 +750,29 @@ extension App {
         let jetzt = gtk_window_is_fullscreen(alsFenster(fenster)) != 0
         if jetzt { gtk_window_unfullscreen(alsFenster(fenster)) }
         else { gtk_window_fullscreen(alsFenster(fenster)) }
-        spielerVollbildbild?.setzeName(jetzt ? "vollbild" : "vollbild-aus")
+        vollbildAnzeigen(voll: !jetzt)
+        steuerungZeigen()
+    }
+
+    /// **Das Zeichen folgt dem Fenster, nicht dem Knopf.** Es wurde nur hier
+    /// gesetzt; wer mit Escape, F11 des Fenstermanagers oder einem
+    /// Doppelklick aus dem Vollbild ging, sah danach das falsche Zeichen und
+    /// den falschen Hinweis. Jetzt ruft auch `notify::fullscreened` hierher.
+    func vollbildAnzeigen(voll: Bool) {
+        spielerVollbildbild?.setzeName(voll ? "vollbild-aus" : "vollbild")
         if let knopf = spielerVollknopf {
-            let text = jetzt ? uebersetzt("Vollbild") : uebersetzt("Vollbild verlassen")
+            let text = voll ? uebersetzt("Vollbild verlassen") : uebersetzt("Vollbild")
             gtk_widget_set_tooltip_text(knopf, text)
             beschriften(knopf, text)
         }
-        steuerungZeigen()
+    }
+
+    /// Stumm oder nicht — **M** im Player. Ohne Einblendung: der Hinweis-
+    /// streifen (``melden(_:)``) gehoert der Detailseite und laege unter dem
+    /// Player; was man hoert, ist hier die Rueckmeldung.
+    func stummUmschalten() {
+        guard let stumm = abspieler.stummUmschalten() else { return }
+        Protokoll.schreib("[Player] Ton \(stumm ? "aus" : "an")")
     }
 
     /// Mittig im Bild: zurück, abspielen, vor — Abstand 80, Zeichen 30 und 40
@@ -603,7 +785,7 @@ extension App {
         let zurueck = Playerzeichen("zurueck", groesse: 36, zahl: wahlen.zurueckSekunden)
         spielerZurueckZeichen = zurueck
         anhaengen(reihe, spieltaste(zurueck.anzeige, kiste: 54,
-                                    name: String(format: uebersetzt("%d Sekunden zurück"), wahlen.zurueckSekunden)) {
+                                    name: String(format: uebersetzt("%lld Sekunden zurück"), wahlen.zurueckSekunden)) {
             [weak self] in
             guard let self else { return }
             self.springe(um: -Double(self.wahlen.zurueckSekunden))
@@ -614,20 +796,14 @@ extension App {
         let mitte = Playerzeichen("pause", groesse: 46)
         spielerAbspielzeichen = mitte
         anhaengen(reihe, spieltaste(mitte.anzeige, kiste: 72,
-                                    name: uebersetzt("Abspielen oder anhalten")) {
-            [weak self] in
-            guard let self else { return }
-            self.abspieler.umschalten()
-            self.spielstand.laeuft.toggle()
-            self.spielerAbspielzeichen?.setzen(self.spielstand.laeuft)
-            self.medienstandMelden()
-            self.steuerungZeigen()
+                                    name: uebersetzt("Anhalten")) {
+            [weak self] in self?.abspielenUmschalten()
         })
 
         let vor = Playerzeichen("vor", groesse: 36, zahl: wahlen.vorSekunden)
         spielerVorZeichen = vor
         anhaengen(reihe, spieltaste(vor.anzeige, kiste: 54,
-                                    name: String(format: uebersetzt("%d Sekunden vor"), wahlen.vorSekunden)) {
+                                    name: String(format: uebersetzt("%lld Sekunden vor"), wahlen.vorSekunden)) {
             [weak self] in
             guard let self else { return }
             self.springe(um: Double(self.wahlen.vorSekunden))
@@ -689,11 +865,19 @@ extension App {
         beiGriff(spielerRegler) { [weak self] gedrueckt in
             guard let self else { return }
             self.amRegler = gedrueckt
+            // In der Gruppe geht die Bitte erst beim Loslassen — eine, nicht
+            // eine je Mausbewegung (iOS: `onEditingChanged`).
+            if !gedrueckt, let ziel = self.gemeinsam.reglerZiel {
+                self.gemeinsam.reglerZiel = nil
+                self.springe(auf: ziel)
+            }
             for w in [self.spielerMitte, self.spielerSymbolreihe] {
                 guard let w else { continue }
                 gtk_widget_set_opacity(w, gedrueckt ? 0 : 1)
                 gtk_widget_set_can_target(w, gedrueckt ? 0 : 1)
             }
+            // Beim Ziehen ist die Spur 6 dick, die Kerben mit ihr.
+            if let k = self.spielerKerben { gtk_widget_queue_draw(k) }
             if gedrueckt {
                 gtk_widget_add_css_class(self.spielerRegler, "swiftly-regler-ziehen")
                 self.steuerungZeigen()
@@ -714,10 +898,40 @@ extension App {
             guard let self, !self.amRegler else { return }
             self.vorschauVerbergen()
         })
-        anhaengen(leiste, spielerRegler)
+        // **Kerben an den Abschnittsgrenzen**, zwei Punkt in `grund` — auf
+        // Spur und Balken zu sehen, wie am Mac. Gemalt über dem Regler, ohne
+        // Treffer: der Zeiger geht durch auf den Regler.
+        let reglerhuelle: Widget! = gtk_overlay_new()
+        gtk_widget_set_hexpand(reglerhuelle, 1)
+        gtk_overlay_set_child(OpaquePointer(reglerhuelle), spielerRegler)
+        let kerben: Widget! = gtk_drawing_area_new()
+        gtk_widget_set_can_target(kerben, 0)
+        gtk_widget_set_can_focus(kerben, 0)
+        gtk_drawing_area_set_draw_func(alsZeichen(kerben), kerbenMalen,
+                                       Unmanaged.passUnretained(self).toOpaque(), nil)
+        gtk_overlay_add_overlay(OpaquePointer(reglerhuelle), kerben)
+        spielerKerben = kerben
+        kerbenDauer = 0
+        beiSignal(kerben, "destroy") { [weak self] in
+            if self?.spielerKerben == kerben { self?.spielerKerben = nil }
+        }
+        anhaengen(leiste, reglerhuelle)
         spielerRest = beschriftung("−0:00", stil: "swiftly-spielerzeit")
         gtk_widget_set_size_request(spielerRest, 58, -1)
         gtk_label_set_xalign(OpaquePointer(spielerRest), 1)
+        // **Restzeit oder Ende — ein Klick schaltet um** (iOS d35d05a3):
+        // „−12:34" oder „Endet um 22:41", die Wahl bleibt. Kein eigener
+        // Knopf, keine zweite Zeile: dieselbe Stelle, dieselbe Schrift.
+        // Per Tastatur erreichbar wie ein Knopf.
+        beiKlick(spielerRest, tastatur: true) { [weak self] in
+            guard let self else { return }
+            self.wahlen.restzeitAlsEnde.toggle()
+            self.wahlen.sichern()
+            self.zeitenZeigen()
+            self.steuerungZeigen()
+        }
+        gtk_widget_set_cursor_from_name(spielerRest, "pointer")
+        gtk_widget_set_tooltip_text(spielerRest, uebersetzt("Wechselt zwischen Restzeit und Ende"))
         anhaengen(leiste, spielerRest)
         anhaengen(unten, leiste)
         return unten
@@ -897,7 +1111,7 @@ extension App {
             abspieler.geholteBilder, abspieler.takte))
     }
 
-    private func taktBeenden() {
+    func taktBeenden() {
         if spielertakt != 0 { g_source_remove(spielertakt); spielertakt = 0 }
     }
 
@@ -906,6 +1120,9 @@ extension App {
     func takten() {
         guard laufenderTitel != nil else { return }
         taktluecke()
+        // Die Gruppe liest den Stand über ``Gemeinsamspieler`` selbst; hier
+        // bekommt sie nur den Takt (iOS `brueckeNachziehen`).
+        if gemeinsam.an { gemeinsamTakt() }
         // **Dazwischen nur die Zeit**, wie auf iOS: im halben Sekundentakt lief
         // sie nach dem Abspielen verzoegert an und zaehlte ungleichmaessig.
         nurZeitTakt.toggle()
@@ -917,6 +1134,8 @@ extension App {
             }
             return
         }
+        // Im Sekundentakt: libVLC vergisst die Verzoegerung mit jedem Medium.
+        abspieler.verzoegerungNachziehen()
         // Das Schild haengt am selben Takt wie alles andere: 500 ms.
         // Schneller sieht man nur Flackern, langsamer verpasst man den
         // Ruckler.
@@ -951,6 +1170,7 @@ extension App {
 
         zeitenZeigen()
         MainActor.assumeIsolated { stromPruefen() }
+        MainActor.assumeIsolated { tonPruefen() }
         bildmessungSchreiben(messung)
         startverlaufSchreiben(messung, auftrag: auftrag)
 
@@ -958,6 +1178,8 @@ extension App {
         // den Aufbau des Stroms — Klötzchen, ein Ruck, manchmal ein grüner
         // Rahmen. Wann er weicht, entscheidet ``Zeitannahme`` im Paket, nicht
         // diese Datei; ich hatte den Auftrag nur nie ausgewertet.
+        // Die Übergabekarte zoomt, sobald das erste Bild steht.
+        if auftrag.ladeschirmWeg, let id = laufenderTitel?.id { uebergabeBildDa(id) }
         if auftrag.ladeschirmWeg, let schleier = spielerLadeschirm {
             // Mac: `withAnimation(.easeOut(duration: 0.3)) { schirmWeg = true }`.
             gtk_widget_set_can_target(schleier, 0)
@@ -1008,13 +1230,33 @@ extension App {
             naechsteFolge()
         }
         angebotNachfuehren()
+        // **Die nächste Folge vorbereiten**, solange diese noch läuft (iOS
+        // `takt`) — nicht in der Gruppe, die schaltet selbst, und nicht aus
+        // einer Datei. Einmal je Folge; wann und über welches Netz, sagt
+        // `Vorpuffer`.
+        if let folge = vorgeholteFolge, let client, laufenderPlan != nil, !inGruppe,
+           !folgenwechsel.laeuft,
+           Vorpuffer.jetzt(position: spielstand.position, dauer: spielstand.dauer,
+                           abspannVon: abschnitte.first { $0.art == .abspann }?.von,
+                           netzGuenstig: vorbereitung.netzGuenstig) {
+            let grenze = wahlen.profilBitrate
+            vorbereitung.vorbereiten(folge) {
+                try? await client.playbackPlan(for: folge.id, profile: .vlc(maxBitrate: grenze))
+            }
+        }
         // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
         // Server), nicht, wenn sie abgesagt wurde (17.09.2026).
         if angebotsebene.weiterAmEnde,
            vorgeholteFolge != nil, !folgenwechsel.laeuft,
            Folgenende.weiterschalten(position: spielstand.position,
                                      dauer: spielstand.dauer,
-                                     seitOeffnen: Date().timeIntervalSince(seitOeffnen)) {
+                                     seitOeffnen: Date().timeIntervalSince(seitOeffnen),
+                                     karteZaehlt: angebotsebene.karteZaehlt) {
+            // **Zählt die Karte, gehört das Weiterschalten ihr** (iOS
+            // 26.09.: ans Ende gespult, und `position >= dauer - 1` wechselte
+            // sofort).
+            Protokoll.schreib("[Wechsel] Dateiende ohne Karte")
+            fflush(nil)
             naechsteFolge()
         }
     }
@@ -1092,11 +1334,31 @@ extension App {
     /// Takt zog die Anzeige zurueck), und die Zielstelle geht sofort hinaus
     /// (T2-N1).
     func springe(auf ziel: Double) {
+        // **In der Gruppe eine Bitte**; gesprungen wird, wenn der Befehl
+        // kommt. Die Anzeige steht schon auf dem Ziel, wie auf iOS
+        // (`spulen`, `gesprungen(auf:)`).
+        if inGruppe {
+            let ziel = max(0, ziel)
+            gemeinsamBitteSpringen(auf: ziel)
+            Wiedergabetakt.gesprungen(&spielstand, ziel: ziel)
+            zeitenZeigen()
+            return
+        }
+        springeDirekt(auf: ziel)
+    }
+
+    /// Der Sprung selbst — auch der, den die Gruppe befiehlt.
+    func springeDirekt(auf ziel: Double) {
         let ziel = max(0, ziel)
         abspieler.setzeZeit(ziel)
         // Anzeige und Angebot sofort auf dem Ziel; der Takt haelt es, bis VLC
         // dort ist (Bug 17.09.2026).
         Wiedergabetakt.gesprungen(&spielstand, ziel: ziel)
+        // Ein Sprung in den Abspann oder ans Ende: der Countdown der Karte
+        // fängt von vorn an (iOS, gemeldet 26.09.: ans Ende gespult, sofort
+        // weiter).
+        angebotsebene.gesprungen()
+        if case .karte = angebotsebene.anzeige { angebotsuhr = Fuellungsuhr() }
         _ = angebotTakt(vergangen: 0)
         zeitenZeigen()
         angebotNachfuehren()
@@ -1127,15 +1389,25 @@ extension App {
                                       hatNaechsteFolge: vorgeholteFolge != nil)
         jetzigesAngebot = angebot
         guard !folgenwechsel.laeuft else { return false }
+        // **Variante C** (iOS `angebotNachziehen`): ohne Abspann-Abschnitt
+        // kommt die Karte in den letzten ``Folgenkarte/restfenster`` Sekunden
+        // und zählt bis ans Dateiende; am Ende zählt sie weiter, obwohl nichts
+        // mehr läuft — außer beim Ziehen am Regler.
         return angebotsebene.takt(
             angebot: angebot,
             karteFaellig: Abschnittslogik.karteFaellig(position: spielstand.position,
                                                        dauer: spielstand.dauer,
                                                        abschnitte: abschnitte,
-                                                       hatNaechsteFolge: vorgeholteFolge != nil),
+                                                       hatNaechsteFolge: vorgeholteFolge != nil,
+                                                       restfenster: Folgenkarte.restfenster),
             laeuft: spielstand.laeuft && spielerLadeschirm == nil && !amRegler,
             vergangen: vergangen,
-            countdown: Abschnittslogik.countdown(position: spielstand.position, dauer: spielstand.dauer))
+            countdown: Abschnittslogik.countdown(position: spielstand.position,
+                                                 dauer: spielstand.dauer,
+                                                 abschnitte: abschnitte,
+                                                 restfenster: Folgenkarte.restfenster),
+            amEnde: Folgenende.amEnde(position: spielstand.position, dauer: spielstand.dauer)
+                && !amRegler)
     }
 
     /// Das Ende — **abgewartet**, weil danach die Seiten neu laden (d8492ca).
@@ -1146,6 +1418,11 @@ extension App {
         let eintrag = meldung(.stopp, client, titel: titel, plan: plan, ticks: ticks)
         // Trakt hat eine eigene Reihe und wartet nicht auf Jellyfin.
         traktStopp(titel: titel, ticks: ticks)
+        // **Mit und ohne Netz: der Download kennt seinen Stand selbst** —
+        // Haken, gemerkte Stelle, Zeitpunkt (1.0.5, wie
+        // `AppModel.reportStopped`). Die Liste lebt auf dem Hauptfaden.
+        let wann = Date()
+        aufHauptfaden { self.downloads.wiedergabeVermerken(titel.id, ticks: ticks, wann: wann) }
         // Sofort, nicht nach der Antwort: Pause oder Sprung in der
         // Zwischenzeit gehoeren keinem Titel mehr (T1-M9).
         aufHauptfaden {
@@ -1159,6 +1436,9 @@ extension App {
         switch ergebnis {
         case .gesendet:
             Protokoll.schreib("[Melden] Stopped \(ticks / 10_000_000) s \(titel.id) session \(plan.playSessionID ?? "nil")")
+            // Eine ältere Stelle aus der Zeit ohne Netz darf danach nicht
+            // mehr hinaus. `konto` ist das von vor dem Warten.
+            Nachmeldezettel.ueberholt(titel.id, konto: konto)
         case .verworfen:
             Protokoll.schreib("[Melden] Stopped doppelt verworfen \(titel.id) session \(plan.playSessionID ?? "nil")")
         case .gescheitert, .zeitUeberschritten:
@@ -1170,13 +1450,34 @@ extension App {
         fflush(nil)
     }
 
+    /// Die Uhrzeit nach der Landeseinstellung — „22:41" oder „10:41 PM",
+    /// wie `.formatted(date: .omitted, time: .shortened)` auf Apple.
+    private static let uhrzeit: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+
     private func zeitenZeigen() {
         gtk_label_set_text(OpaquePointer(spielerZeit), Spielzeit.text(spielstand.position))
         if spielstand.dauer > 0 {
             let rest = max(0, spielstand.dauer - spielstand.position)
-            gtk_label_set_text(OpaquePointer(spielerRest), "−" + Spielzeit.text(rest))
+            if wahlen.restzeitAlsEnde {
+                let ende = String(format: uebersetzt("Endet um %@"),
+                                  Self.uhrzeit.string(from: Date().addingTimeInterval(rest)))
+                gtk_label_set_text(OpaquePointer(spielerRest), ende)
+                beschriften(spielerRest, ende)
+            } else {
+                gtk_label_set_text(OpaquePointer(spielerRest), "−" + Spielzeit.text(rest))
+                beschriften(spielerRest, uebersetzt("Restzeit"))
+            }
             gtk_range_set_value(alsBereich(spielerRegler),
                                 spielstand.position / spielstand.dauer)
+            if spielstand.dauer != kerbenDauer, let k = spielerKerben {
+                kerbenDauer = spielstand.dauer
+                gtk_widget_queue_draw(k)
+            }
         }
         spielerAbspielzeichen?.setzen(spielstand.laeuft)
     }
@@ -1225,15 +1526,118 @@ extension App {
             pufferWuchsVor: Date().timeIntervalSince(stromPufferWuchs))
         guard rat == .neuVerbinden else { return }
 
-        // **An derselben Stelle wieder auf.** `oeffnen` baut den Strom neu
-        // auf, ohne die Seite anzufassen — die Steuerung, das Technikschild
-        // und der Takt laufen weiter.
+        stromNeuAufbauen(grund: "Bild steht")
+    }
+
+    /// **An derselben Stelle wieder auf.** `oeffnen` baut den Strom neu
+    /// auf, ohne die Seite anzufassen — die Steuerung, das Technikschild
+    /// und der Takt laufen weiter. Neu aufgebaut wird auch die Tonausgabe:
+    /// libVLC oeffnet sie mit jedem Medium frisch, und genau das brauchen
+    /// ``tonPruefen()`` und ``aufgewacht()``.
+    func stromNeuAufbauen(grund: String, pausiert: Bool = false) {
+        guard let plan = laufenderPlan else { return }
+        Protokoll.schreib("[Strom] neu aufgebaut (\(grund)) bei \(Int(spielstand.position)) s"
+            + (pausiert ? ", angehalten" : ""))
         stromStehtSeit = nil
+        tonVerlustSeit = nil
+        tonVerlorenZuletzt = nil
         let stelle = spielstand.position
-        abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer)
+        abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer, pausiert: pausiert,
+                          softwareDekoder: plan.softwareDekoder)
         abspieler.bildfuellend(wahlen.bildfuellend)
         spielstand.spurenGesetzt = false
         spurlage.neuGeoeffnet()
+    }
+
+    /// **Die Tonwacht.** Reisst die Tonausgabe ab — Bluetooth-Kopfhoerer
+    /// aus, KVM-Umschalter, USB-Karte gezogen —, laeuft das Bild weiter und
+    /// libVLC verwirft jeden Tonblock: in den Zaehlern steigt `tonVerloren`
+    /// ohne Pause, und es bleibt still, bis man den Film neu startet. Das ist
+    /// genau der Fehler, den andere Desktop-Clients gemeldet bekommen.
+    ///
+    /// Drei Sekunden ununterbrochener Verlust gelten als abgerissen; dann
+    /// wird an derselben Stelle neu aufgebaut, und libVLC oeffnet die
+    /// Ausgabe auf dem Geraet, das jetzt das Standardgeraet ist.
+    /// **Hoechstens alle 30 s**, damit ein Film ohne jede Tonausgabe nicht in
+    /// eine Schleife laeuft; nach einem Sprung fuenf Sekunden Ruhe, weil
+    /// VLC dort kurz verwirft.
+    private func tonPruefen() {
+        guard laufenderPlan != nil, spielstand.laeuft, spielstand.startGemeldet,
+              Date().timeIntervalSince(letzterSprung) > 5,
+              let verloren = abspieler.zaehlwerte?.tonVerloren else {
+            tonVerlustSeit = nil
+            tonVerlorenZuletzt = nil
+            return
+        }
+        defer { tonVerlorenZuletzt = verloren }
+        guard let vorher = tonVerlorenZuletzt, verloren > vorher else {
+            tonVerlustSeit = nil
+            return
+        }
+        let seit = tonVerlustSeit ?? Date()
+        tonVerlustSeit = seit
+        guard Date().timeIntervalSince(seit) >= 3,
+              Date().timeIntervalSince(tonNeuVersucht) > 30 else { return }
+        tonNeuVersucht = Date()
+        stromNeuAufbauen(grund: "Tonausgabe verwirft seit 3 s alles, \(verloren) Bloecke")
+    }
+
+    /// **VLC hoert mitten im Film auf** — Stopp, „Ende erreicht" oder Fehler,
+    /// ohne dass jemand geschlossen hat.
+    ///
+    /// Auf Apple baut `VLCPlayer` dann den Strom an der letzten guten Stelle
+    /// neu auf (`Sources/Shared/VLCPlayer.swift`, „Strom abgerissen"); hier
+    /// wurde das Ereignis nur ins Protokoll geschrieben. Riss die Leitung
+    /// laenger ab, als `http-reconnect` wartet, blieb ein Standbild stehen,
+    /// und nach einem Fehler vor dem ersten Bild der Ladeschleier — beides
+    /// ohne ein Wort.
+    ///
+    /// Neu aufgebaut wird nur, wenn der Titel noch nicht am Ende war (mehr
+    /// als zehn Sekunden vor Schluss, dieselbe Grenze wie auf Apple), und
+    /// hoechstens dreimal je Titel — eine Datei, die an derselben Stelle
+    /// immer wieder scheitert, soll nicht in Schleife laufen.
+    func stromAbgerissen(fehler: Bool) {
+        guard laufenderTitel != nil, laufenderPlan != nil, !folgenwechsel.laeuft else { return }
+        let stelle = spielstand.position, dauer = spielstand.dauer
+        if stelle <= 1 || abspieler.geholteBilder == 0 {
+            guard fehler else { return }
+            Protokoll.schreib("[Player] Fehler vor dem ersten Bild")
+            taktBeenden()
+            let wo = servername.isEmpty ? uebersetzt("dem Server") : servername
+            spielerMeldung(String(format: uebersetzt(
+                "Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen."), wo))
+            return
+        }
+        guard dauer > 0, stelle < dauer - 10 else { return }
+        guard abrisse < 3 else {
+            Protokoll.schreib("[Strom] abgerissen bei \(Int(stelle)) s, nach 3 Versuchen aufgegeben")
+            return
+        }
+        abrisse += 1
+        stromNeuAufbauen(grund: "Strom abgerissen, Versuch \(abrisse)")
+    }
+
+    /// Vor dem Ruhezustand: anhalten, damit die Stelle beim Server ist
+    /// (die Pause meldet sie) und nach dem Aufwachen nichts ins Leere spielt.
+    func ruhezustandBeginnt() {
+        guard laufenderTitel != nil else { return }
+        Protokoll.schreib("[Ruhe] Rechner schlaeft ein bei \(Int(spielstand.position)) s")
+        fflush(nil)
+        guard spielstand.laeuft else { return }
+        abspieler.anhalten()
+        spielstand.laeuft = false
+        spielerAbspielzeichen?.setzen(false)
+        medienstandMelden()
+    }
+
+    /// Nach dem Aufwachen: Strom und Tonausgabe neu, an derselben Stelle.
+    /// Windows meldet das Aufwachen oft zweimal (automatisch, dann durch den
+    /// Nutzer) — das zweite innerhalb von zehn Sekunden zaehlt nicht.
+    func aufgewacht() {
+        guard laufenderTitel != nil, laufenderPlan != nil,
+              Date().timeIntervalSince(zuletztAufgewacht) > 10 else { return }
+        zuletztAufgewacht = Date()
+        stromNeuAufbauen(grund: "aufgewacht", pausiert: !spielstand.laeuft)
     }
 
     // Ton- und Untertitelwahl beim Start: ``spurenVorwaehlen()`` in `Spurwahl.swift`.
@@ -1255,10 +1659,44 @@ extension App {
         }
     }
 
+    /// **Anhalten und Weiter — Knopf, Leertaste, eine Stelle.** In der Gruppe
+    /// eine Bitte: der Knopf springt erst um, wenn der Befehl kommt.
+    func abspielenUmschalten() {
+        if inGruppe {
+            gemeinsamBitteUmschalten(laeuftGerade: spielstand.laeuft)
+            return
+        }
+        if abspieler.laeuft { abspieler.anhalten() } else { weiterspielen() }
+        spielstand.laeuft.toggle()
+        spielerAbspielzeichen?.setzen(spielstand.laeuft)
+        medienstandMelden()
+        steuerungZeigen()
+    }
+
+    /// **Weiterspielen auf Wunsch des Zuschauers — nach langer Pause ein
+    /// Stück zurück** (iOS `fortsetzen()`, ``Pausenruecksprung``: mehr als
+    /// zehn Minuten, fünf Sekunden). Die Stelle wird gesetzt, solange VLC noch
+    /// steht, erst dann läuft es an: das erste neue Bild ist schon das
+    /// frühere, ein sichtbares Zurückspringen gibt es nicht. Anzeige und
+    /// Meldung gehen über ``springeDirekt(auf:)`` wie jeder Sprung. Nicht in
+    /// der Gruppe — die ruft ``Abspieler/abspielen()`` selbst.
+    func weiterspielen() {
+        let stelle = spielstand.sprung?.ziel ?? abspieler.position
+        if let ziel = Pausenruecksprung.ziel(position: stelle, pausiertSeit: abspieler.pausiertSeit,
+                                             jetzt: Date(), inGruppe: inGruppe) {
+            Protokoll.schreib("[Player] Fortsetzen nach \(Int(Date().timeIntervalSince(abspieler.pausiertSeit ?? Date()))) s Pause — vorher auf \(Int(ziel)) s")
+            fflush(nil)
+            springeDirekt(auf: ziel)
+        }
+        abspieler.abspielen()
+    }
+
     /// Der Knopf „Nächste Folge" — dieselbe vorgeholte Folge, die auch das
     /// selbsttätige Weiterschalten nimmt.
     func naechsteFolge() {
-        guard let folge = vorgeholteFolge else { return }
+        // In der Gruppe keine nächste Folge — jeder schaltete sonst für sich
+        // weiter, und die Gruppe liefe auseinander.
+        guard !inGruppe, let folge = vorgeholteFolge else { return }
         wechsleZu(folge)
     }
 
@@ -1266,10 +1704,13 @@ extension App {
     /// derselben Stelle. Vorlage: die Qualitätswahl im Player auf
     /// macOS/tvOS/iOS (`PlayerScreen.qualitaetswahl`).
     func qualitaetGeaendert() {
-        guard let titel = laufenderTitel else { return }
+        // Die Gruppe kann dazukommen, während die Ebene offen steht.
+        guard !inGruppe, let titel = laufenderTitel else { return }
         Protokoll.schreib("[Qualität] \(wahlen.immerDirectPlay ? "Direct Play" : "\(wahlen.bitratenGrenze) Mbit/s") — neu laden bei \(Int(spielstand.position)) s")
         fflush(nil)
         qualitaetGewechselt = true
+        // Ein vorbereiteter Plan der nächsten Folge trägt die alte Wahl.
+        vorbereitung.vergessen()
         wechsleZu(titel, ab: spielstand.position)
     }
 
@@ -1287,6 +1728,14 @@ extension App {
     ///   bei einer Qualitätswahl (Fortsetzstelle), wie `zurNaechstenFolge` auf
     ///   macOS/tvOS.
     func wechsleZu(_ folge: Item, ab: Double = 0) {
+        // **Aus der Datei in die naechste Datei** — ohne Plan gibt es keinen
+        // Wechsel ueber den Server; der Player oeffnet die geladene Folge neu
+        // und vermerkt dabei die Stelle der vorigen (1.0.5).
+        if laufenderTitel != nil, laufenderPlan == nil,
+           let pfad = downloads.datei(fuer: folge.id) {
+            spielerOeffnen(folge, ab: ab, ausDatei: pfad)
+            return
+        }
         guard let client, let titel = laufenderTitel, let plan = laufenderPlan else { return }
         let wechsel = folgenwechsel
         guard !wechsel.laeuft else {
@@ -1294,11 +1743,18 @@ extension App {
             fflush(nil)
             return
         }
+        fertigZaehlen(titel, position: spielstand.position, dauer: spielstand.dauer)
         let alt = (titel: titel, plan: plan, gemeldet: spielstand.startGemeldet,
                    ticks: Int64(spielstand.position * 10_000_000))
         let grenze = wahlen.profilBitrate
         let konto = benutzerID
         let angewandt = Merker()
+        // In den letzten Minuten schon geholt (``Folgenvorbereitung``)? Dann
+        // gleich mit diesem Plan — nur für den Anfang einer Folge, nicht für
+        // eine Qualitätswahl mitten im Titel.
+        let vorbereitet = ab == 0 ? vorbereitung.nimm(folge.id) : nil
+        Protokoll.schreib("[Wechsel] Beginn → \(folge.id) · Plan vorbereitet: \(vorbereitet != nil ? "ja" : "nein")")
+        fflush(nil)
         Task.detached { [self] in
             let ergebnis = await wechsel.ausfuehren(Folgenwechsel.Schritte<PlaybackPlan>(
                 stoppen: {
@@ -1308,8 +1764,9 @@ extension App {
                                           ticks: alt.ticks, konto: konto)
                 },
                 planen: {
-                    try? await client.playbackPlan(for: folge.id,
-                                                   profile: .vlc(maxBitrate: grenze))
+                    if let vorbereitet { return vorbereitet }
+                    return try? await client.playbackPlan(for: folge.id,
+                                                          profile: .vlc(maxBitrate: grenze))
                 },
                 anwenden: { neu in
                     // **Auf GTKs Faden, und hier noch einmal gefragt.** Der
@@ -1339,13 +1796,19 @@ extension App {
             Protokoll.schreib("[Wechsel] \(ergebnis) → \(folge.id)")
             fflush(nil)
             guard ergebnis == .gewechselt else { return }
-            self.nachschlagen(fuer: folge, wechsel: wechsel, client: client)
+            // Auf GTKs Faden: `nachschlagen` liest die Downloadliste.
+            aufHauptfaden { self.nachschlagen(fuer: folge, wechsel: wechsel, client: client) }
         }
     }
 
     /// Die neue Folge uebernehmen — **vor** dem Start.
     private func folgeAnwenden(_ folge: Item, _ plan: PlaybackPlan, ab: Double = 0) {
+        // Verzoegerung: dieselbe Serie behaelt sie, sonst null.
+        abspieler.verzoegerungFuerNeuenTitel(alterTitel: laufenderTitel?.id ?? "",
+                                             alteSerie: laufenderTitel?.seriesId,
+                                             neuerTitel: folge.id, neueSerie: folge.seriesId)
         laufenderTitel = folge
+        abrisse = 0
         laufenderPlan = plan
         // Grenze gewählt, aber es läuft das Original: entweder reicht die
         // Datei schon, oder der Server wandelt nicht um. Sagen statt schweigen.
@@ -1375,7 +1838,7 @@ extension App {
         // wieder bei 1,0 an, obwohl der Zuschauer 1,25 gewählt hat.
         let tempo = abspieler.tempo
         // Die nächste Folge startet **von vorn** (B5).
-        abspieler.oeffnen(plan.url, ab: ab, puffer: wahlen.puffer)
+        abspieler.oeffnen(plan.url, ab: ab, puffer: wahlen.puffer, softwareDekoder: plan.softwareDekoder)
         // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
         abspieler.bildfuellend(wahlen.bildfuellend)
         technikschildSetzen(wahlen.technikschild)
@@ -1392,24 +1855,40 @@ extension App {
     /// **Abschnitte und naechste Folge zur laufenden Folge nachholen** — nur
     /// uebernehmen, wenn seither kein Wechsel begonnen hat, der Player offen
     /// ist und noch diese Folge zeigt (`Folgenwechsel.nachschlagen`, T1-M4).
-    func nachschlagen(fuer item: Item, wechsel: Folgenwechsel, client: JellyfinClient) {
+    func nachschlagen(fuer item: Item, wechsel: Folgenwechsel, client: JellyfinClient?) {
         let gilt: @Sendable (App) -> Bool = { app in
             app.folgenwechsel === wechsel && wechsel.phase == .ruht
                 && app.laufenderTitel?.id == item.id
         }
+        // **Die beim Download abgelegten Abschnitte zuerst, und ohne Server
+        // die naechste geladene Folge** — beide Regeln liegen im Paket
+        // (`Downloadregeln`), wie auf Apple. Linux hat keinen Netzbeobachter;
+        // `ohneNetz` heisst hier nur „kein Konto", sonst faellt ein Fehler
+        // von selbst auf die geladene Folge zurueck.
+        let abgelegt = downloads.posten(fuer: item.id)?.abschnitte
+        let posten = downloads.posten
         Task.detached { [self] in
-            await wechsel.nachschlagen(holen: { await client.abschnitte(fuer: item.id) }) { marken in
+            await wechsel.nachschlagen(holen: {
+                await Downloadregeln.abschnitte(abgelegt: abgelegt) {
+                    await client?.abschnitte(fuer: item.id) ?? []
+                }
+            }) { marken in
                 aufHauptfaden { if gilt(self) { self.abschnitte = marken } }
             }
         }
         guard let serie = item.seriesId else { return }
         Task.detached { [self] in
             await wechsel.nachschlagen(holen: {
-                (try? await client.folgeNach(itemID: item.id, seriesID: serie)) ?? nil
+                await Downloadregeln.folgeNach(item, aus: posten, ohneNetz: client == nil) {
+                    try await client?.folgeNach(itemID: item.id, seriesID: serie)
+                }
             }) { folge in
                 aufHauptfaden {
                     guard gilt(self) else { return }
-                    self.vorgeholteFolge = folge
+                    // **In der Gruppe keine nächste Folge** (iOS
+                    // `nachschlagen`): kein Knopf, keine Karte, kein
+                    // Weiterschalten.
+                    self.vorgeholteFolge = self.gemeinsam.an ? nil : folge
                     Protokoll.schreib("[Wechsel] naechste Folge \(folge?.id ?? "keine") nach \(item.id)")
                     fflush(nil)
                     self.medienstandMelden()
@@ -1420,12 +1899,39 @@ extension App {
 
     // MARK: Steuerung ein- und ausblenden (B1)
 
+    /// **Beim Ziehen rastet der Regler an den Kerben ein** (``Kerbenfang``,
+    /// wie am Mac — dort mit dem Tick des Trackpads, hier still wie mit
+    /// einer Maus ohne Force Touch). Nah genug an einer Abschnittsgrenze
+    /// steht er genau darauf; `true` heißt: der Wert ist hier gesetzt, GTK
+    /// soll ihn nicht selbst übernehmen.
+    func reglerZug(_ roh: Double) -> Bool {
+        let dauer = spielstand.dauer
+        let breite = Double(gtk_widget_get_width(spielerRegler))
+        guard amRegler, dauer > 0, breite > 0,
+              let kerbe = Kerbenfang.kerbe(wert: roh * dauer, bis: dauer,
+                                            marken: abschnitte.flatMap { [$0.von, $0.bis] },
+                                            breite: breite) else {
+            reglerGesetzt(roh)
+            return false
+        }
+        let anteil = kerbe / dauer
+        gtk_range_set_value(alsBereich(spielerRegler), anteil)
+        reglerGesetzt(anteil)
+        return true
+    }
+
     /// Der Zeitregler wurde gezogen. **Der Sprung greift sofort**, und der
     /// Stand wird mitgeführt: sonst zöge ihn der nächste Takt zurück, bevor
     /// VLC an der neuen Stelle angekommen ist.
     func reglerGesetzt(_ anteil: Double) {
         guard spielstand.dauer > 0 else { return }
         let ziel = spielstand.dauer * anteil
+        if inGruppe, amRegler {
+            gemeinsam.reglerZiel = ziel
+            vorschauZeigen(anteil: anteil)
+            steuerungZeigen()
+            return
+        }
         springe(auf: ziel)
         steuerungZeigen()
         // Die Vorschau folgt dem Griff, solange gezogen wird.
@@ -1439,7 +1945,13 @@ extension App {
         if let andere = zurueck ? spielerSprungRechts : spielerSprungLinks {
             blenden(andere.anzeige, auf: 0, dauer: 0.15, kennlinie: .easeInOut)
         }
-        let sekunden = zurueck ? wahlen.zurueckSekunden : wahlen.vorSekunden
+        // **Mehrfach gedrückt, zählt sie hoch** (iOS, Doppeltipp-Zähler
+        // 1.0.5): 10 s, 20 s, 30 s — solange die Marke der vorigen Sprünge in
+        // dieselbe Richtung noch steht. Hier ist es die Pfeiltaste.
+        let schritt = zurueck ? wahlen.zurueckSekunden : wahlen.vorSekunden
+        let bisher = sprungsumme.flatMap { $0.zurueck == zurueck ? $0.sekunden : nil } ?? 0
+        let sekunden = bisher + schritt
+        sprungsumme = (zurueck, sekunden)
         gtk_label_set_text(OpaquePointer(marke.text), "\(sekunden) s")
         marke.zeichen.stupsen()
         blenden(marke.anzeige, auf: 1, dauer: 0.15, kennlinie: .easeInOut)
@@ -1450,6 +1962,7 @@ extension App {
             aufHauptfaden {
                 guard self.sprungtakt == meins,
                       let marke = zurueck ? self.spielerSprungLinks : self.spielerSprungRechts else { return }
+                self.sprungsumme = nil
                 blenden(marke.anzeige, auf: 0, dauer: 0.15, kennlinie: .easeInOut)
             }
         }
@@ -1552,8 +2065,30 @@ nonisolated(unsafe) let reglerGezogen: @convention(c) (
 ) -> gboolean = { _, _, anteil, daten in
     guard let daten else { return 0 }
     let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
-    app.reglerGesetzt(min(max(anteil, 0), 1))
-    return 0   // false: GTK darf den Wert selbst übernehmen
+    // false: GTK darf den Wert selbst übernehmen; true: eingerastet.
+    return app.reglerZug(min(max(anteil, 0), 1)) ? 1 : 0
+}
+
+/// **Die Kerben am Zeitregler** — Anfang und Ende jedes Abschnitts, zwei
+/// Punkt breit in `grund`, so dick wie die Spur (4, beim Ziehen 6), ohne die
+/// an den beiden Kanten (Mac `Zeitregler.kerben`).
+nonisolated(unsafe) let kerbenMalen: @convention(c) (
+    UnsafeMutablePointer<GtkDrawingArea>?, OpaquePointer?, Int32, Int32, gpointer?
+) -> Void = { _, cr, breite, hoehe, daten in
+    guard let cr, let daten else { return }
+    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
+    let dauer = app.spielstand.dauer
+    guard dauer > 0, !app.abschnitte.isEmpty else { return }
+    let w = Double(breite), h = Double(hoehe)
+    let dicke: Double = app.amRegler ? 6 : 4
+    // `grund` #101010.
+    cairo_set_source_rgba(cr, 16.0 / 255, 16.0 / 255, 16.0 / 255, 1)
+    for grenze in app.abschnitte.flatMap({ [$0.von, $0.bis] }) {
+        let anteil = grenze / dauer
+        guard anteil > 0.01, anteil < 0.99 else { continue }
+        cairo_rectangle(cr, (w * anteil - 1).rounded(), (h - dicke) / 2, 2, dicke)
+    }
+    cairo_fill(cr)
 }
 
 /// Der Taktgeber. Wie jeder C-Rückruf trägt er die App als Zeiger.

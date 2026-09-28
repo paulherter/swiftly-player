@@ -55,6 +55,10 @@ struct HauptView: View {
     /// Was die Uebernahme starten soll. Eigener Stand neben den Playern der
     /// einzelnen Seiten — die starten aus ihrer Liste, dieser aus dem Kopf.
     @State private var uebernahmeWunsch: Abspielwunsch?
+    /// Gemeinsam schauen — einer für die ganze App, siehe ``Gemeinsammodell``.
+    @State private var gemeinsam = Gemeinsammodell.geteilt
+    /// Was ein Kachelmenü bestellt — siehe ``Kachelwunsch``.
+    @State private var kachelwunsch = Kachelwunsch.geteilt
 
     @Environment(\.breit) private var breit
 
@@ -62,9 +66,25 @@ struct HauptView: View {
     ///
     /// Erst der Befehl, dann der Plan, dann der Start — geht das Beenden
     /// schief, passiert gar nichts. Sonst liefen zwei Tonspuren im Raum.
+    ///
+    /// **Die Karte wächst sofort aus dem Abzeichen** (Entwurf B) und läuft
+    /// neben dem Netz her; der Player geht ohne eigene Blende unter ihr auf
+    /// und wird sichtbar, wenn sie auf sein erstes Bild gezoomt hat
+    /// (``Uebergabebuehne``).
     private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
-        Task { uebernahmeWunsch = await uebernahme.wunsch(fuer: sitzung, model: model) }
+        let buehne = Uebergabebuehne.geteilt
+        buehne.starten(titel: sitzung.laeuft, model: model)
+        Task {
+            guard let wunsch = await uebernahme.wunsch(fuer: sitzung, model: model) else {
+                buehne.abbrechen("kein Plan oder Stopp abgelehnt")
+                return
+            }
+            buehne.spielerKommt(wunsch.item.id)
+            var ohne = Transaction()
+            ohne.disablesAnimations = true
+            withTransaction(ohne) { uebernahmeWunsch = wunsch }
+        }
     }
 
     /// Das Profilzeichen in der Seitenleiste.
@@ -182,16 +202,44 @@ struct HauptView: View {
             // **Eigenes Blatt statt `confirmationDialog`.** Der Systemdialog
             // legt seinen eigenen, sehr hellen Schleier auf; ueber einer
             // dunklen Seite voller Plakate hebt er sich kaum ab.
+            //
+            // **Die Karte wächst aus dem Abzeichen** (Versuch
+            // `experiment-glas`): statt mitten im Schirm aufzublenden, kommt
+            // sie aus dem Zeichen, das man angetippt hat, und schrumpft beim
+            // Schließen dorthin zurück. Der Schleier blendet nur.
             if auswahlOffen {
-                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
-                                  waehlen: { hierWeiterschauen($0) },
-                                  abbrechen: { auswahlOffen = false })
+                Uebernahmeauswahl.schleier { auswahlOffen = false }
                     .transition(.opacity)
                     .zIndex(5)
+                Uebernahmekarte(sitzungen: uebernahme.angebote,
+                                waehlen: { hierWeiterschauen($0) },
+                                abbrechen: { auswahlOffen = false })
+                    .transition(.ausDemPunkt(Abzeichenursprung.punkt))
+                    .zIndex(5.1)
+            }
+
+            // Anlegen, Beitreten, Auswahl und der Rückweg nach dem Verlassen.
+            // Über allem, weil jede Seite sie öffnen kann.
+            Gemeinsamblaetter(uebernahme: uebernahme.angebote,
+                              weiterschauen: { hierWeiterschauen($0) })
+                .zIndex(6)
+
+            // **Was ein Kachelmenü bestellt hat** (``Kachelmenue``): das
+            // Ladeblatt und eine kurze Meldung. Hier, weil nicht jede Seite
+            // mit Kacheln ein eigenes Ladeblatt hat.
+            if let auftrag = kachelwunsch.laden {
+                Ladeblatt(offen: $kachelwunsch.ladeblattOffen, model: model,
+                          posten: [auftrag.posten], titel: auftrag.titel,
+                          bilder: auftrag.bilder, qualitaetWaehlen: true)
+                    .zIndex(7)
+            }
+            if let meldung = kachelwunsch.meldung {
+                Hinweisstreifen(text: meldung) { kachelwunsch.meldung = nil }
+                    .zIndex(8)
             }
         }
         .environment(uebernahme)
-        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
+        .animation(Stil.feder, value: auswahlOffen)
         // Ein Schalter statt einer Schliessung durch die Umgebung — siehe
         // `Uebernahmemodell.angetippt`.
         .onChange(of: uebernahme.angetippt) { _, an in
@@ -201,6 +249,38 @@ struct HauptView: View {
             else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
         }
         .task { uebernahme.starten(model) }
+        #if DEBUG
+        .task {
+            guard Kontowechsellauf.an else { return }
+            try? await Task.sleep(for: .seconds(4))
+            Kontowechselflug.notiz("selbsttest: profil oeffnen")
+            pfade[bereich.rawValue].append(ProfilRoute())
+        }
+        .onChange(of: Kontowechselflug.geteilt.zurueck) { _, _ in
+            guard Kontowechsellauf.an, let ms = Kontowechsellauf.profiltipp else { return }
+            Task { @MainActor in
+                // `zurueck` steigt einen Durchlauf nach dem Tipp.
+                try? await Task.sleep(for: .milliseconds(max(0, ms - 5)))
+                Kontowechselflug.notiz("selbsttest: profil oben angetippt (+\(ms) ms)")
+                pfade[bereich.rawValue].append(ProfilRoute())
+            }
+        }
+        #endif
+        .task { gemeinsam.starten(model) }
+        // **Die Gruppe startet den Player, nicht die Seite.** Wer anlegt, wer
+        // beitritt, und wenn in der Gruppe jemand einen neuen Titel setzt —
+        // es kommt immer als Warteschlange vom Server.
+        .onChange(of: gemeinsam.wunsch?.id) { _, neu in
+            guard neu != nil, let wunsch = gemeinsam.wunsch else { return }
+            gemeinsam.wunsch = nil
+            uebernahmeWunsch = wunsch
+        }
+        // Abspielen aus einem Kachelmenü — derselbe Player wie oben.
+        .onChange(of: kachelwunsch.abspielen?.id) { _, neu in
+            guard neu != nil, let wunsch = kachelwunsch.abspielen else { return }
+            kachelwunsch.abspielen = nil
+            uebernahmeWunsch = wunsch
+        }
         #if DEBUG && os(iOS)
         .task {
             guard Sprunglauf.an else { return }
@@ -208,6 +288,23 @@ struct HauptView: View {
             guard let wunsch = await Sprunglauf.wunsch(model) else { return }
             uebernahmeWunsch = wunsch
             await Sprunglauf.ablauf(model) { uebernahmeWunsch = nil }
+        }
+        .task {
+            guard Wechsellauf.an else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let wunsch = await Wechsellauf.wunsch(model) else { return }
+            uebernahmeWunsch = wunsch
+            await Wechsellauf.ablauf(model) { uebernahmeWunsch = nil }
+        }
+        .task {
+            guard Offlinelauf.an else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let wunsch = await Offlinelauf.wunsch(model) else {
+                await Offlinelauf.aufraeumen(model)
+                return
+            }
+            uebernahmeWunsch = wunsch
+            await Offlinelauf.ablauf(model) { uebernahmeWunsch = nil }
         }
         #endif
         .onDisappear { uebernahme.beenden() }
@@ -237,6 +334,7 @@ struct HauptView: View {
         .onDisappear {
             guard Playerrahmen.aktiv == nil else { return }
             Task { await model.fernsteuerungBeenden() }
+            gemeinsam.beenden()
         }
         .onChange(of: bereich) { alt, neu in
             besucht.insert(neu)
@@ -268,12 +366,63 @@ struct HauptView: View {
         // Plattform, und die naechste neue Seite vergisst es. Von der
         // Mac-Sitzung gefunden.
         .onChange(of: model.kontowechsel) { _, _ in
-            for i in pfade.indices where !pfade[i].isEmpty {
-                pfade[i] = NavigationPath()
-            }
-            profilzweig = nil
+            // Aus der Profilauswahl ist schon geleert — beim Tipp, siehe
+            // unten.
+            guard !Kontowechselflug.geteilt.stapelSchonGeleert() else { return }
+            stapelLeeren()
         }
+        // **Beim Tipp in der Profilauswahl** (Versuch `experiment-glas`,
+        // Entwurf D) fährt ein Standbild der Seite weg; darunter springt der
+        // Stapel hier ohne Animation zurück — sichtbar ist davon nichts.
+        .onChange(of: Kontowechselflug.geteilt.zurueck) { _, _ in
+            var ohne = Transaction()
+            ohne.disablesAnimations = true
+            withTransaction(ohne) { stapelLeeren() }
+        }
+        .background { tastenkuerzel }
         .preferredColorScheme(.dark)
+    }
+
+    /// **Dieselben Kürzel wie auf dem Mac** (`Menueleiste`): ⌘1–5 für die
+    /// Bereiche, ⌘F für die Suche, ⌘, für die Einstellungen. Auf dem iPad
+    /// mit Tastatur gab es keine einzige Kombination; gedrückt gehaltenes ⌘
+    /// zeigt sie jetzt in der Übersicht des Systems.
+    ///
+    /// Unsichtbare Knöpfe, weil es keine sichtbare Entsprechung braucht —
+    /// jeder Eintrag hat seine schon in der Leiste. Merkliste und Downloads
+    /// nur dort, wo die Leiste sie zeigt.
+    private var tastenkuerzel: some View {
+        VStack {
+            bereichstaste("Start", .start, "1")
+            bereichstaste("Filme", .filme, "2")
+            bereichstaste("Serien", .serien, "3")
+            if breit { bereichstaste("Merkliste", .merkliste, "4") }
+            if model.downloadsAn { bereichstaste("Downloads", .downloads, "5") }
+            bereichstaste("Suchen", .suche, "f")
+            Button("Einstellungen") { zuDenEinstellungen() }
+                .keyboardShortcut(",", modifiers: .command)
+        }
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    private func bereichstaste(_ titel: LocalizedStringKey, _ ziel: Bereich,
+                               _ taste: KeyEquivalent) -> some View {
+        Button(titel) { bereich = ziel }
+            .keyboardShortcut(taste, modifiers: .command)
+    }
+
+    /// Profil auf, Einstellungen darauf — der Weg, den ein Tipp auch nimmt.
+    private func zuDenEinstellungen() {
+        zumProfil()
+        pfade[bereich.rawValue].append(EinstellungenRoute())
+    }
+
+    private func stapelLeeren() {
+        for i in pfade.indices where !pfade[i].isEmpty {
+            pfade[i] = NavigationPath()
+        }
+        profilzweig = nil
     }
 
     @ViewBuilder
@@ -445,6 +594,10 @@ struct BibliothekView: View {
     /// keine Sammlungen hat, bekommt kein Menü und sieht alles wie vorher.
     @State private var wahl: Bereichswahl = .alle
     @State private var bibliothekslisteOffen = false
+    /// Der laufende Ladevorgang — **es gibt immer nur einen.** Angestossen
+    /// wird von vier Stellen (Kennung, Bibliothekswahl, nachgereichtes
+    /// Angebot, „Erneut versuchen"); vorher liefen sie nebeneinander her.
+    @State private var ladeaufgabe: Task<Void, Never>?
 
     @Environment(\.breit) private var breit
     /// Ist dieser Bereich vorn? Nur dann gilt, was die Scrollflaeche meldet.
@@ -501,7 +654,7 @@ struct BibliothekView: View {
                                  guard neu != wahl else { return }
                                  model.bereichWaehlen(neu, art: art)
                                  wahl = neu
-                                 Task { await laden() }
+                                 neuLaden()
                              },
                              rubrik: { $0 == angebot.ersteBibliothek ? "Bibliotheken" : nil })
         }
@@ -527,7 +680,7 @@ struct BibliothekView: View {
         // wird die laufende Anfrage des alten Kontos abgebrochen, statt neben
         // der neuen weiterzulaufen. Dass ein Abbruch hier kein Ausfall ist,
         // steht in `laden()`.
-        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await alleinLaden() }
         // **Die Bibliotheken koennen nach der Seite eintreffen.**
         //
         // `laden()` waehlt sie beim ersten Lauf aus `model.views` — und wenn
@@ -546,7 +699,7 @@ struct BibliothekView: View {
             let neu = model.bereichswahl(art: art)
             guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
             wahl = neu
-            Task { await laden() }
+            neuLaden()
         }
     }
 
@@ -576,6 +729,7 @@ struct BibliothekView: View {
                             PosterTile(model: model, item: item, breite: nil)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(item, model: model)
                         // Nachladen, sobald die drittletzte Reihe auftaucht —
                         // dann steht der Nachschub schon, bevor man unten
                         // ankommt.
@@ -602,61 +756,9 @@ struct BibliothekView: View {
             }
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
-            // Null im Ruhezustand: `contentOffset` beginnt bei minus dem
-            // oberen Rand, den `contentMargins` gesetzt hat.
-            // **Der rohe Versatz, nicht der um den Sicherheitsrand bereinigte.**
-            //
-            // Hier stand `contentOffset.y + contentInsets.top`, und das war
-            // richtig, solange der Kopf immer gleich hoch war. Seit die
-            // Wertreihe beim Scrollen zuklappt, ist er es nicht mehr — und
-            // damit misst die Zeile ihr eigenes Ergebnis: Kopf schrumpft um
-            // zehn, Sicherheitsrand schrumpft um zehn, der gemessene Versatz
-            // faellt um zehn zurueck auf null, Kopf waechst wieder. Ein
-            // Zweitakter, der nie zur Ruhe kommt.
-            //
-            // **Die Summe ist schon der Scrollweg.** Gemessen am 22.09.:
-            //
-            //     rand 130,8  versatz −130,3  ->  Summe 0,5
-            //     rand 115,0  versatz −114,7  ->  Summe 0,3
-            //
-            // Dazwischen ist die Wertreihe von 28 auf 44 Punkt zugeklappt.
-            // Der obere Rand faellt dabei um 15,8 — und der rohe Versatz
-            // steigt um genau 15,6. **Beide wandern gemeinsam:** die
-            // Scrollflaeche haelt den Inhalt fest, wenn sich ihr Rand aendert.
-            // Die Summe bleibt davon unberuehrt und misst allein, was der
-            // Finger getan hat.
-            //
-            // Drei Anlaeufe sind an der gegenteiligen Annahme gescheitert —
-            // der Rand schrumpfe, der Versatz bleibe stehen, also muesse man
-            // das Eingeklappte wieder draufrechnen. Genau dieses Draufrechnen
-            // war der Fehler: es zaehlte den Weg ein zweites Mal, in jedem
-            // Bild, und die Reihe klappte von selbst zu, ohne dass jemand
-            // gescrollt hat. Zwei Vermutungen ueber die Ursache und eine
-            // Messung: die Messung hat es in zwei Minuten entschieden.
-            .onScrollGeometryChange(for: CGPoint.self) {
-                CGPoint(x: $0.contentInsets.top, y: $0.contentOffset.y)
-            } action: { _, neu in
-                // Waehrend des Bereichswechsels rechnet die Scrollflaeche
-                // ihre Geometrie neu; erst wenn dieser Bereich vorn ist, ist
-                // die Messung etwas wert.
-                guard bereichAktiv else { return }
-                // **Der eine Zwischenstand, der auch dann noch kommt.**
-                //
-                // Die Messung zeigt, wie ein echter Wert aussieht: der rohe
-                // Versatz ist **minus** dem oberen Rand (−130,3 bei Rand
-                // 130,8), die Summe also nahe null. Waehrend die Flaeche ihre
-                // Geometrie neu rechnet, meldet sie dagegen einmal Versatz
-                // null bei schon gesetztem Rand — daraus wird rechnerisch die
-                // ganze Kopfhoehe, die Reihe klappt fuer ein, zwei Bilder zu
-                // und wieder auf, und genau das ruckelt mitten im Aufziehen.
-                //
-                // Echt vorkommen kann die Paarung nur an einer Stelle: wenn
-                // man zufaellig um exakt die Randhoehe gescrollt hat. Dort
-                // kostet ein uebersprungenes Bild nichts, das naechste kommt
-                // sofort.
-                guard !(abs(neu.y) < 1 && neu.x > 1) else { return }
-                versatz = neu.y + neu.x
-            }
+            // Der Weg des Fingers, nicht der um den Rand bereinigte Versatz —
+            // warum, steht in `Kopfscrollweg` im Paket.
+            .scrollweg(aktiv: bereichAktiv) { versatz = $0 }
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
             // Nur die Scrollflaeche zieht sich beim Wechsel heran; der Kopf
@@ -693,11 +795,7 @@ struct BibliothekView: View {
                 // Vorher stand hier „Hier ist noch nichts" — dieselbe Ursache,
                 // zwei Diagnosen, und die falsche schickt einen zum Server
                 // statt zum Netz.
-                Leerzustand(
-                    symbol: "externaldrive.badge.xmark",
-                    kopfzeile: "Server ist abgetaucht",
-                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    hauptknopf: ("Erneut versuchen", { Task { await laden() } }))
+                Leerzustand.serverAbgetaucht(model, erneut: { neuLaden() })
                     .padding(.bottom, Stil.leisteHoehe)
             } else if stand.items.isEmpty, !stand.laedt {
                 // **`!laedt` ist nicht schmückend.** Es stand hier, solange
@@ -714,7 +812,7 @@ struct BibliothekView: View {
                         ? "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."
                         : "Unter \u{201E}\(stand.filter.beschriftung)\u{201C} liegt gerade nichts. Nimm einen anderen Filter.",
                     stillerKnopf: stand.filter == .alle
-                        ? ("Aktualisieren", { Task { await laden() } })
+                        ? ("Aktualisieren", { neuLaden() })
                         : ("Filter zurücksetzen", { stand.filter = .alle }))
                     .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
             }
@@ -816,6 +914,20 @@ struct BibliothekView: View {
 
     // Die Steuerzeile steht in `Regalsteuerung` (Sammlungsseite.swift) —
     // die Sammlungsseite braucht dieselbe.
+
+    /// Startet `laden()` neu und bricht den vorigen Lauf ab.
+    private func neuLaden() {
+        Task { await alleinLaden() }
+    }
+
+    /// `laden()` als einziger Lauf: der vorige wird abgebrochen, und wird
+    /// dieser abgebrochen (`.task(id:)`), geht der Abbruch weiter.
+    private func alleinLaden() async {
+        ladeaufgabe?.cancel()
+        let aufgabe = Task { await laden() }
+        ladeaufgabe = aufgabe
+        await withTaskCancellationHandler { await aufgabe.value } onCancel: { aufgabe.cancel() }
+    }
 
     private func laden() async {
         if model.views.isEmpty { await model.loadViews() }

@@ -212,11 +212,7 @@ struct SucheView: View {
                         } else if gestoert, treffer.isEmpty, seerrtreffer.isEmpty {
                             // Derselbe Text wie in der Bibliothek, samt
                             // Serveradresse — eine Ursache, eine Diagnose.
-                            Leerzustand(
-                                symbol: "externaldrive.badge.xmark",
-                                kopfzeile: "Server ist abgetaucht",
-                                text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                                hauptknopf: ("Erneut versuchen", { suchen(begriff) }))
+                            Leerzustand.serverAbgetaucht(model, erneut: { suchen(begriff) })
                                 .padding(.top, 24)
                         } else if treffer.isEmpty, seerrtreffer.isEmpty {
                             // **Beide leer, nicht nur die Bibliothek.** Hier
@@ -369,6 +365,7 @@ struct SucheView: View {
                                        auskunft: item.trefferauskunft)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(item, model: model)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -390,6 +387,7 @@ struct SucheView: View {
                                        auskunft: item.trefferauskunft)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(item, model: model)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -494,6 +492,7 @@ struct SucheView: View {
                             .font(Stil.koerper)
                             .foregroundStyle(Stil.schriftSehrLeise)
                             .frame(width: 20)
+                            .accessibilityHidden(true)
                         Text(verbatim: wort)
                             .font(Stil.listentitel)
                             .foregroundStyle(Stil.schrift)

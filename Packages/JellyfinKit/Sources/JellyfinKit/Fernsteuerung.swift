@@ -43,6 +43,13 @@ public actor Fernsteuerung {
     private var lauscher: Task<Void, Never>?
     private var herzschlag: Task<Void, Never>?
     private var weitergabe: (@Sendable (Fernbefehl) -> Void)?
+    /// Was zu SyncPlay ankommt — Befehle mit Zeitpunkt und Neues aus der
+    /// Gruppe. Eigener Weg neben den Fernbefehlen: die kommen vom Dashboard,
+    /// diese von der Gruppe, und sie wollen verschiedene Dinge.
+    private var syncPlayWeitergabe: (@Sendable (SyncPlayNachricht) -> Void)?
+    /// Wer die Wiedergabe gleich übernimmt — siehe
+    /// ``JellyfinClient/uebergabeHinweis(an:geraet:)``.
+    private var uebergabeWeitergabe: (@Sendable (String) -> Void)?
     /// Wie oft die Verbindung hintereinander abgerissen ist. Steuert die
     /// Wartezeit vor dem nächsten Versuch und wird bei Erfolg zurückgesetzt.
     private var abrisse = 0
@@ -87,6 +94,17 @@ public actor Fernsteuerung {
         self.geraeteID = geraeteID
         self.ausweis = ausweis
         self.sitzung = sitzung
+    }
+
+    /// Setzt, wer SyncPlay-Nachrichten bekommt. Darf vor oder nach
+    /// ``starten(bei:)`` stehen.
+    public func syncPlayHoeren(_ weitergabe: (@Sendable (SyncPlayNachricht) -> Void)?) {
+        syncPlayWeitergabe = weitergabe
+    }
+
+    /// Setzt, wer den Übernahme-Hinweis bekommt (den Namen des Geräts).
+    public func uebergabeHoeren(_ weitergabe: (@Sendable (String) -> Void)?) {
+        uebergabeWeitergabe = weitergabe
     }
 
     /// Verbindet und ruft `bei` für jeden eingehenden Befehl auf.
@@ -319,6 +337,16 @@ public actor Fernsteuerung {
         case "ForceKeepAlive":
             senden(#"{"MessageType":"KeepAlive"}"#)
 
+        case "SyncPlayCommand", "SyncPlayGroupUpdate":
+            if let nachricht = SyncPlayNachricht.lesen(text) {
+                syncPlayWeitergabe?(nachricht)
+            } else {
+                Spur.sag("[SyncPlay] nicht lesbar: \(text.prefix(300))")
+            }
+
+        case "GeneralCommand":
+            if let geraet = Self.uebergabeHinweis(roh) { uebergabeWeitergabe?(geraet) }
+
         case "Playstate":
             guard let inhalt = roh["Data"] as? [String: Any],
                   let befehl = inhalt["Command"] as? String else { return }
@@ -328,6 +356,17 @@ public actor Fernsteuerung {
         default:
             break
         }
+    }
+
+    /// Der Gerätename aus einem Übernahme-Hinweis, sonst `nil` — auch für
+    /// jede gewöhnliche `DisplayMessage`, die nicht von uns kommt.
+    static func uebergabeHinweis(_ roh: [String: Any]) -> String? {
+        guard let inhalt = roh["Data"] as? [String: Any],
+              inhalt["Name"] as? String == "DisplayMessage",
+              let argumente = inhalt["Arguments"] as? [String: Any],
+              argumente["Header"] as? String == Uebernahme.hinweisKopf,
+              let text = argumente["Text"] as? String, !text.isEmpty else { return nil }
+        return text
     }
 
     static func uebersetzen(_ befehl: String, ziel: Int64?) -> Fernbefehl? {

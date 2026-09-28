@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.future.await
 import android.net.Uri
 import de.paulherter.swiftly.gemeinsam.Hauptknopf
@@ -45,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -122,7 +124,9 @@ fun Downloadring(p: Downloadposten?, mass: Dp = 28.dp,
 /** Der Ring mit 44 Trefferflaeche — kleiner ist nicht tippbar. */
 @Composable
 private fun Ringknopf(app: SwiftlyAnwendung, p: Downloadposten?, mass: Dp = 28.dp, anteilJetzt: Double? = null, anlegen: () -> Unit = {}) {
-    Box(Modifier.size(44.dp).antippen { app.downloads.ringTippen(p, anlegen) }, contentAlignment = Alignment.Center) {
+    // Laden, anhalten, fortsetzen — ein Ruck beim Tipp, wie jeder andere Knopf mit Folgen (Audit 27.09.).
+    val ruck = rememberRuck()
+    Box(Modifier.size(44.dp).antippen { ruck(Ruck.Leicht); app.downloads.ringTippen(p, anlegen) }, contentAlignment = Alignment.Center) {
         Downloadring(p, mass, anteilJetzt)
     }
 }
@@ -134,10 +138,11 @@ private fun Ringknopf(app: SwiftlyAnwendung, p: Downloadposten?, mass: Dp = 28.d
 @Composable
 internal fun RowScope.Downloadfeld(app: SwiftlyAnwendung, id: String, titel: String) {
     val p = app.downloads.posten(id)
+    val ruck = rememberRuck()
     // 48 × 48 wie jedes andere Feld der Aktionsreihe (BRAND 7) — es stand als einziges auf 44.
     // **Die Ladeauswahl dahinter bleibt unangetastet**, hier geht es nur um das Feld.
-    Box(Modifier.weight(1f).height(Stil.knopfHoehe).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche)
-            .antippen { app.downloads.ringTippen(p) { app.downloadsAnlegen(listOf(id), titel) } },
+    Box(Modifier.weight(1f).height(Stil.knopfHoehe).clip(RoundedCornerShape(Stil.ecke)).background(knopfflaeche(LocalAufBildfarbe.current))
+            .antippen { ruck(Ruck.Leicht); app.downloads.ringTippen(p) { app.downloadsAnlegen(listOf(id), titel) } },
         contentAlignment = Alignment.Center) {
         // Ohne Download ein blanker Pfeil, geladen der gefuellte Kreis — beide 17 Semibold wie der
         // Nachbar; nur waehrend es laeuft, wartet oder haengt, steht der Ring (22) im Feld.
@@ -150,30 +155,58 @@ internal fun RowScope.Downloadfeld(app: SwiftlyAnwendung, id: String, titel: Str
 }
 
 /**
- * Vorlage: `Ladeblatt` — **vor jedem Start**, und nie eine Qualitaetswahl: geladen wird die
- * Originaldatei. Welcher der drei Aufbauten gilt, entscheiden `Downloadregeln.platz` und
- * `darfLaden`, nicht das Blatt.
+ * Vorlage: `Ladeblatt` — **vor jedem Start**. Welcher der drei Aufbauten gilt, entscheiden
+ * `Downloadregeln.platz` und `darfLaden`, nicht das Blatt. Ein Film waehlt hier seine Qualitaet
+ * (`qualitaetWaehlen`); eine Serie bringt sie aus der Ladeauswahl mit.
  */
-fun ladeblattZeigen(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder: Map<String, String>, titel: String) {
+fun ladeblattZeigen(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder: Map<String, String>, titel: String,
+                    qualitaetWaehlen: Boolean = false) {
     val v = app.downloads
-    val bytes = neue.sumOf { it.bytes }
     val frei = v.frei()
-    val platz = JSONObject(Kern.downloadPlatz(bytes, frei, Downloadposten.liste(v.posten.value)))
+    val platz = JSONObject(Kern.downloadPlatz(neue.sumOf { it.bytes }, frei, Downloadposten.liste(v.posten.value)))
     val kopf = if (platz.getBoolean("reicht")) uebersetzt("%@ laden", titel) else uebersetzt("Nicht genug Platz")
     app.blatt.value = Blattwunsch(kopf, emptyList(), null, inhalt = { schliessen ->
-        Ladeinhalt(app, neue, bilder, bytes, frei, platz, schliessen)
+        Ladeinhalt(app, neue, bilder, frei, qualitaetWaehlen, schliessen)
     }) {}
 }
 
 @Composable
-private fun Ladeinhalt(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder: Map<String, String>,
-                       bytes: Long, frei: Long, platz: JSONObject, schliessen: () -> Unit) {
+private fun Ladeinhalt(app: SwiftlyAnwendung, original: List<Downloadposten>, bilder: Map<String, String>,
+                       frei: Long, qualitaetWaehlen: Boolean, schliessen: () -> Unit) {
     val v = app.downloads
+    var wahl by remember { mutableStateOf("original") }
+    // Die Posten in der gewaehlten Qualitaet — Matroska und geschaetzte Groesse, sobald umgewandelt wird.
+    val neue = remember(wahl) {
+        if (!qualitaetWaehlen || wahl == "original") original
+        else JSONArray(Kern.downloadInQualitaet(Downloadposten.liste(original), wahl)).let { a ->
+            (0 until a.length()).map { Downloadposten.lesen(a.getJSONObject(it)) }
+        }
+    }
+    val bytes = neue.sumOf { it.bytes }
+    val umgewandelt = neue.any { it.umgewandelt }
+    val platz = remember(bytes) { JSONObject(Kern.downloadPlatz(bytes, frei, Downloadposten.liste(v.posten.value))) }
+    val waehlbar = app.einstellungen.downloadqualitaetWaehlbar
+    val angeboten = remember(waehlbar) {
+        qualitaetenLesen(Kern.downloadQualitaeten(waehlbar, JSONArray(original.map { JSONArray(listOf(it.bytes, it.laufzeitTicks ?: 0L)) }).toString()))
+    }
+    val wahlZeigen = qualitaetWaehlen && waehlbar && angeboten.size > 1
+    /** Die Groesse mit „≈", wenn sie geschaetzt ist. */
+    fun groesseText(b: Long) = (if (umgewandelt) "≈ " else "") + groesse(b)
+    @Composable fun qualitaetszeile() {
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(uebersetzt("Qualität"), style = TextStyle(fontSize = 15.sp), color = Stil.schriftLeise, modifier = Modifier.weight(1f))
+            Qualitaetsplakette(wahl, angeboten, true,
+                               groesse = { q -> original.sumOf { Kern.downloadGeschaetzt(q, it.bytes, it.laufzeitTicks ?: 0L) } }) { wahl = it }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+    }
     val laden = { v.hinzufuegen(neue, bilder) }
     Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 4.dp, bottom = 16.dp)) {
         when {
             !platz.getBoolean("reicht") -> {
-                Blattzeile(uebersetzt("Diese Datei"), groesse(bytes))
+                Blattzeile(uebersetzt("Diese Datei"), groesseText(bytes))
+                // Der naheliegende Ausweg ist eine kleinere Fassung; reicht es danach, wechselt das Blatt.
+                if (wahlZeigen) qualitaetszeile()
                 Blattzeile(uebersetzt("Frei auf dem Gerät"), groesse(frei), warnend = true)
                 if (platz.getBoolean("reichtNachAufraeumen")) {
                     Blattzeile(uebersetzt("Gesehene Titel"), groesse(platz.getLong("entbehrlichBytes")))
@@ -192,7 +225,7 @@ private fun Ladeinhalt(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder
                 }
             }
             !v.darfLaden() -> {
-                Blattzeile(uebersetzt("Größe"), groesse(bytes))
+                Blattzeile(uebersetzt("Größe"), groesseText(bytes))
                 Blattzeile(uebersetzt("Kein WLAN"), uebersetzt("Mobilfunk"), warnend = true)
                 Knopfreihe {
                     Spielknopf(Zeichen.Uhr, uebersetzt("In die Warteschlange"), true, haupt = true) { schliessen(); laden() }
@@ -203,11 +236,18 @@ private fun Ladeinhalt(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder
                 Blatthinweis(uebersetzt("Der Download startet von selbst, sobald WLAN da ist."))
             }
             else -> {
-                Blattzeile(uebersetzt("Größe"), groesse(bytes))
-                neue.singleOrNull()?.container?.let { Blattzeile(uebersetzt("Qualität"), it.uppercase()) }
+                Blattzeile(uebersetzt("Größe"), groesseText(bytes))
+                if (wahlZeigen) qualitaetszeile()
+                else {
+                    // Kommt die Serie umgewandelt aus der Auswahl, steht die Stufe vorn.
+                    val q = neue.firstOrNull()?.takeIf { it.umgewandelt }?.let { Kern.downloadPlakette(it.qualitaet.orEmpty()) }
+                    val c = neue.singleOrNull()?.container?.uppercase()
+                    listOfNotNull(q, c).takeIf { it.isNotEmpty() }?.let { Blattzeile(uebersetzt("Qualität"), it.joinToString(" · ")) }
+                }
                 Blattzeile(uebersetzt("Danach frei"), groesse(platz.getLong("freiDanach")))
                 Knopfreihe { Spielknopf(Zeichen.PfeilRunter, uebersetzt("Laden"), true, haupt = true) { schliessen(); laden() } }
-                Blatthinweis(uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."))
+                if (umgewandelt) Blatthinweis(uebersetzt("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt."))
+                else Blatthinweis(uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."))
             }
         }
     }
@@ -215,7 +255,9 @@ private fun Ladeinhalt(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder
 
 @Composable
 private fun Blattzeile(titel: String, wert: String, warnend: Boolean = false) {
-    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+    // `heightIn(min=)`, nicht `height()`: bei grosser Systemschrift wachsen die Zeilen, statt
+    // gegen die feste Hoehe zu stossen.
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(titel, style = TextStyle(fontSize = 15.sp), color = Stil.schriftLeise, modifier = Modifier.weight(1f))
         Text(wert, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
              color = if (warnend) Stil.warnung else Stil.schrift)
@@ -243,23 +285,29 @@ private fun gruppenLesen(json: String): List<Downloadgruppe> = JSONArray(json).l
     }
 }
 
+private fun stufe(p: Downloadposten) = Kern.downloadQualitaetName(p.qualitaet.orEmpty())
+
 /** Wie `Downloadzeile.unterzeile`: Folge oder Laufzeit, dann der Stand. Laedt und Fehler ersetzen alles. */
 private fun unterzeile(p: Downloadposten, geladen: Long = p.geladen): String {
     val teile = mutableListOf<String>()
-    if (p.staffel != null && p.folge != null) teile += "S${p.staffel} F${p.folge}"
+    // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand hier
+    // fest als „F", auch auf Englisch (gemeldet 27.09.2026).
+    if (p.staffel != null && p.folge != null) teile += uebersetzt("S%d F%d", p.staffel, p.folge)
     else p.laufzeitTicks?.takeIf { it > 0 }?.let { teile += uebersetzt("%lld Min.", (it / 600_000_000L).toInt()) }
     when (p.stand) {
         // **Feste Einheit, feste Stellen** (`Downloadregeln.fortschritt`): `groesse` wechselte mitten im
         // Laden von „845 MB" auf „1 GB" und „1,01 GB", und die Zeile wurde bei jedem Schritt anders breit.
+        // Umgewandelt ist das Ende geschaetzt — dann steht „≈" davor.
         "laedt" -> return JSONArray(Kern.downloadFortschritt(geladen, p.bytes)).let { f ->
-            uebersetzt("%@ von %@", f.getString(0), f.getString(1))
+            uebersetzt("%@ von %@", f.getString(0), (if (p.umgewandelt) "≈ " else "") + f.getString(1))
         }
-        "wartet" -> teile += uebersetzt("wartet")
-        "angehalten" -> teile += uebersetzt("angehalten")
+        "wartet" -> { teile += uebersetzt("wartet"); if (p.umgewandelt) teile += stufe(p) }
+        "angehalten" -> { teile += uebersetzt("angehalten"); if (p.umgewandelt) teile += stufe(p) }
         "fehler" -> return p.grund ?: uebersetzt("Fehlgeschlagen")
         else -> {
             teile += groesse(p.bytes)
-            p.container?.let { teile += it.uppercase() }
+            // Die gewaehlte Stufe steht, wo sonst der Container steht.
+            if (p.umgewandelt) teile += stufe(p) else p.container?.let { teile += it.uppercase() }
             // H9: leise, keine Fehlerfarbe — die Datei laeuft ja.
             if (!p.nochAufDemServer) teile += uebersetzt("nicht mehr auf dem Server")
         }
@@ -331,11 +379,12 @@ fun DownloadsSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         // **Eine Zeile in beiden Lagen, kein Tausch** — so gleitet sie mit den anderen.
                         Downloadzeile(app, erste, v.bildDatei(sid), false, bearbeiten, g.folgen.all { it in gewaehlt },
                             tun = { if (bearbeiten) umschalten(g.folgen) else oeffnen(Ziel(sid, g.titel, "Downloadserie")) },
-                            gruppe = g.titel to (uebersetzt("%lld Folgen", g.folgen.size) + " · " + groesse(g.bytes)),
+                            gruppe = g.titel to (uebersetzt("%lld Folgen", g.folgen.size) + " · " + groesse(g.bytes)
+                                + Kern.downloadGemeinsam(Downloadposten.liste(alle.filter { it.id in g.folgen })).let { if (it.isEmpty()) "" else " · $it" }),
                             modifier = Modifier.animateItem())
                     } else if (erste != null) {
                         Downloadzeile(app, erste, v.bildDatei(erste.id), erste.art == "folge", bearbeiten, erste.id in gewaehlt,
-                            tun = { if (bearbeiten) umschalten(listOf(erste.id)) else app.spiel.value = Abspielwunsch(erste.id, null) },
+                            tun = { if (bearbeiten) umschalten(listOf(erste.id)) else app.spiel.value = Abspielwunsch(erste.id, erste.fortsetzenAb) },
                             modifier = Modifier.animateItem())
                     }
                 }
@@ -375,13 +424,14 @@ internal fun Bearbeitenknopf(bearbeiten: Boolean, setzen: (Boolean) -> Unit) {
  */
 @Composable
 internal fun Loeschleiste(app: SwiftlyAnwendung, gewaehlt: Set<String>, modifier: Modifier, entfernen: () -> Unit) {
+    val ruck = rememberRuck()
     val bytes = app.downloads.posten.value.filter { it.id in gewaehlt }.sumOf { it.bytes }
     val titel = uebersetzt("%lld entfernen", gewaehlt.size) + " · " + groesse(bytes)
     Box(modifier.fillMaxWidth().background(Stil.grund)
             .padding(horizontal = Stil.randAbstand).padding(top = 8.dp, bottom = 8.dp)) {
         Hauptknopf(titel, freigegeben = gewaehlt.isNotEmpty()) {
             app.blatt.value = Blattwunsch(titel, listOf(Wahl("weg", uebersetzt("Entfernen"))), null,
-                                          mapOf("weg" to Zeichen.Papierkorb), warnend = setOf("weg")) { entfernen() }
+                                          mapOf("weg" to Zeichen.Papierkorb), warnend = setOf("weg")) { ruck(Ruck.Mittel); entfernen() }
         }
     }
 }
@@ -400,6 +450,20 @@ private fun Speicherbalken(belegt: Long, frei: Long) {
     }
 }
 
+/**
+ * **Eine Uhr fuer alle ladenden Zeilen** — sie laeuft nur, solange mindestens eine Zeile sichtbar laedt
+ * (die Liste baut nur sichtbare Zeilen), und nur auf dem Hauptfaden: an- und abgemeldet wird aus
+ * `DisposableEffect`.
+ */
+private object Downloadtakt {
+    val schlag = mutableLongStateOf(0L)
+    private var nutzer = 0
+    private var lauf: kotlinx.coroutines.Job? = null
+    private val bereich = kotlinx.coroutines.MainScope()
+    fun an() { if (nutzer++ == 0) lauf = bereich.launch { while (true) { delay(250); schlag.longValue++ } } }
+    fun aus() { if (--nutzer == 0) { lauf?.cancel(); lauf = null } }
+}
+
 /** Wie `Downloadzeile.unterfarbe`: laedt im Akzent, Fehler in `fehler`, sonst sehr leise. */
 private fun unterfarbe(p: Downloadposten) = when (p.stand) {
     "laedt" -> Stil.akzent
@@ -412,8 +476,11 @@ private fun unterfarbe(p: Downloadposten) = when (p.stand) {
  * Semibold **einzeilig**, Unterzeile 12 mit tabellarischen Ziffern in der Farbe des Stands, darunter
  * der geteilte `Fortschrittsbalken` als Kapsel. Senkrecht 10.
  *
- * **Waehrend geladen wird, zaehlt die Zeile je Bild weiter** (30 je Sekunde). Die Verwaltung meldet
- * hoechstens einmal je Sekunde; dazwischen rechnet der `Fortschrittsschaetzer` im Kern weiter. Zahl,
+ * **Waehrend geladen wird, zaehlt die Zeile weiter**, viermal je Sekunde an einer Uhr fuer alle Zeilen
+ * (`Downloadtakt`). Bis zum 27.09.2026 lief je Zeile eine eigene Schleife mit 30 Schlaegen je Sekunde —
+ * bei sechs Downloads sechs Schleifen mit JNI-Aufruf und Neuaufbau je Bild, fuer eine Zahl, die man so
+ * schnell gar nicht liest. Die Verwaltung meldet hoechstens einmal je Sekunde; dazwischen rechnet der
+ * `Fortschrittsschaetzer` im Kern weiter. Zahl,
  * Balken und Ring lesen **denselben** Wert. Geschaetzt wird nur, solange wirklich Byte kommen:
  * angehalten, wartend, fehlgeschlagen oder ohne Netz steht die Zahl sofort.
  *
@@ -426,17 +493,13 @@ private fun Downloadzeile(app: SwiftlyAnwendung, p: Downloadposten, bild: File, 
                           /** Titel und Unterzeile, wenn die Zeile fuer eine ganze Serie steht (H12). */
                           gruppe: Pair<String, String>? = null, modifier: Modifier = Modifier) {
     val kommtWas = gruppe == null && p.stand == "laedt" && app.downloads.netz.value
-    val aktuell by rememberUpdatedState(p)
-    var schaetzung by remember(p.id) { mutableLongStateOf(p.geladen) }
-    LaunchedEffect(p.id, kommtWas) {
-        if (!kommtWas) { Kern.downloadSchaetzerAnhalten(p.id); return@LaunchedEffect }
-        while (true) {
-            schaetzung = Kern.downloadSchaetzerWert(p.id, aktuell.geladen)
-            delay(33)
-        }
+    DisposableEffect(p.id, kommtWas) {
+        if (kommtWas) Downloadtakt.an() else Kern.downloadSchaetzerAnhalten(p.id)
+        onDispose { if (kommtWas) Downloadtakt.aus() }
     }
     val geladen = when {
-        kommtWas -> schaetzung
+        // Den Schlag lesen haengt die Zeile an die Uhr: sie baut sich je Schlag neu, sonst nicht.
+        kommtWas -> { Downloadtakt.schlag.longValue; Kern.downloadSchaetzerWert(p.id, p.geladen) }
         gruppe == null && (p.stand == "angehalten" || p.stand == "laedt") -> maxOf(Kern.downloadSchaetzerWert(p.id, p.geladen), p.geladen)
         else -> p.geladen
     }
@@ -457,8 +520,14 @@ private fun Downloadzeile(app: SwiftlyAnwendung, p: Downloadposten, bild: File, 
                 Spacer(Modifier.width(12.dp))
             }
         }
+        // **Gesehen wie in der Folgenliste** — auch ohne Netz: der Stand liegt im Posten (1.0.5). Nur an
+        // der einzelnen Zeile; eine Serienzeile steht fuer viele Folgen.
+        val gesehen = gruppe == null && p.gesehen
+        // Gesehen nur dunkler, nicht durchsichtig — wie in der Folgenliste (`GESEHEN_ABDUNKELN`).
         Box(Modifier.size(if (quer) 116.dp else 64.dp, if (quer) 65.dp else 96.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
-            AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop,
+                       colorFilter = if (gesehen) GESEHEN_ABDUNKELN else null, modifier = Modifier.fillMaxSize())
+            if (gesehen) Gesehenhaken()
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -552,7 +621,8 @@ fun DownloadserieSeite(app: SwiftlyAnwendung, ziel: Ziel, zurueck: () -> Unit) {
                 Box(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp, bottom = 22.dp)) {
                     Spielknopf(Zeichen.Abspielen, naechste.feldText("knopftext") ?: uebersetzt("Abspielen"),
                                an = naechsteFolge != null, haupt = true) {
-                        naechsteFolge?.let { app.spiel.value = Abspielwunsch(it.id, null) }
+                        // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
+                        naechsteFolge?.let { app.spiel.value = Abspielwunsch(it.id, it.fortsetzenAb) }
                     }
                 }
             }
@@ -566,7 +636,7 @@ fun DownloadserieSeite(app: SwiftlyAnwendung, ziel: Ziel, zurueck: () -> Unit) {
                             Downloadzeile(app, p, v.bildDatei(p.id), true, bearbeiten, p.id in gewaehlt,
                                 tun = when {
                                     bearbeiten -> { { umschalten(p.id) } }
-                                    p.stand == "fertig" -> { { app.spiel.value = Abspielwunsch(p.id, null) } }
+                                    p.stand == "fertig" -> { { app.spiel.value = Abspielwunsch(p.id, p.fortsetzenAb) } }
                                     else -> null
                                 },
                                 lange = {

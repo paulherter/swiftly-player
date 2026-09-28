@@ -101,17 +101,19 @@ extension AppModel {
     }
 
     func anmeldenMitQuickConnect(_ vorgang: Anmeldecode) async {
-        guard let client else { return }
+        // Bei „Weiteres Konto hinzufügen" auf einem frischen Client — siehe
+        // `anmeldeclient()`.
+        guard let anmelder = anmeldeclient() else { return }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            let s = try await client.anmeldenMitQuickConnect(vorgang)
+            let s = try await anmelder.anmeldenMitQuickConnect(vorgang)
             // **Nicht zusätzlich laden, wenn es ein Wechsel war.** Dann
             // räumt `sitzungUebernehmen` bereits auf und stösst das Neuladen
             // an; ein zweiter Lauf daneben liefert sich mit dem ersten ein
             // Rennen, und wer verliert, schreibt Halbfertiges.
-            if !sitzungUebernehmen(s) { await loadViews() }
+            if !sitzungUebernehmen(s, angemeldetMit: anmelder) { await loadViews() }
         } catch {
             errorMessage = lesbar(error)
         }

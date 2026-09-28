@@ -227,8 +227,11 @@ func profilbildLaden(_ teile: (huelle: Widget, bild: Widget, zeichen: Widget),
         return
     }
     let kiste = Zeigerkiste(teile.zeichen)
+    // Gehalten ist nur das Bild; der Buchstabe daneben kann mit seiner Seite
+    // schon weg sein, wenn die Antwort kommt.
+    let lebt = Lebenszeichen(teile.zeichen)
     bildLaden(teile.bild, url: url, schluessel: schluessel, sofort: true) { kam in
-        guard !kam else { return }
+        guard !kam, lebt.lebt else { return }
         gtk_widget_set_visible(kiste.widget, 1)
     }
 }
@@ -236,8 +239,9 @@ func profilbildLaden(_ teile: (huelle: Widget, bild: Widget, zeichen: Widget),
 /// Legt den Fortschrittsbalken unten **in** die Bildhülle.
 ///
 /// Zwei Lagen, wie auf dem Mac: eine Spur in Weiß 16 % über die ganze Breite
-/// und darauf der Akzent, so breit wie der gesehene Anteil. Drei Punkt hoch —
-/// nicht vier. GTK kennt keinen Anteil als Breitenangabe, aber die Kachel hat
+/// und darauf der Akzent, so breit wie der gesehene Anteil. Vier Punkt hoch,
+/// wie `Bildflaeche` am Mac und das iPhone (dort „4, nicht 3"); mit drei ging
+/// er unter einem Standbild in der Folgenliste unter. GTK kennt keinen Anteil als Breitenangabe, aber die Kachel hat
 /// eine feste Breite, also lässt er sich ausrechnen.
 /// Gibt Spur und Balken zurueck, damit ein Aufrufer sie wieder abnehmen kann.
 @discardableResult
@@ -245,14 +249,14 @@ func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) -> [Widget?] {
     Pruefzaehler.balken += 1
     let spur: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(spur, "swiftly-balkenspur")
-    gtk_widget_set_size_request(spur, -1, 3)
+    gtk_widget_set_size_request(spur, -1, 4)
     gtk_widget_set_valign(spur, GTK_ALIGN_END)
     gtk_widget_set_halign(spur, GTK_ALIGN_FILL)
     gtk_overlay_add_overlay(OpaquePointer(huelle), spur)
 
     let balken: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(balken, "swiftly-balken")
-    gtk_widget_set_size_request(balken, Int32(Double(breite) * min(max(anteil, 0), 1)), 3)
+    gtk_widget_set_size_request(balken, Int32(Double(breite) * min(max(anteil, 0), 1)), 4)
     gtk_widget_set_valign(balken, GTK_ALIGN_END)
     gtk_widget_set_halign(balken, GTK_ALIGN_START)
     gtk_overlay_add_overlay(OpaquePointer(huelle), balken)
@@ -390,6 +394,7 @@ func nebenknopf(_ symbol: String, name: String? = nil, aktiv: Bool = false,
 func knopfzustand(_ knopf: Widget!, aktiv: Bool, symbol: String) {
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+    bedienhilfe(knopf, haken: aktiv ? .an : .aus)
     let bild: Widget! = gtk_image_new_from_icon_name(symbol)
     gtk_image_set_pixel_size(OpaquePointer(bild), 17)
     gtk_button_set_child(alsKnopf(knopf), bild)
@@ -409,6 +414,7 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-reiter")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    bedienhilfe(knopf, gewaehlt: aktiv)
     let stapelchen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
     anhaengen(stapelchen, beschriftung(text))
     let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
@@ -586,9 +592,12 @@ func schalterzeile(symbol: String, titel: String, unter: String? = nil,
     gtk_button_set_child(alsKnopf(knopf),
                          zeilenrumpf(symbol: symbol, titel: titel, unter: unter,
                                      akzent: false, rechts: schalter))
+    // Ein Schalter ohne Zustand ist für die Bedienhilfe nur ein Knopf.
+    bedienhilfe(knopf, name: titel, haken: zustand ? .an : .aus)
     beiSignal(knopf, "clicked") {
         zustand.toggle()
         anmalen()
+        bedienhilfe(knopf, haken: zustand ? .an : .aus)
         umgeschaltet(zustand)
     }
     return knopf
@@ -616,6 +625,7 @@ func werteliste<W: Equatable>(_ eintraege: [(String, W)], gewaehlt: W,
             anhaengen(reihe, haken)
         }
         gtk_button_set_child(alsKnopf(knopf), reihe)
+        bedienhilfe(knopf, gewaehlt: wert == gewaehlt)
         beiSignal(knopf, "clicked") { waehlen(wert) }
         anhaengen(liste, knopf)
     }
@@ -652,6 +662,14 @@ func losgelassen(_ kiste: Zeigerkiste) {
     g_object_unref(kiste.widget)
 }
 
+/// Haelt ein Widget, solange die Huelle lebt — fuer Auftraege, die vielleicht
+/// nie laufen und dann nur verworfen werden. Nur auf dem Hauptfaden.
+final class Festgehalten {
+    let widget: Widget!
+    init(_ widget: Widget!) { self.widget = widget; g_object_ref(widget) }
+    deinit { g_object_unref(widget) }
+}
+
 
 /// **Ein Platzhalter in der Form dessen, was kommt** (E17).
 ///
@@ -665,27 +683,6 @@ func ladefeld(breite: Int, hoehe: Int, schmal: Bool = false) -> Widget! {
     gtk_widget_set_halign(feld, GTK_ALIGN_START)
     gtk_widget_set_valign(feld, GTK_ALIGN_START)
     return feld
-}
-
-/// Drei Folgenzeilen als Platzhalter — Standbild, Titel, Nebenzeile.
-///
-/// Die Maße sind die des Macs (`SerienView.swift:327`): 160 x 90 für das
-/// Standbild, darüber 220 x 14 und 90 x 11 für die zwei Zeilen.
-func folgenPlatzhalter(rand: Int) -> Widget! {
-    let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
-    gtk_widget_set_margin_start(block, Int32(rand))
-    gtk_widget_set_margin_end(block, Int32(rand))
-    for _ in 0 ..< 3 {
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 16)
-        anhaengen(zeile, ladefeld(breite: 160, hoehe: 90))
-        let texte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        gtk_widget_set_valign(texte, GTK_ALIGN_CENTER)
-        anhaengen(texte, ladefeld(breite: 220, hoehe: 14, schmal: true))
-        anhaengen(texte, ladefeld(breite: 90, hoehe: 11, schmal: true))
-        anhaengen(zeile, texte)
-        anhaengen(block, zeile)
-    }
-    return block
 }
 
 /// Ein Raster aus Plakatplatzhaltern — für Reiter, die ein Raster füllen.
@@ -732,6 +729,33 @@ func reihenPlatzhalter(rand: Int) -> Widget! {
 }
 
 
+/// **Der Fortschritt in Worten** — für die Bedienhilfe, die den Balken und
+/// den Haken im Bild nicht sieht. Erst ab einem Prozent, wie auf Apple
+/// (`HomeView.swift`, `TVBausteine.swift`): „null Prozent gesehen" ist keine
+/// Auskunft.
+func sehstandWort(gesehen: Bool, anteil: Double?) -> String? {
+    if gesehen { return uebersetzt("Gesehen") }
+    guard let anteil, anteil >= 0.01 else { return nil }
+    return String(format: uebersetzt("%lld Prozent gesehen"), Int(anteil * 100))
+}
+
+/// **Eine Aussage je Kachel statt dreier Bruchstücke** — wie
+/// `.accessibilityElement(children: .ignore)` auf Apple. Oben der Titel,
+/// darunter Jahr oder Zweitzeile; bei einer Folge statt „S1 • E3" die
+/// ausgeschriebene Stelle, und zuletzt, wie weit sie gesehen ist.
+func kachelname(_ item: Item, oben: String, unten: String?) -> String {
+    var teile = [oben]
+    if item.type == "Episode", let staffel = item.parentIndexNumber, let folge = item.indexNumber {
+        teile.append(String(format: uebersetzt("Staffel %lld · Folge %lld"), staffel, folge))
+    } else if let unten, !unten.isEmpty {
+        teile.append(unten)
+    }
+    if let wort = sehstandWort(gesehen: item.istGesehen, anteil: item.gesehenerAnteil) {
+        teile.append(wort)
+    }
+    return teile.joined(separator: ", ")
+}
+
 /// **Die Plakette einer Kachel** (E16) — Haken, offene Folgen oder Staffeln.
 ///
 /// Welche Auskunft gilt, entscheidet ``Anzeigeregeln/kachelmarke(art:staffeln:gesehen:offeneFolgen:)``
@@ -755,8 +779,8 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
         // (`Sources/macOS/Macbausteine.swift:531`, `wortlaut`).
         feld = beschriftung(String(format: uebersetzt("%lld offen"), n))
     case .staffeln(let n):
-        feld = beschriftung(n == 1 ? uebersetzt("1 Staffel")
-                                   : String(format: uebersetzt("%lld Staffeln"), n))
+        feld = beschriftung(zahlwort(n, eins: uebersetzt("1 Staffel"),
+                                     viele: uebersetzt("%lld Staffeln")))
     }
     gtk_widget_add_css_class(feld, "swiftly-kachelmarke")
     // Ohne Wort einen Punkt enger — siehe die Klasse im Stilblatt.
@@ -773,8 +797,10 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
 /// eigenen Schleier, und der sieht aus wie ein Fehler. Stattdessen halbe
 /// Deckung und ein Rückruf, der nichts tut; dieselbe Lehre wie beim aktiven
 /// Konto im Profil.
-func listenpfeil(_ symbol: String, an: Bool, _ tun: @escaping () -> Void) -> Widget! {
+func listenpfeil(_ symbol: String, name: String, an: Bool,
+                 _ tun: @escaping () -> Void) -> Widget! {
     let knopf: Widget! = gtk_button_new()
+    beschriften(knopf, name)
     gtk_widget_add_css_class(knopf, "swiftly-listenpfeil")
     gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
@@ -824,6 +850,7 @@ func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widg
     if an { gtk_widget_add_css_class(l, "swiftly-akzentzeile") }
     anhaengen(zeile, l)
     gtk_button_set_child(alsKnopf(knopf), zeile)
+    bedienhilfe(knopf, haken: an ? .an : .aus)
     beiSignal(knopf, "clicked", tun)
     return knopf
 }
@@ -834,7 +861,8 @@ func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widg
 /// **„Klein" heisst hier ohne Zeile, nicht kleiner.** Der Mac kennt nur eine
 /// Baugroesse (`Einstellungszeilen.swift:128`); die Reihenliste in der
 /// Darstellung benutzt denselben `Schalter` wie jede andere Zeile.
-func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
+func kleinerSchalter(an: Bool, name: String,
+                     _ umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
     var zustand = an
     let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(schalter, "swiftly-schalter")
@@ -861,9 +889,11 @@ func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widg
     gtk_widget_add_css_class(knopf, "swiftly-blank")
     gtk_button_set_child(alsKnopf(knopf), schalter)
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    bedienhilfe(knopf, name: name, haken: zustand ? .an : .aus)
     beiSignal(knopf, "clicked") {
         zustand.toggle()
         anmalen()
+        bedienhilfe(knopf, haken: zustand ? .an : .aus)
         umgeschaltet(zustand)
     }
     return knopf
@@ -899,4 +929,78 @@ func zweispalter(in block: Widget!) -> (links: Widget, rechts: Widget) {
     gtk_size_group_add_widget(gleich, rechts)
     anhaengen(block, spalten)
     return (links!, rechts!)
+}
+
+/// **Der Sehstand auf einem Vorschaubild**: gesehen heisst abgedunkelt, mit
+/// Haken oben rechts. Dasselbe Zeichen in der Folgenliste und in der
+/// Downloadliste — wie `Gesehenhaken` auf Apple. Gesehenes tritt zurueck, es
+/// verschwindet nicht: 0,45 wie auf dem Mac. Der Haken kommt zurueck, damit
+/// die Folgenliste ihn beim Umschalten ein- und ausblenden kann.
+@discardableResult
+func gesehenhakenLegen(_ huelle: Widget!, an: Bool) -> Widget! {
+    bildAbdunkeln(huelle, an)
+    let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+    gtk_image_set_pixel_size(OpaquePointer(haken), 10)
+    gtk_widget_add_css_class(haken, "swiftly-folgenhaken")
+    gtk_widget_set_halign(haken, GTK_ALIGN_END)
+    gtk_widget_set_valign(haken, GTK_ALIGN_START)
+    gtk_widget_set_visible(haken, an ? 1 : 0)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), haken)
+    return haken
+}
+
+/// **Gesehen: das Bild nur dunkler, nie durchsichtig** (iOS 81108a56,
+/// `Gesehenhaken`: `colorMultiply` statt `opacity`). Mit der Deckkraft der
+/// ganzen Huelle schien der Grund durch — auf einer Seite in der Farbe ihres
+/// Kopfbilds bekam jedes gesehene Standbild deren Stich. `brightness` auf dem
+/// Bild allein multipliziert; Haken und Balken bleiben, was sie sind.
+func bildAbdunkeln(_ huelle: Widget!, _ an: Bool) {
+    gtk_widget_set_opacity(huelle, 1)
+    var kind = gtk_widget_get_first_child(huelle)
+    while let k = kind {
+        if let name = gtk_widget_get_css_name(k), String(cString: name) == "picture" {
+            if an { gtk_widget_add_css_class(k, "swiftly-abgedunkelt") }
+            else { gtk_widget_remove_css_class(k, "swiftly-abgedunkelt") }
+        }
+        kind = gtk_widget_get_next_sibling(k)
+    }
+}
+
+/// **Eine Zahl mit ihrem Wort — bei 1 in der Einzahl** (UX-Audit 27.09.).
+/// Hier stand vielerorts „1 Folgen", „1 Filme". Beide Formen sind eigene
+/// Schluessel, damit das Englische „1 episode" sagen kann; `@autoclosure`,
+/// damit die Aufrufstellen den Schluessel woertlich in `uebersetzt` tragen und der
+/// Uebersetzungsabgleich sie findet.
+func zahlwort(_ n: Int, eins: @autoclosure () -> String, viele: @autoclosure () -> String) -> String {
+    n == 1 ? eins() : String(format: viele(), n)
+}
+
+/// Ein Zeichen aus einer **Liste** von Namen — der erste, den der Zeichensatz
+/// kennt, gilt. Breeze (Linux) und Adwaita (Windows) haben nicht dieselben:
+/// `view-calendar-symbolic` fehlt in Adwaita, `x-office-calendar-symbolic` in
+/// Breeze. Ein einzelner Name hiesse auf einer der beiden das Ersatzbild.
+func zeichenbild(_ namen: [String]) -> Widget! {
+    guard let erster = namen.first, let icon = g_themed_icon_new(erster) else {
+        return gtk_image_new()
+    }
+    for weiterer in namen.dropFirst() {
+        g_themed_icon_append_name(icon, weiterer)
+    }
+    let bild: Widget! = gtk_image_new_from_gicon(icon)
+    g_object_unref(UnsafeMutableRawPointer(icon))
+    return bild
+}
+
+/// **Jede Sortierung hat ihr Zeichen** (Mac `Sortierung.symbol`). Der Knopf
+/// trug für alle vier dieselben Pfeile; neben „Alle" mit dem Filterzeichen
+/// las sich „A–Z" wie ein Knopf ohne Zeichen.
+extension Sortierung {
+    var zeichennamen: [String] {
+        switch self {
+        case .name:        ["view-sort-ascending-name-symbolic", "view-sort-ascending-symbolic"]
+        case .neueste:     ["clock-symbolic", "document-open-recent-symbolic"]
+        case .bewertung:   ["starred-symbolic"]
+        case .erscheinung: ["view-calendar-symbolic", "x-office-calendar-symbolic"]
+        }
+    }
 }

@@ -1,0 +1,27 @@
+From 74a3aae62eebb8cc404827d2b8adbe12fd3b1419 Mon Sep 17 00:00:00 2001
+From: Steve Lhomme <robux4@ycbcr.xyz>
+Date: Tue, 15 Sep 2026 11:42:06 +0200
+Subject: [PATCH] demux: mkv: fix the Display Aspect Ratio to Sample Aspect
+ Ratio conversion
+
+A 1280x720 with a DAR of 1:1 should display as a square but instead it's
+very elongated.
+
+Fixes #30131
+---
+ modules/demux/mkv/matroska_segment_parse.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/modules/demux/mkv/matroska_segment_parse.cpp b/modules/demux/mkv/matroska_segment_parse.cpp
+index a81af7f068b5..0ed8744b7614 100644
+--- a/modules/demux/mkv/matroska_segment_parse.cpp
++++ b/modules/demux/mkv/matroska_segment_parse.cpp
+@@ -608,7 +608,7 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
+                                      i_display_height * tk->fmt.video.i_visible_width, 0);
+                         break;
+                     case 3: // display aspect ratio
+-                        vlc_ureduce( &tk->fmt.video.i_sar_num, &tk->fmt.video.i_sar_den,
++                        vlc_ureduce( &tk->fmt.video.i_sar_den, &tk->fmt.video.i_sar_num,
+                                      i_display_height * tk->fmt.video.i_visible_width,
+                                      i_display_width * tk->fmt.video.i_visible_height, 0);
+                         break;

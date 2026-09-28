@@ -59,7 +59,7 @@ public struct Untertiteldatei: Sendable, Equatable {
         stroeme.compactMap { strom in
             guard strom.type == "Subtitle", strom.isExternal == true,
                   let index = strom.index, let pfad = strom.deliveryUrl, !pfad.isEmpty,
-                  let ganz = URL(string: pfad, relativeTo: server)?.absoluteURL,
+                  let ganz = AppModelURLNormalizer.serverrelativ(pfad, basis: server),
                   var teile = URLComponents(url: ganz, resolvingAgainstBaseURL: false)
             else { return nil }
             let vorhanden = teile.queryItems ?? []
@@ -68,6 +68,45 @@ public struct Untertiteldatei: Sendable, Equatable {
             }
             guard let adresse = teile.url else { return nil }
             return Untertiteldatei(index: index, adresse: adresse, merkmal: merkmal(adresse))
+        }
+    }
+
+    /// **Was zu einem Download an Untertiteln mitreist.**
+    ///
+    /// Beim Original nur die externen: die eingebetteten stecken in der Datei.
+    /// Eine **umgewandelte** Datei traegt dagegen nur noch Bild und Ton — also
+    /// kommen die eingebetteten Textuntertitel dazu, vom Server als eigene
+    /// Datei herausgezogen (`/Videos/{id}/{quelle}/Subtitles/{index}/0/Stream.srt`).
+    /// Bildbasierte (PGS, VobSub, DVB) lassen sich nicht als Text ziehen und
+    /// fehlen dann — einbrennen hiesse, sie immer zu zeigen.
+    public static func mitladen(stroeme: [MediaStream], itemID: String, quelle: String?,
+                                server: URL, schluessel: String?,
+                                umgewandelt: Bool) -> [Untertiteldatei] {
+        var dateien = aus(stroeme: stroeme, server: server, schluessel: schluessel)
+        guard umgewandelt, let quelle, !quelle.isEmpty else { return dateien }
+        let schon = Set(dateien.map(\.index))
+        for strom in stroeme where strom.type == "Subtitle" && strom.isExternal != true {
+            guard let index = strom.index, !schon.contains(index),
+                  let endung = textendung(strom.codec) else { continue }
+            var teile = URLComponents(
+                url: server.appendingPathComponent("Videos/\(itemID)/\(quelle)/Subtitles/\(index)/0/Stream.\(endung)"),
+                resolvingAgainstBaseURL: false)
+            if let schluessel { teile?.queryItems = [URLQueryItem(name: "ApiKey", value: schluessel)] }
+            guard let adresse = teile?.url else { continue }
+            dateien.append(Untertiteldatei(index: index, adresse: adresse, merkmal: nil))
+        }
+        return dateien.sorted { $0.index < $1.index }
+    }
+
+    /// Die Dateiendung, in der der Server einen eingebetteten Textuntertitel
+    /// ausgibt — `nil` fuer Bilduntertitel. ASS bleibt ASS, damit Schrift und
+    /// Stellung erhalten bleiben; alles andere wird SRT.
+    static func textendung(_ codec: String?) -> String? {
+        switch codec?.lowercased() {
+        case "ass", "ssa": "ass"
+        case "subrip", "srt", "webvtt", "vtt", "mov_text", "text", "tx3g", "microdvd", "sami", "smi":
+            "srt"
+        default: nil
         }
     }
 }
@@ -130,6 +169,31 @@ public struct Spurzuordnung: Sendable, Equatable {
         return Spurzuordnung(ton: tonIndizes, untertitel: utIndizes)
     }
 
+    /// **Die gewünschten Spuren als Position je Art, schon vor dem Öffnen.**
+    ///
+    /// libVLC nimmt `:audio-track=N` und `:sub-track=N` als N-te Spur ihrer
+    /// Art in der Reihenfolge, in der der Demuxer sie anlegt — dieselbe
+    /// Dateireihenfolge, in der der Server zählt (siehe oben). Wer die Spur
+    /// so beim Öffnen setzt, startet gleich mit ihr; vorher lief erst VLCs
+    /// eigene Wahl an und wurde nach dem ersten Bild umgeschaltet, samt
+    /// neuem Tondekoder und neu aufgebautem Tonausgang (28.09.2026).
+    ///
+    /// `nil` heißt: beim Öffnen nicht festzulegen. Untertiteldateien gehören
+    /// nicht dazu, die hängen erst nach dem Öffnen am Strom. Ob die Position
+    /// stimmt, prüft später ``bilden(ton:untertitel:stroeme:dateien:)``;
+    /// gesetzt wird dann nur noch, was abweicht.
+    public static func startpositionen(stroeme: [MediaStream], ton: Int?,
+                                       untertitel: Spurregel.Untertitel) -> (ton: Int?, untertitel: Int?) {
+        let tonstroeme = stroeme.filter { $0.type == "Audio" && $0.isExternal != true }
+        let utStroeme = stroeme.filter { $0.type == "Subtitle" && $0.isExternal != true }
+        let tonPosition = ton.flatMap { index in tonstroeme.firstIndex { $0.index == index } }
+        var utPosition: Int?
+        if case .strom(let index) = untertitel {
+            utPosition = utStroeme.firstIndex { $0.index == index }
+        }
+        return (tonPosition, utPosition)
+    }
+
     public func tonposition(index: Int) -> Int? { ton.firstIndex(of: index) }
     public func untertitelposition(index: Int) -> Int? { untertitel.firstIndex(of: index) }
 
@@ -190,12 +254,16 @@ public struct Spurabdruck: Codable, Sendable, Equatable {
     public var extern: Bool
     /// Spurname im Abspieler, nur zur Auskunft.
     public var name: String?
+    /// Für Hörgeschädigte (SDH). Optional, weil ältere Abdrücke es nicht
+    /// tragen — dort zählt es nicht mit.
+    public var hoergeschaedigt: Bool?
 
     public init(sprache: String?, codec: String?, titel: String?, erzwungen: Bool,
-                kanaele: Int?, position: Int?, extern: Bool, name: String?) {
+                kanaele: Int?, position: Int?, extern: Bool, name: String?,
+                hoergeschaedigt: Bool? = nil) {
         self.sprache = sprache; self.codec = codec; self.titel = titel
         self.erzwungen = erzwungen; self.kanaele = kanaele; self.position = position
-        self.extern = extern; self.name = name
+        self.extern = extern; self.name = name; self.hoergeschaedigt = hoergeschaedigt
     }
 
     /// Aus einem Server-Strom.
@@ -205,7 +273,8 @@ public struct Spurabdruck: Codable, Sendable, Equatable {
                   erzwungen: strom.isForced == true,
                   kanaele: strom.type == "Audio" ? strom.channels : nil,
                   position: art.firstIndex(of: strom), extern: strom.isExternal == true,
-                  name: name)
+                  name: name,
+                  hoergeschaedigt: strom.type == "Subtitle" ? strom.isHearingImpaired == true : nil)
     }
 
     /// Aus einer Abspielerspur, die sich keinem Strom zuordnen ließ.
@@ -229,6 +298,7 @@ public struct Spurabdruck: Codable, Sendable, Equatable {
             var punkte = gemerkteSprache == nil ? 0 : 3
             if let titel, !titel.isEmpty, titel == strom.title { punkte += 2 }
             if erzwungen == (strom.isForced == true) { punkte += 2 }
+            if let hoergeschaedigt, hoergeschaedigt == (strom.isHearingImpaired == true) { punkte += 2 }
             if let codec, Technikangaben.codecname(codec) == Technikangaben.codecname(strom.codec) { punkte += 1 }
             if position == self.position { punkte += 1 }
             if let kanaele, kanaele == strom.channels { punkte += 1 }

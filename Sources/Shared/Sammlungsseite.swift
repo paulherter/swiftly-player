@@ -58,11 +58,7 @@ struct SammlungView: View {
                                              breit: breit))
             }
             if stand.gestoert {
-                Leerzustand(
-                    symbol: "externaldrive.badge.xmark",
-                    kopfzeile: "Server ist abgetaucht",
-                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    hauptknopf: ("Erneut versuchen", { Task { await stand.laden(model, aus: quelle) } }))
+                Leerzustand.serverAbgetaucht(model, erneut: { Task { await stand.laden(model, aus: quelle) } })
             } else if stand.items.isEmpty, !stand.laedt {
                 Leerzustand(
                     symbol: stand.filter == .alle ? "tray" : "line.3.horizontal.decrease",
@@ -115,6 +111,7 @@ struct SammlungView: View {
                         PosterTile(model: model, item: item, breite: nil)
                     }
                     .buttonStyle(Stil.Druckknopf())
+                    .kachelmenue(item, model: model)
                     .onAppear {
                         guard stand.loestNachladenAus(item.id, spalten: spalten) else { return }
                         Task { await stand.nachladen(model, aus: quelle) }
@@ -128,15 +125,8 @@ struct SammlungView: View {
         }
         .scrollIndicators(.hidden)
         .animation(Stil.einblenden, value: stand.items.isEmpty)
-        // Dieselbe Messung wie in `BibliothekView` — dort steht, warum die
-        // Summe aus Rand und Versatz der Scrollweg ist und warum der eine
-        // Zwischenstand mit Versatz null übergangen wird.
-        .onScrollGeometryChange(for: CGPoint.self) {
-            CGPoint(x: $0.contentInsets.top, y: $0.contentOffset.y)
-        } action: { _, neu in
-            guard !(abs(neu.y) < 1 && neu.x > 1) else { return }
-            versatz = neu.y + neu.x
-        }
+        // Dieselbe Messung wie in Bibliothek und Merkliste, siehe `Kopfscrollweg`.
+        .scrollweg { versatz = $0 }
         .safeAreaInset(edge: .top, spacing: 0) { kopf }
     }
 }
@@ -348,7 +338,7 @@ extension View {
 /// wartet die Filmseite auf sie wie auf Extras und Ähnliches und blendet alles
 /// zusammen ein (24.09.2026).
 struct Sammlungsreihe: View {
-    typealias Reihe = (sammlung: Sammlung, titel: [Item])
+    typealias Reihe = AppModel.Sammlungsreihendaten
 
     let model: AppModel
     let titel: Item
@@ -395,20 +385,5 @@ struct Sammlungsreihe: View {
                 .padding(.top, Stil.reihenAbstand)
             }
         }
-    }
-
-    /// Die Reihen zu einem Titel — leer, wenn er in keiner Sammlung steht.
-    static func laden(model: AppModel, titel: Item) async -> [Reihe] {
-        guard let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return [] }
-        await model.angebotLaden()
-        var gefunden: [Reihe] = []
-        // Höchstens zwei Reihen. Steht ein Film in mehr Sammlungen, sind die
-        // übrigen meist automatisch angelegte Doppel.
-        for sammlung in model.sammlungen(mit: titel).prefix(2) {
-            guard let liste = await model.sammlungstitel(sammlung, art: art) else { continue }
-            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
-            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
-        }
-        return gefunden
     }
 }

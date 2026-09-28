@@ -101,7 +101,7 @@ struct PersonView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(6))
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 1.2)) { bannerStelle += 1 }
+                withAnimation(Stil.bewegung(.easeInOut(duration: 1.2))) { bannerStelle += 1 }
             }
         }
     }

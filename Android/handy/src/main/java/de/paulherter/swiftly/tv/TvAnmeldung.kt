@@ -29,6 +29,7 @@ import de.paulherter.swiftly.kern.Kern
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
@@ -57,6 +58,8 @@ import org.json.JSONObject
 fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
     var adresse by remember { mutableStateOf(app.ablage.letzterServer ?: "") }
     var laeuft by remember { mutableStateOf(false) }
+    /** Die laufende Pruefung — nur sie darf wirken; eine geaenderte Adresse bricht sie ab. */
+    var pruefung by remember { mutableStateOf<Job?>(null) }
     // Nach einer widerrufenen Anmeldung steht hier, warum man wieder auf der Serverwahl ist.
     var fehler by remember { mutableStateOf<String?>(app.anmeldehinweis.value.also { app.anmeldehinweis.value = null }) }
     val lauf = rememberCoroutineScope()
@@ -67,19 +70,31 @@ fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
     fun verbinden() {
         if (adresse.isBlank() || laeuft) return
         laeuft = true; fehler = null
-        lauf.launch {
+        val geprueft = adresse
+        pruefung = lauf.launch {
             try {
-                val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.verbinden(adresse, koepfe.alsJson()).await() })
+                val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.verbinden(geprueft, koepfe.alsJson()).await() })
                 // Erst jetzt ablegen: fuer eine Adresse, unter der nichts antwortet, bleibt nichts liegen.
                 if (koepfe.isNotEmpty()) app.eigeneKoepfeAblegen()
-                app.ablage.letzterServer = adresse
+                app.ablage.letzterServer = geprueft
                 verbunden(antwort.getString("name"), antwort.getString("version"))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 fehler = fehlertext(app, e)
-            } finally { laeuft = false }
+            } finally {
+                // Eine abgebrochene Pruefung gibt die Maske schon in `adresseAendern` frei.
+                if (pruefung == coroutineContext[Job]) laeuft = false
+            }
         }
+    }
+
+    /** Wie `AppModel.adresseGeaendert` auf Apple: waehrend der Pruefung die Adresse aendern bricht sie ab. */
+    fun adresseAendern(neu: String) {
+        if (neu != adresse && laeuft) {
+            pruefung?.cancel(); pruefung = null; laeuft = false; fehler = null
+        }
+        adresse = neu
     }
 
     Box(Modifier.fillMaxSize().background(Stil.grund), contentAlignment = Alignment.Center) {
@@ -87,7 +102,7 @@ fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
             Wortmarke(hoehe = 36.dp)
             Text(uebersetzt("Wo steht dein Jellyfin-Server?"), style = TvStil.koerper, color = Stil.schriftLeise,
                  modifier = Modifier.padding(top = 28.dp))
-            TvFeld(adresse, { adresse = it }, "tv.beispiel.de",
+            TvFeld(adresse, { adresseAendern(it) }, "tv.beispiel.de",
                    Modifier.padding(top = 16.dp).fillMaxWidth().focusRequester(fokus),
                    imeAction = ImeAction.Go, tastaturAktion = { verbinden() })
             Text(uebersetzt("https:// kannst du weglassen."), style = TvStil.klein, color = Stil.schriftSehrLeise,

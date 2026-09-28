@@ -76,3 +76,26 @@
   .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
   .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
 }
+
+/* ---- Wie die Startseite (Designsystem): eine Flaeche je Weg, kein Ring, kein
+   Anheben, kein Schatten. Druck: Flaeche wird dunkler, Massstab .98. ---- */
+.laden { border-radius: 14px; box-shadow: none; background: #262626; min-height: 56px; }
+.knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 34%, #101010); box-shadow: none; }
+.knoepfe > :first-child .laden__zeichen { background: rgba(255,255,255,.12); color: var(--schrift); }
+.leistenkasten { border: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover { transform: none; box-shadow: none; }
+  .laden:hover { background: #303030; }
+  .knoepfe > :first-child:hover { background: color-mix(in srgb, var(--akzent) 42%, #101010); }
+  .karte:hover { background: #262626; }
+}
+.knopf:active { background: rgba(255,255,255,.75); }
+.laden:active { background: #3A3A3A; }
+.knoepfe > :first-child:active { background: color-mix(in srgb, var(--akzent) 26%, #101010); }
+.karte:active { background: #303030; }
+
+/* Leiste: der Punkt reagiert unter dem Zeiger wie ein Knopf in der App (27.09.). */
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
+}

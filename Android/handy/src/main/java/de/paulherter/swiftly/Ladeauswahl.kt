@@ -15,6 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,11 +49,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Eine Folge, wie die Auswahl sie braucht — Antwort von `Kern.ladeauswahlFolgen`. */
-private data class Ladefolge(val id: String, val name: String, val gesehen: Boolean, val bytes: Long)
+private data class Ladefolge(val id: String, val name: String, val gesehen: Boolean, val bytes: Long, val ticks: Long)
 
 private fun ladefolgenLesen(json: String): List<Ladefolge> = JSONArray(json).let { a ->
     (0 until a.length()).map { i ->
-        a.getJSONObject(i).let { Ladefolge(it.getString("id"), it.getString("name"), it.optBoolean("gesehen"), it.optLong("bytes")) }
+        a.getJSONObject(i).let { Ladefolge(it.getString("id"), it.getString("name"), it.optBoolean("gesehen"), it.optLong("bytes"), it.optLong("ticks")) }
     }
 }
 
@@ -93,6 +95,8 @@ private fun Ladeauswahl(app: SwiftlyAnwendung, serieId: String, name: String, st
     /** **Der Fehlfall gehoert dazu.** Scheitert der Abruf, darf die Auswahl nicht leer dastehen. */
     var gestoert by remember { mutableStateOf(false) }
     var frei by remember { mutableLongStateOf(v.frei()) }
+    /** Original, bis jemand die Plakette antippt und etwas anderes nimmt. */
+    var qualitaet by remember { mutableStateOf("original") }
 
     val alleFolgen = staffeln.flatMap { folgen[it.id].orEmpty() }
     fun liegt(f: Ladefolge) = v.posten(f.id) != null
@@ -110,7 +114,18 @@ private fun Ladeauswahl(app: SwiftlyAnwendung, serieId: String, name: String, st
     }
     // Solange nicht jede Staffel gelesen ist, ist die Serie nicht „da".
     val standAlle = stand(alleFolgen, daZaehlt = !laedt)
-    val bytes = alleFolgen.filter { it.id in gewaehlt }.sumOf { it.bytes }
+    val gewaehlteFolgen = alleFolgen.filter { it.id in gewaehlt }
+    /** **Der Fuss rechnet in der gewaehlten Qualitaet** — beim Original die echte Groesse, sonst geschaetzt. */
+    fun bytesIn(q: String) = gewaehlteFolgen.sumOf { Kern.downloadGeschaetzt(q, it.bytes, it.ticks) }
+    val bytes = bytesIn(qualitaet)
+    /** Die Stufen nach der besten Datei der Auswahl — oder der ganzen Serie, solange nichts gewaehlt ist. */
+    val waehlbar = app.einstellungen.downloadqualitaetWaehlbar
+    val angeboten = remember(gewaehlt, folgen, waehlbar) {
+        val basis = if (gewaehlteFolgen.isEmpty()) alleFolgen else gewaehlteFolgen
+        qualitaetenLesen(Kern.downloadQualitaeten(waehlbar, JSONArray(basis.map { JSONArray(listOf(it.bytes, it.ticks)) }).toString()))
+    }
+    // Faellt die gewaehlte Stufe weg, gilt wieder das Original.
+    LaunchedEffect(angeboten) { if (angeboten.none { it.id == qualitaet }) qualitaet = "original" }
 
     fun umschalten(liste: List<Ladefolge>) {
         val nimm = nehmbar(liste)
@@ -245,12 +260,11 @@ private fun Ladeauswahl(app: SwiftlyAnwendung, serieId: String, name: String, st
                 }
             }
         }
-        // **Die Qualitaet steht dabei, nicht im Kleingedruckten.**
-        Row(Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(Stil.eckeKlein)).background(Stil.akzent.copy(alpha = 0.15f))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Symbol(Zeichen.Haken, 11.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett)
-            Text(uebersetzt("Direct Play · Originalqualität"), style = Stil.klein, color = Stil.akzent)
+        // **Die Qualitaet steht dabei, nicht im Kleingedruckten** — und darf der Server umwandeln, ist
+        // die Plakette zugleich die Wahl einer kleineren Fassung.
+        Box(Modifier.padding(horizontal = 16.dp)) {
+            Qualitaetsplakette(qualitaet, angeboten, waehlbar,
+                               groesse = { q -> if (gewaehlt.isEmpty()) 0L else bytesIn(q) }) { qualitaet = it }
         }
         // **Mit Pfeil**, wie in der Knopfreihe der Serie. Gesperrt auf `erhoeht`: auf dem Blatt in
         // `flaeche` waere ein gesperrter Knopf in `flaeche` nur noch leise Schrift.
@@ -261,7 +275,7 @@ private fun Ladeauswahl(app: SwiftlyAnwendung, serieId: String, name: String, st
                 val ids = alleFolgen.filter { it.id in gewaehlt }.map { it.id }
                 schliessen()
                 // Ein Blatt zur Zeit: das Ladeblatt kommt, wenn dieses unten ist.
-                app.downloadsAnlegen(ids, name, abwarten = 260)
+                app.downloadsAnlegen(ids, name, abwarten = 260, qualitaet = qualitaet)
             }
         }
     }
@@ -323,6 +337,61 @@ private fun Kastenbild(k: Kasten) {
                 // Leise, ohne Kreis: ein Haken in Akzent hiesse „gewaehlt"; dieser sagt, dass nichts mehr zu tun ist.
                 Kasten.Da -> Symbol(Zeichen.Haken, 15.dp, farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett)
             }
+        }
+    }
+}
+
+/** Eine Stufe, wie `Kern.downloadQualitaeten` sie liefert. */
+data class Qualitaetsstufe(val id: String, val zeile: String, val plakette: String)
+
+fun qualitaetenLesen(json: String): List<Qualitaetsstufe> = JSONArray(json).let { a ->
+    (0 until a.length()).map { i -> a.getJSONObject(i).let { Qualitaetsstufe(it.getString("id"), it.getString("zeile"), it.getString("plakette")) } }
+}
+
+/**
+ * Vorlage: `Qualitaetsplakette` in `Sources/Shared/Ladeauswahl.swift`. Original ist die Vorgabe; darf der
+ * Server umwandeln, oeffnet ein Tipp eine Liste mit den kleineren Stufen und ihrer geschaetzten Groesse.
+ * Darf er es nicht, bleibt die Plakette stehen, und ein Satz darunter sagt, warum nichts zu waehlen ist.
+ */
+@Composable
+fun Qualitaetsplakette(wahl: String, angeboten: List<Qualitaetsstufe>, waehlbar: Boolean,
+                       groesse: (String) -> Long, waehlen: (String) -> Unit) {
+    val aufklappbar = waehlbar && angeboten.size > 1
+    var offen by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box {
+            Row(Modifier.then(if (aufklappbar) Modifier.heightIn(min = 44.dp) else Modifier)
+                    .then(if (aufklappbar) Modifier.antippen { offen = true } else Modifier)
+                    .semantics { contentDescription = uebersetzt("Qualität") + ", " + Kern.downloadPlakette(wahl) },
+                verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(Stil.akzent.copy(alpha = 0.15f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (wahl == "original") Symbol(Zeichen.Haken, 11.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett)
+                    Text(Kern.downloadPlakette(wahl), style = Stil.klein.copy(fontFeatureSettings = "tnum"), color = Stil.akzent)
+                    if (aufklappbar) Symbol(Zeichen.WinkelRunter, 11.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett)
+                }
+            }
+            DropdownMenu(offen, onDismissRequest = { offen = false }, containerColor = Stil.erhoeht,
+                         shape = RoundedCornerShape(Stil.eckeKarte)) {
+                angeboten.forEach { q ->
+                    val g = groesse(q.id)
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(q.zeile, style = Stil.listentitel, color = Stil.schrift)
+                                if (g > 0) Text((if (q.id == "original") "" else "≈ ") + Kern.downloadGroesse(g),
+                                                style = Stil.klein.copy(fontFeatureSettings = "tnum"), color = Stil.schriftSehrLeise)
+                            }
+                        },
+                        trailingIcon = if (q.id == wahl) ({ Symbol(Zeichen.Haken, 15.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett) }) else null,
+                        onClick = { offen = false; waehlen(q.id) })
+                }
+            }
+        }
+        if (!waehlbar) {
+            Text(uebersetzt("Kleinere Fassungen gibt der Server für dieses Konto nicht frei."),
+                 style = Stil.klein, color = Stil.schriftSehrLeise)
         }
     }
 }

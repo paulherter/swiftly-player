@@ -213,6 +213,7 @@ final class Wiedergabezentrale {
             eintrag[MPMediaItemPropertyArtwork] = bild
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
+        eintragSeit = Date()
         zustandMelden(laeuft)
         titelbildHolen(bildURL, fuer: item.id)
 
@@ -229,6 +230,9 @@ final class Wiedergabezentrale {
     /// ersetzt `nowPlayingInfo` vollstaendig; ohne die Zuordnung stuende beim
     /// Folgenwechsel eine Weile das Bild der vorigen Folge da.
     private var titelbild: MPMediaItemArtwork?
+    /// Wann Stelle und Rate zuletzt eingetragen wurden — Grundlage der
+    /// Hochrechnung in `standNachziehen`.
+    private var eintragSeit = Date.distantPast
     private var titelbildFuer: String?
 
     /// Holt das Titelbild einmal je Titel und traegt es nach.
@@ -295,17 +299,34 @@ final class Wiedergabezentrale {
             else { return }
             eintrag[MPMediaItemPropertyArtwork] = werk
             MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
+            // Das System setzt die mitgeschickte (alte) Stelle auf jetzt —
+            // der nächste Takt soll sie berichtigen.
+            self.eintragSeit = .distantPast
         }
     }
 
     /// Nur die Stelle nachziehen — billiger als der ganze Eintrag, und beim
     /// Anhalten muss die Rate sofort stimmen, sonst läuft die Uhr auf dem
     /// Sperrbildschirm weiter.
+    ///
+    /// **Nur schreiben, wenn das System sich verrechnet** (28.09.2026, Akku).
+    /// Der Sperrbildschirm rechnet die Stelle aus Stelle und Rate selbst
+    /// weiter. Vorher ging der ganze Eintrag jede Sekunde als Nachricht an
+    /// den Mediendienst, den ganzen Film lang. Jetzt nur noch, wenn sich die
+    /// Rate ändert oder die Stelle um mehr als eine Sekunde von der
+    /// Hochrechnung abweicht — Sprung, Hänger, Pause.
     func standNachziehen(position: Double, laeuft: Bool, tempo: Float) {
         guard var eintrag = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
-        eintrag[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
-        eintrag[MPNowPlayingInfoPropertyPlaybackRate] = laeuft ? Double(tempo) : 0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
+        let rate = laeuft ? Double(tempo) : 0
+        let alteRate = eintrag[MPNowPlayingInfoPropertyPlaybackRate] as? Double
+        let alteStelle = eintrag[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double
+        let hochgerechnet = (alteStelle ?? 0) + (alteRate ?? 0) * Date().timeIntervalSince(eintragSeit)
+        if alteRate != rate || alteStelle == nil || abs(hochgerechnet - position) > 1 {
+            eintrag[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
+            eintrag[MPNowPlayingInfoPropertyPlaybackRate] = rate
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
+            eintragSeit = Date()
+        }
         // Nicht überschreiben, solange die eigene Entscheidung frisch ist.
         if let seitBefehl, Date().timeIntervalSince(seitBefehl) < 2 {
             zustandMelden(spieltGerade)

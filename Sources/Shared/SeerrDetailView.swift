@@ -158,6 +158,11 @@ struct SeerrDetailView: View {
             guard bestaetigt else { return }
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
+            // **Nach einem Fehler bleibt sie stehen.** Wer bestaetigt hat und
+            // eine Fehlermeldung bekommt, hat seine Antwort schon gegeben —
+            // der naechste Tipp ist der erneute Versuch, nicht wieder die
+            // Rueckfrage. Waehrend die Anfrage laeuft, ebenso nicht zuruecknehmen.
+            guard !laeuft, fehler == nil else { return }
             bestaetigt = false
         }
         // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
@@ -267,7 +272,7 @@ struct SeerrDetailView: View {
                 .disabled(laeuft)
                 // Der Wechsel der Beschriftung soll zu sehen sein, sonst
                 // liest niemand, dass sich etwas geaendert hat.
-                .animation(.snappy(duration: 0.18), value: bestaetigt)
+                .animation(Stil.sprung, value: bestaetigt)
             } else {
                 auskunft(stand.hinweis)
             }

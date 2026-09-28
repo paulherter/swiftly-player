@@ -96,8 +96,11 @@ class Suchstand {
                 treffer = JSONArray(json).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
                 gesucht = sauber
                 // **Nebeneinander, nicht nacheinander** fuer den Nutzer: die eigenen Treffer stehen schon.
-                seerr = if (app.seerrVerbunden.value) seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
-                           else emptyList()
+                // **Seerr ist ein Bonus** (Audit 27.09.): scheitert es, bleiben die eigenen Treffer stehen —
+                // vorher warf ein Seerr-Fehler auch sie weg und zeigte den ganzen Stoerzustand.
+                seerr = if (!app.seerrVerbunden.value) emptyList() else try {
+                    seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
                 gestoert = true
                 treffer = emptyList()

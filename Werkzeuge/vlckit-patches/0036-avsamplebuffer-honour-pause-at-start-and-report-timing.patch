@@ -1,0 +1,159 @@
+From 56ac6d84200cf87c96af489854d5d19f31d4b935 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Mon, 28 Sep 2026 18:47:24 +0200
+Subject: [PATCH] avsamplebuffer: honour pause at start and report timing right
+ away
+
+The sample-buffer output reported its position only from a one-second
+periodic observer (skipping time zero) and on rate changes. Until the first
+report the clock runs on its monotonic fallback reference, so switching to
+the audio reference shortly after starting or resuming made a video picture
+late. A pause that arrived before the start date was also ignored: the
+synchronizer was started at rate 1 anyway, and timing was reported while
+paused.
+
+Track the pause state independently of the timeline, start the synchronizer
+at rate 0 when paused, drop periodic reports while paused, and report the
+synchronizer position immediately after starting and after resuming.
+
+Modelled on SwiftVLC's rework of this output.
+---
+ modules/audio_output/apple/avsamplebuffer.m | 75 +++++++++++++++++++--
+ 1 file changed, 70 insertions(+), 5 deletions(-)
+
+diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
+index 59609d59c5..335e006b71 100644
+--- a/modules/audio_output/apple/avsamplebuffer.m
++++ b/modules/audio_output/apple/avsamplebuffer.m
+@@ -76,6 +76,12 @@ @interface VLCAVSample : NSObject
+     unsigned _sampleRate;
+     BOOL _stopped;
+     BOOL _dateReached;
++    /* Paused by the core. Kept across flushes and known before the first
++     * sample arrives, so that a deferred start honours it. */
++    BOOL _paused;
++    /* Bumped on every stop/flush, so that a queued timing report from a
++     * previous timeline is dropped. */
++    uint64_t _timelineGeneration;
+ }
+ @end
+ 
+@@ -234,22 +240,73 @@ - (void)flush
+     _lastDate = VLC_TICK_INVALID;
+ }
+ 
++/* Report the synchronizer's current position right away, instead of waiting
++ * for the periodic observer. Until the first report the clock runs on its
++ * monotonic fallback reference; the later switch to the audio reference made
++ * video pictures late right after starting or resuming.
++ * Must be called with _bufferLock held. */
++- (void)reportTimingSoonLocked
++{
++    vlc_mutex_assert(&_bufferLock);
++    const uint64_t generation = _timelineGeneration;
++    __weak typeof(self) weakSelf = self;
++    dispatch_async(_timeQueue, ^{
++        [weakSelf reportTimingForGeneration:generation];
++    });
++}
++
++- (void)reportTimingForGeneration:(uint64_t)generation
++{
++    vlc_mutex_lock(&_bufferLock);
++    const BOOL current = generation == _timelineGeneration && !_stopped
++                      && !_paused && _dateReached
++                      && _firstPts != VLC_TICK_INVALID;
++    const vlc_tick_t firstPts = _firstPts;
++    AVSampleBufferRenderSynchronizer *sync = _sync;
++    vlc_mutex_unlock(&_bufferLock);
++    if (!current)
++        return;
++
++    const CMTime time = sync.currentTime;
++    const vlc_tick_t system_now = vlc_tick_now();
++    if (!CMTIME_IS_NUMERIC(time))
++        return;
++    aout_TimingReport(_aout, system_now,
++                      [VLCAVSample CMTimeTotick:time] + firstPts);
++}
++
+ - (void)pause:(BOOL)pause date:(vlc_tick_t)date
+ {
+     (void) date;
+ 
+-    if (_ptsSamples >= 0)
++    vlc_mutex_lock(&_bufferLock);
++    /* Set the state before the rate change: the periodic observer also fires
++     * on rate changes and must see it. */
++    _paused = pause;
++    /* Before the start date is reached the synchronizer is still at rate 0;
++     * startNow will pick the rate. Setting 1.0 here would start it early. */
++    if (_ptsSamples >= 0 && _dateReached)
++    {
+         _sync.rate = pause ? 0.0f : 1.0f;
++        if (!pause)
++            [self reportTimingSoonLocked];
++    }
++    vlc_mutex_unlock(&_bufferLock);
+ }
+ 
+ - (void)whenTimeObserved:(CMTime) time
+ {
+-    assert(_firstPts != VLC_TICK_INVALID);
++    vlc_mutex_lock(&_bufferLock);
++    /* No timing while paused: the position does not advance, and a report
++     * taken around the rate change would anchor the clock wrongly. */
++    const BOOL skip = _paused || _stopped || _firstPts == VLC_TICK_INVALID;
++    const vlc_tick_t firstPts = _firstPts;
++    vlc_mutex_unlock(&_bufferLock);
+ 
+-    if (time.value == 0)
++    if (skip || time.value == 0)
+         return;
+     vlc_tick_t system_now = vlc_tick_now();
+-    vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + _firstPts;
++    vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + firstPts;
+ 
+     aout_TimingReport(_aout, system_now, pos_ticks);
+ }
+@@ -260,7 +317,9 @@ - (void)startNow:(vlc_tick_t)delta
+ 
+     _dateReached = YES;
+     CMTime time = CMTimeMake(0, _sampleRate);
+-    [_sync setRate:1.0f time:time];
++    /* A pause that arrived before the start date is honoured: start the
++     * timeline at rate 0, the resume sets 1.0. */
++    [_sync setRate:_paused ? 0.0f : 1.0f time:time];
+ 
+     const CMTime interval = CMTimeMake(CLOCK_FREQ, CLOCK_FREQ);
+     __weak typeof(self) weakSelf = self;
+@@ -269,6 +328,9 @@ - (void)startNow:(vlc_tick_t)delta
+                                                usingBlock:^ (CMTime time){
+         [weakSelf whenTimeObserved:time];
+     }];
++
++    if (!_paused)
++        [self reportTimingSoonLocked];
+ }
+ 
+ - (void)whenDataReady
+@@ -385,6 +447,7 @@ - (void)stopSyncRenderer
+         [_sync removeTimeObserver:_observer];
+ 
+     _stopped = YES;
++    _timelineGeneration++;
+ 
+     block_ChainRelease(_outChain);
+     _outChain = NULL;
+@@ -518,6 +581,8 @@ - (BOOL)start:(audio_sample_format_t *)fmt
+ 
+     _stopped = NO;
+     _dateReached = NO;
++    _paused = NO;
++    _timelineGeneration++;
+ 
+     _ptsSamples = -1;
+     _firstPts = VLC_TICK_INVALID;
+-- 
+2.50.1 (Apple Git-155)
+

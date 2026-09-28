@@ -16,7 +16,10 @@
  */
 
 /* Dieselben Griffe wie in `Medienleiste.Griff`, in derselben Reihenfolge. */
-enum { MT_UMSCHALTEN = 0, MT_BEENDEN = 1, MT_WEITER = 2, MT_ZURUECK = 3 };
+enum { MT_UMSCHALTEN = 0, MT_BEENDEN = 1, MT_WEITER = 2, MT_ZURUECK = 3,
+       /* Keine Tasten, aber derselbe Weg: Windows meldet Ruhezustand und
+        * Aufwachen als WM_POWERBROADCAST an dieselbe Fensterprozedur. */
+       MT_SCHLAEFT = 4, MT_AUFGEWACHT = 5 };
 
 /* Meldet die Tasten für die Fensterfläche an — übergeben wird die `GdkSurface`
  * des Fensters, nicht das Handle: die Umrechnung bleibt hier, damit

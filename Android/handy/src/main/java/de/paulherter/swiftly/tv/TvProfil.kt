@@ -32,6 +32,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -404,8 +408,8 @@ private fun TvReihenzeile(name: String, an: Boolean, kannHoch: Boolean, kannRunt
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TvSchalterzeile(name, an, modifier = Modifier.weight(1f), tun = umschalten)
-        TvKnopf(null, Zeichen.WinkelHoch, hoehe = 28.dp, freigegeben = kannHoch) { schieben(-1) }
-        TvKnopf(null, Zeichen.WinkelRunter, hoehe = 28.dp, freigegeben = kannRunter) { schieben(1) }
+        TvKnopf(null, Zeichen.WinkelHoch, hoehe = 28.dp, freigegeben = kannHoch, beschreibung = uebersetzt("Nach oben")) { schieben(-1) }
+        TvKnopf(null, Zeichen.WinkelRunter, hoehe = 28.dp, freigegeben = kannRunter, beschreibung = uebersetzt("Nach unten")) { schieben(1) }
     }
 }
 
@@ -444,6 +448,9 @@ private fun Kontokarte(app: SwiftlyAnwendung, serverzeile: String, karten: List<
 @Composable
 private fun Kontenstreifen(karten: List<JSONObject>, aufnehmen: () -> Unit, wechseln: (String) -> Unit) {
     val groesse = 30.dp
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as SwiftlyAnwendung
+    val dichte = androidx.compose.ui.platform.LocalDensity.current.density
+    val ruhig = de.paulherter.swiftly.gemeinsam.bewegungReduziert()
     val andere = karten.flatMap { k ->
         val konten = k.optJSONArray("konten") ?: JSONArray()
         (0 until konten.length()).map { konten.getJSONObject(it) }
@@ -451,8 +458,13 @@ private fun Kontenstreifen(karten: List<JSONObject>, aufnehmen: () -> Unit, wech
 
     Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         andere.forEach { konto ->
-            Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = { wechseln(konto.optString("kennung")) }) { fokus ->
-                Box(Modifier.size(groesse).clip(CircleShape)
+            // **Wechseln, mit Bewegung** (Entwurf D, `Kontowechselflug`): das Bild hebt von hier ab.
+            val rahmen = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }
+            Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = {
+                de.paulherter.swiftly.Kontowechselflug.starten(app, konto.optString("kennung"), konto.optString("name"),
+                    konto.optString("bild").ifEmpty { null }, rahmen[0], Stil.flaeche, dichte, ruhig)
+            }) { fokus ->
+                Box(Modifier.size(groesse).onGloballyPositioned { rahmen[0] = it.boundsInRoot() }.clip(CircleShape)
                         .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)) {
                     Kontokreis(konto.optString("name"), konto.optString("bild").ifEmpty { null }, groesse)
                 }

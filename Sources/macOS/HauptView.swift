@@ -78,6 +78,12 @@ struct HauptView: View {
     @State private var uebernahme = Uebernahmemodell()
     /// Bei mehr als einem Gerät wird gefragt statt geraten.
     @State private var auswahlOffen = false
+    /// Die laufende Übernahme — **nur eine gilt.** Wer zweimal wählt, bevor
+    /// die erste Antwort da ist, bricht die erste ab; ihre späte Antwort darf
+    /// die neuere Wahl nicht überschreiben.
+    @State private var uebergabeAufgabe: Task<Void, Never>?
+    /// Gemeinsam schauen — einer für die ganze App, siehe ``Gemeinsammodell``.
+    @State private var gemeinsam = Gemeinsammodell.geteilt
     @State private var filmregal = Bibliotheksmodell(merkname: "movies")
     @State private var serienregal = Bibliotheksmodell(merkname: "tvshows")
     /// Was das Titelmenü der beiden Bereiche gewählt hat — Alle, Sammlungen
@@ -97,7 +103,7 @@ struct HauptView: View {
     var body: some View {
         HStack(spacing: 0) {
             Seitenleiste(model: model, bereich: $bereich,
-                         uebernahme: uebernahme.angebot,
+                         weiterschauen: uebernahme.angebote,
                          uebernehmen: { abzeichenGedrueckt() },
                          zumProfil: { zumProfil() },
                          imKonto: navigator.imKonto(bereich),
@@ -139,6 +145,25 @@ struct HauptView: View {
                 Stil.grund
                 inhalt
             }
+            // „Filmabend verlassen · Wieder beitreten" nach dem Schließen des
+            // Players — unten mittig im Inhalt, wo auch sonst Hinweise stehen.
+            // Darüber, was bei der Gruppe schiefging.
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 10) {
+                    // Im Player zeigt er selbst.
+                    if steuerung.wunsch == nil {
+                        Gemeinsamfehler()
+                        // Was ein Kachelmenü nicht geschafft hat.
+                        Kachelmeldungsstreifen()
+                    }
+                    if let alt = gemeinsam.zuletztVerlassen {
+                        Rueckwegstreifen(name: alt.name) { gemeinsam.wiederBeitreten() }
+                            .transition(.opacity)
+                    }
+                }
+                .padding(.bottom, Stil.randAbstand)
+            }
+            .animation(Stil.einblenden, value: gemeinsam.zuletztVerlassen?.id)
             // **Und der Inhalt bleibt in seiner Spalte — auch fuer Klicks.**
             //
             // Hier stand zuerst `clipped()`. Das schneidet nur das **Bild**:
@@ -212,15 +237,35 @@ struct HauptView: View {
             else { uebernahme.beenden() }
         }
         .onDisappear { uebernahme.beenden() }
+        // **Die Karte wächst aus dem Abzeichen** (wie am iPhone): statt
+        // mitten im Fenster aufzublenden, kommt sie aus der Zeile in der
+        // Seitenleiste, die man angeklickt hat, und schrumpft beim Schließen
+        // dorthin zurück. Der Schleier blendet nur.
         .overlay {
             if auswahlOffen {
-                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
-                                  waehlen: { hierWeiterschauen($0) },
-                                  abbrechen: { auswahlOffen = false })
+                Uebernahmeauswahl.schleier { auswahlOffen = false }
                     .transition(.opacity)
+                Uebernahmekarte(sitzungen: uebernahme.angebote,
+                                waehlen: { hierWeiterschauen($0) },
+                                abbrechen: { auswahlOffen = false })
+                    .transition(.ausDemPunkt(Abzeichenursprung.punkt))
             }
         }
-        .animation(Stil.sprung, value: auswahlOffen)
+        .animation(Stil.feder, value: auswahlOffen)
+        // Anlegen, Beitreten und die Auswahl. Über allem außer dem Player,
+        // weil jede Seite sie öffnen kann.
+        .overlay { Gemeinsamtafeln(uebernahme: uebernahme.angebote,
+                                   weiterschauen: { hierWeiterschauen($0) }) }
+        .task { gemeinsam.starten(model) }
+        .onDisappear { gemeinsam.beenden() }
+        // **Die Gruppe startet den Player, nicht die Seite.** Wer anlegt, wer
+        // beitritt, und wenn in der Gruppe jemand einen neuen Titel setzt —
+        // es kommt immer als Warteschlange vom Server.
+        .onChange(of: gemeinsam.wunsch?.id) { _, neu in
+            guard neu != nil, let wunsch = gemeinsam.wunsch else { return }
+            gemeinsam.wunsch = nil
+            steuerung.wunsch = wunsch
+        }
         .environment(navigator)
         .environment(\.bereich, bereich)
         // **G4: Der Seitenstapel gehört zum Konto.** Was darauf liegt, gehört
@@ -232,7 +277,20 @@ struct HauptView: View {
         //
         // Hier und nicht in jeder Seite: das wären fünf Stellen, und die
         // nächste neue Seite vergisst es.
-        .onChange(of: model.kontowechsel) { _, _ in navigator.alleLeeren() }
+        .onChange(of: model.kontowechsel) { _, _ in
+            // Aus der Profilseite ist schon geleert — beim Klick, siehe unten.
+            // Nicht `wartet` fragen: wer das Profil mitten im Flug öffnet,
+            // schließt ihn ab, und das Leeren nähme die Seite wieder weg
+            // (siehe ``Kontowechselflug/stapelSchonGeleert()``).
+            guard !Kontowechselflug.geteilt.stapelSchonGeleert() else { return }
+            navigator.alleLeeren()
+        }
+        // **Beim Klick in der Profilseite** (Entwurf D, wie am iPhone) fährt
+        // die Seite selbst hinaus — samt Profil, das Bild fliegt in die
+        // Seitenleiste. Siehe ``Kontowechselbuehne``.
+        .onChange(of: Kontowechselflug.geteilt.zurueck) { _, _ in navigator.allesLeeren() }
+        // Das fliegende Profilbild — über Seite und Leiste, unter dem Player.
+        .overlay { Kontowechselbild() }
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {
@@ -262,7 +320,9 @@ struct HauptView: View {
         // Der ist aber seit 26.1 behoben, und dieser Rechner läuft auf 26.5.
         // Also lag es doch an uns.
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.3), value: steuerung.wunsch?.id)
+        // `Stil.einblenden` statt einer eigenen Kurve: dieselbe Dauer, und
+        // bei reduzierter Bewegung wird aus dem Hereinblenden ein kurzer Wechsel.
+        .animation(Stil.einblenden, value: steuerung.wunsch?.id)
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }
             ausfuehren(kommando)
@@ -452,6 +512,8 @@ struct HauptView: View {
                             // Steht die Seite schon, ist das ein Rückkehrer aus
                             // einem Leistenwechsel — der fährt nicht noch einmal.
                             guard platz >= tiefe else { return }
+                            // Ab jetzt fährt sie — Antworten warten (`Einfahrt`).
+                            Einfahrt.beginnt()
                             // **Nur dieser eine Schreibzugriff.** Vorher stand
                             // daneben ein zweiter, unanimierter (`ruht = false`).
                             // Beides ist Zustand derselben Ansicht und landet in
@@ -499,9 +561,9 @@ struct HauptView: View {
             // fuer Ein- und Austritt gehoeren an das, was bleibt — und das ist
             // dieses Stueck hier.
             .id(wurzelkennung)
-            // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
-            // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
-            // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
+            // Erst geht das Alte, danach kommt das Neue — nacheinander,
+            // nur Deckkraft. Die Zahlen und das Warum stehen bei
+            // `Stil.zeitBereichHinaus`.
             .transition(.bereichswechsel)
             // **Nur hier, nicht am Elternteil.** Genau daran ist der erste
             // Versuch gescheitert: eine Anweisung mit `value:` gilt für
@@ -669,22 +731,45 @@ struct HauptView: View {
 
 extension HauptView {
 
-    /// Bei einem Gerät sofort, bei mehreren erst fragen.
+    /// Bei einem Eintrag sofort, bei mehreren erst fragen (Entwurf A):
+    /// nur Geräte — die Geräteauswahl wie bisher; eine Gruppe allein — gleich
+    /// „Beitreten"; sonst die Auswahl mit beidem.
     fileprivate func abzeichenGedrueckt() {
-        if uebernahme.mehrereDa { auswahlOffen = true }
-        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+        let gruppen = gemeinsam.gruppe == nil && gemeinsam.darfBeitreten ? gemeinsam.angebote : []
+        if gruppen.isEmpty {
+            if uebernahme.mehrereDa { auswahlOffen = true }
+            else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+        } else if uebernahme.angebote.isEmpty, gruppen.count == 1, let g = gruppen.first {
+            gemeinsam.blatt = .beitreten(g)
+        } else {
+            gemeinsam.blatt = .auswahl
+        }
     }
 
     /// Drüben beenden, hier an derselben Stelle weitermachen.
     ///
     /// Erst der Befehl, dann der Start — geht das Beenden schief, passiert
     /// hier gar nichts. Sonst liefen zwei Tonspuren im Raum.
+    ///
+    /// **Die Karte wächst sofort aus der Zeile** (Entwurf B, wie am iPhone);
+    /// der Player geht ohne Blende unter ihr auf (``Uebergabebuehne``).
     fileprivate func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
-        Task {
-            guard let wunsch = await uebernahme.wunsch(fuer: sitzung, model: model)
-            else { return }
-            steuerung.wunsch = wunsch
+        let buehne = Uebergabebuehne.geteilt
+        uebergabeAufgabe?.cancel()
+        buehne.starten(titel: sitzung.laeuft, model: model)
+        uebergabeAufgabe = Task {
+            let wunsch = await uebernahme.wunsch(fuer: sitzung, model: model)
+            // Abgelöst: die neuere Wahl gehört der Bühne, nicht diese Antwort.
+            guard !Task.isCancelled else { return }
+            guard let wunsch else {
+                buehne.abbrechen("kein Plan oder Stopp abgelehnt")
+                return
+            }
+            buehne.spielerKommt(wunsch.item.id)
+            var ohne = Transaction()
+            ohne.disablesAnimations = true
+            withTransaction(ohne) { steuerung.wunsch = wunsch }
         }
     }
 }
@@ -692,8 +777,8 @@ extension HauptView {
 struct Seitenleiste: View {
     let model: AppModel
     @Binding var bereich: Bereich
-    /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
-    var uebernahme: Fremdsitzung?
+    /// Was auf anderen Geräten läuft — leer, wenn nichts.
+    var weiterschauen: [Fremdsitzung] = []
     var uebernehmen: () -> Void
     let zumProfil: () -> Void
     /// Profil oder etwas von dort ist offen. Dann traegt keine Zeile oben die
@@ -703,6 +788,15 @@ struct Seitenleiste: View {
     /// Nicht die Bindung selbst: ein Klick auf den schon offenen Bereich
     /// muss den Kontozweig schliessen, und daran aendert sich ihr Wert nicht.
     let bereichWaehlen: (Bereich) -> Void
+
+    @State private var gemeinsam = Gemeinsammodell.geteilt
+    /// Wo die Angebotszeile steht, global — die Auswahl wächst von dort.
+    @State private var angebotsrahmen: CGRect = .zero
+
+    /// Gruppen, denen man beitreten kann — nicht, wenn man schon in einer ist.
+    private var gruppen: [SyncPlayGruppe] {
+        gemeinsam.gruppe == nil && gemeinsam.darfBeitreten ? gemeinsam.angebote : []
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -752,14 +846,31 @@ struct Seitenleiste: View {
             // Konto. Das Angebot gehört daneben, wo man ohnehin hinsieht —
             // dieselbe Stelle wie das Abzeichen auf iPhone und Fernseher,
             // nur in der Form dieser Leiste.
-            if let uebernahme {
-                Button(action: uebernehmen) {
-                    Uebernahmezeile(sitzung: uebernahme)
+            //
+            // **Und die offenen Gruppen zählen mit** (Entwurf A): eine Zeile,
+            // ein Zähler — keine zweite Zeile, die das Konto verschiebt.
+            if !weiterschauen.isEmpty || !gruppen.isEmpty {
+                Button {
+                    // Die Auswahl wächst aus dieser Zeile (``Abzeichenursprung``).
+                    Abzeichenursprung.punkt = CGPoint(x: angebotsrahmen.midX, y: angebotsrahmen.midY)
+                    uebernehmen()
+                } label: {
+                    Angebotszeile(weiterschauen: weiterschauen, gruppen: gruppen)
                 }
-                .buttonStyle(Stil.Druckzeile())
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
+                // Druck wie jeder Knopf; `Druckzeile` legte ein Rechteck
+                // unter die Kapsel.
+                .buttonStyle(Stil.Druckknopf())
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    angebotsrahmen = $0
+                }
+                // **Ein Abstand zu allen Seiten, an denen es klebt** —
+                // links, rechts und unten derselbe Wert. Unten stand 4 gegen
+                // 12 an den Seiten; das Abzeichen sass tiefer, als es breit
+                // eingerückt war. Die Karte wächst aus seiner Mitte
+                // (`angebotsrahmen`), sie zieht also von selbst mit.
+                .padding([.horizontal, .bottom], Stil.abzeichenRand)
                 .transition(.opacity)
+                // Die Ansage trägt `Angebotszeile` selbst (Titel und was läuft).
             }
 
             // `Divider` bringt Apples eigene Farbe und Staerke mit; der
@@ -777,7 +888,8 @@ struct Seitenleiste: View {
         .frame(width: Stil.seitenleisteBreite)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche)
-        .animation(Stil.sprung, value: uebernahme?.id)
+        .animation(Stil.sprung, value: weiterschauen.map(\.id))
+        .animation(Stil.sprung, value: gruppen.map(\.id))
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 }
@@ -829,9 +941,20 @@ struct Profilzeile: View {
     private var zeichen: some View {
         let weitere = model.konten.first { $0.userID != model.session?.userID }
         HStack(spacing: -9) {
+            let bild = model.benutzerbildURL()
             Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(), groesse: 26,
-                          hervorgehoben: weitere != nil)
+                          bild: bild, groesse: 26,
+                          hervorgehoben: weitere != nil,
+                          ohneBild: bild.map { Kontowechselflug.geteilt.ohneBild.contains($0) } ?? false)
+                // **Hier landet der Kontowechsel** (Entwurf D): je
+                // Bildadresse eine eigene Ansicht, sonst stünde bei der
+                // Landung kurz das alte Bild; und solange das neue hierher
+                // fliegt, steht hier noch keins.
+                .id(bild)
+                .opacity(Kontowechselflug.geteilt.flug.map { $0.ersetzt } ?? true ? 1 : 0)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rahmen in
+                    Kontowechselflug.geteilt.zielInLeisteMelden(rahmen, groesse: 26, inhaltAb: 0)
+                }
                 // **Das verbundene Konto liegt oben.** Ein `HStack` mit
                 // negativem Abstand zeichnet in der Reihenfolge der Auslage,
                 // also läge sonst das zweite obenauf — und damit das Bild

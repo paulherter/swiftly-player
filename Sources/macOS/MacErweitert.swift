@@ -23,6 +23,7 @@ struct MacErweitert: View {
                         Image(systemName: "chevron.right")
                             .font(Stil.plakette)
                             .rotationEffect(.degrees(offen ? 90 : 0))
+                            .accessibilityHidden(true)
                     }
                     .font(Stil.zweitzeile)
                     .foregroundStyle(Stil.schriftLeise)
@@ -76,6 +77,7 @@ struct MacErweitert: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus")
+                        .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }
                 .font(Stil.zweitzeile)

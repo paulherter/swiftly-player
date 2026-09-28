@@ -15,8 +15,18 @@ public struct PlaybackPlan: Sendable, Equatable {
     public let reasons: [TranscodeReason]
     /// Die gewählte Quelle — für den Datei-Auszug auf der Detailseite.
     public let quelle: MediaSource?
+    /// Bildcodec einer Datei auf dem Gerät, wie er beim Laden gemerkt wurde
+    /// (``Downloadposten/bildcodec``) — dort gibt es keine ``quelle``.
+    var plattenBildcodec: String? = nil
 
     public var isLossless: Bool { method.isLossless }
+
+    /// Ob der Abspieler gleich mit Software-Dekoder öffnen soll — siehe
+    /// ``Erstbild/softwareVonAnfang(bildcodec:methode:)``.
+    public var softwareDekoder: Bool {
+        Erstbild.softwareVonAnfang(bildcodec: quelle?.bildcodec ?? plattenBildcodec,
+                                   methode: method)
+    }
 
 
     /// Kurzer Satz für die Oberfläche.
@@ -50,11 +60,16 @@ public extension PlaybackPlan {
     ///
     /// `playSessionID` ist `nil`: ohne Server gibt es keine Sitzung. Was
     /// gesehen wurde, meldet die App nach, sobald wieder Netz da ist.
+    ///
+    /// `bildcodec` ist ``Downloadposten/bildcodec`` — ohne Quelle die einzige
+    /// Angabe, an der ``softwareDekoder`` hängt (XviD auch offline).
     public static func vonDerPlatte(_ datei: URL, container: String?,
-                             mediaSourceID: String? = nil) -> PlaybackPlan {
+                             mediaSourceID: String? = nil,
+                             bildcodec: String? = nil) -> PlaybackPlan {
         PlaybackPlan(url: datei, method: .directPlay,
                      mediaSourceID: mediaSourceID, playSessionID: nil,
-                     container: container, reasons: [], quelle: nil)
+                     container: container, reasons: [], quelle: nil,
+                     plattenBildcodec: bildcodec)
     }
 }
 
@@ -103,7 +118,14 @@ public extension PlaybackPlan {
         serverBase: URL
     ) throws -> PlaybackPlan? {
 
-        guard let source = besteQuelle(response.mediaSources) else { return nil }
+        guard let source = besteQuelle(response.mediaSources) else {
+            // Mit Grund ist es eine Ablehnung, kein „nichts da" — und die
+            // soll der Nutzer lesen können.
+            if let grund = response.errorCode, !grund.isEmpty {
+                throw JellyfinError.wiedergabeAbgelehnt(grund)
+            }
+            return nil
+        }
         // **Ohne Adresse zum Umwandeln läuft die Originaldatei — dann heißt es
         // auch so.** Verlangt eine Bitratengrenze Umwandeln, hat der Server
         // das Transcoding aber aus, nennt er keine `TranscodingUrl`; gespielt
@@ -119,8 +141,9 @@ public extension PlaybackPlan {
         //
         let url: URL
         if method != .directPlay, let path = source.transcodingUrl {
-            // TranscodingUrl kommt als serverrelativer Pfad zurück.
-            guard let composed = URL(string: path, relativeTo: serverBase)?.absoluteURL else {
+            // TranscodingUrl kommt als serverrelativer Pfad zurück — und muss
+            // den Unterpfad eines Reverse-Proxys behalten, siehe dort.
+            guard let composed = AppModelURLNormalizer.serverrelativ(path, basis: serverBase) else {
                 throw JellyfinError.invalidServerURL
             }
             url = composed

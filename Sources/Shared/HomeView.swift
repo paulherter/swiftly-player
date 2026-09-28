@@ -18,6 +18,22 @@ struct HomeView: View {
     @State private var laedtNeu = false
     /// Wie weit die Seite gescrollt ist — **nur für den Kopfverlauf.**
     @State private var weg = Scrollweg()
+    /// **Ein Kontowechsel läuft** (Versuch `experiment-glas`): die Reihen
+    /// sind aus und kommen erst, wenn Inhalt da ist und die Profilseite zu
+    /// ist — dann gestaffelt (``Reihenauftritt``).
+    @State private var wechsel = false
+
+    /// Die Reihen stehen — kein Wechsel unterwegs. Beim Tipp in der
+    /// Profilauswahl gehen sie sofort aus, noch bevor das Konto wechselt.
+    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
+    /// Die Reihen stehen im Baum — außer zwischen Tipp und Freigabe.
+    private var gebaut: Bool { zeigen || aufbau }
+    @State private var aufbau = false
+
+    /// Es gibt etwas zu zeigen, und nichts liegt mehr davor.
+    private var freigegeben: Bool {
+        (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -68,14 +84,36 @@ struct HomeView: View {
         // stehen erst nach einer neuen Abfrage fest. Ohne das sah man seine
         // eigene Einstellung erst, wenn man die Seite von Hand nachlud, und
         // hielt sie fuer wirkungslos.
+        //
+        // **Ein `task`, nicht zwei** — wie auf tvOS. Hier stand zusaetzlich
+        // ein schlichtes `.task { if !stand.geladen … }`; beide liefen beim
+        // Erscheinen, der zweite fand `geladen` noch falsch und holte alle
+        // Reihen ein zweites Mal (gemessen 25.09.2026: zwei Laeufe in
+        // derselben Millisekunde).
         .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+            // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
+            // Seite, die mit ihm zusammenfällt (sonst holte sie noch einmal
+            // das alte Konto).
+            if Kontowechselflug.geteilt.wartet { return }
             await laden()
         }
         // **Nicht an `phase` haengen.** Die steht beim Kontowechsel schon auf
         // `.ready` und aendert sich nicht — die Startseite lud nie neu und
         // zeigte die Titel des vorigen Kontos. Auf tvOS ist genau das bei
         // `kontowechsel` ist der Zaehler, der dafuer da ist.
-        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
+        .onChange(of: model.kontowechsel) { _, _ in
+            // Erst aus, dann laden, dann gestaffelt ein (Versuch
+            // `experiment-glas`).
+            Kontowechselflug.notiz("wechsel: startseite blendet aus")
+            wechsel = true
+            Task {
+                await laden()
+                if wechsel, freigegeben { einblenden() }
+            }
+        }
+        .onChange(of: freigegeben) { _, jetzt in
+            if jetzt, wechsel { einblenden() }
+        }
         // Neu geholt wird nach der Endmeldung, nicht beim Zumachen: beim
         // Zumachen ist sie noch unterwegs (`AppModel.wiedergabeBeendet`).
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
@@ -83,7 +121,6 @@ struct HomeView: View {
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
-        .task { if !stand.geladen { await laden() } }
     }
 
     /// Wortmarke links, Profilbild rechts.
@@ -143,16 +180,9 @@ struct HomeView: View {
     /// Netz steckt. Vorher stand da nur, dass etwas nicht ging.
     @ViewBuilder private var nichtsDa: some View {
         if stand.gestoert {
-            Leerzustand(
-                symbol: "externaldrive.badge.xmark",
-                // Ein harmloser Fehler - nichts geht verloren, also darf ein
-                kopfzeile: "Server ist abgetaucht",
-                // Der Titel sagt noch, was los ist; der Witz steht im zweiten
-                // Satz. So steht es in BRAND.md, Abschnitt 7.
-                text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                laedt: laedtNeu,
-                hauptknopf: laedtNeu ? nil : ("Erneut versuchen", { neuVersuchen() }),
-                stillerKnopf: laedtNeu ? nil : ("Server wechseln", { model.signOut() }))
+            Leerzustand.serverAbgetaucht(model, laedt: laedtNeu,
+                                         erneut: { neuVersuchen() },
+                                         wechseln: { model.signOut() })
         } else {
             Leerzustand(
                 symbol: "tray",
@@ -195,34 +225,49 @@ struct HomeView: View {
                 // eines Rings mitten auf der Seite: zwei Reihen in ihrer
                 // Form, die überblenden, sobald die Titel da sind. Man sieht
                 // sofort, was für eine Seite das wird.
-                if !stand.geladen {
+                // Nicht während eines Kontowechsels: dann bleibt die Seite
+                // leer, bis die Reihen gestaffelt kommen.
+                if !stand.geladen, zeigen {
                     Reihenplatzhalter(quer: true)
                     Reihenplatzhalter()
                 }
                 // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
                 // Einstieg, kein Inhalt: ein Tipp öffnet das Genre.
-                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+                // **Während des Wechsels gar nicht gebaut** (Versuch
+                // `experiment-glas`): beim Tipp sind die Reihen des alten
+                // Kontos sofort weg — nichts blitzt hinter der zurückgehenden
+                // Seite auf —, und was mitten im Flug ankommt, wird nicht
+                // gesetzt und nicht entschlüsselt. Erst nach der Landung.
+                if gebaut {
+                if model.genreChips, !model.startGenres.isEmpty {
+                    gattungschips.reihenauftritt(0, da: zeigen)
+                }
                 // **Die festen Reihen in der eingestellten Reihenfolge**, ohne
                 // die ausgeblendeten — Einstellungen → Darstellung → Startseite.
-                ForEach(model.startReihen.filter {
-                    !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
-                }) { reihe in
-                    feste(reihe)
+                ForEach(Array(festeReihen.enumerated()), id: \.element.id) { i, reihe in
+                    feste(reihe).reihenauftritt(i + 1, da: zeigen)
                 }
                 // Die gewählten Genres als eigene Reihen, nach den festen.
                 //
                 // **Sie blenden ein, statt zu erscheinen.** Sie kommen einen
                 // Netzweg spaeter als die festen Reihen — ohne Uebergang stand
                 // dort erst nichts und dann auf einen Schlag alles.
-                ForEach(stand.gattungsreihen) { r in
+                ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, r in
                     Reihe(model: model, titel: "", name: r.name, items: r.items,
                           nachGesehen: { await laden() })
                         .transition(.opacity)
+                        .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                }
                 }
                 // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
                 // stehen jetzt in der Leiste unten.
             }
             .padding(.top, 8)
+            // **So breit wie die Seite, auch ohne Inhalt.** Die Scrollflaeche
+            // richtet sich in der Breite nach ihrem Inhalt — gemessen im
+            // Simulator: bei leerer Startseite schrumpfte sie auf null, und
+            // die Leiste unten, die als Auflage darauf liegt, mit ihr.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .animation(Stil.einblenden, value: stand.geladen)
         // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
@@ -277,7 +322,7 @@ struct HomeView: View {
         case .weiterschauen:
             if !stand.weiterschauen.isEmpty {
                 Reihe(model: model, titel: "Weiterschauen",
-                      items: stand.weiterschauen, quer: true, direkt: starte,
+                      items: stand.weiterschauen, quer: true, restzeit: true, direkt: starte,
                       nachGesehen: { await laden() })
             }
         case .naechsteFolge:
@@ -336,7 +381,36 @@ struct HomeView: View {
         }
     }
 
-    private func laden() async { await stand.laden(model) }
+    private func laden() async {
+        Kontowechselflug.notiz("startseite: laden (konto \(model.kontowechsel))")
+        let intervall = Kontowechselflug.zeichen.beginInterval("startseiteLaden")
+        let a = CACurrentMediaTime()
+        await stand.laden(model)
+        Kontowechselflug.zeichen.endInterval("startseiteLaden", intervall)
+        Kontowechselflug.notiz("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
+    }
+
+    private var festeReihen: [Startreihe] {
+        model.startReihen.filter {
+            !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+        }
+    }
+
+    /// Erst bauen (unsichtbar), im nächsten Durchgang zeigen — sonst
+    /// stünden neu eingefügte Reihen sofort an ihrem Ziel, ohne Staffel.
+    private func einblenden() {
+        // Freigabe und Ende des Ladens können beide hierher führen.
+        guard !aufbau else { return }
+        Kontowechselflug.notiz("wechsel 6: reihen werden gebaut")
+        aufbau = true
+        Task { @MainActor in
+            // Ein Bild Luft, damit die Reihen einmal unsichtbar stehen.
+            try? await Task.sleep(for: .milliseconds(20))
+            Kontowechselflug.notiz("wechsel 7: reihen kommen gestaffelt")
+            wechsel = false
+            aufbau = false
+        }
+    }
 }
 
 /// Eine waagerecht scrollende Reihe.
@@ -352,26 +426,12 @@ private struct Reihe: View {
     var quer = false
     /// Zeigt statt der Folgennummer, *was* neu dazugekommen ist.
     var neuzugang = false
+    /// Zeigt unter der Kachel, wie lange es noch geht — für „Weiterschauen".
+    var restzeit = false
     /// Gesetzt heißt: Tippen startet sofort, statt auf die Seite zu führen.
     var direkt: ((Item) -> Void)? = nil
     /// Wird nach „gesehen/ungesehen" gerufen, damit die Startseite nachzieht.
     var nachGesehen: (() async -> Void)? = nil
-
-    /// Gesehen-Zustand setzen und die Startseite nachziehen.
-    ///
-    /// **Neu laden, nicht nur die Kachel ändern.** „Weiterschauen" und
-    /// „Als Nächstes" hängen beide am Fortschritt: eine als gesehen markierte
-    /// Folge verschwindet aus der einen Reihe und die nächste erscheint in
-    /// der anderen. Nur die Kachel umzufärben ließe die Reihen falsch stehen.
-    private func gesehenSetzen(_ item: Item, an: Bool) {
-        Task {
-            if let fehler = await model.setzeGesehen(item, an: an) {
-                model.errorMessage = fehler
-                return
-            }
-            await nachGesehen?()
-        }
-    }
 
     /// **Die Hoehe steht fest, sie wird nicht gemessen.**
     ///
@@ -416,46 +476,22 @@ private struct Reihe: View {
                     ForEach(items) { item in
                         if let direkt {
                             Button { direkt(item) } label: {
-                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang)
+                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
                             }
                             .buttonStyle(Stil.Druckknopf())
                             // Zur Serie kommt man weiterhin — nur nicht mehr
                             // im Weg der Wiedergabe.
-                            .contextMenu {
-                                NavigationLink(value: item) {
-                                    Label("Zur Übersicht", systemImage: "info.circle")
-                                }
-                                // **Beide Eintraege immer, nicht der passende.**
-                                //
-                                // Erst stand hier nur der, der gerade zutraf.
-                                // Das ging an einem Fall vorbei: eine Folge,
-                                // durch die man nur durchgesprungen ist, gilt
-                                // als angefangen — „ungesehen" setzt sie
-                                // zurueck und holt sie aus „Weiterschauen".
-                                // Wer das will, findet sonst nichts.
-                                //
-                                // Ein Umschalter mit Haeckchen waere die
-                                // dritte Moeglichkeit und die schlechteste:
-                                // er liest sich wie eine Anzeige, und man
-                                // weiss vor dem Druecken nicht, was passiert.
-                                Button {
-                                    gesehenSetzen(item, an: true)
-                                } label: {
-                                    Label("Als gesehen markieren",
-                                          systemImage: "checkmark.circle")
-                                }
-                                Button {
-                                    gesehenSetzen(item, an: false)
-                                } label: {
-                                    Label("Als ungesehen markieren",
-                                          systemImage: "eye.slash")
-                                }
-                            }
+                            // Zur Serie kommt man weiterhin — nur nicht mehr
+                            // im Weg der Wiedergabe: „Zur Übersicht" steht im
+                            // Kachelmenü, dazu alles, was jede Kachel kann.
+                            .kachelmenue(item, model: model, weiterschauen: true, quer: quer,
+                                         nachher: nachGesehen)
                         } else {
                             NavigationLink(value: item) {
-                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang)
+                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
                             }
                             .buttonStyle(Stil.Druckknopf())
+                            .kachelmenue(item, model: model, quer: quer, nachher: nachGesehen)
                         }
                     }
                 }
@@ -476,6 +512,7 @@ private struct Kachel: View {
     let item: Item
     var quer = false
     var neuzugang = false
+    var restzeit = false
 
     /// Waagerecht 16:9, so breit wie zwei Poster nebeneinander — sonst wirkt
     /// die Reihe leer.
@@ -502,7 +539,7 @@ private struct Kachel: View {
                     // und genau so wurde sie gemeldet. Ein Zeichen sagt: hier
                     // gehoert ein Bild hin, der Server hat keins.
                     Stil.flaeche.overlay {
-                        Image(systemName: item.seriesId != nil ? "tv" : "film")
+                        Image(systemName: item.kachelzeichen)
                             .font(.system(size: 22))
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
@@ -526,10 +563,12 @@ private struct Kachel: View {
                     .font(Stil.kachel)
                     .foregroundStyle(Stil.schrift)
                     .lineLimit(1)
-                if let kuerzel = neuzugang ? item.neuzugangszeile : item.folgenkuerzel {
+                if let kuerzel = unterzeile {
                     Text(kuerzel)
                         .font(Stil.klein)
+                        .monospacedDigit()
                         .foregroundStyle(Stil.schriftLeise)
+                        .lineLimit(1)
                 }
             }
             .frame(width: breite, alignment: .leading)
@@ -539,18 +578,26 @@ private struct Kachel: View {
         // VoiceOver bisher ganz heraus; der tvOS-Chat hat es dort gefunden
         // und uns geprüft. Erst ab einem Prozent: „null Prozent gesehen" ist
         // keine Auskunft.
+        //
+        // Die Ansage kommt aus `Item.kachelansage` (Titel, Jahr bzw. Staffel
+        // und Folge), der Zustand aus `kachelzustand` — gleich auf allen
+        // Apple-Plattformen.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(item.trefferauskunft.isEmpty
-                                 ? item.name
-                                 : "\(item.seriesName ?? item.name), \(item.trefferauskunft)"))
-        .accessibilityValue(fortschritt.map {
-            Text("\(Int($0 * 100)) Prozent gesehen")
-        } ?? Text(""))
+        .accessibilityLabel(Text(verbatim: item.kachelansage))
+        .accessibilityValue(Text(verbatim: item.kachelzustand))
     }
 
     private var fortschritt: Double? {
         guard let prozent = item.userData?.playedPercentage, prozent > 0 else { return nil }
         return prozent / 100
+    }
+
+    /// Die leise Zeile unter dem Namen. Bei „Weiterschauen" mit der Restzeit
+    /// — „S2 · F5 · noch 12 Min." (Entwurf D): das Bild bleibt frei, die
+    /// Angabe steht, wo das Kürzel ohnehin stand.
+    private var unterzeile: String? {
+        if restzeit, let zeile = item.weiterschauenzeile { return zeile }
+        return neuzugang ? item.neuzugangszeile : item.folgenkuerzel
     }
 }
 

@@ -24,7 +24,8 @@ katalog = json.loads((wurzel / "Sources/Shared/Localizable.xcstrings").read_text
 # Auskunftskarten im Player.
 muster = re.compile(r'(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
                     r'String\(localized:\s*|navigationTitle\(|\.help\(|'
-                    r'confirmationDialog\(|'
+                    r'confirmationDialog\(|accessibilityLabel\(|accessibilityValue\(|'
+                    r'accessibilityHint\(|'
                     r'titel:\s*|unter:\s*|beschriftung:\s*|platzhalter:\s*|'
                     r'kopfzeile:\s*|hinweis:\s*|text:\s*|wort:\s*|ansage:\s*)"([^"\\]{3,})"')
 
@@ -40,6 +41,7 @@ muster = re.compile(r'(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
 # **SF-Symbolnamen** zurueckgibt. Die gehoeren nicht uebersetzt, und ohne die
 # Eingrenzung stuenden sie ab sofort alle in dieser Liste.
 block = re.compile(r':\s*LocalizedStringKey\s*\{(.*?)\n(\s*)\}', re.S)
+zweig = re.compile(r'(?:Text|Button|Label)\(\s*[^"()\n]*\?\s*"([^"\\]{3,})"\s*:\s*"([^"\\]{3,})"')
 fall = re.compile(r'case\s+\.[A-Za-z][A-Za-zÄÖÜäöü]*:\s*"([^"\\]{3,})"')
 
 fehlt, roh = set(), set()
@@ -66,6 +68,12 @@ for weg in dateien:
     treffer_liste = muster.findall(quelle)
     for rumpf, _ in block.findall(quelle):
         treffer_liste += fall.findall(rumpf)
+    # **Beide Zweige einer Auswahl im Aufruf.** `Text(leer ? "A" : "B")`
+    # wird uebersetzt wie `Text("A")`, aber vor dem Anfuehrungszeichen steht
+    # `?` bzw. `:` und kein Schluesselwort. So fehlten am 25.09.2026 fuenf
+    # Beschriftungen im Katalog, darunter zwei auf der Darstellungsseite.
+    for ja, nein in zweig.findall(quelle):
+        treffer_liste += [ja, nein]
     for treffer in treffer_liste:
         if not re.search(r"[a-zäöüßA-ZÄÖÜ]", treffer):
             continue

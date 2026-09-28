@@ -348,6 +348,26 @@ struct ServeradresseTests {
     /// und `localhost`, aber **nicht** CGNAT, und seine blosse Anwesenheit
     /// schaltete `NSAllowsArbitraryLoads` ab. Der Test haelt die Halbe fest,
     /// die hier pruefbar ist; die andere steht im Info.plist.
+    @Test("IPv6-Adressen gelten als Heimnetz und bekommen Klammern")
+    func ipv6() throws {
+        #expect(AppModelURLNormalizer.istImHeimnetz("[fd00::5]:8096"))
+        #expect(AppModelURLNormalizer.istImHeimnetz("fd00::5"))
+        #expect(AppModelURLNormalizer.istImHeimnetz("fe80::1%en0"))
+        #expect(!AppModelURLNormalizer.istImHeimnetz("jellyfin.example.com:8096"))
+        let nackt = try #require(AppModelURLNormalizer.normalize("fd00::5"))
+        #expect(nackt.scheme == "http")
+        let mitPort = try #require(AppModelURLNormalizer.normalize("[fd00::5]:8096"))
+        #expect(mitPort.scheme == "http")
+        #expect(mitPort.port == 8096)
+    }
+
+    @Test("Ein Anfuehrungszeichen im Geraetenamen bricht den Kopf nicht auf")
+    func kopfwertMaskiert() {
+        #expect(JellyfinClient.kopfwert(#"Pauls "Kiste""#) == "Pauls 'Kiste'")
+        #expect(JellyfinClient.kopfwert("Zeile\nzwei") == "Zeilezwei")
+        #expect(JellyfinClient.kopfwert("Wohnzimmer-TV") == "Wohnzimmer-TV")
+    }
+
     @Test func tailscaleAdresseGehtUeberHTTP() throws {
         #expect(AppModelURLNormalizer.istImHeimnetz("100.110.192.87"))
         let url = try #require(AppModelURLNormalizer.normalize("100.110.192.87:8096"))

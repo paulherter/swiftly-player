@@ -1,0 +1,116 @@
+From bdb2d9443cc55f641f54e2ddf0da0bca1ef6e3dd Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Mon, 28 Sep 2026 19:03:26 +0200
+Subject: [PATCH] avsamplebuffer: start when the first sample is due, not one
+ block early
+
+The start deadline was the date of the last received block minus the
+samples already enqueued. Once every received block is enqueued, that
+includes the last block itself, so the output started one block early
+(about 32 ms for 5.1 E-AC-3). The first timing report then moved the whole
+clock by that amount and a video picture came late right after starting.
+
+Compute the date of the first sample the way coreaudio_common.c does: the
+date of each block minus the samples received before it. Log every timing
+report and the actual start offset at debug level.
+---
+ modules/audio_output/apple/avsamplebuffer.m | 33 +++++++++++++++++----
+ 1 file changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
+index 335e006b71..e1b4059f68 100644
+--- a/modules/audio_output/apple/avsamplebuffer.m
++++ b/modules/audio_output/apple/avsamplebuffer.m
+@@ -82,6 +82,12 @@ @interface VLCAVSample : NSObject
+     /* Bumped on every stop/flush, so that a queued timing report from a
+      * previous timeline is dropped. */
+     uint64_t _timelineGeneration;
++    /* Samples received from the core since the last flush, and the date at
++     * which the first of them is due. Every block carries the date of its
++     * own first sample, so the first sample is due at that date minus what
++     * came before it -- the same formula as coreaudio_common.c. */
++    int64_t _receivedSamples;
++    vlc_tick_t _firstDate;
+ }
+ @end
+ 
+@@ -271,8 +277,10 @@ - (void)reportTimingForGeneration:(uint64_t)generation
+     const vlc_tick_t system_now = vlc_tick_now();
+     if (!CMTIME_IS_NUMERIC(time))
+         return;
+-    aout_TimingReport(_aout, system_now,
+-                      [VLCAVSample CMTimeTotick:time] + firstPts);
++    const vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + firstPts;
++    msg_Dbg(_aout, "timing report (immediate): system %" PRId64 " pts %" PRId64
++            " position %" PRId64 " us", system_now, pos_ticks, pos_ticks - firstPts);
++    aout_TimingReport(_aout, system_now, pos_ticks);
+ }
+ 
+ - (void)pause:(BOOL)pause date:(vlc_tick_t)date
+@@ -308,6 +316,8 @@ - (void)whenTimeObserved:(CMTime) time
+     vlc_tick_t system_now = vlc_tick_now();
+     vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + firstPts;
+ 
++    msg_Dbg(_aout, "timing report (periodic): system %" PRId64 " pts %" PRId64
++            " position %" PRId64 " us", system_now, pos_ticks, pos_ticks - firstPts);
+     aout_TimingReport(_aout, system_now, pos_ticks);
+ }
+ 
+@@ -316,6 +326,9 @@ - (void)startNow:(vlc_tick_t)delta
+     assert(!_dateReached);
+ 
+     _dateReached = YES;
++    msg_Dbg(_aout, "sample renderer started %" PRId64 " us after the first "
++            "sample was due%s", vlc_tick_now() - _firstDate,
++            _paused ? " (paused)" : "");
+     CMTime time = CMTimeMake(0, _sampleRate);
+     /* A pause that arrived before the start date is honoured: start the
+      * timeline at rate 0, the resume sets 1.0. */
+@@ -343,10 +356,14 @@ - (void)whenDataReady
+         {
+             /* Start playback at the requested date */
+ 
+-            CMTime writtenTime = CMTimeMake(_ptsSamples, _sampleRate);
+-            vlc_tick_t writtenTicks = [VLCAVSample CMTimeTotick:writtenTime];
++            /* Start when the first sample is due. This used to be
++             * _lastDate minus the samples already enqueued, which includes
++             * the last block itself: the output started one block (about
++             * 32 ms) early, and the first timing report then moved the whole
++             * clock by that much -- a video picture came late right after
++             * the start. */
+             vlc_tick_t now = vlc_tick_now();
+-            vlc_tick_t deadline = _lastDate - writtenTicks;
++            vlc_tick_t deadline = _firstDate;
+             vlc_tick_t delta = deadline - now;
+ 
+             if (delta <= 0)
+@@ -364,7 +381,7 @@ - (void)whenDataReady
+                 {
+                     timeout = vlc_cond_timedwait(&_bufferWait, &_bufferLock,
+                                                  deadline);
+-                    deadline = _lastDate - writtenTicks;
++                    deadline = _firstDate;
+                 }
+ 
+                 if (timeout != 0 && !_stopped)
+@@ -415,6 +432,7 @@ - (void)play:(block_t *)block date:(vlc_tick_t)date
+         _stopped = NO;
+         _firstPts = block->i_pts;
+         _ptsSamples = 0;
++        _receivedSamples = 0;
+ 
+         __weak typeof(self) weakSelf = self;
+         [_renderer requestMediaDataWhenReadyOnQueue:_dataQueue usingBlock:^{
+@@ -422,6 +440,9 @@ - (void)play:(block_t *)block date:(vlc_tick_t)date
+         }];
+     }
+     _lastDate = date;
++    _firstDate = date - [VLCAVSample CMTimeTotick:
++                            CMTimeMake(_receivedSamples, _sampleRate)];
++    _receivedSamples += block->i_nb_samples;
+ 
+     block_ChainLastAppend(&_outChainLast, block);
+ 
+-- 
+2.50.1 (Apple Git-155)
+

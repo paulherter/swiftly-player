@@ -31,6 +31,9 @@ final class Abspieler: @unchecked Sendable {
     /// Nur zum Messen: ohne diese Zahl laesst sich „das Bild bleibt schwarz"
     /// nicht von „das Bild kommt, wird aber nicht gezeichnet" unterscheiden.
     private(set) var geholteBilder = 0
+    /// GTK ist auf `GskCairoRenderer` zurueckgefallen — siehe
+    /// ``rendererMelden()``.
+    private(set) var zeichnetOhneGPU = false
 
     /// **Wie oft GTKs Taktgeber den Abspieler ueberhaupt gefragt hat.**
     /// Steht diese Zahl still, liegt es nicht an VLC, sondern daran, dass
@@ -59,6 +62,16 @@ final class Abspieler: @unchecked Sendable {
     /// `VLCPlayerView.laeuftGemeldet` auf Apple: gemeldet wird, was VLC tut,
     /// nicht was ein Knopf erwartet (Audit 16.09., T2-N1).
     var laufzustand: ((Bool) -> Void)?
+    /// Stopp, Ende oder Fehler **des laufenden Mediums** — nicht eines, das
+    /// ``beenden(nurMedium:)`` absichtlich angehalten hat (dessen Ereignis
+    /// kommt spaeter an und traegt einen anderen Spieler). Wahr heisst: VLC
+    /// meldete einen Fehler. Auf dem Hauptfaden.
+    var abgerissen: ((Bool) -> Void)?
+
+    /// Ist `quelle` der Spieler, der gerade laeuft?
+    fileprivate func istLaufend(_ quelle: UInt) -> Bool {
+        UInt(bitPattern: spieler.map { UnsafeMutableRawPointer($0) }) == quelle
+    }
 
     init() {
         // Keine Benutzeroberfläche von VLC, keine eigenen Fenster: wir stellen
@@ -80,6 +93,23 @@ final class Abspieler: @unchecked Sendable {
             woerter = ["--no-video-title-show", "--verbose=1"]
         }
         #endif
+        // **Keine Bilder vorab wegwerfen** (Apple `d7e4a6f`, `VLCPlayer.bibliothek`).
+        // Alte DVD-Rips ruckelten: der vout wirft ein Bild weg, sobald es nach
+        // einer Schaetzung aus dem Hoechstwert von Filter- und Renderdauer zu
+        // spaet kaeme, und eine einzige Zeitspitze kostet so ganze Bilder.
+        // Gemessen wurde auf Apple; hier laeuft jedes Bild ebenfalls ueber
+        // die CPU zu uns. **An der Bibliothek, nicht am Medium** — am Medium
+        // wirkt die Option dort nachweislich nicht. In libVLC 3.0.23 auf
+        // cachy vorhanden (`vlc -H --advanced`).
+        woerter.append("--no-drop-late-frames")
+        // **Entflechten mit `bob`, ebenfalls an der Bibliothek** (Apple
+        // `VLCPlayerView.bibliothek`). Stand am Medium und griff dort nie:
+        // libVLC 3.0.23 meldete bei 1080i50 trotzdem „using x deinterlace
+        // method", mit `--deinterlace-mode=bob` hier „using bob" (gemessen
+        // 25.09.2026). Greift nur, wo VLC Halbbilder erkennt.
+        woerter.append("--deinterlace-mode=bob")
+        woerter += Untertitelstil.vlcOptionen()
+
         #if os(Linux)
         // Sagt VLC, dass es Xlib nicht anfassen soll — wir zeichnen selbst.
         // Unter Windows kennt VLC die Angabe nicht und beschwert sich.
@@ -134,8 +164,18 @@ final class Abspieler: @unchecked Sendable {
             let adresse = UInt(bitPattern: fertig.map { UnsafeMutableRawPointer($0) })
             aufHauptfaden {
                 self.kern = adresse == 0 ? nil : OpaquePointer(UnsafeMutableRawPointer(bitPattern: adresse)!)
-                self.vlcMeldungenAnschliessen()
-                Protokoll.schreib("[Player] VLC bereit")
+                if self.kern == nil {
+                    // **Ohne Kern wartete ein Titel fuer immer.** `oeffnen`
+                    // legte ihn als wartenden Auftrag ab, der Auftrag rief
+                    // `oeffnen`, und das legte ihn wieder ab — der Nutzer sah
+                    // den Ladeschleier, im Protokoll stand nichts.
+                    self.kaputt = true
+                    Protokoll.schreib("[Player] FEHLER: libVLC liess sich nicht starten"
+                        + " (VLC_PLUGIN_PATH, fehlende Module?)")
+                } else {
+                    self.vlcMeldungenAnschliessen()
+                    Protokoll.schreib("[Player] VLC bereit")
+                }
                 let wartet = self.wartenderAuftrag
                 self.wartenderAuftrag = nil
                 wartet?()
@@ -179,17 +219,30 @@ final class Abspieler: @unchecked Sendable {
     /// Was laufen soll, sobald ``kern`` steht — hoechstens eines, das
     /// juengste gewinnt. Wer zweimal tippt, will den zweiten Titel.
     private var wartenderAuftrag: (() -> Void)?
+    /// `libvlc_new` hat nichts geliefert. Siehe ``init()``.
+    private var kaputt = false
     private var wartetSeit: Date?
 
     /// Steht der Kern? Der Ladeschirm sagt es dem Zuschauer, statt ihn vor
     /// eine schwarze Fläche zu setzen.
     var bereit: Bool { kern != nil }
 
-    func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe) {
+    /// - Parameter softwareDekoder: gleich ohne Hardware dekodieren —
+    ///   ``PlaybackPlan/softwareDekoder`` (MPEG-4 Part 2, XviD/DivX).
+    func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe, pausiert: Bool = false,
+                 softwareDekoder: Bool = false) {
+        if kern == nil, kaputt {
+            Protokoll.schreib("[Player] kein VLC, Titel kann nicht spielen")
+            aufHauptfaden { [weak self] in self?.abgerissen?(true) }
+            return
+        }
+        pausiertSeit = nil
         guard kern != nil else {
             Protokoll.schreib("[Player] VLC noch nicht bereit, Titel wartet")
             if wartetSeit == nil { wartetSeit = Date() }
-            wartenderAuftrag = { [self] in oeffnen(url, ab: ab, puffer: puffer) }
+            wartenderAuftrag = { [self] in
+                oeffnen(url, ab: ab, puffer: puffer, pausiert: pausiert, softwareDekoder: softwareDekoder)
+            }
             return
         }
         // **Wie lange der erste Titel auf VLC gewartet hat.** Beim ersten Mal
@@ -218,6 +271,19 @@ final class Abspieler: @unchecked Sendable {
         // so macht es die iOS-Fassung (`:start-time`), und der Grund steht
         // dort: ein Sprung nach dem Start baut den Strom ein zweites Mal auf.
         if ab > 1 { libvlc_media_add_option(medium, ":start-time=\(Int(ab))") }
+        // Entflechten: `--deinterlace-mode=bob` steht an der Bibliothek (oben,
+        // `woerter`) — als Medienoption griff es nicht.
+
+        // Nach dem Aufwachen an der Stelle neu aufbauen, **ohne** loszuspielen,
+        // wenn vorher angehalten war.
+        if pausiert { libvlc_media_add_option(medium, ":start-paused") }
+
+        // **XviD/DivX ohne Hardware** (``Erstbild/softwareOptionenDesktop``):
+        // Hardware-Dekoder nehmen MPEG-4 Part 2 an und scheitern an
+        // Advanced-Simple-Profile-Material — auf Apple blieb das Bild stehen.
+        if softwareDekoder {
+            for option in Erstbild.softwareOptionenDesktop { libvlc_media_add_option(medium, option) }
+        }
 
         // **Zwei Optionen vom Netzweg, wortgleich von der Apple-Fassung.**
         //
@@ -272,7 +338,8 @@ final class Abspieler: @unchecked Sendable {
         }
         Protokoll.schreib("[Player] oeffne \(url.isFileURL ? "Datei" : "Netz")"
             + " \(url.pathExtension.isEmpty ? "ohne Endung" : url.pathExtension)"
-            + ", ab \(Int(ab)) s, Puffer \(puffer)")
+            + ", ab \(Int(ab)) s, Puffer \(puffer)"
+            + (softwareDekoder ? ", Dekoder Software" : ""))
         libvlc_media_player_play(spieler)
         bildTaktStarten()
         rendererMelden()
@@ -294,7 +361,20 @@ final class Abspieler: @unchecked Sendable {
               let zeichner = gtk_native_get_renderer(fenster) else { return }
         let name = g_type_name_from_instance(
             unsafeBitCast(zeichner, to: UnsafeMutablePointer<GTypeInstance>.self))
-        Protokoll.schreib("[Player] Zeichenwerk \(name.map { String(cString: $0) } ?? "unbekannt")")
+        let klar = name.map { String(cString: $0) } ?? "unbekannt"
+        Protokoll.schreib("[Player] Zeichenwerk \(klar)")
+        // **Der Rueckfall auf Cairo wird genannt, nicht nur verzeichnet.**
+        // Ist der GL-/EGL-Kontext ungueltig (alter Treiber, VM, Fernsitzung),
+        // zeichnet GTK mit der CPU: jedes Videobild geht dann durch Cairo,
+        // das Fenster stockt, und bei einem Tester blieb so der Ladeschleier
+        // liegen. Im Protokoll stand das bisher als eine Zeile unter vielen.
+        // Jetzt als Warnung mit dem Weg, den man selbst probieren kann, und
+        // im Technikschild (``Technikschild``) sichtbar.
+        zeichnetOhneGPU = klar.contains("Cairo")
+        if zeichnetOhneGPU {
+            Protokoll.schreib("[Player] WARNUNG: GTK zeichnet ohne Grafikbeschleunigung (Cairo)."
+                + " GL/EGL nicht verfuegbar; Probe: GSK_RENDERER=ngl oder =gl setzen")
+        }
     }
 
     /// **Was VLC selbst zu melden hat, in unser Protokoll.**
@@ -312,9 +392,41 @@ final class Abspieler: @unchecked Sendable {
         Protokoll.schreib("[Player] VLC-Meldungen an")
     }
 
+    /// Schaltet den Ton um. Wahr heisst: jetzt stumm; `nil`, wenn nichts
+    /// laeuft. **Gelesen, dann gesetzt** statt `toggle`: ohne Tonausgabe
+    /// (Geraet gerade gewechselt) meldet VLC -1, und `toggle` taete dann
+    /// nichts, waehrend der Hinweis „Ton aus" sagte.
+    func stummUmschalten() -> Bool? {
+        guard let spieler else { return nil }
+        let neu = libvlc_audio_get_mute(spieler) != 1
+        libvlc_audio_set_mute(spieler, neu ? 1 : 0)
+        return neu
+    }
+
     func abspielen() { spieler.map { libvlc_media_player_set_pause($0, 0) } }
-    func anhalten() { spieler.map { libvlc_media_player_set_pause($0, 1) } }
+    func anhalten() {
+        if pausiertSeit == nil { pausiertSeit = Date() }
+        spieler.map { libvlc_media_player_set_pause($0, 1) }
+    }
     func umschalten() { laeuft ? anhalten() : abspielen() }
+
+    /// **Seit wann angehalten ist** — für ``Pausenruecksprung`` (iOS
+    /// `VLCPlayerView.pausiertSeit`). Gesetzt beim Anhalten, auch wenn VLC
+    /// von selbst anhält; gelöscht, sobald es wieder läuft, und mit jedem
+    /// neuen Medium.
+    private(set) var pausiertSeit: Date?
+
+    #if DEBUG
+    /// Für das ``Fernsteuerpult``: so tun, als stünde es seit `sekunden`.
+    func pausiertSeitVorstellen(_ sekunden: Double) {
+        pausiertSeit = Date().addingTimeInterval(-sekunden)
+    }
+    #endif
+
+    /// Vom Laufzustand nachgeführt (``laufzustandRuf``).
+    fileprivate func laufzustandVermerken(_ laeuft: Bool) {
+        if laeuft { pausiertSeit = nil } else if pausiertSeit == nil { pausiertSeit = Date() }
+    }
 
     var laeuft: Bool {
         guard let spieler else { return false }
@@ -462,6 +574,52 @@ final class Abspieler: @unchecked Sendable {
         set { spieler.map { libvlc_media_player_set_rate($0, newValue) } }
     }
 
+    // MARK: Verzoegerung
+
+    /// Untertitel und Ton gegen das Bild verschoben — nur lokal, SyncPlay
+    /// sieht davon nichts (Vorlage: `VLCPlayerView`, Abschnitt Verzoegerung).
+    /// Der Abspieler lebt so lange wie die App; ``App/spielerOeffnen`` setzt
+    /// die Werte je Titel ueber ``verzoegerungFuerNeuenTitel``.
+    var untertitelVerzoegerung = Verzoegerung.null {
+        didSet { if untertitelVerzoegerung != oldValue { verzoegerungNachziehen() } }
+    }
+    var tonVerzoegerung = Verzoegerung.null {
+        didSet { if tonVerzoegerung != oldValue { verzoegerungNachziehen() } }
+    }
+
+    /// Vor jedem Oeffnen eines anderen Titels: dieselbe Serie behaelt den
+    /// Wert, alles andere beginnt bei null (`Verzoegerung.fuerNeuenTitel`).
+    func verzoegerungFuerNeuenTitel(alterTitel: String, alteSerie: String?,
+                                    neuerTitel: String, neueSerie: String?) {
+        untertitelVerzoegerung = .fuerNeuenTitel(untertitelVerzoegerung, alterTitel: alterTitel,
+                                                 alteSerie: alteSerie, neuerTitel: neuerTitel,
+                                                 neueSerie: neueSerie)
+        tonVerzoegerung = .fuerNeuenTitel(tonVerzoegerung, alterTitel: alterTitel,
+                                          alteSerie: alteSerie, neuerTitel: neuerTitel,
+                                          neueSerie: neueSerie)
+    }
+
+    /// **Nachsetzen, nicht einmal setzen.** Linux legt je Medium einen neuen
+    /// libVLC-Spieler an, der bei 0 beginnt; und wie VLC 4 auf Apple nimmt
+    /// er den Wert vor dem Abspielen womoeglich nicht an. Deshalb beim
+    /// Aendern, bei „spielt" und im Sekundentakt des Spielers — immer dann,
+    /// wenn libVLC etwas anderes liest als gewollt.
+    func verzoegerungNachziehen() {
+        guard let spieler else { return }
+        let text = Int(libvlc_video_get_spu_delay(spieler))
+        let ton = Int(libvlc_audio_get_delay(spieler))
+        if untertitelVerzoegerung.weichtAb(vonMikrosekunden: text) {
+            libvlc_video_set_spu_delay(spieler, Int64(untertitelVerzoegerung.mikrosekunden))
+            Protokoll.schreib("[Verzögerung] Untertitel \(untertitelVerzoegerung.millisekunden) ms"
+                + " gesetzt, VLC liest \(libvlc_video_get_spu_delay(spieler)) µs")
+        }
+        if tonVerzoegerung.weichtAb(vonMikrosekunden: ton) {
+            libvlc_audio_set_delay(spieler, Int64(tonVerzoegerung.mikrosekunden))
+            Protokoll.schreib("[Verzögerung] Ton \(tonVerzoegerung.millisekunden) ms"
+                + " gesetzt, VLC liest \(libvlc_audio_get_delay(spieler)) µs")
+        }
+    }
+
     // MARK: Zaehlwerk
 
     /// **VLCs Zaehler, roh — gerechnet wird im Paket.**
@@ -607,7 +765,10 @@ nonisolated(unsafe) private let laufzustandRuf: @convention(c) (
     let adresse = UInt(bitPattern: daten)
     aufHauptfaden {
         guard let zeiger = UnsafeMutableRawPointer(bitPattern: adresse) else { return }
-        Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue().laufzustand?(laeuft)
+        let abspieler = Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue()
+        if laeuft { abspieler.verzoegerungNachziehen() }
+        abspieler.laufzustandVermerken(laeuft)
+        abspieler.laufzustand?(laeuft)
     }
 }
 
@@ -615,7 +776,7 @@ nonisolated(unsafe) private let laufzustandRuf: @convention(c) (
 /// hier nichts von libVLC rufen, nur die Nummer weitertragen.
 nonisolated(unsafe) private let zustandRuf: @convention(c) (
     UnsafePointer<libvlc_event_t>?, UnsafeMutableRawPointer?
-) -> Void = { ereignis, _ in
+) -> Void = { ereignis, daten in
     guard let ereignis else { return }
     func ist(_ art: libvlc_event_e) -> Bool {
         ereignis.pointee.type == libvlc_event_type_t(art.rawValue)
@@ -637,9 +798,16 @@ nonisolated(unsafe) private let zustandRuf: @convention(c) (
     }
     let ende = ist(libvlc_MediaPlayerStopped) || ist(libvlc_MediaPlayerEndReached)
         || ist(libvlc_MediaPlayerEncounteredError)
+    let fehler = ist(libvlc_MediaPlayerEncounteredError)
+    let quelle = UInt(bitPattern: ereignis.pointee.p_obj)
+    let adresse = UInt(bitPattern: daten)
     aufHauptfaden {
         Protokoll.schreib("[Player] \(name)")
-        if ende { Wachhalter.freigeben() }
+        guard ende else { return }
+        Wachhalter.freigeben()
+        guard let zeiger = UnsafeMutableRawPointer(bitPattern: adresse) else { return }
+        let abspieler = Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue()
+        if abspieler.istLaufend(quelle) { abspieler.abgerissen?(fehler) }
     }
 }
 
@@ -674,4 +842,71 @@ nonisolated(unsafe) private let bildTakt: @convention(c) (
     guard let daten else { return 0 }
     Unmanaged<Abspieler>.fromOpaque(daten).takeUnretainedValue().bildHolen()
     return 1   // G_SOURCE_CONTINUE
+}
+
+/// **Wie Textuntertitel aussehen** — dieselben Werte wie auf Apple
+/// (`Untertitelstil` in `Sources/Shared/VLCPlayer.swift`, dort die
+/// Begruendung): Inter SemiBold, weiss, feine Kontur, leichter Schatten,
+/// 78 % von VLCs Vorgabegroesse. Hier laeuft libVLC 3; `sub-margin` bleibt
+/// weg, weil VLC 3 den Text ohnehin hoeher setzt als VLC 4.
+///
+/// **Die Schrift muss VLC selbst finden.** libVLC 3 fragt fontconfig mit
+/// einer eigenen Konfiguration (`FcInitLoadConfigAndFonts`), die
+/// `schriften_laden` aus `Stil.swift` nicht sieht — mitgebrachte Schriften
+/// gibt es fuer VLC also nicht. Deshalb eine kleine Konfiguration, die die
+/// des Systems einbindet und unseren Ordner dazulegt, per
+/// `FONTCONFIG_FILE`. Wer die Variable selbst gesetzt hat, behaelt sie.
+///
+/// **Unter Windows** sucht VLC Schriften ueber GDI und die Registry, nicht
+/// ueber fontconfig; eine mitgelieferte Datei ist dort unerreichbar. Segoe UI
+/// Semibold liegt jedem Windows bei und ist der naechste Verwandte.
+enum Untertitelstil {
+    static func vlcOptionen() -> [String] {
+        #if os(Windows)
+        let schrift = "Segoe UI Semibold"
+        #else
+        let schrift = schriftFuerVLC() ? "Inter 18pt SemiBold" : "Sans"
+        #endif
+        return [
+            "--freetype-font=\(schrift)",
+            "--freetype-color=16777215",
+            "--freetype-outline-thickness=3",
+            "--freetype-outline-opacity=230",
+            "--freetype-shadow-opacity=120",
+            "--freetype-shadow-distance=0.04",
+            "--freetype-shadow-angle=-70",
+            "--sub-text-scale=78",
+        ]
+    }
+
+    #if !os(Windows)
+    private static func schriftFuerVLC() -> Bool {
+        let dm = FileManager.default
+        guard let ordner = Plattform.mitgeliefert("Schriften"),
+              dm.fileExists(atPath: ordner + "/Inter-SemiBold.ttf") else { return false }
+        if ProcessInfo.processInfo.environment["FONTCONFIG_FILE"] != nil { return false }
+        let system = "/etc/fonts/fonts.conf"
+        guard dm.fileExists(atPath: system) else { return false }
+        let zwischen = URL(fileURLWithPath: String(cString: g_get_user_cache_dir()))
+            .appendingPathComponent("swiftly")
+        let datei = zwischen.appendingPathComponent("untertitel-fonts.conf")
+        let inhalt = """
+            <?xml version="1.0"?>
+            <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+            <fontconfig>
+              <include ignore_missing="yes">\(system)</include>
+              <dir>\(ordner)</dir>
+            </fontconfig>
+            """
+        do {
+            try dm.createDirectory(at: zwischen, withIntermediateDirectories: true)
+            try inhalt.write(to: datei, atomically: true, encoding: .utf8)
+        } catch {
+            Protokoll.schreib("[Untertitel] fontconfig-Datei nicht geschrieben: \(error)")
+            return false
+        }
+        datei.path.withCString { _ = g_setenv("FONTCONFIG_FILE", $0, 1) }
+        return true
+    }
+    #endif
 }

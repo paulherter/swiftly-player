@@ -142,9 +142,10 @@ struct SucheView: View {
                                              staffeln: eintrag.childCount,
                                              gesehen: eintrag.userData?.played,
                                              offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                             zeichen: eintrag.type == "Series" ? "tv" : "film")
+                                             zeichen: eintrag.kachelzeichen)
                             }
                             .buttonStyle(Stil.Druckknopf())
+                            .kachelmenue(eintrag, model: model)
                         }
                     }
                     .padding(.top, 24)

@@ -99,6 +99,9 @@ private struct Zeilenrumpf<Rechts: View>: View {
                 .font(Stil.koerper)
                 .foregroundStyle(akzent ? Stil.akzent : Stil.schriftLeise)
                 .frame(width: 20)
+                // Nur Bild neben dem Titel; VoiceOver liest sonst den
+                // Symbolnamen vor jeder Zeile vor.
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 titel
@@ -232,6 +235,8 @@ struct Wertezeile: View {
         }
         .onHover { schwebt = $0 && (schwebbar ?? hatKnopf) }
         .animation(Stil.zeitSchweben, value: schwebt)
+        // Der Haken ist verborgen; „gewählt" trägt das Merkmal der Zeile.
+        .accessibilityAddTraits(haken ? .isSelected : [])
     }
 
     private var rumpf: some View {
@@ -250,6 +255,9 @@ struct Wertezeile: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Stil.schriftSehrLeise)
+                            // Zeigt nur „hier geht's weiter"; der Titel der
+                            // Zeile sagt bereits, wohin.
+                            .accessibilityHidden(true)
                     }
                     // Der Haken steht fuer eine Mehrfachwahl — dort ist das
                     // Angekreuztsein der Zustand der Sache selbst und traegt
@@ -258,6 +266,7 @@ struct Wertezeile: View {
                         Image(systemName: "checkmark")
                             .font(Stil.listentitel)
                             .foregroundStyle(Stil.akzent)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -319,6 +328,7 @@ private struct Wertwahlzeile: View {
         }
         .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
         // Welcher Wert gilt, hing an Ton und Haken — beides sieht VoiceOver
         // nicht. Dasselbe Merkmal setzen die Bausteine nebenan schon.
         .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)

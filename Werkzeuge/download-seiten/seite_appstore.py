@@ -6,7 +6,7 @@ from teile import *
 S1 = skizze(1, "A phone showing the app page in a store, with the Get button marked",
     TELEFON + MARKE +
     '<text class="titel" x="194" y="48">Swiftly</text><text x="194" y="64">Free</text>' +
-    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="182" y="99">Get</text>' +
     zeile(152, 126, 96, ".45") + zeile(152, 142, 74, ".35") + zeile(152, 158, 88, ".3") +
     tipp(238, 95))
@@ -18,7 +18,7 @@ S2 = skizze(2, "The app asking for a server address, with the Connect button mar
     '<text x="160" y="75">jelly.home</text>' +
     '<rect x="152" y="92" width="96" height="26" rx="8" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     zeile(160, 101, 52, ".5") +
-    '<rect x="152" y="128" width="96" height="30" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="128" width="96" height="30" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="174" y="147">Connect</text>' +
     tipp(238, 143))
 
@@ -26,7 +26,7 @@ S3 = skizze(3, "The library on the phone, with the play button on a film marked"
     TELEFON +
     '<rect x="152" y="34" width="44" height="60" rx="8" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     '<rect x="204" y="34" width="44" height="60" rx="8" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
-    '<circle cx="174" cy="64" r="15" fill="rgba(92,209,194,.20)" stroke="var(--akzent)"/>' +
+    '<circle cx="174" cy="64" r="15" fill="rgba(80,213,218,.20)" stroke="var(--akzent)"/>' +
     '<path d="M170 57 181 64l-11 7z" fill="var(--schrift)"/>' +
     zeile(152, 104, 96, ".45") + zeile(152, 120, 70, ".35") +
     '<rect x="152" y="140" width="96" height="34" rx="10" fill="var(--erhoeht)" stroke="var(--linie)"/>' +

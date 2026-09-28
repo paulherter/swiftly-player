@@ -60,7 +60,13 @@ public struct Downloadposten: Codable, Sendable, Equatable, Identifiable {
     /// `mediaSourceId` — dieselbe Quelle, die der Player genommen haette.
     public let quelle: String?
     /// Was der Server als Groesse nennt. 0, wenn er keine nennt.
-    public let bytes: Int64
+    ///
+    /// **Bei einer umgewandelten Datei eine Schaetzung** — bis sie fertig
+    /// ist; dann steht hier, was auf der Platte liegt. Deshalb `var`.
+    public var bytes: Int64
+    /// In welcher Qualitaet geladen wird. `nil` heisst Original — so steht
+    /// es in jeder Liste von vor 1.0.5, und so bleibt es lesbar.
+    public let qualitaet: Downloadqualitaet?
 
     /// Wie viel davon schon auf der Platte liegt.
     public var geladen: Int64
@@ -74,29 +80,104 @@ public struct Downloadposten: Codable, Sendable, Equatable, Identifiable {
     /// die Datei bleibt, spielbar, mit einem leisen Hinweis daneben.
     public var nochAufDemServer: Bool
 
+    // MARK: Offline (1.0.5)
+    //
+    // Alle drei optional und am Ende: eine Liste von vor 1.0.5 liest sich
+    // weiter, und was fehlt, holt ``Downloadregeln`` beim naechsten Kontakt
+    // mit dem Server nach.
+
+    /// Vorspann, Rueckblick, Abspann — beim Laden mitgenommen, damit
+    /// „Intro ueberspringen" und die Karte „Naechste Folge" auch ohne Server
+    /// kommen. `nil`: nie gefragt; leer: der Server kennt keine.
+    public var abschnitte: [Abschnitt]?
+    /// Wo zuletzt aufgehoert wurde, in Ticks. `nil` heisst von vorn.
+    public var stelleTicks: Int64?
+    /// Wann zuletzt gespielt — hier auf dem Geraet oder laut Server.
+    public var zuletzt: Date?
+    /// Codec der Bildspur der geladenen Datei (``MediaSource/bildcodec``).
+    /// Offline gibt es keine Quelle, an der der Player XviD erkennt
+    /// (``Erstbild/softwareVonAnfang(bildcodec:methode:)``). `nil`: vor
+    /// dieser Angabe geladen oder umgewandelt — dann gilt die freie Wahl.
+    public var bildcodec: String?
+
     public init(id: String, konto: String, art: Art, titel: String,
                 serie: String? = nil, serienId: String? = nil,
                 staffel: Int? = nil, folge: Int? = nil,
                 laufzeitTicks: Int64? = nil, container: String? = nil,
                 quelle: String? = nil, bytes: Int64,
+                qualitaet: Downloadqualitaet? = nil,
                 geladen: Int64 = 0, stand: Downloadstand = .wartet,
                 grund: String? = nil, gesehen: Bool = false,
-                angelegt: Date = Date(), nochAufDemServer: Bool = true) {
+                angelegt: Date = Date(), nochAufDemServer: Bool = true,
+                abschnitte: [Abschnitt]? = nil, stelleTicks: Int64? = nil,
+                zuletzt: Date? = nil, bildcodec: String? = nil) {
         self.id = id; self.konto = konto; self.art = art; self.titel = titel
         self.serie = serie; self.serienId = serienId
         self.staffel = staffel; self.folge = folge
         self.laufzeitTicks = laufzeitTicks; self.container = container
         self.quelle = quelle; self.bytes = bytes
+        self.qualitaet = qualitaet == .original ? nil : qualitaet
         self.geladen = geladen; self.stand = stand; self.grund = grund
         self.gesehen = gesehen; self.angelegt = angelegt
         self.nochAufDemServer = nochAufDemServer
+        self.abschnitte = abschnitte; self.stelleTicks = stelleTicks
+        self.zuletzt = zuletzt
+        // Eine umgewandelte Datei hat den Bildcodec des Servers, nicht den des Originals.
+        self.bildcodec = self.qualitaet == nil ? bildcodec : nil
+    }
+
+    /// **Der Sehstand eines Titels, wie der Server ihn kennt** — beim Anlegen
+    /// eines Downloads mitgeben, damit die Liste ihn ohne Netz zeigt.
+    public init(id: String, konto: String, art: Art, titel: String,
+                serie: String? = nil, serienId: String? = nil,
+                staffel: Int? = nil, folge: Int? = nil,
+                laufzeitTicks: Int64? = nil, container: String? = nil,
+                quelle: String? = nil, bytes: Int64,
+                sehstand: UserItemData?, bildcodec: String? = nil) {
+        self.init(id: id, konto: konto, art: art, titel: titel, serie: serie,
+                  serienId: serienId, staffel: staffel, folge: folge,
+                  laufzeitTicks: laufzeitTicks, container: container, quelle: quelle,
+                  bytes: bytes, gesehen: sehstand?.played ?? false,
+                  stelleTicks: sehstand?.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil },
+                  zuletzt: sehstand?.zuletztGespielt, bildcodec: bildcodec)
     }
 
     /// Zwischen 0 und 1. `nil`, wenn der Server keine Groesse genannt hat —
     /// dann gibt es keinen Balken, und der Ring zeigt nur, dass es laeuft.
     public var anteil: Double? {
         guard bytes > 0 else { return nil }
-        return min(1, max(0, Double(geladen) / Double(bytes)))
+        let wert = min(1, max(0, Double(geladen) / Double(bytes)))
+        // **Eine Schaetzung erreicht nie ganz das Ende.** Laeuft die
+        // umgewandelte Datei groesser aus als gerechnet, stuende der Ring
+        // sonst lange voll da, obwohl noch geladen wird.
+        return umgewandelt && stand != .fertig ? min(wert, 0.99) : wert
+    }
+
+    /// Wird die Datei vom Server umgewandelt? Dann ist ``bytes`` bis zum
+    /// Ende geschaetzt.
+    public var umgewandelt: Bool { qualitaet.map { !$0.istOriginal } ?? false }
+
+    /// Die gewaehlte Qualitaet, `nil` gilt als Original.
+    public var guete: Downloadqualitaet { qualitaet ?? .original }
+
+    /// **Derselbe Posten in einer anderen Qualitaet.** Container und Groesse
+    /// aendern sich mit: eine umgewandelte Datei ist Matroska, und ihre
+    /// Groesse ist geschaetzt (``Downloadqualitaet/geschaetzteBytes(original:laufzeitTicks:)``).
+    /// Beim Original bleibt alles, wie es der Server nennt.
+    ///
+    /// Gerufen wird es auf dem Posten, wie ihn der Katalog beschreibt — also
+    /// mit Originalgroesse und -container; die Schaetzung rechnet von dort.
+    public func inQualitaet(_ q: Downloadqualitaet) -> Downloadposten {
+        Downloadposten(
+            id: id, konto: konto, art: art, titel: titel, serie: serie, serienId: serienId,
+            staffel: staffel, folge: folge, laufzeitTicks: laufzeitTicks,
+            container: q.istOriginal ? container : Downloadqualitaet.container,
+            quelle: quelle,
+            bytes: q.geschaetzteBytes(original: bytes, laufzeitTicks: laufzeitTicks),
+            qualitaet: q, geladen: geladen, stand: stand, grund: grund, gesehen: gesehen,
+            angelegt: angelegt, nochAufDemServer: nochAufDemServer,
+            abschnitte: abschnitte, stelleTicks: stelleTicks, zuletzt: zuletzt,
+            bildcodec: bildcodec)
     }
 
     /// Ein `Item` aus dem, was hier steht — **fuer die Wiedergabe ohne Netz.**
@@ -116,13 +197,100 @@ public struct Downloadposten: Codable, Sendable, Equatable, Identifiable {
              parentIndexNumber: staffel, seriesId: serienId)
     }
 
+    /// Ab wo die Downloadliste abspielt: die gemerkte Stelle, sonst von vorn.
+    /// Gesehenes faengt von vorn an — wie „Nochmal ansehen" online.
+    public var fortsetzenAb: Double {
+        guard !gesehen, let t = stelleTicks, t > 0 else { return 0 }
+        return Double(t) / 10_000_000
+    }
+
+    /// **Eine Wiedergabe auf diesem Geraet vermerken** — mit oder ohne Netz.
+    ///
+    /// Dieselben Schwellen wie der Server (`MinResumePct` 5, `MaxResumePct`
+    /// 90, Jellyfins Vorgaben): unter 5 % zaehlt nichts als Stelle, ueber 90 %
+    /// gilt der Titel als gesehen und die Stelle faellt weg. Dazwischen bleibt
+    /// „gesehen", wie es war — auch das haelt der Server so. So zeigt die
+    /// Liste offline, was sie nach dem Wiederverbinden vom Server hoeren wird.
+    public func nachWiedergabe(ticks: Int64, wann: Date) -> Downloadposten {
+        var p = self
+        p.zuletzt = wann
+        guard let laufzeit = laufzeitTicks, laufzeit > 0 else {
+            p.stelleTicks = ticks > 0 ? ticks : nil
+            return p
+        }
+        let anteil = Double(ticks) / Double(laufzeit)
+        if anteil >= Downloadregeln.gesehenAb {
+            p.gesehen = true
+            p.stelleTicks = nil
+        } else if anteil < Downloadregeln.stelleAb {
+            p.stelleTicks = nil
+        } else {
+            p.stelleTicks = ticks
+        }
+        return p
+    }
+
     /// Der Dateiname auf der Platte. Konto und Kennung, damit zwei Konten
     /// sich nicht ins Gehege kommen (H11), und die Endung des Containers,
     /// damit VLC den Demuxer erraet — bei Matroska haengt daran
     /// `:demux=mkv_trusted`, siehe `VLCPlayer.play`.
+    ///
+    /// Alle drei Teile kommen vom Server und gehen durch ``Pfadteil`` —
+    /// ein boeswilliger Server bekommt so keinen Pfad aus dem Ordner heraus.
     public var dateiname: String {
-        let endung = (container?.lowercased()).map { "." + $0 } ?? ""
-        return "\(konto)-\(id)\(endung)"
+        let endung = Pfadteil.endung(container).map { "." + $0 } ?? ""
+        return "\(Pfadteil.sicher(konto))-\(Pfadteil.sicher(id))\(endung)"
+    }
+
+    /// Der Name des Bildes auf der Platte, neben der Datei.
+    public static func bildname(konto: String, kennung: String) -> String {
+        "\(Pfadteil.sicher(konto))-\(Pfadteil.sicher(kennung)).jpg"
+    }
+}
+
+/// **Ein Stueck Dateiname aus Serverdaten** — nie ein Weg aus dem Ordner.
+///
+/// Kennungen (Jellyfin-GUIDs) und Endungen bleiben, wie sie sind; alles
+/// andere wird so entschaerft, dass kein `/`, `\`, `..` oder
+/// Steuerzeichen im Dateinamen landet. Echte Werte aendern sich dadurch
+/// nicht — bestehende Downloads werden weiter gefunden.
+public enum Pfadteil {
+    /// Buchstaben, Ziffern, `-` und `_` bleiben; jedes andere Zeichen wird
+    /// `_`. Leer wird `_`.
+    public static func sicher(_ teil: String) -> String {
+        let erlaubt = teil.unicodeScalars.map { z -> Character in
+            switch z {
+            case "a"..."z", "A"..."Z", "0"..."9", "-", "_": Character(z)
+            default: "_"
+            }
+        }
+        return erlaubt.isEmpty ? "_" : String(erlaubt)
+    }
+
+    /// Sieht das aus wie eine Jellyfin-Kennung (GUID, mit oder ohne
+    /// Bindestriche)? Fuer Kennungen, die von aussen kommen — ein
+    /// `swiftly://titel/<id>`-Link —, bevor sie in eine Serveradresse gehen:
+    /// ein `..%2F..` darin wuerde sonst einen anderen Endpunkt treffen.
+    public static func istKennung(_ text: String) -> Bool {
+        (1...64).contains(text.count)
+            && text.unicodeScalars.allSatisfy {
+                ("a"..."z").contains($0) || ("A"..."Z").contains($0)
+                    || ("0"..."9").contains($0) || $0 == "-"
+            }
+    }
+
+    /// Die Endung aus dem Container des Servers: `[a-z0-9]{1,8}`, sonst
+    /// `nil` (dann ohne Endung, wie bei fehlendem Container). Eine Liste wie
+    /// `mov,mp4,m4a` bleibt erlaubt, solange jedes Glied passt — so heissen
+    /// schon geladene Dateien, und ein Komma fuehrt nirgendwohin.
+    public static func endung(_ container: String?) -> String? {
+        guard let c = container?.lowercased(), !c.isEmpty else { return nil }
+        let glieder = c.split(separator: ",", omittingEmptySubsequences: false)
+        let passt = glieder.allSatisfy { g in
+            (1...8).contains(g.count)
+                && g.unicodeScalars.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) }
+        }
+        return passt ? c : nil
     }
 }
 
@@ -201,6 +369,32 @@ public enum Downloadregeln {
     /// Antwort geben.
     public static func darfLaden(imWLAN: Bool, nurUeberWLAN: Bool) -> Bool {
         imWLAN || !nurUeberWLAN
+    }
+
+    /// Was der Takt mit dem Netz anfaengt.
+    public enum Netzentscheid: Sendable, Equatable {
+        /// Laden darf beginnen oder weiterlaufen.
+        case laden
+        /// Was laeuft, geht zurueck in die Reihe — es wartet auf WLAN.
+        case zurueckstellen
+        /// Noch nichts tun: das Netz ist nicht bekannt.
+        case abwarten
+    }
+
+    /// **Solange das Netz unbekannt ist, faengt nichts an.**
+    ///
+    /// Die erste Meldung des Pfadbeobachters kommt erst nach dem ersten
+    /// Takt. Bis dahin WLAN anzunehmen hiess: beim Start im Mobilnetz lief
+    /// ein wartender Download los und wurde Millisekunden spaeter wieder
+    /// gestoppt — auf Android brach das die App ab (Issue #3). Ohne
+    /// „Nur ueber WLAN" spielt das Netz keine Rolle, dann gilt `laden`.
+    ///
+    /// `zurueckstellen` ist kein Anhalten: der Titel wartet danach, damit
+    /// ihn der naechste Takt im WLAN von selbst wieder aufnimmt.
+    public static func netzentscheid(imWLAN: Bool?, nurUeberWLAN: Bool) -> Netzentscheid {
+        guard nurUeberWLAN else { return .laden }
+        guard let imWLAN else { return .abwarten }
+        return imWLAN ? .laden : .zurueckstellen
     }
 
     // MARK: H3 und H6 — Platz
@@ -361,6 +555,82 @@ public enum Downloadregeln {
             ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id)
         }
         return fertig.first { !$0.gesehen } ?? fertig.first
+    }
+
+    // MARK: Offline (1.0.5)
+
+    /// Ab diesem Anteil gilt ein Titel als gesehen — Jellyfins `MaxResumePct`.
+    public static let gesehenAb = 0.9
+    /// Darunter wird keine Stelle gemerkt — Jellyfins `MinResumePct`.
+    public static let stelleAb = 0.05
+
+    /// **Die naechste geladene Folge nach dieser** — fuer „Naechste Folge",
+    /// wenn kein Server antwortet.
+    ///
+    /// Nach Staffel und Folge, nur fertige Downloads desselben Kontos und
+    /// derselben Serie. Specials (Staffel 0) liegen vorn und kommen damit
+    /// nach einer regulaeren Folge nie dran. **Eine Luecke wird
+    /// uebersprungen**: fehlt Folge 4, ist 5 die naechste geladene — offline
+    /// gibt es keine andere, und „keine" hiesse, dass der Abend endet.
+    /// Ohne Folgennummer laesst sich nichts ordnen; dann gibt es keine.
+    public static func folgeNach(_ id: String, aus posten: [Downloadposten]) -> Downloadposten? {
+        guard let jetzt = posten.first(where: { $0.id == id }), jetzt.art == .folge,
+              let serie = jetzt.serienId, let nummer = jetzt.folge else { return nil }
+        let hier = (jetzt.staffel ?? 0, nummer)
+        return posten
+            .filter {
+                $0.stand == .fertig && $0.konto == jetzt.konto && $0.serienId == serie
+                    && $0.id != id && $0.folge != nil
+                    && ($0.staffel ?? 0, $0.folge ?? 0) > hier
+            }
+            .min { ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id) }
+    }
+
+    /// **Die Abschnitte eines Titels — die abgelegten zuerst.**
+    ///
+    /// Liegen beim Download welche ab, gelten sie sofort, ohne Anfrage: sie
+    /// kamen vom selben Server, und ohne Netz — oder unterwegs, wo der Server
+    /// daheim nicht antwortet — waere eine Anfrage erst nach ihrer Frist
+    /// beantwortet, und der Knopf „Intro ueberspringen" kaeme zu spaet.
+    /// Sonst fragt ``server``; leer heisst dort „keine" oder „nicht
+    /// erreichbar", und beides heisst: kein Knopf.
+    public static func abschnitte(abgelegt: [Abschnitt]?,
+                                  server: @Sendable () async -> [Abschnitt]) async -> [Abschnitt] {
+        if let abgelegt, !abgelegt.isEmpty { return abgelegt }
+        return await server()
+    }
+
+    /// **„Naechste Folge" — online wie bisher, ohne Server die naechste
+    /// geladene** (``folgeNach(_:aus:)``).
+    ///
+    /// Ohne Netz wird gar nicht erst gefragt. Mit Netz fragt ``server``;
+    /// scheitert die Anfrage (Server daheim nicht erreichbar), gilt die
+    /// geladene. Antwortet der Server „keine", bleibt es dabei — er weiss es
+    /// besser als die Liste auf dem Geraet.
+    public static func folgeNach(_ item: Item, aus posten: [Downloadposten], ohneNetz: Bool,
+                                 server: @Sendable () async throws -> Item?) async -> Item? {
+        let geladen = folgeNach(item.id, aus: posten)?.alsItem
+        if ohneNetz { return geladen }
+        do { return try await server() } catch { return geladen }
+    }
+
+    /// **Was der Server ueber einen geladenen Titel sagt, in den Posten.**
+    ///
+    /// Gesehen, Stelle und Zeitpunkt kommen vom Server — **ausser** der
+    /// Posten traegt einen neueren Stand von hier, der noch nicht gemeldet
+    /// ist (`zuletzt` juenger als die Angabe des Servers). Dann bleibt er;
+    /// die Nachmeldung bringt ihn hin, und die naechste Abfrage bestaetigt ihn.
+    public static func nachziehen(_ p: Downloadposten, sehstand: UserItemData?) -> Downloadposten {
+        guard let sehstand else { return p }
+        // Eine Sekunde Spiel: die Nachmeldung schreibt genau diesen Zeitpunkt
+        // an den Server, und was zurueckkommt, darf gerundet sein.
+        if let hier = p.zuletzt,
+           hier.timeIntervalSince(sehstand.zuletztGespielt ?? .distantPast) > 1 { return p }
+        var q = p
+        q.gesehen = sehstand.played ?? false
+        q.stelleTicks = sehstand.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil }
+        q.zuletzt = sehstand.zuletztGespielt ?? p.zuletzt
+        return q
     }
 
     /// „3 von 12 Titeln" braucht niemand — aber „12 Titel · 42,8 GB" schon.

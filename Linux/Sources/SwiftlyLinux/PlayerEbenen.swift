@@ -50,6 +50,7 @@ final class Wahlgruppe {
             gtk_widget_set_opacity(z.haken, an ? 1 : 0)
             if an { gtk_widget_add_css_class(z.knopf, "swiftly-gewaehlt") }
             else { gtk_widget_remove_css_class(z.knopf, "swiftly-gewaehlt") }
+            bedienhilfe(z.knopf, gewaehlt: an)
         }
     }
 }
@@ -152,6 +153,7 @@ extension App {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-ebenenzeile")
         if gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-gewaehlt") }
+        bedienhilfe(knopf, name: text, gewaehlt: gewaehlt)
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 9)
         let haken = Playerzeichen("haken", groesse: 15)
         let hakenplatz = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
@@ -288,6 +290,7 @@ extension App {
                     [weak self] in self?.tonspurGewaehlt(spur.kennung)
                 })
             }
+            anhaengen(raum, verzoegerungszeile(untertitel: false))
         }
         let untertitelJetzt = abspieler.untertitelspur
         let utgruppe = Wahlgruppe()
@@ -302,8 +305,104 @@ extension App {
                     [weak self] in self?.untertitelGewaehlt(spur.kennung)
                 })
             }
+            anhaengen(raum, verzoegerungszeile(untertitel: true))
         }
         return spaltenebene([audio, untertitel])
+    }
+
+    // MARK: Verzoegerung
+
+    /// **Verzoegerung — letzte Zeile der Spalten Audio und Untertitel.**
+    ///
+    /// Gegenstueck zu `Verzoegerungszeile` auf dem Mac (Begruendung auf iOS):
+    /// kleine Beschriftung, darunter − Wert +, rechts der Pfeil zum
+    /// Zuruecksetzen, der nur bei ≠ 0 zu sehen ist und seinen Platz behaelt,
+    /// damit − Wert + nicht springen. Gehalten wiederholen − und +, und der
+    /// ``Verzoegerung/Haltezaehler`` macht sie schneller.
+    func verzoegerungszeile(untertitel: Bool) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_margin_top(zeile, 10)
+        let titel = beschriftung(uebersetzt("Verzögerung"), stil: "swiftly-verzugstitel")
+        gtk_label_set_xalign(OpaquePointer(titel), 0)
+        gtk_widget_set_margin_start(titel, 10)
+        anhaengen(zeile, titel)
+
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        anhaengen(zeile, reihe)
+        let abspieler = self.abspieler
+        var halten = Verzoegerung.Haltezaehler()
+        func wert() -> Verzoegerung {
+            untertitel ? abspieler.untertitelVerzoegerung : abspieler.tonVerzoegerung
+        }
+        var anzeigen: () -> Void = {}
+        func setzen(_ neu: Verzoegerung) {
+            if untertitel { abspieler.untertitelVerzoegerung = neu } else { abspieler.tonVerzoegerung = neu }
+            anzeigen()
+        }
+        let frueher = verzugstaste("minus", uebersetzt("Früher")) {
+            setzen(wert().verschoben(-1, schritte: halten.druck()))
+        }
+        anhaengen(reihe, frueher.knopf)
+        let zahl = beschriftung(wert().text(), stil: "swiftly-verzugswert")
+        gtk_widget_set_hexpand(zahl, 1)
+        anhaengen(reihe, zahl)
+        let spaeter = verzugstaste("plus", uebersetzt("Später")) {
+            setzen(wert().verschoben(1, schritte: halten.druck()))
+        }
+        anhaengen(reihe, spaeter.knopf)
+        let zurueck = verzugstaste("zuruecksetzen", uebersetzt("Zurücksetzen"), wiederholen: false) {
+            setzen(.null)
+        }
+        anhaengen(reihe, zurueck.knopf)
+
+        anzeigen = {
+            let v = wert()
+            gtk_label_set_text(OpaquePointer(zahl), v.text())
+            if v.istNull { gtk_widget_add_css_class(zahl, "swiftly-null") }
+            else { gtk_widget_remove_css_class(zahl, "swiftly-null") }
+            frueher.sperren(v.amAnfang)
+            spaeter.sperren(v.amEnde)
+            // Platz bleibt stehen: unsichtbar, nicht weg.
+            gtk_widget_set_opacity(zurueck.knopf, v.istNull ? 0 : 1)
+            gtk_widget_set_sensitive(zurueck.knopf, v.istNull ? 0 : 1)
+        }
+        anzeigen()
+        return zeile
+    }
+
+    /// − / + / Zuruecksetzen der Verzoegerungszeile — 38 × 38 wie die
+    /// Symbolknoepfe, mit ihrer Schwebeflaeche.
+    private func verzugstaste(_ name: String, _ text: String, wiederholen: Bool = true,
+                              aktion: @escaping () -> Void) -> Verzugstaste {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-symbolknopf")
+        gtk_widget_set_size_request(knopf, Playermass.knopf, Playermass.knopf)
+        gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+        let zeichen = Playerzeichen(name, groesse: Playermass.symbol - 3)
+        gtk_button_set_child(alsKnopf(knopf), zeichen.anzeige)
+        gtk_widget_set_tooltip_text(knopf, text)
+        beschriften(knopf, text)
+        let taste = Verzugstaste(knopf: knopf, zeichen: zeichen, aktion: aktion)
+        beiSignal(knopf, "clicked") { taste.geklickt() }
+        if wiederholen {
+            beiGriff(knopf) { gedrueckt in gedrueckt ? taste.halten() : taste.loslassen() }
+        }
+        beiSignal(knopf, "destroy") { taste.loslassen() }
+        return taste
+    }
+
+    /// **G/H Untertitel, J/K Ton, je 50 ms — wie in VLC und auf dem Mac**
+    /// (`PlayerScreen.verzoegern`). Nur ohne offene Ebene; der neue Wert
+    /// steht kurz als Hinweis da.
+    func verzoegern(untertitel: Bool, _ richtung: Int) {
+        if untertitel {
+            abspieler.untertitelVerzoegerung = abspieler.untertitelVerzoegerung.verschoben(richtung)
+            melden(String(format: uebersetzt("Untertitelverzögerung %@"),
+                          abspieler.untertitelVerzoegerung.text()))
+        } else {
+            abspieler.tonVerzoegerung = abspieler.tonVerzoegerung.verschoben(richtung)
+            melden(String(format: uebersetzt("Tonverzögerung %@"), abspieler.tonVerzoegerung.text()))
+        }
     }
 
     // MARK: Einstellungen
@@ -333,7 +432,7 @@ extension App {
                 self.schlaftakt += 1
             })
             for minuten in Schlafzeiten.werte {
-                anhaengen(raum, ebenenzeile(String(format: uebersetzt("%d Min."), minuten),
+                anhaengen(raum, ebenenzeile(String(format: uebersetzt("%lld Min."), minuten),
                                             kennung: "\(minuten)", gruppe: schlafgruppe,
                                             gewaehlt: schlafminuten == minuten) {
                     [weak self] in self?.schlafzeitSetzen(minuten)
@@ -355,12 +454,16 @@ extension App {
             }
         }
         var spalten = [bild, schlaf, technik]
+        // **Gemeinsam zuerst** (Entwurf A): wer dabei ist, und der Ausgang.
+        if let gemeinsam = gemeinsamSpalte() { spalten.insert(gemeinsam, at: 0) }
         // **Qualität: Direct Play oder eine Obergrenze.** Eine Obergrenze
         // heißt, der Server darf umwandeln — Direct Play ist dann aus. Nur
         // bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf.
         // Gilt wie die Einstellung in der App und lädt den Film an derselben
         // Stelle neu.
-        if umwandelnErlaubt, laufenderPlan?.url.isFileURL == false {
+        // **Und nicht in einer Gruppe**: der Wechsel liefe an ihr vorbei (iOS
+        // `qualitaetswahl`).
+        if umwandelnErlaubt, laufenderPlan?.url.isFileURL == false, !inGruppe {
             let qualitaetgruppe = Wahlgruppe()
             let qualitaet = ebenenspalte(uebersetzt("Qualität")) { raum in
                 anhaengen(raum, ebenenzeile(uebersetzt("Direct Play"), kennung: "direct",
@@ -467,6 +570,9 @@ extension App {
                 self.ebeneSchliessen()
                 // Die laufende Folge anklicken heisst: weiterschauen.
                 guard gewaehlteFolge.id != self.laufenderTitel?.id else { return }
+                // In der Gruppe wechselt niemand allein: die Wahl setzt die
+                // Warteschlange, und alle laden die Folge (wie iOS).
+                if self.inGruppe { self.gemeinsamBitteTitel(gewaehlteFolge.id); return }
                 self.wechsleZu(gewaehlteFolge)
             }
             anhaengen(innen, zeile)
@@ -578,4 +684,65 @@ extension App {
         }
         folgenFuerStaffelLaden(anfangsWahl, serieID: serieID, laufend: laufend, ueberblenden: false)
     }
+}
+
+/// **Eine Taste der Verzoegerungszeile, die gehalten wiederholt.**
+///
+/// GTKs Knopf wiederholt nicht von selbst (Apple: `buttonRepeatBehavior`).
+/// Gedrueckt wartet sie 0,4 s, dann kommt alle 0,1 s ein Druck — der
+/// ``Verzoegerung/Haltezaehler`` zaehlt sie als eine Reihe und wird
+/// schneller. Das `clicked` beim Loslassen zaehlt nach einer Wiederholung
+/// nicht mehr; ohne Wiederholung ist es der eine Schritt, auch ueber die
+/// Tastatur.
+final class Verzugstaste: @unchecked Sendable {
+    let knopf: Widget!
+    private let zeichen: Playerzeichen
+    private let aktion: () -> Void
+    private var quelle: guint = 0
+    private var takte = 0
+    private var wiederholt = false
+
+    init(knopf: Widget!, zeichen: Playerzeichen, aktion: @escaping () -> Void) {
+        self.knopf = knopf
+        self.zeichen = zeichen
+        self.aktion = aktion
+    }
+
+    /// Am Anschlag (±10 s) gesperrt und blasser.
+    func sperren(_ ja: Bool) {
+        gtk_widget_set_sensitive(knopf, ja ? 0 : 1)
+        gtk_widget_set_opacity(zeichen.anzeige, ja ? 0.4 : 1)
+        if ja { loslassen() }
+    }
+
+    func geklickt() {
+        if wiederholt { wiederholt = false; return }
+        aktion()
+    }
+
+    func halten() {
+        loslassen()
+        wiederholt = false
+        takte = 0
+        quelle = g_timeout_add_full(0, 100, verzugstakt,
+                                    Unmanaged.passUnretained(self).toOpaque(), nil)
+    }
+
+    func loslassen() {
+        if quelle != 0 { g_source_remove(quelle); quelle = 0 }
+    }
+
+    fileprivate func takt() -> Bool {
+        takte += 1
+        guard takte > 4 else { return true }
+        guard gtk_widget_get_sensitive(knopf) != 0 else { quelle = 0; return false }
+        wiederholt = true
+        aktion()
+        return quelle != 0
+    }
+}
+
+nonisolated(unsafe) private let verzugstakt: @convention(c) (gpointer?) -> gboolean = { daten in
+    guard let daten else { return 0 }
+    return Unmanaged<Verzugstaste>.fromOpaque(daten).takeUnretainedValue().takt() ? 1 : 0
 }

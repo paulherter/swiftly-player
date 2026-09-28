@@ -70,6 +70,19 @@ struct DownloadregelnTests {
         #expect(!Downloadregeln.darfLaden(imWLAN: false, nurUeberWLAN: true))
     }
 
+    @Test("Unbekanntes Netz: nur ueber WLAN wartet ab, sonst wird geladen")
+    func netzUnbekannt() {
+        #expect(Downloadregeln.netzentscheid(imWLAN: nil, nurUeberWLAN: true) == .abwarten)
+        #expect(Downloadregeln.netzentscheid(imWLAN: nil, nurUeberWLAN: false) == .laden)
+    }
+
+    @Test("Mobilfunk bei nur ueber WLAN stellt zurueck, statt anzuhalten")
+    func netzBekannt() {
+        #expect(Downloadregeln.netzentscheid(imWLAN: false, nurUeberWLAN: true) == .zurueckstellen)
+        #expect(Downloadregeln.netzentscheid(imWLAN: true, nurUeberWLAN: true) == .laden)
+        #expect(Downloadregeln.netzentscheid(imWLAN: false, nurUeberWLAN: false) == .laden)
+    }
+
     // MARK: H3 und H6 — Platz
 
     @Test("Reichlich Platz: es reicht, und es gibt nichts zu raeumen")
@@ -346,6 +359,43 @@ struct DownloadregelnTests {
         #expect(p.dateiname == "u9-abc.mkv")
         // Zwei Konten, dieselbe Kennung — zwei Dateien. H11.
         #expect(posten("abc", konto: "u1").dateiname != posten("abc", konto: "u2").dateiname)
+    }
+
+    @Test("Serverdaten bauen keinen Weg aus dem Ordner")
+    func dateinameAusServerdaten() {
+        func mit(_ container: String?, id: String = "abc", konto: String = "u1") -> String {
+            Downloadposten(id: id, konto: konto, art: .film, titel: "T",
+                           container: container, bytes: 1).dateiname
+        }
+        // Echte Werte bleiben, wie sie waren — alte Downloads werden gefunden.
+        #expect(mit("MKV") == "u1-abc.mkv")
+        #expect(mit("mov,mp4,m4a,3gp,3g2,mj2") == "u1-abc.mov,mp4,m4a,3gp,3g2,mj2")
+        #expect(mit(nil) == "u1-abc")
+        #expect(mit("mkv", id: "0f8e2c4a9b7d4e1fa3c5b6d7e8f90123", konto: "a1b2c3d4-e5f6")
+                == "a1b2c3d4-e5f6-0f8e2c4a9b7d4e1fa3c5b6d7e8f90123.mkv")
+        // Alles andere faellt auf keine Endung zurueck bzw. wird entschaerft.
+        #expect(mit("../../../../etc/passwd") == "u1-abc")
+        #expect(mit("mkv/x") == "u1-abc")
+        #expect(mit("mk\u{0}v") == "u1-abc")
+        #expect(mit("sehrlangeendung") == "u1-abc")
+        #expect(mit("") == "u1-abc")
+        #expect(mit("mkv", id: "../../x") == "u1-______x.mkv")
+        #expect(mit("mkv", konto: "a/b\nc") == "a_b_c-abc.mkv")
+        #expect(mit(nil, id: "") == "u1-_")
+        for name in [mit("mkv", id: ".."), mit("../x", id: "a/../b", konto: "..")] {
+            #expect(!name.contains("/") && !name.contains(".."))
+        }
+        #expect(Downloadposten.bildname(konto: "u1", kennung: "../s") == "u1-___s.jpg")
+    }
+
+    @Test("Eine Kennung von aussen ist eine GUID oder wird verworfen")
+    func kennungVonAussen() {
+        #expect(Pfadteil.istKennung("0f8e2c4a9b7d4e1fa3c5b6d7e8f90123"))
+        #expect(Pfadteil.istKennung("0f8e2c4a-9b7d-4e1f-a3c5-b6d7e8f90123"))
+        #expect(!Pfadteil.istKennung(""))
+        #expect(!Pfadteil.istKennung("../../Users"))
+        #expect(!Pfadteil.istKennung("abc?x=1"))
+        #expect(!Pfadteil.istKennung(String(repeating: "a", count: 65)))
     }
 
     // MARK: H8 — der Plan von der Platte

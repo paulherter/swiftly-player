@@ -15,7 +15,7 @@ import Foundation
 
 /// „2 Std. 8 Min." oder „94 Min."
 public func laufzeit(_ sekunden: Double) -> String {
-    let m = Int(sekunden / 60)
+    let m = Int(gekappt: sekunden / 60)
     return m >= 60 ? uebersetzt("\(m / 60) Std. \(m % 60) Min.")
                    : uebersetzt("\(m) Min.")
 }
@@ -24,7 +24,7 @@ public func laufzeit(_ sekunden: Double) -> String {
 ///
 /// Ohne Übersetzung: „h" und „min" stehen in beiden Sprachen so da.
 public func zeitText(_ sekunden: Double) -> String {
-    let gesamt = Int(sekunden)
+    let gesamt = Int(gekappt: sekunden)
     let (h, m) = (gesamt / 3600, (gesamt % 3600) / 60)
     return h > 0 ? "\(h):\(String(format: "%02d", m)) h" : "\(m) min"
 }
@@ -98,7 +98,33 @@ public extension Item {
     /// als reine Zeichenkette und lief nie durch die Übersetzung.
     var restzeitText: String? {
         guard let gesamt = runtimeSeconds, gesamt > 0, let ab = fortsetzenAb else { return nil }
-        return uebersetzt("Noch \(Int((gesamt - ab) / 60)) Minuten")
+        return uebersetzt("Noch \(Int(gekappt: (gesamt - ab) / 60)) Minuten")
+    }
+
+    /// **Die Zeile unter einer Weiterschauen-Kachel**: „S2 · F5 · noch 12 Min."
+    /// bei einer Folge, „2019 · noch 1 Std. 4 Min." bei einem Film (das Jahr
+    /// aus `kontextzeile`) — oder `nil`, wenn
+    /// kein Stand da ist (dann bleibt die gewohnte Zeile).
+    ///
+    /// Beantwortet die Frage, die man vor dem Tippen hat: wie lange noch. Das
+    /// Bild bleibt frei; die Angabe steht an der Stelle, an der das Kürzel
+    /// ohnehin stand (Entwurf D, 26.09.2026).
+    var weiterschauenzeile: String? {
+        guard let gesamt = runtimeSeconds, gesamt > 0, let ab = fortsetzenAb else { return nil }
+        let (stunden, minuten) = Restzeit.teile(sekunden: gesamt - ab)
+        let rest: String
+        if stunden == 0 {
+            rest = uebersetzt("noch \(minuten) Min.")
+        } else if minuten == 0 {
+            rest = uebersetzt("noch \(stunden) Std.")
+        } else {
+            rest = uebersetzt("noch \(stunden) Std. \(minuten) Min.")
+        }
+        guard type == "Episode", let staffel = parentIndexNumber, let folge = indexNumber else {
+            if type == "Movie", let jahr = kontextzeile { return jahr + " · " + rest }
+            return rest
+        }
+        return uebersetzt("S\(staffel) · F\(folge)") + " · " + rest
     }
 
     /// Beschriftung des Hauptknopfes auf einer Serienseite.
@@ -119,5 +145,18 @@ public extension Item {
         let angefangen = (folge.userData?.playbackPositionTicks ?? 0) > 0
         return angefangen ? uebersetzt("Fortsetzen \(kuerzel)")
                           : uebersetzt("Abspielen \(kuerzel)")
+    }
+}
+
+
+/// **Restzeit in Stunden und Minuten**, fürs Anzeigen gerundet.
+///
+/// Aufgerundet auf die Minute: eine Folge mit 40 Sekunden Rest hat „noch 1
+/// Min.", nicht „noch 0 Min." — null hieße „fertig", und das stimmt nicht.
+public enum Restzeit {
+    public static func teile(sekunden: Double) -> (stunden: Int, minuten: Int) {
+        guard sekunden.isFinite, sekunden > 0 else { return (0, 1) }
+        let ganz = max(Int(gekappt: (sekunden / 60).rounded(.up)), 1)
+        return (ganz / 60, ganz % 60)
     }
 }

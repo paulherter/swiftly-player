@@ -98,6 +98,15 @@ struct Technikschild: View {
                     .kern()
             }
 
+            // **Kam nie ein Bild, steht das hier** — was der Player dagegen
+            // getan hat, siehe ``Erstbild``. Ohne diese Zeile sähe ein
+            // schwarzes Bild mit Ton im Schild aus wie ein gesunder Strom.
+            if let hinweis = flaeche?.erstbildHinweis {
+                Text(verbatim: hinweis).foregroundStyle(Stil.warnung)
+                    .lineLimit(messen ? nil : 2)
+                    .kern()
+            }
+
             if let b = bildzeile { angabe(String(localized: "Bild"), b).kern() }
             if let t = tonzeile { angabe(String(localized: "Ton"), t).kern() }
             if let u = untertitelzeile { angabe(String(localized: "Untertitel"), u).kern() }

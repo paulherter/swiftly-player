@@ -7,24 +7,34 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Fortschritt der Downloads in der Mitteilungsleiste. Gefragt beim ersten Download, nicht beim Start. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Netz: Klartext und eigene Wurzelzertifikate regelt allein `netz_vertrauen` (Begruendung
+         dort). Ab API 24 sticht diese Datei `usesCleartextTraffic` ohnehin, darum steht das Flag
+         hier nicht mehr doppelt. -->
     <application
         android:name=".SwiftlyAnwendung"
         android:label="Swiftly"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/tv_banner"
-        android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/netz_vertrauen"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/keine_sicherung"
         android:enableOnBackInvokedCallback="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Swiftly">
         <!-- configChanges wie beim Player: eine Drehung baut die Aktivitaet nicht neu. Compose
              richtet sich selbst neu aus; ein Neubau warf dagegen den Seitenstapel weg (er steht in
              `remember`) und liess `LaunchedEffect(spiel)` ein zweites Mal laufen — beim Schliessen
-             des Players ging die Folge dann wieder auf. -->
+             des Players ging die Folge dann wieder auf.
+             **Auch Dunkelmodus, Schriftgroesse, Anzeigegroesse und Sprache** (uiMode, fontScale, density,
+             locale): die App ist immer dunkel und liest ihre Texte einmal beim Start. Der Player wurde
+             dabei neu gebaut, meldete „gestoppt" und begann wieder vorn — etwa beim Dunkelmodus nach
+             Zeitplan mitten im Film (findroid#505). Compose zieht Schrift und Dichte selbst nach. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden">
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|uiMode|fontScale|density|locale|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -39,7 +49,7 @@
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|uiMode|fontScale|density|locale|layoutDirection" />
         <!-- Fernseher: eigener Einstieg ueber den Leanback-Starter, dieselbe App darunter.
              singleTask: ein Tipp auf einen Watch-Next-Eintrag (siehe TvWeiterschauenRegal.kt)
              soll in die schon laufende Aktivitaet gehen (onNewIntent), nicht eine zweite
@@ -48,7 +58,7 @@
             android:name=".tv.TvAktivitaet"
             android:exported="true"
             android:launchMode="singleTask"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation">
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|fontScale|density|locale|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

@@ -427,6 +427,16 @@ audio codec and subtitle format of that file.
 
 <br>
 
+## Sister app: Swiftly Music
+
+[Swiftly Music](https://github.com/paulherter/swiftly-music) is the music app
+for Jellyfin and Navidrome, on the iPhone — Direct Play with FLAC, timed
+lyrics, downloads, and Sonos with the iPhone as the remote. Same design, and
+the same Jellyfin code: its `JellyfinKit` is a copy from this repository.
+The beta is open on [TestFlight](https://testflight.apple.com/join/Ws5snXzX).
+
+<br>
+
 ## Built with Claude
 
 Swiftly Player was written together with Anthropic's Claude, and the

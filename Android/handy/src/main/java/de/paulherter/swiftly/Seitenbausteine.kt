@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,6 +28,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -71,6 +73,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -81,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Hauptknopf
+import de.paulherter.swiftly.gemeinsam.Nebenknopf
 import de.paulherter.swiftly.gemeinsam.StillerKnopf
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.bewegungReduziert
@@ -145,6 +151,36 @@ fun Modifier.druckzeile(tun: () -> Unit): Modifier = composed {
     val schleier = remember { Animatable(0f) }
     LaunchedEffect(gedrueckt) { if (gedrueckt) schleier.snapTo(1f) else schleier.animateTo(0f, Bewegung.loslassen()) }
     Modifier.drawBehind { drawRect(Color.White.copy(alpha = 0.06f * schleier.value)) }.clickable(quelle, null, onClick = tun)
+}
+
+/**
+ * `Stil.Drucktext` — **Druck nur ueber die Deckkraft**, fuer Text, der direkt auf Bildfarbe steht: gedrueckt
+ * 60 %, das Loslassen klingt nach wie ueberall.
+ */
+fun Modifier.drucktext(tun: () -> Unit): Modifier = composed {
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val druck = remember { Animatable(0f) }
+    LaunchedEffect(gedrueckt) { if (gedrueckt) druck.snapTo(1f) else druck.animateTo(0f, Bewegung.loslassen()) }
+    graphicsLayer { alpha = 1f - 0.4f * druck.value }.clickable(quelle, null, onClick = tun)
+}
+
+/**
+ * **Gesehen wird nur dunkler** (`Gesehenhaken`, `colorMultiply(0,45)`): multipliziert statt durchsichtig,
+ * damit auf einer Seite in Bildfarbe keine Farbe durch das Standbild scheint.
+ */
+val GESEHEN_ABDUNKELN = androidx.compose.ui.graphics.ColorFilter.tint(Color(0.45f, 0.45f, 0.45f), androidx.compose.ui.graphics.BlendMode.Modulate)
+
+/** `druckzeile` mit langem Druck — das Kontextmenue einer Zeile auf iOS (`.contextMenu`). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun Modifier.druckzeileLang(lange: () -> Unit, tun: () -> Unit): Modifier = composed {
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val schleier = remember { Animatable(0f) }
+    val ruck = rememberRuck()
+    LaunchedEffect(gedrueckt) { if (gedrueckt) schleier.snapTo(1f) else schleier.animateTo(0f, Bewegung.loslassen()) }
+    Modifier.drawBehind { drawRect(Color.White.copy(alpha = 0.06f * schleier.value)) }
+        .combinedClickable(quelle, null, onLongClick = { ruck(Ruck.Mittel); lange() }, onClick = tun)
 }
 
 enum class Ruck { Leicht, Mittel, Erfolg }
@@ -285,8 +321,15 @@ fun Kopfziele(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, vorn: @Composable 
         }
         // `Profilziel`: das Zeichen 34 in 44 Trefferflaeche, um 7 nach aussen gerueckt, damit der Kreis
         // buendig an der Kante steht und nicht die Trefferflaeche.
+        // Der Kontowechsel fliegt hierher (`Kontowechselflug.zielMelden`); solange das neue Profilbild
+        // unterwegs ist, steht hier noch keins.
+        val flug = Kontowechselflug.flug
         Box(Modifier.offset(x = 7.dp).size(44.dp).antippen { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {
-            Profilbild(app, 34.dp)
+            Box(Modifier.size(34.dp)
+                    .onGloballyPositioned { Kontowechselflug.zielMelden(it.boundsInRoot(), (it.findRootCoordinates().size.width).toFloat()) }
+                    .graphicsLayer { alpha = if (flug != null && !flug.ersetzt) 0f else 1f }) {
+                Profilbild(app, 34.dp)
+            }
         }
     }
 }
@@ -342,6 +385,19 @@ fun Wertpille(symbol: Zeichen, text: String, tun: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol(symbol, 12.dp, farbe = Stil.schriftLeise, staerke = Staerke.Mittel)
         Text(text, style = Stil.kachel, color = Stil.schrift)
+    }
+}
+
+/**
+ * **Der Sehstand auf einem Vorschaubild** — Vorlage `Gesehenhaken` in `Bausteine.swift`: Haken auf
+ * dunkler Scheibe oben rechts, in der Folgenliste und in der Downloadliste. Abdunkeln (0,45) tut die
+ * Bildflaeche selbst. 0,78 wie jede andere dunkle Scheibe auf einem Bild.
+ */
+@Composable
+fun BoxScope.Gesehenhaken() {
+    Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.78f)),
+        contentAlignment = Alignment.Center) {
+        Symbol(Zeichen.Haken, 10.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Gesehen"))
     }
 }
 
@@ -485,7 +541,11 @@ fun Stoerhinweis(adresse: String?, modifier: Modifier = Modifier, abstandOben: D
                         adresse ?: uebersetzt("Der Server")),
              style = Stil.klein.copy(fontSize = 14.sp, lineHeight = 16.sp, textAlign = TextAlign.Center),
              color = Stil.schriftSehrLeise, modifier = Modifier.widthIn(max = 262.dp))
-        erneut?.let { StillerKnopf(uebersetzt("Erneut versuchen"), Modifier.padding(top = 10.dp), it) }
+        // **Ein Knopf aus dem Baukasten, nicht nur Schrift** (Liste 20.09.): als stiller Knopf stand
+        // „Erneut versuchen" ohne Flaeche und ohne Rand da und las sich nicht als Knopf. Jetzt der
+        // Nebenknopf, so breit wie sein Text — dieselbe Form wie jeder andere zweite Knopf.
+        erneut?.let { Nebenknopf(uebersetzt("Erneut versuchen"), dehnt = false, akzent = true,
+                                 modifier = Modifier.padding(top = 16.dp), aktion = it) }
     }
 }
 
@@ -502,21 +562,26 @@ fun Wischzeile(symbol: Zeichen, text: String, farbe: Color = Stil.akzent, tun: (
     val schwelle = with(dichte) { 168.dp.toPx() }
     val weg = remember { Animatable(0f) }
     val lauf = rememberCoroutineScope()
+    // **Ein Ruck, wenn die Handlung ausloest** (Audit 27.09.) — beim Tipp aufs Feld und beim ganzen Zug;
+    // `Wischzeile` auf iOS gibt ihn auch.
+    val ruck = rememberRuck()
     Box(Modifier.fillMaxWidth()) {
         Box(Modifier.matchParentSize().graphicsLayer { alpha = if (weg.value < -0.5f) 1f else 0f }.background(farbe)) {
             Column(Modifier.align(Alignment.CenterEnd).width(96.dp).fillMaxHeight()
-                    .tippen { lauf.launch { weg.snapTo(0f) }; tun() },
+                    .tippen { ruck(Ruck.Mittel); lauf.launch { weg.snapTo(0f) }; tun() },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Symbol(symbol, 17.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
                 Text(text, style = Stil.klein.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium), color = Stil.grund)
             }
         }
-        Box(Modifier.graphicsLayer { translationX = weg.value }.background(Stil.grund)
+        // Deckend nur, solange gezogen wird: dann liegt die Handlungsfarbe darunter. Zu ist die Zeile
+        // durchsichtig — ein fester Grund zeichnete ueber Bildfarbe eine harte Kante an der ersten Folge.
+        Box(Modifier.graphicsLayer { translationX = weg.value }.drawBehind { if (weg.value < -0.5f) drawRect(Stil.grund) }
             .draggable(rememberDraggableState { d -> lauf.launch { weg.snapTo((weg.value + d).coerceAtMost(0f)) } },
                 Orientation.Horizontal,
                 onDragStopped = { tempo ->
                     when {
-                        -weg.value > schwelle -> { tun(); weg.snapTo(0f) }
+                        -weg.value > schwelle -> { ruck(Ruck.Mittel); tun(); weg.snapTo(0f) }
                         -weg.value > feld / 2 || tempo < -700 * dichte.density -> weg.animateTo(-feld, Bewegung.sprung())
                         else -> weg.animateTo(0f, Bewegung.sprung())
                     }
@@ -551,6 +616,11 @@ class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: St
                    * Bibliotheken, abgesetzt von „Alle" und „Sammlungen", die keine sind (`Auswahlblatt.rubrik`).
                    */
                   val rubriken: Map<String, String> = emptyMap(),
+                  /**
+                   * Nur am Fernseher: ein Absatz unter der Ueberschrift der Tafel — was das Blatt am Telefon
+                   * als eigenen Inhalt zeigt (Gemeinsam schauen: Titel, wer schaut, was gilt).
+                   */
+                  val unterzeile: String? = null,
                   val waehlen: (String) -> Unit)
 
 /**
@@ -569,9 +639,21 @@ fun Blattauflage(app: SwiftlyAnwendung) {
     if (wunsch != null) gemerkt[0] = wunsch
     val offen = wunsch != null
     val schliessen = { app.blatt.value = null }
-    BackHandler(enabled = offen, onBack = schliessen)
     val zug = remember { Animatable(0f) }
     var hoehe by remember { mutableIntStateOf(1) }
+    val lauf = rememberCoroutineScope()
+    // **Zurueck zieht die Karte mit** (Audit 27.09.) — wie das Ziehen am Griff, bis zu einem Viertel ihrer
+    // Hoehe. Losgelassen faehrt sie hinaus; abgebrochen federt sie zurueck. Vorher schloss sie erst am
+    // Ende der Geste, ohne Vorschau.
+    androidx.activity.compose.PredictiveBackHandler(enabled = offen) { ereignisse ->
+        try {
+            ereignisse.collect { e -> zug.snapTo(e.progress * hoehe * 0.25f) }
+            schliessen()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            lauf.launch { zug.animateTo(0f, spring(dampingRatio = 0.956f, stiffness = 280f)) }
+            throw e
+        }
+    }
     LaunchedEffect(wunsch) { if (wunsch != null) zug.snapTo(0f) }
     val schleier by animateFloatAsState(if (offen) 0.55f else 0f, Bewegung.blatt(), label = "schleier")
     val schleierDa by remember { derivedStateOf { schleier > 0.001f } }
@@ -642,7 +724,7 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
 
 /** Die Abbrechen-Zeile am Fuss eines Blatts — `Blattabbruch`: 15 Medium `schriftLeise`, ≥ 54. */
 @Composable
-private fun Blattabbruch(schliessen: () -> Unit) {
+internal fun Blattabbruch(schliessen: () -> Unit) {
     Box(Modifier.fillMaxWidth().heightIn(min = 54.dp).druckzeile(schliessen), contentAlignment = Alignment.Center) {
         Text(uebersetzt("Abbrechen"), style = Stil.knopftext, color = Stil.schriftLeise)
     }

@@ -4,7 +4,7 @@ import UIKit
 /// Die Ansichtsklasse der Plattform.
 ///
 /// UIKit gibt es auf iPhone und Fernseher, auf dem Mac nicht. Statt
-/// `VLCPlayerView` und `Zeichenflaeche` zweimal zu schreiben — und damit
+/// `VLCPlayerView` zweimal zu schreiben — und damit
 /// genau die Doppelung anzulegen, gegen die dieses Projekt sonst antritt —,
 /// hängen beide an diesem Namen.
 ///

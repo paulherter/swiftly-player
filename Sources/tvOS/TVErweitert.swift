@@ -21,6 +21,7 @@ struct TVErweitert: View {
                     HStack(spacing: 12) {
                         Text("Erweitert")
                         Image(systemName: offen ? "chevron.down" : "chevron.right")
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(KnopfStil())
@@ -63,6 +64,7 @@ struct TVErweitert: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "plus")
+                        .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }
             }

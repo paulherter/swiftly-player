@@ -221,7 +221,7 @@ struct EinstellungenView: View {
     private func pruefen() {
         pruefe = true
         Task {
-            pruefung = await model.verbindungPruefen()
+            pruefung = await model.verbindungPruefen(frist: .seconds(12))
             pruefe = false
         }
     }

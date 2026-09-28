@@ -9,23 +9,23 @@
 /* Farben und Leiste wie index.html. Die Startseite kennt nur dunkel,
    also auch der Blog. */
 :root {
-  --grund: #0B0B0D; --tief: #08080A; --flaeche: #161619; --erhoeht: #1E1E22;
-  --akzent: #5CD1C2; --kuehl: #7E9BFF; --warm: #E8833A; --marke: #2FDBC0;
-  --schrift: #FFFFFF; --leise: rgba(255,255,255,.64); --sehr-leise: rgba(255,255,255,.40);
-  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.13);
+  --grund: #101010; --tief: #101010; --flaeche: #1E1E1E; --erhoeht: #262626; --akzent-leise: #113435; --auf-akzent: #061212;
+  --akzent: #50D5DA; --kuehl: var(--akzent); --warm: var(--akzent); --marke: var(--akzent);
+  --schrift: #FFFFFF; --leise: #CCCCCC; --sehr-leise: #989898;
+  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.12);
   --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --bahn: 1240px; --lesen: 700px; --seitenrand: clamp(24px, 4vw, 40px);
   --raus: cubic-bezier(.23, 1, .32, 1);
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scrollbar-color: #2f2f33 var(--grund); }
+html { scroll-behavior: smooth; scrollbar-color: #303030 var(--grund); }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body { margin: 0; background: var(--grund); color: var(--schrift); font-family: var(--schriftart);
   font-size: 18px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; }
 a { color: inherit; text-decoration: none; }
 p { margin: 0; }
-::selection { background: rgba(92,209,194,.32); color: var(--schrift); }
+::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
 :focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
 .nur-fuer-leser { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .bahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
@@ -35,48 +35,44 @@ p { margin: 0; }
 .leiste { position: absolute; top: 10px; left: 0; right: 0; z-index: 60; display: flex; justify-content: center;
   padding-inline: var(--seitenrand); pointer-events: none; }
 .leiste__kapsel { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 24px;
-  border-radius: 999px; border: 1px solid var(--rand); background: rgba(22,22,25,.72);
-  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+  border-radius: 999px; background: var(--flaeche); }
 .leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
 .leiste__marke img { height: 21px; width: auto; }
-.leiste__punkt { padding: 10px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 500; color: var(--leise);
+.leiste__punkt { padding: 10px 16px; border-radius: 10px; font-size: 14.5px; font-weight: 500; color: var(--leise);
   transition: color 160ms var(--raus), background-color 160ms var(--raus); }
 .leiste__punkt[aria-current] { color: var(--schrift); }
-.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px;
-  background: var(--schrift); color: var(--grund); font-family: inherit; font-weight: 600; line-height: 1.2;
+.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 10px;
+  background: var(--schrift); color: var(--auf-akzent); font-family: inherit; font-weight: 600; line-height: 1.2;
   cursor: pointer; transition: transform 160ms var(--raus), background-color 160ms var(--raus); }
 /* Druck, Hover und Fokus stehen am Ende unter "Verhalten": eine Regel fuer alles. */
-.knopf--leiste { padding: 11px 22px; font-size: 14.5px; }
-.knopf--gross { padding: 17px 30px; font-size: 16.5px; }
+.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
+.knopf--gross { min-height: 48px; padding: 0 28px; font-size: 17px; }
 .knopf--leise { padding: 10px 21px; font-size: 14.5px; background: transparent; color: var(--schrift);
   box-shadow: inset 0 0 0 1px var(--rand); }
 .leiste__burger { display: none; }
 .menue { display: none; position: fixed; z-index: 55; left: 20px; right: 20px; top: 12px; padding: 78px 0 22px;
-  border-radius: 30px; border: 1px solid var(--rand); background: rgba(22,22,25,.92);
-  backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow: 0 12px 30px rgba(0,0,0,.5); transform-origin: top center; opacity: 0;
+  border-radius: 16px; background: var(--flaeche); transform-origin: top center; opacity: 0;
   transform: scaleY(.86) translateY(-10px); pointer-events: none;
   transition: opacity 220ms var(--raus), transform 320ms var(--raus); }
 .menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
 .menue a { display: block; padding: 15px 20px; color: var(--leise); font-size: 19px; font-weight: 500; }
 .menue a[aria-current] { color: var(--schrift); }
-.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--grund); }
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
 
 /* Kopf der Seite. Licht wie die Aurora der Startseite, schwaecher:
    hier soll gelesen werden. Liegt unter dem Text (DESIGN.md 2). */
 main { position: relative; padding: 140px 0 110px; }
-.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .55;
+.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .8;
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
   background:
-    radial-gradient(ellipse 30% 46% at 50.7% 30%, rgba(92,209,194,.40), rgba(92,209,194,.16) 62%, rgba(92,209,194,0) 100%),
-    radial-gradient(ellipse 26% 42% at 27% 40%, rgba(126,155,255,.34), rgba(126,155,255,.13) 62%, rgba(126,155,255,0) 100%),
-    radial-gradient(ellipse 28% 42% at 80% 38%, rgba(232,131,58,.28), rgba(232,131,58,.11) 62%, rgba(232,131,58,0) 100%); }
+    radial-gradient(ellipse 46% 70% at 0% 100%, rgba(80,213,218,.42), rgba(80,213,218,.16) 55%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 46% 70% at 100% 100%, rgba(80,213,218,.34), rgba(80,213,218,.13) 55%, rgba(80,213,218,0) 100%); }
 main > :not(.schein) { position: relative; z-index: 6; }
 .pfad { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; padding: 0; list-style: none;
   font-size: 14.5px; color: var(--sehr-leise); }
 .pfad a { color: var(--leise); transition: color 160ms var(--raus); }
 .pfad li + li::before { content: "/"; margin-right: 8px; color: var(--sehr-leise); }
-.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 600; line-height: 1.04; letter-spacing: -.03em;
+.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; line-height: 1.04; letter-spacing: -.021em;
   margin: 0; text-wrap: balance; }
 .seitenkopf .unter { margin-top: 18px; color: var(--leise); font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; text-wrap: pretty; }
 .seitenkopf--mitte { text-align: center; }
@@ -91,7 +87,7 @@ main > :not(.schein) { position: relative; z-index: 6; }
 
 /* FAQ: wie "Common questions" auf der Startseite, als details, damit es ohne
    Skript geht (DESIGN.md 9). Die erste Antwort steht offen. */
-.fragen__blatt { margin-top: 28px; border-radius: 32px; background: var(--flaeche); border: 1px solid var(--linie); overflow: hidden; }
+.fragen__blatt { margin-top: 28px; border-radius: 16px; background: var(--flaeche); overflow: hidden; }
 .frage + .frage { border-top: 1px solid var(--linie); }
 .frage__knopf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px;
   cursor: pointer; list-style: none; transition: background-color 160ms var(--raus); }
@@ -157,16 +153,16 @@ main > :not(.schein) { position: relative; z-index: 6; }
   .text pre { font-size: 14px; }
   .tabelle table { font-size: 14px; }
   .tabelle th, .tabelle td { padding: 11px 14px; }
-  .kurz { padding: 22px; border-radius: 24px; }
-  .fragen__blatt { border-radius: 24px; }
+  .kurz { padding: 22px; border-radius: 16px; }
+  .fragen__blatt { border-radius: 16px; }
   .frage__knopf { padding: 18px; }
   .text .frage__knopf h3 { font-size: 15.5px; }
   .frage__antwort { padding: 0 18px 20px; font-size: 16px; }
-  .swiftly { padding: 22px 20px 20px; border-radius: 24px; }
+  .swiftly { padding: 22px 20px 20px; border-radius: 16px; }
   .wege { grid-template-columns: 1fr; }
   .wege > :last-child:nth-child(odd) { width: auto; justify-self: stretch; }
   .karten--raster { grid-template-columns: 1fr; margin-top: 40px; }
-  .karte { padding: 22px 22px 24px; border-radius: 24px; }
+  .karte { padding: 22px 22px 24px; border-radius: 16px; }
   .fuss__raster { grid-template-columns: 1fr 1fr; padding-block: 48px 40px; }
   .fuss__marke { grid-column: 1 / -1; }
   .fuss__spalte:last-child { grid-column: 1 / -1; }
@@ -182,16 +178,16 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .seite { width: 100%; max-width: calc(760px + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
 .schritte { display: grid; gap: 14px; margin: 44px 0 0; padding: 0; list-style: none; }
 .schritt { display: grid; grid-template-columns: auto 1fr; column-gap: 18px; padding: 24px 22px 22px;
-  border-radius: 24px; background: var(--flaeche); border: 1px solid var(--linie); }
+  border-radius: 16px; background: var(--flaeche); }
 .schritt__zahl { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%;
-  font-size: 20px; font-weight: 700; color: var(--akzent);
+  font-size: 20px; font-weight: 600; color: var(--akzent);
   background: color-mix(in srgb, var(--akzent) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 32%, transparent); }
-.schritt h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+.schritt h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; letter-spacing: -.012em; }
 .schritt p { grid-column: 1 / -1; margin-top: 12px; color: var(--leise); font-size: 16.5px; line-height: 1.5; }
 .schritt p strong { color: var(--schrift); font-weight: 600; }
 .schritt .knopf { grid-column: 1 / -1; margin-top: 18px; min-height: 58px; width: 100%; padding: 16px 24px; font-size: 17px; }
-.hinweis { margin-top: 28px; padding: 22px 22px 24px; border-radius: 24px; color: var(--leise); font-size: 16px; line-height: 1.55;
+.hinweis { margin-top: 28px; padding: 22px 22px 24px; border-radius: 16px; color: var(--leise); font-size: 16px; line-height: 1.55;
   background: color-mix(in srgb, var(--warm) 8%, var(--flaeche));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 28%, transparent); }
 .hinweis h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em; text-transform: uppercase; color: var(--warm); }
@@ -200,21 +196,21 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .hinweis li::marker { color: var(--sehr-leise); }
 .hinweis strong { color: var(--schrift); font-weight: 600; }
 .abschnitt { margin-top: 64px; }
-.abschnitt > h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: -.03em; }
+.abschnitt > h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: -.014em; }
 .abschnitt > p { margin-top: 14px; color: var(--leise); font-size: 17px; line-height: 1.6; }
 .abschnitt a:not(.knopf), .frage__antwort a { color: var(--akzent); text-decoration: underline;
-  text-decoration-color: rgba(92,209,194,.35); text-underline-offset: 3px; }
+  text-decoration-color: rgba(80,213,218,.35); text-underline-offset: 3px; }
 .frage__knopf h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; letter-spacing: -.014em; }
 .frage__antwort { color: var(--leise); }
 .hilfe { margin-top: 64px; text-align: center; }
 .hilfe p { color: var(--leise); font-size: 17px; }
 .hilfe .knopf { margin-top: 18px; min-height: 52px; padding-inline: 26px; }
 @media (min-width: 901px) {
-  .schritt { padding: 30px 32px 30px; border-radius: 32px; column-gap: 22px; }
+  .schritt { padding: 30px 32px 30px; border-radius: 16px; column-gap: 22px; }
   .schritt h2 { font-size: 26px; margin-top: 6px; }
   .schritt p { grid-column: 2; font-size: 17px; }
   .schritt .knopf { grid-column: 2; width: auto; justify-self: start; }
-  .hinweis { padding: 28px 32px; border-radius: 32px; }
+  .hinweis { padding: 28px 32px; border-radius: 16px; }
   .abschnitt > h2 { font-size: 34px; }
   .frage__knopf h3 { font-size: 18px; }
 }

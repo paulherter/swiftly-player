@@ -72,7 +72,10 @@ public enum Merkgattung: String, CaseIterable, Sendable, Identifiable {
 
     public var beschriftung: String {
         switch self {
-        case .alle:   uebersetzt("Filme & Serien")
+        // „Alle" wie der erste Filter auf Filme und Serien
+        // (`Bibliotheksfilter.alle`) — dieselbe Wahl, dasselbe Wort
+        // (Paul, 27.09.2026). Vorher „Filme & Serien".
+        case .alle:   uebersetzt("Alle")
         case .filme:  uebersetzt("Filme")
         case .serien: uebersetzt("Serien")
         }

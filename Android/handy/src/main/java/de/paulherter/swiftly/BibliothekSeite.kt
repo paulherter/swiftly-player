@@ -46,6 +46,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -395,14 +397,31 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
 /** Vorlage: `PosterTile` in `BrowseViews.swift` — fuellt die Spalte, 2:3, Titel zweizeilig. */
 @Composable
 fun RasterKachelAnsicht(k: Rasterkachel, modifier: Modifier = Modifier, tun: () -> Unit) {
-    Column(modifier.einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    // **Eine Kachel ist EIN Element fuer TalkBack** — Bild, Titel und Marke einzeln waeren drei
+    // Antippziele fuer dieselbe Sache.
+    val anteil = k.fortschritt?.takeIf { it > 0.0 && it < 1.0 }
+    val markenwortlaut = when (k.marke) {
+        "offen" -> uebersetzt("%lld offen", k.markenzahl)
+        "staffeln" -> if (k.markenzahl == 1) uebersetzt("1 Staffel") else uebersetzt("%lld Staffeln", k.markenzahl)
+        "gesehen" -> uebersetzt("Gesehen")
+        else -> null
+    }
+    val beschreibung = listOfNotNull(
+        k.titel, k.unterzeile,
+        anteil?.let { uebersetzt("%lld Prozent gesehen", (it * 100).toInt()) } ?: markenwortlaut
+    ).joinToString(", ")
+    // Langer Druck: das Kachelmenue mit Vorschau (`Kachelmenue`), dasselbe Bild in derselben Form.
+    Column(modifier.einblenden().kachelDruck({ Kachelmenuewunsch(k.id, k.titel, k.typ, k.plakat, false, k.unterzeile) }, tun)
+            .semantics(mergeDescendants = true) { contentDescription = beschreibung },
+        verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             // Kein `SubcomposeAsyncImage` im Raster — siehe `KachelAnsicht` auf der Startseite.
             var fehlt by remember(k.plakat) { mutableStateOf(k.plakat == null) }
             if (fehlt) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Symbol(Zeichen.Film, 22.dp, farbe = Stil.schriftSehrLeise)
             }
-            coil3.compose.AsyncImage(model = k.plakat, contentDescription = k.titel, contentScale = ContentScale.Crop,
+            // Dekorativ: die Kachel spricht ihre Beschreibung schon als Ganzes.
+            coil3.compose.AsyncImage(model = k.plakat, contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(), onError = { fehlt = true })
             k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
             k.marke?.let { Kachelplakette(it, k.markenzahl, Modifier.align(Alignment.TopEnd)) }

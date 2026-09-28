@@ -40,7 +40,7 @@ settings:
     # als `READY_FOR_SALE` in App Store Connect. Einen Bau an eine bereits
     # veroeffentlichte Fassung zu haengen geht nicht sauber; und was hier
     # drinsteckt, gehoert ohnehin bald in den Store.
-    MARKETING_VERSION: "1.0.4"
+    MARKETING_VERSION: "1.0.5"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
     #
@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "16"
+    CURRENT_PROJECT_VERSION: "14"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -249,7 +249,7 @@ targets:
       # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
       # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
       # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
-      # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
+      # Parameter mit, siehe `Lader.fern` in Stil.swift.
       - path: Sources/Shared/Bausteine.swift
       # **Der Bildspeicher, an dem `Profilzeichen` haengt.** Er merkt sich,
       # was schon geholt wurde, und antwortet synchron — nur deshalb steht
@@ -260,9 +260,26 @@ targets:
       # VLCs Zaehlwerk und das Technikschild darueber — beide teilen sich
       # alle vier Plattformen, seit es das Schild ueberall gibt.
       - path: Sources/Shared/Spielwerte.swift
+      # Die Folgenkarte am Ende einer Folge — Rahmen, Ring, Verlauf; die
+      # Karte selbst zeichnet jede Plattform.
+      - path: Sources/Shared/Folgenkartenteile.swift
+      # Plan und Dateianfang der nächsten Folge in den letzten Minuten
+      # (Regeln in `Vorpuffer` im Paket) — iPhone und Fernseher.
+      - path: Sources/Shared/Folgenvorbereitung.swift
+      # Der Kontowechsel als Bewegung (Entwurf D) — Flug, Bühne, gestaffelte
+      # Reihen; iPhone und Fernseher.
+      - path: Sources/Shared/Kontowechselflug.swift
+      - path: Sources/Shared/KontowechselbuehneUIKit.swift
+      # Feder und „aus dem Punkt" — die Auswahl wächst aus dem Abzeichen.
+      - path: Sources/Shared/Uebergaenge.swift
+      # Das Menü hinter dem langen Druck auf jede Kachel — auf dem Fernseher
+      # ohne Vorschau und ohne „Laden".
+      - path: Sources/Shared/Kachelmenue.swift
       - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
+      # Selbsttest ohne Netz (`-offlinelauf`), nur im Debug-Bau wirksam.
+      - path: Sources/Shared/Offlinelauf.swift
       - path: Sources/Shared/Discordanzeiger.swift
       # Trakt: Schluesselbund, Anmeldezustand, die Aufrufe aus AppModel.
       - path: Sources/Shared/Traktkonto.swift
@@ -295,6 +312,12 @@ targets:
       - path: Sources/Shared/Trickplaybilder.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
+      # „Hier weiterschauen" als Karte (Entwurf B): Bühne über allem und
+      # der Abgang des Abgebers, Zeitleiste im Paket (`Uebergabekarte`).
+      - path: Sources/Shared/Uebergabebuehne.swift
+      # Gemeinsam schauen: der Spiegel der Gruppe und die Bruecke zum
+      # Player. Der Ablauf selbst steht im Paket (`SyncPlaySitzung`).
+      - path: Sources/Shared/Gemeinsammodell.swift
       - path: Sources/Shared/Localizable.xcstrings
       # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
       # deutsch kommt hier heraus.
@@ -305,6 +328,9 @@ targets:
       # größer.
       - path: Sources/Shared/Startanimation.swift
       - path: Sources/Shared/Mittel
+      # Die Toene eines Kulissenbilds — der Fernseher faerbt damit seine
+      # Detailseiten, das iPhone seinen Grund darunter.
+      - path: Sources/Shared/Bildton.swift
       - path: Sources/tvOS
     dependencies:
       - package: JellyfinKit
@@ -534,6 +560,10 @@ targets:
       # Was das Mehr-Blatt anbietet — der Inhalt ist auf allen Plattformen
       # derselbe, nur die Darreichung ist eigen.
       - path: Sources/Shared/Titelhandlung.swift
+      # Nur der Sehstand-Eintrag der Mehr-Tafel (`Titelhandlung.sehstand`);
+      # das Menü selbst ist dort ausgeklammert, der Mac hat seins in
+      # Sources/macOS/KachelmenueMac.swift.
+      - path: Sources/Shared/Kachelmenue.swift
       # Abgeleitete Angaben am Titel — Fortsetzstelle, Kontextzeile.
       # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
       # überall (VERHALTEN.md D5).
@@ -559,6 +589,12 @@ targets:
       - path: Sources/Shared/Protokollteilen.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
+      # „Hier weiterschauen" als Karte (Entwurf B): Bühne über allem und
+      # der Abgang des Abgebers, Zeitleiste im Paket (`Uebergabekarte`).
+      - path: Sources/Shared/Uebergabebuehne.swift
+      # Gemeinsam schauen: der Spiegel der Gruppe und die Bruecke zum
+      # Player. Der Ablauf selbst steht im Paket (`SyncPlaySitzung`).
+      - path: Sources/Shared/Gemeinsammodell.swift
       # Der Code-Weg beim Aufnehmen eines weiteren Kontos: Code holen,
       # im Zweisekundentakt nachfragen, fuenf Minuten Gueltigkeit.
       - path: Sources/Shared/QuickConnectModell.swift
@@ -570,6 +606,19 @@ targets:
       # Vorhang — die Datei war in keinem seiner Pfade.
       - path: Sources/Shared/Startanimation.swift
       - path: Sources/Shared/Mittel
+      # Die Folgenkarte (Variante C): Rahmen, Ring, Verlauf — die Karte
+      # selbst zeichnet `Sources/macOS/Folgenkartenansicht.swift`. Dazu die
+      # Vorbereitung der nächsten Folge in den letzten Minuten.
+      - path: Sources/Shared/Folgenkartenteile.swift
+      - path: Sources/Shared/Folgenvorbereitung.swift
+      # Die Farbe des Kopfbilds unter Film- und Serienseite — dieselbe
+      # Rechnung wie Fernseher und iPhone, derselbe Auslauf wie das iPhone.
+      - path: Sources/Shared/Bildton.swift
+      - path: Sources/Shared/Bildstimmung.swift
+      # Kontowechsel D und die Karte aus dem Abzeichen: Ablauf und Kurve
+      # geteilt, die Bühne steht in `Sources/macOS/Kontowechselbuehne.swift`.
+      - path: Sources/Shared/Kontowechselflug.swift
+      - path: Sources/Shared/Uebergaenge.swift
       - path: Sources/macOS
     dependencies:
       - package: JellyfinKit

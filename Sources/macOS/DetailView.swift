@@ -45,7 +45,15 @@ struct DetailView: View {
                 FilmView(model: model, film: titel, zurueck: zurueck)
             }
         }
-        .task { if voll == nil { voll = await model.item(id: item.id) } }
+        // Eingesetzt erst, wenn die Seite steht: der Tausch baut sie ganz
+        // neu aus (`Einfahrt`).
+        .task {
+            guard voll == nil else { return }
+            let geholt = await model.item(id: item.id)
+            await Einfahrt.abwarten()
+            guard !Task.isCancelled else { return }
+            voll = geholt
+        }
         // Nach dem Player den Titel neu holen — er liegt als Ebene darüber,
         // `.task` läuft nicht neu. Siehe `AppModel.wiedergabeBeendet`.
         .onChange(of: model.seitenAuffrischen) { _, _ in
@@ -107,9 +115,15 @@ struct StaffelZiel: View {
             if serie == nil {
                 let geholt = await model.item(id: id)
                 if let geholt { Serienspeicher.geteilt.merken(geholt) }
+                // Die ganze Serienseite entsteht mit diesem Wert — nicht
+                // mitten in der Fahrt (`Einfahrt`).
+                await Einfahrt.abwarten()
+                guard !Task.isCancelled else { return }
                 serie = geholt
             }
             let f = await frisch
+            await Einfahrt.abwarten()
+            guard !Task.isCancelled else { return }
             frischeStaffelID = f?.seasonId
             frischeStaffelnummer = f?.parentIndexNumber
         }
@@ -123,11 +137,11 @@ struct FilmView: View {
     let film: Item
     let zurueck: () -> Void
 
-    @State private var farbe = Bildfarbe()
-
     @State private var extras: [Item] = []
     @State private var aehnliche: [Item] = []
     @State private var sammlungsreihen: [Sammlungsreihe.Reihe] = []
+    /// Alles unter dem Kopf ist beantwortet. Siehe `body`.
+    @State private var untenDa = false
     @State private var kopfstand = Kopfstand()
 
     var body: some View {
@@ -142,29 +156,51 @@ struct FilmView: View {
                     // ineinander.
                     .zIndex(1)
 
-                VStack(alignment: .leading, spacing: 26) {
-                    // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
-                    // hier stünde sie ein zweites Mal.
-                    Besetzungsreihe(model: model, leute: film.darsteller,
-                                    herkunft: film.name)
-                    // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
-                    // Reihenfolge wie auf iOS (A9).
-                    Titelreihe(titel: "Extras", eintraege: extras, model: model)
-                    // Über „Ähnliches": die Sammlung ist die nähere
-                    // Verwandtschaft. Nur bei Titeln, die in einer stehen.
-                    ForEach(sammlungsreihen, id: \.sammlung.id) { reihe in
-                        Sammlungsreihe(model: model, reihe: reihe,
-                                       art: Bibliotheksgattung.art(zuTyp: film.type))
+                // **Alles unter dem Kopf kommt auf einmal** — wie auf dem
+                // iPhone (`untenDa` in `BrowseViews.swift`, 24.09.2026).
+                // Extras und Ähnliches kamen ohne Blende, die Sammlungsreihe
+                // mit eigener danach, und jede schob den Rest nach unten.
+                // Jetzt wartet die Seite auf alle und blendet sie gemeinsam
+                // ein; kein Platzhalter, kein Leerhinweis während des Ladens.
+                if untenDa {
+                    VStack(alignment: .leading, spacing: 26) {
+                        // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
+                        // hier stünde sie ein zweites Mal.
+                        Besetzungsreihe(model: model, leute: film.darsteller,
+                                        herkunft: film.name)
+                        // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
+                        // Reihenfolge wie auf iOS (A9).
+                        Titelreihe(titel: "Extras", eintraege: extras, model: model)
+                        // Über „Ähnliches": die Sammlung ist die nähere
+                        // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                        ForEach(sammlungsreihen, id: \.sammlung.id) { reihe in
+                            Sammlungsreihe(model: model, reihe: reihe,
+                                           art: Bibliotheksgattung.art(zuTyp: film.type))
+                        }
+                        Titelreihe(titel: "Ähnliches", eintraege: aehnliche, model: model)
+                        if let quelle = film.mediaSources?.first {
+                            Dateizeile(quelle: quelle)
+                        }
                     }
-                    Titelreihe(titel: "Ähnliches", eintraege: aehnliche, model: model)
-                    if let quelle = film.mediaSources?.first {
-                        Dateizeile(quelle: quelle)
-                    }
+                    .padding(.horizontal, Stil.randAbstand)
+                    .padding(.top, 26)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, 26)
             }
             .padding(.bottom, 40)
+            // **Die Farbe des Kopfbilds unter der Seite** — wie am iPhone
+            // (`Stimmungsgrund`): dieselben Töne wie am Fernseher, oben rechts
+            // unter der Kulisse am kräftigsten, unter dem Kopf über 1300
+            // Punkt in OKLab nahtlos zurück auf `grund`. Am Inhalt, nicht an
+            // der Seite: sie scrollt mit dem Kopf, sonst stünde beim Scrollen
+            // eine Kante.
+            .background(alignment: .top) {
+                Stimmungsgrund(url: model.kopfbildURL(for: film), ab: Stil.heldHoehe)
+            }
+            // Darüber durchsichtige statt fester Flächen — siehe
+            // `Stil.flaecheDurchsichtig`.
+            .environment(\.aufBildfarbe, true)
+            .environment(\.bildfarbeQuelle, model.kopfbildURL(for: film))
         }
         .scrollIndicators(.never)
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
@@ -186,26 +222,11 @@ struct FilmView: View {
         // ungefragt beisteuert.
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        // **Der Ton endet mit dem Heldbild, nicht 260 Punkt darunter.**
-        //
-        // Er lief bis `heldHoehe + 260` weiter, „wie bei Apple TV, wo die
-        // ganze Seite vom Bild eingefaerbt wirkt". Auf dem Mac steht die
-        // Knopfreihe aber **neben** dem Abspielknopf, also mitten in diesem
-        // Auslauf — auf dem iPhone steht dieselbe Reihe **unter** dem Bild auf
-        // reinem `grund`. Die Knoepfe tragen auf beiden Plattformen exakt
-        // `flaeche` #262626; derselbe Grauton wirkt auf einem farbigen Grund
-        // aber wie eine andere Farbe. Rückmeldung vom 22.09.: „Das sind nicht
-        // dieselben, so wie ich das sehe."
-        //
-        // Endet der Verlauf mit dem Bild, kommen an der Mitte der Knopfreihe
-        // (356 von 380) noch 0,068 an — praktisch `grund` (0,063). Oben bleibt
-        // der Ton voll.
-        .background(alignment: .top) {
-            LinearGradient(colors: [farbe.ton, Stil.grund],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: Stil.heldHoehe)
-                .frame(maxHeight: .infinity, alignment: .top)
-        }
+        // **Hier stand ein eigener Verlauf aus `Bildfarbe`**, der mit dem
+        // Heldbild endete — weil die Knöpfe `flaeche` trugen und ein festes
+        // Grau auf farbigem Grund wie eine andere Farbe wirkt (22.09.). Seit
+        // 1.0.5 sind die Knöpfe über Bildfarbe durchsichtig (weiß 8 %), und
+        // die Farbe darf wie am iPhone unter die ganze Seite.
         .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
@@ -213,16 +234,21 @@ struct FilmView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: film.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.kopfbildURL(for: film)) }
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
-            extras = (await a) ?? []
-            aehnliche = (await b) ?? []
-        }
-        .task(id: "\(film.id)|\(model.kontowechsel)") {
-            let gefunden = await Sammlungsreihe.laden(model, titel: film)
-            withAnimation(Stil.einblenden) { sammlungsreihen = gefunden }
+            async let c = model.sammlungsreihen(zu: film)
+            let neueExtras = (await a) ?? []
+            let neueAehnliche = (await b) ?? []
+            let neueSammlungen = await c
+            await Einfahrt.abwarten()
+            guard !Task.isCancelled else { return }
+            // **Ein Einblenden, nicht drei.** Erst wenn alles beantwortet
+            // ist, wird es auf einmal gesetzt.
+            extras = neueExtras
+            aehnliche = neueAehnliche
+            sammlungsreihen = neueSammlungen
+            withAnimation(Stil.einblenden) { untenDa = true }
         }
     }
 }
@@ -253,9 +279,10 @@ struct Titelreihe: View {
                                          staffeln: eintrag.childCount,
                                          gesehen: eintrag.userData?.played,
                                          offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                         zeichen: eintrag.type == "Series" ? "tv" : "film")
+                                         zeichen: eintrag.kachelzeichen)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(eintrag, model: model)
                     }
                 }
             }
@@ -354,7 +381,7 @@ struct Heldenkopf: View {
             id: titel.id, konto: konto, art: .film, titel: titel.name,
             laufzeitTicks: titel.runTimeTicks, container: quelle?.container,
             quelle: quelle?.id, bytes: quelle?.size ?? 0,
-            gesehen: titel.userData?.played ?? false)
+            sehstand: titel.userData, bildcodec: quelle?.bildcodec)
     }
 
     private var ladebilder: [String: URL] {
@@ -403,8 +430,13 @@ struct Heldenkopf: View {
         .task(id: "\(titel.id)|\(titel.istGesehen)|\(model.seitenAuffrischen)") {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.istGesehen
+            // Vorab geholt (Überfahren der Kachel): der Beleg steht sofort.
+            if plan == nil, let schon = Planvorrat.plan(titel.id) { plan = schon }
             if titel.type == "Series" {
-                spielbarerTitel = await model.standInSerie(titel)
+                let stand = await model.standInSerie(titel)
+                await Einfahrt.abwarten()
+                guard !Task.isCancelled else { return }
+                spielbarerTitel = stand
             }
             // **Der Plan gehört zur Folge, nicht zur Serie.**
             //
@@ -421,7 +453,11 @@ struct Heldenkopf: View {
             // anfasst — der teuerste Abruf der App, hier umsonst und mitten
             // in der Einfahrt. iOS und tvOS holen ihn beide für die Folge.
             if let ziel = spielbarerTitel ?? (titel.type == "Series" ? nil : titel) {
-                plan = await model.plan(for: ziel.id)
+                let neu = await model.plan(for: ziel.id)
+                Planvorrat.merken(titel.id, neu)
+                await Einfahrt.abwarten()
+                guard !Task.isCancelled else { return }
+                plan = neu
             }
         }
     }
@@ -517,24 +553,28 @@ struct Heldenkopf: View {
     /// Jahr, Laufzeit, Genres — und dahinter die Belegzeile: Direct Play,
     /// Bewertung, Freigabe. **Eine Zeile**, nicht drei.
     ///
-    /// **Die Reihenfolge ist die der Vorlage.** In `Belegzeile`
-    /// (`Sources/Shared/Stil.swift`) stehen die drei Belege als Beleg →
-    /// Bewertung → Freigabe; hier standen sie als Bewertung → Freigabe →
-    /// Beleg. Dieselben drei Angaben in anderer Folge lesen sich als eine
-    /// andere Zeile, und die beiden sollen nebeneinander gleich aussehen.
+    /// **Die Reihenfolge ist die des Fernsehers:** Bewertung → Freigabe →
+    /// Beleg (`Belegmarken(belegZuletzt: true)` im Detailkopf). Vorne stand
+    /// der Beleg wie in der iPhone-`Belegzeile` — aber er kommt als Letztes
+    /// an, und vorne schob sein Erscheinen Sterne und FSK zur Seite.
     ///
     /// Jahr, Laufzeit und Genre stehen davor, weil der Mac sie nicht wie das
     /// iPhone unter dem Titel im Heldbild trägt — dort ist die `nebenzeile`
     /// Teil des `Heldkopf`, hier hat der Titelblock feste Stellen und keine
     /// zweite Zeile dafür.
     private var angabenReihe: some View {
-        HStack(spacing: 14) {
+        // **8 zwischen den Hüllen, 14 nach dem Text** — wie `Belegzeile` am
+        // iPhone. 14 stammt aus der Zeit, als nur Direct Play eine Hülle trug;
+        // zwischen drei kleinen Marken ist es ein Loch. Die 6 am Text statt
+        // eines Stapels im Stapel: ein leerer innerer Stapel hielte seinen
+        // Abstand auch ohne Marke (tvOS `Belegmarken`).
+        HStack(spacing: 8) {
             // Angabe (Jahr, Laufzeit, Genre): 12, wie im `Heldkopf` auf dem
             // iPhone. 14 und 10 stehen in keiner Leiter.
             Text(verbatim: angabenzeile)
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
-            if let plan { beleg(plan) }
+                .padding(.trailing, 6)
             // In derselben Hülle wie Direct Play, wie in `Belegzeile`
             // (23.09.2026): vorher stand die Bewertung als einzige Angabe
             // der Zeile nackt da.
@@ -554,8 +594,16 @@ struct Heldenkopf: View {
             if let freigabe = titel.officialRating {
                 Plakette(text: freigabe, rundung: Stil.eckeKlein)
             }
+            // **Der Beleg steht hinten** — Jahr · Laufzeit · Sterne · FSK ·
+            // Direct Play, wie am Fernseher (`Belegmarken(belegZuletzt:)`).
+            // Er kommt als Letzter und schiebt deshalb nichts; er blendet
+            // nur ein (0,2 s Deckkraft).
+            if let plan {
+                beleg(plan).transition(.opacity)
+            }
             Spacer(minLength: 0)
         }
+        .animation(.easeOut(duration: 0.2), value: plan != nil)
         .lineLimit(1)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -596,6 +644,7 @@ struct Heldenkopf: View {
                        farbe: Color, gewicht: Font.Weight) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: 11, weight: gewicht))
+                .accessibilityHidden(true)
             Text(verbatim: wort).font(Stil.kachel)
         }
         .foregroundStyle(farbe)
@@ -625,12 +674,15 @@ struct Heldenkopf: View {
             if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
                 Hauptknopf(beschriftung: "Fortsetzen") { starten(ab) }
                     .frame(width: Stil.hauptknopfBreite)
+                    // Rechtsklick: das Kachelmenü des Titels, wie an seiner Kachel.
+                    .kachelmenue(titel, model: model, nachher: { await auffrischen() })
                 Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: "arrow.counterclockwise", titel: "Von vorn") {
                     starten(0)
                 }
             } else {
                 Hauptknopf(beschriftung: "Abspielen") { starten(0) }
                     .frame(width: Stil.hauptknopfBreite)
+                    .kachelmenue(titel, model: model, nachher: { await auffrischen() })
             }
 
             Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: merkliste ? "bookmark.fill" : "bookmark",
@@ -671,7 +723,9 @@ struct Heldenkopf: View {
                 .overlay(alignment: .topLeading) {
                     if ladetafelOffen, let p = alsPosten {
                         Ladetafel(model: model, posten: [p], titel: titel.name,
-                                  bilder: ladebilder, offen: $ladetafelOffen)
+                                  bilder: ladebilder, offen: $ladetafelOffen,
+                                  qualitaetWaehlen: true,
+                                  gescheitert: { melde($0) })
                             .offset(y: Stil.hauptknopfHoehe + 8)
                             .transition(.aufklappen(von: .topLeading))
                             .zIndex(30)
@@ -728,28 +782,26 @@ struct Heldenkopf: View {
     /// ebenfalls hier stehen statt in der Knopfreihe.
     private var mehrHandlungen: [Titelhandlung] {
         var liste: [Titelhandlung] = [
-            .init(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                  text: gesehen ? "Als ungesehen markieren" : "Als gesehen markieren") {
-                gesehen.toggle()
-                Task {
-                    if let grund = await model.setzeGesehen(titel, an: gesehen) {
-                        gesehen.toggle()
-                        melde(grund)
-                    }
-                }
-            },
+            // Aus dem gemeinsamen Baustein neben dem Kachelmenü, nicht als
+            // eigener Eintrag — siehe `Titelhandlung.sehstand`.
+            .sehstand(titel, model: model, gesehen: $gesehen, melden: { melde($0) }),
             .init(symbol: "film", text: "Trailer") { trailerStarten() },
         ]
         if titel.type == "Series" {
             liste += Titelhandlungen.fuerSerie(
                 titel, stand: spielbarerTitel, staffel: staffel, model: model,
                 folgeStarten: { folge, ab in steuerung.starte(folge, ab: ab) },
-                melden: { melde($0) }, auffrischen: { await auffrischen() })
+                melden: { melde($0) }, auffrischen: { await auffrischen() },
+                // Ersetzt „Nächste Folge abspielen", wie auf iPhone und iPad.
+                gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                    ? { Gemeinsammodell.geteilt.anlegenFuer = $0 } : nil)
         } else {
             liste += Titelhandlungen.fuerFilm(
                 titel, plan: plan, model: model,
                 starten: { ab in steuerung.starte(titel, ab: ab) },
-                melden: { melde($0) }, auffrischen: { await auffrischen() })
+                melden: { melde($0) }, auffrischen: { await auffrischen() },
+                gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                    ? { [titel] in Gemeinsammodell.geteilt.anlegenFuer = titel } : nil)
         }
         return liste
     }

@@ -56,6 +56,13 @@ struct FassungsvergleichTests {
         #expect(Fassungsvergleich.baunummer(ausText: "Nichts davon") == nil)
     }
 
+    @Test("Nur das ganze Wort zaehlt, nicht „Umbau 12“ oder „rebuild 9“")
+    func baunummerNurAlsWort() {
+        #expect(Fassungsvergleich.baunummer(ausText: "Umbau 12 der Suche") == nil)
+        #expect(Fassungsvergleich.baunummer(ausText: "rebuild 9 caches, build 3") == 3)
+        #expect(Fassungsvergleich.baunummer(ausText: "(Build 4)") == 4)
+    }
+
     /// Ein Text, der mehrere Bauten aufzaehlt, nennt den aeltesten zuerst.
     @Test("Die groesste genannte Zahl gewinnt")
     func groessteZahl() {

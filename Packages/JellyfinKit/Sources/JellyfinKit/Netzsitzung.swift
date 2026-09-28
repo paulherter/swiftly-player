@@ -25,9 +25,10 @@ public extension URLSession {
     /// **Deshalb die Frist.** `waitsForConnectivity` wartet ohne Grenze, und
     /// ein Server, der schlicht nicht da ist, würde die Anmeldung hängen
     /// lassen statt einen Fehler zu zeigen. `timeoutIntervalForResource`
-    /// begrenzt den ganzen Vorgang; 20 Sekunden reichen für eine Abfrage, die
-    /// der Nutzer liest, und sind kurz genug, dass ein Tippfehler in der
-    /// Adresse als Fehler ankommt.
+    /// begrenzt den ganzen Vorgang auf 20 Sekunden. Die Prüfung einer
+    /// eingetippten Adresse läuft nicht hier, sondern mit kürzerer Frist über
+    /// ``Adresspruefung`` — dort kam ein Tippfehler sonst erst nach dieser
+    /// Frist als Fehler an.
     static let ortsnetzfaehig: URLSession = {
         let k = URLSessionConfiguration.default
         // **Auf Linux nur lesbar.** swift-corelibs-foundation kennt die
@@ -40,6 +41,11 @@ public extension URLSession {
         #endif
         k.timeoutIntervalForRequest = 15
         k.timeoutIntervalForResource = 20
+        #if DEBUG && canImport(Darwin)
+        // Selbsttest ohne Netz — ``Netzsperre``. Solange sie aus ist, nimmt
+        // sie keine Anfrage an.
+        k.protocolClasses = [Netzsperre.self] + (k.protocolClasses ?? [])
+        #endif
         return URLSession(configuration: k)
     }()
 }

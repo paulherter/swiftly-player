@@ -94,23 +94,30 @@ extension App {
         gtk_stack_set_vhomogeneous(alsStapel(reiterstapel), 0)
         anhaengen(unten, reiterstapel)
 
-        var gebaut: Set<String> = []
-        let zeigen: (Reiter) -> Void = { [weak self] fall in
-            guard let self else { return }
+        // **Alle drei Seiten stehen von Anfang an** (iPhone `fcd0d890`).
+        // Vorher entstanden „Folgen" sofort und „Ähnliches" erst beim ersten
+        // Wechsel dorthin, mit eigenem Abruf und eigenem Platzhalter. Jetzt
+        // kommen Stand, Staffeln, die Folgen der gewählten Staffel und
+        // Ähnliches in einem Zug (``serieNachladen``); die Besetzung steht
+        // schon im Titel.
+        var seiten: [Reiter: Widget?] = [:]
+        for fall in Reiter.allCases {
+            let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
+            gtk_stack_add_named(alsStapel(reiterstapel), raum, String(describing: fall))
+            reiterInhalt(fall, serie: serie, in: raum)
+            seiten[fall] = raum
+        }
+        serieNachladen(serie, folgen: seiten[.folgen] ?? nil, aehnliches: seiten[.aehnliches] ?? nil)
+
+        let zeigen: (Reiter) -> Void = { fall in
             gewaehlt = fall
             for (i, f) in Reiter.allCases.enumerated() {
                 guard let k = reiterknoepfe[i] else { continue }
                 if f == fall { gtk_widget_add_css_class(k, "swiftly-aktiv") }
                 else { gtk_widget_remove_css_class(k, "swiftly-aktiv") }
+                bedienhilfe(k, gewaehlt: f == fall)
             }
-            let name = String(describing: fall)
-            if !gebaut.contains(name) {
-                gebaut.insert(name)
-                let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
-                gtk_stack_add_named(alsStapel(reiterstapel), raum, name)
-                self.reiterInhalt(fall, serie: serie, in: raum)
-            }
-            gtk_stack_set_visible_child_name(alsStapel(reiterstapel), name)
+            gtk_stack_set_visible_child_name(alsStapel(reiterstapel), String(describing: fall))
         }
         reiterZeigen = zeigen
         zeigen(.folgen)
@@ -122,10 +129,12 @@ extension App {
         leeren(raum)
         switch was {
         case .folgen:
-            // **Kein Ladering und kein „Lade …"** (E17), sondern drei
-            // Folgenzeilen in ihrer Form.
-            anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
-            staffelnLaden(serie, in: raum)
+            // **Leer, aber mit Platz** (iPhone `2b17f044`). Solange geladen
+            // wird, steht die Hoehe der Staffelwahl frei; Staffelwahl und
+            // Folgen blenden dann an ihrem Platz ein. Die drei
+            // Folgenplatzhalter sind weg: die Liste ist das Letzte auf der
+            // Seite, darunter springt nichts.
+            anhaengen(raum, staffelwahlPlatz())
         case .besetzung:
             if serie.darsteller.isEmpty {
                 let leer = beschriftung(uebersetzt("Keine Besetzung hinterlegt."), stil: "swiftly-koerper")
@@ -135,14 +144,35 @@ extension App {
                 anhaengen(raum, besetzungsreihe(serie.darsteller, herkunft: serie.name))
             }
         case .aehnliches:
-            anhaengen(raum, rasterPlatzhalter(rand: Stil.randAbstand))
-            aehnlicheNachladen(serie, in: raum, leeren: true, alsRaster: true)
+            // Bleibt leer, bis ``serieNachladen`` antwortet — kein
+            // Platzhalter und kein „Nichts Ähnliches", solange geladen wird.
+            break
         }
+    }
+
+    /// Der freie Platz der Staffelwahl: Chiphoehe 30 und die 18 darunter
+    /// (``staffelnZeigen``).
+    private func staffelwahlPlatz() -> Widget! {
+        let platz = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(platz, -1, 30)
+        gtk_widget_set_margin_bottom(platz, 18)
+        return platz
     }
 
     // MARK: Staffeln und Folgen
 
-    private func staffelnLaden(_ serie: Item, in raum: Widget!) {
+    /// **Ein Einblenden, nicht fünf** (iPhone `fcd0d890`, `SeriesDetailView.laden`).
+    ///
+    /// Die Seite setzte jede Antwort einzeln: erst die Staffelwahl, dann die
+    /// Folgen mit eigenem Platzhalter, und „Ähnliches" erst, wenn jemand den
+    /// Reiter öffnete. Jetzt kommen Stand, Staffeln, die Folgen der
+    /// gewählten Staffel und Ähnliches zusammen und blenden gemeinsam ein.
+    /// Der Plan läuft daneben (``planNachladen``) und blendet nur den Beleg
+    /// ein, dessen Platz schon steht.
+    ///
+    /// - Parameter aehnliches: `nil` beim Wiederholen nach einer Störung —
+    ///   dann gilt der Abruf nur den Staffeln.
+    private func serieNachladen(_ serie: Item, folgen raum: Widget!, aehnliches araum: Widget?) {
         guard let client else { return }
         let id = startStaffel
         let nummer = startStaffelNummer
@@ -150,18 +180,24 @@ extension App {
         // niemand liest, kostet auf jeder Serienseite eine Anfrage.
         let brauchtStand = Staffelwahlregel.brauchtStand(hinweisID: id, hinweisNummer: nummer)
 
-        // **Schon geholt heisst: sofort da.** Kein Lader, kein Sprung.
+        // **Schon geholt heisst: sofort da.** Kein Lader, kein Sprung —
+        // „Ähnliches" steht dann in einem anderen Reiter und kommt allein.
         if let schon = staffelspeicher[serie.id], !schon.isEmpty, !brauchtStand {
             staffelnZeigen(schon, serie: serie, in: raum,
                            gewaehlt: Staffelwahlregel.waehle(aus: schon, hinweisID: id,
                                                              hinweisNummer: nummer))
+            if let araum { aehnlicheNachladen(serie, in: araum, leeren: true, alsRaster: true) }
             return
         }
         let kiste = gehalten(raum)
+        let aKiste = araum.map(gehalten)
         Task.detached { [self] in
-            // Beides nebenher: der Stand haengt nicht an den Staffeln.
+            // Alles nebenher: Stand, Staffeln und Ähnliches hängen nicht
+            // aneinander; nur die Folgen brauchen die gewählte Staffel.
             async let staffelnRoh = try? await client.staffeln(seriesID: serie.id)
             async let standRoh = brauchtStand ? await client.standInSerie(serie.id) : nil
+            async let aehnlichRoh: [Item]?? = aKiste == nil
+                ? .none : .some(try? await client.aehnliche(itemID: serie.id, zu: serie))
             // **`nil` heisst gestoert, `[]` wirklich leer** (a2bb95bd) — und
             // ein gescheiterter Abruf wird nicht gemerkt (4fffc63c).
             let geholt = await staffelnRoh
@@ -169,21 +205,41 @@ extension App {
             let stand = await standRoh
             let gewaehlt = Staffelwahlregel.waehle(aus: staffeln, hinweisID: id,
                                                    hinweisNummer: nummer, stand: stand)
-            aufHauptfaden {
-                defer { losgelassen(kiste) }
+            // Die Folgen der Staffel, die gleich dasteht — ``staffelnZeigen``
+            // nimmt dieselbe.
+            let erste = gewaehlt ?? staffeln.first
+            let folgen: [Item]? = await {
+                guard let erste else { return nil }
+                return try? await client.folgen(seriesID: serie.id, seasonID: erste.id)
+            }()
+            let aehnliche = await aehnlichRoh
+            nachDemSchub {
+                defer {
+                    losgelassen(kiste)
+                    if let aKiste { losgelassen(aKiste) }
+                }
+                if let aKiste, let aehnliche {
+                    self.aehnlicheZeigen(aehnliche, titel: serie, in: aKiste.widget,
+                                         leeren: true, alsRaster: true)
+                    gtk_widget_set_opacity(aKiste.widget, 0)
+                    blenden(aKiste.widget, auf: 1, dauer: Stil.zeitBlendeHerein)
+                }
                 guard geholt != nil else {
                     leeren(kiste.widget)
                     anhaengen(kiste.widget, self.stoerhinweis { [weak self] in
                         guard let self, let raum = kiste.widget else { return }
                         leeren(raum)
-                        anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
-                        self.staffelnLaden(serie, in: raum)
+                        anhaengen(raum, self.staffelwahlPlatz())
+                        self.serieNachladen(serie, folgen: raum, aehnliches: nil)
                     })
                     return
                 }
                 self.staffelspeicher[serie.id] = staffeln
+                if let erste, let folgen { self.folgenspeicher[erste.id] = folgen }
                 self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget,
                                     gewaehlt: gewaehlt)
+                gtk_widget_set_opacity(kiste.widget, 0)
+                blenden(kiste.widget, auf: 1, dauer: Stil.zeitBlendeHerein)
             }
         }
     }
@@ -266,6 +322,20 @@ extension App {
         gtk_revealer_set_child(alsAufklapp(aufklapp), liste)
         gtk_widget_set_margin_top(aufklapp, 8)
         gtk_widget_set_halign(aufklapp, GTK_ALIGN_START)
+        // **Zugeklappt ist sie weg, nicht nur durchsichtig.** Eine Blende
+        // behält zu die volle Höhe ihrer Liste (headless gemessen: 336 Punkt
+        // bei acht Staffeln) — das war der riesige Abstand zwischen
+        // Staffelwahl und erster Folge. Sichtbar wird sie beim Aufklappen,
+        // unsichtbar, sobald das Zuklappen fertig ist.
+        gtk_widget_set_visible(aufklapp, 0)
+        let aufklappKiste = gehalten(aufklapp)
+        beiEigenschaft(UnsafeMutableRawPointer(aufklapp), "notify::child-revealed") {
+            guard let a = aufklappKiste.widget,
+                  gtk_revealer_get_child_revealed(alsAufklapp(a)) == 0,
+                  gtk_revealer_get_reveal_child(alsAufklapp(a)) == 0 else { return }
+            gtk_widget_set_visible(a, 0)
+        }
+        beiSignal(aufklapp, "destroy") { losgelassen(aufklappKiste) }
         anhaengen(wahlblock, aufklapp)
 
         // **Einmal angelegt, nicht bei jedem Klick.** Vorher entstand hier je
@@ -298,6 +368,7 @@ extension App {
             // Auch bei einer einzigen Staffel oeffnet sie: der Chip sagt, welche
             // Staffel man sieht (Mac 91e2475a).
             let offen = gtk_revealer_get_reveal_child(alsAufklapp(aufklapp)) == 0
+            if offen { gtk_widget_set_visible(aufklapp, 1) }
             // Die Klasse stoesst das Aufklappen im Stilblatt an.
             if offen { gtk_widget_add_css_class(liste, "swiftly-offen") }
             else { gtk_widget_remove_css_class(liste, "swiftly-offen") }
@@ -312,7 +383,11 @@ extension App {
         // Knopfreihe (``ladeauswahlZeigen(_:an:)``). 18 unter der Wahl.
         staffelladeknopf = nil
         gtk_widget_set_margin_start(wahlblock, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_bottom(wahlblock, 18)
+        // 14 bis zur ersten Zeile, dazu ihre 12 Innenabstand — wie am iPhone
+        // (`SeriesView.folgenliste`) und am Mac. Der Abstand des Reiterraums
+        // (18) gilt hier nicht, sonst stünden beide übereinander.
+        gtk_box_set_spacing(alsBox(raum), 0)
+        gtk_widget_set_margin_bottom(wahlblock, 14)
         anhaengen(raum, wahlblock)
         anhaengen(raum, folgenraum)
         if let jetzt = wahl.jetzt {
@@ -342,6 +417,7 @@ extension App {
         gtk_widget_add_css_class(knopf, "swiftly-handlung")
         gtk_widget_add_css_class(knopf, "swiftly-staffelzeile")
         if gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        bedienhilfe(knopf, gewaehlt: gewaehlt)
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         let l = beschriftung(text, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
@@ -362,6 +438,7 @@ extension App {
         guard let zeile else { return }
         if gewaehlt { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
         else        { gtk_widget_remove_css_class(zeile, "swiftly-aktiv") }
+        bedienhilfe(zeile, gewaehlt: gewaehlt)
         // Knopf → Reihe → (Beschriftung, Haken). Der Haken ist das letzte Kind.
         guard let reihe = gtk_button_get_child(alsKnopf(zeile)),
               let haken = gtk_widget_get_last_child(reihe) else { return }
@@ -372,10 +449,23 @@ extension App {
         guard let client else { return }
         if let schon = folgenspeicher[staffel.id] {
             folgenZeigen(schon, in: raum)
+            // **Der Speicher zeigt sofort, der Server hat recht.** Was hier
+            // liegt, stammt vom letzten Besuch; wer inzwischen am Handy
+            // weitergeschaut hat, sah weder Balken noch Restzeit. Frisch
+            // holen und die Zeilen an Ort und Stelle nachziehen — ohne
+            // Neubau, die Liste springt nicht.
+            Task.detached { [self] in
+                guard let frisch = try? await client.folgen(seriesID: serie.id,
+                                                            seasonID: staffel.id) else { return }
+                nachDemSchub {
+                    self.folgenspeicher[staffel.id] = frisch
+                    for f in frisch { self.sehstandZeilen[f.id]?.auffrischen(f) }
+                }
+            }
             return
         }
-        leeren(raum)
-        anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
+        // **Keine Platzhalter** (iPhone `2b17f044`): die bisherige Liste
+        // bleibt stehen, bis die neue da ist, und die blendet dann ein.
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let geholt = try? await client.folgen(seriesID: serie.id,
@@ -394,6 +484,8 @@ extension App {
                 }
                 self.folgenspeicher[staffel.id] = folgen
                 self.folgenZeigen(folgen, in: kiste.widget)
+                gtk_widget_set_opacity(kiste.widget, 0)
+                blenden(kiste.widget, auf: 1, dauer: Stil.zeitBlendeHerein)
             }
         }
     }
@@ -415,8 +507,38 @@ extension App {
             anhaengen(raum, l)
             return
         }
-        for folge in folgen { anhaengen(raum, folgenzeile(folge)) }
+        // **Schrittweise, nicht auf einmal.** Hier baute eine Schleife jede
+        // Zeile in einem Zug — bei einer Staffel mit vierzig Folgen je Zeile
+        // ein Bild, Texte und Knöpfe, alles auf dem Hauptfaden und alles vor
+        // dem nächsten Bild. Das war das Stocken beim Öffnen einer Serie mit
+        // vielen Folgen. Jetzt stehen die ersten sofort (sie sind zu sehen),
+        // der Rest kommt in kleinen Stücken, jedes nach dem nächsten
+        // gezeichneten Bild (``nachFrist`` läuft unter dem Bildtakt).
+        folgenaufbau += 1
+        let nummer = folgenaufbau
+        let sofort = App.folgenSofort
+        for folge in folgen.prefix(sofort) { anhaengen(raum, folgenzeile(folge)) }
+        guard folgen.count > sofort else { return }
+        let kiste = gehalten(raum)
+        func weiter(ab start: Int) {
+            nachFrist(0) { [weak self] in
+                guard let self, self.folgenaufbau == nummer, let raum = kiste.widget,
+                      gtk_widget_get_parent(raum) != nil else {
+                    losgelassen(kiste)
+                    return
+                }
+                let ende = min(start + App.folgenJeSchritt, folgen.count)
+                for folge in folgen[start..<ende] { anhaengen(raum, self.folgenzeile(folge)) }
+                if ende < folgen.count { weiter(ab: ende) } else { losgelassen(kiste) }
+            }
+        }
+        weiter(ab: sofort)
     }
+
+    /// So viele Folgen stehen sofort — mehr passen unter den Kopf nicht.
+    static let folgenSofort = 8
+    /// Und so viele kommen je Schritt danach.
+    static let folgenJeSchritt = 4
 
     /// Eine Folge in der Liste. Bild 160 × 90 (16 : 9), 18 Abstand, darunter
     /// Kopfzeile mit Laufzeit rechts und zwei Zeilen Beschreibung.
@@ -467,16 +589,7 @@ extension App {
            let anteil = folge.gesehenerAnteil {
             balkenteile = balkenLegen(huelle, breite: 160, anteil: anteil)
         }
-        // Gesehenes tritt zurueck, es verschwindet nicht: 0,45 wie auf dem Mac.
-        gtk_widget_set_opacity(huelle, folge.istGesehen ? 0.45 : 1)
-
-        let bildhaken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(bildhaken), 10)
-        gtk_widget_add_css_class(bildhaken, "swiftly-folgenhaken")
-        gtk_widget_set_halign(bildhaken, GTK_ALIGN_END)
-        gtk_widget_set_valign(bildhaken, GTK_ALIGN_START)
-        gtk_widget_set_visible(bildhaken, folge.istGesehen ? 1 : 0)
-        gtk_overlay_add_overlay(OpaquePointer(huelle), bildhaken)
+        let bildhaken = gesehenhakenLegen(huelle, an: folge.istGesehen)
         // **Ein Abspielzeichen über dem Bild, wenn der Zeiger da ist** — der
         // Mac hat es (`SerienView.swift:665-674`). Ohne es sieht ein Standbild
         // nicht danach aus, als ließe es sich anklicken.
@@ -485,7 +598,10 @@ extension App {
         gtk_widget_add_css_class(kreis, "swiftly-spielkreis")
         gtk_widget_set_halign(kreis, GTK_ALIGN_CENTER)
         gtk_widget_set_valign(kreis, GTK_ALIGN_CENTER)
-        gtk_widget_set_visible(kreis, 0)
+        // Steht immer da, nur unsichtbar — so kann es einblenden statt
+        // aufzuspringen (`zeitSchweben`). Klicks gehen an die Zeile.
+        gtk_widget_set_opacity(kreis, 0)
+        gtk_widget_set_can_target(kreis, 0)
         gtk_overlay_add_overlay(OpaquePointer(huelle), kreis)
         anhaengen(zeile, huelle)
 
@@ -500,8 +616,17 @@ extension App {
         gtk_label_set_max_width_chars(OpaquePointer(name), 1)
         gtk_widget_set_hexpand(name, 1)
         anhaengen(kopf, name)
-        if let sekunden = folge.runtimeSeconds, sekunden > 0 {
-            let dauer = beschriftung(laufzeit(sekunden), stil: "swiftly-zweitzeile")
+        // **Angefangen: die Restzeit statt der Laufzeit** — wie `Folgenzeile`
+        // am iPhone („Noch 24 Minuten"). Der Balken im Bild sagt, wie weit;
+        // das Wort, wie lange noch.
+        func dauertext(_ f: Item) -> String? {
+            guard let sekunden = f.runtimeSeconds, sekunden > 0 else { return nil }
+            return (f.istGesehen ? nil : f.restzeitText) ?? laufzeit(sekunden)
+        }
+        var dauerfeld: Widget?
+        if let text = dauertext(folge) {
+            let dauer = beschriftung(text, stil: "swiftly-zweitzeile")
+            dauerfeld = dauer
             gtk_widget_add_css_class(dauer, "swiftly-leise")
             anhaengen(kopf, dauer)
         }
@@ -519,60 +644,12 @@ extension App {
         }
         anhaengen(zeile, text)
 
-        // **Der Haken steht immer, wenn die Folge gesehen ist** — auf iPhone
-        // und Mac genauso. Er ist die einzige Auskunft darüber in der Liste;
-        // ohne ihn sieht eine durchgesehene Staffel aus wie eine
-        // unangetastete. **Zum Ändern** braucht es den Zeiger, zum Sehen
-        // nicht: beim Schweben tritt an seine Stelle ein runder Knopf.
+        // **Kein Haken-Knopf mehr am Zeilenende** (wie am Mac). Er kam unter
+        // dem Zeiger und war der zweite Weg zum Sehstand; der Weg ist jetzt
+        // das Kachelmenü (Rechtsklick). Der Haken als *Auskunft* steht auf
+        // dem Bild und bleibt dort, auch unter dem Zeiger.
         var gesehen = folge.istGesehen
-        let platz = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
-        gtk_widget_set_size_request(platz, 40, -1)
-        gtk_widget_set_halign(platz, GTK_ALIGN_END)
-        gtk_widget_set_valign(platz, GTK_ALIGN_START)
-        gtk_widget_set_margin_top(platz, 2)
-
-        // **Der stille Haken steht jetzt auf dem Bild, nicht hier.** Diese
-        // Spalte traegt nur noch den Umschaltknopf, der beim Schweben kommt.
         let ruhig = bildhaken
-
-        let knopf = nebenknopf("object-select-symbolic", aktiv: gesehen)
-        gtk_widget_add_css_class(knopf, "swiftly-hakenknopf")
-        gtk_widget_set_size_request(knopf, 34, 34)
-        gtk_widget_set_visible(knopf, 0)
-        beiSignal(knopf, "clicked") { [weak self] in
-            guard let self, let client = self.client else { return }
-            gesehen.toggle()
-            knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
-            gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
-            // Das Bild tritt mit zurueck — dieselbe Auskunft, dieselbe Stelle.
-            gtk_widget_set_opacity(huelle, gesehen ? 0.45 : 1)
-            let neu = gesehen
-            // **Der Zustand des Knopfes ist die Antwort** (D6) — aber nur,
-            // solange sie stimmt. Lehnt der Server ab, geht der Haken zurück
-            // und sagt warum; auf dem Mac genauso.
-            // Zeiger über eine Fadengrenze gehen in die Kiste — dieselbe
-            // Zusicherung wie überall hier.
-            let knopfkiste = gehalten(knopf)
-            let hakenkiste = gehalten(ruhig)
-            Task.detached { [self] in
-                do {
-                    try await client.setzeGesehen(itemID: folge.id, an: neu)
-                    // Der gemerkte Stand dieser Staffel ist ab jetzt falsch.
-                    aufHauptfaden { self.sehstandVergessen(folge) }
-                }
-                catch {
-                    aufHauptfaden {
-                        knopfzustand(knopfkiste.widget, aktiv: !neu,
-                                     symbol: "object-select-symbolic")
-                        gtk_widget_set_visible(hakenkiste.widget, !neu ? 1 : 0)
-                        self.melden(lesbarerFehler(error))
-                    }
-                }
-                aufHauptfaden { losgelassen(knopfkiste); losgelassen(hakenkiste) }
-            }
-        }
-        anhaengen(platz, knopf)
-        anhaengen(zeile, platz)
 
         // **Kein Ladering je Folge mehr** (Mac f4dae47c): er war einer von
         // drei Wegen zum Laden und der schlechteste — bei fuenfundzwanzig
@@ -585,6 +662,18 @@ extension App {
         // nach oben (bafc898). So bleiben Scrollstelle, Staffel und Fokus.
         var aktuell = folge
         var schwebt = false
+        // **Der Tastaturfokus zählt wie der Zeiger.** Der Haken zum Umschalten
+        // steht nur beim Überfahren da; wer mit Tab kommt, sähe ihn nie und
+        // käme nicht an ihn heran.
+        var fokussiert = false
+        // Ein Name statt vier Bruchstücke: Nummer, Titel, und wie weit.
+        func benennen() {
+            let teile = [nummer + aktuell.name,
+                         sehstandWort(gesehen: gesehen, anteil: aktuell.gesehenerAnteil)]
+            bedienhilfe(zeile, name: teile.compactMap { $0 }.joined(separator: ", "),
+                        gewaehlt: laeuft)
+        }
+        benennen()
         let marke = naechsteSehstandMarke()
         sehstandZeilen[folge.id] = (marke, { [weak self] neu in
             guard let self else { return }
@@ -595,35 +684,56 @@ extension App {
                 balkenteile = balkenLegen(huelle, breite: 160, anteil: anteil)
             }
             gesehen = neu.istGesehen
-            gtk_widget_set_opacity(huelle, gesehen ? 0.45 : 1)
-            knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
-            gtk_widget_set_visible(ruhig, !schwebt && gesehen ? 1 : 0)
+            bildAbdunkeln(huelle, gesehen)
+            gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+            if let feld = dauerfeld, let text = dauertext(neu) {
+                gtk_label_set_text(OpaquePointer(feld), text)
+            }
+            benennen()
         })
         beiSignal(zeile, "destroy") { [weak self] in
             if self?.sehstandZeilen[folge.id]?.marke == marke { self?.sehstandZeilen[folge.id] = nil }
         }
 
-        beiZeiger(zeile, herein: {
-            schwebt = true
-            gtk_widget_add_css_class(zeile, "swiftly-schwebt")
-            gtk_widget_set_visible(knopf, 1)
-            gtk_widget_set_visible(ruhig, 0)
-            gtk_widget_set_visible(kreis, 1)
-        }, hinaus: {
-            // Der Ladeknopf bleibt stehen. Er wurde hier versteckt — und
-            // sobald seine Tafel aufging, verliess der Zeiger die Zeile, der
-            // Knopf verschwand und nahm die Tafel mit. Das war „nichts passiert".
-            schwebt = false
-            gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
-            gtk_widget_set_visible(knopf, 0)
-            gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
-            gtk_widget_set_visible(kreis, 0)
-        })
+        // Zeiger oder Fokus: dieselbe Hervorhebung, derselbe Haken.
+        func vorneZeigen() {
+            let vorn = schwebt || fokussiert
+            if vorn { gtk_widget_add_css_class(zeile, "swiftly-schwebt") }
+            else { gtk_widget_remove_css_class(zeile, "swiftly-schwebt") }
+            blenden(kreis, auf: vorn ? 1 : 0, dauer: Stil.zeitSchweben)
+        }
+        // Der Ladeknopf bleibt stehen. Er wurde beim Verlassen versteckt — und
+        // sobald seine Tafel aufging, verliess der Zeiger die Zeile, der
+        // Knopf verschwand und nahm die Tafel mit. Das war „nichts passiert".
+        beiZeiger(zeile, herein: { schwebt = true; vorneZeigen() },
+                         hinaus: { schwebt = false; vorneZeigen() })
+        beiFokus(zeile, herein: { fokussiert = true; vorneZeigen() },
+                        hinaus: { fokussiert = false; vorneZeigen() })
 
         // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5) —
         // oder, in der Player-Folgenebene, wechselt der laufende Player zu ihr.
-        beiKlick(zeile) { [weak self] in
+        beiKlick(zeile, tastatur: true) { [weak self] in
             if let aktion { aktion(aktuell) } else { self?.starte(aktuell) }
+        }
+        // **Das Kachelmenü an jeder Folge** (1.0.5, Apple `.kachelmenue(folge, …)`
+        // in `SeriesView` und in der Folgenliste des Players): Rechtsklick,
+        // langer Druck oder Menütaste. Auf der Serienseite dieselben Einträge
+        // wie an einer Kachel — darunter „Gemeinsam schauen", das hier vorher
+        // allein stand —, in der Folgenebene des Players nur der Sehstand.
+        let bildadresse: URL? = adressen.flatMap { a in
+            folge.imageTags?["Primary"].flatMap {
+                a.bauen(itemID: folge.id, marke: $0, mass: .hoechstensHoch(220))
+            }
+        }
+        let imPlayer = aktion != nil
+        kachelmenueAnlegen(zeile) { [weak self] in
+            Kachelmenueangabe(item: aktuell, quer: true, bild: bildadresse, imPlayer: imPlayer,
+                              nachher: { neu in
+                                  guard let self else { return }
+                                  self.sehstandZeilen[neu.id]?.auffrischen(neu)
+                                  // Der Hauptknopf der Serie zeigt danach vielleicht woandershin.
+                                  self.kopfAuffrischen?.tun()
+                              })
         }
         return zeile
     }
@@ -712,54 +822,65 @@ extension App {
         guard let client else { return }
         let kiste = gehalten(raum)
         Task.detached { [self] in
-            let geholt = try? await client.aehnliche(itemID: titel.id)
-            let treffer = geholt ?? []
+            // **Mit dem Titel selbst als Vorlage** (`6e480f14`): liegt er in
+            // zwei Bibliotheken, fiel sonst seine Kopie unter „Ähnliches".
+            let geholt = try? await client.aehnliche(itemID: titel.id, zu: titel)
             nachDemSchub {
                 defer { losgelassen(kiste) }
-                let ziel = kiste.widget
-                if leeren_ { leeren(ziel) }
-                // Als Reiter steht dort sonst der ganze Inhalt — ein
-                // gescheiterter Abruf sagt es (Mac 4fffc63c). Als Reihe auf
-                // der Filmseite bleibt der Abschnitt einfach weg, wie dort.
-                if geholt == nil, leeren_ {
-                    anhaengen(ziel, self.stoerhinweis { [weak self] in
-                        guard let self, let raum = kiste.widget else { return }
-                        self.aehnlicheNachladen(titel, in: raum, leeren: true,
-                                                rand: rand, alsRaster: alsRaster)
-                    })
-                    return
-                }
-                guard !treffer.isEmpty else {
-                    if leeren_ {
-                        // Mittig, mit Zeichen — wie jeder andere Leerzustand.
-                        // Hier stand eine Textzeile oben links.
-                        //
-                        // **`mail-inbox-symbolic`, nicht `mail-archive`.**
-                        // Der Mac nimmt `tray` (`SerienView.swift:392`), und
-                        // den Ablagekorb hat unter Breeze nur der Posteingang;
-                        // `mail-archive-symbolic` gibt es dort gar nicht, GTK
-                        // zeigte dafuer das Ersatzbild mit rotem
-                        // Verbotszeichen. Am Bild gefunden.
-                        // `Leerhinweis`, wie auf dem Mac: ein leerer
-                        // Abschnitt innerhalb der Seite.
-                        anhaengen(ziel, self.leerhinweis(uebersetzt("Nichts Ähnliches gefunden")))
-                    }
-                    return
-                }
-                if alsRaster {
-                    let raster = self.rasterBauen()
-                    gtk_widget_set_margin_start(raster, Int32(rand))
-                    gtk_widget_set_margin_end(raster, Int32(rand))
-                    self.rasterFuellen(raster, treffer)
-                    anhaengen(ziel, raster)
-                } else {
-                    anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Ähnliches"), art: .neu,
-                                                    items: treffer, rand: rand))
-                    // Ein eigener Platz auf der Filmseite steht bis hier
-                    // unsichtbar, damit er keinen Abstand mitbringt.
-                    gtk_widget_set_visible(ziel, 1)
-                }
+                self.aehnlicheZeigen(geholt, titel: titel, in: kiste.widget, leeren: leeren_,
+                                     rand: rand, alsRaster: alsRaster)
             }
+        }
+    }
+
+    /// Füllt den Platz mit einer Antwort — aus ``aehnlicheNachladen`` oder aus
+    /// dem gemeinsamen Abruf der Serienseite (``serieNachladen``).
+    func aehnlicheZeigen(_ geholt: [Item]?, titel: Item, in ziel: Widget!, leeren leeren_: Bool,
+                         rand: Int = Stil.randAbstand, alsRaster: Bool) {
+        // Doppelte Kennungen raus — dieselbe Regel wie in Suche und Startseite.
+        let treffer = Listenregeln.ohneDoppelte(geholt ?? [])
+        if leeren_ { leeren(ziel) }
+        // Als Reiter steht dort sonst der ganze Inhalt — ein
+        // gescheiterter Abruf sagt es (Mac 4fffc63c). Als Reihe auf
+        // der Filmseite bleibt der Abschnitt einfach weg, wie dort.
+        if geholt == nil, leeren_ {
+            let kiste = Zeigerkiste(ziel)
+            anhaengen(ziel, stoerhinweis { [weak self] in
+                guard let self, let raum = kiste.widget else { return }
+                self.aehnlicheNachladen(titel, in: raum, leeren: true,
+                                        rand: rand, alsRaster: alsRaster)
+            })
+            return
+        }
+        guard !treffer.isEmpty else {
+            if leeren_ {
+                // Mittig, mit Zeichen — wie jeder andere Leerzustand.
+                // Hier stand eine Textzeile oben links.
+                //
+                // **`mail-inbox-symbolic`, nicht `mail-archive`.**
+                // Der Mac nimmt `tray` (`SerienView.swift:392`), und
+                // den Ablagekorb hat unter Breeze nur der Posteingang;
+                // `mail-archive-symbolic` gibt es dort gar nicht, GTK
+                // zeigte dafuer das Ersatzbild mit rotem
+                // Verbotszeichen. Am Bild gefunden.
+                // `Leerhinweis`, wie auf dem Mac: ein leerer
+                // Abschnitt innerhalb der Seite.
+                anhaengen(ziel, self.leerhinweis(uebersetzt("Nichts Ähnliches gefunden")))
+            }
+            return
+        }
+        if alsRaster {
+            let raster = self.rasterBauen()
+            gtk_widget_set_margin_start(raster, Int32(rand))
+            gtk_widget_set_margin_end(raster, Int32(rand))
+            self.rasterFuellen(raster, treffer)
+            anhaengen(ziel, raster)
+        } else {
+            anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Ähnliches"), art: .neu,
+                                            items: treffer, rand: rand))
+            // Ein eigener Platz auf der Filmseite steht bis hier
+            // unsichtbar, damit er keinen Abstand mitbringt.
+            gtk_widget_set_visible(ziel, 1)
         }
     }
 }

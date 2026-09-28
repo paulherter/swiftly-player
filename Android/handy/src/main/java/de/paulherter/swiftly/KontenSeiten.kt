@@ -31,6 +31,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.platform.LocalDensity
+import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -270,7 +274,9 @@ fun ServerAufnahmeSeite(app: SwiftlyAnwendung, voreingestellt: String?, zurueck:
         QuickConnectAnmeldung(app, neuerServer = true, zurueck = { quick = false }) { aufnehmen(it) }
         return
     }
-    BackHandler { abbrechen() }
+    // **Kein eigener Zurueck-Fang** (Audit 27.09.): er nahm der Seite das Mitziehen der Hauptansicht.
+    // Die Aufnahme bricht ab, sobald die Seite geht — auf welchem Weg auch immer.
+    DisposableEffect(Unit) { onDispose { app.kern.aufnahmeAbbrechen() } }
 
     val s = server
     // Der Titel ist der Servername, sobald er feststeht.
@@ -368,9 +374,17 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
     val vorn = karte.konten.firstOrNull { it.aktiv } ?: karte.konten.firstOrNull() ?: return
     val andere = karte.konten.filter { it.kennung != vorn.kennung }
     // Die eigene Kopfzeile wechselt nichts; die eines fremden Servers wechselt dorthin.
-    Row(Modifier.fillMaxWidth().then(if (!karte.aktiv) Modifier.druckzeile { app.kontoWechseln(vorn.kennung) } else Modifier).padding(16.dp),
+    // **Wechseln, mit Bewegung** (Entwurf D, `Kontowechselflug`): das Bild hebt von hier ab.
+    val dichte = LocalDensity.current.density
+    val ruhig = bewegungReduziert()
+    val kopfRahmen = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }
+    Row(Modifier.fillMaxWidth().then(if (!karte.aktiv) Modifier.druckzeile {
+            Kontowechselflug.starten(app, vorn.kennung, vorn.name, vorn.bild, kopfRahmen[0], Stil.gruppenflaeche, dichte, ruhig)
+        } else Modifier).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Profilzeichen(vorn.name, vorn.bild, 56.dp, hervorgehoben = karte.aktiv && mehrere)
+        Box(Modifier.onGloballyPositioned { kopfRahmen[0] = it.boundsInRoot() }) {
+            Profilzeichen(vorn.name, vorn.bild, 56.dp, hervorgehoben = karte.aktiv && mehrere)
+        }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // 17 Semibold, die Blattrubrik — der Name ist der Gegenstand der Karte, nicht eine Zeile.
             Text(vorn.name, style = Stil.rubrikGross, color = Stil.schrift, maxLines = 1)
@@ -389,7 +403,10 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
     Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         andere.forEach { k ->
-            Box(Modifier.size(40.dp).antippen { app.kontoWechseln(k.kennung) }) { Profilzeichen(k.name, k.bild, 40.dp) }
+            val rahmen = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }
+            Box(Modifier.size(40.dp).onGloballyPositioned { rahmen[0] = it.boundsInRoot() }.antippen {
+                Kontowechselflug.starten(app, k.kennung, k.name, k.bild, rahmen[0], Stil.gruppenflaeche, dichte, ruhig)
+            }) { Profilzeichen(k.name, k.bild, 40.dp) }
         }
         // Das Plus: am eigenen Server ein weiteres Konto, an einem fremden die Aufnahme mit seiner Adresse.
         Box(Modifier.size(40.dp)

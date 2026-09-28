@@ -29,6 +29,10 @@ struct ProfilView: View {
                 // Pfeil ueber der Kante des Inhalts.
                 Unterseitenkopf(titel: "Profil", zurueck: zurueck)
                     .padding(.bottom, 10)
+                    // **Geht die Seite mitten im Kontowechsel auf**, ist er
+                    // sofort fertig — neues Konto aktiv, Profilbild an seinem
+                    // Platz. Siehe `Kontowechselflug.abschliessen`.
+                    .onAppear { Kontowechselflug.geteilt.abschliessen() }
 
                 Kontokarte(model: model,
                            hinzufuegenAuf: { server in
@@ -348,6 +352,7 @@ struct KontoHinzufuegenView: View {
         HStack(spacing: 10) {
             Image(systemName: "server.rack")
                 .font(Stil.klein)
+                .accessibilityHidden(true)
             Text(verbatim: serverbeschreibung)
                 .font(Stil.zweitzeile)
         }
@@ -503,6 +508,7 @@ struct Umrissknopf: View {
         Button(action: auswahl) {
             HStack(spacing: 9) {
                 Image(systemName: symbol).font(Stil.koerper)
+                    .accessibilityHidden(true)
                 Text(beschriftung).font(Stil.koerper.weight(.medium))
             }
             .frame(maxWidth: .infinity)
@@ -566,6 +572,38 @@ private struct Kontokarte: View {
         server?.absoluteString.lowercased() == model.session?.serverURL.absoluteString.lowercased()
     }
 
+    /// Wo die Profilbilder stehen, global: der Kontowechsel hebt das
+    /// gewählte von dort ab. In einer schlichten Klasse, damit Scrollen nicht
+    /// bei jedem Bild neu baut — wie am iPhone.
+    @State private var kreise = Kreisablage()
+    private final class Kreisablage {
+        var rahmen: [String: CGRect] = [:]
+    }
+
+    /// Ein Wechsel läuft: alles außer dem gewählten Bild tritt zurück.
+    private var wechselt: Bool { Kontowechselflug.geteilt.flug != nil }
+
+    /// **Wechseln, mit Bewegung** (Entwurf D, wie am iPhone) — siehe
+    /// ``Kontowechselflug`` und am Mac ``Kontowechselbuehne``: die Seite fährt
+    /// hinaus, das Bild fliegt im Bogen in die Seitenleiste, der Ring ploppt,
+    /// die Reihen der Startseite kommen gestaffelt.
+    private func wechseln(zu konto: Session) {
+        let von = kreise.rahmen[konto.kontoschluessel] ?? .zero
+        let adresse = model.benutzerbildURL(fuer: konto)
+        let ohneBild = adresse.map { Bildspeicher.geteilt.bild($0) == nil } ?? true
+        Kontowechselflug.geteilt.starten(
+            konto: konto.kontoschluessel,
+            bild: Profilzeichen(name: konto.userName, bild: adresse,
+                                groesse: max(von.width, 1) * 1.06, ohneBild: ohneBild),
+            von: von, flaeche: Stil.flaeche, adresse: adresse) {
+            model.kontoWechseln(zu: konto.kontoschluessel)
+        }
+    }
+
+    private func merken(_ schluessel: String) -> some ViewModifier {
+        Rahmenmelder { kreise.rahmen[schluessel] = $0 }
+    }
+
     @ViewBuilder
     private func karte(_ server: URL?) -> some View {
         let alle = server.map { model.konten(auf: $0) } ?? model.konten
@@ -592,11 +630,19 @@ private struct Kontokarte: View {
 
     @ViewBuilder
     private func kopfzeile(_ konto: Session?, aktiv: Bool, server: URL?) -> some View {
+        let schluessel = konto?.kontoschluessel ?? ""
+        let fliegt = Kontowechselflug.geteilt.flug?.konto == schluessel
         let inhalt = HStack(spacing: 14) {
             Profilzeichen(name: konto?.userName ?? "?",
                           bild: konto.flatMap { model.benutzerbildURL(fuer: $0) },
                           groesse: 56,
                           hervorgehoben: aktiv && model.server.count > 1)
+                .modifier(merken(schluessel))
+                // Das angemeldete Bild macht dem neuen Platz; ein abhebendes
+                // ist unterwegs und steht hier nicht mehr.
+                .opacity(wechselt ? 0 : 1)
+                .scaleEffect(wechselt && !fliegt && !Stil.bewegungReduziert ? 0.8 : 1)
+                .animation(fliegt ? nil : Kontowechselflug.abheben, value: wechselt)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: konto?.userName ?? String(localized: "Angemeldet"))
                     // 19 steht in keiner Leiter; 20 Semifett ist die Stufe
@@ -631,12 +677,15 @@ private struct Kontokarte: View {
                         .lineLimit(1)
                 }
             }
+            // Name und Server des alten Kontos treten mit zurück.
+            .opacity(wechselt ? 0 : 1)
             Spacer(minLength: 0)
         }
         .padding(16)
         .contentShape(Rectangle())
+        .animation(Kontowechselflug.abheben, value: wechselt)
         if !aktiv, let konto {
-            Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: { inhalt }
+            Button { wechseln(zu: konto) } label: { inhalt }
                 .buttonStyle(Stil.Druckknopf())
         } else {
             inhalt
@@ -654,12 +703,24 @@ private struct Kontokarte: View {
         HStack(spacing: 14) {
             Color.clear.frame(width: 0, height: 40)
             ForEach(andere, id: \.kontoschluessel) { konto in
-                Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: {
+                let fliegt = Kontowechselflug.geteilt.flug?.konto == konto.kontoschluessel
+                Button { wechseln(zu: konto) } label: {
                     Profilzeichen(name: konto.userName,
                                   bild: model.benutzerbildURL(fuer: konto),
                                   groesse: 40)
+                        .modifier(merken(konto.kontoschluessel))
+                        // Das gewählte hebt ab, die übrigen schrumpfen weg;
+                        // das gewählte ist sofort weg — sonst stünde es einen
+                        // Augenblick doppelt da.
+                        .opacity(wechselt ? 0 : 1)
+                        .scaleEffect(wechselt && !fliegt && !Stil.bewegungReduziert ? 0.8 : 1)
+                        .animation(fliegt ? nil : Kontowechselflug.abheben, value: wechselt)
                 }
                 .buttonStyle(Stil.Druckknopf())
+                // `.help` setzt den Kurzhinweis unter dem Zeiger, nicht die
+                // Beschriftung — das Profilzeichen allein sagt VoiceOver
+                // nichts (E8).
+                .accessibilityLabel(Text("Zu \(konto.userName) wechseln"))
                 .help(Text(verbatim: konto.userName))
             }
 
@@ -689,6 +750,8 @@ private struct Kontokarte: View {
             // Beschriftung — VoiceOver las hier „Taste" und sonst nichts.
             .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
             .help(Text("Weiteres Konto hinzufügen"))
+            .opacity(wechselt ? 0 : 1)
+            .animation(Kontowechselflug.abheben, value: wechselt)
         }
         .padding(16)
         }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -41,6 +42,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -74,7 +77,9 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
                   val bewertung: Double? = null, val freigabe: String? = null, val beschreibung: String? = null,
                   /** Nur fuer den Fernseher: die Kulisse, dieselbe Adresse wie `Titel.kulisse`/`Serie.kulisse`
                    *  (`Kern.kulisse`) — damit Start und Detailseite dasselbe Bild und denselben Ton zeigen. */
-                  val kulisse: String? = null)
+                  val kulisse: String? = null,
+                  /** „S2 · F5 · noch 12 Min." — die Zeile unter einer Weiterschauen-Kachel (Entwurf D, `weiterschauenzeile`). */
+                  val weiterschauenzeile: String? = null)
 /**
  * `schluessel` ist der rohe, unuebersetzte Reihenname aus dem Paket (`Startreihe.reihentitel`
  * in `Startreihen.swift`, z. B. „Weiterschauen" oder „Zuletzt hinzugefügt") — `null` bei
@@ -109,7 +114,8 @@ internal fun reihenLesen(json: String): List<Reihe> {
                    if (o.isNull("bewertung")) null else o.getDouble("bewertung"),
                    o.optString("freigabe").takeIf { !o.isNull("freigabe") },
                    o.optString("beschreibung").takeIf { !o.isNull("beschreibung") },
-                   o.optString("kulisse").takeIf { o.has("kulisse") && !o.isNull("kulisse") })
+                   o.optString("kulisse").takeIf { o.has("kulisse") && !o.isNull("kulisse") },
+                   o.optString("weiterschauenzeile").takeIf { o.has("weiterschauenzeile") && !o.isNull("weiterschauenzeile") })
         })
     }
 }
@@ -141,6 +147,8 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var fehler by remember { mutableStateOf<String?>(null) }
     val e = app.einstellungen
     suspend fun laden() {
+        // Laeuft ein Kontowechsel, laedt der — nicht die Rueckkehr auf die Seite, die mit ihm zusammenfaellt.
+        if (Kontowechselflug.wartet && !Kontowechselflug.gewechselt) return
         try {
             val json = withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
@@ -161,7 +169,8 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var hatGespielt by remember { mutableStateOf(false) }
     LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; laden() } }
     // Und noch einmal, wenn die Endmeldung durch ist — erst dann kennt der Server die Stelle.
-    val beendet = app.wiedergabeBeendet.intValue
+    // Auch nach einer Aenderung am Sehstand (Kachelmenue) — `seitenAuffrischen` auf iOS.
+    val beendet = app.wiedergabeBeendet.intValue + app.sehstandGeaendert.intValue
     val beendetAnfangs = remember { beendet }
     LaunchedEffect(beendet) { if (beendet != beendetAnfangs) laden() }
     // Zurueck in die App: neu, wenn der Stand aelter als die Frist aus dem Paket ist.
@@ -174,22 +183,9 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     }
     var zieht by remember { mutableStateOf(false) }
     val ziehstand = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
-    // Langer Druck auf „Weiterschauen": zur Uebersicht, oder gesehen/ungesehen — **beide immer**:
-    // eine nur durchgesprungene Folge gilt als angefangen, „ungesehen" holt sie aus der Reihe.
-    fun halten(k: Kachel) {
-        app.blatt.value = Blattwunsch(k.name, listOf(
-            Wahl("uebersicht", uebersetzt("Zur Übersicht")),
-            Wahl("gesehen", uebersetzt("Als gesehen markieren")),
-            Wahl("ungesehen", uebersetzt("Als ungesehen markieren"))), null,
-            mapOf("uebersicht" to Zeichen.Info,
-                  "gesehen" to Zeichen.HakenKreis,
-                  "ungesehen" to Zeichen.Auge)) { wahl ->
-            when (wahl) {
-                "uebersicht" -> oeffnen(Ziel(k.id, k.name, k.typ))
-                else -> lauf.launch { withContext(Dispatchers.IO) { app.kern.gesehen(k.id, wahl == "gesehen").await() }; laden() }
-            }
-        }
-    }
+    // Langer Druck auf jede Kachel: das Kachelmenue mit Vorschau (`Kachelmenue`) — bei „Weiterschauen" mit
+    // „Zur Uebersicht" und „Aus Weiterschauen entfernen". Danach zieht die Seite nach.
+    val nachher: () -> Unit = { lauf.launch { laden() } }
     val liste = androidx.compose.foundation.lazy.rememberLazyListState()
     val dichte = androidx.compose.ui.platform.LocalDensity.current
     // Wie weit gescrollt ist — daran zieht der Kopfverlauf auf, wie `weg.wert` auf dem iPhone.
@@ -235,15 +231,21 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 }
             } else fehler?.let { item { Text(it, color = Stil.fehler, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
             // Platzhalter in der Form der Reihen, dann eine Ueberblendung — kein Ring (`einblenden`).
-            if (reihen == null) items(3, key = { "platzhalter$it" }) { i ->
+            // **Waehrend eines Kontowechsels gar nicht gebaut** (Entwurf D): beim Tipp sind die Reihen des alten
+            // Kontos sofort weg, und was mitten im Flug ankommt, wird erst nach der Landung gesetzt — dann
+            // gestaffelt (`reihenauftritt`).
+            val wechselt = Kontowechselflug.wartet
+            if (reihen == null && !wechselt) items(3, key = { "platzhalter$it" }) { i ->
                 Reihenplatzhalter(quer = i == 0, Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Bewegung.einblenden()))
             }
             // Genres entweder als Chips oder als Reihen, nie beides — die Fassade laesst die Reihen dann weg.
-            if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "gattungschips") {
-                Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) }
+            if (e.genreChips && e.startGenres.isNotEmpty() && !wechselt) item(key = "gattungschips") {
+                Box(Modifier.reihenauftritt(0)) { Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) } }
             }
-            items(reihen ?: emptyList(), key = { it.titel }) { reihe ->
-                ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, if (reihe.quer) { k -> halten(k) } else null, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
+            val sichtbar = if (wechselt) emptyList() else reihen ?: emptyList()
+            itemsIndexed(sichtbar, key = { _, r -> r.titel }) { i, reihe ->
+                ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, nachher,
+                             Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null).reihenauftritt(i + 1))
             }
         }
         }
@@ -264,14 +266,14 @@ private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, versatz: (
 }
 
 @Composable
-private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, halten: ((Kachel) -> Unit)?, modifier: Modifier = Modifier) {
+private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, nachher: () -> Unit, modifier: Modifier = Modifier) {
     // 12 zwischen Titel und Reihe; der Titel traegt die Sperrung seiner Stufe (−0,24).
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(reihe.titel, style = Stil.reihe, color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
-            items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer, halten?.let { h -> { h(k) } }) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
+            items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer, weiterschauen = reihe.quer, nachher) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
         }
     }
 }
@@ -279,27 +281,40 @@ private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel
 /** Vorlage: `Kachel` in `HomeView.swift` — 112×168 hochkant, 236×133 quer, Ecke 10, Balken 4 unten. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun KachelAnsicht(k: Kachel, quer: Boolean, lang: (() -> Unit)? = null, tun: () -> Unit) {
+private fun KachelAnsicht(k: Kachel, quer: Boolean, weiterschauen: Boolean, nachher: () -> Unit, tun: () -> Unit) {
     val breite: Dp = if (quer) 236.dp else Stil.kachelBreite
     val hoehe: Dp = if (quer) 133.dp else Stil.kachelHoehe
-    val ruck = rememberRuck()
-    val beruehrung = Modifier.then(if (lang == null) Modifier.antippen(tun) else
-        Modifier.combinedClickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null,
-            onLongClick = { ruck(Ruck.Mittel); lang() }, onClick = tun))
-    Column(Modifier.width(breite).einblenden().then(beruehrung), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    // Die leise Zeile unter dem Namen: bei „Weiterschauen" mit der Restzeit — „S2 · F5 · noch 12 Min."
+    // (Entwurf D). Das Bild bleibt frei; die Angabe steht, wo das Kuerzel ohnehin stand.
+    val unterzeile = (if (weiterschauen) k.weiterschauenzeile else null) ?: k.unterzeile
+    val beruehrung = Modifier.kachelDruck({
+        Kachelmenuewunsch(k.id, k.name, k.typ, if (quer) k.quer ?: k.plakat else k.plakat, quer, k.angabenzeile,
+                          weiterschauen = weiterschauen, nachher = nachher)
+    }, tun)
+    // **Eine Kachel ist EIN Element fuer TalkBack**, nicht Bild plus zwei Textzeilen einzeln —
+    // sonst muesste man dreimal wischen, um an die naechste zu kommen.
+    val anteil = k.fortschritt?.takeIf { it > 0.0 && it < 1.0 }
+    val beschreibung = listOfNotNull(
+        k.name, unterzeile,
+        anteil?.let { uebersetzt("%lld Prozent gesehen", (it * 100).toInt()) } ?: if (k.gesehen) uebersetzt("Gesehen") else null
+    ).joinToString(", ")
+    Column(Modifier.width(breite).einblenden().then(beruehrung)
+            .semantics(mergeDescendants = true) { contentDescription = beschreibung },
+        verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
             // **Kein `SubcomposeAsyncImage` in Reihen**: es komponiert je Kachel nach und kostete beim
             // schnellen Scrollen ganze Bilder (gemessen: 99. Perzentil 81 ms auf dem Pixel 10 Pro).
             var fehlt by remember(adresse) { mutableStateOf(adresse == null) }
             if (fehlt) Ersatz(k)
-            coil3.compose.AsyncImage(model = adresse, contentDescription = k.name, contentScale = ContentScale.Crop,
+            // Das Bild ist dekorativ: die Kachel spricht ihre Beschreibung schon als Ganzes.
+            coil3.compose.AsyncImage(model = adresse, contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(), onError = { fehlt = true })
             k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(k.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            k.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
+            unterzeile?.let { Text(it, style = Stil.klein.copy(fontFeatureSettings = "tnum"), color = Stil.schriftSehrLeise, maxLines = 1) }
         }
     }
 }

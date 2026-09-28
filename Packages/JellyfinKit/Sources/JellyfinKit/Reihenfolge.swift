@@ -59,6 +59,15 @@ public enum Listenregeln {
         return ergebnis
     }
 
+    /// **Die vollständigen Einträge in der Reihenfolge der schlanken.**
+    ///
+    /// Ein Abruf über `Ids` sortiert nach seiner eigenen Regel, nicht nach der
+    /// Liste. Was dazwischen vom Server verschwunden ist, fällt heraus.
+    public static func inReihenfolge(_ voll: [Item], wie vorlage: [Item]) -> [Item] {
+        let je = Dictionary(voll.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return vorlage.compactMap { je[$0.id] }
+    }
+
     static func titelschluessel(_ item: Item) -> String {
         func gefaltet(_ text: String) -> String {
             text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
@@ -169,10 +178,22 @@ public extension JellyfinClient {
     /// Folgen): Vorrat 60 → 9 Zeilen, 120 → 13, **200 → 16**, 300 → 18. Der
     /// alte Weg brachte 16. Zweihundert hält den Stand, dreihundert kostet
     /// nur noch Bytes.
+    ///
+    /// **Zwei Abrufe statt eines, und das ist schneller.** Der Vorrat wird
+    /// schlank geholt — Kennung, Name, Serie, Anbieternummern —, und erst die
+    /// vierundzwanzig, die stehen bleiben, kommen vollständig mit
+    /// Beschreibung, Bildern und Stand. Vorher trugen alle zweihundert ihre
+    /// Beschreibung: am 25.09.2026 gemessen **457 KB** für die Reihe „Neue
+    /// Serien" auf dem Prüfserver, ohne Kompression, für 16 Kacheln.
     func zuletztHinzugefuegt(in bibliothek: String? = nil,
                              holen: Int = 200, zeigen: Int = 24) async -> [Item]? {
-        guard let roh = try? await neuDazugekommen(parentID: bibliothek, limit: holen)
+        guard let roh = try? await neuDazugekommen(parentID: bibliothek, limit: holen,
+                                                   schlank: true)
         else { return nil }
-        return Listenregeln.jeTitelEinmal(roh, zeigen: zeigen)
+        let gewaehlt = Listenregeln.jeTitelEinmal(roh, zeigen: zeigen)
+        guard !gewaehlt.isEmpty else { return [] }
+        guard let voll = try? await items(limit: gewaehlt.count, ids: gewaehlt.map(\.id))
+        else { return nil }
+        return Listenregeln.inReihenfolge(voll.items, wie: gewaehlt)
     }
 }

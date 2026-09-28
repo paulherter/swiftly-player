@@ -139,11 +139,11 @@ struct PosterTile: View {
         // Eine Aussage je Kachel statt zweier Bruchstücke, und der
         // Fortschritt kommt mit — er ist eine Zeichnung im Bild und fiel für
         // VoiceOver bisher heraus.
+        // Mit Jahr bzw. Staffel und Folge, und „gesehen" aus der Plakette.
+        // Die Suche gibt ihre eigene Auskunft mit; dann gilt die.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(item.name))
-        .accessibilityValue(item.gesehenerAnteil.map {
-            Text("\(Int($0 * 100)) Prozent gesehen")
-        } ?? Text(""))
+        .accessibilityLabel(Text(verbatim: auskunft.map { "\(titelzeile), \($0)" } ?? item.kachelansage))
+        .accessibilityValue(Text(verbatim: item.kachelzustand))
     }
 }
 
@@ -173,6 +173,8 @@ struct ItemDetailView: View {
     @State private var ladeblatt = false
     @State private var pruefe = true
     @State private var abspielen: Abspielwunsch?
+    /// Sperrt einen zweiten Tipp, solange ein Plan beim Druck geholt wird.
+    @State private var bereitet = false
     @State private var mehrOffen = false
     @State private var meldung: String?
     @State private var frisch: Item?
@@ -203,7 +205,7 @@ struct ItemDetailView: View {
             id: aktuell.id, konto: konto, art: .film, titel: aktuell.name,
             laufzeitTicks: aktuell.runTimeTicks, container: quelle?.container,
             quelle: quelle?.id, bytes: quelle?.size ?? 0,
-            gesehen: aktuell.userData?.played ?? false)
+            sehstand: aktuell.userData, bildcodec: quelle?.bildcodec)
     }
 
     private var fortsetzenAb: Double? { aktuell.fortsetzenAb }
@@ -301,6 +303,19 @@ struct ItemDetailView: View {
                 // sonst die ganze Seite — und eine Seite, die breiter ist als
                 // ihre Scrollfläche, lässt sich seitwärts ziehen.
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                // **Die Farbe des Kopfbilds unter der Seite** (Versuch
+                // `experiment-glas`), schmal wie breit. Breit trägt `Heldkopf`
+                // sein Bild als Grund und blendet es über `aufBildfarbe` mit
+                // einer Maske aus statt mit `grund` — darunter liegt dasselbe
+                // Netz, gerechnet ab seiner Mindesthöhe (iPad, 1.0.5).
+                .background(alignment: .top) {
+                    Stimmungsgrund(url: model.kopfbildURL(for: aktuell),
+                                   ab: breit ? Stil.heldHoeheBreit : Stil.heldHoehe)
+                }
+                // Darüber durchsichtige statt fester Flächen — siehe
+                // `Stil.flaecheDurchsichtig`.
+                .environment(\.aufBildfarbe, true)
+                .environment(\.bildfarbeQuelle, model.kopfbildURL(for: aktuell))
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
@@ -322,7 +337,9 @@ struct ItemDetailView: View {
                           titel: aktuell.name,
                           bilder: [aktuell.id: model.plakatURL(
                               itemID: aktuell.id,
-                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 })
+                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 },
+                          gescheitert: { meldung = $0 },
+                          qualitaetWaehlen: true)
                     .zIndex(20)
             }
             if let meldung {
@@ -361,7 +378,7 @@ struct ItemDetailView: View {
             async let planung = model.plan(for: item.id)
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
-            async let sammlung = Sammlungsreihe.laden(model: model, titel: item)
+            async let sammlung = model.sammlungsreihen(zu: item)
             let neuerTitel = await frischerTitel
             let neuerPlan = await planung
             // **Doppelte Kennungen raus.** Der Server liefert unter
@@ -416,7 +433,7 @@ struct ItemDetailView: View {
     /// Gleiche Höhe wie auf der Serienseite — vorher waren es 260 gegen 300.
     private var hero: some View {
         Heldbild(url: model.kopfbildURL(for: aktuell))
-            .overlay(alignment: .bottom) { Heldauslauf() }
+            .overlay(alignment: .bottom) { Heldauslauf(bild: model.kopfbildURL(for: aktuell)) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(aktuell.name)
@@ -491,7 +508,12 @@ struct ItemDetailView: View {
                 }
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
-            .disabled(plan == nil)
+            // Langer Druck: das Kachelmenü des Titels, wie an seiner Kachel.
+            .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
+            // Nur waehrend der Plan beim Druck unterwegs ist. Vorher hing der
+            // Knopf am vorab geladenen Plan: scheiterte dieser eine Abruf,
+            // blieb er fuer immer grau, ohne ein Wort.
+            .disabled(bereitet)
 
             if let rest = aktuell.restzeitText {
                 // Restzeit ist eine Angabe: 12.
@@ -701,9 +723,20 @@ struct ItemDetailView: View {
     }
 
     private func starte(ab: Double) {
-        guard let plan else { return }
         Stil.ruck(.mittel)
-        abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
+        if let plan {
+            abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
+            return
+        }
+        // **Kein vorab geladener Plan** — noch unterwegs oder gescheitert.
+        // Dann beim Druck holen, wie auf der Serienseite, und sagen, wenn
+        // es wieder nichts wird.
+        Abspielwunsch.starten(aktuell, ab: ab, model: model, bereitet: $bereitet,
+                              fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              abspielen: { wunsch in
+                                  plan = wunsch.plan
+                                  abspielen = wunsch
+                              })
     }
 
     /// Nur die eine Reihe nachholen — die ganze Seite neu zu laden waere fuer
@@ -765,6 +798,8 @@ extension ItemDetailView {
         Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
                                  starten: { starte(ab: $0) },
                                  melden: { meldung = $0 },
-                                 auffrischen: { await auffrischen() })
+                                 auffrischen: { await auffrischen() },
+                                 gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
+                                     ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
     }
 }

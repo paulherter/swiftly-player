@@ -88,12 +88,13 @@ fun TvSammlung(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
  * Hoechstens zwei Reihen, ohne den offenen Titel; fehlt die Sammlung, fehlt die Reihe.
  *
  * `abschnitt`: der Modifier je Reihe aus der Seite (Einblenden, abschnittsweises Scrollen).
+ *
+ * **Geladen wird auf der Filmseite, nicht hier** (`sammlungsreihenLaden`) — wie iOS 83677a44: die
+ * Reihe holte sich ihre Titel selbst und drueckte sich spaeter als alles andere in die Seite.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TvSammlungsreihe(app: SwiftlyAnwendung, titelId: String, oeffnen: (Ziel) -> Unit, abschnitt: (Int) -> Modifier = { Modifier }) {
-    var reihen by remember(titelId) { mutableStateOf<List<Sammlungsreihendaten>>(emptyList()) }
-    LaunchedEffect(titelId) { reihen = sammlungsreihenLaden(app.kern, titelId) }
+fun TvSammlungsreihe(reihen: List<Sammlungsreihendaten>, oeffnen: (Ziel) -> Unit, abschnitt: (Int) -> Modifier = { Modifier }) {
     reihen.forEachIndexed { i, reihe ->
         Column(abschnitt(i).padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
             Row(Modifier.padding(start = TvStil.randSeite, bottom = TvStil.titelAbstand - TvStil.reihenLuft),

@@ -21,18 +21,18 @@ SKIZZEN_CSS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ski
 ZUSATZ_CSS = """
 /* Der Kasten oben traegt die eine Handlung der Seite. Er steht vor den
    Schritten: wer weiss, was er will, klickt und liest nicht weiter. */
-.download { margin-top: 34px; padding: 24px 22px 22px; border-radius: 24px; text-align: center;
+.download { margin-top: 34px; padding: 24px 22px 22px; border-radius: 16px; text-align: center;
   background: color-mix(in srgb, var(--akzent) 8%, var(--flaeche));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 28%, transparent); }
 .download p { font-size: 17px; line-height: 1.5; }
 .download__klein { margin-top: 14px; color: var(--sehr-leise); font-size: 14.5px; }
 .download .knopf { margin-top: 16px; min-height: 52px; padding-inline: 28px; }
-@media (min-width: 901px) { .download { padding: 28px 32px 26px; border-radius: 32px; } }
+@media (min-width: 901px) { .download { padding: 28px 32px 26px; border-radius: 16px; } }
 
 /* Mitmachen: eine Karte mit knappen Zeilen, nie die grossen Downloadknoepfe
    (Paul, 17.09.: sonst sieht es aus wie eine kopierte Kategorie). */
-.mitmachen__karte { margin-top: 64px; padding: 26px 22px 20px; border-radius: 24px;
-  background: var(--flaeche); border: 1px solid var(--linie); }
+.mitmachen__karte { margin-top: 64px; padding: 26px 22px 20px; border-radius: 16px;
+  background: var(--flaeche); }
 .mitmachen__karte h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
 .mitmachen__karte > p { margin-top: 10px; color: var(--leise); font-size: 15.5px; line-height: 1.5; }
 .mitmachen__liste { display: grid; gap: 0; margin: 16px 0 0; padding: 0; list-style: none; }
@@ -41,16 +41,16 @@ ZUSATZ_CSS = """
   transition: background-color 160ms var(--raus); }
 .mitmachen__zeichen { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; }
 .mitmachen__zeichen svg { width: 15px; height: 15px; }
-.mitmachen__zeichen--akzent { background: rgba(92,209,194,.14); color: var(--akzent); }
-.mitmachen__zeichen--kuehl { background: rgba(126,155,255,.14); color: var(--kuehl); }
-.mitmachen__zeichen--warm { background: rgba(232,131,58,.14); color: var(--warm); }
+.mitmachen__zeichen--akzent { background: rgba(80,213,218,.14); color: var(--akzent); }
+.mitmachen__zeichen--kuehl { background: rgba(80,213,218,.14); color: var(--kuehl); }
+.mitmachen__zeichen--warm { background: rgba(80,213,218,.14); color: var(--warm); }
 .mitmachen__wort { flex: 1 1 auto; min-width: 0; }
 .mitmachen__wort b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
 .mitmachen__wort em { display: block; font-size: 13px; font-style: normal; line-height: 1.3; color: var(--sehr-leise); }
 .mitmachen__pfeil { flex: none; width: 12px; height: 12px; color: var(--sehr-leise); }
 .mitmachen__liste a:active { background: rgba(255,255,255,.07); }
 @media (min-width: 901px) {
-  .mitmachen__karte { padding: 30px 32px 24px; border-radius: 32px; }
+  .mitmachen__karte { padding: 30px 32px 24px; border-radius: 16px; }
   .mitmachen__karte h2 { font-size: 26px; }
   .mitmachen__liste { grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 20px; }
 }
@@ -61,7 +61,7 @@ ZUSATZ_CSS = """
 
 /* Befehl mit Kopieren-Knopf, wie im Blog (Werkzeuge/blog-bauen.py). */
 .codeblock { position: relative; margin-top: 18px; }
-.codeblock pre { margin: 0; padding: 20px 22px; overflow-x: auto; border-radius: 18px; background: var(--tief);
+.codeblock pre { margin: 0; padding: 20px 22px; overflow-x: auto; border-radius: 14px; background: var(--tief);
   border: 1px solid var(--linie); font-size: 15px; line-height: 1.55; }
 .codeblock code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .kopieren { position: absolute; top: 10px; right: 12px; display: inline-flex; align-items: center;
@@ -128,7 +128,7 @@ BROWSER = ('<rect x="14" y="16" width="372" height="178" rx="16" fill="var(--fla
 TELEFON = ('<rect x="132" y="10" width="136" height="190" rx="22" fill="var(--flaeche)" stroke="var(--rand)"/>'
            '<rect x="140" y="20" width="120" height="170" rx="16" fill="var(--tief)" stroke="var(--linie)"/>')
 
-MARKE = ('<rect x="152" y="34" width="34" height="34" rx="11" fill="rgba(47,219,192,.18)" stroke="var(--marke)"/>'
+MARKE = ('<rect x="152" y="34" width="34" height="34" rx="11" fill="rgba(80,213,218,.18)" stroke="var(--marke)"/>'
          '<path d="M162 45h14m-14 7h14m-14 7h9" stroke="var(--marke)" stroke-width="1.6" stroke-linecap="round"/>')
 
 def skizze(nummer, titel, inhalt):
@@ -145,8 +145,17 @@ def figur(svg, bild):
 
 # ------------------------------------------------------------------ Rahmen
 
-def kopf(titel, beschreibung, pfad, og_titel=None, og_text=None, extra_ld=""):
+# Swiftly Music bekommt einen Punkt "Music" in der Leiste, sobald die Seite
+# /music/ live ist. Bis dahin zeigt ihn nur der Entwurf selbst.
+MUSIC_LIVE = True
+
+
+def kopf(titel, beschreibung, pfad, og_titel=None, og_text=None, extra_ld="", musik=False):
     ort = f"https://swiftlyplayer.com{pfad}"
+    zeigen = musik or MUSIC_LIVE
+    jetzt = ' aria-current="page"' if musik else ""
+    musik_leiste = f'\n    <a class="leiste__punkt" href="/music/"{jetzt}>Music</a>' if zeigen else ""
+    musik_menue = f'\n  <a href="/music/"{jetzt}>Music</a>' if zeigen else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -167,7 +176,7 @@ def kopf(titel, beschreibung, pfad, og_titel=None, og_text=None, extra_ld=""):
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{og_titel or titel}">
 <meta name="twitter:description" content="{og_text or beschreibung}">
-<meta name="theme-color" content="#0B0B0D">
+<meta name="theme-color" content="#101010">
 <link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
 <link rel="icon" href="/symbol.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
@@ -183,18 +192,17 @@ def kopf(titel, beschreibung, pfad, og_titel=None, og_text=None, extra_ld=""):
   <div class="leiste__kapsel">
     <a class="leiste__marke" href="/" aria-label="Swiftly Player, home">
       <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
-    </a>
+    </a>{musik_leiste}
     <a class="leiste__punkt" href="/blog/">Blog</a>
     <a class="leiste__punkt" href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
     <a class="leiste__punkt" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
-    <a class="knopf knopf--leiste nur-desktop" href="/#downloads">Download</a>
     <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
       <span></span><span></span><span></span>
     </button>
   </div>
 </header>
 
-<nav class="menue" id="menue" aria-label="Menu">
+<nav class="menue" id="menue" aria-label="Menu">{musik_menue}
   <a href="/blog/">Blog</a>
   <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
   <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
@@ -272,6 +280,7 @@ def fuss(aktuell, mit_kopieren=False):
       <div class="fuss__spalte">
         <h2>Elsewhere</h2>
         <ul>
+          <li><a href="/about/">About</a></li>
           <li><a href="/blog/">Blog</a></li>
           <li><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>

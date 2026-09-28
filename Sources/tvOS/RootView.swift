@@ -7,7 +7,7 @@ import SwiftUI
 /// einer Oberfläche für drei Meter Entfernung, und mit demselben
 /// Startvorhang: die Marke fährt auf wie auf dem iPhone, nur größer.
 struct RootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.einziges
     /// Der Vorhang liegt über allem, bis die Animation durch ist.
     @State private var gestartet = false
     /// Der einmalige Hinweis auf den Discord, nach dem fünften Titel.
@@ -29,7 +29,7 @@ struct RootView: View {
         .overlay {
             if !gestartet {
                 Startvorhang {
-                    withAnimation(.easeOut(duration: 0.45)) { gestartet = true }
+                    withAnimation(Stil.bewegung(.easeOut(duration: 0.45))) { gestartet = true }
                 }
             }
         }
@@ -223,11 +223,15 @@ struct ServerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
+        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
     }
 
+    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
+    /// Senden während der Prüfung verwirft das Modell.
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
+        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
     }
 }
 
@@ -302,7 +306,7 @@ struct AnmeldeView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: quickConnect)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: quickConnect)
     }
 
     private func anmelden() {

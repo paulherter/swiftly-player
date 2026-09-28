@@ -5,7 +5,6 @@ import de.paulherter.swiftly.gemeinsam.Symbol
 import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -146,7 +145,9 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     val lauf = rememberCoroutineScope()
     val verbunden = app.seerrVerbunden.value
     LaunchedEffect(verbunden) {
-        traegt = if (verbunden) withContext(Dispatchers.IO) { app.kern.seerrGilt().await() } else null
+        // Kein Netz oder kaputte Antwort: „traegt nicht" statt eines Absturzes aus dem Effekt.
+        traegt = if (!verbunden) null else try { withContext(Dispatchers.IO) { app.kern.seerrGilt().await() } }
+                 catch (e: CancellationException) { throw e } catch (_: Exception) { false }
     }
     fun verbinden() {
         if (verbindet || adresse.isBlank() || benutzer.isBlank() || passwort.isBlank()) return
@@ -288,11 +289,11 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
             }
             val leute = d?.feldListe("besetzung") { Mitwirkender(it.getString("id"), it.getString("name"), it.feldText("rolle"), it.feldText("bild")) }.orEmpty()
             if (leute.isNotEmpty()) Abschnitt(uebersetzt("Besetzung"), 14.dp) {
-                items(leute.take(12)) { p -> Besetzungskachel(p) }
+                kachelnMitSchluessel(leute.take(12), { it.id }) { p -> Besetzungskachel(p) }
             }
             val aehnliche = d?.feldListe("aehnliches") { seerrkachelLesen(it) }.orEmpty()
             if (aehnliche.isNotEmpty()) Abschnitt(uebersetzt("Ähnliche Titel"), Stil.kachelAbstand) {
-                items(aehnliche) { t ->
+                kachelnMitSchluessel(aehnliche, { it.schluessel }) { t ->
                     SeerrkachelAnsicht(t, Modifier.width(Stil.kachelBreite)) { app.seerrTreffer[t.schluessel] = t; oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel")) }
                 }
             }

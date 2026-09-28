@@ -6,6 +6,7 @@ import android.os.Build
 import de.paulherter.swiftly.gemeinsam.Texte
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import coil3.request.crossfade
 import kotlinx.coroutines.future.await
 import org.swift.swiftkit.core.SwiftArena
@@ -30,6 +31,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Zaehlt Kontowechsel — `AppModel.kontowechsel`: die Hauptansicht baut sich dann neu. */
     val kontowechsel = androidx.compose.runtime.mutableIntStateOf(0)
     private val lauf = kotlinx.coroutines.MainScope()
+    /** Fuer Handlungen, die ihre Ansicht ueberleben — ein Kachelmenue ist zu, bevor der Server antwortet. */
+    val anwendungslauf: kotlinx.coroutines.CoroutineScope get() = lauf
 
     /**
      * **Die zuletzt geladenen Reihen der Startseite.** Compose baut eine Seite beim
@@ -67,6 +70,10 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      * Stelle kennt, und bekommt den Stand des letzten Takts. Seiten mit Fortschritt haengen hier an.
      */
     val wiedergabeBeendet = androidx.compose.runtime.mutableIntStateOf(0)
+    /** Zaehlt Aenderungen am Sehstand aus einem Kachelmenue — `AppModel.sehstandGeaendert`; die Seiten frischen auf. */
+    val sehstandGeaendert = androidx.compose.runtime.mutableIntStateOf(0)
+    /** Eine kurze Meldung ueber allem — was ein Kachelmenue meldet (`Kachelwunsch.meldung`). */
+    val meldung = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     /**
      * Welcher Wunsch schon an `PlayerAktivitaet` uebergeben wurde. **Kein Compose-Zustand und nicht
@@ -75,6 +82,13 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      * Mal — sichtbar erst beim Schliessen, weil der alte Player erst danach `spiel` leert.
      */
     @Volatile var spielUebergeben: Abspielwunsch? = null
+
+    /**
+     * **Titel und Stelle, die gerade laufen** — der Takt schreibt sie fort. `PlayerAktivitaet` legt sie
+     * in ihren gesicherten Zustand: beendet Android den Prozess im Hintergrund, geht es beim Zurueckkehren
+     * dort weiter, statt ohne Wort zur Startseite zu fallen (Audit 27.09.).
+     */
+    @Volatile var spielStelle: Abspielwunsch? = null
 
     /** Nach einem fertig geschauten Titel steht die Bewertungsfrage an — die Hauptaktivitaet fragt und setzt zurueck. */
     val bewertungFaellig = androidx.compose.runtime.mutableStateOf(false)
@@ -124,6 +138,13 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
 
     /** „Hier weiterschauen" — was auf einem anderen Geraet desselben Kontos laeuft. */
     val angebote = androidx.compose.runtime.mutableStateOf<List<Angebot>>(emptyList())
+    /** „Wo weiterschauen?" ist offen — die Karte waechst aus dem Abzeichen (`Uebernahmeauflage`). */
+    val uebernahmeauswahl = androidx.compose.runtime.mutableStateOf<Uebernahmeauswahl?>(null)
+
+    /** „Gemeinsam schauen" — der Spiegel der Lage aus dem Kern (`Gemeinsam.kt`). */
+    val gemeinsam = androidx.compose.runtime.mutableStateOf(Gemeinsamlage())
+    /** Eine Meldung der Gruppe (`SyncPlayFehler.text`) — Hauptansicht oder Player zeigen sie als Hinweis und leeren sie. */
+    val gemeinsamFehler = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     /**
      * Fernseher: die Adresse aus einem Tipp auf einen Watch-Next-Eintrag (`TvAktivitaet`,
@@ -160,8 +181,17 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }
 
-    /** Laeuft die App auf einem Fernseher? Dann ohne Downloads, wie tvOS. */
-    val istFernseher: Boolean by lazy { packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) }
+    /**
+     * Laeuft die App auf einem Fernseher? Dann TV-Oberflaeche und ohne Downloads, wie tvOS.
+     * Drei Merkmale, jedes reicht: Leanback, der Fernsehmodus des Systems, und das Fire-TV-Merkmal
+     * von Amazon — nicht jedes Fire-OS meldet Leanback verlaesslich.
+     */
+    val istFernseher: Boolean by lazy {
+        packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+            packageManager.hasSystemFeature("amazon.hardware.fire_tv") ||
+            getSystemService(android.app.UiModeManager::class.java)?.currentModeType ==
+                android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     /** Downloads — die Liste lebt so lange wie die App, wie `Downloadverwaltung` auf iOS. */
     val downloads by lazy { Downloadverwaltung(this) }
@@ -177,7 +207,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             val meldung = runCatching {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.wiedergabeBeenden(position).await() }
             }.getOrDefault("")
-            if (meldung.isNotEmpty()) nachmeldungAblegen(meldung)
+            nachStopp(meldung)
             protokollSchreiben()
             wiedergabeBeendet.intValue += 1
         }
@@ -186,6 +216,22 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Eine Nachmeldung aus dem Kern ablegen — beim Schliessen und beim Folgenwechsel. */
     fun nachmeldungAblegen(meldung: String) {
         ablage.merken(NACHMELDUNGEN, Kern.nachmeldungAufnehmen(ablage.merkwert(NACHMELDUNGEN) ?: "[]", meldung))
+    }
+
+    /**
+     * **Nach jedem Stopp** — Schliessen, Folgen- und Qualitaetswechsel. `meldung`: die Nachmeldung aus
+     * dem Kern, leer wenn der Stopp ankam. Danach, was der Kern daraus macht (Vorlage
+     * `AppModel.reportStopped`): der Sehstand des Downloads, mit und ohne Netz, und eine angekommene
+     * Meldung raeumt die liegende desselben Titels.
+     */
+    fun nachStopp(meldung: String?) {
+        if (!meldung.isNullOrEmpty()) nachmeldungAblegen(meldung)
+        val o = runCatching {
+            org.json.JSONObject(kern.stoppsVerarbeiten(ablage.merkwert(NACHMELDUNGEN) ?: "[]", downloads.listeJson()))
+        }.getOrNull() ?: return
+        ablage.merken(NACHMELDUNGEN, o.getString("ablage"))
+        val a = o.getJSONArray("posten")
+        downloads.sehstandUebernehmen((0 until a.length()).map { Downloadposten.lesen(a.getJSONObject(it)) })
     }
 
     /** Die Meldezeilen des Kerns (Start, Stopped, Wechsel) ins logcat unter „Swiftly". */
@@ -199,8 +245,13 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      */
     suspend fun nachDemVerbinden() {
         if (servername.value == null) return
+        // **Erst melden, dann lesen** — sonst hoert die Liste vom Server den Stand von vor dem Flug.
         val roh = ablage.merkwert(NACHMELDUNGEN) ?: "[]"
-        if (roh != "[]") runCatching { kern.nachmeldungenAbschicken(roh).await() }.getOrNull()?.let { ablage.merken(NACHMELDUNGEN, it) }
+        if (roh != "[]") runCatching { kern.nachmeldungenAbschicken(roh).await() }.getOrNull()?.let { erledigt ->
+            // Aus der Ablage, wie sie jetzt ist — waehrend des Wartens kann eine neue dazugekommen sein.
+            ablage.merken(NACHMELDUNGEN, Kern.nachmeldungenErledigt(ablage.merkwert(NACHMELDUNGEN) ?: "[]", erledigt))
+        }
+        protokollSchreiben()
         downloads.nachziehen()
     }
 
@@ -209,7 +260,26 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      * `abwarten`: kommt der Ruf aus einem Blatt, das gerade hinunterfaehrt, wartet das Ladeblatt so
      * lange — **ein Blatt zur Zeit**, zwei zugleich waeren zwei Karten, die sich kreuzen.
      */
-    fun downloadsAnlegen(ids: List<String>, titel: String, abwarten: Long = 0) {
+    /**
+     * **Mitteilungen erst beim ersten Download erfragen** — der uebliche Moment: dann weiss man,
+     * wofuer. Beim Start wird nicht gefragt. `MainActivity` legt hier den Aufruf ab (nur sie kann
+     * fragen) und nimmt ihn beim Beenden wieder weg. **Einmal:** lehnt der Nutzer ab, laufen die
+     * Downloads trotzdem, nur ohne Meldung, und die App fragt nicht wieder.
+     */
+    @Volatile var meldungsrechtFragen: (() -> Unit)? = null
+
+    private fun meldungsrechtEinmalErfragen() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        if (ablage.merkwert(MELDUNGSRECHT_GEFRAGT) == "1") return
+        val fragen = meldungsrechtFragen ?: return
+        ablage.merken(MELDUNGSRECHT_GEFRAGT, "1")
+        fragen()
+    }
+
+    fun downloadsAnlegen(ids: List<String>, titel: String, abwarten: Long = 0, qualitaet: String = "original") {
+        meldungsrechtEinmalErfragen()
         val beginn = android.os.SystemClock.uptimeMillis()
         lauf.launch {
             val roh = runCatching { kern.downloadPosten(ids.toTypedArray()).await() }.getOrNull() ?: return@launch
@@ -218,7 +288,10 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             val bilder = mutableMapOf<String, String>()
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                val p = Downloadposten.lesen(o.getJSONObject("posten"))
+                // Aus der Ladeauswahl kommt die Qualitaet mit — Matroska und geschaetzte Groesse.
+                val roh1 = o.getJSONObject("posten")
+                val p = if (qualitaet == "original") Downloadposten.lesen(roh1)
+                        else Downloadposten.lesen(org.json.JSONArray(Kern.downloadInQualitaet("[$roh1]", qualitaet)).getJSONObject(0))
                 if (downloads.posten(p.id) != null) continue
                 neue += p
                 o.feldText("bild")?.let { bilder[p.id] = it }
@@ -234,7 +307,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             }
             val rest = abwarten - (android.os.SystemClock.uptimeMillis() - beginn)
             if (rest > 0) kotlinx.coroutines.delay(rest)
-            if (neue.isNotEmpty()) ladeblattZeigen(this@SwiftlyAnwendung, neue, bilder, titel)
+            // Ein einzelner Film bekommt die Wahl im Ladeblatt; eine Serie bringt sie aus der Auswahl mit.
+            if (neue.isNotEmpty()) ladeblattZeigen(this@SwiftlyAnwendung, neue, bilder, titel,
+                                                   qualitaetWaehlen = qualitaet == "original" && neue.size == 1 && neue[0].art == "film")
         }
     }
 
@@ -312,6 +387,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         Texte.laden(this)
         // Vor der ersten Anfrage des Kerns: eigene Zertifizierungsstellen auch fuer URLSession und VLC.
         Zertifikate.bereitstellen(this)
+        Zertifikate.beobachten(this)
         // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste Abruf die eigenen Header.
         Kern.eigenkoepfeLaden(ablage.tresorLesen(EIGENKOEPFE).orEmpty())
         val sprache = if (Locale.getDefault().language == "de") "de" else "en"
@@ -321,6 +397,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         kern = Kern.init(ablage.geraeteID(), Build.MODEL ?: "Android", BuildConfigFassung,
                          if (istFernseher) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
         qualitaetMelden()
+        gemeinsamZuhoeren(lauf)
     }
 
     /** Direct Play und Bitrate an die Fassade — beim Start und bei jeder Aenderung. */
@@ -388,6 +465,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         einstellungen.naechsteAutomatischKonto = ""
         einstellungen.downloadrechtKonto = ""
         einstellungen.umwandelnErlaubtKonto = ""
+        einstellungen.downloadqualitaetKonto = ""
         lauf.launch {
             val teile = runCatching {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.kontovorgaben().await() }
@@ -395,6 +473,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             einstellungen.naechsteAutomatischKonto = teile.getOrElse(0) { "" }
             einstellungen.downloadrechtKonto = teile.getOrElse(1) { "" }
             einstellungen.umwandelnErlaubtKonto = teile.getOrElse(2) { "" }
+            einstellungen.downloadqualitaetKonto = teile.getOrElse(3) { "" }
         }
     }
 
@@ -423,8 +502,31 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         if (vorher != null) nachDemWechsel() else kontovorgabenHolen()
     }
 
+    /**
+     * **Ein offener Player endet vor Kontowechsel und Abmelden** (Audit 27.09.) — auch im kleinen Fenster.
+     * Der Kern ist einer fuer den ganzen Prozess: lief der Takt weiter, gingen Fortschritt und Stopp mit
+     * der Sitzung des neuen Kontos hinaus. Der Player hoert auf den Zaehler, meldet den Stopp noch mit
+     * dem alten Konto und schliesst; gewartet wird auf diese Meldung, hoechstens 4 s.
+     */
+    val playerSchliessen = androidx.compose.runtime.mutableIntStateOf(0)
+
+    private suspend fun wiedergabeVorDemWechselBeenden() {
+        if (spiel.value == null) return
+        val vorher = wiedergabeBeendet.intValue
+        playerSchliessen.intValue++
+        Protokoll.schreib("Kontowechsel: offener Player wird zuerst beendet")
+        kotlinx.coroutines.withTimeoutOrNull(4000) {
+            androidx.compose.runtime.snapshotFlow { wiedergabeBeendet.intValue }.first { it != vorher }
+        }
+    }
+
     /** **Beim Wechsel wird nicht abgemeldet** — das verlassene Konto bleibt gueltig fuer den Weg zurueck. */
     fun kontoWechseln(kennung: String) {
+        if (spiel.value != null) { lauf.launch { wiedergabeVorDemWechselBeenden(); kontoWechselnJetzt(kennung) }; return }
+        kontoWechselnJetzt(kennung)
+    }
+
+    private fun kontoWechselnJetzt(kennung: String) {
         val bund = ablage.konten ?: return
         if (Kern.bundAktiveKennung(bund) == kennung) return
         val neu = Kern.bundWechseln(bund, kennung)
@@ -442,6 +544,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     private suspend fun abmeldenJetzt() {
+        wiedergabeVorDemWechselBeenden()
         runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.abmelden().await() } }
         val bund = ablage.konten
         val rest = bund?.let { Kern.bundEntfernt(it, Kern.bundAktiveKennung(it)) }.orEmpty()
@@ -514,6 +617,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             "Swiftly Player ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
         /** Derselbe Schluessel wie in `UserDefaults` auf iOS. */
         const val NACHMELDUNGEN = "nachmeldungen"
+        const val MELDUNGSRECHT_GEFRAGT = "meldungsrechtGefragt"
         /** Ein Eintrag fuer alle Server: die ganze Tafel aus `Eigenkoepfe` — derselbe Name wie im Schluesselbund. */
         const val EIGENKOEPFE = "eigenkoepfe"
     }
@@ -527,35 +631,48 @@ class Ablage(context: Context) {
     private val prefs = context.getSharedPreferences("swiftly", Context.MODE_PRIVATE)
 
     /**
+     * **Entschluesselt wird einmal, nicht bei jedem Lesen.** Jeder Zugriff auf `konten` ging durch den
+     * Keystore — Benutzername, Kontokennung, Seerr, Server: StrictMode zaehlte beim Kaltstart 13 solche
+     * Lesungen auf dem Hauptthread, jede ein Aufruf in den Keystore-Dienst. Geschrieben wird weiter
+     * sofort verschluesselt; hier liegt nur, was dieser Prozess ohnehin schon im Klartext hatte.
+     */
+    private val klartext = HashMap<String, String?>()
+
+    private fun tresorwert(schluessel: String): String? = synchronized(klartext) {
+        if (klartext.containsKey(schluessel)) return klartext[schluessel]
+        val wert = prefs.getString(schluessel, null)?.let { Tresor.entschluesseln(it) }
+        klartext[schluessel] = wert
+        wert
+    }
+
+    private fun tresorSetzen(schluessel: String, wert: String?) {
+        synchronized(klartext) { klartext[schluessel] = wert }
+        val bearbeitung = prefs.edit()
+        if (wert == null) bearbeitung.remove(schluessel) else bearbeitung.putString(schluessel, Tresor.verschluesseln(wert))
+        bearbeitung.apply()
+    }
+
+    /**
      * **Verschluesselt im Android Keystore** — das Gegenstueck zur Keychain. Eine alte Sitzung im
      * Klartext wird beim ersten Lesen umgezogen und geloescht; niemand muss sich neu anmelden.
      */
     var sitzung: String?
         get() {
             prefs.getString("sitzung", null)?.let { klar -> sitzung = klar; return klar }
-            return prefs.getString("sitzung.tresor", null)?.let { Tresor.entschluesseln(it) }
+            return tresorwert("sitzung.tresor")
         }
         set(wert) {
-            val bearbeitung = prefs.edit().remove("sitzung")
-            if (wert == null) bearbeitung.remove("sitzung.tresor") else bearbeitung.putString("sitzung.tresor", Tresor.verschluesseln(wert))
-            bearbeitung.apply()
+            prefs.edit().remove("sitzung").apply()
+            tresorSetzen("sitzung.tresor", wert)
         }
 
     /** Das Kontenbuendel (`Kontenbund`) — verschluesselt wie die Sitzung. */
     var konten: String?
-        get() = prefs.getString("konten.tresor", null)?.let { Tresor.entschluesseln(it) }
-        set(wert) {
-            val bearbeitung = prefs.edit()
-            if (wert == null) bearbeitung.remove("konten.tresor") else bearbeitung.putString("konten.tresor", Tresor.verschluesseln(wert))
-            bearbeitung.apply()
-        }
+        get() = tresorwert("konten.tresor")
+        set(wert) = tresorSetzen("konten.tresor", wert)
 
-    fun tresorLesen(schluessel: String): String? = prefs.getString("$schluessel.tresor", null)?.let { Tresor.entschluesseln(it) }
-    fun tresorSchreiben(schluessel: String, wert: String?) {
-        val bearbeitung = prefs.edit()
-        if (wert == null) bearbeitung.remove("$schluessel.tresor") else bearbeitung.putString("$schluessel.tresor", Tresor.verschluesseln(wert))
-        bearbeitung.apply()
-    }
+    fun tresorLesen(schluessel: String): String? = tresorwert("$schluessel.tresor")
+    fun tresorSchreiben(schluessel: String, wert: String?) = tresorSetzen("$schluessel.tresor", wert)
 
     var letzterServer: String?
         get() = prefs.getString("letzterServer", null)

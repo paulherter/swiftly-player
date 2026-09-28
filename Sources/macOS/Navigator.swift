@@ -54,6 +54,21 @@ final class Navigator {
         }
     }
 
+    /// **Alles weg, auch die Profilseite** — der Kontowechsel aus der
+    /// Profilseite (Entwurf D, wie am iPhone): die Seite fährt wie beim
+    /// Zurückgehen nach rechts hinaus, und das Profilbild fliegt in die
+    /// Seitenleiste (``Kontowechselflug``). Die Ausnahme aus G4 gilt für
+    /// jeden anderen Wechsel weiter — etwa die Anmeldung auf einem neuen
+    /// Server, nach der man den Server im Profil sehen will.
+    func allesLeeren() {
+        guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
+        // Mit reduzierter Bewegung nur die Blende — wie das Standbild am
+        // iPhone, das dann ausblendet statt wegzufahren.
+        withAnimation(Stil.bewegungReduziert ? Stil.blendeReduziert : Stil.zeitSeitenschub) {
+            for bereich in stapel.keys { stapel[bereich] = [] }
+        }
+    }
+
     /// **Die Pruefung gehoert in die Animation, nicht davor.**
     ///
     /// Sie stand davor, und die App stuerzte ab, sobald man einen zweiten
@@ -219,4 +234,71 @@ enum Seitenziel: Hashable, Identifiable {
 /// dazwischen gemusst, die ihn selbst gar nicht braucht.
 extension EnvironmentValues {
     @Entry var bereich: Bereich = .start
+}
+
+/// **Während eine Seite hereinfährt, wird nichts ausgetauscht.**
+///
+/// Die Fahrt ist ein `.offset`, und den rechnet SwiftUI in jedem Einzelbild
+/// auf dem Hauptlauf. Kam in dieser Zeit eine Antwort vom Server — der volle
+/// Titel, Staffeln und Folgen, Extras und Ähnliches, der Plan, der Bildton —,
+/// baute SwiftUI im selben Lauf die halbe Seite neu aus, und die Fahrt verlor
+/// Bilder: ein, zwei Zentimeter herein, kurz stehen, dann weiter. Genau das
+/// Stocken in der ersten Sekunde nach dem Klick.
+///
+/// Also warten die Antworten, bis die Seite steht (Linux: `nachDemSchub`).
+/// Abgerufen wird trotzdem sofort; nur das Einsetzen wartet, höchstens die
+/// Dauer einer Fahrt. Wer auf eine stehende Seite zurückkehrt, wartet nicht.
+@MainActor
+enum Einfahrt {
+    private static var ende = ContinuousClock.now
+
+    /// Ruft `HauptView`, wenn eine neue Seite losfährt.
+    static func beginnt() {
+        // Ein Einzelbild Luft: das letzte Bild der Fahrt gehört noch ihr.
+        ende = .now + .milliseconds(Int(Stil.dauerSeitenschub * 1000) + 30)
+    }
+
+    /// Kehrt zurück, sobald keine Seite mehr fährt.
+    static func abwarten() async {
+        guard ende > .now else { return }
+        try? await Task.sleep(until: ende, clock: .continuous)
+    }
+}
+
+/// **Wiedergabepläne, vorab geholt** — für den Beleg „Direct Play" im Kopf
+/// der Detailseite. Beim Überfahren einer Kachel (nach der Frist der
+/// `Kachelhuelle`) holt `vorholen` den Plan schon; liegt er beim Öffnen vor,
+/// steht der Beleg sofort da, statt hinten nachzukommen. Der Kopf fragt
+/// trotzdem frisch nach und zieht nach, falls sich etwas geändert hat.
+///
+/// Bei einer Serie ist es der Plan der Folge, die als Nächstes liefe — wie
+/// im Kopf (`standInSerie`). Linux/Windows: `App.planAuftrag`.
+@MainActor
+enum Planvorrat {
+    private static var gemerkt: [String: PlaybackPlan] = [:]
+    private static var laufend: [String: Task<PlaybackPlan?, Never>] = [:]
+
+    static func plan(_ id: String) -> PlaybackPlan? { gemerkt[id] }
+
+    static func merken(_ id: String, _ plan: PlaybackPlan?) {
+        gemerkt[id] = plan
+    }
+
+    /// `PlaybackInfo` ist ein POST, bei dem der Server die Datei anfasst —
+    /// je Titel einer, auch wenn Überfahren und Öffnen zusammenfallen.
+    static func vorholen(_ item: Item, mit model: AppModel) {
+        guard item.type == "Movie" || item.type == "Series",
+              gemerkt[item.id] == nil, laufend[item.id] == nil else { return }
+        let id = item.id
+        let serie = item.type == "Series"
+        laufend[id] = Task { @MainActor in
+            let ziel: String?
+            if serie { ziel = await model.standInSerie(item)?.id } else { ziel = id }
+            guard let ziel else { laufend[id] = nil; return nil }
+            let plan = await model.plan(for: ziel, still: true)
+            if let plan { gemerkt[id] = plan }
+            laufend[id] = nil
+            return plan
+        }
+    }
 }

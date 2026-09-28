@@ -103,10 +103,14 @@ enum Trailerstart {
 enum Titelhandlungen {
 
     /// Für einen Film.
+    ///
+    /// `gemeinsam` gibt es nur dort, wo gemeinsam geschaut werden kann
+    /// (bisher iPhone und iPad); fehlt es, fehlt der Eintrag.
     static func fuerFilm(_ titel: Item, plan: PlaybackPlan?, model: AppModel,
                          starten: @escaping (Double) -> Void,
                          melden: @escaping (String) -> Void,
-                         auffrischen: @escaping () async -> Void) -> [Titelhandlung] {
+                         auffrischen: @escaping () async -> Void,
+                         gemeinsam: (() -> Void)? = nil) -> [Titelhandlung] {
         var liste: [Titelhandlung] = []
         // Nur wenn es überhaupt etwas zurückzusetzen gibt: „von vorn" bei
         // einem Film, der noch bei null steht, ist eine Zeile ohne Wirkung.
@@ -126,6 +130,9 @@ enum Titelhandlungen {
                 }
             })
         }
+        if plan != nil, let gemeinsam {
+            liste.append(gemeinsamSchauen(gemeinsam))
+        }
         liste.append(metadaten(titel, model: model, melden: melden))
         return liste
     }
@@ -137,12 +144,19 @@ enum Titelhandlungen {
     static func fuerSerie(_ serie: Item, stand: Item?, staffel: Item?, model: AppModel,
                           folgeStarten: @escaping (Item, Double) -> Void,
                           melden: @escaping (String) -> Void,
-                          auffrischen: @escaping () async -> Void) -> [Titelhandlung] {
+                          auffrischen: @escaping () async -> Void,
+                          gemeinsam: ((Item) -> Void)? = nil) -> [Titelhandlung] {
         var liste: [Titelhandlung] = []
         if let stand {
             liste.append(.init(symbol: "gobackward", text: "Folge von vorn abspielen") {
                 folgeStarten(stand, 0)
             })
+            // **Auf iPhone und iPad weicht „Nächste Folge" für „Gemeinsam
+            // schauen"** (Entwurf A, 1.0.5). Das Blatt soll nicht länger
+            // werden, und die nächste Folge erreicht man ebenso über die Liste.
+            if let gemeinsam {
+                liste.append(gemeinsamSchauen { gemeinsam(stand) })
+            } else {
             liste.append(.init(symbol: "forward.end.alt", text: "Nächste Folge abspielen") {
                 Task {
                     guard let naechste = await model.folgeNach(stand) else {
@@ -152,6 +166,7 @@ enum Titelhandlungen {
                     folgeStarten(naechste, 0)
                 }
             })
+            }
         }
         if let staffel {
             liste.append(.init(symbol: "checkmark.circle",
@@ -170,11 +185,49 @@ enum Titelhandlungen {
         return liste
     }
 
+    private static func gemeinsamSchauen(_ tun: @escaping () -> Void) -> Titelhandlung {
+        .init(symbol: "person.2", text: "Gemeinsam schauen", tun: tun)
+    }
+
     /// Steht unter beiden Listen, deshalb einmal hier.
     private static func metadaten(_ titel: Item, model: AppModel,
                                   melden: @escaping (String) -> Void) -> Titelhandlung {
         .init(symbol: "arrow.clockwise", text: "Metadaten neu einlesen") {
             Task { melden(await model.metadatenAuffrischen(titel)) }
         }
+    }
+}
+
+/// **Was VoiceOver zu einer Kachel sagt** — auf allen drei Apple-Plattformen
+/// derselbe Satz.
+///
+/// Vorher las die Kachel nur den Namen. Bei einer Folge ist das der
+/// Folgentitel, während auf der Kachel der Serienname steht, und das Kürzel
+/// „S1 • E3" hätte VoiceOver als „S1 Aufzählungszeichen E3" gelesen. Das Jahr
+/// eines Films stand im Bild, aber nicht in der Ansage.
+extension Item {
+    var kachelansage: String {
+        var teile: [String] = []
+        if type == "Episode" {
+            teile.append(seriesName ?? name)
+            if let staffel = parentIndexNumber, let folge = indexNumber {
+                teile.append(String(localized: "Staffel \(staffel), Folge \(folge)"))
+            }
+            if seriesName != nil, !name.isEmpty { teile.append(name) }
+        } else {
+            teile.append(name)
+            if let jahr = productionYear { teile.append(String(jahr)) }
+        }
+        return teile.joined(separator: ", ")
+    }
+
+    /// Der Zustand einer Kachel als Wert: gesehen, oder wie weit. Erst ab
+    /// einem Prozent — „null Prozent gesehen" ist keine Auskunft.
+    var kachelzustand: String {
+        if userData?.played == true { return String(localized: "Gesehen") }
+        if let anteil = gesehenerAnteil {
+            return String(localized: "\(Int(anteil * 100)) Prozent gesehen")
+        }
+        return ""
     }
 }

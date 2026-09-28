@@ -193,6 +193,7 @@ private struct Genrezeile: View {
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
                 .frame(width: 20)
+                .accessibilityHidden(true)
             // Vom Server, also nicht übersetzt.
             Text(verbatim: name)
                 .font(Stil.listentitel)

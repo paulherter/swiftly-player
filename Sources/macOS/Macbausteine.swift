@@ -99,6 +99,7 @@ struct Chip: View {
     let auswahl: () -> Void
 
     @State private var schwebt = false
+    @Environment(\.aufBildfarbe) private var aufBild
 
     var body: some View {
         Button(action: auswahl) {
@@ -126,7 +127,10 @@ struct Chip: View {
             // Schrift; keines von beiden aendert ein Mass.
             .background {
                 ZStack {
-                    Capsule().fill(aktiv ? Stil.erhoeht : Stil.flaeche)
+                    // Über Bildfarbe durchsichtig, und aktiv ändert die
+                    // Fläche dort nicht — den Zustand trägt die Schrift.
+                    Capsule().fill(aufBild ? Stil.flaecheDurchsichtig
+                                           : (aktiv ? Stil.erhoeht : Stil.flaeche))
                     if let fuellung {
                         // Durchgehend aus der Uhr, in Akzentfarbe halb
                         // deckend — wie auf iOS (17.09.2026).
@@ -178,6 +182,7 @@ struct Hauptknopf: View {
                 // Stufe der Blattrubrik, und ein Hauptknopf ist mindestens
                 // so laut (BAUTEILE 6).
                 Image(systemName: symbol).font(Stil.rubrikGross)
+                    .accessibilityHidden(true)
                 Text(beschriftung).font(Stil.rubrikGross)
                 if let kuerzel {
                     Text(kuerzel)
@@ -221,6 +226,8 @@ struct Aktionsknopf: View {
     let auswahl: () -> Void
 
     @State private var schwebt = false
+    /// Über Bildfarbe (Film- und Serienseite) durchsichtig statt `flaeche`.
+    @Environment(\.aufBildfarbe) private var aufBild
 
     var body: some View {
         Button(action: auswahl) {
@@ -237,7 +244,7 @@ struct Aktionsknopf: View {
                 .background {
                     let form = RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                     ZStack {
-                        form.fill(Stil.flaeche)
+                        form.fill(Stil.knopfflaeche(aufBild: aufBild))
                         if schwebt { form.fill(Stil.schwebeflaeche) }
                     }
                 }
@@ -277,8 +284,6 @@ struct Posterkachel: View {
     /// Zeichen für den Fall, dass der Server kein Bild hat.
     var zeichen: String?
     var auswahl: (() -> Void)?
-    /// `nil`, wenn es keine Übersicht dazu gibt (A6).
-    var uebersicht: (() -> Void)?
     /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
     /// **Nur für eine Sammlungskachel ohne eigenes Bild:** woraus das
@@ -286,17 +291,16 @@ struct Posterkachel: View {
     /// es steht genau das Plakat wie vorher.
     var mosaik: (model: AppModel, sammlung: Sammlung, art: String)? = nil
 
-    @State private var schwebt = false {
-        didSet { if schwebt, !oldValue { vorholen?() } }
-    }
+    @State private var schwebt = false
     /// Plakat und Text blenden **zusammen** ein. Das Bild blendet von selbst
     /// ein, der Titel stünde sofort da — beim Wechsel sähe man erst die
     /// Beschriftungen und dann die Plakate hineinlaufen.
     @State private var da = false
 
     var body: some View {
-        Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
-                     name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
+        Kachelhuelle(auswahl: auswahl, schwebt: $schwebt, vorholen: vorholen,
+                     name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", "),
+                     zustand: zustand) {
             VStack(alignment: .leading, spacing: 8) {
                 Group {
                     if let mosaik {
@@ -332,14 +336,35 @@ struct Posterkachel: View {
             guard !da else { return }
             withAnimation(Stil.einblenden) { da = true }
         }
-        .kontextmenue(uebersicht)
+    }
+
+    /// Was die Marke und der Balken sagen — dieselbe Auskunft wie auf tvOS
+    /// (`Kachelinhalt.beschriftung`/`fortschrittText`), hier als Wert statt
+    /// als Teil der Beschriftung, weil `Kachelhuelle` den Titel getrennt
+    /// hält. Ohne das war „gesehen" und „zur Hälfte gesehen" nur eine
+    /// Zeichnung im Bild.
+    private var zustand: String? {
+        var teile: [String] = []
+        if let marke {
+            switch marke {
+            case .gesehen: teile.append(String(localized: "gesehen"))
+            case .offen(let n): teile.append(String(localized: "\(n) offen"))
+            case .staffeln(let n): teile.append(n == 1 ? String(localized: "1 Staffel")
+                                                       : String(localized: "\(n) Staffeln"))
+            }
+        }
+        if let fortschritt, fortschritt >= 0.01 {
+            teile.append(String(localized: "\(Int(fortschritt * 100)) Prozent gesehen"))
+        }
+        return teile.isEmpty ? nil : teile.joined(separator: ", ")
     }
 }
 
 /// Querkachel, 16 : 9 — nur für „Weiterschauen" und „Nächste Folge".
 ///
 /// Ein Klick startet sofort (A1/A2). Der Weg zur Übersicht führt über die
-/// rechte Maustaste (A6).
+/// rechte Maustaste (A6) — das Kachelmenü (`Kachelmenue.swift`) hängt der
+/// Aufrufer an, wie an jede Kachel.
 struct Querkachel: View {
     let titel: String
     let zweitzeile: String?
@@ -348,17 +373,15 @@ struct Querkachel: View {
     /// Zeichen für den Fall, dass der Server kein Bild hat.
     var zeichen: String?
     var auswahl: (() -> Void)?
-    var uebersicht: (() -> Void)?
     /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
 
-    @State private var schwebt = false {
-        didSet { if schwebt, !oldValue { vorholen?() } }
-    }
+    @State private var schwebt = false
 
     var body: some View {
-        Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
-                     name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
+        Kachelhuelle(auswahl: auswahl, schwebt: $schwebt, vorholen: vorholen,
+                     name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", "),
+                     zustand: zustand) {
             VStack(alignment: .leading, spacing: 8) {
                 Bildflaeche(bild: bild, breite: Stil.querBreite, hoehe: Stil.querHoehe,
                             fortschritt: fortschritt, zeichen: zeichen)
@@ -375,7 +398,12 @@ struct Querkachel: View {
             }
             .frame(width: Stil.querBreite, alignment: .leading)
         }
-        .kontextmenue(uebersicht)
+    }
+
+    /// Der Balken in Worten — erst ab einem Prozent, wie bei `Posterkachel`.
+    private var zustand: String? {
+        guard let fortschritt, fortschritt >= 0.01 else { return nil }
+        return String(localized: "\(Int(fortschritt * 100)) Prozent gesehen")
     }
 }
 
@@ -383,7 +411,14 @@ struct Querkachel: View {
 private struct Kachelhuelle<Inhalt: View>: View {
     let auswahl: (() -> Void)?
     @Binding var schwebt: Bool
+    /// Wird gerufen, wenn der Zeiger **liegen bleibt** — nicht schon beim
+    /// Drüberfahren. Wer quer über eine Reihe wischt, streift ein Dutzend
+    /// Kacheln; ohne die Pause fragte jede davon den Server.
+    var vorholen: (() -> Void)?
     let name: String
+    /// Gesehen, zur Hälfte gesehen, offene Folgen, Staffelzahl — als Wert,
+    /// nicht als Teil des Namens. `nil` heißt: nichts zu sagen.
+    var zustand: String? = nil
     @ViewBuilder let inhalt: Inhalt
 
     var body: some View {
@@ -397,27 +432,17 @@ private struct Kachelhuelle<Inhalt: View>: View {
         }
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
+        .task(id: schwebt) {
+            guard schwebt, let vorholen else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            vorholen()
+        }
+        .animation(Stil.zeitSchweben, value: schwebt)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: name))
+        .accessibilityValue(zustand.map(Text.init) ?? Text(""))
         .accessibilityAddTraits(.isButton)
-    }
-}
-
-/// Das Kontextmenü einer Kachel: der Weg zur Übersicht (A6).
-///
-/// `.contextMenu` ist Systemchrom, das nur beim Rechtsklick erscheint und
-/// nichts in die Fläche einbringt — anders als `Menu`, das als Steuerelement
-/// im Aufbau stünde.
-extension View {
-    @ViewBuilder
-    func kontextmenue(_ uebersicht: (() -> Void)?) -> some View {
-        if let uebersicht {
-            contextMenu {
-                Button("Übersicht öffnen", systemImage: "info.circle", action: uebersicht)
-            }
-        } else {
-            self
-        }
     }
 }
 
@@ -444,16 +469,16 @@ struct Bildflaeche: View {
             // Angabe wird jedes Bild auf 1600 Punkt Kante entschluesselt.
             Netzbild(url: bild, zeichen: zeichen, anzeigekante: max(breite, hoehe))
             if let fortschritt, fortschritt > 0, balkenZeigen {
-                GeometryReader { raum in
-                    ZStack(alignment: .leading) {
-                        // **Die Spur ist hell** (weiss 30 %), der Balken
-                        // traegt den Akzent. Gelesen heisst die dunkle Spur
-                        // „hier fehlt etwas", die helle „so lang ist das
-                        // Ganze, und so weit bist du" (BRAND 7).
-                        Rectangle().fill(Color.white.opacity(0.3))
-                        Rectangle().fill(Stil.akzent)
-                            .frame(width: raum.size.width * min(max(fortschritt, 0), 1))
-                    }
+                // Kein GeometryReader: die Breite steht fest (`breite`),
+                // und einer je Kachel kostet in langen Rastern Layoutlaeufe.
+                ZStack(alignment: .leading) {
+                    // **Die Spur ist hell** (weiss 30 %), der Balken
+                    // traegt den Akzent. Gelesen heisst die dunkle Spur
+                    // „hier fehlt etwas", die helle „so lang ist das
+                    // Ganze, und so weit bist du" (BRAND 7).
+                    Rectangle().fill(Color.white.opacity(0.3))
+                    Rectangle().fill(Stil.akzent)
+                        .frame(width: breite * min(max(fortschritt, 0), 1))
                 }
                 // 4, nicht 3 — dasselbe Mass wie auf dem iPhone.
                 .frame(height: 4)
@@ -818,6 +843,7 @@ struct Handlungszeile: View {
                 Image(systemName: handlung.symbol)
                     .font(Stil.koerper)
                     .frame(width: 20)
+                    .accessibilityHidden(true)
                 handlung.beschriftung.font(Stil.koerper)
                 Spacer(minLength: 0)
             }
@@ -829,6 +855,7 @@ struct Handlungszeile: View {
         }
         .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
     }
 }
 
@@ -1154,7 +1181,11 @@ struct Blätterreihe<Inhalt: View>: View {
             }
         }
         .onHover { schwebt = $0 }
-        .animation(Stil.zeitSchweben, value: schwebt)
+        // **Auch das Ende blendet.** Vorher war nur das Überfahren animiert;
+        // wer an den Rand blätterte, sah den Pfeil hart verschwinden.
+        .animation(Stil.zeitPfeile, value: schwebt)
+        .animation(Stil.zeitPfeile, value: kannLinks)
+        .animation(Stil.zeitPfeile, value: kannRechts)
         #if DEBUG
         .task {
             try? await Task.sleep(for: .seconds(4))
@@ -1286,58 +1317,6 @@ private struct Seitenscrollen: ViewModifier {
 
 
 // MARK: - Übernahme
-
-/// „Läuft auf dem iPhone — hier weiterschauen", in der Form der Seitenleiste.
-///
-/// **`Mac`-eigene Fassung, weil die Leiste schmal ist.** Auf dem Fernseher
-/// trägt das Abzeichen zwei Zeilen nebeneinander, hier stehen sie
-/// untereinander und der Titel darf umbrechen. Gleicher Zweck, andere Breite
-/// — die Benennung (`titelzeile`, `geraetezeichen`) teilen sich beide.
-struct Uebernahmezeile: View {
-    let sitzung: Fremdsitzung
-    @State private var schwebt = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            // **Der Akzent, und das Zeichen macht den Unterschied.**
-            //
-            // Hier stand `kuehl`, ein eigenes Blau fuer „woanders laeuft was".
-            // Die Farbe ist am 21.09.2026 gestrichen: der Akzent traegt
-            // Zustand, und „laeuft woanders" ist einer. Was die Zeile von
-            // einem Fortschrittsbalken unterscheidet, ist das Geraetezeichen
-            // links davon — das sagt es deutlicher als ein zweiter Blauton.
-            Image(systemName: sitzung.geraetezeichen)
-                .font(Stil.kachel)
-                .foregroundStyle(Stil.akzent)
-                .frame(width: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Hier weiterschauen")
-                    .font(Stil.kachelTitel)
-                    .foregroundStyle(Stil.schrift)
-                    .lineLimit(1)
-                Text(verbatim: sitzung.titelzeile)
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 40)
-        // **`akzentLeise` statt zweier roher Deckkräfte, und kein Rand.**
-        // Der Token ist genau dieser Ton, schon ausgerechnet; der Rand sagte
-        // ein zweites Mal, was die Fläche schon sagt.
-        .background {
-            let form = RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
-            ZStack {
-                form.fill(Stil.akzentLeise)
-                if schwebt { form.fill(Stil.schwebeflaeche) }
-            }
-        }
-        .onHover { schwebt = $0 }
-        .animation(Stil.zeitSchweben, value: schwebt)
-    }
-}
 
 // MARK: - Wahl über eine Tafel
 
@@ -1525,6 +1504,7 @@ struct Titelwahl<Eintrag: Identifiable>: View {
                 Image(systemName: offen ? "chevron.up" : "chevron.down")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(schwebt || offen ? Stil.schrift : Stil.schriftLeise)
+                    .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }
@@ -1578,6 +1558,7 @@ private struct Wahltafelzeile: View {
                         .font(Stil.listentitel)
                         .foregroundStyle(Stil.schrift)
                         .frame(width: 14)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 12)
@@ -1587,6 +1568,7 @@ private struct Wahltafelzeile: View {
         }
         .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
         .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
     }
 }

@@ -6,11 +6,12 @@ import Testing
 struct SpurregelTests {
 
     private func ut(_ index: Int, _ sprache: String, forced: Bool = false, extern: Bool = false,
-                    codec: String = "subrip", titel: String? = nil) -> MediaStream {
+                    codec: String = "subrip", titel: String? = nil, hi: Bool = false) -> MediaStream {
         MediaStream(codec: codec, type: "Subtitle", language: sprache, displayTitle: nil,
                     channels: nil, isDefault: nil, index: index, height: nil, width: nil,
                     isForced: forced, isExternal: extern, title: titel,
-                    deliveryUrl: extern ? "/Videos/x/y/Subtitles/\(index)/0/Stream.srt" : nil)
+                    deliveryUrl: extern ? "/Videos/x/y/Subtitles/\(index)/0/Stream.srt" : nil,
+                    isHearingImpaired: hi)
     }
 
     private func ton(_ index: Int, _ sprache: String, codec: String = "aac", kanaele: Int = 2,
@@ -26,6 +27,63 @@ struct SpurregelTests {
     }
 
     // MARK: Zuordnung
+
+    /// Die Folge vom 28.09.2026: Video, Deutsch, Englisch, zwei Untertitel.
+    /// Englisch (Index 2) ist die zweite Tonspur, der zweite Untertitel die
+    /// zweite Untertitelspur; eine Datei von außen zählt beim Öffnen nicht.
+    @Test func startpositionenJeArt() {
+        let stroeme = [ton(1, "ger"), ton(2, "eng"), ut(3, "ger"), ut(4, "eng"), ut(5, "fre", extern: true)]
+        let a = Spurzuordnung.startpositionen(stroeme: stroeme, ton: 2, untertitel: .strom(4))
+        #expect(a.ton == 1)
+        #expect(a.untertitel == 1)
+        let b = Spurzuordnung.startpositionen(stroeme: stroeme, ton: nil, untertitel: .aus)
+        #expect(b.ton == nil)
+        #expect(b.untertitel == nil)
+        let c = Spurzuordnung.startpositionen(stroeme: stroeme, ton: 1, untertitel: .strom(5))
+        #expect(c.ton == 0)
+        #expect(c.untertitel == nil)
+    }
+
+    /// **Die Vielspurdatei aus jellyfin-androidtv#5776, nachgebaut** (Phase B, 25.09.2026).
+    ///
+    /// Drei Tonspuren und sechzehn Untertitel, in der Datei durchmischt
+    /// (Video, Ton, 5 UT, Ton, 5 UT, Ton, 6 UT), darunter zwei ASS, eine
+    /// ohne Sprache, zweimal Deutsch und dreimal Englisch. Die Spurlisten
+    /// unten sind **gemessen**, nicht ausgedacht: libVLC 4 (VLCKit a23,
+    /// macOS) meldet `audio/N`/`spu/N` mit N = Matroska-Spurnummer, also
+    /// Serverindex + 1; libVLC 3.0.23 (Linux, dieselbe Zählung wie Android)
+    /// meldet die Kennung als Zahl gleich dem Serverindex. In beiden Fällen
+    /// muss jede Position ihren eigenen Index treffen — dort, wo ExoPlayer
+    /// bei `floor(i / 2)` landete.
+    @Test("Sechzehn Untertitel zwischen drei Tonspuren: jede Position trifft ihren Index")
+    func vielspurdatei() {
+        let tonSprachen = [(1, "ger"), (7, "eng"), (13, "jpn")]
+        let utSprachen: [(Int, String, String)] = [
+            (2, "ger", "subrip"), (3, "eng", "subrip"), (4, "fre", "subrip"), (5, "spa", "subrip"),
+            (6, "ita", "subrip"), (8, "ger", "subrip"), (9, "eng", "subrip"), (10, "und", "subrip"),
+            (11, "jpn", "subrip"), (12, "chi", "subrip"), (14, "kor", "subrip"), (15, "ger", "ass"),
+            (16, "eng", "ass"), (17, "por", "subrip"), (18, "dut", "subrip"), (19, "pol", "subrip"),
+        ]
+        let stroeme = tonSprachen.map { ton($0.0, $0.1, codec: "ac3", kanaele: 6) }
+            + utSprachen.map { ut($0.0, $0.1, forced: $0.0 == 8, codec: $0.2, titel: $0.0 == 9 ? "SDH" : nil) }
+
+        for (versatz, name) in [(1, "libVLC 4"), (0, "libVLC 3")] {
+            let tonspuren = tonSprachen.map {
+                vlc("audio/\($0.0 + versatz)", "Track", sprache: $0.1, codec: "AC-3")
+            }
+            let utspuren = utSprachen.map {
+                vlc("spu/\($0.0 + versatz)", "Track", sprache: $0.1,
+                    codec: Technikangaben.codecname(vlcKennung: $0.2 == "ass" ? 0x2061_7373 : 0x7462_7573))
+            }
+            let z = Spurzuordnung.bilden(ton: tonspuren, untertitel: utspuren, stroeme: stroeme, dateien: [])
+            #expect(z.ton == tonSprachen.map(\.0), "\(name)")
+            #expect(z.untertitel == utSprachen.map(\.0), "\(name)")
+            // Und rückwärts, wie die Wahl nach Serverindex es braucht.
+            for (position, eintrag) in utSprachen.enumerated() {
+                #expect(z.untertitelposition(index: eintrag.0) == position, "\(name) Index \(eintrag.0)")
+            }
+        }
+    }
 
     @Test("Gleiche Namen: die Position entscheidet, nicht der Name")
     func gleicheNamen() {
@@ -147,6 +205,33 @@ struct SpurregelTests {
         #expect(regel([ton(1, "ger"), ut(2, "ger", forced: true), ut(4, "eng")], vorgabe: 4, automatisch: true, wunsch: "Deutsch") == .strom(4))
         // Server sagt „keine": erzwungene bleiben an.
         #expect(regel(stroeme, vorgabe: -1) == .strom(2))
+    }
+
+    /// findroid#756: SDH und normale Spur derselben Sprache sahen gleich aus,
+    /// und die automatische Wahl nahm, was zuerst in der Datei stand.
+    @Test("Automatisch: die gewöhnliche Spur vor der für Hörgeschädigte, auch wenn SDH zuerst steht")
+    func hoergeschaedigtNichtBevorzugt() {
+        let stroeme = [ton(1, "eng"), ut(2, "ger", hi: true), ut(3, "ger", forced: true), ut(4, "ger")]
+        #expect(regel(stroeme, automatisch: true, wunsch: "Deutsch") == .strom(4))
+        // Gibt es nur SDH, ist SDH besser als nichts.
+        #expect(regel([ton(1, "eng"), ut(2, "ger", hi: true)], automatisch: true, wunsch: "Deutsch") == .strom(2))
+        // Handwahl SDH bleibt SDH in der nächsten Folge, auch wenn die Reihenfolge wechselt.
+        let gemerkt = Spurabdruck(strom: stroeme[1], in: stroeme)
+        let naechste = [ton(1, "eng"), ut(2, "ger"), ut(3, "ger", hi: true)]
+        #expect(regel(naechste, gemerkt: .spur(gemerkt)) == .strom(3))
+    }
+
+    @Test("Das Merkmal kommt aus IsHearingImpaired")
+    func hoergeschaedigtGelesen() throws {
+        let json = #"{"Type":"Subtitle","Index":3,"Language":"ger","IsHearingImpaired":true}"#
+        let strom = try JSONDecoder().decode(MediaStream.self, from: Data(json.utf8))
+        #expect(strom.isHearingImpaired == true)
+        let ohne = try JSONDecoder().decode(MediaStream.self, from: Data(#"{"Type":"Subtitle","Index":3}"#.utf8))
+        #expect(ohne.isHearingImpaired == nil)
+        // Ein Abdruck von vor dem Merkmal liest sich weiter.
+        let alt = #"{"sprache":"ger","erzwungen":false,"extern":false}"#
+        let abdruck = try JSONDecoder().decode(Spurabdruck.self, from: Data(alt.utf8))
+        #expect(abdruck.hoergeschaedigt == nil)
     }
 
     @Test("Schalter aus: die Wunschsprache schaltet nichts dazu")

@@ -69,7 +69,7 @@ struct MerklisteView: View {
                                   gattung = fall
                                   stand.gattung = fall.art
                               })
-                    Wahlknopf(symbol: "arrow.up.arrow.down",
+                    Wahlknopf(symbol: stand.sortierung.symbol,
                               wert: stand.sortierung.beschriftung,
                               eintraege: Sortierung.allCases,
                               beschriftung: { $0.beschriftung },
@@ -94,9 +94,10 @@ struct MerklisteView: View {
                                             staffeln: eintrag.childCount,
                                             gesehen: eintrag.userData?.played,
                                             offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                         zeichen: eintrag.type == "Series" ? "tv" : "film")
+                                         zeichen: eintrag.kachelzeichen)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(eintrag, model: model)
                         .task {
                             if stand.loestNachladenAus(eintrag.id, spalten: 6) {
                                 await stand.nachladen(model)

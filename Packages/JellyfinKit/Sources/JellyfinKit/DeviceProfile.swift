@@ -113,7 +113,17 @@ public extension DeviceProfile {
     static let vlcContainers = [
         "mkv", "mp4", "mov", "m4v", "avi", "flv", "webm", "asf", "wmv",
         "ts", "m2ts", "mts", "mpegts", "mpg", "mpeg", "vob", "3gp", "3g2",
-        "ogv", "ogm", "rm", "rmvb", "divx", "f4v", "mk3d", "nsv", "dav", "wtv",
+        // `ogg`: so nennt Jellyfin eine .ogv, ffprobe sagt nur „ogg". Fehlte
+        // es, wurde Theora/Vorbis umgewandelt, obwohl libVLC 3 und 4 die
+        // Datei abspielen (gemessen 25.09.2026).
+        "ogg", "ogv", "ogm", "rm", "rmvb", "divx", "f4v", "mk3d", "nsv", "dav", "wtv",
+    ]
+
+    /// Container reiner Audiodateien, in Jellyfins Schreibweise.
+    static let vlcAudioContainers = [
+        "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma", "ape", "alac",
+        "mkv", "mka", "webm", "wv", "aiff", "aif", "caf", "w64", "au", "tta",
+        "mpc", "ac3", "eac3", "dts", "truehd", "mp2",
     ]
 
     /// Videocodecs, die libVLC dekodiert. Auf Apple-Silicon laufen h264, hevc
@@ -154,7 +164,17 @@ public extension DeviceProfile {
             "dvdsub", "dvd_subtitle", "vobsub", "idx",
             "cc_dec", "eia_608", "subviewer", "mpl2", "pjs", "jacosub", "realtext",
         ]
-        let external = ["srt", "subrip", "ass", "ssa", "vtt", "webvtt", "sub", "idx", "smi"]
+        // `pgssub` ist eine .sup-Datei neben dem Film. Jellyfin nennt sie so
+        // und liefert sie **roh** aus, wenn ein Client genau dieses Format als
+        // `External` nimmt (`SubtitleEncoder.GetReadableFile`). Fehlte es,
+        // fand der Server fuer den gewaehlten Untertitel kein Profil und
+        // antwortete mit `Encode` — Einbrennen, also Neuencode des Bildes.
+        // libVLC 3 und 4 laden die Datei als Nebenspur ueber den
+        // avformat-Demuxer, auch unter dem Namen `Stream.pgssub` (gemessen
+        // 25.09.2026). Externes VobSub (`dvdsub`) steht bewusst **nicht**
+        // hier: das kann Jellyfin nicht roh ausliefern, es wuerde in Text
+        // umwandeln wollen und scheitern.
+        let external = ["srt", "subrip", "ass", "ssa", "vtt", "webvtt", "sub", "idx", "smi", "pgssub"]
         return embedded.map { SubtitleProfile(format: $0, method: "Embed") }
              + external.map { SubtitleProfile(format: $0, method: "External") }
     }()
@@ -190,8 +210,12 @@ public extension DeviceProfile {
             )
         }
 
-        // Reine Audiodateien.
-        for container in ["mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma", "ape", "alac"] {
+        // Reine Audiodateien — alles, was libVLC 3 und 4 abspielen (gemessen
+        // 25.09.2026 an je einer erzeugten Datei). Der Name ist der, den
+        // Jellyfin aus ffprobes `format_name` macht: `.mka` heisst dort `mkv`,
+        // `.mp2` heisst `mp3`, rohes TrueHD `truehd`. Fehlt ein Container,
+        // wandelt der Server die Musik um, obwohl nichts dagegen spricht.
+        for container in vlcAudioContainers {
             direct.append(DirectPlayProfile(container: container, type: "Audio",
                                             videoCodec: nil, audioCodec: nil))
         }
@@ -295,6 +319,27 @@ public extension DeviceProfile {
         let untertitel = ["vtt", "webvtt", "srt", "subrip"]
             .map { SubtitleProfile(format: $0, method: "External") }
 
+        // **HEVC nur mit der Kennung, die AVFoundation annimmt.**
+        //
+        // HEVC in MP4 steht entweder als `hvc1` oder als `hev1` in der Datei.
+        // AVPlayer — und damit der Apple TV am anderen Ende — spielt nur
+        // `hvc1` (Dolby Vision: `dvh1`); bei `hev1` kommt der Ton und kein
+        // Bild. Genau das wurde bei AirPlay von HEVC gemeldet. Ohne diese
+        // Bedingung reichte der Server eine solche MP4 per Direct Play durch.
+        //
+        // Mit ihr lehnt er Direct Play ab (`VideoCodecTagNotSupported`, ein
+        // Grund, der Kopieren weiter erlaubt) und packt ueber das HLS-Profil
+        // unten um — dabei setzt er selbst `-tag:v:0 hvc1`
+        // (DynamicHlsController, Jellyfin 10.11). Das Bild wird kopiert, nicht
+        // neu gerechnet. Matroska traegt keine Kennung (`CodecTag` leer) und
+        // ist deshalb mit `IsRequired: false` nicht betroffen; es wird
+        // ohnehin umgepackt. Dieselbe Liste nimmt jellyfin-web fuer Safari.
+        let hevcKennung = CodecProfile(
+            type: "Video", codec: "hevc",
+            conditions: [ProfileCondition(condition: "EqualsAny", property: "VideoCodecTag",
+                                          value: "hvc1|dvh1", isRequired: false)]
+        )
+
         return DeviceProfile(
             name: "Swiftly (AirPlay)",
             maxStreamingBitrate: maxBitrate,
@@ -302,7 +347,7 @@ public extension DeviceProfile {
             directPlayProfiles: direct,
             transcodingProfiles: transcoding,
             subtitleProfiles: untertitel,
-            codecProfiles: []
+            codecProfiles: [hevcKennung]
         )
     }
 

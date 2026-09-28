@@ -16,7 +16,8 @@ import Foundation
 /// 1. Von Hand gewählt, für diese Serie oder diesen Film — auch „aus". Wer in
 ///    einer Folge umschaltet, meint die ganze Serie.
 /// 2. „Untertitel automatisch" an, und der Ton läuft nicht in der
-///    Wunschsprache: die volle Spur in der Untertitelsprache.
+///    Wunschsprache: die volle Spur in der Untertitelsprache, die gewöhnliche
+///    vor der für Hörgeschädigte (SDH).
 /// 3. Die Vorgabe des Servers (`DefaultSubtitleStreamIndex`) — mit
 ///    „Untertitel automatisch" jede, ohne nur eine erzwungene. Ohne
 ///    Handwahl sind Untertitel sonst aus, und das bleibt so.
@@ -97,7 +98,10 @@ public enum Spurregel {
                 let passend = spuren.filter { Spurabdruck.sprachschluessel($0.language) == wunschsprache }
                 // Die volle vor der erzwungenen derselben Sprache — wer
                 // Untertitel will, weil er den Ton nicht versteht, braucht alles.
-                if let voll = passend.first(where: { $0.isForced != true }) ?? passend.first,
+                // Und die gewöhnliche vor der für Hörgeschädigte: Geräusch-
+                // beschreibungen will nur, wer sie ausdrücklich wählt.
+                if let voll = passend.first(where: { $0.isForced != true && $0.isHearingImpaired != true })
+                    ?? passend.first(where: { $0.isForced != true }) ?? passend.first,
                    let index = voll.index {
                     return .strom(index)
                 }

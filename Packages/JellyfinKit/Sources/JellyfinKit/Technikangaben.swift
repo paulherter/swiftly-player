@@ -43,6 +43,10 @@ public enum Technikangaben {
         case "subrip", "srt":             return "SRT"
         case "ass", "ssa":                return "ASS"
         case "mov_text":                  return "MOV-Text"
+        case "webvtt", "vtt":             return "WebVTT"
+        case "ttml", "stpp":              return "TTML"
+        // Jellyfin schreibt `DVBSUB`, ffprobe `dvb_subtitle`.
+        case "dvbsub", "dvb_subtitle":    return "DVB"
         default:                          return roh.uppercased()
         }
     }
@@ -61,7 +65,8 @@ public enum Technikangaben {
         case "a52":          "ac3"
         case "eac3":         "eac3"
         case "dts":          "dts"
-        case "trhd":         "truehd"
+        // libVLC 4 meldet TrueHD als `mlpa`, libVLC 3 als `trhd` (gemessen 25.09.2026).
+        case "trhd", "mlpa": "truehd"
         case "mlp":          "mlp"
         case "flac":         "flac"
         case "alac":         "alac"
@@ -74,6 +79,9 @@ public enum Technikangaben {
         case "bdpg":         "hdmv_pgs_subtitle"
         case "spu":          "dvd_subtitle"
         case "tx3g":         "mov_text"
+        case "wvtt":         "webvtt"
+        case "stpp":         "ttml"
+        case "dvbs":         "dvbsub"
         default:             nil
         }
         return codecname(roh)

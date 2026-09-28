@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Grund wie `Stil.grund` (0xFF101010): zwischen Start und erstem Bild stand sonst das Grau von
+         Theme.Material, danach sprang es auf den Startvorhang. -->
+    <color name="grund">#FF101010</color>
+    <style name="Swiftly" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/grund</item>
+        <item name="android:colorBackground">@color/grund</item>
+    </style>
+</resources>

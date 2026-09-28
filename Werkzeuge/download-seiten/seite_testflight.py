@@ -8,7 +8,7 @@ S1 = skizze(1, "A phone showing the TestFlight app page in a store, with the Get
     '<rect x="152" y="34" width="34" height="34" rx="11" fill="var(--erhoeht)" stroke="var(--rand)"/>' +
     '<path d="M162 60h14l-7-16z" fill="none" stroke="var(--leise)" stroke-width="1.6" stroke-linejoin="round"/>' +
     '<text class="titel" x="194" y="48">TestFlight</text><text x="194" y="64">Free</text>' +
-    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="182" y="99">Get</text>' +
     zeile(152, 126, 96, ".4") + zeile(152, 142, 70, ".3") +
     tipp(238, 95))
@@ -16,7 +16,7 @@ S1 = skizze(1, "A phone showing the TestFlight app page in a store, with the Get
 S2 = skizze(2, "The tester app listing Swiftly Player, with the Install button marked",
     TELEFON + MARKE +
     '<text class="titel" x="194" y="48">Swiftly</text><text x="194" y="64">Beta</text>' +
-    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="80" width="96" height="30" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="176" y="99">Install</text>' +
     zeile(152, 126, 96, ".4") + zeile(152, 142, 80, ".3") +
     tipp(238, 95))
@@ -25,7 +25,7 @@ S3 = skizze(3, "A phone with the feedback screen, with Send Beta Feedback marked
     TELEFON +
     '<text class="titel" x="152" y="46">Swiftly, beta</text>' +
     zeile(152, 58, 96, ".4") +
-    '<rect x="152" y="76" width="96" height="34" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="152" y="76" width="96" height="34" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="160" y="90">Send Beta</text><text class="ziel" x="160" y="104">Feedback</text>' +
     '<rect x="152" y="120" width="96" height="30" rx="10" fill="var(--erhoeht)" stroke="var(--linie)"/>' +
     zeile(160, 131, 60, ".3") +

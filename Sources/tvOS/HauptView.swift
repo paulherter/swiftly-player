@@ -121,9 +121,39 @@ struct HauptView: View {
     /// **Bei einer Sitzung sofort, bei mehreren erst fragen.** Auf zwei
     /// Geräten zu raten, welches gemeint ist, geht in der Hälfte der Fälle
     /// daneben — und der Preis dafür ist, dass anderswo der Film anhält.
+    ///
+    /// **Seit 1.0.5 auch für offene Gruppen** (Entwurf A, wie am iPhone):
+    /// ohne Gruppe wie bisher; nur eine Gruppe und nichts anderes öffnet
+    /// gleich „Beitreten"; sonst die Auswahl mit beidem.
     private func abzeichenGedrueckt() {
-        if uebernahme.mehrereDa { auswahlOffen = true }
-        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+        if gruppenAngebote.isEmpty {
+            if uebernahme.mehrereDa { vomAbzeichen = true; auswahlOffen = true }
+            else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+        } else if uebernahme.angebote.isEmpty, gruppenAngebote.count == 1,
+                  let g = gruppenAngebote.first {
+            vomAbzeichen = true
+            gemeinsam.blatt = .beitreten(g)
+        } else {
+            vomAbzeichen = true
+            gemeinsam.blatt = .auswahl
+        }
+    }
+
+    /// Aus dem Abzeichen wächst die Tafel aus dessen Mitte, sonst blendet
+    /// sie. `vomAbzeichen` gilt bis nach dem Schließen, also schrumpft sie
+    /// auch dorthin zurück.
+    private var tafelauftritt: AnyTransition {
+        vomAbzeichen ? .ausDemPunkt(Abzeichenursprung.punkt) : .opacity
+    }
+
+    /// Gruppen, denen man beitreten könnte — nur, solange man in keiner ist.
+    private var gruppenAngebote: [SyncPlayGruppe] {
+        gemeinsam.gruppe == nil && gemeinsam.darfBeitreten ? gemeinsam.angebote : []
+    }
+
+    /// Eine Tafel für „Gemeinsam schauen" steht offen.
+    private var gemeinsamTafel: Bool {
+        gemeinsam.anlegenFuer != nil || gemeinsam.blatt != nil
     }
 
     /// Das andere Gerät anhalten und hier an derselben Stelle weitermachen.
@@ -131,9 +161,28 @@ struct HauptView: View {
     /// Die Reihenfolge ist die ganze Sache: erst dort anhalten, dann hier den
     /// Plan holen, dann starten. Geht das Anhalten schief, passiert hier
     /// nichts — sonst liefen zwei Tonspuren im Raum.
+    ///
+    /// **Die Karte wächst sofort aus dem Abzeichen** (Entwurf B, wie am
+    /// iPhone); der Player geht ohne Blende unter ihr auf (``Uebergabebuehne``).
     private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
-        Task { abspielen = await uebernahme.wunsch(fuer: sitzung, model: model) }
+        gemeinsam.blatt = nil
+        let buehne = Uebergabebuehne.geteilt
+        uebergabeAufgabe?.cancel()
+        buehne.starten(titel: sitzung.laeuft, model: model)
+        uebergabeAufgabe = Task {
+            let wunsch = await uebernahme.wunsch(fuer: sitzung, model: model)
+            // Abgelöst: die neuere Wahl gehört der Bühne, nicht diese Antwort.
+            guard !Task.isCancelled else { return }
+            guard let wunsch else {
+                buehne.abbrechen("kein Plan oder Stopp abgelehnt")
+                return
+            }
+            buehne.spielerKommt(wunsch.item.id)
+            var ohne = Transaction()
+            ohne.disablesAnimations = true
+            withTransaction(ohne) { abspielen = wunsch }
+        }
     }
 
     /// **Ob die Kopfleiste steht — als eigener Zustand, nicht abgeleitet.**
@@ -150,6 +199,22 @@ struct HauptView: View {
     @State private var uebernahme = Uebernahmemodell()
     /// Steht auf mehreren Geräten etwas, wird gefragt statt geraten.
     @State private var auswahlOffen = false
+    /// Die laufende Übernahme — **nur eine gilt.** Wer zweimal wählt, bevor
+    /// die erste Antwort da ist, bricht die erste ab; ihre späte Antwort darf
+    /// die neuere Wahl nicht überschreiben.
+    @State private var uebergabeAufgabe: Task<Void, Never>?
+    /// Gemeinsam schauen — einer für die ganze App, siehe ``Gemeinsammodell``.
+    @State private var gemeinsam = Gemeinsammodell.geteilt
+    /// Zählt hoch, wenn eine Tafel des Abzeichens zugeht — siehe `Kopfleiste`.
+    @State private var abzeichenFokus = 0
+    /// Die offene Tafel kam vom Abzeichen, nicht von einer Seite.
+    @State private var vomAbzeichen = false
+    /// Was ein Kachelmenü bestellt hat — abspielen oder eine Meldung
+    /// (``Kachelwunsch``, wie am iPhone).
+    @State private var kachelwunsch = Kachelwunsch.geteilt
+    /// Zählt hoch, wenn nach einem Kontowechsel der Fokus aufs Profilbild
+    /// oben gehört — siehe `Kopfleiste`.
+    @State private var profilFokus = 0
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -176,14 +241,44 @@ struct HauptView: View {
             // heisst auf dem Fernseher nicht unerreichbar — der Fokusmotor
             // sucht geometrisch und kennt keine Ebenen.
             rahmen
-                .disabled(abspielen != nil || auswahlOffen)
+                .disabled(abspielen != nil || auswahlOffen || gemeinsamTafel)
+
+            // **Der Schleier blendet, die Auswahl wächst aus dem Abzeichen**
+            // (wie am iPhone, „Hier weiterschauen"): kam sie von dort, kommt
+            // sie aus dessen Mitte und schrumpft beim Schließen dorthin
+            // zurück. Der Grund fängt den Druck ab, damit dahinter nichts
+            // reagiert — gesperrt ist der Rahmen ohnehin.
+            if auswahlOffen || gemeinsamTafel {
+                Color.black.opacity(0.72)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(2.9)
+            }
 
             if auswahlOffen {
                 TVUebernahmeauswahl(sitzungen: uebernahme.angebote,
                                   waehlen: { hierWeiterschauen($0) },
                                   abbrechen: { auswahlOffen = false })
-                    .transition(.opacity)
+                    .transition(tafelauftritt)
                     .zIndex(3)
+            }
+
+            // Anlegen, Beitreten und die Auswahl mit beidem. Über allem außer
+            // dem Player, weil jede Seite sie öffnen kann.
+            if gemeinsamTafel {
+                TVGemeinsamtafeln(weiterschauen: uebernahme.angebote,
+                                  hierWeiterschauen: { hierWeiterschauen($0) },
+                                  gemeinsam: gemeinsam)
+                    .transition(tafelauftritt)
+                    .zIndex(4)
+            }
+
+            // „Filmabend verlassen · Wieder beitreten" nach dem Schließen des
+            // Players. Nicht über dem Player: dort ist man ja in der Gruppe.
+            if abspielen == nil, !gemeinsamTafel, let alt = gemeinsam.zuletztVerlassen {
+                TVRueckwegstreifen(name: alt.name) { gemeinsam.wiederBeitreten() }
+                    .transition(.opacity)
+                    .zIndex(4)
             }
 
             if let wunsch = abspielen {
@@ -200,8 +295,36 @@ struct HauptView: View {
         .environment(\.abspielwunsch, $abspielen)
         .environment(\.tafelOffen, $tafelOffen)
         // Dieselbe Blende wie auf iPhone und Mac.
-        .animation(.easeInOut(duration: 0.3), value: abspielen?.id)
-        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.3)), value: abspielen?.id)
+        .animation(vomAbzeichen ? Stil.feder : Stil.bewegung(.easeInOut(duration: 0.2)),
+                   value: auswahlOffen)
+        .animation(vomAbzeichen ? Stil.feder : Stil.bewegung(.easeInOut(duration: 0.2)),
+                   value: gemeinsamTafel)
+        .animation(Stil.einblenden, value: gemeinsam.zuletztVerlassen?.id)
+        // **Zu heisst: zurueck an den Ausloeser.** Kam die Tafel vom Abzeichen,
+        // steht der Fokus wieder dort; kam sie von einer Seite, holt die ihn
+        // sich selbst (siehe `gemeinsamZu` in Detail- und Serienseite).
+        .onChange(of: gemeinsamTafel || auswahlOffen) { _, offen in
+            guard !offen, vomAbzeichen else { return }
+            vomAbzeichen = false
+            if abspielen == nil { abzeichenFokus += 1 }
+        }
+        .task { gemeinsam.starten(model) }
+        // **Die Gruppe startet den Player, nicht die Seite.** Wer anlegt, wer
+        // beitritt, und wenn in der Gruppe jemand einen neuen Titel setzt —
+        // es kommt immer als Warteschlange vom Server.
+        // **Was ein Kachelmenü bestellt**: „Abspielen" und „Fortsetzen"
+        // starten hier, im Rahmen, wie jeder andere Wunsch.
+        .onChange(of: kachelwunsch.abspielen?.id) { _, neu in
+            guard neu != nil, let wunsch = kachelwunsch.abspielen else { return }
+            kachelwunsch.abspielen = nil
+            abspielen = wunsch
+        }
+        .onChange(of: gemeinsam.wunsch?.id) { _, neu in
+            guard neu != nil, let wunsch = gemeinsam.wunsch else { return }
+            gemeinsam.wunsch = nil
+            abspielen = wunsch
+        }
         .task { await model.fernsteuerungStarten() }
         // **Einmal je Start, und ohne Antwort passiert nichts.**
         //
@@ -213,6 +336,20 @@ struct HauptView: View {
         // fehlt, ist fort. `HauptView` ist je Plattform eigen, deshalb
         // braucht jede ihren eigenen Aufruf.
         .task { await model.downloadsNachziehen() }
+        #if DEBUG
+        // Selbsttest ohne Netz — der Fernseher-Simulator ist der, der am
+        // Prüfserver angemeldet ist; die Logik darunter teilen alle Apple-Ziele.
+        .task {
+            guard Offlinelauf.an else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let wunsch = await Offlinelauf.wunsch(model) else {
+                await Offlinelauf.aufraeumen(model)
+                return
+            }
+            abspielen = wunsch
+            await Offlinelauf.ablauf(model) { abspielen = nil }
+        }
+        #endif
         // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
         // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
         // Anfrage mehr zu beantworten, während es aufs Bild ankommt.
@@ -223,7 +360,10 @@ struct HauptView: View {
         #if DEBUG
         .task { await debugSprung() }
         #endif
-        .onDisappear { Task { await model.fernsteuerungBeenden() } }
+        .onDisappear {
+            Task { await model.fernsteuerungBeenden() }
+            gemeinsam.beenden()
+        }
         .onChange(of: bereich) { _, neu in besucht.insert(neu) }
         // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
         //
@@ -236,10 +376,40 @@ struct HauptView: View {
         // Fortschrittsbalken des vorigen Kontos, und ein Druck auf
         // Abspielen setzte an dessen Stelle an und meldete sie dem neuen.
         .onChange(of: model.kontowechsel) { _, _ in
-            for i in pfade.indices where !pfade[i].isEmpty {
-                pfade[i] = NavigationPath()
-            }
+            // Aus der Profilauswahl ist schon geleert — beim Druck, siehe
+            // unten.
+            guard !Kontowechselflug.geteilt.stapelSchonGeleert() else { return }
+            stapelLeeren()
         }
+        // **Beim Druck in der Profilauswahl** (Entwurf D, wie am iPhone)
+        // blendet ein Standbild der Seite aus; darunter springt der Stapel
+        // hier ohne Animation zurück, und der Fokus geht aufs Profilbild
+        // oben — das Profil ist sofort wieder erreichbar.
+        .onChange(of: Kontowechselflug.geteilt.zurueck) { _, _ in
+            var ohne = Transaction()
+            ohne.disablesAnimations = true
+            withTransaction(ohne) { stapelLeeren() }
+            profilFokus += 1
+            #if DEBUG
+            if Kontowechsellauf.an, let ms = Kontowechsellauf.profiltipp {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(ms))
+                    Kontowechselflug.notiz("selbsttest: profil oben gedrückt (+\(ms) ms)")
+                    pfade[bereich.rawValue].append(ProfilRoute())
+                }
+            }
+            #endif
+        }
+        #if DEBUG
+        // Selbsttest Kontowechsel: nach dem Start das Profil öffnen — über
+        // denselben Weg wie ein Druck aufs Profilbild.
+        .task {
+            guard Kontowechsellauf.an else { return }
+            try? await Task.sleep(for: .seconds(3))
+            Kontowechselflug.notiz("selbsttest: profil oeffnen")
+            pfade[bereich.rawValue].append(ProfilRoute())
+        }
+        #endif
         // Top Shelf: `titel` öffnet die Seite (Auswählen), `abspielen`
         // startet sofort und setzt an der gemerkten Stelle fort (Abspieltaste)
         // — so erwartet es Apple für Starts aus dem System (HIG, Playing video).
@@ -247,7 +417,7 @@ struct HauptView: View {
             guard adresse.scheme == "swiftly",
                   adresse.host == "titel" || adresse.host == "abspielen" else { return }
             let kennung = adresse.lastPathComponent
-            guard !kennung.isEmpty else { return }
+            guard Pfadteil.istKennung(kennung) else { return }
             let direkt = adresse.host == "abspielen"
             Task {
                 // Frisch holen: die Stelle im Regal ist so alt wie die Startseite.
@@ -257,6 +427,13 @@ struct HauptView: View {
                 besucht.insert(.start)
                 pfade[Bereich.start.rawValue].append(titel)
             }
+        }
+    }
+
+    /// Jeder Stapel zurück an die Wurzel — ein Stapel gehört zu einem Konto.
+    private func stapelLeeren() {
+        for i in pfade.indices where !pfade[i].isEmpty {
+            pfade[i] = NavigationPath()
         }
     }
 
@@ -332,8 +509,11 @@ struct HauptView: View {
                            aufsProfil: {
                                pfade[bereich.rawValue].append(ProfilRoute())
                            },
-                           uebernahme: uebernahme.angebot,
-                           uebernehmen: { abzeichenGedrueckt() })
+                           uebernahme: uebernahme.angebote,
+                           gruppen: gruppenAngebote,
+                           abzeichenGedrueckt: { abzeichenGedrueckt() },
+                           abzeichenFokus: abzeichenFokus,
+                           profilFokus: profilFokus)
                 // Ohne eigenen Abschnitt springt der Fokus aus dem Inhalt
                 // nicht sauber in die Leiste, sondern sucht sich den
                 // waagerecht nächsten Knopf.
@@ -352,13 +532,24 @@ struct HauptView: View {
         // Der Wechsel laeuft hier, in einer eigenen Transaktion — der Pfad
         // selbst wird bewusst ohne Animation gesetzt, siehe `stapel`.
         .onChange(of: anDerWurzel, initial: true) { _, jetzt in
-            withAnimation(.easeInOut(duration: 0.26)) { leisteDa = jetzt }
+            withAnimation(Stil.bewegung(.easeInOut(duration: 0.26))) { leisteDa = jetzt }
         }
         // Serverfehler sichtbar machen. `AppModel` sammelt sie in
         // `errorMessage`; auf tvOS hat sie bisher niemand gelesen.
         .overlay(alignment: .top) {
             if let fehler = model.errorMessage {
                 Hinweisstreifen(text: fehler) { model.errorMessage = nil }
+                    .padding(.top, Stil.leisteUnten + 20)
+                    .zIndex(3)
+            } else if let meldung = kachelwunsch.meldung {
+                // Was ein Kachelmenü zu sagen hat — dieselbe Stelle.
+                Hinweisstreifen(text: meldung) { kachelwunsch.meldung = nil }
+                    .padding(.top, Stil.leisteUnten + 20)
+                    .zIndex(3)
+            } else if let fehler = gemeinsam.fehler {
+                // Was bei „Gemeinsam schauen" schiefging — eigene Meldung,
+                // dieselbe Stelle.
+                Hinweisstreifen(text: fehler) { gemeinsam.fehler = nil }
                     .padding(.top, Stil.leisteUnten + 20)
                     .zIndex(3)
             }
@@ -381,7 +572,8 @@ struct HauptView: View {
         // Auf Unterseiten greift der Navigationsstapel zuerst, der ist naeher
         // am Fokus. Der Player ebenso — er hat seine eigene Behandlung.
         .onExitCommand(perform: zurueckAufStart)
-        .animation(.easeInOut(duration: 0.2), value: model.errorMessage)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: model.errorMessage)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: gemeinsam.fehler)
     }
 
     #if DEBUG

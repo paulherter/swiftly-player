@@ -309,7 +309,7 @@ extension App {
     }
 
     /// Gleich heißende und nachgeladene Untertitel bekommen Sprache, Format,
-    /// „Erzwungen" und „Datei" — sonst sind sie in der Liste nicht zu
+    /// „Erzwungen", „Hörgeschädigt" und „Datei" — sonst sind sie in der Liste nicht zu
     /// unterscheiden (Apple: `untertitelnamen()`).
     func untertitelnamen() -> [(kennung: Int32, name: String)] {
         let (_, ut, z, _) = spurstand()
@@ -318,13 +318,14 @@ extension App {
             let doppelt = ut.filter { $0.name == spur.name }.count > 1
             guard let index = z.untertitel[position],
                   let strom = stroeme.first(where: { $0.type == "Subtitle" && $0.index == index }),
-                  doppelt || strom.isExternal == true else {
+                  doppelt || strom.isExternal == true || strom.isHearingImpaired == true else {
                 return (spur.kennung, spur.name)
             }
             let teile: [String?] = [
                 Technikangaben.sprache(strom.language) ?? spur.name,
                 Technikangaben.codecname(strom.codec),
                 strom.isForced == true ? uebersetzt("Erzwungen") : nil,
+                strom.isHearingImpaired == true ? uebersetzt("Hörgeschädigt") : nil,
                 strom.isExternal == true ? uebersetzt("Datei") : nil,
             ]
             return (spur.kennung, teile.compactMap { $0 }.joined(separator: " · "))

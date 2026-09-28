@@ -69,7 +69,7 @@ final class App: @unchecked Sendable {
 
     // Startseite
     var bereich: Bereich = .start
-    private var reihenstapel: Widget!
+    var reihenstapel: Widget!
     /// Die gewählten Genres, wenn sie als Chips über den Reihen stehen.
     private var gattungschips: [String] = []
     /// Was zuletzt auf der Startseite stand — das Fernsteuerpult braucht
@@ -85,6 +85,15 @@ final class App: @unchecked Sendable {
     /// siehe ``serieVorholen(_:)``.
     var vollspeicher: [String: Item] = [:]
     var vorholend: Set<String> = []
+    /// **Wiedergabepläne, einmal geholt** — für den Beleg „Direct Play" in
+    /// der Angabenzeile (``planAuftrag(_:)``). Der Auftrag ist geteilt: Beleg
+    /// und Dateiauszug warten auf denselben Abruf, nicht auf zwei.
+    var planauftraege: [String: Task<PlaybackPlan?, Never>] = [:]
+    /// Was schon beantwortet ist — damit eine neu gebaute Zeile den Beleg im
+    /// ersten Bild trägt statt ihn nachzureichen.
+    var planfertig: [String: PlaybackPlan] = [:]
+    /// Die Kachel, über der der Zeiger gerade steht (Vorholen mit Frist).
+    var planWunsch: String?
     /// Die Folgen der offenen Staffel und der Chip „Staffel laden" darueber.
     var staffelfolgen: [Item] = []
     var staffelladeknopf: Widget?
@@ -95,6 +104,14 @@ final class App: @unchecked Sendable {
     var stromPufferWuchs = Date()
     /// Wann zuletzt gesprungen wurde — die Wacht setzt danach aus.
     var letzterSprung = Date.distantPast
+    // MARK: Tonwacht und Ruhezustand (siehe `Spieler.tonPruefen`)
+    var tonVerlorenZuletzt: UInt64?
+    var tonVerlustSeit: Date?
+    var tonNeuVersucht = Date.distantPast
+    var zuletztAufgewacht = Date.distantPast
+    /// Wie oft der Strom dieses Titels schon neu aufgebaut wurde, weil VLC
+    /// mittendrin aufhoerte — siehe ``stromAbgerissen(fehler:)``.
+    var abrisse = 0
     /// Die Kontozeile unten in der Seitenleiste — sie traegt die
     /// Hervorhebung, solange eine Unterseite offen ist.
     private var profilzeile: Widget?
@@ -105,13 +122,32 @@ final class App: @unchecked Sendable {
 
     /// Die Kreise unten in der Leiste. Ein ``GtkFixed``, weil sie sich
     /// ueberlappen — GTK kennt keine negativen Raender.
-    private var profilkreise: Widget!
+    var profilkreise: Widget!
 
     var client: JellyfinClient?
     var adressen: Bildadresse?
     /// Läuft nur beim Start und blendet danach weg.
     var startanimation: Startanimation?
     var startbild: Widget!
+
+    /// Groesse und Maximiert fuer den naechsten Start. **Nicht im Vollbild**
+    /// — dann stuende nach dem Film die Bildschirmgroesse als Fenstermass
+    /// da; es gilt, was vorher war.
+    func fensterstandMerken() {
+        let f = alsFenster(fenster)
+        guard gtk_window_is_fullscreen(f) == 0 else { return }
+        let maximiert = gtk_window_is_maximized(f) != 0
+        var breite: Int32 = 0, hoehe: Int32 = 0
+        // Die Vorgabegroesse folgt in GTK4 dem Ziehen, aber nicht dem
+        // Maximieren — also das Mass, zu dem das Fenster zurueckkehrt.
+        gtk_window_get_default_size(f, &breite, &hoehe)
+        wahlen.fensterMaximiert = maximiert
+        if breite >= Int32(Stil.fensterMinBreite), hoehe >= Int32(Stil.fensterMinHoehe) {
+            wahlen.fensterBreite = Int(breite)
+            wahlen.fensterHoehe = Int(hoehe)
+        }
+        wahlen.sichern()
+    }
 
     // MARK: - Aufbau
 
@@ -145,7 +181,15 @@ final class App: @unchecked Sendable {
         // Programm, das man nicht mehr los wird. **Bewusst nicht angeglichen**
         // — die Plattform entscheidet, so wie sie auch entscheidet, wo die
         // Fensterampel sitzt.
-        gtk_window_set_default_size(alsFenster(fenster), 1440, 900)
+        // **Wie beim letzten Schliessen, sonst die Vorgabe** (UX-Audit
+        // 27.09.). Vorher begann jeder Start bei 1440 x 900, egal wie gross
+        // man das Fenster gezogen hatte. Die Bildschirmpruefung darunter
+        // gilt fuer beide: ein gemerktes Mass von einem groesseren Schirm
+        // passt auf dem kleineren nicht.
+        let breite = wahlen.fensterBreite >= Stil.fensterMinBreite ? wahlen.fensterBreite : 1440
+        let hoehe = wahlen.fensterHoehe >= Stil.fensterMinHoehe ? wahlen.fensterHoehe : 900
+        gtk_window_set_default_size(alsFenster(fenster), Int32(breite), Int32(hoehe))
+        if wahlen.fensterMaximiert { gtk_window_maximize(alsFenster(fenster)) }
         // **Passt es nicht, dann maximiert.** Windows kuerzt eine Vorgabe, die
         // groesser als der Bildschirm ist, nicht — auf 1280 x 800 stand das
         // Fenster unten hinter der Taskleiste und rechts ueber den Rand.
@@ -156,7 +200,7 @@ final class App: @unchecked Sendable {
             var flaeche = GdkRectangle()
             gdk_monitor_get_geometry(OpaquePointer(roh), &flaeche)
             g_object_unref(roh)
-            if flaeche.width < 1440 + 40 || flaeche.height < 900 + 80 {
+            if flaeche.width < Int32(breite) + 40 || flaeche.height < Int32(hoehe) + 80 {
                 gtk_window_maximize(alsFenster(fenster))
             }
         }
@@ -167,7 +211,8 @@ final class App: @unchecked Sendable {
                                     Int32(Stil.fensterMinHoehe))
 
         seiten = gtk_stack_new()
-        gtk_stack_set_transition_type(OpaquePointer(seiten), GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+        // Keine Kreuzblende — der Wechsel läuft über ``stapelWechseln``.
+        gtk_stack_set_transition_type(OpaquePointer(seiten), GTK_STACK_TRANSITION_TYPE_NONE)
         gtk_widget_set_vexpand(seiten, 1)
 
         anmeldeseite = anmeldungBauen()
@@ -215,8 +260,17 @@ final class App: @unchecked Sendable {
             }
         }
         gtk_window_set_child(alsFenster(fenster), decke)
+        fensterdecke = decke
 
         tastenEinrichten()
+        beiEigenschaft(UnsafeMutableRawPointer(fenster), "notify::fullscreened") { [weak self] in
+            guard let self, self.laufenderTitel != nil else { return }
+            self.vollbildAnzeigen(voll: gtk_window_is_fullscreen(alsFenster(self.fenster)) != 0)
+        }
+        g_signal_connect_data(UnsafeMutableRawPointer(fenster), "close-request",
+                              unsafeBitCast(schliessenGewuenscht, to: GCallback.self),
+                              Unmanaged.passUnretained(self).toOpaque(),
+                              nil, GConnectFlags(rawValue: 0))
         // **Die Medientasten der Tastatur.** Unter Linux gibt es dafür kein
         // Rahmenwerk, sondern einen Standard auf dem Sitzungsbus; siehe
         // ``Medienleiste``.
@@ -627,7 +681,7 @@ final class App: @unchecked Sendable {
 
         meldetGerade = true
         gtk_widget_set_sensitive(verbindeknopf, 0)
-        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinde …"))
+        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinde…"))
         serverstandZeigen(String(format: uebersetzt("Frage %@ …"), url.absoluteString))
         // Leer heisst: was fuer diese Adresse schon eingetragen ist, bleibt.
         let koepfe = anmeldeleser?.koepfe() ?? []
@@ -639,7 +693,8 @@ final class App: @unchecked Sendable {
                                    deviceName: Geraet.name,
                                    clientVersion: Geraet.fassung)
             do {
-                let info = try await c.publicSystemInfo()
+                // Kurze Frist wie auf Apple, siehe `Adresspruefung`.
+                let info = try await c.erreichbarkeitPruefen()
                 // Erst jetzt ablegen: fuer eine Adresse, unter der nichts
                 // antwortet, bleibt nichts liegen.
                 if !koepfe.isEmpty { Speicher.koepfeSichern(koepfe, fuer: url) }
@@ -647,6 +702,11 @@ final class App: @unchecked Sendable {
                 let fassung = info.version ?? "?"
                 aufHauptfaden {
                     self.verbindenFertig()
+                    // **Die Antwort gehoert zur Adresse, die gefragt wurde.**
+                    // Steht inzwischen eine andere im Feld, bleibt sie liegen —
+                    // sonst ginge es mit dem alten Server weiter.
+                    guard self.text(self.serverfeld)
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == eingabe else { return }
                     self.serverURL = url
                     // **Sie wurde geholt und weggeworfen.** `serverfassung`
                     // stand in den Einstellungen und im Profil und war immer
@@ -665,6 +725,8 @@ final class App: @unchecked Sendable {
                 if !koepfe.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
                 aufHauptfaden {
                     self.verbindenFertig()
+                    guard self.text(self.serverfeld)
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == eingabe else { return }
                     self.serverstandZeigen(lesbarerFehler(error))
                 }
             }
@@ -741,6 +803,9 @@ final class App: @unchecked Sendable {
     /// dass ihre Antwort zum vorigen Konto gehört.
     var kontowechsel = 0
 
+    /// Je Bibliotheksraster die Wache, die weit Weggescrolltes entlaedt.
+    var kachelwachen: [UnsafeMutableRawPointer: Kachelbildwache] = [:]
+
     /// Nimmt eine frische Sitzung an — nach Anmeldung oder Quick Connect.
     ///
     /// Gibt zurück, ob es ein **Kontowechsel** war, also ob schon jemand
@@ -756,6 +821,7 @@ final class App: @unchecked Sendable {
         schnelllauf?.cancel()
         schnelllauf = nil
         let (neuer, warAngemeldet) = Kontenbund.aufnehmen(sitzung, in: bund)
+        if warAngemeldet { playerZuVorWechsel() }
         bund = neuer
         bundSichern(servername: servername)
         if warAngemeldet { aufraeumenNachWechsel() }
@@ -773,9 +839,10 @@ final class App: @unchecked Sendable {
     /// oder gar keins. `Kontenbund.konto(_:)` prueft zuerst den vollen
     /// Schluessel und faellt nur zur Sicherheit auf die Benutzerkennung
     /// zurueck — damit bleiben aeltere Aufrufer lesbar.
-    func kontoWechseln(zu kennung: String) {
+    func kontoWechseln(zu kennung: String, imProfilBleiben: Bool = true) {
         guard var neu = bund, neu.aktiveKennung != kennung,
               neu.konto(kennung) != nil else { return }
+        playerZuVorWechsel()
         neu.wechseln(zu: kennung)
         bund = neu
         let name = servername.isEmpty ? nil : servername
@@ -785,7 +852,9 @@ final class App: @unchecked Sendable {
         // was Akzentring und Punkt traegt, und das aendert sich beim Klicken".
         // Wer stattdessen auf die Startseite geworfen wuerde, saehe die
         // Antwort auf seinen eigenen Klick nie.
-        let warImProfil = offeneUnterseite == .profil
+        // Der Flug (``kontoWechselnMitFlug``) fuehrt dagegen auf die Seite
+        // des Bereichs, wie am iPhone (Entwurf D).
+        let warImProfil = imProfilBleiben && offeneUnterseite == .profil
         bundSichern(servername: name)
         aufraeumenNachWechsel()
         sitzungEinsetzen(neu.aktives, servername: name)
@@ -793,6 +862,21 @@ final class App: @unchecked Sendable {
         // die stellt ``sitzungEinsetzen(_:servername:)``; davor gebaut zeigte
         // sie den Namen des Kontos, von dem man gerade weggegangen ist.
         if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
+    }
+
+    /// **Ein laufender Player geht vor jedem Kontowechsel zu** — auch beim
+    /// Abmelden und bei einer neuen Anmeldung ueber ein bestehendes Konto.
+    ///
+    /// Er lief sonst mit dem Titel und dem Merkmal des vorigen Kontos weiter,
+    /// waehrend die Oberflaeche schon das neue zeigte, und seine
+    /// Zwischenmeldungen gingen ueber den ausgetauschten Client an ein Konto,
+    /// in dem der Titel vielleicht gar nicht liegt. Muss **vor** dem Tausch
+    /// stehen: ``spielerSchliessen(melden:fensterZurueck:)`` greift Client
+    /// und Benutzerkennung sofort, der Stopp geht also noch ans alte Konto.
+    private func playerZuVorWechsel() {
+        guard laufenderTitel != nil else { return }
+        Protokoll.schreib("[Konto] Wechsel bei offenem Player, erst schliessen")
+        spielerSchliessen()
     }
 
     /// Was nach jedem Kontowechsel neu muss — ausser dem Client selbst.
@@ -818,6 +902,8 @@ final class App: @unchecked Sendable {
         uebernahmelauf?.cancel()
         uebernahmelauf = nil
         uebernahmeangebote = []
+        // Raus aus der Gruppe, samt Streifen und Angeboten des vorigen Kontos.
+        gemeinsamBeenden()
         // Detailseiten und geladene Bereiche gehoeren zum vorigen Konto.
         // Ohne das zeigten Filme und Serien nach dem Wechsel dauerhaft die
         // Titel des vorigen Kontos: `geladen` wurde bisher nur beim Abmelden
@@ -881,7 +967,7 @@ final class App: @unchecked Sendable {
             let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
                                    deviceName: Geraet.name, clientVersion: Geraet.fassung)
             do {
-                let auskunft = try await c.publicSystemInfo()
+                let auskunft = try await c.erreichbarkeitPruefen()
                 if !koepfe.isEmpty { Speicher.koepfeSichern(koepfe, fuer: url) }
                 aufHauptfaden {
                     self.serverAufnahmeURL = url
@@ -1044,8 +1130,10 @@ final class App: @unchecked Sendable {
             gtk_widget_set_visible(feld, 0)
             return
         }
-        let text = String(format: uebersetzt("Läuft ab in %d:%02d"),
-                          sekunden / 60, sekunden % 60)
+        // Derselbe Schlüssel wie auf Apple: die Sekunden kommen zweistellig
+        // als fertiger Text, der Katalog kennt nur Minuten und Rest.
+        let text = String(format: uebersetzt("Läuft ab in %lld:%@"),
+                          sekunden / 60, String(format: "%02d", sekunden % 60))
         gtk_label_set_text(OpaquePointer(feld), text)
         gtk_widget_set_visible(feld, 1)
     }
@@ -1091,6 +1179,7 @@ final class App: @unchecked Sendable {
         naechsteAutomatischKonto = nil
         downloadrecht = .unbekannt
         umwandelnErlaubt = true
+        downloadqualitaetWaehlbar = true
         // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
         // Server tragen dieselben Kennungen; ohne das Konto kaeme der
         // Fortschritt des einen an den Titel des anderen.
@@ -1099,7 +1188,7 @@ final class App: @unchecked Sendable {
             self.downloadseiteFuellen()
         }
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
+        stapelWechseln(seiten, zu: "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
         // deshalb nur mit `await`; erst danach darf geladen werden.
@@ -1132,6 +1221,7 @@ final class App: @unchecked Sendable {
                 self.serverstandHolen()
                 self.fernsteuerungStarten()
                 self.uebernahmetaktStarten()
+                self.gemeinsamStarten()
             }
         }
     }
@@ -1211,6 +1301,8 @@ final class App: @unchecked Sendable {
     private var suchverlaufliste: Widget!
     var suchraster: Widget!
     var suchleer: Widget!
+    /// Statt „Nichts gefunden", wenn der Server gar nicht geantwortet hat.
+    var suchstoerung: Widget!
     var geladen: Set<Bereich> = []
     /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
     /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
@@ -1365,8 +1457,37 @@ final class App: @unchecked Sendable {
     var offeneStaffel: Item?
     /// Die Hinweiszeile der Detailseite.
     var hinweisfeld: Widget!
-    /// Wohin der Dateiauszug kommt, sobald der Plan da ist.
-    var dateiraum: Widget!
+    /// Der Platz des Belegs auf der gerade gebauten Filmseite. Wird beim
+    /// Bauen gesetzt und sofort ausgelesen — der Abruf haelt ihn selbst.
+    var belegraum: Widget!
+    /// Der Unterbau der mageren ersten Fassung einer Detailseite, noch nicht
+    /// angestossen. Siehe ``titelNachladen``.
+    var magererUnterbau: (() -> Void)?
+    /// Der oberste Ueberzug des Fensters — dort liegt der Discord-Hinweis.
+    var fensterdecke: Widget?
+    /// Der laufende Kontowechsel mit Flug (``Kontoflug``), sonst `nil`.
+    var kontoflug: Kontoflug?
+    /// Die laufende Übergabe „Hier weiterschauen" als Karte
+    /// (``Uebergabelauf``), sonst `nil`.
+    var uebergabe: Uebergabelauf?
+    /// **Wer gerade übernimmt** — kommt als Hinweis kurz vor dem Stopp
+    /// (``JellyfinClient/uebergabeHinweis(an:geraet:)``). Mit frischem Hinweis
+    /// geht das Bild beim Stopp als Karte ab, sonst schließt der Player wie
+    /// immer (Apple `AppModel.uebergabeZiel`).
+    var uebergabeZiel: (name: String, zeit: Date)?
+    /// Die Startseite war beim Tausch noch nicht geladen — ihre Reihen
+    /// kommen trotzdem gestaffelt, sobald sie da sind.
+    var kontoflugStaffelNachzuegler = false
+    /// Laufende ``stapelWechseln`` je Stapel — der jüngste gewinnt.
+    var stapelwechsel: [UnsafeMutableRawPointer: Int] = [:]
+    var stapelwechselZaehler = 0
+    /// Der laufende schrittweise Aufbau einer Folgenliste — ein neuer
+    /// (andere Staffel, andere Seite) beendet den alten.
+    var folgenaufbau = 0
+    var discordkarte: Widget?
+    var discordHinweisFaellig = false
+    /// Welcher Titel zuletzt gezaehlt wurde (``fertigZaehlen``).
+    var gezaehlterTitel: String?
     var hinweistakt = 0
     /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
     /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie
@@ -1443,21 +1564,39 @@ final class App: @unchecked Sendable {
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
+    /// Gemeinsam schauen — einer für die ganze App, siehe ``Gemeinsamstand``.
+    let gemeinsam = Gemeinsamstand()
     /// Medientasten und die Wiedergabekachel der Arbeitsumgebung.
     var medienleiste: Medienleiste?
-    private var uebernahmezeile: Widget!
+    var uebernahmezeile: Widget!
     private var uebernahmetitel: Widget!
     /// Bis wann ein Fehler in der Uebernahmezeile stehen bleibt (N7).
     private var uebernahmefehlerBis = Date.distantPast
     private var uebernahmezeichen: Widget!
+    /// Was die Zeile oben sagt: „Hier weiterschauen", „Gemeinsam schauen"
+    /// oder, bei mehr als einem Angebot, „Läuft gerade".
+    private var uebernahmeoben: Widget!
+    /// Der Zähler, sobald mehr als ein Angebot da ist (Entwurf A).
+    private var uebernahmezaehler: Widget!
     private var uebernahmeangebote: [Fremdsitzung] = []
     private var uebernahmelauf: Task<Void, Never>?
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
-    var abschnitte: [Abschnitt] = []
+    var abschnitte: [Abschnitt] = [] {
+        // Die Kerben am Zeitregler stehen an ihren Grenzen.
+        didSet { if let k = spielerKerben { gtk_widget_queue_draw(k) } }
+    }
     var jetzigesAngebot: Knopfangebot = .keiner
     /// **„Intro überspringen" und „Nächste Folge" über dem Bild**, ohne dass
     /// die Steuerung aufgehen muss (Stufe 3). Was wann steht, sagt das Paket.
-    var angebotsebene = Angebotsebene()
+    /// **Die Karte wartet, solange die Steuerung bewusst offen ist** (iOS
+    /// 26.09.2026, `karteWartetBeiSteuerung`): sie geht weg, der Countdown
+    /// hält an, und mit dem Schließen kommt sie zurück — abgesagt wird nur
+    /// über X oder Escape.
+    var angebotsebene: Angebotsebene = {
+        var e = Angebotsebene()
+        e.karteWartetBeiSteuerung = true
+        return e
+    }()
     /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: kommt bei
     /// jeder Anmeldung frisch, ein anderes Konto hat eine andere.
     var naechsteAutomatischKonto: Bool?
@@ -1468,6 +1607,9 @@ final class App: @unchecked Sendable {
     /// Antwort. Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im
     /// Player, wie `AppModel.umwandelnErlaubt` auf Apple.
     var umwandelnErlaubt = true
+    /// Ob beim Laden eine kleinere Qualitaet waehlbar ist — Bild- und
+    /// Tonrecht, entschieden im Paket (`Downloadqualitaet.waehlbar`).
+    var downloadqualitaetWaehlbar = true
     /// **Der Folgenwechsel des offenen Players** — der Ablauf aus dem Paket,
     /// derselbe wie auf iOS, tvOS und macOS (Audit 16.09.2026, T2-H1/M3).
     /// Er haelt den Riegel (ein Wechsel zur Zeit), und `schliessen` bricht
@@ -1475,10 +1617,18 @@ final class App: @unchecked Sendable {
     /// Wechsel, dessen Player zu ist, erkennt sich daran, dass er nicht mehr
     /// hier steht.
     var folgenwechsel = Folgenwechsel()
+    /// Was nach der Endmeldung des Players geschehen soll — gesetzt nur,
+    /// wenn das Fenster waehrend der Wiedergabe zugeht. Siehe
+    /// ``fensterSchliessenGewuenscht()``.
+    var nachDemStopp: (() -> Void)?
+    var schliesstNachStopp = false
     /// **Die naechste Folge, vorab geholt** (T2-H2). Nur wenn sie da ist,
     /// gibt es den Knopf, die Medientaste und das Weiterschalten — vorher
     /// galt jede Folge als eine mit Nachfolger, auch das Finale.
     var vorgeholteFolge: Item?
+    /// Plan und Dateianfang der nächsten Folge, in den letzten Minuten geholt
+    /// (``Folgenvorbereitung``, iOS `vorbereitung`).
+    let vorbereitung = Folgenvorbereitung()
     /// **Die eine Reihe fuer Start, Fortschritt und Stopp** — dieselbe wie
     /// `AppModel.meldungen` auf Apple (Audit 16.09.2026, Stufe 2). Reihenfolge,
     /// Zusammenfassen, 6 s Frist je Meldung und die Stoppsperre je PlaySession
@@ -1606,9 +1756,13 @@ final class App: @unchecked Sendable {
         neu.laufzustand = { [weak self] laeuft in
             guard let self else { return }
             // Waehrend der Wiedergabe kein Bildschirmschoner, bei Pause wieder.
-            Wachhalter.setzen(laeuft, fenster: self.fenster)
+            // Nur mit offenem Player: ein „laeuft", das erst nach dem
+            // Schliessen ankommt, hielte den Schirm sonst bis zum naechsten
+            // Film wach.
+            Wachhalter.setzen(laeuft && self.laufenderTitel != nil, fenster: self.fenster)
             self.laufzustandGemeldet(laeuft: laeuft)
         }
+        neu.abgerissen = { [weak self] fehler in self?.stromAbgerissen(fehler: fehler) }
         return neu
     }()
     #if os(Windows)
@@ -1641,12 +1795,20 @@ final class App: @unchecked Sendable {
     var spielerZeit: Widget!
     var spielerRest: Widget!
     var spielerRegler: Widget!
+    /// Die Kerben über dem Zeitregler (``kerbenMalen``), solange er steht.
+    var spielerKerben: Widget?
+    /// Die Laufzeit, mit der die Kerben zuletzt gemalt wurden.
+    var kerbenDauer: Double = 0
     /// Zaehlt die Spielerseiten. Siehe ``spielerOeffnen(_:ab:)``.
     var spielerZaehler = 0
     var spielerAbspielzeichen: Playerzeichen?
     var spielerWeiter: Angebotsknopf?
     /// Derselbe Knopf als eigene Ebene über dem Bild, bei zugeklappter Steuerung.
     var spielerAngebot: Angebotsknopf?
+    /// **Die Karte der nächsten Folge** (Variante C, ``Folgenkartenansicht``)
+    /// und der Schleier darunter, der das Bild abdunkelt, solange sie steht.
+    var spielerKarte: Folgenkartenansicht?
+    var spielerKartenschleier: Widget?
     var spielerSpurknopf: Widget!
     /// Hält das gemalte Reglerzeichen des Wiedergabe-Chips am Leben, solange
     /// die Spielerseite steht.
@@ -1674,6 +1836,9 @@ final class App: @unchecked Sendable {
     var spielerSprungLinks: Sprungmarke?
     var spielerSprungRechts: Sprungmarke?
     var sprungtakt = 0
+    /// Was die Sprungmarke gerade zusammenzählt — Richtung und Sekunden
+    /// (iOS `sprungAnzeige`).
+    var sprungsumme: (zurueck: Bool, sekunden: Int)?
     var spielerRahmen: Widget!
     /// Eine der drei Ebenen über dem Bild — Audio & Untertitel, Einstellungen,
     /// Folgen — oder `nil`, wenn keine offen ist. Wörtlich `offeneEbene` auf
@@ -1823,11 +1988,10 @@ final class App: @unchecked Sendable {
         anhaengen(quer, seitenleisteBauen())
 
         inhalt = gtk_stack_new()
-        // Der Bereichswechsel blendet über — auf dem Mac „Fade Through",
-        // 200 ms hinaus und 260 ms herein. GTK kennt nur eine Dauer für
-        // beides; 220 liegt dazwischen.
-        gtk_stack_set_transition_type(OpaquePointer(inhalt), GTK_STACK_TRANSITION_TYPE_CROSSFADE)
-        gtk_stack_set_transition_duration(OpaquePointer(inhalt), 220)
+        // **Keine Kreuzblende.** `GtkStack` kann nur überblenden — beide
+        // Seiten gleichzeitig halb. Der Bereichswechsel läuft deshalb über
+        // ``stapelWechseln``: erst weg, dann da.
+        gtk_stack_set_transition_type(OpaquePointer(inhalt), GTK_STACK_TRANSITION_TYPE_NONE)
         gtk_widget_set_hexpand(inhalt, 1)
         gtk_widget_set_vexpand(inhalt, 1)
 
@@ -1951,9 +2115,8 @@ final class App: @unchecked Sendable {
         // Hinweis, der nicht stimmt, ist schlimmer als keiner.
         //
         // Dieselben vier wie auf dem Mac (`PlayerScreen` 242–247), ohne
-        // Zusatztaste: Leertaste hält an, die Pfeile springen, Escape geht
-        // zurück. Vollbild gibt es unter Wayland nicht als eigenen Zustand,
-        // den wir führen — dort schliesst Escape gleich.
+        // Zusatztaste: Leertaste hält an, die Pfeile springen, F schaltet das
+        // Vollbild, Escape verlässt erst das Vollbild und dann den Player.
         if laufenderTitel != nil, !strg {
             switch wert {
             // **Bei offener Ebene gehören die Tasten ihr** — dieselbe Regel
@@ -1962,10 +2125,7 @@ final class App: @unchecked Sendable {
             // Vollbild-Ebene offen ist. Escape bleibt davon unberührt, siehe
             // unten.
             case 0x020 where offeneEbene == nil:           // Leertaste
-                abspieler.umschalten()
-                spielstand.laeuft.toggle()
-                spielerAbspielzeichen?.setzen(spielstand.laeuft)
-                steuerungZeigen()
+                abspielenUmschalten()
                 return true
             case 0xFF51 where offeneEbene == nil:          // Pfeil links
                 springe(um: -Double(wahlen.zurueckSekunden))
@@ -1979,8 +2139,26 @@ final class App: @unchecked Sendable {
                 sprungZeigen(false)
                 steuerungZeigen()
                 return true
-            case 0xFFC8:                                   // F11
+            // **Verzoegerung wie in VLC und auf dem Mac:** G/H Untertitel,
+            // J/K Ton, je 50 ms. Nicht bei offener Ebene — dort steht die
+            // Zeile selbst, und ihre Anzeige wuesste vom Tastendruck nichts.
+            case 0x067, 0x047, 0x068, 0x048,               // g G h H
+                 0x06A, 0x04A, 0x06B, 0x04B:               // j J k K
+                guard offeneEbene == nil else { return false }
+                let klein = wert | 0x20
+                verzoegern(untertitel: klein == 0x067 || klein == 0x068,
+                           klein == 0x067 || klein == 0x06A ? -1 : 1)
+                return true
+            case 0xFFC8, 0x066, 0x046:                     // F11, f, F
+                // **F wie auf dem Mac** (`PlayerScreen`, `.keyboardShortcut("f")`)
+                // — ohne Zusatztaste und auch bei offener Ebene, dort hat es
+                // keine andere Bedeutung. F11 ist der Weg, den GTK-Nutzer kennen.
                 vollbildUmschalten()
+                return true
+            // **M wie in jedem Player** schaltet den Ton — ohne Taste gab es
+            // hier gar keinen Weg dazu.
+            case 0x06D where offeneEbene == nil, 0x04D where offeneEbene == nil:
+                stummUmschalten()
                 return true
             case 0xFF0D, 0xFF8D:                           // Eingabe, Ziffernblock
                 // **Steht die Einblendung da, löst Eingabe sie aus** — ohne
@@ -2025,6 +2203,16 @@ final class App: @unchecked Sendable {
             // (`SwiftlyApp.swift:46`). Ohne das kommt man von einer
             // Unterseite nur über den Pfeil zurück.
             zurueck()
+        // **Die beiden Kürzel, die jede Desktop-App hat** (UX-Audit 27.09.,
+        // GNOME HIG): Strg+, öffnet die Einstellungen wie Befehl-, auf dem
+        // Mac, Strg+Q beendet. Nicht im Player — dort läge die Seite hinter
+        // dem Film.
+        case 0x02C where laufenderTitel == nil && client != nil: // ,
+            unterseiteOeffnen(.einstellungen)
+        case 0x071, 0x051:                                 // q / Q
+            // Über `close-request`, nicht hart beendet: ein laufender Film
+            // meldet so noch seine Stelle, und das Fenstermass wird gemerkt.
+            gtk_window_close(alsFenster(fenster))
         default: return false
         }
         return true
@@ -2148,9 +2336,9 @@ final class App: @unchecked Sendable {
     /// Die Zeile „Hier weiterschauen".
     ///
     /// **Mass für Mass vom Mac** (`Macbausteine.Uebernahmezeile`): 40 hoch,
-    /// 10 innen, Zeichen 26 breit im Akzent, darunter Titel und Folge in 11
-    /// auf sehr leiser Schrift. Der Kasten trägt Akzent zu 6 % mit einem Rand
-    /// zu 18 %, schwebend 12 und 35.
+    /// Eine Kapsel wie das Abzeichen am Fernseher: 14 innen, Zeichen 20 breit
+    /// und Titel im Akzent, darunter Titel und Folge in 11 auf sehr leiser
+    /// Schrift. Akzent zu 18 % über `grund`, schwebend Weiß 6 % darüber.
     ///
     /// Zuerst stand hier der Titel oben und „läuft auf iPhone" darunter. Das
     /// sagt, **was** läuft — der Mac sagt, **was man tun kann**, und stellt
@@ -2158,14 +2346,18 @@ final class App: @unchecked Sendable {
     private func uebernahmezeileBauen() -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-uebernahme")
-        gtk_widget_set_margin_start(knopf, 12)
-        gtk_widget_set_margin_end(knopf, 12)
-        gtk_widget_set_margin_bottom(knopf, 4)
+        // **Ein Abstand zu allen Seiten, an denen es klebt** (Mac
+        // `abzeichenRand`). Unten stand 4 gegen 12 an den Seiten. Die Karte
+        // wächst aus der Mitte dieser Zeile (``uebergabeStarten``) und zieht
+        // damit von selbst mit.
+        gtk_widget_set_margin_start(knopf, Stil.abzeichenRand)
+        gtk_widget_set_margin_end(knopf, Stil.abzeichenRand)
+        gtk_widget_set_margin_bottom(knopf, Stil.abzeichenRand)
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
         uebernahmezeichen = gtk_image_new_from_icon_name("phone-symbolic")
         gtk_image_set_pixel_size(OpaquePointer(uebernahmezeichen), 13)
-        gtk_widget_set_size_request(uebernahmezeichen, 26, -1)
+        gtk_widget_set_size_request(uebernahmezeichen, 20, -1)
         anhaengen(reihe, uebernahmezeichen)
 
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
@@ -2175,6 +2367,7 @@ final class App: @unchecked Sendable {
         gtk_label_set_ellipsize(OpaquePointer(oben), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(oben), 1)
         anhaengen(text, oben)
+        uebernahmeoben = oben
         uebernahmetitel = beschriftung("", stil: "swiftly-uebernahmezeile")
         gtk_label_set_xalign(OpaquePointer(uebernahmetitel), 0)
         gtk_label_set_ellipsize(OpaquePointer(uebernahmetitel), PANGO_ELLIPSIZE_END)
@@ -2182,6 +2375,15 @@ final class App: @unchecked Sendable {
         anhaengen(text, uebernahmetitel)
         gtk_widget_set_hexpand(text, 1)
         anhaengen(reihe, text)
+
+        // **Ein Abzeichen für alles, was gerade woanders läuft** (Entwurf A,
+        // iOS `Angebotsabzeichen`): läuft woanders etwas **und** gibt es eine
+        // Gruppe, steht ein Zähler daran — keine zweite Zeile daneben.
+        let zaehler = beschriftung("", stil: "swiftly-zaehler")
+        gtk_widget_set_valign(zaehler, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(zaehler, 0)
+        anhaengen(reihe, zaehler)
+        uebernahmezaehler = zaehler
 
         gtk_button_set_child(alsKnopf(knopf), reihe)
         beiSignal(knopf, "clicked") { [weak self] in self?.uebernahmeGedrueckt() }
@@ -2191,7 +2393,7 @@ final class App: @unchecked Sendable {
 
     /// **Welches Zeichen zu welchem Gerät.** Die Entscheidung, *welches*
     /// Gerät es ist, liegt im Paket — hier steht nur, wie Adwaita es nennt.
-    private func geraetezeichen(_ art: Fremdsitzung.Geraeteart) -> String {
+    func geraetezeichen(_ art: Fremdsitzung.Geraeteart) -> String {
         switch art {
         case .telefon:   "phone-symbolic"
         case .tablet:    "tablet-symbolic"
@@ -2248,22 +2450,32 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func uebernahmeZeigen() {
+    func uebernahmeZeigen() {
         guard let zeile = uebernahmezeile else { return }
         // **Nicht, während hier selbst etwas läuft.** Dann wäre das Angebot
         // eine Einladung, sich selbst zu unterbrechen.
         // Ein Fehler steht ein paar Sekunden in der Zeile; der naechste
         // Takt soll ihn nicht sofort ueberschreiben (N7).
         guard Date() >= uebernahmefehlerBis else { return }
-        guard laufenderTitel == nil, let erste = uebernahmeangebote.first,
-              let titel = erste.laeuft else {
+        let geraete = uebernahmeangebote.filter { $0.laeuft != nil }
+        let gruppen = gemeinsamAngebote
+        let anzahl = geraete.count + gruppen.count
+        guard laufenderTitel == nil, anzahl > 0 else {
             gtk_widget_set_visible(zeile, 0)
             return
         }
-        _ = titel
-        gtk_label_set_text(OpaquePointer(uebernahmetitel), erste.titelzeile)
+        // Wortlaut und Zeichen wie `Angebotsabzeichen` auf iOS.
+        let oben = anzahl > 1 ? uebersetzt("Läuft gerade")
+            : geraete.isEmpty ? uebersetzt("Gemeinsam schauen") : uebersetzt("Hier weiterschauen")
+        gtk_label_set_text(OpaquePointer(uebernahmeoben), oben)
+        gtk_label_set_text(OpaquePointer(uebernahmetitel),
+                           (geraete.map(\.titelzeile) + gruppen.map(\.name)).joined(separator: ", "))
         gtk_image_set_from_icon_name(OpaquePointer(uebernahmezeichen),
-                                     geraetezeichen(erste.geraeteart))
+                                     geraete.first.map { geraetezeichen($0.geraeteart) }
+                                         ?? "system-users-symbolic")
+        gtk_label_set_text(OpaquePointer(uebernahmezaehler), "\(anzahl)")
+        gtk_widget_set_visible(uebernahmezaehler, anzahl > 1 ? 1 : 0)
+        beschriften(zeile, oben)
         gtk_widget_set_visible(zeile, 1)
     }
 
@@ -2281,6 +2493,17 @@ final class App: @unchecked Sendable {
     /// `Uebernahmeauswahl`) steht die Auswahl dort, wo geklickt wurde.
     private func uebernahmeGedrueckt() {
         let angebote = uebernahmeangebote.filter { $0.laeuft != nil }
+        // **Mit Gruppen**: eine allein öffnet gleich „Beitreten", sonst fragt
+        // die Tafel mit beidem (iOS `Angebotsabzeichen.antippen`).
+        let gruppen = gemeinsamAngebote
+        if let g = gruppen.first {
+            if angebote.isEmpty, gruppen.count == 1 {
+                gemeinsamBeitretenZeigen(g, an: uebernahmezeile)
+            } else {
+                gemeinsamAuswahlZeigen(geraete: angebote, gruppen: gruppen, an: uebernahmezeile)
+            }
+            return
+        }
         if angebote.count > 1 {
             uebernahmeauswahlZeigen(angebote)
         } else if let eine = angebote.first {
@@ -2341,17 +2564,31 @@ final class App: @unchecked Sendable {
         gtk_popover_popup(alsTafel(tafel))
     }
 
-    private func uebernehmen(_ sitzung: Fremdsitzung) {
+    /// **Die Karte wächst sofort aus der Zeile** (Entwurf B, wie am Mac);
+    /// der Player geht ohne Blende unter ihr auf (``uebergabeStarten(titel:)``).
+    /// **Erst der Hinweis, dann der Stopp** — nur so weiß der Abgeber, dass
+    /// sein Stopp eine Übergabe ist. Danach wartet die Zeile höchstens
+    /// anderthalb Sekunden auf die Stelle, die der Abgeber beim Stopp meldet
+    /// (Apple `Uebernahmemodell.wunsch`).
+    func uebernehmen(_ sitzung: Fremdsitzung) {
         guard let client, let titel = sitzung.laeuft else { return }
-        let ab = sitzung.stand?.stelle ?? 0
+        uebergabeStarten(titel: titel)
         gtk_widget_set_visible(uebernahmezeile, 0)
         Task.detached { [self] in
+            let vorher = (try? await client.item(id: titel.id))?.userData?.playbackPositionTicks
+            let frisch = (try? await client.fremdsitzungen())?.first { $0.id == sitzung.id }?.stand?.stelle
+            let sitzungsstelle = frisch ?? sitzung.stand?.stelle ?? 0
+            if Uebernahme.nimmtHinweis(sitzung) {
+                do { try await client.uebergabeHinweis(an: sitzung.id, geraet: App.uebergabeName) }
+                catch { Protokoll.schreib("[Uebergabe] Hinweis nicht gesendet: \(error)") }
+            }
             do { try await client.fremdbefehl(.beenden, an: sitzung.id) }
             catch {
                 let text = lesbarerFehler(error)
                 Protokoll.schreib("[Uebernahme] Beenden auf \(sitzung.geraetename ?? sitzung.id) gescheitert: \(text)")
                 fflush(nil)
                 aufHauptfaden {
+                    self.uebergabeAbbrechen("Stopp abgelehnt")
                     // **Dort, wo geklickt wurde** (N7). Vorher ging der Satz in
                     // ein Feld des Anmeldeschirms, das hier niemand sieht.
                     self.uebernahmeangebote = []
@@ -2361,8 +2598,20 @@ final class App: @unchecked Sendable {
                 }
                 return
             }
+            // In Schritten von 100 ms: jeder verschlafene Schritt verzögert den Start.
+            var nachher: Int64?
+            for _ in 0 ..< 15 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                let jetzt = (try? await client.item(id: titel.id))?.userData?.playbackPositionTicks
+                if jetzt != vorher { nachher = jetzt; break }
+            }
+            let ab = Uebernahme.startstelle(sitzung: sitzungsstelle, gespeichertVorher: vorher,
+                                            gespeichertNachher: nachher)
+            Protokoll.schreib("[Uebernahme] Sitzung \(Int(sitzungsstelle)) s, nach Stopp "
+                + "\(nachher.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(ab)) s")
             aufHauptfaden {
                 self.uebernahmeangebote = []
+                self.uebergabeSpielerKommt(titel.id)
                 self.starte(titel, ab: ab)
             }
         }
@@ -2436,7 +2685,13 @@ final class App: @unchecked Sendable {
     /// Wer wen überdeckt, entscheidet die Reihenfolge im `GtkFixed` — beim
     /// Vorwärtsschub muss die neue Ebene oben liegen, beim Zurückschub die
     /// alte, weil sie diejenige ist, die sich bewegt.
-    func schieben(zu ziel: Widget!, richtung: Schub) {
+    func schieben(zu ziel: Widget!, richtung gewuenscht: Schub) {
+        // **Bei reduzierter Bewegung schiebt nichts** — die Seite blendet
+        // kurz über, wie auf Apple, wo „Bewegung reduzieren" jede Fahrt durch
+        // eine Blende ersetzt. Die Blende unten fragt die Einstellung selbst
+        // und nimmt dann `Stil.zeitReduziert`.
+        let richtung: Schub = bewegungReduziert() && (gewuenscht == .tiefer || gewuenscht == .zurueck)
+            ? .blende : gewuenscht
         let alt: Widget! = obenAuf
         obenAuf = ziel
         gtk_widget_set_visible(ziel, 1)
@@ -2445,30 +2700,28 @@ final class App: @unchecked Sendable {
         let fest = alsFest(buehne)
         let breite = Double(gtk_widget_get_width(buehne))
 
-        // **„Fade Through": erst hinaus, dann herein** — und die beiden
-        // ueberlappen. Hier stand eine gleichzeitige Kreuzblende mit **einer**
-        // Dauer; damit steht die Seite in der Mitte des Wechsels auf halber
-        // Deckung, und beide Bilder sind gleichzeitig halb zu sehen. Der Mac
-        // trennt die Dauern (`Sources/macOS/Stil.swift:208-210`): 0,20 s
-        // hinaus mit `easeInOut`, 0,26 s herein mit `easeOut` und 0,04 s
-        // Vorlauf. Zusammen 0,30 s, und es ist nie nichts zu sehen.
+        // **Erst hinaus, dann herein — nie beide zugleich.** Hier stand eine
+        // Überblendung: 0,20 s hinaus und 0,26 s herein ab 0,04 s, in der
+        // Mitte zwei halbe Seiten übereinander. Jetzt geht die alte kurz mit
+        // `easeIn`, und erst wenn sie weg ist, kommt die neue mit `easeOut`
+        // (`Blendzeiten.seitenwechsel`, gleich am Mac).
         if richtung == .blende {
             gtk_fixed_move(fest, ziel, 0, 0)
             gtk_widget_insert_before(ziel, buehne, nil)
             gtk_widget_set_opacity(ziel, 0)
-            let hinaus = Stil.zeitBlendeHinaus
-            let vorlauf = Stil.zeitBlendeVorlauf
-            let herein = Stil.zeitBlendeHerein
-            let gesamt = max(hinaus, vorlauf + herein)
-            laufen(auf: buehne, dauer: gesamt) { e in
-                let t = e * gesamt
-                // Das Alte: `easeInOut` ueber `hinaus`.
-                let a = min(max(t / hinaus, 0), 1)
-                gtk_widget_set_opacity(alt, 1 - (a < 0.5 ? 2 * a * a
-                                                         : 1 - pow(-2 * a + 2, 2) / 2))
-                // Das Neue: `easeOut` ueber `herein`, nach dem Vorlauf.
-                let b = min(max((t - vorlauf) / herein, 0), 1)
-                gtk_widget_set_opacity(ziel, 1 - pow(1 - b, 3))
+            // Bei reduzierter Bewegung kurz und linear (Mac
+            // `Stil.linearReduziert`) — ebenfalls nacheinander.
+            let reduziert = bewegungReduziert()
+            let gesamt = reduziert ? 2 * Stil.zeitReduziert : Blendzeiten.seiteGesamt
+            laufen(auf: buehne, dauer: gesamt, linear: true) { e in
+                if reduziert {
+                    gtk_widget_set_opacity(alt, max(0, 1 - 2 * e))
+                    gtk_widget_set_opacity(ziel, max(0, 2 * e - 1))
+                } else {
+                    let d = Blendzeiten.seitenwechsel(e * gesamt)
+                    gtk_widget_set_opacity(alt, d.alt)
+                    gtk_widget_set_opacity(ziel, d.neu)
+                }
             } fertig: {
                 gtk_widget_set_opacity(ziel, 1)
                 gtk_widget_set_opacity(alt, 1)
@@ -2510,10 +2763,67 @@ final class App: @unchecked Sendable {
         }
     }
 
-    /// Zeigt einen Bereich — im Stapel überblendet, auf der Bühne geschoben.
+    /// Zeigt einen Bereich — im Stapel nacheinander geblendet, auf der Bühne
+    /// geschoben.
+    ///
+    /// Steht der Stapel schon obenauf, wechselt er an Ort und Stelle
+    /// (``stapelWechseln``). Liegt eine Detailseite darüber, blendet
+    /// ``schieben(zu:richtung:)`` sie weg und den Stapel her; der Stapel
+    /// selbst steht dann schon auf dem neuen Bereich.
     func bereichZeigen(_ kennung: String, schub: Schub) {
+        if obenAuf == inhalt, schub == .blende {
+            stapelWechseln(inhalt, zu: kennung)
+            return
+        }
+        stapelWechselAbbrechen(inhalt)
         gtk_stack_set_visible_child_name(OpaquePointer(inhalt), kennung)
         schieben(zu: inhalt, richtung: schub)
+    }
+
+    /// **Ein Stapel wechselt nacheinander, nicht überblendet** — erst geht
+    /// die alte Seite (`easeIn`), dann kommt die neue (`easeOut`), mit den
+    /// Zeiten aus `Blendzeiten`, gleich am Mac.
+    ///
+    /// Der Tausch hängt an einer Frist, nicht am Ende der Blende: der
+    /// Bildtakt steht, wenn das Fenster nicht zeichnet, und die Seite soll
+    /// trotzdem wechseln. Ein zweiter Wechsel mitten im ersten gewinnt.
+    func stapelWechseln(_ stapelW: Widget!, zu kennung: String) {
+        guard let stapelW else { return }
+        let st = OpaquePointer(stapelW)
+        gtk_stack_set_transition_type(st, GTK_STACK_TRANSITION_TYPE_NONE)
+        let schluessel = UnsafeMutableRawPointer(stapelW)
+        let laeuft = stapelwechsel[schluessel] != nil
+        if !laeuft, let jetzt = gtk_stack_get_visible_child_name(st),
+           String(cString: jetzt) == kennung { return }
+        guard gtk_widget_get_mapped(stapelW) != 0 else {
+            stapelWechselAbbrechen(stapelW)
+            gtk_stack_set_visible_child_name(st, kennung)
+            return
+        }
+        stapelwechselZaehler += 1
+        let nummer = stapelwechselZaehler
+        stapelwechsel[schluessel] = nummer
+        let reduziert = bewegungReduziert()
+        let hinaus = reduziert ? Stil.zeitReduziert : Blendzeiten.seiteHinaus
+        blenden(stapelW, auf: 0, dauer: hinaus, kennlinie: .easeIn)
+        let kiste = gehalten(stapelW)
+        nachFrist(hinaus) { [weak self] in
+            defer { losgelassen(kiste) }
+            guard let self, self.stapelwechsel[schluessel] == nummer, let w = kiste.widget else { return }
+            self.stapelwechsel[schluessel] = nil
+            gtk_stack_set_visible_child_name(OpaquePointer(w), kennung)
+            blenden(w, auf: 1, dauer: Blendzeiten.seiteHerein, kennlinie: .easeOut)
+        }
+    }
+
+    /// Ein laufender ``stapelWechseln`` gilt nicht mehr — wer den Stapel
+    /// jetzt selbst umstellt, soll ihn nicht eine Frist später überschrieben
+    /// bekommen.
+    func stapelWechselAbbrechen(_ stapelW: Widget!) {
+        guard let stapelW else { return }
+        let schluessel = UnsafeMutableRawPointer(stapelW)
+        guard stapelwechsel.removeValue(forKey: schluessel) != nil else { return }
+        blenden(stapelW, auf: 1, dauer: 0)
     }
 
     /// Nimmt die freie Detailscheibe und leert sie.
@@ -2764,6 +3074,7 @@ final class App: @unchecked Sendable {
         gtk_widget_add_css_class(zeile, "swiftly-handlung")
         gtk_widget_add_css_class(zeile, "swiftly-wahlzeile")
         if gewaehlt { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
+        bedienhilfe(zeile, gewaehlt: gewaehlt)
         let r = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         let l = beschriftung(text, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
@@ -2903,6 +3214,7 @@ final class App: @unchecked Sendable {
         if let zurueck {
             let pfeil: Widget! = gtk_button_new()
             gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
+            beschriften(pfeil, uebersetzt("Zurück"))
             gtk_button_set_child(alsKnopf(pfeil),
                                  gtk_image_new_from_icon_name("go-previous-symbolic"))
             gtk_widget_set_valign(pfeil, GTK_ALIGN_CENTER)
@@ -3039,6 +3351,11 @@ final class App: @unchecked Sendable {
         laderFeld[was] = lader
 
         let rahmen = seitenrahmen(block)
+        // Weit Weggescrolltes gibt seine Bilder her (``Kachelbildwache``).
+        let wache = Kachelbildwache(scroller: rahmen)
+        let rasterzeiger = UnsafeMutableRawPointer(raster!)
+        kachelwachen[rasterzeiger] = wache
+        beiSignal(raster, "destroy") { [weak self] in self?.kachelwachen[rasterzeiger] = nil }
         // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
         // bringt die Kante mit, also wieder ein eigener Rückruf, Falle 2).
         // **Eine Genreseite laedt einmal.** Der Mac holt dort genau 200 und
@@ -3191,7 +3508,9 @@ final class App: @unchecked Sendable {
                 })
             }))
         }
-        let pfeile: Widget! = gtk_image_new_from_icon_name("view-sort-ascending-symbolic")
+        // Das Zeichen der gewählten Sortierung, nicht dieselben Pfeile für
+        // alle (Mac `Sortierung.symbol`).
+        let pfeile: Widget! = zeichenbild(jetztSort.zeichennamen)
         gtk_image_set_pixel_size(OpaquePointer(pfeile), 12)
         anhaengen(zeile, wahlknopf(zeichen: pfeile, wert: jetztSort.beschriftung,
                                    eintraege: sortieren))
@@ -3251,13 +3570,15 @@ final class App: @unchecked Sendable {
         if item.imageTags?["Primary"] != nil,
            let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
                                                               maxHoehe: Stil.kachelHoehe * 2) }) {
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse))
+            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                      kante: Stil.kachelHoehe * 2)
         } else {
             mosaikLegen(kaefig, sammlung: sammlung, art: gattung)
         }
         let n = sammlung.anzahl(art: gattung)
-        let unten = gattung == "tvshows" ? String(format: uebersetzt("%d Serien"), n)
-                                         : String(format: uebersetzt("%d Filme"), n)
+        let unten = gattung == "tvshows"
+            ? zahlwort(n, eins: uebersetzt("1 Serie"), viele: uebersetzt("%lld Serien"))
+            : zahlwort(n, eins: uebersetzt("1 Film"), viele: uebersetzt("%lld Filme"))
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
                                   oben: item.name, unten: unten) { [weak self] in
             self?.sammlungOeffnen(item, art: gattung)
@@ -3301,7 +3622,8 @@ final class App: @unchecked Sendable {
                                                          stil: "swiftly-mosaikfeld")
                         if let adresse = self.adressen.flatMap({
                             Bildwahl.hochkant(eintrag, adressen: $0, maxHoehe: 260) }) {
-                            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse))
+                            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                                      kante: 260)
                         } else {
                             zeichenLegen(feld, serie: gattung == "tvshows")
                         }
@@ -3384,6 +3706,13 @@ final class App: @unchecked Sendable {
         suchleer = leerzustand("mail-inbox-symbolic", uebersetzt("Nichts gefunden"), nil)
         gtk_widget_set_visible(suchleer, 0)
         anhaengen(block, suchleer)
+        // **Gestoert ist nicht leer** (UX-Audit 27.09., Mac `SucheView`
+        // `gestoert`). Hier stand `try?` — ein Netzfehler sah aus wie „Nichts
+        // gefunden". Gefuellt wird erst im Fehlerfall, damit die Adresse
+        // die des gerade angemeldeten Servers ist.
+        suchstoerung = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_visible(suchstoerung, 0)
+        anhaengen(block, suchstoerung)
 
         // **Was der Server nicht hat, steht darunter — nicht dazwischen.**
         //
@@ -3486,6 +3815,13 @@ final class App: @unchecked Sendable {
         gtk_widget_set_valign(bild, GTK_ALIGN_CENTER)
         gtk_widget_set_vexpand(bild, 1)
         anhaengen(kreis, bild)
+        // **Der Kreis dehnt sich nicht.** `vexpand` am Zeichen zentriert es
+        // im Kreis, stieg aber ohne diese Zeile bis zum Kreis auf — der nahm
+        // dann jede freie Höhe der Seite und wurde zur langen Kapsel (headless
+        // gemessen: 78 × 460 statt 78 × 78). Hier endet die Weitergabe.
+        gtk_widget_set_vexpand(kreis, 0)
+        gtk_widget_set_hexpand(kreis, 0)
+        gtk_widget_set_valign(kreis, GTK_ALIGN_START)
         anhaengen(block, kreis)
 
         let t = beschriftung(titel, stil: "swiftly-reihe", umbruch: true)
@@ -3548,7 +3884,7 @@ final class App: @unchecked Sendable {
 
     /// **Ein gestoerter Abschnitt innerhalb einer Seite** — `Stoerhinweis`
     /// auf dem Mac: Zeichen 30, Kopfzeile 20, Text 15 in `schriftSehrLeise`,
-    /// darunter der stille Knopf „Erneut versuchen".
+    /// darunter „Erneut versuchen" als Chip.
     func stoerhinweis(oben: Int = 40, adresse: String? = nil,
                       erneut: (() -> Void)?) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
@@ -3572,8 +3908,14 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(u, 6)
         anhaengen(block, u)
         if let erneut {
-            let k = stillerKnopf(uebersetzt("Erneut versuchen"), erneut)
-            gtk_widget_set_margin_top(k, 6)
+            // **Ein Knopf aus unserem Satz, kein nackter Text** (LISTE
+            // 20.09.). Der stille Knopf stand hier ohne Flaeche und ohne Rand
+            // links und rechts und sah nicht nach Knopf aus; der Chip ist der
+            // Standardknopf fuer eine Nebenhandlung.
+            let k = chip(uebersetzt("Erneut versuchen"), symbol: "view-refresh-symbolic")
+            gtk_widget_set_halign(k, GTK_ALIGN_CENTER)
+            gtk_widget_set_margin_top(k, 14)
+            beiSignal(k, "clicked", erneut)
             anhaengen(block, k)
         }
         return block
@@ -3611,10 +3953,31 @@ final class App: @unchecked Sendable {
     ///   (`BibliothekView.swift:136`).
     func rasterFuellen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
         rasterLeeren(raster)
+        rasterAnhaengen(raster, items, auskunft: auskunft)
+    }
+
+    /// Kacheln hinten an ein Raster haengen, ohne das Stehende anzufassen.
+    func rasterAnhaengen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
+        let wache = raster.flatMap { kachelwachen[UnsafeMutableRawPointer($0)] }
         for item in items {
             gtk_flow_box_insert(OpaquePointer(raster),
-                                rasterkachel(item, auskunft: auskunft), -1)
+                                rasterkachel(item, auskunft: auskunft, wache: wache), -1)
         }
+    }
+
+    /// Wie viele Kacheln im Raster stehen. Die FlowBox zaehlt nicht selbst;
+    /// gesucht wird deshalb die erste leere Stelle, halbierend.
+    func rasterAnzahl(_ raster: Widget!) -> Int {
+        let box = OpaquePointer(raster)
+        var oben = 1
+        while gtk_flow_box_get_child_at_index(box, Int32(oben - 1)) != nil { oben *= 2 }
+        var unten = oben / 2   // hier steht sicher etwas (oder es ist 0)
+        while unten < oben {
+            let mitte = (unten + oben + 1) / 2
+            if gtk_flow_box_get_child_at_index(box, Int32(mitte - 1)) != nil { unten = mitte }
+            else { oben = mitte - 1 }
+        }
+        return unten
     }
 
     /// **Ein Raster wird über die FlowBox geleert, nie mit ``leeren(_:)``.**
@@ -3649,10 +4012,25 @@ final class App: @unchecked Sendable {
     /// nicht uebernehmbar.
     func fernsteuerungStarten() {
         guard let client else { return }
+        let sitzung = gemeinsamSitzung
         Task.detached {
             try? await client.faehigkeitenMelden()
             guard let fern = try? await client.fernsteuerung() else { return }
             aufHauptfaden { self.fernsteuerung = fern }
+            // **Gemeinsam schauen kommt über denselben Kanal.** Direkt in die
+            // Sitzung, nicht über den GTK-Faden: `annehmen` ist dafür gebaut,
+            // und die Reihenfolge der Nachrichten hält die Sitzung selbst.
+            await fern.syncPlayHoeren { sitzung.annehmen($0) }
+            // **Der Hinweis vor einem Stopp**: ein anderes Gerät übernimmt.
+            // Mit ihm geht das Bild beim Stopp als Karte ab
+            // (``uebergabeAbgeben(an:)``), ohne ihn schließt der Player wie
+            // bei einem Stopp aus dem Dashboard (Apple `AppModel.fernStarten`).
+            await fern.uebergabeHoeren { name in
+                aufHauptfaden {
+                    self.uebergabeZiel = (name, Date())
+                    Protokoll.schreib("[Uebergabe] Hinweis: übernimmt \(name)")
+                }
+            }
             await fern.starten { befehl in
                 aufHauptfaden { self.fernbefehlAusfuehren(befehl) }
             }
@@ -3661,14 +4039,40 @@ final class App: @unchecked Sendable {
 
     /// Was die Medientaste auslöst. Dieselben Griffe wie am Knopf.
     func medienGriff(_ griff: Medienleiste.Griff) {
-        guard laufenderTitel != nil else { return }
         switch griff {
-        case .abspielen:  abspieler.abspielen()
+        case .vorholen:
+            gtk_window_present(alsFenster(fenster)); return
+        case .schliessen:
+            // Ueber `close-request`, damit ein laufender Film seine
+            // Endmeldung noch abschickt (``fensterSchliessenGewuenscht()``).
+            gtk_window_close(alsFenster(fenster)); return
+        case .schlaeft:
+            ruhezustandBeginnt(); return
+        case .aufgewacht:
+            aufgewacht(); return
+        default: break
+        }
+        guard laufenderTitel != nil else { return }
+        // **In der Gruppe eine Bitte**, wie die Wiedergabezentrale auf iOS
+        // (`PlayerScreen.zentraleEinrichten`); keine nächste Folge.
+        if inGruppe {
+            switch griff {
+            case .abspielen:  gemeinsamBitteUmschalten(laeuftGerade: false)
+            case .anhalten:   gemeinsamBitteUmschalten(laeuftGerade: true)
+            case .umschalten: gemeinsamBitteUmschalten(laeuftGerade: spielstand.laeuft)
+            case .beenden:    spielerSchliessen()
+            default:          break
+            }
+            return
+        }
+        // Fenster und Ruhezustand sind oben schon erledigt.
+        switch griff {
+        case .abspielen:  weiterspielen()
         case .anhalten:   abspieler.anhalten()
-        case .umschalten: abspieler.umschalten()
+        case .umschalten: if abspieler.laeuft { abspieler.anhalten() } else { weiterspielen() }
         case .beenden:    spielerSchliessen(); return
         case .weiter:     naechsteFolge(); return
-        case .zurueck:    break
+        default:          break
         }
         spielstand.laeuft = abspieler.laeuft
         spielerAbspielzeichen?.setzen(spielstand.laeuft)
@@ -3712,11 +4116,33 @@ final class App: @unchecked Sendable {
             // sonst ein Schliessen ins Leere.
             return
         }
+        // **In der Gruppe gehen Pause, Weiter und Springen als Bitte** —
+        // wörtlich `PlayerScreen.ausfuehren` auf iOS. Stopp schliesst, und
+        // das heisst verlassen.
+        if inGruppe {
+            let laeuft = spielstand.laeuft
+            switch befehl {
+            case .pause:      if laeuft { gemeinsamBitteUmschalten(laeuftGerade: true) }
+            case .weiter:     if !laeuft { gemeinsamBitteUmschalten(laeuftGerade: false) }
+            case .umschalten: gemeinsamBitteUmschalten(laeuftGerade: laeuft)
+            case .stopp:      spielerSchliessen(); return
+            case let .springenAuf(stelle): springe(auf: stelle)
+            case .vor:        springe(um: Double(wahlen.vorSekunden))
+            case .zurueck:    springe(um: -Double(wahlen.zurueckSekunden))
+            case .naechste, .vorige: break
+            }
+            steuerungZeigen()
+            return
+        }
         switch befehl {
         case .pause:    abspieler.anhalten()
-        case .weiter:   abspieler.abspielen()
-        case .umschalten: abspieler.umschalten()
-        case .stopp:    spielerSchliessen()
+        case .weiter:   weiterspielen()
+        case .umschalten: if abspieler.laeuft { abspieler.anhalten() } else { weiterspielen() }
+        // **Ein anderes Gerät übernimmt** (Hinweis kam kurz vorher): das Bild
+        // geht als Karte ab. Sonst — Dashboard, andere App — wie immer.
+        case .stopp:
+            if let ziel = uebergabeZielNehmen() { uebergabeAbgeben(an: ziel) }
+            else { spielerSchliessen() }
         // Ueber `springe`: Stand und Sprungriegel mit (T2-N2), Meldung sofort.
         case let .springenAuf(stelle): springe(auf: stelle)
         case .vor:      springe(um: Double(wahlen.vorSekunden))
@@ -3729,6 +4155,14 @@ final class App: @unchecked Sendable {
             spielerAbspielzeichen?.setzen(spielstand.laeuft)
             steuerungZeigen()
         }
+    }
+
+    /// Der Name des übernehmenden Geräts, wenn der letzte Hinweis frisch ist
+    /// — und nur einmal: der Hinweis gilt für genau diesen Stopp.
+    func uebergabeZielNehmen() -> String? {
+        guard let ziel = uebergabeZiel else { return nil }
+        uebergabeZiel = nil
+        return Uebernahme.istUebergabe(hinweisVor: Date().timeIntervalSince(ziel.zeit)) ? ziel.name : nil
     }
 
     /// **Eine abgelaufene Anmeldung fiel bisher gar nicht auf.**
@@ -3752,6 +4186,7 @@ final class App: @unchecked Sendable {
     /// wäre eine zweite Bedeutung für denselben Knopf. Welches danach gilt,
     /// entscheidet ``Kontenbund/entfernt(_:)`` im Paket.
     func abmelden() {
+        playerZuVorWechsel()
         if let alter = bund, let rest = alter.entfernt(alter.aktiveKennung) {
             bund = rest
             let name = servername.isEmpty ? nil : servername
@@ -3770,6 +4205,8 @@ final class App: @unchecked Sendable {
         uebernahmelauf?.cancel()
         uebernahmelauf = nil
         uebernahmeangebote = []
+        // Raus aus der Gruppe, samt Streifen und Angeboten des vorigen Kontos.
+        gemeinsamBeenden()
         Speicher.loeschen()
         client = nil
         adressen = nil
@@ -3784,7 +4221,7 @@ final class App: @unchecked Sendable {
         serverstandZeigen("")
         kopfzeileZeigen(false)
         gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "server")
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "anmeldung")
+        stapelWechseln(seiten, zu: "anmeldung")
     }
 
     /// Name, Server und Bild unten in der Leiste, dazu die Bibliotheken.
@@ -4103,8 +4540,10 @@ final class App: @unchecked Sendable {
         // Die Sammlung liegt im Bereich, aus dem sie kam — dessen Zeile bleibt.
         let aktiv = bereich == .sammlung ? sammlungHerkunft : bereich
         for (fall, knopf) in bereichsknoepfe {
-            if !keiner, fall == aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+            let an = !keiner && fall == aktiv
+            if an { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
             else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+            bedienhilfe(knopf, gewaehlt: an)
         }
         if let profilzeile {
             if offeneUnterseite != nil { gtk_widget_add_css_class(profilzeile, "swiftly-aktiv") }
@@ -4150,8 +4589,19 @@ final class App: @unchecked Sendable {
             // ist damit die Stelle, an der eine abgelaufene Anmeldung als
             // Erstes auffällt — vorher kam einfach nichts zurück, und die
             // Seite blieb leer.
+            //
+            // **Nur fuer das Konto, das noch aktiv ist.** Die Startseite laedt
+            // oft zweimal kurz hintereinander (Rueckkehr ins Fenster, Player
+            // zu). Kamen beide mit 401 zurueck, meldete die erste das Konto
+            // ab und schaltete aufs naechste um — und die zweite, die noch zum
+            // alten gehoerte, meldete **das naechste** gleich mit ab.
             do { _ = try await client.resumeItems(limit: 1) }
-            catch { aufHauptfaden { self.sitzungPruefen(error) } }
+            catch {
+                aufHauptfaden {
+                    guard self.kontowechsel == stand, self.client === client else { return }
+                    self.sitzungPruefen(error)
+                }
+            }
             // **Nur eine Bibliothek, die es gibt** — gemerkt sein kann seit dem
             // Titelmenue auch „alle" oder „sammlungen" (Mac
             // `AppModel.gewaehlteBibliothek(art:)`).
@@ -4348,19 +4798,44 @@ final class App: @unchecked Sendable {
         // zwischen zwei Seiten etwas hinzufuegen; dann rutscht ein Titel eine
         // Stelle nach hinten und kaeme in der naechsten Seite ein zweites Mal.
         // Auf GTK stuende die Kachel einfach zweimal im Raster.
+        let vorher = rasterItems[was] ?? []
         if !gestoert || ab == 0 {
             rasterItems[was] = ab == 0 ? items : Listenregeln.anhaengen(
-                items, an: rasterItems[was] ?? [])
+                items, an: vorher)
         }
-        let zahlwert = gesamt ?? (rasterItems[was] ?? []).count
+        // **Ein gescheitertes Nachladen laesst die Gesamtzahl stehen.** Sonst
+        // galt die Liste danach als vollstaendig, und weder der Rand noch
+        // „Erneut versuchen" holten je die naechste Seite.
+        let nachladenGestoert = gestoert && ab > 0
+        let zahlwert = nachladenGestoert
+            ? (rasterGesamt[was] ?? (rasterItems[was] ?? []).count)
+            : (gesamt ?? (rasterItems[was] ?? []).count)
         rasterGesamt[was] = zahlwert
-        rasterFuellen(raster, rasterItems[was] ?? [])
+        // **Nachladen haengt nur an.** Vorher baute jede Seite alle Kacheln
+        // neu — bei 300 Titeln 300 Kacheln samt Bildern, nur um 100 dazuzutun,
+        // und die Bilder blinkten dabei neu ein. `anhaengen` laesst den
+        // vorderen Teil stehen, also genuegt der Rest.
+        let jetzt = rasterItems[was] ?? []
+        if ab > 0, rasterAnzahl(raster) == vorher.count,
+           jetzt.count >= vorher.count, jetzt.prefix(vorher.count).map(\.id) == vorher.map(\.id) {
+            rasterAnhaengen(raster, Array(jetzt.dropFirst(vorher.count)))
+        } else {
+            rasterFuellen(raster, jetzt)
+        }
         gtk_label_set_text(OpaquePointer(zahl), String(zahlwert))
         gtk_widget_set_visible(zahl, zahlwert > 0 ? 1 : 0)
         // **Gestoert ist nicht leer** — ein gescheiterter Abruf sagt „Server
         // ist abgetaucht", nicht „hier ist nichts".
         let nichts = (rasterItems[was] ?? []).isEmpty
         rasterZustandZeigen(was, gestoert: gestoert && nichts, leer: nichts)
+        // **Und ein gescheitertes Nachladen sagt es auch** (UX-Audit 27.09.).
+        // Vorher endete das Raster einfach, als waere die Bibliothek zu Ende.
+        // Unter den Kacheln, nicht statt ihrer — was steht, bleibt stehen.
+        if nachladenGestoert, !nichts, let feld = leerFeld[was] {
+            leeren(feld)
+            anhaengen(feld, stoerhinweis(oben: 24) { [weak self] in self?.rasterNachladen(was) })
+            gtk_widget_set_visible(feld, 1)
+        }
     }
 
     /// **Aus mehreren Bibliotheken, je Titel einmal** (Mac
@@ -4458,6 +4933,7 @@ final class App: @unchecked Sendable {
         guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
             rasterFuellen(suchraster, [])
             gtk_widget_set_visible(suchleer, 0)
+            gtk_widget_set_visible(suchstoerung, 0)
             seerrTrefferZeigen([])
             // Feld leer heisst: „Zuletzt gesucht" kommt zurueck.
             suchverlaufZeigen()
@@ -4544,19 +5020,23 @@ final class App: @unchecked Sendable {
         suchverlaufZeigen()
         let seerr = seerrclient
         Task.detached { [self] in
-            let treffer = Listenregeln.ohneDoppelte((try? await client.suche(begriff)) ?? [])
+            let antwort = try? await client.suche(begriff)
+            let treffer = Listenregeln.ohneDoppelte(antwort ?? [])
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
                 self.rasterFuellen(self.suchraster, treffer, auskunft: true)
+                self.suchstoerungZeigen(antwort == nil, meins: meins)
                 // **Beide leer, nicht nur die Bibliothek.** Stuende hier nur
                 // `treffer.isEmpty`, gewaenne dieser Zweig, sobald der eigene
                 // Server nichts hat — und „Nichts gefunden" stuende ueber den
                 // Seerr-Treffern, also genau ueber dem Fall, fuer den die
                 // ganze Anbindung gebaut ist. Der Seerr-Teil antwortet
                 // spaeter und blendet dann nach.
-                self.eigeneTrefferLeer = treffer.isEmpty
+                // Gestoert zaehlt nicht als leer — sonst setzte der
+                // Seerr-Teil „Nichts gefunden" ueber die Stoerung.
+                self.eigeneTrefferLeer = antwort != nil && treffer.isEmpty
                 gtk_widget_set_visible(self.suchleer,
-                                       treffer.isEmpty && self.seerrTrefferLeer ? 1 : 0)
+                                       self.eigeneTrefferLeer && self.seerrTrefferLeer ? 1 : 0)
                 self.seerrTrefferZeigen([])
             }
             guard let seerr else { return }
@@ -4564,10 +5044,24 @@ final class App: @unchecked Sendable {
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
                 self.seerrTrefferZeigen(fremde)
-                // Gefunden ist gefunden, auch wenn es woanders liegt.
-                if !fremde.isEmpty { gtk_widget_set_visible(self.suchleer, 0) }
+                // Gefunden ist gefunden, auch wenn es woanders liegt — wie
+                // auf dem Mac verdraengen Seerr-Treffer auch die Stoerung.
+                if !fremde.isEmpty {
+                    gtk_widget_set_visible(self.suchleer, 0)
+                    gtk_widget_set_visible(self.suchstoerung, 0)
+                }
             }
         }
+    }
+
+    private func suchstoerungZeigen(_ gestoert: Bool, meins: Int) {
+        leeren(suchstoerung)
+        gtk_widget_set_visible(suchstoerung, gestoert ? 1 : 0)
+        guard gestoert else { return }
+        anhaengen(suchstoerung, stoerzustand { [weak self] in
+            guard let self, self.suchtakt == meins else { return }
+            self.suchen(meins)
+        })
     }
 
     /// **Genres als Chips, ganz oben** — ein Einstieg, kein Inhalt: ein Klick
@@ -4605,10 +5099,28 @@ final class App: @unchecked Sendable {
         return flaeche
     }
 
-    private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])], gestoert: Bool = false) {
+    func reihenZeigen(_ reihen: [(String, Reihenart, [Item])], gestoert: Bool = false,
+                      gestaffelt: Bool = false) {
+        // **Waehrend das Profilbild fliegt, warten die Reihen** (Entwurf D,
+        // iOS „wechsel 5"): sie kommen erst nach dem Tausch, gestaffelt.
+        if let flug = kontoflug, flug.reihenHalten {
+            flug.wartendeReihen = (reihen, gestoert)
+            return
+        }
+        let gestaffelt = gestaffelt || kontoflugStaffelNachzuegler
+        kontoflugStaffelNachzuegler = false
         letzteStartreihe = reihen.first?.2 ?? []
         leeren(reihenstapel)
-        if !gattungschips.isEmpty { anhaengen(reihenstapel, gattungschipzeile()) }
+        // **Die Chips kommen mit** — als erste im Takt, wie am Mac
+        // (`gattungschips.reihenauftritt(0, …)`). Vorher standen sie nach dem
+        // Kontowechsel schlagartig da, während die Reihen darunter einflogen.
+        var takt = 0
+        if !gattungschips.isEmpty {
+            let chips = gattungschipzeile()
+            anhaengen(reihenstapel, chips)
+            if gestaffelt { reiheAuftreten(chips, nummer: 0) }
+            takt = 1
+        }
         // **Gestoert ist nicht leer** (Mac 6d7f6478): ein Server, der nicht
         // antwortet, bekommt die Serverformel und „Erneut versuchen" — nicht
         // „Hier ist noch nichts". Eine falsche Diagnose schickt einen zum
@@ -4626,8 +5138,10 @@ final class App: @unchecked Sendable {
                                   oben: 120))
             return
         }
-        for (titel, art, titelListe) in reihen {
-            anhaengen(reihenstapel, reiheBauen(titel: titel, art: art, items: titelListe))
+        for (i, (titel, art, titelListe)) in reihen.enumerated() {
+            let reihe = reiheBauen(titel: titel, art: art, items: titelListe)
+            anhaengen(reihenstapel, reihe)
+            if gestaffelt { reiheAuftreten(reihe, nummer: i + takt) }
         }
     }
 
@@ -4734,12 +5248,16 @@ final class App: @unchecked Sendable {
         var schwebt = false
 
         // **Einblenden, nicht erscheinen.** Auf dem Mac liegt eine
-        // `.transition(.opacity)` an den Pfeilen. `set_visible` kennt keinen
-        // Zwischenzustand — die Deckung schon, und das Stilblatt gibt ihr
-        // eine Zeit mit. `can_target` sorgt dafür, dass ein unsichtbarer
-        // Pfeil auch keinen Klick schluckt.
+        // `.transition(.opacity)` an den Pfeilen. Hier stand
+        // `gtk_widget_set_opacity` — und das ist die Deckung des *Widgets*,
+        // nicht die des Stilblatts: der `transition: opacity` dort griff nie,
+        // die Pfeile waren schlagartig da. Jetzt schaltet eine Klasse die
+        // CSS-Deckung, und die blendet (`Blendzeiten.pfeile`, `easeInOut`).
+        // `can_target` sorgt dafür, dass ein unsichtbarer Pfeil auch keinen
+        // Klick schluckt.
         func zeigen(_ knopf: Widget!, _ ja: Bool) {
-            gtk_widget_set_opacity(knopf, ja ? 1 : 0)
+            if ja { gtk_widget_add_css_class(knopf, "swiftly-da") }
+            else { gtk_widget_remove_css_class(knopf, "swiftly-da") }
             gtk_widget_set_can_target(knopf, ja ? 1 : 0)
         }
         func nachfuehren() {
@@ -4780,11 +5298,18 @@ final class App: @unchecked Sendable {
     private func pfeilknopf(_ symbol: String, oben bildHoehe: Int, rechts: Bool) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-pfeil")
+        beschriften(knopf, rechts ? uebersetzt("Weiterblättern") : uebersetzt("Zurückblättern"))
+        // **Kein Tabulatorhalt.** Der Pfeil ist unsichtbar, bis der Zeiger
+        // über der Reihe steht; wer mit Tab durch die Kacheln geht, landete
+        // sonst auf einem Knopf, den er nicht sieht. Die Reihe scrollt ohnehin
+        // von selbst zur fokussierten Kachel.
+        gtk_widget_set_focusable(knopf, 0)
         gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
         gtk_widget_set_halign(knopf, rechts ? GTK_ALIGN_END : GTK_ALIGN_START)
         gtk_widget_set_valign(knopf, GTK_ALIGN_START)
         gtk_widget_set_margin_top(knopf, Int32(4 + bildHoehe / 2 - 17))
-        gtk_widget_set_opacity(knopf, 0)
+        // Unsichtbar über das Stilblatt (`button.swiftly-pfeil`), nicht über
+        // die Widget-Deckung — sonst blendet nichts.
         gtk_widget_set_can_target(knopf, 0)
         return knopf
     }
@@ -4796,7 +5321,7 @@ final class App: @unchecked Sendable {
     ///
     /// | Reihe | Bild | Titel | Zweitzeile |
     /// |---|---|---|---|
-    /// | Weiterschauen | quer, 280 × 158 | Serie | `kontextzeile` |
+    /// | Weiterschauen | quer, 280 × 158 | Serie | `weiterschauenzeile` (sonst `kontextzeile`) |
     /// | Nächste Folge | Plakat der Serie | Serie | `folgenkuerzel` |
     /// | Zuletzt hinzugefügt | Plakat | eigener Name | `neuzugangszeile` |
     ///
@@ -4826,13 +5351,19 @@ final class App: @unchecked Sendable {
             ? (adressen.flatMap { Bildwahl.quer(item, adressen: $0, breite: breite * 2)?.url } ?? hoch)
             : hoch
         if let adresse {
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse))
+            // Doppelte Kachelkante: dieselbe Groesse, die die Adresse erbittet.
+            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                      kante: max(breite, hoehe) * 2,
+                      ersatzSerie: item.seriesId != nil || item.type == "Series")
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
 
         let (oben, unten): (String, String?) = switch art {
-        case .weiterschauen: (item.seriesName ?? item.name, item.kontextzeile)
+        // **Mit der Restzeit** (iOS fbe14aa0, Entwurf D): „S2 · F5 · noch
+        // 12 Min.", beim Film „noch 1 Std. 4 Min." — an der Stelle der
+        // leisen Zeile, das Bild bleibt frei. Ohne Stand die gewohnte Zeile.
+        case .weiterschauen: (item.seriesName ?? item.name, item.weiterschauenzeile ?? item.kontextzeile)
         case .naechste:      (item.seriesName ?? item.name, item.folgenkuerzel)
         case .neu:           (item.name, item.neuzugangszeile)
         }
@@ -4853,8 +5384,15 @@ final class App: @unchecked Sendable {
         // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
         // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
         return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten,
-                            uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil,
-                            vorholen: { [weak self] in self?.serieVorholen(item) }) {
+                            name: kachelname(item, oben: oben, unten: unten),
+                            menue: Kachelmenueangabe(
+                                item: item, quer: quer, bild: adresse, kante: max(breite, hoehe) * 2,
+                                weiterschauen: art == .weiterschauen,
+                                uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil),
+                            vorholen: { [weak self] in
+                                self?.serieVorholen(item)
+                                self?.planVorholenBald(item)
+                            }) {
             [weak self] in
             guard let self else { return }
             if quer { self.starte(item) } else { self.oeffne(item) }
@@ -4893,13 +5431,18 @@ final class App: @unchecked Sendable {
     /// bleiben. Der Mac legt dort ein `LazyVGrid` mit **fester** Spaltenweite
     /// an — der Platz, der übrig bleibt, geht in den Abstand, nicht in die
     /// Kachel. Mittig ausgerichtet kommt genau das heraus.
-    private func rasterkachel(_ item: Item, auskunft: Bool = false) -> Widget! {
+    private func rasterkachel(_ item: Item, auskunft: Bool = false,
+                              wache: Kachelbildwache? = nil) -> Widget! {
         let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
         if let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
                                                               maxHoehe: Stil.kachelHoehe * 2) }) {
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse))
+            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                      kante: Stil.kachelHoehe * 2,
+                      ersatzSerie: item.seriesId != nil || item.type == "Series")
+            wache?.aufnehmen(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                             kante: Stil.kachelHoehe * 2)
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
@@ -4913,10 +5456,15 @@ final class App: @unchecked Sendable {
         }
         // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
         // keiner startet (A7b).
+        let unten: String? = auskunft ? item.trefferauskunft : item.productionYear.map(String.init)
+        let adresse = adressen.flatMap { Bildwahl.hochkant(item, adressen: $0,
+                                                           maxHoehe: Stil.kachelHoehe * 2) }
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
-                                  oben: item.name,
-                                  unten: auskunft ? item.trefferauskunft
-                                                  : item.productionYear.map(String.init)) {
+                                  oben: item.name, unten: unten,
+                                  name: kachelname(item, oben: item.name, unten: unten),
+                                  menue: Kachelmenueangabe(item: item, bild: adresse,
+                                                           kante: Stil.kachelHoehe * 2),
+                                  vorholen: { [weak self] in self?.planVorholenBald(item) }) {
             [weak self] in self?.oeffne(item)
         }
         gtk_widget_set_halign(kachel, GTK_ALIGN_CENTER)
@@ -4946,7 +5494,8 @@ final class App: @unchecked Sendable {
     /// - Parameter vorholen: Was geschieht, sobald der Zeiger die Kachel
     ///   erreicht — siehe unten.
     func kachelhuelle(bild: Widget!, breite: Int, oben: String, unten: String?,
-                      uebersicht: (() -> Void)? = nil,
+                      name: String? = nil,
+                      menue: Kachelmenueangabe? = nil,
                       vorholen: (() -> Void)? = nil,
                       auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
@@ -4967,6 +5516,10 @@ final class App: @unchecked Sendable {
         anhaengen(kachel, text)
 
         gtk_button_set_child(alsKnopf(knopf), kachel)
+        // **Ein Name für die ganze Kachel** — sonst liest die Bedienhilfe
+        // Titel und Zweitzeile als lose Stücke und den Balken gar nicht.
+        beschriften(knopf, name ?? [oben, unten].compactMap { $0 }
+                                    .filter { !$0.isEmpty }.joined(separator: ", "))
         beiSignal(knopf, "clicked", auswahl)
         if let vorholen {
             // **Vorholen beim Ueberfahren.** Auf dem Schreibtisch liegt der
@@ -4976,20 +5529,13 @@ final class App: @unchecked Sendable {
             // schon vor. Hier fehlte es ganz: ein Klick auf eine
             // Weiterschauen-Kachel blieb bis zu zwei nacheinander laufende
             // Abrufe lang ohne jede Reaktion.
-            beiZeiger(knopf, herein: vorholen, hinaus: {})
+            beiZeiger(knopf, herein: vorholen, hinaus: { [weak self] in self?.planWunsch = nil })
         }
 
-        if let uebersicht {
-            let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            let tafel = tafelAn(knopf)
-            gtk_popover_set_child(alsTafel(tafel), liste)
-            anhaengen(liste, handlungszeile("dialog-information-symbolic",
-                                            uebersetzt("Übersicht öffnen")) {
-                gtk_popover_popdown(alsTafel(tafel))
-                uebersicht()
-            })
-            beiRechtsklick(knopf) { gtk_popover_popup(alsTafel(tafel)) }
-        }
+        // **Rechtsklick: das Menü mit Vorschau** (``Kachelmenueangabe``,
+        // iOS-Langdruck 1.0.5). Hier stand nur „Übersicht öffnen" auf der
+        // Querkachel; das steht jetzt als „Zur Übersicht" darin.
+        if let menue { kachelmenueAnlegen(knopf, menue) }
         return knopf
     }
 
@@ -5020,6 +5566,17 @@ nonisolated(unsafe) private let tasteGedrueckt: @convention(c) (
     let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
     let strg = (zustand.rawValue & GDK_CONTROL_MASK.rawValue) != 0
     return app.taste(wert, strg: strg) ? 1 : 0
+}
+
+/// Das Fenster soll zugehen. Wahr heisst: noch nicht, die App erledigt es
+/// selbst. Wie ``tasteGedrueckt`` kommt die App als Zeiger mit.
+nonisolated(unsafe) private let schliessenGewuenscht: @convention(c) (
+    UnsafeMutableRawPointer?, gpointer?
+) -> gboolean = { _, daten in
+    guard let daten else { return 0 }
+    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
+    app.fensterstandMerken()
+    return app.fensterSchliessenGewuenscht() ? 1 : 0
 }
 
 /// Wie sich diese App beim Server vorstellt.

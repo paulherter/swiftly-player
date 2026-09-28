@@ -41,6 +41,12 @@ struct Heldkopf<Inhalt: View>: View {
     /// Belegzeile, Knöpfe, Aktionsreihe — was unter dem Titel steht,
     /// entscheidet die Seite.
     @ViewBuilder var inhalt: () -> Inhalt
+    /// **Liegt die Farbe des Kopfbilds unter der Seite?** Dann malt der Kopf
+    /// seine Schleier nicht in `grund`, sondern blendet das Bild mit einer
+    /// Maske aus — was darunter liegt, der ``Stimmungsgrund``, kommt durch.
+    /// Dieselbe Rechnung wie die Kulisse am Mac (`Kulissenblende`): ein
+    /// Anstrich setzt voraus, dass dahinter `grund` ist.
+    @Environment(\.aufBildfarbe) private var aufBild
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 32) {
@@ -124,7 +130,36 @@ struct Heldkopf<Inhalt: View>: View {
         .clipped()
     }
 
+    @ViewBuilder
     private var hintergrund: some View {
+        if aufBild {
+            // Dieselben Stufen wie unten, nur als Durchsichtigkeit: wo dort
+            // `grund` mit Deckkraft a liegt, zeigt das Bild hier 1 − a.
+            Netzbild(url: bild, vorrang: true)
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .black.opacity(0.04), location: 0),
+                        .init(color: .black.opacity(0.18), location: 0.32),
+                        .init(color: .black.opacity(0.82), location: 0.62),
+                        .init(color: .black,               location: 1),
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .clear,               location: 0),
+                        .init(color: .black.opacity(0.05), location: 0.26),
+                        .init(color: .black.opacity(0.28), location: 0.44),
+                        .init(color: .black.opacity(0.70), location: 0.60),
+                        .init(color: .black,               location: 0.78),
+                    ], startPoint: .bottom, endPoint: .top)
+                }
+                .allowsHitTesting(false)
+        } else {
+            gemalt
+        }
+    }
+
+    private var gemalt: some View {
         ZStack {
             Stil.grund
             // **Weiterhin nicht `Bild`, aber jetzt `Netzbild`.**
@@ -291,6 +326,7 @@ struct Handlungstafel: View {
                         Image(systemName: paar.element.symbol)
                             .font(.system(size: 17))
                             .frame(width: 20)
+                            .accessibilityHidden(true)
                         paar.element.beschriftung
                             // Zeile einer Handlungsliste: 15, wie im
                             // `Handlungsblatt`. 16 steht in keiner Leiter — und

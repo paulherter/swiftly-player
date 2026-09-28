@@ -79,6 +79,7 @@ struct MerklisteView: View {
                             PosterTile(model: model, item: item, breite: nil)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(item, model: model)
                         .onAppear {
                             guard stand.loestNachladenAus(item.id, spalten: spalten) else { return }
                             Task { await stand.nachladen(model) }
@@ -91,60 +92,9 @@ struct MerklisteView: View {
             }
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
-            // Null im Ruhezustand — wie in der Bibliothek.
-            // **Der rohe Versatz, nicht der um den Sicherheitsrand bereinigte.**
-            //
-            // Hier stand `contentOffset.y + contentInsets.top`, und das war
-            // richtig, solange der Kopf immer gleich hoch war. Seit die
-            // Wertreihe beim Scrollen zuklappt, ist er es nicht mehr — und
-            // damit misst die Zeile ihr eigenes Ergebnis: Kopf schrumpft um
-            // zehn, Sicherheitsrand schrumpft um zehn, der gemessene Versatz
-            // faellt um zehn zurueck auf null, Kopf waechst wieder. Ein
-            // Zweitakter, der nie zur Ruhe kommt.
-            //
-            // **Die Summe ist schon der Scrollweg.** Gemessen am 22.09.:
-            //
-            //     rand 130,8  versatz −130,3  ->  Summe 0,5
-            //     rand 115,0  versatz −114,7  ->  Summe 0,3
-            //
-            // Dazwischen ist die Wertreihe von 28 auf 44 Punkt zugeklappt.
-            // Der obere Rand faellt dabei um 15,8 — und der rohe Versatz
-            // steigt um genau 15,6. **Beide wandern gemeinsam:** die
-            // Scrollflaeche haelt den Inhalt fest, wenn sich ihr Rand aendert.
-            // Die Summe bleibt davon unberuehrt und misst allein, was der
-            // Finger getan hat.
-            //
-            // Drei Anlaeufe sind an der gegenteiligen Annahme gescheitert —
-            // der Rand schrumpfe, der Versatz bleibe stehen, also muesse man
-            // das Eingeklappte wieder draufrechnen. Genau dieses Draufrechnen
-            // war der Fehler: es zaehlte den Weg ein zweites Mal, in jedem
-            // Bild, und die Reihe klappte von selbst zu, ohne dass jemand
-            // gescrollt hat. Zwei Vermutungen ueber die Ursache und eine
-            // Messung: die Messung hat es in zwei Minuten entschieden.
-            .onScrollGeometryChange(for: CGPoint.self) {
-                CGPoint(x: $0.contentInsets.top, y: $0.contentOffset.y)
-            } action: { _, neu in
-                // Waehrend des Bereichswechsels rechnet die Scrollflaeche
-                // ihre Geometrie neu; erst wenn dieser Bereich vorn ist, ist
-                // die Messung etwas wert.
-                guard bereichAktiv else { return }
-                // **Der eine Zwischenstand, der auch dann noch kommt.**
-                //
-                // Die Messung zeigt, wie ein echter Wert aussieht: der rohe
-                // Versatz ist **minus** dem oberen Rand (−130,3 bei Rand
-                // 130,8), die Summe also nahe null. Waehrend die Flaeche ihre
-                // Geometrie neu rechnet, meldet sie dagegen einmal Versatz
-                // null bei schon gesetztem Rand — daraus wird rechnerisch die
-                // ganze Kopfhoehe, die Reihe klappt fuer ein, zwei Bilder zu
-                // und wieder auf, und genau das ruckelt mitten im Aufziehen.
-                //
-                // Echt vorkommen kann die Paarung nur an einer Stelle: wenn
-                // man zufaellig um exakt die Randhoehe gescrollt hat. Dort
-                // kostet ein uebersprungenes Bild nichts, das naechste kommt
-                // sofort.
-                guard !(abs(neu.y) < 1 && neu.x > 1) else { return }
-                versatz = neu.y + neu.x
-            }
+            // Der Weg des Fingers, nicht der um den Rand bereinigte Versatz —
+            // warum, steht in `Kopfscrollweg` im Paket.
+            .scrollweg(aktiv: bereichAktiv) { versatz = $0 }
             // **Das Heranziehen beim Bereichswechsel — es fehlte hier.**
             //
             // Filme und Serien tragen es seit dem Umbau, die Merkliste ist
@@ -166,11 +116,7 @@ struct MerklisteView: View {
                 // eine Ursache, eine Diagnose. Vorher stand auch hier „Noch
                 // nichts gemerkt", und das ist bei einer vollen Merkliste
                 // schlicht falsch.
-                Leerzustand(
-                    symbol: "externaldrive.badge.xmark",
-                    kopfzeile: "Server ist abgetaucht",
-                    text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    hauptknopf: ("Erneut versuchen", { Task { await stand.laden(model) } }))
+                Leerzustand.serverAbgetaucht(model, erneut: { Task { await stand.laden(model) } })
             } else if stand.items.isEmpty, !stand.laedt {
                 // **Der Leerzustand sagt, wie man hineinkommt.** Sonst steht
                 // dort eine Sackgasse: eine leere Liste, die nicht verrät,

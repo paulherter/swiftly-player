@@ -283,6 +283,7 @@ struct SeerrDetailView: View {
             if let bewertung = detail?.bewertung {
                 HStack(spacing: 5) {
                     Image(systemName: "star.fill").font(.system(size: 11))
+                        .accessibilityHidden(true)
                     // `String(format:)` wie nebenan — die echte Seite zeigt
                     // „8.4", hier stand „8,4". Zwei Schreibweisen derselben
                     // Zahl auf zwei Seiten.
@@ -294,6 +295,7 @@ struct SeerrDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: stand.symbol)
                     .font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text(stand.wort)
                     .font(Stil.kachel)
             }
@@ -321,29 +323,6 @@ struct SeerrDetailView: View {
                                           : String(localized: "Film"))
         }
         return teile.joined(separator: " · ")
-    }
-
-    /// Symbol, Wort, Stern — dieselbe Zeile wie auf einer echten Seite, nur
-    /// mit dem Stand statt „Direct Play": über einen Titel, den es hier nicht
-    /// gibt, weiss niemand, wie er läuft.
-    private var belegzeile: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 6) {
-                Image(systemName: stand.symbol).font(.system(size: 11, weight: .semibold))
-                Text(verbatim: stand.wort).font(Stil.kachel)
-            }
-            .foregroundStyle(stand.farbe)
-
-            if let b = detail?.bewertung, b > 0 {
-                HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 11))
-                    Text(verbatim: String(format: "%.1f", b)
-                            .replacingOccurrences(of: ".", with: ","))
-                        .font(Stil.kachel)
-                }
-                .foregroundStyle(Stil.schriftLeise)
-            }
-        }
     }
 
     /// **Ein Stand ist keine Schaltfläche.** Was wartet oder lädt, lässt sich
@@ -428,6 +407,9 @@ struct SeerrDetailView: View {
                             // Ausnahme), also traegt er den Akzent.
                             .foregroundStyle(gewaehlt.contains(st.nummer) ? Stil.akzent
                                                                           : Stil.schriftSehrLeise)
+                            // Das Kaestchen ist nur Bild; gewaehlt traegt das
+                            // Merkmal der Zeile, „schon da" steht als Hinweis.
+                            .accessibilityHidden(true)
                         Text("Staffel \(st.nummer)")
                             .font(Stil.koerper)
                             .foregroundStyle(st.stand.anfragbar ? Stil.schrift
@@ -443,6 +425,9 @@ struct SeerrDetailView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Stil.Druckknopf())
+                .accessibilityAddTraits(gewaehlt.contains(st.nummer)
+                                        ? [.isButton, .isSelected] : .isButton)
+                .accessibilityHint(st.stand.anfragbar ? Text("") : Text(st.stand.ansage))
             }
           }
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listenhoehe = $0 }

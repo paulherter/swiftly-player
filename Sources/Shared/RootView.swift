@@ -3,7 +3,7 @@ import StoreKit
 import SwiftUI
 
 struct RootView: View {
-    @State private var model = AppModel()
+    @State private var model = AppModel.einziges
     /// Der Vorhang liegt über allem, bis die Animation durch ist.
     @State private var gestartet = false
     #if os(iOS)
@@ -191,6 +191,8 @@ struct ConnectView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .onAppear { if adresse.isEmpty { adresse = model.letzterServer?.adresse ?? "" } }
+        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
+        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
     }
 
     /// Beim zweiten Mal tippt niemand die Adresse erneut.
@@ -234,9 +236,11 @@ struct ConnectView: View {
         .padding(.top, 36)
     }
 
+    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
+    /// Senden während der Prüfung verwirft das Modell.
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
+        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
     }
 }
 
@@ -419,6 +423,7 @@ struct LoginView: View {
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "tv")
+                        .accessibilityHidden(true)
                     Text("Mit Quick Connect anmelden")
                 }
             }

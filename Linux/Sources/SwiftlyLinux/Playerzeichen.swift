@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import JellyfinKit
 
 // MARK: - Die Zeichen des Players, als SVG mitgeliefert
 
@@ -296,9 +297,19 @@ final class Playerzeichen: @unchecked Sendable {
     /// Wie `Abspielzeichen.setzen`: läuft es, zeigt der Knopf Pause.
     func setzen(_ laeuft: Bool) {
         setzeName(laeuft ? "pause" : "abspielen")
+        // **Der Knopf heisst, was er tut** — wie auf dem Mac
+        // (`PlayerScreen`, `laeuftJetzt ? "Anhalten" : "Abspielen"`). Der
+        // Knopf ist das Elternteil der Zeichnung; hier wird er an jeder Stelle
+        // mitgenommen, an der das Zeichen wechselt, auch bei der Leertaste.
+        if lebt, let knopf = gtk_widget_get_parent(anzeige) {
+            beschriften(knopf, laeuft ? uebersetzt("Anhalten") : uebersetzt("Abspielen"))
+        }
     }
 
     func stupsen() {
+        // Kein Hüpfen bei reduzierter Bewegung (Mac: `.symbolEffect(.bounce,
+        // value: Stil.bewegungReduziert ? 0 : takt)`).
+        guard !bewegungReduziert() else { return }
         laufen(auf: anzeige, dauer: 0.3) { [weak self] e in
             guard let self, self.lebt else { return }
             self.wucht = sin(Double.pi * e)
@@ -365,26 +376,20 @@ nonisolated(unsafe) private let playerzeichenMalen: @convention(c) (
 // MARK: - Weiches Ein- und Ausblenden
 
 /// Die zwei Kennlinien, die der Player braucht — dieselben Bézierkurven wie
-/// SwiftUIs `.easeOut` und `.easeInOut`.
+/// SwiftUIs `.easeOut` und `.easeInOut`. Dazu `linear` fuer reduzierte
+/// Bewegung (``bewegungReduziert()``).
 enum Kennlinie {
-    case easeOut, easeInOut
+    case easeOut, easeInOut, easeIn, linear
 
+    /// Die Kurven stehen im Paket (`Blendzeiten`), damit Mac und GTK
+    /// dieselben rechnen.
     func wert(_ t: Double) -> Double {
-        let (x1, y1, x2, y2): (Double, Double, Double, Double) =
-            self == .easeOut ? (0, 0, 0.58, 1) : (0.42, 0, 0.58, 1)
-        func b(_ s: Double, _ p1: Double, _ p2: Double) -> Double {
-            3 * p1 * (1 - s) * (1 - s) * s + 3 * p2 * (1 - s) * s * s + s * s * s
+        switch self {
+        case .linear: t
+        case .easeOut: Blendzeiten.easeOut(t)
+        case .easeInOut: Blendzeiten.easeInOut(t)
+        case .easeIn: Blendzeiten.easeIn(t)
         }
-        func db(_ s: Double, _ p1: Double, _ p2: Double) -> Double {
-            3 * p1 * (1 - s) * (1 - s) + 6 * (p2 - p1) * (1 - s) * s + 3 * (1 - p2) * s * s
-        }
-        var s = t
-        for _ in 0..<8 {
-            let d = db(s, x1, x2)
-            guard abs(d) > 1e-6 else { break }
-            s = min(max(s - (b(s, x1, x2) - t) / d, 0), 1)
-        }
-        return b(s, y1, y2)
     }
 }
 
@@ -395,7 +400,8 @@ private final class Blendlauf {
     let kennlinie: Kennlinie
     let nummer: Int
     let fertig: (() -> Void)?
-    let beginn = Date()
+    /// Ab dem ersten Bild, nicht ab dem Auftrag — siehe ``Lauf``.
+    var beginn: Date?
     init(von: Double, nach: Double, dauer: Double, kennlinie: Kennlinie, nummer: Int,
          fertig: (() -> Void)?) {
         self.von = von; self.nach = nach; self.dauer = dauer
@@ -415,7 +421,10 @@ nonisolated(unsafe) private let blendTakt: @convention(c) (
     let l = Unmanaged<Blendlauf>.fromOpaque(daten).takeUnretainedValue()
     let schluessel = UnsafeMutableRawPointer(widget)
     guard blendstand[schluessel] == l.nummer else { return 0 }
-    let t = min(Date().timeIntervalSince(l.beginn) / l.dauer, 1)
+    let jetzt = Date()
+    let beginn = l.beginn ?? jetzt
+    l.beginn = beginn
+    let t = min(jetzt.timeIntervalSince(beginn) / l.dauer, 1)
     gtk_widget_set_opacity(widget, l.von + (l.nach - l.von) * l.kennlinie.wert(t))
     if t >= 1 {
         blendstand[schluessel] = nil
@@ -436,6 +445,12 @@ nonisolated(unsafe) private let blendFreigeben: @convention(c) (gpointer?) -> Vo
 func blenden(_ widget: Widget!, auf ziel: Double, dauer: Double,
              kennlinie: Kennlinie = .easeOut, fertig: (() -> Void)? = nil) {
     guard let widget else { return }
+    // **Bei reduzierter Bewegung wird jede Blende kurz und linear** — wie
+    // `Stil.linearReduziert` auf dem Mac (`Sources/macOS/Stil.swift:104`).
+    // Sie bleibt eine Blende: hart erscheinen soll trotzdem nichts (E18).
+    let reduziert = bewegungReduziert()
+    let dauer = reduziert ? min(dauer, Stil.zeitReduziert) : dauer
+    let kennlinie: Kennlinie = reduziert ? .linear : kennlinie
     let schluessel = UnsafeMutableRawPointer(widget)
     blendzaehler += 1
     let nummer = blendzaehler

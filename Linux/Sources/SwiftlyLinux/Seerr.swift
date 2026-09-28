@@ -108,7 +108,9 @@ extension App {
                 self.seerrStandZeigen(standKiste, uebersetzt("Benutzername und Passwort fehlen"))
                 return
             }
-            self.seerrStandZeigen(standKiste, uebersetzt("Verbinde …"))
+            self.seerrStandZeigen(standKiste, uebersetzt("Verbinde…"))
+            // Die Antwort kann kommen, wenn die Seite schon zu ist.
+            let standLebt = Lebenszeichen(standKiste.widget)
             Task.detached {
                 var letzter: String?
                 for url in adressen {
@@ -121,7 +123,8 @@ extension App {
                             self.seerrGilt = true
                             Speicher.seerrSchreiben(neu)
                             // Das Passwortfeld wird geleert, sobald es nicht
-                            // mehr gebraucht wird.
+                            // mehr gebraucht wird — sofern die Seite noch steht.
+                            guard standLebt.lebt else { return }
                             gtk_editable_set_text(OpaquePointer(pKiste.widget), "")
                             self.seerrStandZeigen(standKiste, uebersetzt("Verbunden"))
                         }
@@ -135,7 +138,7 @@ extension App {
                 // laesst Swift 6 nicht zu — und zu Recht: der Block laeuft
                 // spaeter.
                 let meldung = letzter ?? uebersetzt("Keine Verbindung")
-                aufHauptfaden {
+                aufHauptfaden(solange: standLebt) {
                     self.seerrStandZeigen(standKiste, meldung)
                 }
             }
@@ -350,6 +353,11 @@ extension App {
         anhaengen(block, textblock)
 
         gtk_button_set_child(alsKnopf(knopf), block)
+        // Eine Aussage je Kachel: Titel, Jahr und Art, und der Stand der
+        // Anfrage — die Marke ist im Bild und fiele sonst heraus.
+        beschriften(knopf, ([t.titel, t.jahr.map { "\($0) · \(art)" } ?? art]
+                            + [seerrMarkenwort(t.stand)].compactMap { $0 })
+                                .joined(separator: ", "))
         // **Erst die Seite, dann die Anfrage.** Vorher loeste ein Tipp
         // sofort die Rueckfrage aus — ohne dass man wusste, worum es geht,
         // wie lang es ist oder welche Staffeln es gibt.

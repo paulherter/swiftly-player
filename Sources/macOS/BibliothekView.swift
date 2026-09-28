@@ -118,7 +118,7 @@ struct BibliothekView: View {
                               beschriftung: { $0.beschriftung },
                               istGewaehlt: { $0 == regal.filter },
                               waehlen: { regal.filter = $0 })
-                    Wahlknopf(symbol: "arrow.up.arrow.down",
+                    Wahlknopf(symbol: regal.sortierung.symbol,
                               wert: regal.sortierung.beschriftung,
                               eintraege: Sortierung.allCases,
                               beschriftung: { $0.beschriftung },
@@ -175,6 +175,7 @@ struct BibliothekView: View {
                                          zeichen: art == "tvshows" ? "tv" : "film")
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        .kachelmenue(eintrag, model: model)
                         .task {
                             // Nachschub steht, bevor man unten ankommt.
                             if regal.loestNachladenAus(eintrag.id, spalten: geschaetzteSpalten),
@@ -200,7 +201,7 @@ struct BibliothekView: View {
                             symbol: "externaldrive.badge.xmark",
                             kopfzeile: "Server ist abgetaucht",
                             text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                            hauptknopf: ("Erneut versuchen", { Task { await laden() } }))
+                            hauptknopf: ("Erneut versuchen", { neuLaden() }))
                             .padding(.top, 80)
                     } else {
                         Leerzustand(
@@ -213,7 +214,7 @@ struct BibliothekView: View {
                                    : "Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
                                 : "Unter \u{201E}\(regal.filter.beschriftung)\u{201C} liegt gerade nichts. Nimm einen anderen Filter.",
                             stillerKnopf: regal.filter == .alle
-                                ? ("Aktualisieren", { Task { await laden() } })
+                                ? ("Aktualisieren", { neuLaden() })
                                 : ("Filter zurücksetzen", { regal.filter = .alle }))
                             .padding(.top, 80)
                     }
@@ -246,7 +247,7 @@ struct BibliothekView: View {
         // ankommen — die Seite ist dann leer, nicht am Warten.
         // GESTALTUNG, Abschnitt G.
         .animation(Stil.einblenden, value: regal.items.isEmpty)
-        .task(id: regal.kennung) { await laden() }
+        .task(id: regal.kennung) { await alleinLaden() }
         // **Auch das Regal gehört zu einem Konto.** `.task(id:)` hängt an
         // Sortierung und Filter — die ändern sich beim Kontowechsel nicht,
         // und das Regal lebt in `HauptView`, überlebt also den
@@ -258,7 +259,7 @@ struct BibliothekView: View {
         // Geleert wird nichts — `Bibliotheksmodell` ersetzt die Einträge
         // erst, wenn die neuen da sind.
         .onChange(of: model.kontowechsel) { _, _ in
-            Task { await laden() }
+            neuLaden()
         }
         // **Sammlungen und gemischte Bibliotheken kommen nach** — aus
         // `angebotLaden()`. Ändert sich damit, was „Alle" liest oder was
@@ -270,7 +271,7 @@ struct BibliothekView: View {
             let neu = model.bereichswahl(art: art)
             guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
             wahl = neu
-            Task { await laden() }
+            neuLaden()
         }
     }
 
@@ -278,6 +279,20 @@ struct BibliothekView: View {
     /// sechs oder sieben Spalten beginnt, verschiebt den Auslöser um eine
     /// Kachelbreite. Genau ausrechnen hieße die Fensterbreite mitzuführen.
     private var geschaetzteSpalten: Int { 6 }
+
+    /// Startet `laden()` neu und bricht den vorigen Lauf ab.
+    private func neuLaden() {
+        Task { await alleinLaden() }
+    }
+
+    /// `laden()` als einziger Lauf: der vorige wird abgebrochen, und wird
+    /// dieser abgebrochen (`.task(id:)`), geht der Abbruch weiter.
+    private func alleinLaden() async {
+        ladeaufgabe?.cancel()
+        let aufgabe = Task { await laden() }
+        ladeaufgabe = aufgabe
+        await withTaskCancellationHandler { await aufgabe.value } onCancel: { aufgabe.cancel() }
+    }
 
     private func laden() async {
         if model.views.isEmpty { await model.loadViews() }
@@ -328,6 +343,9 @@ struct BibliothekView: View {
         }
     }
     @State private var geladeneQuelle: String?
+    /// Der laufende Ladevorgang — **es gibt immer nur einen.** Angestossen
+    /// wird von fuenf Stellen; vorher liefen sie nebeneinander her.
+    @State private var ladeaufgabe: Task<Void, Never>?
 
     private var sammlungsliste: [Sammlung] {
         model.sammlungsverzeichnis?.sammlungen(art: art) ?? []
@@ -362,7 +380,7 @@ struct BibliothekView: View {
                           guard neu != wahl else { return }
                           model.bereichWaehlen(neu, art: art)
                           wahl = neu
-                          Task { await laden() }
+                          neuLaden()
                       })
         } else {
             Text(titel)
@@ -404,6 +422,21 @@ struct BibliothekView: View {
             String(localized: "Sammlungen")
         case .bibliothek(let id):
             angebot.bibliothek(id)?.name ?? ""
+        }
+    }
+}
+
+/// **Jede Sortierung hat ihr Zeichen.** Der Knopf trug für alle vier
+/// dieselben Pfeile; neben „Alle" mit dem Filterzeichen las sich „A–Z" damit
+/// wie ein Knopf ohne Zeichen. Jetzt sagt das Zeichen, wonach sortiert ist —
+/// Linux/Windows nehmen dieselbe Zuordnung (`Sortierung.zeichennamen`).
+extension Sortierung {
+    var symbol: String {
+        switch self {
+        case .name:        "textformat.abc"
+        case .neueste:     "clock"
+        case .bewertung:   "star"
+        case .erscheinung: "calendar"
         }
     }
 }

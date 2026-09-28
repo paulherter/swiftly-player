@@ -9,7 +9,7 @@ S1 = skizze(1, "The command on this page with the Copy button marked",
     '<rect x="14" y="40" width="372" height="130" rx="16" fill="var(--tief)" stroke="var(--linie)"/>' +
     '<text x="34" y="80">curl -fsSL https://...</text>' +
     '<text x="34" y="100">/swiftly-installieren.sh | bash</text>' +
-    '<rect x="252" y="118" width="96" height="32" rx="16" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="252" y="118" width="96" height="32" rx="16" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="284" y="138">Copy</text>' +
     zeiger(300, 130))
 
@@ -21,7 +21,7 @@ S2 = skizze(2, "A terminal window with the pasted command and the Enter key mark
     '<text x="34" y="86">$ curl -fsSL https://...</text>' +
     '<text x="34" y="106">  | bash</text>' +
     '<rect x="34" y="124" width="8" height="14" fill="var(--akzent)"/>' +
-    '<rect x="226" y="134" width="120" height="36" rx="10" fill="rgba(92,209,194,.18)" stroke="var(--akzent)"/>' +
+    '<rect x="226" y="134" width="120" height="36" rx="10" fill="rgba(80,213,218,.18)" stroke="var(--akzent)"/>' +
     '<text class="ziel" x="262" y="156">Enter</text>' +
     zeiger(282, 148))
 

@@ -15,9 +15,9 @@ import Foundation
 /// Die Feldnamen stammen aus der OpenAPI-Beschreibung des Servers
 /// (`MediaSegmentDto`), nicht aus einer gefüllten Antwort — auf dem
 /// Prüfserver ist nichts analysiert. Geraten ist daran trotzdem nichts.
-public struct Abschnitt: Sendable, Equatable, Decodable {
+public struct Abschnitt: Sendable, Equatable, Codable {
 
-    public enum Art: String, Sendable, Decodable {
+    public enum Art: String, Sendable, Codable {
         case unbekannt  = "Unknown"
         case werbung    = "Commercial"
         case vorschau   = "Preview"
@@ -71,9 +71,24 @@ public struct Abschnitt: Sendable, Equatable, Decodable {
     /// wer sie für Millisekunden nimmt, landet um den Faktor 10.000 daneben.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        art = try c.decodeIfPresent(Art.self, forKey: .art) ?? .unbekannt
+        // **Als Text gelesen, nicht als `Art`.** Ein Typ, den diese Fassung
+        // nicht kennt — ein neuer Server, ein Zusatz —, warf sonst beim
+        // Lesen, und mit ihm fiel die ganze Antwort: kein einziger Knopf
+        // zum Überspringen, auch nicht für den bekannten Vorspann daneben.
+        art = (try? c.decodeIfPresent(String.self, forKey: .art)).flatMap { $0.flatMap(Art.init(rawValue:)) }
+            ?? .unbekannt
         von = Double(try c.decodeIfPresent(Int64.self, forKey: .vonTicks) ?? 0) / 10_000_000
         bis = Double(try c.decodeIfPresent(Int64.self, forKey: .bisTicks) ?? 0) / 10_000_000
+    }
+
+    /// **Dieselbe Form, in der der Server sie schickt** — damit ein Download
+    /// seine Abschnitte ablegen und genauso wieder lesen kann (offline, siehe
+    /// ``Downloadposten/abschnitte``). Sekunden zurück in Ticks, gerundet.
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(art, forKey: .art)
+        try c.encode(Int64((von * 10_000_000).rounded()), forKey: .vonTicks)
+        try c.encode(Int64((bis * 10_000_000).rounded()), forKey: .bisTicks)
     }
 
     public func enthaelt(_ stelle: Double) -> Bool {
@@ -89,7 +104,7 @@ public struct AbschnittsAntwort: Sendable, Decodable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        items = try c.decodeIfPresent([Abschnitt].self, forKey: .items) ?? []
+        items = try c.decodeIfPresent(Nachsichtig<Abschnitt>.self, forKey: .items)?.werte ?? []
     }
 }
 
@@ -216,13 +231,25 @@ public enum Abschnittslogik {
     /// Kommt nach dem Abspann noch eine Szene, wird der Abspann übersprungen,
     /// und die Szene danach bekommt keine Karte: ein Countdown mitten in ihr
     /// würde sie abschneiden.
+    ///
+    /// **`restfenster`** (Folgenkarte, 26.09.2026, iPhone und Fernseher):
+    /// ohne Abspann-Abschnitt kommt die Karte in den letzten so vielen
+    /// Sekunden — dann läuft ihr Countdown bis ans Dateiende
+    /// (``countdown(position:dauer:abschnitte:restfenster:)``) und schneidet
+    /// nichts ab. `nil` ist das alte Verhalten (Android, Linux, Windows).
     public static func karteFaellig(position: Double, dauer: Double,
                                     abschnitte: [Abschnitt],
-                                    hatNaechsteFolge: Bool) -> Bool {
+                                    hatNaechsteFolge: Bool,
+                                    restfenster: Double? = nil) -> Bool {
         // Ohne Dauer ist nichts „am Ende" — vor dem ersten Bild steht sie auf 0.
-        guard dauer > 0,
-              let abspann = gueltig(abschnitte).first(where: { $0.art == .abspann }),
-              reichtAnsEnde(abspann, dauer: dauer), position >= abspann.von
+        guard dauer > 0 else { return false }
+        let abspann = gueltig(abschnitte).first(where: { $0.art == .abspann })
+        if abspann == nil, let restfenster {
+            return dauer - position <= restfenster
+                && angebot(position: position, dauer: dauer, abschnitte: abschnitte,
+                           hatNaechsteFolge: hatNaechsteFolge) == .naechsteFolge
+        }
+        guard let abspann, reichtAnsEnde(abspann, dauer: dauer), position >= abspann.von
         else { return false }
         return angebot(position: position, dauer: dauer, abschnitte: abschnitte,
                        hatNaechsteFolge: hatNaechsteFolge) == .naechsteFolge
@@ -233,5 +260,15 @@ public enum Abschnittslogik {
     public static func countdown(position: Double, dauer: Double) -> Double {
         guard dauer > 0 else { return Angebotsebene.countdown }
         return min(Angebotsebene.countdown, max(dauer - position, 1))
+    }
+
+    /// Wie oben — nur ohne Abspann-Abschnitt und mit `restfenster` läuft der
+    /// Countdown bis ans Dateiende: dort weiß niemand, ob noch Handlung ist.
+    public static func countdown(position: Double, dauer: Double, abschnitte: [Abschnitt],
+                                 restfenster: Double?) -> Double {
+        guard restfenster != nil, dauer > 0,
+              !gueltig(abschnitte).contains(where: { $0.art == .abspann })
+        else { return countdown(position: position, dauer: dauer) }
+        return max(dauer - position, 1)
     }
 }

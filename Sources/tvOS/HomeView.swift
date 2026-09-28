@@ -26,13 +26,42 @@ struct HomeView: View {
     @State private var startfokusGesetzt = false
     /// Was in jeder Reihe gerade **vorne** steht, also unter ihrem Titel.
     /// Darauf faellt der Fokus, wenn er von oben oder unten hereinkommt.
-    @State private var vorderste: [Reihenkennung: String] = [:]
+    ///
+    /// **Ein Kasten, kein Zustand.** Als `@State`-Woerterbuch zeichnete jeder
+    /// Fokusschritt in einer Reihe die ganze Seite neu — die Reihe schiebt
+    /// dabei, meldet ihre Vorderkante, und das Woerterbuch aendert sich.
+    /// Gelesen wird es nur im Moment des Reihenwechsels; zeichnen muss
+    /// deshalb niemand, wenn es sich aendert.
+    @State private var vorderste = Vorderkanten()
+    /// Das letzte Schreiben fuers Top Shelf — siehe `regalSchreiben`.
+    @State private var regalAufgabe: Task<Void, Never>?
 
     @Environment(\.scenePhase) private var phase
 
+    /// **Ein Kontowechsel läuft** (Entwurf D, wie am iPhone): die Reihen
+    /// sind aus und kommen erst, wenn Inhalt da ist und der Flug gelandet
+    /// ist — dann gestaffelt (``Reihenauftritt``). Der alte Inhalt ist mit
+    /// dem Druck weg, nicht erst mit dem neuen.
+    @State private var wechsel = false
+    /// Die Reihen stehen — kein Wechsel unterwegs.
+    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
+    /// Die Reihen stehen im Baum — außer zwischen Druck und Freigabe. Dann
+    /// gibt es auch nichts Unsichtbares, in das der Fokus fallen könnte:
+    /// er steht auf dem Profilbild oben.
+    private var gebaut: Bool { zeigen || aufbau }
+    @State private var aufbau = false
+    /// Es gibt etwas zu zeigen, und nichts liegt mehr davor.
+    private var freigegeben: Bool {
+        (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
+    }
+
     var body: some View {
         ZStack {
-            if !stand.geladen {
+            if !stand.geladen, Kontowechselflug.geteilt.wartet {
+                // Zwischen Druck und Landung steht nichts — auch kein
+                // Platzhalter, der aussähe wie das alte Konto.
+                Color.clear
+            } else if !stand.geladen {
                 // **Kein Ladering.** Statt eines Punktes auf drei Meter
                 // Entfernung stehen zwei Reihen in ihrer Form da und werden
                 // ueberblendet, sobald die Titel kommen.
@@ -82,7 +111,23 @@ struct HomeView: View {
         // geprüft — ohne sie würde jedes kurze Wegschalten neu laden.
         // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
         // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
-        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
+        .onChange(of: model.kontowechsel) { _, _ in
+            // Erst aus, dann laden, dann gestaffelt ein. Bild und Fokus
+            // gehören dem alten Konto: vergessen, damit oben weder dessen
+            // Kulisse steht noch der Fokus nach unten auf eine Kachel
+            // zurückwill, die es nicht mehr gibt.
+            Kontowechselflug.notiz("wechsel: startseite blendet aus")
+            wechsel = true
+            imBild = nil
+            zuletztAmTitel = nil
+            Task {
+                await laden()
+                if wechsel, freigegeben { einblenden() }
+            }
+        }
+        .onChange(of: freigegeben) { _, jetzt in
+            if jetzt, wechsel { einblenden() }
+        }
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
         // **Die Einstellung greift sofort, nicht beim naechsten Oeffnen.**
         // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
@@ -93,6 +138,9 @@ struct HomeView: View {
         // und die stehen erst nach einer neuen Abfrage fest. Mit einem
         // zweiten, schlichten `task` daneben lief beim Oeffnen alles doppelt.
         .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+            // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
+            // Seite, die mit ihm zusammenfällt.
+            if Kontowechselflug.geteilt.wartet { return }
             await laden()
         }
         .onChange(of: phase) { _, neu in
@@ -118,11 +166,18 @@ struct HomeView: View {
     /// Der Rueckfall muss zwischen zwei Faellen unterscheiden, die beide
     /// `nil` sind: **noch nie fokussiert** — dann ist der erste Titel
     /// richtig — und **gerade woanders**, dann gilt der letzte Stand weiter.
+    ///
+    /// **In der einen Reihe nachsehen, nicht in allen.** Die Marke nennt
+    /// ihre Reihe; hier stand eine Liste aus allen Reihen, die bei jedem
+    /// Zeichnen — also bei jedem Fokusschritt — neu zusammengesetzt wurde.
     private var aktuell: Item? {
-        if let amTitel, let t = alleTitel.first(where: { $0.id == amTitel.titel }) { return t }
-        if let zuletztAmTitel,
-           let t = alleTitel.first(where: { $0.id == zuletztAmTitel.titel }) { return t }
+        if let amTitel, let t = titel(zu: amTitel) { return t }
+        if let zuletztAmTitel, let t = titel(zu: zuletztAmTitel) { return t }
         return ersterTitel
+    }
+
+    private func titel(zu marke: Kachelmarke) -> Item? {
+        liste(marke.reihe).first { $0.id == marke.titel }
     }
 
     /// Die Kulisse, die gerade steht — dieselbe Adresse wie auf der
@@ -133,16 +188,12 @@ struct HomeView: View {
         return model.querbildURL(for: t, breite: 1600) ?? model.kopfbildURL(for: t)
     }
 
-    private var alleTitel: [Item] {
-        stand.weiterschauen + stand.naechsteFolge + stand.zuletzt
-            + stand.neueFilme + stand.neueSerien
-            + stand.gattungsreihen.flatMap(\.items)
-    }
-
     /// Worauf die Seite beim Oeffnen steht: der erste Eintrag aus
     /// „Weiterschauen", sonst der erste ueberhaupt.
     private var ersterTitel: Item? {
-        stand.weiterschauen.first ?? alleTitel.first
+        stand.weiterschauen.first ?? stand.naechsteFolge.first ?? stand.zuletzt.first
+            ?? stand.neueFilme.first ?? stand.neueSerien.first
+            ?? stand.gattungsreihen.lazy.compactMap(\.items.first).first
     }
 
     private func liste(_ reihe: Reihenkennung) -> [Item] {
@@ -181,7 +232,7 @@ struct HomeView: View {
     private func vordersteMarke(_ reihe: Reihenkennung) -> Kachelmarke? {
         let eintraege = liste(reihe)
         guard !eintraege.isEmpty else { return nil }
-        let vorn = vorderste[reihe]
+        let vorn = vorderste.je[reihe]
         let titel = eintraege.contains { $0.id == vorn } ? vorn! : eintraege[0].id
         return Kachelmarke(reihe: reihe, titel: titel)
     }
@@ -242,7 +293,12 @@ struct HomeView: View {
     private var inhalt: some View {
         VStack(spacing: 0) {
             heldenzone
-            reihen
+                .reihenauftritt(0, da: zeigen)
+            if gebaut {
+                reihen
+            } else {
+                Spacer(minLength: 0)
+            }
         }
         // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
         //
@@ -304,6 +360,11 @@ struct HomeView: View {
         .onChange(of: amTitel) { _, jetzt in
             if let jetzt { zuletztAmTitel = jetzt }
         }
+        #if DEBUG
+        .onChange(of: amTitel) { _, jetzt in
+            if Kontowechsellauf.an { Kontowechselflug.notiz("fokus: startseite \(jetzt.map { "\($0.reihe)" } ?? "-")") }
+        }
+        #endif
         .onChange(of: amTitel) { vorher, jetzt in
             guard let jetzt, let vorher, vorher.reihe != jetzt.reihe else { return }
             if let ziel = vordersteMarke(jetzt.reihe), ziel != jetzt { amTitel = ziel }
@@ -360,24 +421,28 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
                 // Einstieg, kein Inhalt: ein Druck öffnet das Genre.
-                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+                if model.genreChips, !model.startGenres.isEmpty {
+                    gattungschips.reihenauftritt(1, da: zeigen)
+                }
 
                 // **Die festen Reihen in der eingestellten Reihenfolge**,
                 // ohne die ausgeblendeten — Profil → Darstellung → Startseite.
-                ForEach(festeReihen) { reihe in
-                    feste(reihe)
+                // Nach einem Kontowechsel gestaffelt (``Reihenauftritt``).
+                ForEach(Array(festeReihen.enumerated()), id: \.element) { i, reihe in
+                    feste(reihe).reihenauftritt(i + 2, da: zeigen)
                 }
 
                 // Die gewählten Genres als eigene Reihen, nach den festen.
-                ForEach(stand.gattungsreihen) { gattung in
+                ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, gattung in
                     if !gattung.items.isEmpty {
                         reihenabschnitt {
                             Reihentitel(name: gattung.name)
                         } inhalt: {
                             Streifen(model: model, items: gattung.items,
                                      reihe: .gattung(gattung.name),
-                                     amTitel: $amTitel, vorderste: $vorderste)
+                                     amTitel: $amTitel, vorderste: vorderste)
                         }
+                        .reihenauftritt(festeReihen.count + 2 + j, da: zeigen)
                     }
                 }
             }
@@ -430,7 +495,7 @@ struct HomeView: View {
                     Streifen(model: model, items: stand.weiterschauen,
                              reihe: .weiterschauen, quer: true,
                              direkt: starte, amTitel: $amTitel,
-                             vorderste: $vorderste)
+                             vorderste: vorderste)
                 }
             }
         case .naechsteFolge:
@@ -438,7 +503,7 @@ struct HomeView: View {
                 abschnitt("Nächste Folge") {
                     Streifen(model: model, items: stand.naechsteFolge,
                              reihe: .naechsteFolge, amTitel: $amTitel,
-                             vorderste: $vorderste)
+                             vorderste: vorderste)
                 }
             }
         case .neueFilme:
@@ -456,7 +521,7 @@ struct HomeView: View {
         if !items.isEmpty {
             abschnitt(titel) {
                 Streifen(model: model, items: items, reihe: reihe,
-                         neuzugang: true, amTitel: $amTitel, vorderste: $vorderste)
+                         neuzugang: true, amTitel: $amTitel, vorderste: vorderste)
             }
         }
     }
@@ -510,7 +575,7 @@ struct HomeView: View {
             Kopfschatten()
             auskunft
                 .padding(.leading, Stil.randSeite)
-                .padding(.top, 196)
+                .padding(.top, Stil.inhaltOben)
         }
         // **Volle 510, von der Bildkante gemessen.**
         //
@@ -585,7 +650,7 @@ struct HomeView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: imBild?.id)
+        .animation(Stil.bewegung(.easeInOut(duration: 0.3)), value: imBild?.id)
     }
 
     /// Titel, Angaben und Beschreibung zum Titel unter dem Fokus.
@@ -598,11 +663,27 @@ struct HomeView: View {
                 // auseinander: dort Genres, hier die Restzeit. Siehe
                 // `Kopfauskunft`.
                 Kopfauskunft(item: t,
-                             zweitzeile: t.type == "Episode" ? t.name : nil) {
+                             zweitzeile: t.type == "Episode" ? t.name : nil,
+                             serie: serie(zu: t)) {
+                    // Auch die Restzeit springt beim Titelwechsel, statt zu
+                    // gleiten — siehe `Angabenreihe`.
                     Restzeitmarke(item: t)
+                        .id(t.id)
+                        .transaction { $0.animation = nil }
                 }
+                // Die Serie kommt aus dem Speicher, den die Startseite je
+                // Reihe gebuendelt fuellt (`vorholenGebuendelt`) — kein Abruf
+                // unter dem Fokus, der Wechsel ist sofort vollstaendig.
             }
         }
+    }
+
+    /// Die Serie einer Folge, sofern schon bekannt — aus dem Vorrat oder
+    /// aus dem Stand einer schon besuchten Serienseite.
+    private func serie(zu t: Item) -> Item? {
+        guard t.type == "Episode" else { return nil }
+        return Serienspeicher.geteilt.serie(fuer: t, mit: model)
+            ?? t.seriesId.flatMap { Serienspeicher.geteilt.stand($0, mit: model)?.serie }
     }
 
 
@@ -620,8 +701,25 @@ struct HomeView: View {
     }
 
     private func laden() async {
+        Kontowechselflug.notiz("startseite: laden (konto \(model.kontowechsel))")
+        let a = Date()
         await stand.laden(model)
+        Kontowechselflug.notiz("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
         regalSchreiben()
+    }
+
+    /// Erst bauen (unsichtbar), im nächsten Durchgang zeigen — sonst
+    /// stünden neu eingefügte Reihen sofort an ihrem Ziel, ohne Staffel.
+    private func einblenden() {
+        guard !aufbau else { return }
+        Kontowechselflug.notiz("wechsel 6: reihen werden gebaut")
+        aufbau = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            Kontowechselflug.notiz("wechsel 7: reihen kommen gestaffelt")
+            wechsel = false
+            aufbau = false
+        }
     }
 
     /// Legt fürs Top Shelf ab, was die Startseite gerade zeigt.
@@ -659,12 +757,30 @@ struct HomeView: View {
             rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügt"), quer: false,
                                   eintraege: eintraege(stand.zuletzt, quer: false)))
         }
-        Regal.schreiben(Regalvorschau(rubriken: rubriken))
-        Protokoll.schreib("[Regal] \(rubriken.count) Rubriken, \(rubriken.map(\.eintraege.count)) Eintraege · \(Regal.befund())")
+        // **Abseits des Hauptakteurs.** Lesen, Vergleichen und Schreiben der
+        // Datei lagen nach jedem Laden der Startseite auf dem Hauptakteur —
+        // genau dann, wenn die Reihen gerade einblenden.
+        let vorschau = Regalvorschau(rubriken: rubriken)
+        let zahlen = rubriken.map(\.eintraege.count)
+        // Hintereinander, nie zwei zugleich: jede Runde wartet auf die
+        // vorige, sonst schrieben zwei schnelle Ladelaeufe dieselbe Datei.
+        let vorige = regalAufgabe
+        regalAufgabe = Task.detached(priority: .utility) {
+            await vorige?.value
+            Regal.schreiben(vorschau)
+            Protokoll.schreib("[Regal] \(zahlen.count) Rubriken, \(zahlen) Eintraege · \(Regal.befund())")
+        }
     }
 }
 
 // MARK: - Fokusmarke
+
+/// Die Vorderkante jeder Reihe — bewusst **nicht** beobachtbar, siehe
+/// `HomeView.vorderste`.
+@MainActor
+private final class Vorderkanten {
+    var je: [Reihenkennung: String] = [:]
+}
 
 /// Welche Reihe. Nur zur Unterscheidung, nicht fuer die Anzeige.
 private enum Reihenkennung: Hashable {
@@ -714,7 +830,7 @@ private struct Streifen: View {
     /// Meldet nach oben, welcher Titel gerade unter dem Fokus steht.
     @FocusState.Binding var amTitel: Kachelmarke?
     /// Traegt hier ein, was in dieser Reihe gerade vorne steht.
-    @Binding var vorderste: [Reihenkennung: String]
+    let vorderste: Vorderkanten
 
     /// Die Kachel an der Vorderkante — von der Scrollflaeche gemeldet.
     @State private var vorne: String?
@@ -746,9 +862,16 @@ private struct Streifen: View {
                                 // Langes Druecken auf der Fernbedienung, wie
                                 // in der TV-App von Apple — kein Nachbau,
                                 // `contextMenu` kann das auf tvOS selbst.
-                                .contextMenu { kachelmenue(item) }
+                                // Dasselbe Menü wie am iPhone (`Kachelmenue`),
+                                // hier mit „Zur Übersicht" und „Aus
+                                // Weiterschauen entfernen".
+                                .kachelmenue(item, model: model,
+                                             weiterschauen: reihe == .weiterschauen, quer: quer)
                         } else {
+                            // **Seit 1.0.5 an jeder Kachel**, nicht nur an
+                            // „Weiterschauen" — wie am iPhone.
                             NavigationLink(value: item) { kachel(item) }
+                                .kachelmenue(item, model: model, quer: quer)
                         }
                     }
                     .buttonStyle(KachelStil())
@@ -770,7 +893,7 @@ private struct Streifen: View {
             .scrollTargetLayout()
         }
         .scrollPosition(id: $vorne, anchor: .leading)
-        .onChange(of: vorne, initial: true) { _, id in vorderste[reihe] = id }
+        .onChange(of: vorne, initial: true) { _, id in vorderste.je[reihe] = id }
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
         // Jede Reihe ist ein eigener Abschnitt.
@@ -784,64 +907,13 @@ private struct Streifen: View {
         .focusSection()
     }
 
-    /// Das Menue hinter dem langen Druecken — dieselben drei Eintraege wie
-    /// auf dem iPhone (`Shared/HomeView.swift`).
-    ///
-    /// **Nur an den Kacheln mit `direkt`.** Das sind die, die sofort
-    /// abspielen, also „Weiterschauen" — dort ist der Weg auf die Uebersicht
-    /// sonst verbaut. Die anderen Reihen fuehren mit einem Druck ohnehin
-    /// dorthin und brauchen kein Menue; dieselbe Grenze zieht das iPhone.
-    @ViewBuilder
-    private func kachelmenue(_ item: Item) -> some View {
-        // Zur Serie kommt man weiterhin — nur nicht mehr im Weg der
-        // Wiedergabe.
-        NavigationLink(value: item) {
-            Label("Zur Übersicht", systemImage: "info.circle")
-        }
-        // **Beide Eintraege immer, nicht der passende.**
-        //
-        // Steht auf iOS so begruendet und ist dort entschieden: eine Folge,
-        // durch die man nur durchgesprungen ist, gilt als angefangen —
-        // „ungesehen" setzt sie zurueck und holt sie aus „Weiterschauen".
-        // Wer das will, findet sonst nichts. Ein Umschalter mit Haeckchen
-        // waere die dritte Moeglichkeit und die schlechteste: er liest sich
-        // wie eine Anzeige, und man weiss vor dem Druecken nicht, was
-        // passiert.
-        Button {
-            gesehenSetzen(item, an: true)
-        } label: {
-            Label("Als gesehen markieren", systemImage: "checkmark.circle")
-        }
-        Button {
-            gesehenSetzen(item, an: false)
-        } label: {
-            Label("Als ungesehen markieren", systemImage: "eye.slash")
-        }
-    }
-
-    /// **Kein eigenes Nachladen.** `AppModel.setzeGesehen` zaehlt
-    /// `sehstandGeaendert` hoch, und die Startseite haengt mit
-    /// `seitenAuffrischen` daran — sie laedt von selbst neu. Das ist wichtig,
-    /// weil eine als gesehen markierte Folge aus „Weiterschauen"
-    /// verschwindet und die naechste in „Naechste Folge" erscheint; nur die
-    /// Kachel umzufaerben liesse beide Reihen falsch stehen.
-    ///
-    /// Die Logik selbst ist geteilt und wird nicht kopiert: sie steht in
-    /// `AppModel.setzeGesehen`, die auch den `Serienspeicher` leert.
-    private func gesehenSetzen(_ item: Item, an: Bool) {
-        Task {
-            if let grund = await model.setzeGesehen(item, an: an) {
-                model.errorMessage = grund
-            }
-        }
-    }
-
     private func kachel(_ item: Item) -> some View {
         Kachelinhalt(bild: bildURL(item),
                      titel: item.seriesName ?? item.name,
                      unterzeile: unterzeile(item),
                      quer: quer,
-                     fortschritt: fortschritt(item))
+                     fortschritt: fortschritt(item),
+                     zeichen: item.kachelzeichen)
     }
 
     private func bildURL(_ item: Item) -> URL? {
@@ -850,8 +922,13 @@ private struct Streifen: View {
              : model.imageURL(for: item, maxHeight: 600, hochkant: true)
     }
 
+    /// Die leise Zeile unter dem Namen. Bei „Weiterschauen" mit der Restzeit
+    /// — „S2 · F5 · noch 12 Min." (Entwurf D, wie am iPhone): das Bild bleibt
+    /// frei, die Angabe steht, wo das Kürzel ohnehin stand. Die Zeile kommt
+    /// aus dem Paket (`weiterschauenzeile`).
     private func unterzeile(_ item: Item) -> String? {
-        neuzugang ? item.neuzugangszeile : item.folgenkuerzel
+        if reihe == .weiterschauen, let zeile = item.weiterschauenzeile { return zeile }
+        return neuzugang ? item.neuzugangszeile : item.folgenkuerzel
     }
 
     private func fortschritt(_ item: Item) -> Double? { item.gesehenerAnteil }

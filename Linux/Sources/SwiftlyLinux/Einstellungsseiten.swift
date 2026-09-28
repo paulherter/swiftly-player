@@ -35,6 +35,9 @@ extension App {
     /// Unterseite nach einem Kontowechsel *wiederherstellen*, geben `.ohne`
     /// weiterhin ausdruecklich mit: dort ist die Seite schon dagewesen.
     func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .tiefer) {
+        // **Das Profil ist mitten im Kontowechsel sofort wieder da** (iOS
+        // `abschliessen`): was aussteht, geschieht jetzt.
+        if was == .profil { kontoflugAbschliessen() }
         // Eine offene Unterseite nimmt der Leiste die Hervorhebung — sonst
         // leuchtet „Start", waehrend rechts das Profil steht.
         defer { bereichszeilenMalen() }
@@ -130,7 +133,7 @@ extension App {
     /// Rückruf ist schlimmer als keiner, weil er Funktion vortäuscht.
     private func verbindungPruefen() {
         guard let client else { return }
-        pruefergebnis = uebersetzt("Moment …")
+        pruefergebnis = uebersetzt("Moment…")
         unterseiteOeffnen(.einstellungen, schub: .ohne)
         Task.detached { [self] in
             let ok = (try? await client.publicSystemInfo()) != nil
@@ -196,7 +199,7 @@ extension App {
         // Zwischen Wiedergabe und Einstellungen — die Reihenfolge des Macs.
         anhaengen(g2.raum, wertezeile(symbol: "view-app-grid-symbolic",
                                       titel: uebersetzt("Darstellung"),
-                                      unter: uebersetzt("Startseite, Reihen und Genres"),
+                                      unter: uebersetzt("Startseite, Reihen, Genres"),
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.darstellung)
         })
@@ -572,8 +575,9 @@ extension App {
             anhaengen(o.raum, zeilenstrich())
             anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
                                          titel: uebersetzt("Speicher"),
-                                         unter: String(format: uebersetzt("%d Titel auf diesem Rechner"),
-                                                       downloads.posten.count),
+                                         unter: zahlwort(downloads.posten.count,
+                                                         eins: uebersetzt("1 Titel auf diesem Rechner"),
+                                                         viele: uebersetzt("%d Titel auf diesem Rechner")),
                                          wert: Downloadregeln.groesse(b.bytes)))
         }
         anhaengen(links, o.aussen)
@@ -624,7 +628,7 @@ extension App {
         // waehrend sie laeuft, ist die Zeile nicht anklickbar
         // (`EinstellungenView.swift:199-202`). Hier stand beides im Wertfeld,
         // und ein zweiter Klick stiess die Pruefung noch einmal an.
-        let laeuft = pruefergebnis == uebersetzt("Moment …")
+        let laeuft = pruefergebnis == uebersetzt("Moment…")
         let pruefzeile = wertezeile(symbol: "network-wireless-symbolic",
                                     titel: uebersetzt("Verbindung prüfen"),
                                     unter: laeuft ? nil : pruefergebnis,
@@ -659,6 +663,7 @@ extension App {
     private func unterseitenpfeil() -> Widget! {
         let pfeil: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
+        beschriften(pfeil, uebersetzt("Zurück"))
         gtk_button_set_child(alsKnopf(pfeil),
                              gtk_image_new_from_icon_name("go-previous-symbolic"))
         gtk_widget_set_halign(pfeil, GTK_ALIGN_START)
@@ -846,7 +851,10 @@ extension App {
         gtk_widget_add_css_class(knopf, "swiftly-kontoknopf")
         gtk_button_set_child(alsKnopf(knopf), zeile)
         let schluessel = konto.kontoschluessel
-        beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: schluessel) }
+        let bild = teile.huelle
+        beiSignal(knopf, "clicked") { [weak self] in
+            self?.kontoWechselnMitFlug(zu: schluessel, konto: konto, von: bild)
+        }
         return knopf
     }
 
@@ -866,10 +874,14 @@ extension App {
                                       schriftstil: "swiftly-zeichen26")
             gtk_button_set_child(alsKnopf(knopf), teile.huelle)
             gtk_widget_set_tooltip_text(knopf, konto.userName)
+            beschriften(knopf, String(format: uebersetzt("Zu %@ wechseln"), konto.userName))
             profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
                             schluessel: "konto-\(konto.userID)")
             let schluessel = konto.kontoschluessel
-            beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: schluessel) }
+            let bild = teile.huelle
+            beiSignal(knopf, "clicked") { [weak self] in
+                self?.kontoWechselnMitFlug(zu: schluessel, konto: konto, von: bild)
+            }
             anhaengen(reihe, knopf)
         }
 
@@ -884,6 +896,7 @@ extension App {
         gtk_widget_set_size_request(plus, 40, 40)
         gtk_button_set_child(alsKnopf(plus), gtk_image_new_from_icon_name("list-add-symbolic"))
         gtk_widget_set_tooltip_text(plus, uebersetzt("Weiteres Konto hinzufügen"))
+        beschriften(plus, uebersetzt("Weiteres Konto hinzufügen"))
         beiSignal(plus, "clicked") { [weak self] in
             guard let self else { return }
             if aktiv { self.unterseiteOeffnen(.kontoHinzufuegen) }
@@ -1038,17 +1051,17 @@ extension App {
         gtk_widget_set_hexpand(name, 1)
         anhaengen(zeile, name)
 
-        let hoch = listenpfeil("go-up-symbolic", an: stelle > 0) { [weak self] in
+        let hoch = listenpfeil("go-up-symbolic", name: uebersetzt("Nach oben"), an: stelle > 0) { [weak self] in
             self?.reiheVerschieben(reihe, um: -1)
         }
         anhaengen(zeile, hoch)
-        let runter = listenpfeil("go-down-symbolic", an: stelle < von - 1) { [weak self] in
+        let runter = listenpfeil("go-down-symbolic", name: uebersetzt("Nach unten"), an: stelle < von - 1) { [weak self] in
             self?.reiheVerschieben(reihe, um: 1)
         }
         anhaengen(zeile, runter)
 
         let an = !wahlen.startAus.contains(reihe.rawValue)
-        anhaengen(zeile, kleinerSchalter(an: an) { [weak self] neu in
+        anhaengen(zeile, kleinerSchalter(an: an, name: uebersetzt(reihe.listenname)) { [weak self] neu in
             guard let self else { return }
             if neu { self.wahlen.startAus.removeAll { $0 == reihe.rawValue } }
             else { self.wahlen.startAus.append(reihe.rawValue) }
@@ -1086,13 +1099,13 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_widget_set_hexpand(l, 1)
         anhaengen(zeile, l)
-        anhaengen(zeile, listenpfeil("go-up-symbolic", an: stelle > 0) { [weak self] in
+        anhaengen(zeile, listenpfeil("go-up-symbolic", name: uebersetzt("Nach oben"), an: stelle > 0) { [weak self] in
             self?.genreVerschieben(name, um: -1)
         })
-        anhaengen(zeile, listenpfeil("go-down-symbolic", an: stelle < von - 1) { [weak self] in
+        anhaengen(zeile, listenpfeil("go-down-symbolic", name: uebersetzt("Nach unten"), an: stelle < von - 1) { [weak self] in
             self?.genreVerschieben(name, um: 1)
         })
-        let weg = listenpfeil("list-remove-symbolic", an: true) { [weak self] in
+        let weg = listenpfeil("list-remove-symbolic", name: uebersetzt("Entfernen"), an: true) { [weak self] in
             guard let self else { return }
             self.wahlen.startGenres.removeAll { $0 == name }
             self.wahlen.sichern()
@@ -1643,10 +1656,21 @@ extension App {
                     Protokoll.schreib("[Update] " + (stand.map { "neu: \($0.fassung)" } ?? "aktuell"))
                     self.aktualisierungszeileFuellen()
                 }
+            } catch Aktualisierung.Fehler.keinInstallierer {
+                // **Eine Veroeffentlichung ohne Installer ist noch keine.**
+                // Zwischen dem Anlegen auf GitHub und dem Hochladen der
+                // `-setup.exe` vergehen Minuten; in der Zeit stand hier
+                // „GitHub antwortet nicht" — falsch, und nichts, was der
+                // Nutzer beheben kann.
+                aufHauptfaden {
+                    self.aktualisierungslage = .aktuell
+                    Protokoll.schreib("[Update] neue Fassung ohne Installer, gilt als aktuell")
+                    self.aktualisierungszeileFuellen()
+                }
             } catch {
                 aufHauptfaden {
                     self.aktualisierungslage = .schiefgegangen(uebersetzt("GitHub antwortet nicht."))
-                    Protokoll.schreib("[Update] Suche fehlgeschlagen")
+                    Protokoll.schreib("[Update] Suche fehlgeschlagen: \(error)")
                     self.aktualisierungszeileFuellen()
                 }
             }
@@ -1674,7 +1698,7 @@ extension App {
             } catch {
                 aufHauptfaden {
                     self.aktualisierungslage = .schiefgegangen(uebersetzt("Das Herunterladen ist abgebrochen."))
-                    Protokoll.schreib("[Update] Herunterladen fehlgeschlagen")
+                    Protokoll.schreib("[Update] Herunterladen fehlgeschlagen: \(error)")
                     self.aktualisierungszeileFuellen()
                 }
             }

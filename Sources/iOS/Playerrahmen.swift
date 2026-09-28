@@ -28,6 +28,8 @@ final class Playerrahmen: UIHostingController<AnyView> {
 
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
         // Hält jemand das Telefon schon quer, in dieser Richtung aufgehen.
+        // Aus einer Übergabe: hochkant, bis die Karte weg ist.
+        if Orientierung.shared.uebergabeHaelt { return .portrait }
         switch UIDevice.current.orientation {
         case .landscapeLeft: return .landscapeRight
         case .landscapeRight: return .landscapeLeft
@@ -39,7 +41,10 @@ final class Playerrahmen: UIHostingController<AnyView> {
     override var prefersHomeIndicatorAutoHidden: Bool { true }
 
     /// Zeigt den Player über dem obersten Controller.
-    static func zeigen(_ inhalt: AnyView, querformatFest: Bool, beendet: @escaping () -> Void) {
+    /// - Parameter ruhig: ohne Überblenden — aus einer Übergabe, wo der
+    ///   Player unter der Karte aufgeht und erst mit ihrem Zoom zu sehen ist.
+    static func zeigen(_ inhalt: AnyView, querformatFest: Bool, ruhig: Bool = false,
+                       beendet: @escaping () -> Void) {
         guard aktiv == nil,
               let szene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene }).first,
@@ -59,7 +64,7 @@ final class Playerrahmen: UIHostingController<AnyView> {
         rahmen.overrideUserInterfaceStyle = .dark
         rahmen.view.backgroundColor = .black
         aktiv = rahmen
-        oben.present(rahmen, animated: true)
+        oben.present(rahmen, animated: !ruhig)
     }
 
     /// Schließt den Player; die Drehung zurück läuft im selben Übergang.
@@ -94,7 +99,8 @@ private struct PlayerCover<Inhalt: View>: ViewModifier {
         } else {
             content.onChange(of: wunsch?.id, initial: true) { _, id in
                 if let offen = wunsch, id != nil {
-                    Playerrahmen.zeigen(AnyView(inhalt(offen)), querformatFest: querformatFest) {
+                    Playerrahmen.zeigen(AnyView(inhalt(offen)), querformatFest: querformatFest,
+                                        ruhig: Uebergabebuehne.geteilt.aktiv) {
                         wunsch = nil
                     }
                 } else {

@@ -25,16 +25,22 @@ import SwiftUI
 /// Gewichtet wird mit dem Quadrat der Saettigung: der farbigste Fleck traegt
 /// den Eindruck, den man vom Bild hat, nicht die graue Flaeche ringsum.
 ///
-/// **Versuchsweise hier und nicht in `Sources/Shared`.** Mac und iPad haetten
-/// dieselbe Verwendung; sobald es bleibt, gehoert die Rechnung nach der Regel
-/// zuerst nach iOS und dann in den geteilten Code. Gemeldet.
+/// **Geteilt, seit das iPhone denselben Ton braucht.** Fernseher und iPhone
+/// rechnen dieselben Toene aus demselben Bild; wie daraus ein Grund wird,
+/// entscheidet jede Plattform selbst (`TVBildgrund.swift`,
+/// `Sources/iOS/Bildstimmung.swift`).
 @MainActor
 final class Bildton {
     static let geteilt = Bildton()
 
     /// Einmal gerechnet, dann gemerkt. Ohne das rechnet jede Rueckkehr auf
     /// dieselbe Seite neu, und der Hintergrund blendet jedes Mal auf.
+    ///
+    /// **Gedeckelt.** Ein Eintrag ist klein, aber wer eine Stunde durch die
+    /// Bibliothek faehrt, sammelt tausende; die aeltesten fallen heraus.
     private var bekannt: [URL: [Double]] = [:]
+    private var reihenfolge: [URL] = []
+    private static let hoechstens = 300
     private var laufend: [URL: Task<[Double], Never>] = [:]
 
     /// **Schon bekannt?** Ohne Warten, ohne `await`.
@@ -61,14 +67,24 @@ final class Bildton {
         if let fertig = bekannt[url] { return fertig }
         if let laeuft = laufend[url] { return await laeuft.value }
 
-        let aufgabe = Task<[Double], Never> {
+        // **Losgeloest, nicht bloss `nonisolated`.** Ein gewoehnliches
+        // `Task` erbt den Hauptakteur, und `toeneAus` lief darin trotz
+        // `nonisolated` auf ihm: Entschluesseln, Verkleinern und ein
+        // Histogramm ueber jeden Punkt, mitten im Fokuswechsel.
+        let aufgabe = Task.detached(priority: .userInitiated) { () -> [Double] in
             guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)) else { return [] }
             return Self.toeneAus(daten)
         }
         laufend[url] = aufgabe
         let ergebnis = await aufgabe.value
+        if bekannt[url] == nil { reihenfolge.append(url) }
         bekannt[url] = ergebnis
         laufend[url] = nil
+        if reihenfolge.count > Self.hoechstens {
+            let weg = reihenfolge.prefix(reihenfolge.count - Self.hoechstens)
+            for alt in weg { bekannt[alt] = nil }
+            reihenfolge.removeFirst(weg.count)
+        }
         return ergebnis
     }
 
@@ -111,60 +127,9 @@ final class Bildton {
         else { return [] }
         flaeche.draw(bild, in: CGRect(x: 0, y: 0, width: breite, height: hoehe))
 
-        let faecher = 36
-        var korb = [Double](repeating: 0, count: faecher)
-        var gesamt = 0.0
-
-        for i in stride(from: 0, to: punkte.count, by: 4) {
-            let r = Double(punkte[i]) / 255
-            let g = Double(punkte[i + 1]) / 255
-            let b = Double(punkte[i + 2]) / 255
-
-            let hoch = max(r, g, b), tief = min(r, g, b)
-            let spanne = hoch - tief
-            guard spanne > 0.04, hoch > 0.08 else { continue }
-
-            let saettigung = spanne / hoch
-            var ton: Double
-            switch hoch {
-            case r: ton = (g - b) / spanne
-            case g: ton = 2 + (b - r) / spanne
-            default: ton = 4 + (r - g) / spanne
-            }
-            ton *= 60
-            if ton < 0 { ton += 360 }
-
-            let gewicht = saettigung * saettigung * hoch
-            korb[min(faecher - 1, Int(ton / 10))] += gewicht
-            gesamt += gewicht
-        }
-
-        guard gesamt > 0.5 else { return [] }
-
-        // Gipfel ziehen: staerkstes Fach, dann das staerkste mit mindestens
-        // drei Faechern (30 Grad) Abstand, und so weiter.
-        var gewaehlt: [Double] = []
-        var uebrig = korb
-        for _ in 0 ..< 5 {
-            guard let (fach, wert) = uebrig.enumerated().max(by: { $0.element < $1.element }),
-                  wert > gesamt * 0.035 else { break }
-
-            // Der genaue Ton kommt aus dem Fach und seinen Nachbarn, damit er
-            // nicht auf Zehnergrad einrastet.
-            var x = 0.0, y = 0.0
-            for versatz in -1 ... 1 {
-                let f = (fach + versatz + faecher) % faecher
-                let bogen = (Double(f) * 10 + 5) * .pi / 180
-                x += cos(bogen) * korb[f]
-                y += sin(bogen) * korb[f]
-            }
-            var grad = atan2(y, x) * 180 / .pi
-            if grad < 0 { grad += 360 }
-            gewaehlt.append(grad)
-
-            for versatz in -1 ... 1 { uebrig[(fach + versatz + faecher) % faecher] = 0 }
-        }
-        return gewaehlt
+        // Histogramm und Gipfel stehen im Paket, damit Android dieselben
+        // Töne rechnet (`Bildtonrechnung.toene`).
+        return Bildtonrechnung.toene(rgba: punkte)
     }
 
 }
@@ -248,70 +213,13 @@ extension Bildton {
     /// hat, an dem ein Band entstehen koennte.
 }
 
-/// Faerbt den Grund einer ganzen Seite nach ihrem Kulissenbild.
-///
-/// **An der Seite, nicht am Kopf.** Erst sass das im `Detailkopf`, und damit
-/// endete die Faerbung an dessen Unterkante — darunter stand wieder reines
-/// `#0B0B0D` und quer ueber dem Schirm eine Naht. Der Grund gehoert unter
-/// alles, was die Seite zeigt, die Reihen eingeschlossen.
-struct Bildgrund: ViewModifier {
-    let url: URL?
-    @State private var toene: [Double]
+// MARK: - Das Netz
 
-    /// **Der Anfangswert kommt aus dem Gedaechtnis, nicht aus dem Nichts.**
-    ///
-    /// Jede Seite legt ihren eigenen `Bildgrund` an — die Detailseite also
-    /// einen neuen, wenn sie aufgeht. Stand der auf `[]`, zeichnete er zuerst
-    /// den nackten Grund und fuellte sich erst im naechsten Durchgang. Genau
-    /// das sah
-    ///
-    /// Das nachtraegliche Setzen ohne Animation kam dafuer zu spaet — der
-    /// leere Durchgang hatte da schon stattgefunden. Ein Ton, der bekannt ist,
-    /// muss deshalb **schon im ersten** Durchgang stehen.
-    @MainActor init(url: URL?) {
-        self.url = url
-        _toene = State(initialValue: url.flatMap { Bildton.geteilt.gemerkt(fuer: $0) } ?? [])
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    netz.ignoresSafeArea()
-
-                    // Der letzte Rest gegen Baender — siehe `Bildton.rauschen`.
-                    if !toene.isEmpty {
-                        Bildton.rauschen
-                            .resizable(resizingMode: .tile)
-                            .opacity(0.008)
-                            .ignoresSafeArea()
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-            .animation(.easeInOut(duration: 0.4), value: toene)
-            .task(id: url) {
-                guard let url else { toene = []; return }
-
-                // Schon bekannt? Dann steht es seit dem ersten Durchgang da
-                // (siehe `init`) und hier ist nichts mehr zu tun. Ohne diese
-                // Rueckkehr wuerde dieselbe Zuweisung eine Animation
-                // ausloesen, obwohl sich der Wert gar nicht aendert.
-                if let schonDa = Bildton.geteilt.gemerkt(fuer: url) {
-                    if schonDa != toene {
-                        var ohne = Transaction()
-                        ohne.disablesAnimations = true
-                        withTransaction(ohne) { toene = schonDa }
-                    }
-                    return
-                }
-
-                // Nur wirklich Neues wird uebergeblendet — etwa ein Titel,
-                // den man ueber die Suche direkt oeffnet.
-                toene = await Bildton.geteilt.toene(fuer: url)
-            }
-    }
-
+/// **Wie aus den Toenen ein Grund wird — auf Fernseher und iPhone gleich.**
+/// Stand zuerst im tvOS-`Bildgrund`; das iPhone malt seine Detailseiten jetzt
+/// aus derselben Rechnung, deshalb hier. Die Zahlen sind Stil-Tokens
+/// (`Farben.swift`, „Farbe aus dem Bild").
+extension Bildton {
     /// **Ein Netz statt gestapelter Verlaeufe.**
     ///
     /// Davor lagen hier ein linearer Grundverlauf und bis zu fuenf radiale
@@ -331,7 +239,7 @@ struct Bildgrund: ViewModifier {
     /// Kulisse sitzt, der staerkste Ton am hellsten; nach links unten wird es
     /// dunkler, bis es in den Grund uebergeht. Die uebrigen Toene fuellen die
     /// Mitte, damit ueber die Flaeche wirklich Farbe wechselt.
-    private var netz: some View {
+    static func netz(_ toene: [Double]) -> MeshGradient {
         // **Fuenf mal fuenf, nicht drei mal drei.**
         //
         // Neun Stuetzpunkte auf 1920 x 1080 sind neun Farbinseln, und was
@@ -353,7 +261,7 @@ struct Bildgrund: ViewModifier {
         }
         return MeshGradient(width: seite, height: seite,
                             points: punkte,
-                            colors: punkte.map { farbe(bei: $0) })
+                            colors: punkte.map { farbe(toene, bei: $0) })
     }
 
     /// Welche Farbe an welcher Stelle des Netzes steht.
@@ -367,32 +275,58 @@ struct Bildgrund: ViewModifier {
     ///
     /// Zwei Dinge entscheiden: die Naehe zur Kulisse oben rechts bestimmt,
     /// **wie hell** es wird, die Stelle im Netz, **welcher** Ton es ist.
-    private func farbe(bei punkt: SIMD2<Float>) -> Color {
+    static func farbe(_ toene: [Double], bei punkt: SIMD2<Float>) -> Color {
         guard !toene.isEmpty else { return Stil.grund }
 
-        // Abstand zur Kulisse (oben rechts), auf 0…1 gebracht.
-        let dx = Double(1 - punkt.x), dy = Double(punkt.y)
-        let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.414)
-
-        // Schraeg ueber die Flaeche, damit die Farbe wandert.
-        let lauf = (Double(punkt.x) + Double(punkt.y)) / 2
-        let ton = tonBei(lauf)
-
-        // Nah an der Kulisse farbig, weit weg fast der Grundton.
+        // Die Rechnung steht im Paket (`Bildtonrechnung.hsb`), die Zahlen
+        // sind die Stil-Tokens in `Farben.swift`:
         //
         //     Saettigung  0,38…0,58
         //     Helligkeit  0,075…0,215
         //     Abfall      naehe^1,6
         //
-        // Der Abfall traegt das meiste: quadratisch faellt die Helligkeit so
-        // schnell, dass ausserhalb des Bildes fast alles auf dem Grundton
-        // liegt und die Farbe nur dort steht, wo ohnehin das Bild ist.
-        //
-        // Der Akzent bleibt aussen vor (E2): das ist Grund, kein
+        // Der Abfall traegt das meiste: ausserhalb des Bildes liegt fast
+        // alles auf dem Grundton, die Farbe steht nur dort, wo ohnehin das
+        // Bild ist. Der Akzent bleibt aussen vor (E2): das ist Grund, kein
         // Bedienelement, und dunkel genug fuer weisse Schrift darauf.
-        return Color(hue: ton / 360,
-                     saturation: 0.38 + 0.20 * naehe,
-                     brightness: 0.075 + 0.140 * pow(naehe, 1.6))
+        let t = Bildtonrechnung.hsb(toene, x: Double(punkt.x), y: Double(punkt.y))
+        return Color(hue: t.ton / 360, saturation: t.saettigung, brightness: t.helligkeit)
+    }
+
+    /// Dieselbe Farbe wie ``farbe(_:bei:)``, aber `abklingen` (1 … 0) führt
+    /// sie auf `grund` zurück — **in OKLab**: Helligkeit und Buntheit
+    /// gemeinsam, bis bei 0 genau `grund` steht. Eine Deckkraft über `grund`
+    /// mischte in sRGB, und wo die Farbe dunkler war als der Grund, stand beim
+    /// Scrollen eine Kante (Paul, 27.09.). Gerechnet im Paket
+    /// (`Bildtonrechnung.farbe`), damit Android denselben Auslauf hat.
+    static func farbe(_ toene: [Double], x: Double, y: Double, abklingen f: Double) -> Color {
+        guard !toene.isEmpty else { return Stil.grund }
+        let aus = Bildtonrechnung.farbe(toene, x: x, y: y, abklingen: f)
+        return Color(.sRGB, red: aus.r, green: aus.g, blue: aus.b)
+    }
+
+    /// **Das Netz für eine Detailseite, die in `grund` ausläuft** (iPhone).
+    /// Oben genau das Bild des Fernsehers über `farbhoehe` (wie bisher), ab
+    /// `ab` über `auslauf` auf einer Glättkurve (smootherstep) exakt bis
+    /// `grund` — Stützzeilen dicht über den Auslauf, gemischt in der
+    /// wahrnehmungsgleichen Farbwelt.
+    static func netz(_ toene: [Double], hoehe: Double, farbhoehe: Double, ab: Double,
+                     auslauf: Double) -> MeshGradient {
+        let spalten = 5
+        var zeilen: [Double] = [0, ab * 0.5, ab]
+        for i in 1 ... 10 { zeilen.append(ab + auslauf * Double(i) / 10) }
+        zeilen.append(hoehe)
+        var punkte: [SIMD2<Float>] = [], farben: [Color] = []
+        for y in zeilen {
+            let f = Bildtonrechnung.abklingen(y: y, ab: ab, auslauf: auslauf)
+            for s in 0 ..< spalten {
+                let x = Double(s) / Double(spalten - 1)
+                punkte.append([Float(x), Float(min(1, y / hoehe))])
+                farben.append(farbe(toene, x: x, y: min(1, y / farbhoehe), abklingen: f))
+            }
+        }
+        return MeshGradient(width: spalten, height: zeilen.count, points: punkte, colors: farben,
+                            background: Stil.grund, smoothsColors: true, colorSpace: .perceptual)
     }
 
     /// Der Farbton an der Stelle `lauf` (0…1) — zwischen den gefundenen
@@ -402,31 +336,7 @@ struct Bildgrund: ViewModifier {
     /// Flaeche bleibt, ihre Spannweite schrumpft auf ein Drittel. Sonst
     /// stuende neben Blau ein volles Orange, und das sieht man als Fleck,
     /// wie fein das Netz auch ist.
-    private func tonBei(_ lauf: Double) -> Double {
-        let leit = toene[0]
-        func gedaempft(_ ton: Double) -> Double {
-            var weg = ton - leit
-            if weg > 180 { weg -= 360 }
-            if weg < -180 { weg += 360 }
-            return leit + weg * 0.34
-        }
-        guard toene.count > 1 else { return leit }
-
-        let stelle = lauf * Double(toene.count - 1)
-        let a = min(Int(stelle), toene.count - 2)
-        let t = stelle - Double(a)
-
-        let von = gedaempft(toene[a]), bis = gedaempft(toene[a + 1])
-        var weg = bis - von
-        if weg > 180 { weg -= 360 }
-        if weg < -180 { weg += 360 }
-        var ton = von + weg * (t * t * (3 - 2 * t))
-        if ton < 0 { ton += 360 }
-        if ton >= 360 { ton -= 360 }
-        return ton
+    static func tonBei(_ toene: [Double], _ lauf: Double) -> Double {
+        Bildtonrechnung.tonBei(toene, lauf)
     }
-}
-
-extension View {
-    func bildgrund(url: URL?) -> some View { modifier(Bildgrund(url: url)) }
 }

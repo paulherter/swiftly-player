@@ -49,13 +49,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -78,7 +71,8 @@ import org.json.JSONArray
 @Composable
 fun ersterFokus(bereit: Boolean = true): FocusRequester {
     val f = remember { FocusRequester() }
-    LaunchedEffect(bereit) { if (bereit) { delay(60); runCatching { f.requestFocus() } } }
+    // Doppelte Frist: hier muss die ganze Seite stehen, nicht nur ein Knopf.
+    LaunchedEffect(bereit) { if (bereit) { delay(2 * TvStil.fokusFrist); runCatching { f.requestFocus() } } }
     return f
 }
 
@@ -123,8 +117,10 @@ fun TvRaster(kacheln: List<Rasterkachel>, nachladen: () -> Unit = {}, fokus: Foc
                 val k = kacheln[i]
                 // **Kein Jahr unter dem Titel in Bibliothek/Merkliste** (`mitUnterzeile: false` auf
                 // tvOS) — in der Suche bleibt es, dort steht dort „Serie · 2008" statt eines Jahres.
+                val menue = de.paulherter.swiftly.LocalKachelmenue.current
                 TvKachel(k.plakat, k.titel, if (mitUnterzeile) k.unterzeile else null,
                          marke = k.marke, markenzahl = k.markenzahl,
+                         lange = menue?.let { m -> { m(de.paulherter.swiftly.Kachelmenuewunsch(k.id, k.titel, k.typ, k.plakat, false, k.unterzeile)) } },
                          modifier = if (i == fokusIndex && fokus != null) Modifier.focusRequester(fokus) else Modifier,
                          fokusGeaendert = { if (it) zuletzt = k.id }) {
                     oeffnen(Ziel(k.id, k.titel, k.typ))
@@ -168,7 +164,9 @@ private fun TvGrundton(art: String) {
  * bleibt es beim blossen Hinweis, wie in Merkliste und Suche.
  */
 @Composable
-fun TvLeer(kopfzeile: String, text: String, symbol: Zeichen? = null, knopf: Pair<String, () -> Unit>? = null) {
+fun TvLeer(kopfzeile: String, text: String, symbol: Zeichen? = null, knopf: Pair<String, () -> Unit>? = null,
+           /** Fuer den Erstfokus, wenn der Knopf das einzige Ziel der Seite ist. */
+           knopfModifier: Modifier = Modifier) {
     Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         symbol?.let {
             // **44, nicht 38** — tvOS setzt 88, hier gilt die Haelfte. Der Grad stand als
@@ -180,7 +178,7 @@ fun TvLeer(kopfzeile: String, text: String, symbol: Zeichen? = null, knopf: Pair
         Text(text, style = TvStil.koerper, color = Stil.schriftLeise, textAlign = TextAlign.Center,
              modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp))
         knopf?.let { (titel, tun) ->
-            TvKnopf(titel, modifier = Modifier.padding(top = 16.dp), tun = tun)
+            TvKnopf(titel, modifier = Modifier.padding(top = 16.dp).then(knopfModifier), tun = tun)
         }
     }
 }
@@ -203,11 +201,11 @@ fun TvLeer(kopfzeile: String, text: String, symbol: Zeichen? = null, knopf: Pair
  * fuer ein externes Laufwerk.
  */
 @Composable
-fun TvStoerung(app: SwiftlyAnwendung, adresse: String? = null, erneut: (() -> Unit)? = null) {
+fun TvStoerung(app: SwiftlyAnwendung, adresse: String? = null, knopfModifier: Modifier = Modifier, erneut: (() -> Unit)? = null) {
     TvLeer(uebersetzt("Server ist abgetaucht"),
            uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", adresse ?: app.serveradresse()),
            symbol = Zeichen.ServerWeg,
-           knopf = erneut?.let { uebersetzt("Erneut versuchen") to it })
+           knopf = erneut?.let { uebersetzt("Erneut versuchen") to it }, knopfModifier = knopfModifier)
 }
 
 /**
@@ -334,7 +332,7 @@ private fun TvKapselMitTafel(text: String, symbol: Zeichen?, eintraege: List<Wah
         if (offen) {
             BackHandler(onBack = { schliessen() })
             val erste = remember { FocusRequester() }
-            LaunchedEffect(Unit) { delay(30); runCatching { erste.requestFocus() } }
+            LaunchedEffect(Unit) { delay(TvStil.fokusFrist); runCatching { erste.requestFocus() } }
             val lage = remember(rand, luft) {
                 object : PopupPositionProvider {
                     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize,
@@ -425,7 +423,6 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val verlauf = remember(verlaufRoh) { runCatching { JSONArray(Kern.suchverlaufListe(verlaufRoh)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList()) }
     LaunchedEffect(st.begriff) { st.suchen(app, st.begriff.trim()) }
     val feld = ersterFokus()
-    val fokusVerwalter = LocalFocusManager.current
     fun merken() { verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh); app.ablage.merken(Kern.suchverlaufSchluessel(), verlaufRoh) }
 
     TvRaster(st.treffer, oeffnen = oeffnen, laedt = st.sucht && st.treffer.isEmpty(), platzhalterReihen = 1, kopf = {
@@ -435,19 +432,10 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 BasicTextField(st.begriff, { st.begriff = it }, singleLine = true,
                     textStyle = TvStil.koerper.copy(color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { merken() }),
-                    // **Hoch und Runter verlassen das Feld.** Das Textfeld nahm beide Tasten selbst
-                    // (Schreibmarke an Anfang/Ende der Zeile) und meldete sie als erledigt: aus der
-                    // Suche kam man weder in die Reiterleiste noch an Verlauf oder Treffer.
+                    // **Hoch und Runter verlassen das Feld, OK holt die Tastatur** (`fernbedienbaresFeld`):
+                    // sonst kam man aus der Suche weder in die Reiterleiste noch an Verlauf oder Treffer.
                     modifier = Modifier.width(460.dp).focusRequester(feld).onFocusChanged { imFeld = it.isFocused }
-                        .onPreviewKeyEvent { e ->
-                            val richtung = when (e.key) {
-                                Key.DirectionUp -> FocusDirection.Up
-                                Key.DirectionDown -> FocusDirection.Down
-                                else -> return@onPreviewKeyEvent false
-                            }
-                            if (e.type == KeyEventType.KeyDown) fokusVerwalter.moveFocus(richtung)
-                            true
-                        },
+                        .fernbedienbaresFeld(),
                     decorationBox = { innen ->
                         // **Kein Rand, auch nicht im Fokus** — ein Suchfeld ist eine
                         // gefuellte Kapsel, kein gezeichneter Rahmen, und der Fokus hat mit

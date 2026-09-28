@@ -125,7 +125,7 @@ struct Downloadring: View {
                 // aus, als zittere der Ring. Linear und ueber eine knappe
                 // halbe Sekunde laeuft er ruhig — und bleibt trotzdem ehrlich,
                 // weil er nie zurueckfaellt.
-                .animation(.linear(duration: 0.4), value: anteil)
+                .animation(Stil.fortschrittsfahrt, value: anteil)
         }
     }
 
@@ -182,6 +182,7 @@ func ringGetippt(_ posten: Downloadposten?, _ verwaltung: Downloadverwaltung,
 /// Masse und Fläche sind wörtlich die von ``Aktionsknopf`` — es steht in
 /// derselben Reihe, und das darf man nicht sehen.
 struct Downloadfeld: View {
+    @Environment(\.aufBildfarbe) private var aufBild
     let posten: Downloadposten?
     var dehnt = true
     let tippen: () -> Void
@@ -215,7 +216,8 @@ struct Downloadfeld: View {
             // dieses Feld stehen geblieben. Rückmeldung vom 21.09.: „der Download-
             // Button auf der Filmseite ist noch falsch."
             .frame(width: dehnt ? nil : 48, height: 48)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+            .background(Stil.knopfflaeche(aufBild: aufBild),
+                        in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(Stil.Druckknopf())
@@ -242,6 +244,9 @@ struct Downloadzeile: View {
     var starten: (() -> Void)?
 
     private var verwaltung: Downloadverwaltung { model.downloads }
+    /// Der Posten mit dem laufenden Stand. **Nur hier gelesen**, damit eine
+    /// Fortschrittsmeldung diese eine Zeile neu zeichnet und nicht die Liste.
+    private var jetzt: Downloadposten { verwaltung.aktuell(posten) }
     /// Haelt den Schaetzer ueber die Neuzeichnungen; beobachtet wird er nicht,
     /// die Zeitleiste fragt ihn je Bild.
     @State private var schaetzer = Schaetzerhalter()
@@ -266,13 +271,13 @@ struct Downloadzeile: View {
                     zeile(geladen: schaetzer.s.wert(um: takt.date))
                 }
             } else if posten.stand == .angehalten || posten.stand == .laedt {
-                zeile(geladen: max(schaetzer.s.wert(um: Date()), posten.geladen))
+                zeile(geladen: max(schaetzer.s.wert(um: Date()), jetzt.geladen))
             } else {
-                zeile(geladen: posten.geladen)
+                zeile(geladen: jetzt.geladen)
             }
         }
-        .onChange(of: posten.geladen, initial: true) { _, neu in
-            schaetzer.s.melden(neu, gesamt: posten.bytes, um: Date())
+        .onChange(of: jetzt.geladen, initial: true) { _, neu in
+            schaetzer.s.melden(neu, gesamt: jetzt.bytes, um: Date())
             if !kommtWas { schaetzer.s.anhalten() }
         }
         .onChange(of: kommtWas) { _, an in
@@ -285,7 +290,7 @@ struct Downloadzeile: View {
     }
 
     private func anteil(_ geladen: Int64) -> Double? {
-        posten.bytes > 0 ? Double(geladen) / Double(posten.bytes) : posten.anteil
+        jetzt.bytes > 0 ? Double(geladen) / Double(jetzt.bytes) : jetzt.anteil
     }
 
     private func zeile(geladen: Int64) -> some View {
@@ -312,6 +317,10 @@ struct Downloadzeile: View {
                 // waren der Fehler.
                 .frame(width: quer ? 116 : 64, height: quer ? 65 : 96)
                 .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
+                // **Gesehen wie in der Folgenliste** — auch ohne Netz: der
+                // Stand liegt im Posten (1.0.5). Nur an der einzelnen Zeile;
+                // eine Serienzeile steht fuer viele Folgen.
+                .gesehenHaken(gruppe == nil && posten.gesehen)
 
             VStack(alignment: .leading, spacing: 3) {
                 // Eine Zeile traegt Semibold, nicht Medium — Medium gehoert
@@ -343,7 +352,7 @@ struct Downloadzeile: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Stil.schriftSehrLeise)
             } else if !bearbeiten {
-                Downloadring(posten: posten, anteilJetzt: anteil(geladen)) {
+                Downloadring(posten: jetzt, anteilJetzt: anteil(geladen)) {
                     ringGetippt(posten, verwaltung) {}
                 }
             }
@@ -386,10 +395,13 @@ struct Downloadzeile: View {
             let bytes = g.folgen.reduce(Int64(0)) { $0 + $1.bytes }
             return String(localized: "\(g.folgen.count) Folgen") + " · "
                 + Downloadregeln.groesse(bytes)
+                + (Downloadqualitaet.gemeinsam(g.folgen).map { " · " + $0.name } ?? "")
         }
         var teile: [String] = []
+        // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand
+        // hier fest als „F", auch auf Englisch (gemeldet 27.09.2026).
         if let s = posten.staffel, let f = posten.folge {
-            teile.append("S\(s) F\(f)")
+            teile.append(String(localized: "S\(s) F\(f)"))
         } else if let ticks = posten.laufzeitTicks, ticks > 0 {
             teile.append(laufzeit(Double(ticks) / 10_000_000))
         }
@@ -400,17 +412,26 @@ struct Downloadzeile: View {
             // Komma raus, und die Zeile wurde bei jedem Schritt anders breit.
             // Am schlimmsten bei der ersten Folge, die unter einem Gigabyte
             // anfaengt. Die Gesamtgroesse gibt die Einheit vor.
-            let f = Downloadregeln.fortschritt(geladen: geladen, von: posten.bytes)
-            teile = [String(localized: "\(f.geladen) von \(f.gesamt)")]
+            let f = Downloadregeln.fortschritt(geladen: geladen, von: jetzt.bytes)
+            // Umgewandelt ist das Ende geschätzt — dann steht „≈" davor.
+            teile = [String(localized: "\(f.geladen) von \((posten.umgewandelt ? "≈ " : "") + f.gesamt)")]
         case .wartet:
             teile.append(String(localized: "wartet"))
+            if posten.umgewandelt { teile.append(posten.guete.name) }
         case .angehalten:
             teile.append(String(localized: "angehalten"))
+            if posten.umgewandelt { teile.append(posten.guete.name) }
         case .fehler:
             teile = [posten.grund ?? String(localized: "Fehlgeschlagen")]
         case .fertig:
-            teile.append(Downloadregeln.groesse(posten.bytes))
-            if let c = posten.container { teile.append(c.uppercased()) }
+            teile.append(Downloadregeln.groesse(jetzt.bytes))
+            // **Die gewählte Qualität steht da, wo sonst der Container
+            // steht** — „720p" erklärt die kleine Zahl davor, „MKV" nicht.
+            if posten.umgewandelt {
+                teile.append(posten.guete.name)
+            } else if let c = posten.container {
+                teile.append(c.uppercased())
+            }
             // **H9.** Die Datei bleibt und bleibt spielbar; der Hinweis steht
             // leise daneben, nicht als Fehler.
             if !posten.nochAufDemServer {
@@ -501,7 +522,10 @@ struct DownloadsView: View {
             Stil.grund.ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                // **Lazy, wie jede andere Liste.** Jede Zeile traegt ein Bild
+                // von der Platte; mit einer grossen Offline-Bibliothek baute
+                // das Oeffnen der Seite alle auf einmal statt beim Sichtbarwerden.
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if !laufend.isEmpty {
                         // **Der Rand wird zurueckgerechnet, nicht addiert.**
                         //
@@ -663,7 +687,9 @@ struct DownloadsView: View {
     private func spiele(_ p: Downloadposten) {
         Task {
             guard let plan = await model.plan(for: p.id) else { return }
-            abspielen = Abspielwunsch(item: p.alsItem, plan: plan, startAt: 0)
+            // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
+            abspielen = Abspielwunsch(item: p.alsItem, plan: plan,
+                                      startAt: model.downloads.posten(fuer: p.id)?.fortsetzenAb ?? 0)
         }
     }
 
@@ -781,7 +807,9 @@ struct Bearbeitenknopf: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(Stil.Druckknopf())
-        .accessibilityLabel(Text("Bearbeiten"))
+        // Im Bearbeiten zeigt der Knopf ein Kreuz und beendet es — dann heißt
+        // er auch so.
+        .accessibilityLabel(bearbeiten ? Text("Fertig") : Text("Bearbeiten"))
     }
 }
 
@@ -850,7 +878,9 @@ struct DownloadserieView: View {
     private func spiele(_ p: Downloadposten) {
         Task {
             guard let plan = await model.plan(for: p.id) else { return }
-            abspielen = Abspielwunsch(item: p.alsItem, plan: plan, startAt: 0)
+            // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
+            abspielen = Abspielwunsch(item: p.alsItem, plan: plan,
+                                      startAt: model.downloads.posten(fuer: p.id)?.fortsetzenAb ?? 0)
         }
     }
 

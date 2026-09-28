@@ -147,6 +147,10 @@ import androidx.compose.ui.unit.dp
  * | `pencil` | `edit` | 0 |  |
  * | `eye` | `visibility` | 0 |  |
  * | `exclamationmark` | `priority_high` | 0 |  |
+ * | `person.2` | `group` | 0 |  |
+ * | `person.2.fill` | `group` | 1 |  |
+ * | `hourglass` | `hourglass` | 0 |  |
+ * | `arrow.left.and.right` | `arrow_range` | 0 |  |
  */
 enum class Zeichen(val code: Int, val gefuellt: Boolean, val gespiegelt: Boolean) {
     Haus(0xE88A, false, false),
@@ -247,6 +251,12 @@ enum class Zeichen(val code: Int, val gefuellt: Boolean, val gespiegelt: Boolean
     Stift(0xE150, false, false),
     AugeOffen(0xE417, false, false),
     Ausrufezeichen(0xE645, false, false),
+    Gruppe(0xE7EF, false, false),
+    GruppeVoll(0xE7EF, true, false),
+    Sanduhr(0xEBFF, false, false),
+    Sprungpfeile(0xF69B, false, false),
+    /** `forward.fill` — die Pille bei gedrueckt gehaltenem 2×. */
+    Doppeltempo(0xE01F, true, false),
     ;
 
     val text: String get() = String(Character.toChars(code))

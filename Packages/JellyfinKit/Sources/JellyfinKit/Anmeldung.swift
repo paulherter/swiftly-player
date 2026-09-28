@@ -40,7 +40,15 @@ extension JellyfinClient {
             // sondern heißt nur: dann eben tippen.
             return []
         }
-        return (try? JSONDecoder().decode([OeffentlicherBenutzer].self, from: daten)) ?? []
+        do {
+            return try JSONDecoder().decode([OeffentlicherBenutzer].self, from: daten)
+        } catch {
+            // Leer bleibt richtig — dann wird getippt. Aber nicht stumm: eine
+            // Liste, die der Server schickt und wir nicht lesen, ist ein
+            // Fehler bei uns, und der soll im Protokoll stehen.
+            Spur.sag("[Anmeldung] Users/Public nicht lesbar: \(error)")
+            return []
+        }
     }
 
     /// Adresse des Benutzerbildes auf der Anmeldeseite — ohne Anmeldung, also
@@ -98,7 +106,12 @@ extension JellyfinClient {
         guard let http = antwort as? HTTPURLResponse else { return false }
         if http.statusCode == 404 { throw Quickconnectabgelaufen() }
         guard http.statusCode == 200 else { return false }
-        return (try? JSONDecoder().decode(Antwort.self, from: daten))?.Authenticated ?? false
+        do {
+            return try JSONDecoder().decode(Antwort.self, from: daten).Authenticated
+        } catch {
+            Spur.sag("[Anmeldung] QuickConnect/Connect nicht lesbar: \(error)")
+            return false
+        }
     }
 
     /// **Einmal nachfragen, ohne dass ein Netzfehler das Warten beendet.**

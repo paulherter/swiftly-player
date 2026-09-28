@@ -84,6 +84,14 @@ public final class Stromweiterleiter: @unchecked Sendable {
         // Leerlauf, nicht Gesamtdauer: ein Film läuft Stunden.
         k.timeoutIntervalForRequest = 60
         k.httpMaximumConnectionsPerHost = 16
+        // **Seriell, und das bleibt so** (geprueft 25.09.2026). Der Verdacht
+        // war, dass Untertitel hier auf das Video warten. Tun sie nicht: die
+        // Rueckrufe des `Verteiler` legen nur ein Stueck in den Puffer der
+        // Leitung und kehren zurueck, gesendet wird auf dem eigenen Faden
+        // jeder Verbindung. Eine nebenlaeufige Schlange dagegen darf
+        // `URLSession` die Stuecke einer Aufgabe in beliebiger Reihenfolge
+        // zustellen — Apple verlangt fuer den Delegaten ausdruecklich eine
+        // serielle. Im Video hiesse das vertauschte Bytes.
         let schlange = OperationQueue()
         schlange.maxConcurrentOperationCount = 1
         sitzung = URLSession(configuration: k, delegate: verteiler, delegateQueue: schlange)

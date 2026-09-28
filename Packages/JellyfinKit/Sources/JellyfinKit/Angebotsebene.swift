@@ -111,6 +111,32 @@ public struct Angebotsebene: Sendable, Equatable {
 
     public init() {}
 
+    /// **Die Karte wartet, solange die Steuerung offen ist** (Folgenkarte,
+    /// iPhone und Fernseher, 26.09.2026): sie geht weg, der Countdown hält
+    /// an, und mit dem Schließen der Steuerung kommt sie zurück und zählt
+    /// weiter — sonst spränge es mitten in der Bedienung zur nächsten Folge.
+    /// Abgebrochen wird nur ausdrücklich (``schliessen()``: X, Wegwischen,
+    /// Menü). Aus: das alte Verhalten, bei dem die bewusst geholte Steuerung
+    /// die Karte absagt (Android, Linux, Windows).
+    public var karteWartetBeiSteuerung = false
+
+    private var karteGedeckt: Bool { steuerungDeckt }
+
+    /// Die Karte zählt gerade ihren Countdown (sichtbar oder von der
+    /// Steuerung verdeckt) — dann gehört das Weiterschalten ihr, nicht dem
+    /// Dateiende (``Folgenende/weiterschalten(position:dauer:seitOeffnen:karteZaehlt:)``).
+    public var karteZaehlt: Bool {
+        anlass == .naechsteFolge && !geschlossen && !ausgeloest
+    }
+
+    /// **Nach einem Sprung fängt der Countdown von vorn an** — wer in den
+    /// Abspann oder ans Ende spult, soll die Karte ganz sehen, nicht einen
+    /// Rest, der sofort umschaltet.
+    public mutating func gesprungen() {
+        guard anlass == .naechsteFolge, !geschlossen, !ausgeloest else { return }
+        gelaufen = 0
+    }
+
     /// Ein Takt. `true` heißt: jetzt zur nächsten Folge wechseln — genau
     /// einmal je Folge.
     ///
@@ -127,7 +153,8 @@ public struct Angebotsebene: Sendable, Equatable {
     ///     aufgeht — ``Abschnittslogik/countdown(position:dauer:)``.
     public mutating func takt(angebot neu: Knopfangebot, karteFaellig: Bool,
                               laeuft: Bool, vergangen: Double,
-                              countdown: Double = Self.countdown) -> Bool {
+                              countdown: Double = Self.countdown,
+                              amEnde: Bool = false) -> Bool {
         let neuerAnlass: Anlass
         switch neu {
         case let .ueberspringen(nach, _): neuerAnlass = .ueberspringen(nach: nach)
@@ -147,8 +174,10 @@ public struct Angebotsebene: Sendable, Equatable {
             knopfGelaufen += vergangen
         }
 
-        guard laeuft, vergangen > 0, anlass == .naechsteFolge, !geschlossen,
-              !steuerungDeckt, !ausgeloest else { return false }
+        // **Am Dateiende zählt er weiter, obwohl nichts mehr läuft** —
+        // sonst stünde die Karte nach einem Sprung ans Ende für immer da.
+        guard laeuft || amEnde, vergangen > 0, anlass == .naechsteFolge, !geschlossen,
+              !karteGedeckt, !ausgeloest else { return false }
         gelaufen += vergangen
         if gelaufen >= laenge + Self.nachlauf {
             ausgeloest = true
@@ -173,7 +202,7 @@ public struct Angebotsebene: Sendable, Equatable {
         switch art {
         case .bewusst:
             guard !steuerungDeckt else { return }
-            if anlass == .naechsteFolge { schliessen() }
+            if anlass == .naechsteFolge, !karteWartetBeiSteuerung { schliessen() }
             steuerungOffen = true
             nurNebenbei = false
         case .nebenbei:
@@ -190,7 +219,7 @@ public struct Angebotsebene: Sendable, Equatable {
     public var anzeige: Anzeige {
         guard anlass != .keiner, !geschlossen, !ausgeloest else { return .nichts }
         if anlass == .naechsteFolge {
-            guard !steuerungDeckt else { return .nichts }
+            guard !karteGedeckt else { return .nichts }
             return .karte(anteil: min(gelaufen / laenge, 1))
         }
         guard !knopfAbgelaufen else { return .nichts }
@@ -208,7 +237,7 @@ public struct Angebotsebene: Sendable, Equatable {
 
     /// Sekunden bis zum Wechsel, für Vorlesen und Beschriftung.
     public var countdownRest: Int {
-        Int((laenge - min(gelaufen, laenge)).rounded(.up))
+        Int(gekappt: (laenge - min(gelaufen, laenge)).rounded(.up))
     }
 
     /// Ob am Dateiende von selbst weitergeschaltet wird: nur mit Karte, und
@@ -241,8 +270,9 @@ public struct Angebotsebene: Sendable, Equatable {
     /// Eine neue Folge läuft: alles vergessen, auch eine Absage. Nur ob die
     /// Steuerung offen ist, bleibt — die Ansicht bleibt ja dieselbe.
     public mutating func neueFolge() {
-        let offen = steuerungOffen, nebenbei = nurNebenbei
+        let offen = steuerungOffen, nebenbei = nurNebenbei, wartet = karteWartetBeiSteuerung
         self = Angebotsebene()
+        karteWartetBeiSteuerung = wartet
         steuerungOffen = offen
         nurNebenbei = nebenbei
     }
@@ -312,12 +342,22 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
     /// `Policy.EnableVideoPlaybackTranscoding` — darf der Server für dieses
     /// Konto Video umwandeln? `nil`, wenn er nichts sagt.
     public let umwandelnErlaubt: Bool?
+    /// `Policy.EnableAudioPlaybackTranscoding` — Ton umwandeln. Eine
+    /// umgewandelte Downloadfassung braucht beides, siehe
+    /// ``Downloadqualitaet/waehlbar(videoUmwandeln:tonUmwandeln:)``.
+    public let tonUmwandelnErlaubt: Bool?
 
     public init(naechsteFolgeAutomatisch: Bool?, downloadsErlaubt: Bool? = nil,
-                umwandelnErlaubt: Bool? = nil) {
+                umwandelnErlaubt: Bool? = nil, tonUmwandelnErlaubt: Bool? = nil) {
         self.naechsteFolgeAutomatisch = naechsteFolgeAutomatisch
         self.downloadsErlaubt = downloadsErlaubt
         self.umwandelnErlaubt = umwandelnErlaubt
+        self.tonUmwandelnErlaubt = tonUmwandelnErlaubt
+    }
+
+    /// Ob beim Laden eine kleinere Qualitaet angeboten wird.
+    public var downloadqualitaetWaehlbar: Bool {
+        Downloadqualitaet.waehlbar(videoUmwandeln: umwandelnErlaubt, tonUmwandeln: tonUmwandelnErlaubt)
     }
 
     /// Die Entscheidung liegt im ``Downloadrecht``, nicht in einem `Bool?`,
@@ -332,6 +372,7 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
     enum Rechteschluessel: String, CodingKey {
         case download = "EnableContentDownloading"
         case umwandeln = "EnableVideoPlaybackTranscoding"
+        case tonUmwandeln = "EnableAudioPlaybackTranscoding"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -349,9 +390,11 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
             let p = try aussen.nestedContainer(keyedBy: Rechteschluessel.self, forKey: .policy)
             downloadsErlaubt = try p.decodeIfPresent(Bool.self, forKey: .download)
             umwandelnErlaubt = try p.decodeIfPresent(Bool.self, forKey: .umwandeln)
+            tonUmwandelnErlaubt = try p.decodeIfPresent(Bool.self, forKey: .tonUmwandeln)
         } else {
             downloadsErlaubt = nil
             umwandelnErlaubt = nil
+            tonUmwandelnErlaubt = nil
         }
     }
 }

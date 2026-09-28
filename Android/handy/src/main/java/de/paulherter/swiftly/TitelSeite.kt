@@ -18,9 +18,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +53,7 @@ import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.drawBehind
@@ -60,6 +61,8 @@ import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
@@ -148,7 +151,12 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
     var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
     var aehnlicheGestoert by remember(ziel.id) { mutableStateOf(false) }
+    var sammlungen by remember(ziel.id) { mutableStateOf<List<Sammlungsreihendaten>>(emptyList()) }
+    /** Alles unter der Beschreibung ist beantwortet — siehe `laden`. */
+    var untenDa by remember(ziel.id) { mutableStateOf(false) }
     var umfeldVersuch by remember(ziel.id) { mutableIntStateOf(0) }
+    /** Der Titel selbst kam nicht (Audit 27.09.) — vorher stand die Seite ohne Hinweis auf ewig halb leer. */
+    var titelGestoert by remember(ziel.id) { mutableStateOf(false) }
     var gemerkt by remember(ziel.id) { mutableStateOf(titel?.gemerkt ?: false) }
     var gesehen by remember(ziel.id) { mutableStateOf(titel?.gesehen ?: false) }
     var meldung by remember { mutableStateOf<String?>(null) }
@@ -166,22 +174,51 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
-    LaunchedEffect(ziel.id) { auffrischen() }
-    LaunchedEffect(ziel.id, umfeldVersuch) {
-        try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() })
-            aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
-            extras = o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
-            aehnlicheGestoert = false
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { aehnlicheGestoert = aehnliche.isEmpty() }
+    /** `titelUmfeld` gelesen — `null`, wenn der Abruf scheiterte. */
+    suspend fun umfeldHolen(): Pair<List<Rasterkachel>, List<Extra>>? = try {
+        val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() })
+        o.feldListe("aehnliche") { rasterkachelLesen(it) } to
+            o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
+    } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+
+    fun umfeldAnnehmen(umfeld: Pair<List<Rasterkachel>, List<Extra>>?) {
+        if (umfeld != null) { aehnliche = umfeld.first; extras = umfeld.second; aehnlicheGestoert = false }
+        else aehnlicheGestoert = aehnliche.isEmpty()
     }
+
+    /**
+     * **Alles unter der Beschreibung kommt auf einmal** — Vorlage `ItemDetailView.untenDa` (iOS,
+     * 83677a44). Besetzung, Extras, Sammlung und Aehnliches trafen einzeln ein, drueckten sich in die
+     * Seite und schoben den Rest vor sich her. Jetzt wartet die Seite auf alle Abrufe und blendet sie
+     * zusammen mit der Belegzeile ein: keine Platzhalter, kein Leerhinweis, solange noch geladen wird.
+     */
+    suspend fun laden() {
+        coroutineScope {
+            val a = async { try { titelLesen(withContext(Dispatchers.IO) { app.kern.titel(ziel.id).await() }) }
+                            catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
+            val b = async { umfeldHolen() }
+            val c = async { sammlungsreihenLaden(app.kern, ziel.id) }
+            val neu = a.await(); val umfeld = b.await(); val reihen = c.await()
+            // Ab hier ohne Unterbrechung: alles landet im selben Bild.
+            neu?.let { titel = it; app.titelSpeicher[ziel.id] = it; gemerkt = it.gemerkt; gesehen = it.gesehen }
+            titelGestoert = neu == null && titel == null
+            umfeldAnnehmen(umfeld)
+            sammlungen = reihen
+            untenDa = true
+        }
+    }
+
+    LaunchedEffect(ziel.id) { laden() }
+    // „Erneut versuchen" unter „Aehnliche Titel" fragt nur das Umfeld nach.
+    LaunchedEffect(ziel.id, umfeldVersuch) { if (umfeldVersuch > 0) umfeldAnnehmen(umfeldHolen()) }
 
     // Nach dem Schauen neu laden: Fortschritt, Gesehen und Plan haben sich geaendert.
     val spielt = app.spiel.value != null
     var hatGespielt by remember { mutableStateOf(false) }
     LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; auffrischen() } }
     // Und noch einmal, wenn die Endmeldung durch ist — erst dann kennt der Server die Stelle.
-    val beendet = app.wiedergabeBeendet.intValue
+    // Auch nach einer Aenderung am Sehstand (Kachelmenue) — `seitenAuffrischen` auf iOS.
+    val beendet = app.wiedergabeBeendet.intValue + app.sehstandGeaendert.intValue
     val beendetAnfangs = remember { beendet }
     LaunchedEffect(beendet) { if (beendet != beendetAnfangs) auffrischen() }
 
@@ -201,16 +238,28 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     val t = titel
     val name = t?.name ?: ziel.name
 
+    // **Die Farbe des Kopfbilds unter der Seite** (Versuch `experiment-glas`, `Stimmungsgrund`): am Inhalt
+    // der Scrollflaeche, darueber durchsichtige statt fester Flaechen (`LocalAufBildfarbe`).
+    val stimmung = rememberBildtoene(t?.kopfbild)
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
-            Held(t?.kopfbild, name, t?.nebenzeile.orEmpty())
+        CompositionLocalProvider(LocalAufBildfarbe provides true, LocalBildtoene provides stimmung.toene) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).stimmungsgrund(stimmung, Stil.heldHoehe)) {
+            Held(t?.kopfbild, name, t?.nebenzeile.orEmpty(), stimmung)
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Belegzeile(t)
                 // **Knopf und Aktionsreihe als ein Block**: 8 zwischen ihnen, 14 zu allem anderen.
                 Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Spielknoepfe(t) { ab -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(ziel.id, ab) }
+                val menue = LocalKachelmenue.current
+                Spielknoepfe(t,
+                    // Langer Druck: das Kachelmenue des Titels, wie an seiner Kachel.
+                    lange = menue?.let { m -> {
+                        m(Kachelmenuewunsch(ziel.id, name, t?.typ?.ifEmpty { null } ?: "Movie", t?.kopfbild, quer = true,
+                                             t?.nebenzeile, nachher = { bereich.launch { auffrischen() } }))
+                    } }) { ab -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(ziel.id, ab) }
+                if (titelGestoert && t == null) Stoerhinweis(app.serveradresse(), abstandOben = 12.dp,
+                    erneut = { titelGestoert = false; bereich.launch { laden() } })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Aktionsknopf(if (gemerkt) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen, uebersetzt("Merkliste"), gemerkt) {
                         umschalten(!gemerkt, { gemerkt = it }, { app.kern.merken(ziel.id, it).await() }) { alt, an -> alt.copy(gemerkt = an) }
@@ -235,10 +284,15 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                                 add(Wahl("vonvorn", uebersetzt("Von vorn abspielen")))
                                 add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
                             }
+                            // Nur mit Datei und Recht (`Titelhandlungen.fuerFilm`, `gemeinsam`).
+                            if (t != null && t.planDa && app.gemeinsam.value.darfAnlegen) add(Wahl("gemeinsam", uebersetzt("Gemeinsam schauen")))
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         app.blatt.value = Blattwunsch(name, eintraege, null,
-                            mapOf("vonvorn" to Zeichen.Zurueckspulen, "zuruecksetzen" to Zeichen.RuecksetzenKreis, "metadaten" to Zeichen.Neuladen)) { wahl ->
+                            mapOf("vonvorn" to Zeichen.Zurueckspulen, "zuruecksetzen" to Zeichen.RuecksetzenKreis,
+                                  "gemeinsam" to Zeichen.Gruppe, "metadaten" to Zeichen.Neuladen)) { wahl ->
+                            // Das naechste Blatt, wenn dieses hinaus ist — ein Tausch an Ort und Stelle sprang in der Hoehe.
+                            if (wahl == "gemeinsam") { bereich.launch { kotlinx.coroutines.delay(BLATTWECHSEL); gemeinsamAnlegenOeffnen(app, ziel.id, name) }; return@Blattwunsch }
                             bereich.launch {
                                 when (wahl) {
                                     "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
@@ -269,18 +323,21 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                 }
             }
 
+            // Alles darunter blendet gemeinsam ein, sobald `laden` durch ist (siehe dort).
+            AnimatedVisibility(untenDa, enter = fadeIn(Bewegung.einblenden()), exit = fadeOut()) {
+            Column {
             if (t != null && t.darsteller.isNotEmpty()) Abschnitt(uebersetzt("Besetzung"), 14.dp) {
-                // Ohne Schluessel: dieselbe Person kann zweimal mitspielen.
-                items(t.darsteller) { p -> Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
+                // Dieselbe Person kann zweimal mitspielen — `kachelnMitSchluessel` zaehlt sie durch.
+                kachelnMitSchluessel(t.darsteller, { it.id }) { p -> Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
             }
             if (extras.isNotEmpty()) Abschnitt(uebersetzt("Extras"), 12.dp) {
-                items(extras) { e -> Extrakachel(e) }
+                kachelnMitSchluessel(extras, { it.id }) { e -> Extrakachel(e) }
             }
             // Ueber „Aehnliche Titel": die Sammlung ist die naehere Verwandtschaft. Nur bei Titeln,
             // die in einer stehen (`Sammlungsreihe`).
-            Sammlungsreihe(app, ziel.id, oeffnen)
+            Sammlungsreihe(sammlungen, oeffnen)
             if (aehnliche.isNotEmpty()) Abschnitt(uebersetzt("Ähnliche Titel"), Stil.kachelAbstand) {
-                items(aehnliche) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+                kachelnMitSchluessel(aehnliche, { it.id }) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
             } else if (aehnlicheGestoert) {
                 // Nur dieser Abschnitt hat nicht geantwortet — die Serverformel fuer ihn allein.
                 Column(Modifier.padding(top = Stil.reihenAbstand), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -289,7 +346,10 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                 }
             }
             t?.datei?.let { Dateiauszug(it) }
+            }
+            }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
+        }
         }
 
         Detailkopf(name, { ((scroll.value / dichte - 150f) / 70f).coerceIn(0f, 1f) }, zurueck)
@@ -299,15 +359,16 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 
 /** Vorlage: `Heldbild` + `Heldauslauf` — 300 hoch, Verlauf 190, Titel und Nebenzeile unten links. */
 @Composable
-internal fun Held(bild: String?, name: String, nebenzeile: String) {
+internal fun Held(bild: String?, name: String, nebenzeile: String, stimmung: Bildtonstand? = null) {
     Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
         AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Heldauslauf(Modifier.align(Alignment.BottomStart))
+        Heldauslauf(Modifier.align(Alignment.BottomStart), stimmung)
         Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Stil.randAbstand).padding(bottom = 16.dp),
                verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // **Der Titel ueber einem Heldbild *ist* der Seitentitel** — dieselbe Stufe wie
             // „Einstellungen" (BRAND 2). Die Sperrung bringt die Stufe schon mit.
-            Text(name, style = Stil.titel, color = Stil.schrift)
+            // Hoechstens zwei Zeilen (Audit 27.09.): ein sehr langer Titel schob sonst die Nebenzeile aus dem Bild.
+            Text(name, style = Stil.titel, color = Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
             // **Die Nebenzeile haelt ihren Platz, auch solange sie leer ist.** Der Titel steht sofort
             // da (aus dem Ziel), die Nebenzeile erst nach dem Laden — und die Spalte haengt unten.
             // Kam die Zeile nachtraeglich dazu, rutschte der Titel um eine Zeilenhoehe nach oben.
@@ -319,10 +380,12 @@ internal fun Held(bild: String?, name: String, nebenzeile: String) {
 
 /** Vorlage: `Heldauslauf` — 190 hoch, damit der Titel auch auf hellen Plakaten nicht blank steht (war 130). */
 @Composable
-internal fun Heldauslauf(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(
-        0f to Stil.grund.copy(alpha = 0f), 0.32f to Stil.grund.copy(alpha = 0.28f), 0.56f to Stil.grund.copy(alpha = 0.58f),
-        0.78f to Stil.grund.copy(alpha = 0.85f), 1f to Stil.grund)))
+internal fun Heldauslauf(modifier: Modifier = Modifier, stimmung: Bildtonstand? = null) {
+    // **Mit Bildfarbe endet er nicht in `grund`, sondern im Netz darunter** (`Heldauslauf(bild:)`): genau
+    // der Ausschnitt, der an dieser Stelle unter der Seite liegt.
+    Box(modifier.fillMaxWidth().height(190.dp)
+        .background(Brush.verticalGradient(*HELDSTUFEN.map { (lage, a) -> lage to Stil.grund.copy(alpha = a) }.toTypedArray()))
+        .then(if (stimmung != null) Modifier.heldauslaufFarbe(stimmung, Stil.heldHoehe, 190.dp) else Modifier))
 }
 
 /**
@@ -370,12 +433,12 @@ internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, me
  * 12 und der Fortschritt. Ohne Plan gesperrt.
  */
 @Composable
-private fun Spielknoepfe(t: Titel?, spielen: (Double?) -> Unit) {
+private fun Spielknoepfe(t: Titel?, lange: (() -> Unit)? = null, spielen: (Double?) -> Unit) {
     val bereit = t?.planDa == true
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         val ab = t?.fortsetzenText
-        if (ab != null) Spielknopf(Zeichen.Abspielen, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true) { spielen(t.fortsetzenAb) }
-        else Spielknopf(Zeichen.Abspielen, uebersetzt("Abspielen"), bereit, haupt = true) { spielen(null) }
+        if (ab != null) Spielknopf(Zeichen.Abspielen, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true, lange = lange) { spielen(t.fortsetzenAb) }
+        else Spielknopf(Zeichen.Abspielen, uebersetzt("Abspielen"), bereit, haupt = true, lange = lange) { spielen(null) }
         t?.restzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise) }
         t?.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.clip(RoundedCornerShape(2.dp))) }
     }
@@ -385,15 +448,19 @@ private fun Spielknoepfe(t: Titel?, spielen: (Double?) -> Unit) {
  * Vorlage: `HauptknopfStil` / `NebenknopfStil` — 48 hoch, Ecke 10. **Weiss, nie Akzent**: der
  * Akzent traegt Zustand (E2), keine Knopffarbe.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun Spielknopf(symbol: Zeichen, text: String, an: Boolean, haupt: Boolean,
                         /** Gesperrt auf einem Blatt in `flaeche` braucht der Knopf `erhoeht` — sonst bleibt nur leise Schrift. */
-                        gesperrtFlaeche: Color = Stil.flaeche, tun: () -> Unit) {
+                        gesperrtFlaeche: Color = Stil.flaeche,
+                        /** Langer Druck: das Kachelmenue des Titels (`Kachelmenue.swift`, Hauptknopf). */
+                        lange: (() -> Unit)? = null, tun: () -> Unit) {
     val quelle = remember { MutableInteractionSource() }
     val gedrueckt by quelle.collectIsPressedAsState()
     // `HauptknopfStil`: weiss, gedrueckt 75 %; `NebenknopfStil`: 10 %, gedrueckt 16 %. Sofort an, 120 ms aus.
     val druck = remember { Animatable(0f) }
     LaunchedEffect(gedrueckt) { if (gedrueckt) druck.snapTo(1f) else druck.animateTo(0f, Bewegung.loslassen()) }
+    val ruck = rememberRuck()
     val farbe = when { !an -> Stil.schriftSehrLeise; haupt -> Stil.grund; else -> Stil.schrift }
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke))
             .drawBehind {
@@ -405,7 +472,12 @@ internal fun Spielknopf(symbol: Zeichen, text: String, an: Boolean, haupt: Boole
                     else -> androidx.compose.ui.graphics.lerp(Stil.flaeche, Stil.gedruecktFlaeche, druck.value)
                 })
             }
-            .then(if (an) Modifier.clickable(quelle, null, onClick = tun) else Modifier),
+            .then(when {
+                !an -> Modifier
+                lange != null -> Modifier.combinedClickable(quelle, null,
+                    onLongClick = { ruck(Ruck.Mittel); lange() }, onClick = tun)
+                else -> Modifier.clickable(quelle, null, onClick = tun)
+            }),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
         // Das Zeichen traegt die Schrift des Knopfs: 17 Semibold am Hauptknopf, 15 Medium am Nebenknopf.
@@ -419,7 +491,8 @@ internal fun Spielknopf(symbol: Zeichen, text: String, an: Boolean, haupt: Boole
 @Composable
 internal fun RowScope.Aktionsknopf(symbol: Zeichen, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
     // **Alle Felder einer Reihe tragen dieselben Masse: 48 × 48** (BRAND 7). Sie standen auf 44.
-    Box(Modifier.weight(1f).height(Stil.knopfHoehe).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun)
+    // Ueber Bildfarbe durchsichtig; aktiv traegt nur das Zeichen den Akzent, nie die Flaeche.
+    Box(Modifier.weight(1f).height(Stil.knopfHoehe).clip(RoundedCornerShape(Stil.ecke)).background(knopfflaeche(LocalAufBildfarbe.current)).antippen(tun)
             .semantics { selected = aktiv; role = androidx.compose.ui.semantics.Role.Button },
         contentAlignment = Alignment.Center) {
         // `Stil.rubrikGross`: 17 Semibold.
@@ -433,7 +506,10 @@ internal fun Klapptext(text: String) {
     var offen by remember { mutableStateOf(false) }
     val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
     // `Druckzeile`, nicht Druckknopf: ein Absatz schrumpft nicht. Text in voller Schrift, 15 mit 3 Luft.
-    Row(Modifier.fillMaxWidth().animateContentSize(Bewegung.sprung()).druckzeile { offen = !offen },
+    // **Ueber Bildfarbe keine Flaeche** (`Stil.Drucktext`): dort stand beim Druck ein heller Kasten hinter
+    // dem Text; der Druck zeigt sich dann nur an der Deckkraft der Schrift.
+    val aufBild = LocalAufBildfarbe.current
+    Row(Modifier.fillMaxWidth().animateContentSize(Bewegung.sprung()).then(if (aufBild) Modifier.drucktext { offen = !offen } else Modifier.druckzeile { offen = !offen }),
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(text, style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schrift,
              maxLines = if (offen) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -452,6 +528,24 @@ internal fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> U
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(abstand), content = inhalt)
     }
+}
+
+/**
+ * `items` mit festem Schluessel, auch wenn eine Kennung doppelt vorkommt. Dieselbe Person kann zweimal
+ * mitspielen, derselbe Titel zweimal empfohlen werden — ein doppelter Schluessel wirft in Compose. Die
+ * Wiederholung bekommt deshalb `#2`, `#3`. Mit Schluessel behaelt eine Kachel beim Nachladen ihren
+ * Zustand (geladenes Bild), statt nach Stelle neu gebaut zu werden.
+ */
+internal fun <T> LazyListScope.kachelnMitSchluessel(liste: List<T>, kennung: (T) -> String,
+                                                    inhalt: @Composable LazyItemScope.(T) -> Unit) {
+    val gezaehlt = HashMap<String, Int>()
+    val schluessel = liste.map { e ->
+        val k = kennung(e)
+        val n = (gezaehlt[k] ?: 0) + 1
+        gezaehlt[k] = n
+        if (n == 1) k else "$k#$n"
+    }
+    items(liste.size, key = { schluessel[it] }) { inhalt(liste[it]) }
 }
 
 /** Vorlage: `Besetzungskachel` — Kreis 76, Name zweizeilig, Rolle, 84 breit. */
