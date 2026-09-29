@@ -22,9 +22,9 @@ on:
         required: true
         default: '1.0.0'
       paketstand:
-        description: 'Paketstand (pkgrel) fuer Arch — hochzaehlen, wenn dieselbe Fassung neu geschnuert wird'
+        description: 'Paketstand (deb-Revision, rpm-Release, pkgrel) — leer lassen, dann gilt pkgrel aus Linux/Installieren/PKGBUILD'
         required: false
-        default: '1'
+        default: ''
 
 permissions:
   contents: write
@@ -78,7 +78,7 @@ jobs:
             "${{ steps.f.outputs.wert }}" \
             "$BAUORDNER" \
             "$PWD/pakete" \
-            "${{ github.event.inputs.paketstand || '1' }}"
+            "$(bash Linux/Installieren/paketstand.sh '${{ github.event.inputs.paketstand }}')"
 
       # Ohne Schluessel entsteht eine unsignierte Quelle. Die funktioniert,
       # aber apt maeckert bei jedem Aufruf — deshalb wird signiert, sobald
@@ -208,7 +208,7 @@ jobs:
         run: |
           bash Linux/Installieren/pacman-paket.sh \
             "${{ steps.f.outputs.wert }}" "$BAUORDNER" "$PWD/pakete" \
-            "${{ github.event.inputs.paketstand || '1' }}"
+            "$(bash Linux/Installieren/paketstand.sh '${{ github.event.inputs.paketstand }}')"
 
       # pacman prueft je Paket eine eigene .sig-Datei, nicht die Datenbank —
       # deshalb wird hier jedes Paket einzeln signiert und `repo-add -s`
