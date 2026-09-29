@@ -22,12 +22,12 @@ struct Playermass {
     var seite: CGFloat { Stil.rand(breit: pad) }
     /// Abstand oben; im Fenster liegt iPadOS' Ampel darüber.
     var oben: CGFloat { (pad ? 24 : 16) + (imFenster ? Fensterknoepfe.hoehe : 0) }
-    /// Über dem sicheren Bereich unten. Auf dem iPhone direkt darauf: der
-    /// sichere Bereich hält den Home-Indikator schon frei, mehr Abstand
-    /// ließ die Leiste zu hoch schweben.
-    /// Auf dem iPhone ragt die Trefferfläche etwas in den sicheren Bereich:
-    /// die sichtbare Leiste sitzt so knapp über dem Home-Indikator.
-    var unten: CGFloat { pad ? 22 : -10 }
+    /// Über dem sicheren Bereich unten. Auf dem iPhone **direkt darauf**: die
+    /// Leiste sitzt knapp über dem Home-Indikator, und weil die Trefferfläche
+    /// nie in den sicheren Bereich ragt, greift ein Wisch von ganz unten nicht
+    /// in den Regler. Bei 12 saß die Leiste zu hoch und sah schwebend aus
+    /// (Rückmeldung 29.09.); bei −10 ragte sie in die Home-Zone.
+    var unten: CGFloat { pad ? 22 : 0 }
     /// Trefferfläche der Symbolknöpfe.
     let knopf: CGFloat = 44
     var symbol: CGFloat { pad ? 21 : 19 }
@@ -52,6 +52,9 @@ struct Playermass {
     let ueberLeiste: CGFloat = 20
     /// Höhe der Zeitzeile — die Trefferfläche des Reglers.
     let leiste: CGFloat = 44
+    /// Um so viel ragt die Trefferfläche des Reglers **nach oben** über die
+    /// Zeitzeile hinaus — nach unten nie.
+    let reglerOben: CGFloat = 16
     /// Einzug der Zeilen auf den Ebenen — Spaltentitel, Wahlzeile und
     /// Verzögerung stehen damit auf einer Textkante.
     static let einzug: CGFloat = 10

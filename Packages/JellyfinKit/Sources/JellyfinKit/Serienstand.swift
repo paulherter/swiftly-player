@@ -21,6 +21,16 @@ public extension JellyfinClient {
         }
         return (try? await folgen(seriesID: seriesID))?.first
     }
+
+    /// Dasselbe, aber ein gestörter Abruf **wirft**, statt als „nichts da"
+    /// zurückzukommen. `nil` heisst hier nur noch: die Serie hat keine Folgen.
+    /// Für Stellen, die dem Nutzer sagen, warum nichts startet.
+    func standInSerieGeprueft(_ seriesID: String) async throws -> Item? {
+        if let offen = try await naechsteFolgeDerSerie(seriesID: seriesID) {
+            return offen
+        }
+        return try await folgen(seriesID: seriesID).first
+    }
 }
 
 /// **Welche Staffel beim Öffnen dasteht (A10).**

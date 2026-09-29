@@ -313,4 +313,63 @@ struct SyncPlaySitzungTests {
         #expect(aufruf?["StartPositionTicks"] == "300000000")
         #expect(aufruf?["PlayingQueue"]?.contains("i2") == true)
     }
+
+    // MARK: Leitung abgerissen
+
+    @Test func abrissMitWiedereintrittTrittDerGruppeWiederBei() async {
+        let (s, p) = await geladeneSitzung(stelle: 60)
+        await s.geduldSetzen(leitung: 5, versuche: 3, antwort: 1, pause: 0.05)
+        let readyVorher = Mitschrift.alle("SyncPlay/Ready").count
+
+        s.annehmen(.leitungVerloren)
+        // Die Gruppe bleibt stehen, solange man um sie kämpft.
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await s.lage.gruppe?.id == "g1")
+        #expect(Mitschrift.alle("SyncPlay/Join").isEmpty)
+
+        s.annehmen(.leitungWieder)
+        #expect(await bis { !Mitschrift.alle("SyncPlay/Join").isEmpty })
+        #expect(Mitschrift.alle("SyncPlay/Join")[0].rumpf["GroupId"] == "g1")
+
+        // Der Server bestätigt: Stand melden, keine Fehlermeldung.
+        s.annehmen(.beigetreten(gruppe))
+        #expect(await bis { Mitschrift.alle("SyncPlay/Ready").count > readyVorher })
+        #expect(Mitschrift.alle("SyncPlay/Ready").last?.rumpf["IsPlaying"] == "0")
+        #expect(await s.lage.gruppe?.id == "g1")
+        _ = p
+    }
+
+    @Test func abrissOhneWiedereintrittMeldetVerlust() async {
+        let (s, _) = await geladeneSitzung()
+        await s.geduldSetzen(leitung: 5, versuche: 2, antwort: 0.1, pause: 0.02)
+        let hoerer = Task<String?, Never> {
+            for await m in s.mitteilungen {
+                if case let .fehler(f) = m, case .leitungVerloren = f { return f.text }
+            }
+            return nil
+        }
+        s.annehmen(.leitungVerloren)
+        s.annehmen(.leitungWieder)
+        // Kein GroupJoined: nach den Versuchen ist die Gruppe weg, mit Hinweis.
+        #expect(await bis { await s.lage.gruppe == nil })
+        let fehlerText = await hoerer.value
+        #expect(Mitschrift.alle("SyncPlay/Join").count == 2)
+        #expect(fehlerText?.isEmpty == false)
+    }
+
+    @Test func leitungKehrtNieZurueck() async {
+        let (s, _) = await geladeneSitzung()
+        await s.geduldSetzen(leitung: 0.1, versuche: 1, antwort: 0.1, pause: 0.02)
+        s.annehmen(.leitungVerloren)
+        #expect(await bis { await s.lage.gruppe == nil })
+        #expect(Mitschrift.alle("SyncPlay/Join").isEmpty)
+    }
+
+    @Test func abrissOhneGruppeTutNichts() async {
+        let s = sitzung()
+        s.annehmen(.leitungVerloren)
+        s.annehmen(.leitungWieder)
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(Mitschrift.alle("SyncPlay/Join").isEmpty)
+    }
 }

@@ -57,7 +57,7 @@ struct ServerAufnahmeView: View {
                     else if voreingestellt == nil || model.errorMessage != nil { adressteil }
                     if let fehler = model.errorMessage {
                         Text(fehler)
-                            .font(Stil.klein)
+                            .mitwachsend(12)
                             // Der Server hat nicht geantwortet — das ist
                             // schiefgegangen, nicht abwartend. `fehler`.
                             .foregroundStyle(Stil.fehler)
@@ -120,16 +120,16 @@ struct ServerAufnahmeView: View {
                     Circle().fill(Stil.akzent).frame(width: 7, height: 7)
                     Text("Verbunden · Jellyfin \(server.fassung)")
                         // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
-                        .font(Stil.klein)
+                        .mitwachsend(12)
                         .foregroundStyle(Stil.schriftSehrLeise)
                 }
             } else if let voreingestellt {
                 Text(verbatim: voreingestellt.host() ?? voreingestellt.absoluteString)
-                    .font(Stil.koerper)
+                    .mitwachsend(15)
                     .foregroundStyle(Stil.schriftLeise)
             } else {
                 Text("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
-                    .font(Stil.koerper)
+                    .mitwachsend(15)
                     .lineSpacing(3)
                     .foregroundStyle(Stil.schriftLeise)
             }
@@ -170,7 +170,7 @@ struct ServerAufnahmeView: View {
                 Rectangle().fill(Stil.linie).frame(height: 1)
                 Text("oder")
                     // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
-                    .font(Stil.klein)
+                    .mitwachsend(12)
                     .foregroundStyle(Stil.schriftSehrLeise)
                 Rectangle().fill(Stil.linie).frame(height: 1)
             }

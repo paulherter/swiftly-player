@@ -491,6 +491,12 @@ final class AppModel {
     /// sie nur auf das Erste — wer eine ganze Serie abhakte, sah die Folgen
     /// darunter weiter offen, bis er die Seite neu oeffnete (18.09.2026).
     var seitenAuffrischen: Int { wiedergabeBeendet + sehstandGeaendert }
+    /// Ein Titel wurde gemerkt oder ausgetragen.
+    private(set) var merklisteGeaendert = 0
+    /// **Worauf Listen hören** (Merkliste, Filme/Serien, Suche): Sehstand
+    /// und Lesezeichen. Detailseiten hören bewusst nur auf
+    /// `seitenAuffrischen` — sie haben das Lesezeichen selbst gesetzt.
+    var listenAuffrischen: Int { seitenAuffrischen + merklisteGeaendert }
 
     /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
     ///
@@ -1464,7 +1470,11 @@ final class AppModel {
 
     func setzeMerkliste(_ item: Item, an: Bool) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
-        do { try await client.setzeMerkliste(itemID: item.id, an: an); return nil }
+        do {
+            try await client.setzeMerkliste(itemID: item.id, an: an)
+            merklisteGeaendert += 1
+            return nil
+        }
         catch { return lesbar(error) }
     }
 
@@ -1560,6 +1570,12 @@ final class AppModel {
     func standInSerie(_ serie: Item) async -> Item? {
         guard let client else { return nil }
         return await client.standInSerie(serie.id)
+    }
+
+    /// Wie `standInSerie`, aber eine Störung wirft — `nil` heisst: keine Folgen.
+    func standInSerieGeprueft(_ serie: Item) async throws -> Item? {
+        guard let client else { return nil }
+        return try await client.standInSerieGeprueft(serie.id)
     }
 
     /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404

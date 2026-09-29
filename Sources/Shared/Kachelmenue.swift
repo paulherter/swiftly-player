@@ -145,14 +145,22 @@ struct Kachelmenue: ViewModifier {
                 Label("Zur Übersicht", systemImage: "info.circle")
             }
         }
-        // **Beide Einträge immer, nicht der passende** — eine Folge, durch
-        // die man nur gesprungen ist, gilt als angefangen; „ungesehen" holt
-        // sie aus „Weiterschauen". Wer das will, findet sonst nichts.
-        Button { gesehen(true) } label: {
-            Label("Als gesehen markieren", systemImage: "checkmark.circle")
+        // **Nur der Eintrag mit Wirkung** — außer bei Serien (teils gesehen)
+        // und bei angefangenen Titeln: eine Folge, durch die man nur
+        // gesprungen ist, gilt als angefangen; „ungesehen" holt sie aus
+        // „Weiterschauen". Ein Eintrag ohne Wirkung wäre Rauschen, ein
+        // fehlender Ausweg ein Fehler.
+        let istGesehen = item.userData?.played ?? false
+        let angefangen = item.fortsetzenAb != nil
+        if istSerie || !istGesehen {
+            Button { gesehen(true) } label: {
+                Label("Als gesehen markieren", systemImage: "checkmark.circle")
+            }
         }
-        Button { gesehen(false) } label: {
-            Label("Als ungesehen markieren", systemImage: "eye.slash")
+        if istSerie || istGesehen || angefangen {
+            Button { gesehen(false) } label: {
+                Label("Als ungesehen markieren", systemImage: "eye.slash")
+            }
         }
         // Der Fernseher lädt nichts herunter — es gibt dort keine Downloads.
         #if !os(tvOS)
@@ -183,13 +191,24 @@ struct Kachelmenue: ViewModifier {
         Task {
             var ziel = item
             if item.type == "Series" {
-                guard let stand = await model.standInSerie(item) else {
-                    Kachelwunsch.geteilt.meldung = String(localized: "Danach kommt nichts mehr.")
+                // **Gestört ist nicht „nichts mehr".** Ohne Netz kam hier
+                // dieselbe Auskunft wie bei einer Serie ohne Folgen.
+                do {
+                    guard let stand = try await model.standInSerieGeprueft(item) else {
+                        Kachelwunsch.geteilt.meldung = String(localized: "Danach kommt nichts mehr.")
+                        return
+                    }
+                    ziel = stand
+                } catch {
+                    Kachelwunsch.geteilt.meldung = lesbarerFehler(error)
                     return
                 }
-                ziel = stand
             }
-            Abspielwunsch.starten(ziel, frisch: true, model: model, bereitet: .constant(false)) {
+            Abspielwunsch.starten(ziel, frisch: true, model: model, bereitet: .constant(false),
+                                  fehlt: {
+                                      // Statt Stille, wenn der Server keine Datei hat.
+                                      Kachelwunsch.geteilt.meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+                                  }) {
                 Kachelwunsch.geteilt.abspielen = $0
             }
         }

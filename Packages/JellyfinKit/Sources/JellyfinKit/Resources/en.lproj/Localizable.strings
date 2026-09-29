@@ -139,3 +139,4 @@
 /* Staffel-/Folgenkürzel: Deutsch „F" wie Folge, Englisch „E" wie Episode */
 "F%lld" = "E%lld";
 "S%lld • F%lld" = "S%lld • E%lld";
+"Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "The connection to the group was lost and could not be restored. Please join the group again.";

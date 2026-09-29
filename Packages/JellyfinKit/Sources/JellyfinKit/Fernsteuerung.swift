@@ -39,7 +39,9 @@ public actor Fernsteuerung {
     private let geraeteID: String
     private let sitzung: URLSession
 
-    private var aufgabe: URLSessionWebSocketTask?
+    private var aufgabe: (any Fernleitung)?
+    /// Nach einem Fehlschlag von libcurl-WS bleibt es bei `URLSession`.
+    private var nurURLSession = false
     private var lauscher: Task<Void, Never>?
     private var herzschlag: Task<Void, Never>?
     private var weitergabe: (@Sendable (Fernbefehl) -> Void)?
@@ -151,11 +153,26 @@ public actor Fernsteuerung {
         var anfrage = URLRequest(url: url)
         anfrage.eigeneKoepfeSetzen()
         anfrage.setValue(ausweis, forHTTPHeaderField: "Authorization")
-        let neu = sitzung.webSocketTask(with: anfrage)
-        neu.resume()
+        let neu = leitungBauen(anfrage)
+        neu.aufbauen()
         aufgabe = neu
         lauschen()
         schlagen()
+    }
+
+    /// **Linux und Windows sprechen den Kanal ueber libcurls eigene
+    /// WebSocket-Schnittstelle**, alles andere ueber `URLSession` — siehe
+    /// ``Fernleitung``. Wer eine eigene `URLSession` uebergeben hat (Tests),
+    /// behaelt sie; `SWIFTLY_WS=urlsession` erzwingt den alten Weg.
+    private func leitungBauen(_ anfrage: URLRequest) -> any Fernleitung {
+        #if os(Linux) || os(Windows)
+        if !nurURLSession, sitzung === Fernsteuerung.dauersitzung,
+           ProcessInfo.processInfo.environment["SWIFTLY_WS"] != "urlsession",
+           let curl = CurlLeitung(anfrage: anfrage) {
+            return curl
+        }
+        #endif
+        return URLSessionLeitung(anfrage: anfrage, sitzung: sitzung)
     }
 
     /// Baut die Verbindung nach einem Abriss neu auf.
@@ -192,17 +209,7 @@ public actor Fernsteuerung {
     /// wirklich das Netz.
     private func abrissMelden(_ fehler: Error) {
         var teile = ["[Fernsteuerung] Leitung verloren"]
-        if let http = aufgabe?.response as? HTTPURLResponse {
-            teile.append("HTTP \(http.statusCode)")
-        }
-        if let code = aufgabe?.closeCode, code != .invalid {
-            var satz = "Schliesscode \(code.rawValue)"
-            if let grund = aufgabe?.closeReason,
-               let text = String(data: grund, encoding: .utf8), !text.isEmpty {
-                satz += " (\(text))"
-            }
-            teile.append(satz)
-        }
+        teile.append(contentsOf: aufgabe?.abrissAngaben ?? [])
         teile.append("\(fehler)")
         Spur.sag(teile.joined(separator: " · "))
     }
@@ -211,10 +218,16 @@ public actor Fernsteuerung {
     /// aufgebauter Socket beweist noch nichts — der Server kann ihn
     /// annehmen und danach schweigen.
     private var stehtSchon = false
+    /// Nach einem Abriss noch nicht wieder gemeldet, dass etwas ankommt.
+    private var abgerissenGemeldet = false
     private func ersteAntwortMelden() {
         guard !stehtSchon else { return }
         stehtSchon = true
         Spur.sag("[Fernsteuerung] Leitung steht, erste Nachricht da")
+        if abgerissenGemeldet {
+            abgerissenGemeldet = false
+            syncPlayWeitergabe?(.leitungWieder)
+        }
     }
 
     public func beenden() {
@@ -223,7 +236,7 @@ public actor Fernsteuerung {
         abrisse = 0
         lauscher?.cancel(); lauscher = nil
         herzschlag?.cancel(); herzschlag = nil
-        aufgabe?.cancel(with: .goingAway, reason: nil)
+        aufgabe?.schliessen()
         aufgabe = nil
     }
 
@@ -232,14 +245,19 @@ public actor Fernsteuerung {
             while !Task.isCancelled {
                 guard let self, let aufgabe = await self.laufende else { return }
                 do {
-                    let nachricht = try await aufgabe.receive()
-                    if case let .string(text) = nachricht {
+                    if let text = try await aufgabe.empfangen() {
                         await self.verarbeiten(text)
                     }
                     // Es kam etwas an, die Leitung steht: die Zählung der
                     // Abrisse beginnt beim nächsten Mal wieder bei null.
                     await self.ersteAntwortMelden()
                     await self.zaehlungZuruecksetzen()
+                } catch is LeitungNichtUnterstuetzt {
+                    // Dieses libcurl kann kein WebSocket: alter Weg, gleich.
+                    guard !Task.isCancelled else { return }
+                    Spur.sag("[Fernsteuerung] libcurl ohne WebSocket — URLSession")
+                    await self.aufURLSessionAusweichen()
+                    return
                 } catch {
                     guard !Task.isCancelled else { return }
                     // **Der stillste Punkt der ganzen App, bis heute.** Hier
@@ -255,12 +273,26 @@ public actor Fernsteuerung {
         }
     }
 
-    private var laufende: URLSessionWebSocketTask? { aufgabe }
+    private var laufende: (any Fernleitung)? { aufgabe }
+
+    private func aufURLSessionAusweichen() async {
+        nurURLSession = true
+        aufgabe?.schliessen()
+        aufgabe = nil
+        herzschlag?.cancel(); herzschlag = nil
+        if let weitergabe { starten(bei: weitergabe) }
+    }
 
     private func zaehlungZuruecksetzen() { abrisse = 0 }
 
     private func leitungVerloren() async {
-        aufgabe?.cancel(with: .abnormalClosure, reason: nil)
+        stehtSchon = false
+        // SyncPlay erfaehrt es auf jeder Plattform gleich: der Server wirft
+        // eine Sitzung ohne Leitung aus der Gruppe, die Sitzung tritt nach
+        // der Neuverbindung wieder bei.
+        abgerissenGemeldet = true
+        syncPlayWeitergabe?(.leitungVerloren)
+        aufgabe?.schliessen()
         aufgabe = nil
         herzschlag?.cancel(); herzschlag = nil
         await neuVerbinden()
@@ -321,7 +353,7 @@ public actor Fernsteuerung {
         // Fuenfte stumme Stelle an einem Tag. Sie sagt jetzt Bescheid.
         Task {
             do {
-                try await aufgabe.send(.string(text))
+                try await aufgabe.senden(text)
             } catch {
                 Spur.sag("[Fernsteuerung] senden fehlgeschlagen: \(error)")
             }

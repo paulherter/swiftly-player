@@ -598,10 +598,13 @@ struct BibliothekView: View {
     /// wird von vier Stellen (Kennung, Bibliothekswahl, nachgereichtes
     /// Angebot, „Erneut versuchen"); vorher liefen sie nebeneinander her.
     @State private var ladeaufgabe: Task<Void, Never>?
+    /// Ein Kontowechsel läuft: Inhalt, Zähler und Störmeldung halten still.
+    @State private var wechsel = false
 
     @Environment(\.breit) private var breit
     /// Ist dieser Bereich vorn? Nur dann gilt, was die Scrollflaeche meldet.
     @Environment(\.bereichAktiv) private var bereichAktiv
+    @Environment(\.reiterNochmal) private var nochmal
 
     /// Die Spaltenzahl folgt der Breite, die Kacheln füllen ihre Spalte.
     ///
@@ -695,6 +698,9 @@ struct BibliothekView: View {
         // Dasselbe gilt für Sammlungen und gemischte Bibliotheken: sie kommen
         // aus `angebotLaden()` nach. Ändert sich damit, was „Alle" liest oder
         // was gewählt sein darf, wird neu geladen.
+        // Gesehen- oder Lesezeichenwechsel anderswo: still nachladen, die
+        // Kacheln zeigen sonst Balken und Haken von vorher.
+        .onChange(of: model.listenAuffrischen) { _, _ in neuLaden() }
         .onChange(of: angebotskennung) { _, _ in
             let neu = model.bereichswahl(art: art)
             guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
@@ -756,6 +762,15 @@ struct BibliothekView: View {
             }
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
+            // Beim Kontowechsel wie die Startseite: alter Inhalt sofort weg,
+            // der neue blendet gestaffelt ein.
+            .kontowechselblende(model: model,
+                                bereit: !stand.veraltet(model) && (!stand.items.isEmpty || !stand.laedt) && !stand.gestoert,
+                                wechsel: $wechsel)
+            // Neue Ordnung heisst: oben anfangen; ebenso der zweite Tipp auf
+            // den Reiter, in dem man schon ist.
+            .nachOben(ordnung: "\(stand.kennung)|\(wahl)", nochmal: nochmal,
+                      aktiv: bereichAktiv)
             // Der Weg des Fingers, nicht der um den Rand bereinigte Versatz —
             // warum, steht in `Kopfscrollweg` im Paket.
             .scrollweg(aktiv: bereichAktiv) { versatz = $0 }
@@ -790,6 +805,8 @@ struct BibliothekView: View {
             if wahl == .sammlungen {
                 // Die Liste steht schon im Speicher: „Sammlungen" gibt es im
                 // Menü nur, wenn es welche gibt. Kein Laden, kein Leer.
+            } else if wechsel || Kontowechselflug.geteilt.wartet {
+                // Beim Kontowechsel weder Stoer- noch Leerzustand: nur leer.
             } else if stand.gestoert {
                 // Derselbe Text wie auf der Startseite, samt Serveradresse.
                 // Vorher stand hier „Hier ist noch nichts" — dieselbe Ursache,
@@ -818,6 +835,9 @@ struct BibliothekView: View {
             }
         }
     }
+
+    /// Kein Wechsel unterwegs und kein Flug: Kopfzeichen und Inhalt stehen.
+    private var da: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
 
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
@@ -857,6 +877,7 @@ struct BibliothekView: View {
                                     Image(systemName: "chevron.down")
                                         .font(Stil.listentitel)
                                         .foregroundStyle(Stil.schriftLeise)
+                                        .kontowechselteil(da: da)
                                 }
                             }
                             .buttonStyle(Stil.Druckknopf())
@@ -883,7 +904,7 @@ struct BibliothekView: View {
                     // teilten sich den Platz zu gleichen Teilen: die Chips
                     // landeten in der Mitte statt rechts.
                     if breit, gezeigt > 0 {
-                        Zaehlmarke(anzahl: gezeigt)
+                        Zaehlmarke(anzahl: gezeigt).kontowechselteil(da: da)
                     }
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
@@ -908,6 +929,7 @@ struct BibliothekView: View {
                                sortierungOffen: $sortierlisteOffen,
                                versatz: versatz,
                                nurAnzahl: wahl == .sammlungen ? sammlungsliste.count : nil)
+                    .kontowechselteil(da: da)
             }
         }
     }

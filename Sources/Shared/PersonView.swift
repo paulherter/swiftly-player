@@ -219,7 +219,7 @@ struct PersonView: View {
         } else {
             if !titel.isEmpty {
                 Abschnitt(titel: "Auf deinem Server") {
-                    HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                    LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
                         ForEach(titel) { item in
                             NavigationLink(value: item) {
                                 PosterTile(model: model, item: item)
@@ -234,7 +234,7 @@ struct PersonView: View {
             }
             if !anfragbar.isEmpty {
                 Abschnitt(titel: "Kann angefragt werden") {
-                    HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                    LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
                         ForEach(anfragbar) { t in
                             NavigationLink(value: t) {
                                 Seerrkachel(treffer: t, breite: Stil.kachelBreite)

@@ -141,3 +141,4 @@
 /* Staffel-/Folgenkürzel: Deutsch „F" wie Folge, Englisch „E" wie Episode */
 "F%lld" = "F%lld";
 "S%lld • F%lld" = "S%lld • F%lld";
+"Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei.";

@@ -327,7 +327,7 @@ struct Downloadzeile: View {
                 // dem Titel unter einem Plakat. Der Token haelt beides
                 // zusammen, damit es nicht wieder auseinanderlaeuft.
                 Text(verbatim: gruppe?.titel ?? posten.titel)
-                    .font(Stil.listentitel)
+                    .mitwachsend(15, .semibold)
                     .lineLimit(1)
                 // 12,5 war eine halbe Stufe zwischen zwei ganzen; die Angabe
                 // unter einem Titel ist 12 Regular.
@@ -336,7 +336,7 @@ struct Downloadzeile: View {
                     // Liste untereinander, und BRAND 2 nennt Laufzeiten und
                     // Groessen ausdruecklich: gleich breite Ziffern, sonst
                     // wandern die Komma- und Punktstellen von Zeile zu Zeile.
-                    .font(Stil.klein.monospacedDigit())
+                    .mitwachsend(12).monospacedDigit()
                     .foregroundStyle(unterfarbe)
                     .lineLimit(1)
                 if let anteil = anteil(geladen), posten.stand == .laedt || posten.stand == .angehalten {
@@ -502,6 +502,8 @@ struct DownloadsView: View {
     let model: AppModel
 
     @Environment(\.breit) private var breit
+    @Environment(\.bereichAktiv) private var bereichAktiv
+    @Environment(\.reiterNochmal) private var nochmal
     @State private var versatz: CGFloat = 0
     @State private var bearbeiten = false
     @State private var gewaehlt: Set<String> = []
@@ -581,6 +583,7 @@ struct DownloadsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
+            .nachOben(nochmal: nochmal, aktiv: bereichAktiv)
             .contentMargins(.bottom, bearbeiten ? 84 : 24, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
@@ -1022,7 +1025,7 @@ struct DownloadserieView: View {
                 .padding(.horizontal, Stil.rand(breit: breit))
         }
         .contextMenu {
-            Button(role: .destructive) { entfernen([p.id]) } label: {
+            Button(role: .destructive) { Stil.ruck(.mittel); entfernen([p.id]) } label: {
                 Label("Download entfernen", systemImage: "trash")
             }
         }
@@ -1069,7 +1072,7 @@ struct DownloadserieView: View {
                 .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
             Text(verbatim: angabe)
-                .font(Stil.klein)
+                .mitwachsend(12)
                 .monospacedDigit()
                 .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)

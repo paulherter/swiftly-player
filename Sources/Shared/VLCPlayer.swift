@@ -727,11 +727,12 @@ final class VLCPlayerView: Basisansicht {
         }
         guard !absichtlichBeendet else { return }
         guard zustand == .stopped || zustand == .stopping || zustand == .error else { return }
-        // Ein Fehler vor dem ersten Bild löst hier nichts aus — die
-        // Oberfläche zeigt dann weiter „lädt". Wenigstens das Protokoll
-        // soll es sagen; den Grund nennen die vlc-Zeilen davor.
+        // Ein Fehler vor dem ersten Bild: das Protokoll sagt es, den Grund
+        // nennen die vlc-Zeilen davor. Die Oberfläche erfährt es auch und
+        // zeigt „Das startet nicht" statt endlos Schwarz.
         if zustand == .error, letzteGutePosition <= 1 {
             Protokoll.schreib("[VLC] Fehler vor dem ersten Bild")
+            startFehlerGemeldet?("VLC-Fehler vor dem ersten Bild")
         }
         let laenge = laengeSekunden
         guard letzteGutePosition > 1 else { return }
@@ -1414,6 +1415,8 @@ final class VLCPlayerView: Basisansicht {
         }
         guard let medium = VLCMedia(url: vlcAdresse) else {
             Self.log.error("Medium ließ sich nicht öffnen: \(url.ohneGeheimnis, privacy: .public)")
+            Protokoll.schreib("[VLC] Medium ließ sich nicht öffnen")
+            startFehlerGemeldet?("Medium ließ sich nicht öffnen")
             return
         }
 
@@ -1903,6 +1906,11 @@ final class VLCPlayerView: Basisansicht {
     /// meldet nicht.
     var sprungGemeldet: ((Double) -> Void)?
 
+    /// Bricht VLC ab, bevor das erste Bild da ist (Datei nicht lesbar, Strom
+    /// nicht erreichbar, Medium nicht zu öffnen), meldet das hier den Grund.
+    /// Die Oberfläche zeigt dann eine Meldung statt endlos Schwarz.
+    var startFehlerGemeldet: ((String) -> Void)?
+
     func pause() {
         if pausiertSeit == nil { pausiertSeit = Date() }
         player.pause()
@@ -2020,6 +2028,7 @@ final class VLCPlayerView: Basisansicht {
         onWiederherstellung = nil
         laeuftGemeldet = nil
         sprungGemeldet = nil
+        startFehlerGemeldet = nil
         spurenGemeldet = nil
         #if os(iOS)
         onPiPAvailable = nil

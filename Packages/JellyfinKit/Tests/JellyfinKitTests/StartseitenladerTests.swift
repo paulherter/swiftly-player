@@ -25,6 +25,17 @@ struct StartseitenladerTests {
         func titel(gattung: String, limit: Int) async -> [Item]? { gattungen[gattung] }
         var sichten: [Item]? = []
         func bibliotheken() async -> [Item]? { sichten }
+        /// Was der Server fuer `IncludeItemTypes=<Gattung>` ohne ParentId
+        /// liefert; fehlt der Eintrag, die gemischte Liste nach Gattung gefiltert.
+        var getypt: [String: [Item]] = [:]
+        func neuzugaenge(gattung: String, holen: Int, zeigen: Int) async -> [Item]? {
+            getypt[gattung] ?? neu[""]?.filter { $0.type == gattung }
+        }
+        /// Was `IncludeItemTypes=Series` liefert; Schluessel „" fuer alle Bibliotheken.
+        var serien: [String: [Item]] = [:]
+        func neueSerien(in bibliothek: String?, zeigen: Int) async -> [Item]? {
+            serien[bibliothek ?? ""]
+        }
     }
 
     private func t(_ id: String) -> Item { Item(id: id, name: id) }
@@ -136,6 +147,62 @@ struct StartseitenladerTests {
         let weg = Quelle(neu: [:], sichten: nil)
         let w = await Startseitenlader.laden(von: weg, .init(getrennt: true))
         #expect(w.neueFilme == nil && w.neueSerien == nil)
+    }
+
+    @Test("Viele neue Filme fuellen die gemischte Liste: Neue Serien fragt nur nach Folgen")
+    func filmeVerdraengenFolgen() async {
+        // Serienbibliothek ohne Art; zuletzt kamen viele Filme dazu, die
+        // gemischte Liste enthaelt keine einzige Folge mehr.
+        let filme = (1...24).map { film("f\($0)") }
+        let q = Quelle(neu: ["": filme], sichten: [Item(id: "a", name: "Filme", collectionType: "movies"),
+                                                   Item(id: "b", name: "Serien")],
+                       getypt: ["Episode": [folge("e1")]])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true, filmBibliothek: "a"))
+        #expect(s.neueSerien?.map(\.id) == ["e1"])
+    }
+
+    @Test("Server erkennt keine Folgen (gemischte Art): Rueckfall wie bis 1.0.4")
+    func keineFolgenWie104() async {
+        let gemischt = [film("f1"), Item(id: "v1", name: "v1", type: "Video")]
+        let q = Quelle(neu: ["": gemischt], sichten: [Item(id: "m", name: "Alles", collectionType: "mixed")],
+                       getypt: ["Episode": []])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f1"])
+        // Nie Filme in „Neue Serien" — auch nicht im letzten Rueckfall.
+        #expect(s.neueSerien?.map(\.id) == ["v1"])
+    }
+
+    @Test("Nur Filme neu, Serien ohne Bibliothekstyp: die Serien-Abfrage traegt die Reihe")
+    func serienOhneBibliothekstyp() async {
+        let filme = (1...24).map { film("f\($0)") }
+        let q = Quelle(neu: ["": filme + [folge("e1")]],
+                       sichten: [Item(id: "a", name: "Filme", collectionType: "movies"),
+                                 Item(id: "b", name: "Serien")],
+                       getypt: ["Episode": []],
+                       serien: ["": [Item(id: "s1", name: "s1", type: "Series")]])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true, filmBibliothek: "a"))
+        #expect(s.neueSerien?.map(\.id) == ["s1"])
+        #expect(s.neueFilme?.allSatisfy { $0.type == "Movie" } == true)
+        let zeilen = Protokollring.geteilt.auszug(sekunden: 60).joined(separator: "\n")
+        #expect(zeilen.contains("Neu tvshows: Serien-Abfrage"))
+    }
+
+    @Test("Serienreihe zeigt nie Filme, auch wenn alles andere leer ist")
+    func serienNieFilme() async {
+        let q = Quelle(neu: ["": [film("f1"), film("f2")]], sichten: nil)
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueSerien?.isEmpty == true)
+        #expect(s.neueFilme?.map(\.id) == ["f1", "f2"])
+    }
+
+    @Test("Gruppierte Antwort (Serien statt Folgen) wird nicht weggefiltert")
+    func gruppierteSerien() async {
+        // Wie Items/Latest mit GroupItems: Serienobjekte statt Folgen.
+        let serie = Item(id: "s1", name: "Serie", type: "Series")
+        let q = Quelle(neu: ["": [film("f1"), serie]], sichten: [Item(id: "b", name: "Serien")],
+                       getypt: ["Episode": [serie]])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueSerien?.map(\.id) == ["s1"])
     }
 
     @Test("Der Rueckfall steht mit Grund im Protokoll")

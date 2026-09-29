@@ -86,7 +86,10 @@ class PlayerAktivitaet : ComponentActivity() {
         // **Mit der Geste ins kleine Fenster, nicht danach.** Nach oben gewischt ging die Aktivitaet
         // zuerst in den Hintergrund; Android baute dabei die Videoflaeche ab, und das kleine Fenster
         // blieb schwarz — auch nach dem Zurueckholen. Ab Android 12 verkleinert das System selbst.
-        if (android.os.Build.VERSION.SDK_INT >= 31 && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+        // **Nie auf dem Fernseher:** Bildschirmschoner und Home schicken die Aktivitaet in den Hintergrund,
+        // ohne dass jemand den Player verlaesst; mit Auto-Enter lief das Bild als Fenster ueber dem Schoner
+        // weiter, und beim Schliessen beendete sich der Player (siehe `onPictureInPictureModeChanged`).
+        if (android.os.Build.VERSION.SDK_INT >= 31 && bildImBildErlaubt(app.istFernseher, packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))) {
             runCatching { setPictureInPictureParams(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setAutoEnterEnabled(true).build()) }
         }
         setContent {
@@ -173,7 +176,7 @@ class PlayerAktivitaet : ComponentActivity() {
 
     /** `false`, wenn das Geraet kein Bild-im-Bild kann. */
     fun bildImBild(): Boolean {
-        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
+        if (!bildImBildErlaubt((application as SwiftlyAnwendung).istFernseher, packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))) return false
         return runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()) }
             .getOrDefault(false)
     }
@@ -181,6 +184,7 @@ class PlayerAktivitaet : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Vor Android 12 gibt es kein automatisches Verkleinern — dort bleibt der Hinweis beim Verlassen.
+        // Auf dem Fernseher nie (`bildImBild` prueft es): der Schoner darf den Player nur anhalten.
         if (!isFinishing && android.os.Build.VERSION.SDK_INT < 31) bildImBild()
     }
 
@@ -198,6 +202,9 @@ class PlayerAktivitaet : ComponentActivity() {
         (application as SwiftlyAnwendung).kleinesFenster.value = false
     }
 }
+
+/** Darf der Player ins kleine Fenster? Nur auf dem Handy und nur, wenn das Geraet es kann. */
+internal fun bildImBildErlaubt(istFernseher: Boolean, kannBildImBild: Boolean): Boolean = !istFernseher && kannBildImBild
 
 private const val SPIEL_ID = "spiel.id"
 private const val SPIEL_AB = "spiel.ab"

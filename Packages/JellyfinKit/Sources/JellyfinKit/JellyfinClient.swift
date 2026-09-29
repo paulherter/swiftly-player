@@ -955,8 +955,12 @@ public actor JellyfinClient {
     /// `schlank`: nur, was ``Listenregeln/jeTitelEinmal(_:zeigen:)`` zum
     /// Zusammenfassen braucht — ohne Beschreibung, Bilder und Nutzerdaten.
     /// Siehe ``zuletztHinzugefuegt(in:holen:zeigen:)``.
+    ///
+    /// `gattungen`: Jellyfins `IncludeItemTypes` — nur Folgen etwa fuer
+    /// „Neue Serien" ohne Bibliothek, damit Filme den Vorrat nicht aufbrauchen.
     public func neuDazugekommen(parentID: String? = nil, limit: Int = 20,
-                                schlank: Bool = false) async throws -> [Item] {
+                                schlank: Bool = false,
+                                gattungen: String = "Movie,Episode") async throws -> [Item] {
         let s = try requireSession()
         var query: [URLQueryItem] = [
             .init(name: "userId", value: s.userID),
@@ -964,7 +968,7 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: "true"),
             .init(name: "SortBy", value: "DateCreated"),
             .init(name: "SortOrder", value: "Descending"),
-            .init(name: "IncludeItemTypes", value: "Movie,Episode"),
+            .init(name: "IncludeItemTypes", value: gattungen),
             .init(name: "IsVirtualItem", value: "false"),
         ]
         if schlank {

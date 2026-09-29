@@ -19,6 +19,8 @@ struct ProfilView: View {
     @Environment(\.breit) private var breit
 
     @State private var kontoAufnehmen = false
+    /// Abmelden fragt nach: ein Tipp daneben kostet sonst den Zugang.
+    @State private var abmeldeblatt = false
     /// **Die Serveraufnahme als geschobene Seite.**
     ///
     /// Das Ziel steht hier und nicht bei den uebrigen in `HauptView`, weil es
@@ -118,7 +120,7 @@ struct ProfilView: View {
                         // letzten geht es zurueck zur Anmeldung. Steht so im
                         // Zustandshalter, nicht hier.
                         Profilzeile(symbol: "rectangle.portrait.and.arrow.right",
-                                    titel: "Abmelden", letzte: true) { model.signOut() }
+                                    titel: "Abmelden", letzte: true) { abmeldeblatt = true }
                     }
 
 
@@ -189,6 +191,14 @@ struct ProfilView: View {
         }
         .background(WischZurueck())
         #endif
+        .overlay(alignment: .topTrailing) {
+            Handlungsblatt(offen: $abmeldeblatt,
+                           titel: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
+                           handlungen: [
+                Titelhandlung(symbol: "rectangle.portrait.and.arrow.right",
+                              text: "Abmelden", warnend: true) { model.signOut() },
+            ])
+        }
         .sheet(item: $protokoll) { datei in
             Teilenblatt(datei: datei.url)
                 .presentationDetents([.medium, .large])
@@ -330,6 +340,10 @@ struct QuickConnectView: View {
                 try await model.quickConnectFreigeben(code: code)
                 geschafft = true
                 meldung = String(localized: "Freigegeben. Das andere Gerät ist gleich angemeldet.")
+                Stil.ruck(.mittel)
+                #if os(iOS)
+                AccessibilityNotification.Announcement(meldung ?? "").post()
+                #endif
                 try? await Task.sleep(for: .seconds(2))
                 zurueck()
             } catch {
@@ -433,6 +447,7 @@ private struct Kontenstreifen: View {
         let mittig = konto.userID == zentriert
         let mass = mittig ? 84 : kleinesMass
         return Button {
+            if !verbunden { Stil.ruck(.mittel) }
             model.kontoWechseln(zu: konto.userID)
         } label: {
             VStack(spacing: 0) {
@@ -530,6 +545,7 @@ private struct Kontokarte: View {
 
     /// **Wechseln, mit Bewegung** — siehe ``Kontowechselflug``.
     private func wechseln(zu konto: Session) {
+        Stil.ruck(.mittel)
         let von = kreise.rahmen[konto.kontoschluessel] ?? .zero
         let adresse = model.benutzerbildURL(fuer: konto)
         // Liegt kein Bild im Speicher, zeigt die Karte den Buchstaben — und

@@ -64,6 +64,8 @@ public enum SyncPlayFehler: Error, Sendable {
     /// Aufgerufen, aber über den Steuerkanal kam nichts zurück.
     case keineAntwort
     case gibtEsNicht
+    /// Die Leitung riss ab und der Wiedereintritt gelang nicht.
+    case leitungVerloren
     case anderer(any Error & Sendable)
 
     public var text: String {
@@ -74,6 +76,8 @@ public enum SyncPlayFehler: Error, Sendable {
             return uebersetzt("Die Gruppe kam nicht zustande: vom Server kam keine Antwort über die Verbindung. Versuch es gleich noch einmal.")
         case .gibtEsNicht:
             return uebersetzt("Diese Gruppe gibt es nicht mehr.")
+        case .leitungVerloren:
+            return uebersetzt("Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei.")
         case let .anderer(fehler):
             return lesbarerFehler(fehler)
         }
@@ -179,6 +183,17 @@ public actor SyncPlaySitzung {
 
     private var spieler: (any SyncPlaySpieler)?
     private var befehlNummer = 0
+    /// Die Gruppe, aus der die Leitung uns geworfen hat — bis der
+    /// Wiedereintritt geklappt hat oder endgültig gescheitert ist.
+    private var verlorenAus: SyncPlayGruppe?
+    private var wiedereintritt: Task<Void, Never>?
+    private var leitungsfrist: Task<Void, Never>?
+    /// Wie lange nach einem Abriss auf die Neuverbindung gewartet wird, wie
+    /// oft und wie lange auf den Beitritt. Für Tests kürzer.
+    var geduld = (leitung: 60.0, versuche: 3, antwort: 5.0, pause: 2.0)
+    func geduldSetzen(leitung: Double, versuche: Int, antwort: Double, pause: Double) {
+        geduld = (leitung, versuche, antwort, pause)
+    }
     private let eingang: AsyncStream<SyncPlayNachricht>.Continuation
 
     public init(client: @escaping Clientquelle, ich: @escaping Namensquelle,
@@ -347,6 +362,9 @@ public actor SyncPlaySitzung {
     }
 
     private func allesZuruecksetzen() {
+        verlorenAus = nil
+        wiedereintritt?.cancel(); wiedereintritt = nil
+        leitungsfrist?.cancel(); leitungsfrist = nil
         lage.gruppe = nil
         lage.zustand = nil
         lage.schlangeTitel = nil
@@ -376,6 +394,7 @@ public actor SyncPlaySitzung {
             lage.zustand = g.zustand
             lage.angebote.removeAll { $0.id == g.id }
             if neu { uhrStarten() }
+            if verlorenAus?.id == g.id { verlorenAus = nil }
         case .verlassen, .nichtInGruppe:
             if lage.gruppe != nil { allesZuruecksetzen() }
         case .gibtEsNicht:
@@ -395,6 +414,25 @@ public actor SyncPlaySitzung {
             lage.gruppe = SyncPlayGruppe(id: g.id, name: g.name, zustand: lage.zustand,
                                          teilnehmer: liste, stand: g.stand)
             if name != (await ichQuelle()) { melden(.gegangen(name)) }
+        case .leitungVerloren:
+            guard let g = lage.gruppe, verlorenAus == nil else { return }
+            sag("Leitung verloren — merke Gruppe \(g.id)")
+            verlorenAus = g
+            // Kommt die Leitung nicht zurueck, nicht ewig still bleiben.
+            let frist = geduld.leitung
+            leitungsfrist?.cancel()
+            leitungsfrist = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(frist))
+                guard !Task.isCancelled else { return }
+                await self?.wiedereintrittGescheitert("Leitung kam nicht zurück")
+            }
+        case .leitungWieder:
+            guard let ziel = verlorenAus else { return }
+            leitungsfrist?.cancel(); leitungsfrist = nil
+            wiedereintritt?.cancel()
+            wiedereintritt = Task { [weak self] in
+                await self?.wiederEintreten(ziel)
+            }
         case let .zustand(neu, grund):
             let vorher = lage.zustand
             lage.zustand = neu
@@ -404,6 +442,44 @@ public actor SyncPlaySitzung {
         case let .befehl(b):
             befehlAnnehmen(b)
         }
+    }
+
+    /// Nach der Neuverbindung zurueck in die Gruppe: `Join`, auf `GroupJoined`
+    /// warten, dann Stand melden. Die Warteschlange, die der Server beim
+    /// Beitritt schickt, gleicht Titel und Stelle ab (siehe
+    /// ``schlangeAnnehmen(_:)``).
+    private func wiederEintreten(_ ziel: SyncPlayGruppe) async {
+        for versuch in 1...max(1, geduld.versuche) {
+            guard !Task.isCancelled, verlorenAus != nil else { return }
+            guard let client = await clientQuelle() else { break }
+            do {
+                try await client.syncPlayBeitreten(ziel.id)
+            } catch {
+                sag("Wiedereintritt \(versuch) fehlgeschlagen: \(error)")
+                try? await Task.sleep(for: .seconds(geduld.pause))
+                continue
+            }
+            let ende = Date().addingTimeInterval(geduld.antwort)
+            while Date() < ende, verlorenAus != nil, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            if Task.isCancelled { return }
+            if verlorenAus == nil {
+                sag("wieder in der Gruppe \(ziel.id)")
+                if spieler != nil, geladenFuer != nil {
+                    await standMelden(bereit: true, laeuft: lage.zustand == .laeuft)
+                }
+                return
+            }
+        }
+        if !Task.isCancelled { wiedereintrittGescheitert("kein Wiedereintritt") }
+    }
+
+    private func wiedereintrittGescheitert(_ grund: String) {
+        guard verlorenAus != nil else { return }
+        sag("Gruppe endgültig verloren: \(grund)")
+        allesZuruecksetzen()
+        fehler(.leitungVerloren)
     }
 
     private func melden(_ art: SyncPlayEreignis.Art) {

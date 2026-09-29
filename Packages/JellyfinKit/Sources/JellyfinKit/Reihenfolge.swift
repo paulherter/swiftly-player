@@ -196,9 +196,10 @@ public extension JellyfinClient {
     /// Beschreibung: am 25.09.2026 gemessen **457 KB** für die Reihe „Neue
     /// Serien" auf dem Prüfserver, ohne Kompression, für 16 Kacheln.
     func zuletztHinzugefuegt(in bibliothek: String? = nil,
-                             holen: Int = 200, zeigen: Int = 24) async -> [Item]? {
+                             holen: Int = 200, zeigen: Int = 24,
+                             gattungen: String = "Movie,Episode") async -> [Item]? {
         guard let roh = try? await neuDazugekommen(parentID: bibliothek, limit: holen,
-                                                   schlank: true)
+                                                   schlank: true, gattungen: gattungen)
         else { return nil }
         // **Über alle Bibliotheken: erst je Werk einmal** (``Werke``) — damit
         // von zwei Kopien die aus der eigentlichen Bibliothek stehen bleibt,
