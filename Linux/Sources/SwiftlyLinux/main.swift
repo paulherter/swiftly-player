@@ -34,6 +34,11 @@ Startstufe.melden("programm")
 // steht, sind die Uhrzeiten gegen die des Startprogramms verschoben und die
 // Laufzeit ist das Mass. Siehe ``Protokoll``.
 Protokoll.zeitzoneMelden()
+// Welche Sprache die Oberflaeche nimmt und warum — ein Bericht „englisch
+// auf deutschem Windows" ist sonst nicht zu klaeren.
+Protokoll.schreib("[Sprache] Wuensche \(oberflaechenkatalog.wuensche.joined(separator: ", ")), "
+    + "vorhanden \(oberflaechenkatalog.vorhandeneSprachen.joined(separator: ", ")), "
+    + "gewaehlt \(oberflaechenkatalog.sprache)")
 
 // **Das Paket bekommt seinen Faden nach draussen**, wie auf den
 // Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket

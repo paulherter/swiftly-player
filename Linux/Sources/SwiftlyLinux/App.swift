@@ -442,9 +442,11 @@ final class App: @unchecked Sendable {
     private func kontenHolen(_ c: JellyfinClient) {
         anmeldeclient = c
         Task.detached { [self] in
-            async let konten = try? await c.oeffentlicheBenutzer()
-            async let schnell = await c.quickConnectVerfuegbar()
-            let (liste, moeglich) = await (konten ?? [], schnell)
+            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
+            let konten = nebenher { try? await c.oeffentlicheBenutzer() }
+            let schnell = nebenher { await c.quickConnectVerfuegbar() }
+            let liste = await konten.value ?? []
+            let moeglich = await schnell.value
             // **Die Adresse vor dem Hauptfaden holen.** `benutzerbild` gehört
             // dem Client-Actor; im Aufbau der Kachel wäre es ein Zugriff von
             // aussen.
@@ -4385,16 +4387,17 @@ final class App: @unchecked Sendable {
         angebotLaeuft = fuer
         let stand = sichten
         Task.detached { [self] in
-            async let anteile = client.bibliotheksanteile(views: stand)
-            async let verzeichnis: Sammlungsverzeichnis? = {
+            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
+            let anteile = nebenher { await client.bibliotheksanteile(views: stand) }
+            let verzeichnis = nebenher { () async -> Sammlungsverzeichnis? in
                 let mitVerborgenen = (try? await client.userViews(verborgene: true)) ?? stand
                 if Sammlungsverzeichnis.ausgeblendet(sichtbar: stand, mitVerborgenen: mitVerborgenen) {
                     return .leer
                 }
                 return try? await client.sammlungsverzeichnis(ansichten: mitVerborgenen)
-            }()
-            let neueAnteile = await anteile
-            let neuesVerzeichnis = await verzeichnis
+            }
+            let neueAnteile = await anteile.value
+            let neuesVerzeichnis = await verzeichnis.value
             aufHauptfaden {
                 if self.angebotLaeuft == fuer { self.angebotLaeuft = nil }
                 // Inzwischen das Konto gewechselt: das Ergebnis gehoert

@@ -520,6 +520,20 @@ int WINAPI wWinMain(HINSTANCE h, HINSTANCE vorher, PWSTR befehl, int zeigen) {
     protokollOeffnen();
     protokolliere(L"Startprogramm läuft, Ordner %s, Sprache %s", ordner, istDeutsch ? L"de" : L"en");
 
+    /* **Dieselbe Sprache an die App.** Die App waehlt ihre Sprache selbst
+     * (`Textkatalog`), zuerst aus `LANGUAGE`. Steht dort nichts, bekommt sie
+     * die Anzeigesprache, die hier schon erkannt ist - so zeigen Ladefenster
+     * und App dieselbe Sprache. Ein gesetztes `LANGUAGE` bleibt unangetastet:
+     * das ist ein Eingriff von Hand. CreateProcessW erbt die Umgebung. */
+    if (GetEnvironmentVariableW(L"LANGUAGE", NULL, 0) == 0) {
+        wchar_t sprache[LOCALE_NAME_MAX_LENGTH];
+        if (LCIDToLocaleName(MAKELCID(GetUserDefaultUILanguage(), SORT_DEFAULT),
+                             sprache, LOCALE_NAME_MAX_LENGTH, 0) > 0) {
+            SetEnvironmentVariableW(L"LANGUAGE", sprache);
+            protokolliere(L"Sprache an die App: %s", sprache);
+        }
+    }
+
     INITCOMMONCONTROLSEX icc = { sizeof icc, ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&icc);
 
