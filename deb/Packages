@@ -1,14 +1,14 @@
 Package: swiftly-jellyfin
-Version: 1.0.5
+Version: 1.0.0
 Architecture: amd64
 Maintainer: Paul Herter <accounts@paulherter.de>
-Installed-Size: 62744
+Installed-Size: 62740
 Depends: libgtk-4-1 (>= 4.14), libvlc5 | libvlc-bin, vlc-plugin-base, libc6 (>= 2.39)
-Filename: ./swiftly-jellyfin_1.0.5_amd64.deb
-Size: 18886368
-MD5sum: e714f2868e425de06d06b11c3ed69f8d
-SHA1: 313bb635829052028977155fd3bb5039cfce15fe
-SHA256: bdcde2a0630816642deabf56e03df1fde89ebe4c37699eeb269e3b3073fd5bd1
+Filename: ./swiftly-jellyfin_1.0.0_amd64.deb
+Size: 18886426
+MD5sum: 408b352b728c452e23216a1b33accb49
+SHA1: 1978b21b045db3ca9f58739e129d5a7017205dfb
+SHA256: b0f87fbe725f658abd60b9fde88d76637506da1306f2f8879e1ea8ccd97ff464
 Section: video
 Priority: optional
 Homepage: https://github.com/paulherter/swiftly-player
