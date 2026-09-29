@@ -19,7 +19,7 @@ enum Fassung {
     /// **Die Baunummer zaehlt, wenn dieselbe Fassung noch einmal hinausgeht.**
     /// Ohne sie steht in einem Fehlerbericht wieder „1.0.4",
     /// und niemand weiss, ob die Behebung drin war.
-    static let bau = "2"
+    static let bau = "3"
 
     /// „Swiftly Player 1.0.0 (Build 10)" — der volle Name, wie ihn die
     /// anderen Plattformen im Profil zeigen.

@@ -114,7 +114,7 @@ Description: Jellyfin client that never transcodes
  Stream. The server never re-encodes, so the picture stays untouched and the
  machine stays quiet.
 EOF
-dpkg-deb --build --root-owner-group "$deb" "$raus/${PROGRAMM}_${fassung}_amd64.deb" >/dev/null
+dpkg-deb --build --root-owner-group "$deb" "$raus/${PROGRAMM}_${debfassung}_amd64.deb" >/dev/null
 rm -rf "$deb"
 
 # ------------------------------------------------------------------- .rpm
