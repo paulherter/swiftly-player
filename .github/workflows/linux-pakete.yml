@@ -129,6 +129,11 @@ jobs:
 
       - name: An die Veroeffentlichung haengen
         if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.fassung != ''
+        # **Darf scheitern.** Scheiterte er ("Resource not accessible by
+        # integration" beim Nachtraegen an ein bestehendes Release), fiel der
+        # ganze Lauf aus und der Arch-Teil (`needs: bauen`) lief nie — die
+        # pacman-Quelle blieb alt. Die Paketquellen sind der Weg der Nutzer.
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.f.outputs.wert }}
