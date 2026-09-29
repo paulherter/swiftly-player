@@ -157,6 +157,10 @@ public struct Textkatalog: Sendable {
 
     /// Die Sprache, die es geworden ist. Für die Fehlersuche und die Probe.
     public let sprache: String
+    /// Die Wünsche in ihrer Reihenfolge, wie die Wahl sie sah — fürs Protokoll.
+    public let wuensche: [String]
+    /// Die Sprachen, die das Bündel mitbringt — fürs Protokoll.
+    public let vorhandeneSprachen: [String]
     private let eintraege: [String: String]
     private let mehrzahl: [String: Mehrzahlregel]
 
@@ -238,8 +242,13 @@ public struct Textkatalog: Sendable {
         var wuensche: [String] = []
         for eintrag in roh {
             // Codierung und Modifikator weg: `de_DE.UTF-8@euro` -> `de_DE`.
-            let ohneBeiwerk = eintrag.split(separator: ".")[0].split(separator: "@")[0]
-            let teile = ohneBeiwerk.split(separator: "_")
+            let ohneBeiwerk = eintrag.split(separator: ".").first?.split(separator: "@").first ?? ""
+            // **Auch am Bindestrich trennen.** Windows meldet seine Sprachen
+            // als `de-DE`, nicht `de_DE`. Nur am Unterstrich getrennt blieb
+            // `de-DE` ganz, kein Katalog heisst so, und die Wahl fiel auf das
+            // angehängte `en` — die Oberfläche war auf deutschem Windows
+            // englisch, während das Startprogramm Deutsch erkannte.
+            let teile = ohneBeiwerk.split(whereSeparator: { $0 == "_" || $0 == "-" })
             guard let sprache = teile.first.map(String.init),
                   !sprache.isEmpty, sprache != "C", sprache != "POSIX"
             else { continue }
@@ -253,11 +262,32 @@ public struct Textkatalog: Sendable {
         return wuensche.filter { gesehen.insert($0).inserted }
     }
 
+    /// Die Sprachen, für die im Bündel ein `.lproj` liegt.
+    ///
+    /// **Selbst nachsehen, nicht nur `bundle.localizations` glauben.** Das
+    /// Ressourcenbündel von SwiftPM hat auf Windows und Linux kein
+    /// `Info.plist`; was Foundation dann als Sprachliste meldet, hängt an der
+    /// Fassung. Die Ordner selbst lügen nicht. `Base` ist keine Sprache.
+    static func sprachordner(in bundle: Bundle) -> Set<String> {
+        var gefunden = Set(bundle.localizations.filter { $0 != "Base" })
+        let orte = [bundle.resourcePath, bundle.bundlePath].compactMap { $0 }
+        for ort in Set(orte) {
+            guard let namen = try? FileManager.default.contentsOfDirectory(atPath: ort) else { continue }
+            for name in namen where name.hasSuffix(".lproj") {
+                let sprache = String(name.dropLast(".lproj".count))
+                if !sprache.isEmpty, sprache != "Base" { gefunden.insert(sprache) }
+            }
+        }
+        return gefunden
+    }
+
     // MARK: Lesen
 
     /// Ein Katalog ohne Eintraege: jeder Text steht als sein Schluessel da.
     init(leer sprache: String) {
         self.sprache = sprache
+        wuensche = []
+        vorhandeneSprachen = []
         eintraege = [:]
         mehrzahl = [:]
     }
@@ -266,7 +296,7 @@ public struct Textkatalog: Sendable {
     ///   kommt sie aus Kotlin — dort gibt es keine Umgebungsvariable, aus der
     ///   `systemsprachen()` lesen koennte.
     public init(bundle: Bundle, sprache wunsch: String? = nil) {
-        let vorhanden = Set(bundle.localizations)
+        let vorhanden = Self.sprachordner(in: bundle)
         // **Eine lokale Konstante, kein `self.sprache`.** Die Hilfsfunktion
         // unten liest sie; griffe sie über `self` darauf zu, verlangte der
         // Compiler die vollständige Initialisierung, bevor das erste Feld
@@ -276,6 +306,10 @@ public struct Textkatalog: Sendable {
                                    system: Self.systemsprachen())
             .first { vorhanden.contains($0) } ?? bundle.developmentLocalization ?? "de"
         sprache = gewaehlt
+        wuensche = wunsch.map { [$0] }
+            ?? Self.sprachwuensche(aus: ProcessInfo.processInfo.environment,
+                                   system: Self.systemsprachen())
+        vorhandeneSprachen = vorhanden.sorted()
 
         func datei(_ endung: String) -> NSDictionary? {
             guard let url = bundle.url(forResource: "Localizable", withExtension: endung,

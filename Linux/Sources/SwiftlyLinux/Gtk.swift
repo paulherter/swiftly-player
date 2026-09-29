@@ -861,6 +861,21 @@ func nachDemSchub(_ block: @escaping @Sendable () -> Void) {
     aufHauptfaden { Schubsperre.spaeter(block) }
 }
 
+/// Ein Abruf, der neben den anderen läuft — **statt `async let`**.
+///
+/// Swift 6.2.1 auf Windows beendet die App mit „freed pointer was not the
+/// last allocation" (0xC0000409), sobald drei `async let` nebeneinander
+/// stehen und eines davon einen grossen Wert wie `Item?` trägt: der
+/// Aufgabenspeicher gibt dann in falscher Reihenfolge frei. Nachgestellt in
+/// der Windows-VM (29.09.2026); dieselbe Probe läuft auf Linux durch, und
+/// mit eigenen Aufgaben auch auf Windows. Die Serienseite hatte genau dieses
+/// Muster. Hier deshalb keine `async let` — jede Nebenläufigkeit über diese
+/// Hilfe, abgewartet mit `.value`.
+@discardableResult
+func nebenher<T: Sendable>(_ arbeit: @escaping @Sendable () async -> T) -> Task<T, Never> {
+    Task.detached(operation: arbeit)
+}
+
 
 nonisolated(unsafe) private let auftragEinmal: @convention(c) (gpointer?) -> gboolean = { daten in
     guard let daten else { return 0 }

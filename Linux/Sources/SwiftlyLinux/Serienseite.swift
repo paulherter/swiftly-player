@@ -194,15 +194,19 @@ extension App {
         Task.detached { [self] in
             // Alles nebenher: Stand, Staffeln und Ähnliches hängen nicht
             // aneinander; nur die Folgen brauchen die gewählte Staffel.
-            async let staffelnRoh = try? await client.staffeln(seriesID: serie.id)
-            async let standRoh = brauchtStand ? await client.standInSerie(serie.id) : nil
-            async let aehnlichRoh: [Item]?? = aKiste == nil
-                ? .none : .some(try? await client.aehnliche(itemID: serie.id, zu: serie))
+            //
+            // **Eigene Aufgaben statt `async let`** (siehe ``nebenher(_:)``).
+            // Genau diese drei als `async let` beendeten die Windows-App
+            // beim Öffnen jeder Serie.
+            let staffelnRoh = nebenher { try? await client.staffeln(seriesID: serie.id) }
+            let standRoh = brauchtStand ? nebenher { await client.standInSerie(serie.id) } : nil
+            let aehnlichRoh = aKiste == nil ? nil
+                : nebenher { try? await client.aehnliche(itemID: serie.id, zu: serie) }
             // **`nil` heisst gestoert, `[]` wirklich leer** (a2bb95bd) — und
             // ein gescheiterter Abruf wird nicht gemerkt (4fffc63c).
-            let geholt = await staffelnRoh
+            let geholt = await staffelnRoh.value
             let staffeln = geholt ?? []
-            let stand = await standRoh
+            let stand = await standRoh?.value ?? nil
             let gewaehlt = Staffelwahlregel.waehle(aus: staffeln, hinweisID: id,
                                                    hinweisNummer: nummer, stand: stand)
             // Die Folgen der Staffel, die gleich dasteht — ``staffelnZeigen``
@@ -212,7 +216,7 @@ extension App {
                 guard let erste else { return nil }
                 return try? await client.folgen(seriesID: serie.id, seasonID: erste.id)
             }()
-            let aehnliche = await aehnlichRoh
+            let aehnliche: [Item]?? = if let aehnlichRoh { .some(await aehnlichRoh.value) } else { .none }
             nachDemSchub {
                 defer {
                     losgelassen(kiste)

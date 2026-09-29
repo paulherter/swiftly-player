@@ -57,6 +57,22 @@ public enum Folgenkarte {
     /// Wann das Vorschaubild auszublenden beginnt, ab dem Start gemessen.
     public static func blendeAb(bildSeit: Double) -> Double { max(bildSeit, tausch) }
 
+    /// **So lange deckt die Karte höchstens, ohne dass ein Bild kommt.**
+    ///
+    /// Die gezoomte Karte liegt über allem, und solange sie liegt, gibt es
+    /// weder Steuerung noch Ladeschirm — also auch keinen Knopf zum
+    /// Schließen. Kommt das erste Bild der neuen Folge nicht (Plan hängt,
+    /// Strom startet nicht), stand man vorher ohne Ausweg vor ihr. Danach
+    /// weicht sie dem gewöhnlichen Ladeschirm, der Wechsel läuft darunter
+    /// weiter.
+    public static let hoechstensDecken: Double = 5
+
+    /// Soll die Karte jetzt weichen? `bildSeit` ist `nil`, solange das erste
+    /// Bild der neuen Folge fehlt.
+    public static func weicht(seit: Double, bildSeit: Double?) -> Bool {
+        bildSeit == nil && seit >= hoechstensDecken
+    }
+
     // MARK: Aussehen (aus dem Entwurf)
 
     /// Beim Hereinschieben: von rechts um so viel Punkt, und von 94 % Größe.

@@ -213,10 +213,14 @@ extension App {
     func gemeinsamTitelLaden(_ titelID: String, ab: Double) async -> Bool {
         let (client, grenze) = await aufHauptfadenHolen { (self.client, self.wahlen.profilBitrate) }
         guard let client else { return false }
-        async let titelAbruf = try? await client.item(id: titelID)
-        async let planAbruf = try? await client.playbackPlan(for: titelID,
-                                                             profile: .vlc(maxBitrate: grenze))
-        guard let titel = await titelAbruf, let plan = await planAbruf else { return false }
+        // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
+        let titelAbruf = nebenher { try? await client.item(id: titelID) }
+        let planAbruf = nebenher {
+            try? await client.playbackPlan(for: titelID, profile: .vlc(maxBitrate: grenze))
+        }
+        let titelGeholt = await titelAbruf.value
+        let planGeholt = await planAbruf.value
+        guard let titel = titelGeholt, let plan = planGeholt else { return false }
         await aufHauptfadenHolen {
             if self.gemeinsam.an, self.laufenderTitel != nil {
                 // Im offenen Player wechseln, derselbe Weg wie eine Folge

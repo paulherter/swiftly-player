@@ -17,6 +17,8 @@
 
 #define Name "Swiftly"
 #define Fassung "1.0.5"
+; Baunummer wie `Fassung.bau` in Linux/Sources/SwiftlyLinux/Fassung.swift.
+#define Bau "2"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"
@@ -25,6 +27,7 @@
 AppId={{8E2F1C74-3D9A-4B10-9C7E-5A6B2D8F0E31}
 AppName={#Name}
 AppVersion={#Fassung}
+VersionInfoVersion={#Fassung}.{#Bau}
 AppPublisher={#Herausgeber}
 AppPublisherURL={#Netz}
 AppSupportURL={#Netz}

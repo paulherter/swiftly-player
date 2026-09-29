@@ -1836,6 +1836,7 @@ struct PlayerScreen: View {
             kartenwechsel = Kartenwechsel(folgeID: folge.id)
             Protokoll.schreib("[Karte] Start → \(folge.id)")
             withAnimation(Self.feder(Folgenkarte.zoomOmega)) { kartenzoom = 1 }
+            if let beginn = kartenwechsel?.beginn { Task { await karteWachen(beginn) } }
         }
         let tauschAb = zoomt ? Date().addingTimeInterval(Folgenkarte.tausch) : nil
         // **Die Spulmarke gehoert der alten Folge.**
@@ -1912,6 +1913,19 @@ struct PlayerScreen: View {
         Protokoll.schreib("[Karte] Wechsel gescheitert, zurück")
         karteAufraeumen()
         steuerungWecken()
+    }
+
+    /// **Ohne erstes Bild weicht die Karte dem Ladeschirm.** Solange sie
+    /// gezoomt liegt, gibt es weder Steuerung noch Ladeschirm und damit
+    /// keinen Weg hinaus; kommt das Bild nicht (``Folgenkarte/weicht``),
+    /// übernimmt der gewöhnliche Ladeschirm samt Schließen. Der Wechsel
+    /// läuft darunter weiter.
+    private func karteWachen(_ beginn: Date) async {
+        try? await Task.sleep(for: .seconds(Folgenkarte.hoechstensDecken))
+        guard let k = kartenwechsel, k.beginn == beginn,
+              Folgenkarte.weicht(seit: k.seit, bildSeit: k.bildSeit) else { return }
+        Protokoll.schreib("[Karte] kein Bild nach \(Int(k.seit * 1000)) ms, Ladeschirm übernimmt")
+        karteAufraeumen()
     }
 
     private func karteAufraeumen() {

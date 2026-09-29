@@ -140,4 +140,14 @@ import Testing
         #expect(Folgenkarte.weggewischt(x: 30, y: 0, schwungX: 200, schwungY: 0))
         #expect(!Folgenkarte.weggewischt(x: 30, y: 20, schwungX: 60, schwungY: 40))
     }
+
+    /// Ohne erstes Bild weicht die Karte dem Ladeschirm — dort steht der
+    /// Knopf zum Schließen. Mit Bild blendet sie wie gewohnt aus.
+    @Test func karteWeichtOhneBild() {
+        #expect(!Folgenkarte.weicht(seit: Folgenkarte.tausch, bildSeit: nil))
+        #expect(!Folgenkarte.weicht(seit: Folgenkarte.hoechstensDecken - 0.1, bildSeit: nil))
+        #expect(Folgenkarte.weicht(seit: Folgenkarte.hoechstensDecken, bildSeit: nil))
+        #expect(!Folgenkarte.weicht(seit: 30, bildSeit: 1.2))
+        #expect(Folgenkarte.hoechstensDecken > Folgenkarte.tausch + Folgenkarte.bildBlende)
+    }
 }

@@ -21,6 +21,8 @@ final class Playerrahmen: UIHostingController<AnyView> {
     /// Ab dem Schließen darf auch hochkant: sonst hätten Player und App beim
     /// Übergang keine gemeinsame Lage, und UIKit dreht nicht mit.
     private var schliesst = false
+    /// Wie oft UIKit je Druck gebeten wurde — ein Deckel, keine Schleife.
+    private var versuche = 0
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         schliesst ? .allButUpsideDown : Orientierung.shared.erlaubt
@@ -68,14 +70,50 @@ final class Playerrahmen: UIHostingController<AnyView> {
     }
 
     /// Schließt den Player; die Drehung zurück läuft im selben Übergang.
+    ///
+    /// **Jeder Aufruf führt zum Ziel, nicht nur der erste.** Vorher legte der
+    /// erste Aufruf einen Riegel und bat UIKit einmal um das Wegnehmen. Lief
+    /// in dem Moment noch ein Übergang, verwirft UIKit die Bitte still, ohne
+    /// Abschluss — der Riegel blieb liegen, und jedes weitere „Schließen"
+    /// prallte an ihm ab. Jetzt wartet die Bitte das Ende eines laufenden
+    /// Übergangs ab und gilt als erledigt erst, wenn der Rahmen wirklich weg
+    /// ist.
     func schliessen() {
-        guard !schliesst else { return }
-        schliesst = true
-        Orientierung.shared.playerGeschlossen(anfordern: false)
-        dismiss(animated: true) { [beendet] in
-            Playerrahmen.aktiv = nil
-            beendet?()
+        Protokoll.schreib("[Rahmen] Schließen · schon dabei \(schliesst) · Übergang \(transitionCoordinator != nil)")
+        if !schliesst {
+            schliesst = true
+            Orientierung.shared.playerGeschlossen(anfordern: false)
         }
+        versuche = 0
+        wegnehmen()
+    }
+
+    /// Über den, der den Rahmen zeigt: das nimmt ihn samt allem, was er
+    /// selbst zeigt. Auf dem Rahmen selbst hätte `dismiss` nur das
+    /// Obenliegende genommen, und der Player wäre stehen geblieben.
+    private func wegnehmen() {
+        guard let darunter = presentingViewController else { fertig(); return }
+        if let laufend = transitionCoordinator ?? darunter.transitionCoordinator {
+            laufend.animate(alongsideTransition: nil) { [weak self] _ in self?.wegnehmen() }
+            return
+        }
+        guard versuche < 3 else {
+            Protokoll.schreib("[Rahmen] nach \(versuche) Versuchen noch da")
+            return
+        }
+        versuche += 1
+        darunter.dismiss(animated: true) { [weak self] in
+            guard let self else { return }
+            // Zu, wenn niemand ihn mehr zeigt — sonst noch einmal.
+            if self.presentingViewController == nil { self.fertig() } else { self.wegnehmen() }
+        }
+    }
+
+    private func fertig() {
+        guard let beendet else { return }
+        self.beendet = nil
+        if Playerrahmen.aktiv === self { Playerrahmen.aktiv = nil }
+        beendet()
     }
 }
 

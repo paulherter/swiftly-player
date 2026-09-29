@@ -168,7 +168,8 @@ extension App {
         Protokoll.schreib("[Spieler] frage Abspielplan beim Server")
         Task.detached { [self] in
             // Neben dem Plan, nicht davor: es kostet keine Wartezeit extra.
-            async let frisch = stelleFrisch ? try? await client.item(id: item.id) : nil
+            // Eigene Aufgabe statt `async let` (siehe ``nebenher(_:)``).
+            let frisch = stelleFrisch ? nebenher { try? await client.item(id: item.id) } : nil
             // Lehnt der Server mit Grund ab (`ErrorCode`), steht der Grund in
             // der Meldung statt „kamen keine Daten" — wie auf Apple über
             // `AppModel.plan`. Den Plan kann die Gruppe schon geholt haben.
@@ -188,7 +189,7 @@ extension App {
             }
             let abgelehnt = ablehnung
             let planNach = Date().timeIntervalSince(gedrueckt)
-            let geholt = await frisch
+            let geholt = await frisch?.value ?? nil
             let allesNach = Date().timeIntervalSince(gedrueckt)
             let stelle = geholt.map { $0.fortsetzenAb ?? 0 } ?? ab
             if stelleFrisch {

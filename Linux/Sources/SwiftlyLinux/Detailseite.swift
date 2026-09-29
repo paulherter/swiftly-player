@@ -48,9 +48,11 @@ extension App {
         // Abruf noch einmal.
         let schon = vollspeicher[serieID]
         Task.detached { [self] in
-            async let frisch = try? await client.item(id: item.id)
-            async let serie = schon != nil ? schon : (try? await client.item(id: serieID))
-            let (f, s) = await (frisch, serie)
+            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
+            let frisch = nebenher { try? await client.item(id: item.id) }
+            let serie = schon == nil ? nebenher { try? await client.item(id: serieID) } : nil
+            let f = await frisch.value
+            let s = await serie?.value ?? schon
             aufHauptfaden {
                 guard let s else { return }
                 // **Beides frisch, Kennung und Nummer.** Der Mac holte lange
@@ -272,18 +274,20 @@ extension App {
         // Derselbe Auftrag wie der Beleg oben — kein zweiter POST.
         let planauftrag = planAuftrag(titel)
         Task.detached { [self] in
-            async let planung = planauftrag?.value
-            async let extraRoh = try? await client.extras(itemID: titel.id)
-            async let aehnlichRoh = try? await client.aehnliche(itemID: titel.id, zu: titel)
-            async let sammlungRoh = self.sammlungsreihenHolen(titel, art: gattung, client: client)
-            let plan = await planung
+            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
+            let extraRoh = nebenher { try? await client.extras(itemID: titel.id) }
+            let aehnlichRoh = nebenher { try? await client.aehnliche(itemID: titel.id, zu: titel) }
+            let sammlungRoh = nebenher {
+                await self.sammlungsreihenHolen(titel, art: gattung, client: client)
+            }
+            let plan = await planauftrag?.value
             // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
             // fehlt die Reihe.
-            let extras = (await extraRoh) ?? []
+            let extras = (await extraRoh.value) ?? []
             // Doppelte Kennungen raus — dieselbe Regel wie in Suche,
             // Startseite und Merkliste (iPhone `ItemDetailView`).
-            let aehnliche = Listenregeln.ohneDoppelte((await aehnlichRoh) ?? [])
-            let sammlungen = await sammlungRoh
+            let aehnliche = Listenregeln.ohneDoppelte((await aehnlichRoh.value) ?? [])
+            let sammlungen = await sammlungRoh.value
             nachDemSchub {
                 defer { losgelassen(blockKiste) }
                 guard let block = blockKiste.widget else { return }
