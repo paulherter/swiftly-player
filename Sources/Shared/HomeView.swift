@@ -14,6 +14,9 @@ struct HomeView: View {
     @State private var stand = Startseitenmodell()
     @State private var abspielen: Abspielwunsch?
     @State private var bereitet = false
+    @State private var meldung: String?
+    /// „Server wechseln" meldet ab — erst nachfragen.
+    @State private var abmeldeblatt = false
     /// Keine der Anfragen kam durch.
     @State private var laedtNeu = false
     /// Wie weit die Seite gescrollt ist — **nur für den Kopfverlauf.**
@@ -53,6 +56,11 @@ struct HomeView: View {
                 .bereichsleiste()
 
             kopf
+
+            if let meldung {
+                Hinweisstreifen(text: meldung) { self.meldung = nil }
+                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
+            }
 
             // **`alleLeer`, nicht drei eigene Abfragen.** Hier standen
             // Weiterschauen, Nächste Folge und die gemeinsame Neuzugangsreihe
@@ -117,6 +125,14 @@ struct HomeView: View {
         // Neu geholt wird nach der Endmeldung, nicht beim Zumachen: beim
         // Zumachen ist sie noch unterwegs (`AppModel.wiedergabeBeendet`).
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
+        .overlay(alignment: .topTrailing) {
+            Handlungsblatt(offen: $abmeldeblatt,
+                           titel: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
+                           handlungen: [
+                Titelhandlung(symbol: "rectangle.portrait.and.arrow.right",
+                              text: "Abmelden", warnend: true) { model.signOut() },
+            ])
+        }
         .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
@@ -182,7 +198,7 @@ struct HomeView: View {
         if stand.gestoert {
             Leerzustand.serverAbgetaucht(model, laedt: laedtNeu,
                                          erneut: { neuVersuchen() },
-                                         wechseln: { model.signOut() })
+                                         wechseln: { abmeldeblatt = true })
         } else {
             Leerzustand(
                 symbol: "tray",
@@ -304,11 +320,19 @@ struct HomeView: View {
     private func starte(_ item: Item) {
         guard !bereitet else { return }
         bereitet = true
+        // Beim Druck, nicht nach der Antwort (siehe `Stil.ruck`).
+        Stil.ruck(.mittel)
+        // **Kein Lader auf der Kachel.** Gedaempft mit Kreisel sah der
+        // Start ruckelig aus; der Player soll einfach aufgehen.
         Task {
             defer { bereitet = false }
             // Frisch holen: die Position im Listeneintrag ist oft veraltet.
             let aktuell = await model.item(id: item.id) ?? item
-            guard let plan = await model.plan(for: aktuell.id) else { return }
+            guard let plan = await model.plan(for: aktuell.id) else {
+                // Statt Stille: sagen, dass es nicht ging.
+                meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+                return
+            }
             abspielen = Abspielwunsch(item: aktuell, plan: plan,
                                       startAt: aktuell.fortsetzenAb ?? 0)
         }
@@ -430,6 +454,8 @@ private struct Reihe: View {
     var restzeit = false
     /// Gesetzt heißt: Tippen startet sofort, statt auf die Seite zu führen.
     var direkt: ((Item) -> Void)? = nil
+    /// Die Kachel, die gerade startet: gedaempft, mit Lader.
+    var laedt: String? = nil
     /// Wird nach „gesehen/ungesehen" gerufen, damit die Startseite nachzieht.
     var nachGesehen: (() async -> Void)? = nil
 
@@ -477,10 +503,14 @@ private struct Reihe: View {
                         if let direkt {
                             Button { direkt(item) } label: {
                                 Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
+                                    .opacity(laedt == item.id ? 0.5 : 1)
+                                    .overlay {
+                                        if laedt == item.id {
+                                            ProgressView().tint(Stil.schrift)
+                                        }
+                                    }
                             }
                             .buttonStyle(Stil.Druckknopf())
-                            // Zur Serie kommt man weiterhin — nur nicht mehr
-                            // im Weg der Wiedergabe.
                             // Zur Serie kommt man weiterhin — nur nicht mehr
                             // im Weg der Wiedergabe: „Zur Übersicht" steht im
                             // Kachelmenü, dazu alles, was jede Kachel kann.

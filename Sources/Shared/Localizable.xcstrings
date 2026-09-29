@@ -1042,6 +1042,23 @@
         }
       }
     },
+    "Abmelden von %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abmelden von %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign out of %@"
+          }
+        }
+      }
+    },
     "Abspielen": {
       "extractionState": "manual",
       "localizations": {
@@ -3538,6 +3555,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Decides what a tick selects."
+          }
+        }
+      }
+    },
+    "Das startet nicht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das startet nicht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This won't start"
+          }
+        }
+      }
+    },
+    "Die Datei oder der Server liefert kein Bild. Prüf die Verbindung und versuch es noch einmal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Datei oder der Server liefert kein Bild. Prüf die Verbindung und versuch es noch einmal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file or the server isn't delivering a picture. Check the connection and try again."
           }
         }
       }
@@ -11017,6 +11068,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Close card"
+          }
+        }
+      }
+    },
+    "Weitere Folgen anzeigen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Folgen anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show more episodes"
           }
         }
       }

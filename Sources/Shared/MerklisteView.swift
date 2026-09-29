@@ -6,6 +6,7 @@ struct MerklisteView: View {
 
     @Environment(\.breit) private var breit
     @Environment(\.bereichAktiv) private var bereichAktiv
+    @Environment(\.reiterNochmal) private var nochmal
     @State private var stand: Merklistenmodell
     /// Die Pille der Ansicht und die Gattung im Modell muessen beim Start
     /// dasselbe sagen — das Modell holt sie aus der Ablage, die Ansicht
@@ -52,7 +53,13 @@ struct MerklisteView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await stand.laden(model) }
+        // Auch bei Gesehen-/Lesezeichenwechsel anderswo: dann still nachladen
+        // (`laden` frischt auf, ohne Platzhalter und ohne die Stelle zu
+        // verlieren), sonst zeigt die Kachel Balken und Haken von vorher und
+        // ein ausgetragener Titel bliebe stehen.
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)|\(model.listenAuffrischen)") {
+            await stand.laden(model)
+        }
     }
 
     @ViewBuilder
@@ -92,6 +99,7 @@ struct MerklisteView: View {
             }
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
+            .nachOben(ordnung: stand.kennung, nochmal: nochmal, aktiv: bereichAktiv)
             // Der Weg des Fingers, nicht der um den Rand bereinigte Versatz —
             // warum, steht in `Kopfscrollweg` im Paket.
             .scrollweg(aktiv: bereichAktiv) { versatz = $0 }

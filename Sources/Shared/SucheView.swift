@@ -40,6 +40,7 @@ struct SucheView: View {
     /// Seite dabei wieder auseinander, wandert alles unter dem Daumen weg.
     /// Zurueck kommt man ueber den Ausweg rechts, sonst nicht.
     @State private var suchmodus = false
+    @State private var kontowechsel = false
 
     /// **Was zuletzt gesucht wurde — die letzten acht, juengstes zuerst.**
     ///
@@ -160,7 +161,7 @@ struct SucheView: View {
                                 .font(Stil.listentitel)
                                 .foregroundStyle(Stil.schriftLeise)
                                 .frame(width: 36, height: 36)
-                                .background(Stil.flaeche, in: Circle())
+                                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -278,6 +279,9 @@ struct SucheView: View {
                     }
                 }
                 .scrollIndicators(.hidden)
+                // Beim Blättern durch Treffer geht die Tastatur zu, wie in
+                // den Formularen (`RootView`).
+                .scrollDismissesKeyboard(.interactively)
                 .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                                 for: .scrollContent)
                 // Tippen ins Leere schliesst die Tastatur — sonst kommt man
@@ -286,6 +290,7 @@ struct SucheView: View {
                 // Nur die Trefferflaeche zieht sich heran, nicht das Suchfeld
                 // darueber — siehe `bereichsinhalt()`.
                 .bereichsinhalt()
+                .kontowechselblende(model: model, bereit: true, wechsel: $kontowechsel)
             }
             .animation(Stil.blattbewegung, value: suchmodus)
             }
@@ -329,6 +334,21 @@ struct SucheView: View {
         // bringt einen nur her — siehe `reiterNochmal`.
         .onChange(of: nochmal) { _, _ in if aktiv { imFeld = true } }
         .onChange(of: begriff) { _, neu in suchen(neu) }
+        // Treffer und Begriff gehören dem vorigen Konto.
+        .onChange(of: model.kontowechsel) { _, _ in
+            aufgabe?.cancel()
+            begriff = ""
+            treffer = []
+            seerrtreffer = []
+            sucht = false
+            suchmodus = false
+        }
+        // Gesehen-/Lesezeichenwechsel auf einer Detailseite: die Kachel
+        // darunter soll nicht den alten Stand zeigen. Die Treffer bleiben
+        // stehen, bis die neuen da sind.
+        .onChange(of: model.listenAuffrischen) { _, _ in
+            if !begriff.isEmpty { suchen(begriff) }
+        }
     }
 
     @ViewBuilder
@@ -340,7 +360,7 @@ struct SucheView: View {
             // Kacheln darunter. Deshalb Listenzeile und nicht `Stil.gruppe`:
             // die Versalien gehören den drei Blöcken, nicht ihren Teilen.
             Text(titel)
-                .font(Stil.listentitel)
+                .mitwachsend(15, .semibold)
                 .foregroundStyle(Stil.schriftLeise)
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 14)
@@ -365,6 +385,9 @@ struct SucheView: View {
                                        auskunft: item.trefferauskunft)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        // Der übliche Weg: Treffer öffnen. Erst damit füllt sich
+                        // „Zuletzt gesucht", nicht nur mit der Suchen-Taste.
+                        .simultaneousGesture(TapGesture().onEnded { merken(begriff) })
                         .kachelmenue(item, model: model)
                     }
                 }
@@ -387,6 +410,9 @@ struct SucheView: View {
                                        auskunft: item.trefferauskunft)
                         }
                         .buttonStyle(Stil.Druckknopf())
+                        // Der übliche Weg: Treffer öffnen. Erst damit füllt sich
+                        // „Zuletzt gesucht", nicht nur mit der Suchen-Taste.
+                        .simultaneousGesture(TapGesture().onEnded { merken(begriff) })
                         .kachelmenue(item, model: model)
                     }
                 }
@@ -444,6 +470,7 @@ struct SucheView: View {
             ForEach(seerrtreffer) { t in
                 NavigationLink(value: t) { Seerrkachel(treffer: t) }
                     .buttonStyle(Stil.Druckzeile())
+                    .simultaneousGesture(TapGesture().onEnded { merken(begriff) })
             }
         }
         .padding(.horizontal, Stil.rand(breit: breit))
@@ -474,8 +501,11 @@ struct SucheView: View {
                 Spacer(minLength: 8)
                 Button { letzteRoh = "" } label: {
                     Text("Löschen")
-                        .font(Stil.kachel)
+                        .mitwachsend(13, .medium)
                         .foregroundStyle(Stil.schriftSehrLeise)
+                        // 44 Punkt Trefferfläche, das Wort bleibt klein.
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(Stil.Druckzeile())
             }
@@ -494,7 +524,7 @@ struct SucheView: View {
                             .frame(width: 20)
                             .accessibilityHidden(true)
                         Text(verbatim: wort)
-                            .font(Stil.listentitel)
+                            .mitwachsend(15, .semibold)
                             .foregroundStyle(Stil.schrift)
                             .lineLimit(1)
                         Spacer(minLength: 0)
@@ -534,7 +564,7 @@ struct SucheView: View {
                 .font(.system(size: 44))
                 .foregroundStyle(Stil.schriftSehrLeise)
             Text("Filme, Serien und Folgen durchsuchen")
-                .font(Stil.koerper)
+                .mitwachsend(15)
                 .foregroundStyle(Stil.schriftLeise)
         }
         // **Mittig unter dem Feld, nicht mittig im Fenster.**

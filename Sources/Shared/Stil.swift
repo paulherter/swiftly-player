@@ -1060,6 +1060,8 @@ struct Schalter: View {
 
     var body: some View {
         Button {
+            // Der leichte Tick, den auch Apples Schalter geben.
+            Stil.ruck(.leicht)
             an.toggle()
         } label: {
             ZStack(alignment: an ? .trailing : .leading) {
@@ -1371,7 +1373,12 @@ struct Aktionsknopf: View {
     let aktion: () -> Void
 
     var body: some View {
-        Button(action: aktion) {
+        // Ein leichter Ruck fuer alle Knoepfe der Reihe, zentral statt an den
+        // Aufrufstellen: sie verhielten sich vorher verschieden.
+        Button {
+            Stil.ruck(.leicht)
+            aktion()
+        } label: {
             Image(systemName: symbol)
                 // Symbolknopf im Kopf: 17. 19 steht in keiner Leiter. Vorher 19.
                 .font(Stil.rubrikGross)
@@ -1739,10 +1746,20 @@ struct Zeitregler: View {
     /// Vorspann endet, wo der Abspann anfaengt. Leer heisst „keine bekannt",
     /// und dann sieht der Regler aus wie vorher.
     var marken: [Double] = []
+    /// **Wie weit die Trefferfläche über den Regler hinausragt** (nach oben,
+    /// nie nach unten): unter dem Regler liegt der Home-Indikator, und wer
+    /// dort hochwischt, will die App verlassen, nicht spulen.
+    var trefferOben: CGFloat = 0
     var beimSchieben: (Bool) -> Void
 
     @State private var breite: CGFloat = 0
     @State private var amSchieben = false
+    /// Läuft, solange ein Finger liegt. Bricht das System die Geste ab
+    /// (Wisch zum Home-Bildschirm), springt es von selbst zurück; `onEnded`
+    /// kommt dann nicht.
+    @GestureState private var beruehrt = false
+    /// Ob diese Berührung als Spulen übernommen wurde. `nil`: noch offen.
+    @State private var uebernommen: Bool?
     /// Die Kerbe, auf der der Regler gerade eingerastet steht — damit der
     /// Tick einmal beim Einrasten kommt, nicht bei jeder Bewegung darauf.
     @State private var eingerastet: Double?
@@ -1816,36 +1833,82 @@ struct Zeitregler: View {
         // 44 statt 28: der Balken ist drei Punkt hoch, treffen muss man ihn
         // trotzdem mit dem Daumen. Sichtbar bleibt nur der Strich.
         .frame(height: 44)
-        .contentShape(Rectangle())
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { breite = $0 }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { geste in
+        // **Die Trefferfläche wächst nach oben.** Sie hängt als Hintergrund
+        // an der Unterkante und ist `trefferOben` höher als der Regler.
+        .background(alignment: .bottom) {
+            Color.clear
+                .frame(height: 44 + trefferOben)
+                .contentShape(Rectangle())
+                .gesture(schieben)
+        }
+        .onChange(of: beruehrt) { _, jetzt in
+            // Vom System abgebrochen: aufräumen, ohne zu springen.
+            if !jetzt, amSchieben { abschliessen() }
+            if !jetzt { uebernommen = nil }
+        }
+    }
+
+    /// **Übernommen wird nur ein überwiegend waagerechter Zug.**
+    ///
+    /// Bis der Finger sich `entscheidung` Punkt bewegt hat, passiert nichts.
+    /// Zieht er dann mehr senkrecht als waagerecht, gehört die Berührung dem
+    /// System (Home-Wisch, Mitteilungen) und der Regler rührt sich nicht.
+    /// Ein Tippen ohne Bewegung springt beim Loslassen an die Stelle.
+    private static let entscheidung: CGFloat = 8
+
+    private func stelleSetzen(_ x: CGFloat) {
+        guard breite > 0 else { return }
+        let roh = Double(min(max(x / breite, 0), 1)) * bis
+        // **An den Kerben rastet er ein** (`Kerbenfang`): nah
+        // genug an einer Abschnittsgrenze steht er genau darauf,
+        // mit einem leichten Tick beim Einrasten.
+        if let kerbe = Kerbenfang.kerbe(wert: roh, bis: bis, marken: marken,
+                                        breite: Double(breite)) {
+            wert = kerbe
+            if eingerastet != kerbe {
+                eingerastet = kerbe
+                Stil.ruck(.leicht)
+            }
+        } else {
+            wert = roh
+            eingerastet = nil
+        }
+    }
+
+    private func abschliessen() {
+        eingerastet = nil
+        amSchieben = false
+        beimSchieben(false)
+    }
+
+    private var schieben: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .updating($beruehrt) { _, zustand, _ in zustand = true }
+            .onChanged { geste in
+                if uebernommen == nil {
+                    let dx = abs(geste.translation.width), dy = abs(geste.translation.height)
+                    guard max(dx, dy) >= Self.entscheidung else { return }
+                    uebernommen = dx > dy
+                    guard uebernommen == true else { return }
                     amSchieben = true
                     beimSchieben(true)
-                    guard breite > 0 else { return }
-                    let roh = Double(min(max(geste.location.x / breite, 0), 1)) * bis
-                    // **An den Kerben rastet er ein** (`Kerbenfang`): nah
-                    // genug an einer Abschnittsgrenze steht er genau darauf,
-                    // mit einem leichten Tick beim Einrasten.
-                    if let kerbe = Kerbenfang.kerbe(wert: roh, bis: bis, marken: marken,
-                                                    breite: Double(breite)) {
-                        wert = kerbe
-                        if eingerastet != kerbe {
-                            eingerastet = kerbe
-                            Stil.ruck(.leicht)
-                        }
-                    } else {
-                        wert = roh
-                        eingerastet = nil
-                    }
                 }
-                .onEnded { _ in
-                    eingerastet = nil
-                    amSchieben = false
-                    beimSchieben(false)
+                guard uebernommen == true else { return }
+                stelleSetzen(geste.location.x)
+            }
+            .onEnded { geste in
+                defer { uebernommen = nil }
+                if uebernommen == nil {
+                    // Tippen: kaum bewegt, also springen.
+                    amSchieben = true
+                    beimSchieben(true)
+                    stelleSetzen(geste.location.x)
+                    abschliessen()
+                } else if uebernommen == true {
+                    abschliessen()
                 }
-        )
+            }
     }
 }
 
@@ -3199,6 +3262,8 @@ struct Wischzeile<Inhalt: View>: View {
     /// Handlung ausführen und die Zeile wieder zufahren.
     private func ausloesen() {
         ausgeloest = true
+        // Zerstoerendes bekommt den kraeftigeren Ruck.
+        Stil.ruck(farbe == Stil.fehler ? .mittel : .leicht)
         aktion()
         // Die Scrollfläche neu aufbauen statt sie zurückzustellen.
         //
@@ -3985,7 +4050,12 @@ struct Hinweisstreifen: View {
         .transition(.opacity)
         .id(text)
         .task(id: text) {
-            try? await Task.sleep(for: .seconds(3))
+            // Fuer VoiceOver: der Streifen erscheint ohne Fokus, also ansagen.
+            #if os(iOS)
+            AccessibilityNotification.Announcement(text).post()
+            #endif
+            // Laengere Texte brauchen laenger zum Lesen: 3 s, hoechstens 6.
+            try? await Task.sleep(for: .seconds(min(6, max(3, Double(text.count) / 18))))
             guard !Task.isCancelled else { return }
             schliessen()
         }

@@ -66,6 +66,8 @@ struct SeriesDetailView: View {
         // Ohne gemerkte Folgen stehen die Platzhalter vom ersten Bild an da —
         // nicht erst, wenn der Abruf der Folgen beginnt.
         _folgenLaedt = State(initialValue: folgen.isEmpty)
+        _gemerkt = State(initialValue: serie.userData?.isFavorite ?? false)
+        _gesehen = State(initialValue: serie.userData?.played ?? false)
     }
 
     @Environment(\.dismiss) private var zurueck
@@ -100,6 +102,8 @@ struct SeriesDetailView: View {
     /// Staffel, gescheiterter Abruf und laufender Abruf sahen alle gleich aus.
     /// Anfangswert im `init`.
     @State private var folgenLaedt: Bool
+    /// Wie viele Zeilen die Liste zeigt — bei 500 Folgen nicht alle auf einmal.
+    @State private var folgenAnzahl = Folgenabschnitt.schritt
     @State private var folgenGestoert = false
     @State private var ladeblatt = false
     @State private var ladeposten: [Downloadposten] = []
@@ -113,8 +117,9 @@ struct SeriesDetailView: View {
     @State private var mehrOffen = false
     @State private var meldung: String?
     @State private var bereitet = false
-    @State private var gemerkt = false
-    @State private var gesehen = false
+    /// Aus `serie.userData` im `init` — siehe `ItemDetailView`.
+    @State private var gemerkt: Bool
+    @State private var gesehen: Bool
     @State private var plan: PlaybackPlan?
     @State private var reiter = 0
     /// Breite des Rasters unter „Ähnliches" — daraus die Spaltenzahl, wie in
@@ -682,10 +687,11 @@ struct SeriesDetailView: View {
             // Nicht faul: jede Zeile ist seit dem Wischen selbst eine
             // Scrollfläche, und verschachtelt kann ein LazyVStack ihre Höhe
             // nicht mehr schätzen — es blieb nur die erste Zeile stehen.
-            // Eine Staffel hat selten mehr als 25 Folgen, das trägt der
-            // gewöhnliche Stapel mühelos.
+            // Eine Staffel hat meist um die 25 Folgen, das trägt der
+            // gewöhnliche Stapel mühelos. Bei Anime mit 500 Folgen nicht:
+            // deshalb erst `Folgenabschnitt.schritt`, dann auf Wunsch mehr.
             VStack(spacing: 0) {
-                ForEach(folgen) { folge in
+                ForEach(folgen.prefix(folgenAnzahl)) { folge in
                     let ist = folge.userData?.played ?? false
                     Wischzeile(symbol: ist ? "arrow.uturn.backward" : "checkmark",
                                beschriftung: ist ? "Ungesehen" : "Gesehen",
@@ -721,6 +727,13 @@ struct SeriesDetailView: View {
                     // zweites Mal. Wo die Liste ueberhaupt eine Marke braucht —
                     // an der laufenden Folge —, traegt sie eine Flaeche, und
                     // die sitzt in `Folgenzeile`.
+                }
+                if folgen.count > folgenAnzahl {
+                    WeitereFolgenKnopf {
+                        withAnimation(Stil.einblenden) {
+                            folgenAnzahl += Folgenabschnitt.schritt
+                        }
+                    }
                 }
             }
             // **Eine Staffel ersetzt die andere, sie mischt sich nicht mit
@@ -855,6 +868,7 @@ struct SeriesDetailView: View {
         withAnimation(Stil.einblenden) {
             gewaehlteStaffel = staffel
             folgen = gemerkt ?? []
+            folgenAnzahl = Folgenabschnitt.schritt
             folgenGestoert = false
             folgenLaedt = gemerkt == nil
         }
@@ -1124,6 +1138,28 @@ struct Folgenzeile: View {
     }
 }
 
+/// Abschnittsweise Folgenliste: jede Zeile trägt eine eigene Wischfläche und
+/// einen Bildabruf, 500 davon auf einmal wären zäh und teuer.
+enum Folgenabschnitt {
+    static let schritt = 40
+}
+
+/// „Weitere Folgen anzeigen" am Ende eines Abschnitts.
+struct WeitereFolgenKnopf: View {
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            Text("Weitere Folgen anzeigen")
+                .mitwachsend(15, .semibold)
+                .foregroundStyle(Stil.akzent)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(Stil.Druckzeile())
+    }
+}
+
 /// Folgenliste einer Staffel — für den Weg über die Bibliothek.
 struct SeasonView: View {
     let model: AppModel
@@ -1131,6 +1167,7 @@ struct SeasonView: View {
     let staffel: Item
 
     @State private var folgen: [Item] = []
+    @State private var folgenAnzahl = Folgenabschnitt.schritt
     @State private var laedt = true
     @State private var gestoert = false
     @State private var abspielen: Abspielwunsch?
@@ -1174,7 +1211,7 @@ struct SeasonView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 40)
                     }
-                    ForEach(folgen) { folge in
+                    ForEach(folgen.prefix(folgenAnzahl)) { folge in
                         let gesehen = (folge.userData?.played ?? false)
                         Wischzeile(symbol: gesehen ? "arrow.uturn.backward" : "checkmark",
                                    beschriftung: gesehen ? "Ungesehen" : "Gesehen",
@@ -1188,6 +1225,13 @@ struct SeasonView: View {
                         // Keine Trennlinie: das Standbild trennt schon. Hier
                         // stand dieselbe von Hand gebaute Linie wie auf der
                         // Serienseite — beide sind weg.
+                    }
+                    if folgen.count > folgenAnzahl {
+                        WeitereFolgenKnopf {
+                            withAnimation(Stil.einblenden) {
+                                folgenAnzahl += Folgenabschnitt.schritt
+                            }
+                        }
                     }
                 }
             }

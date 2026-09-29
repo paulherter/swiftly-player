@@ -42,6 +42,12 @@ struct PlayerScreen: View {
     /// Läuft gerade im kleinen Fenster.
     @State private var imKleinenFenster = false
     @State private var erstesBildDa = false
+    /// Der Start ist gescheitert (VLC-Fehler oder Frist ohne Bild). Der
+    /// Startschleier zeigt dann „Das startet nicht" mit zwei Auswegen.
+    @State private var startGescheitert = false
+    /// Zählt Startversuche; hängt die Frist an, damit „Erneut versuchen" sie
+    /// neu beginnt.
+    @State private var startversuch = 0
     /// Das Bild geht gerade als Karte an ein anderes Gerät.
     @State private var abgabeLaeuft = false
     /// Wird beim Oeffnen gedreht? Muss vorher feststehen — steht die Lage
@@ -309,10 +315,31 @@ struct PlayerScreen: View {
         ZStack(alignment: .top) {
             ZStack {
                 Color.black
-                Lader()
+                if !startGescheitert { Lader() }
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            // **Frist statt endlos Schwarz.** Kommt nach 25 Sekunden kein Bild
+            // (ein NAS, das erst anlaufen muss, braucht länger als 10), ist
+            // der Start gescheitert. Läuft nur, solange der Schleier steht;
+            // ein neuer Versuch beginnt sie neu.
+            .task(id: startversuch) {
+                try? await Task.sleep(for: .seconds(25))
+                guard !Task.isCancelled, !erstesBildDa, !startGescheitert,
+                      airplayPlan == nil, !imKleinenFenster else { return }
+                Protokoll.schreib("[Player] Start gescheitert: 25 s ohne erstes Bild")
+                startGescheitert = true
+            }
+
+            if startGescheitert {
+                Leerzustand(symbol: "exclamationmark.triangle",
+                            kopfzeile: "Das startet nicht",
+                            text: "Die Datei oder der Server liefert kein Bild. Prüf die Verbindung und versuch es noch einmal.",
+                            hauptknopf: ("Erneut versuchen", { startNeuVersuchen() }),
+                            stillerKnopf: ("Schließen", { schliessen() }))
+                    .padding(.horizontal, 24)
+                    .transition(.opacity)
+            }
 
             // **Schließen geht auch, bevor das Bild da ist.** Die Steuerung
             // erscheint erst mit dem ersten Bild; bis dahin lag hier nur der
@@ -346,6 +373,20 @@ struct PlayerScreen: View {
         // eigene Zahl für eine Rolle, die schon einen Token hat.
         .animation(Stil.bereichswechsel, value: drehungFertig)
         .transition(.opacity)
+    }
+
+    /// „Erneut versuchen" im Startschleier: dieselbe Folge, dieselbe Stelle,
+    /// frischer Aufbau.
+    private func startNeuVersuchen() {
+        Protokoll.schreib("[Player] Start erneut versucht")
+        startGescheitert = false
+        startversuch += 1
+        surface?.puffer = model.pufferstufe
+        surface?.spurwunsch = spurwunsch(item, plan)
+        surface?.play(url: plan.url, abSekunden: startNachWechsel ?? startAt,
+                      container: plan.container,
+                      untertitel: model.untertiteldateien(plan),
+                      softwareDekoder: plan.softwareDekoder)
     }
 
     /// Was im großen Bild steht, während nebenan im kleinen Fenster läuft.
@@ -424,6 +465,11 @@ struct PlayerScreen: View {
                 }
                 $0.sprungGemeldet = { ziel in melder.sprungGemeldet(ziel: ziel) }
                 $0.spurenGemeldet = { spuren in melder.spurenGewaehlt(spuren) }
+                $0.startFehlerGemeldet = { grund in
+                    guard !erstesBildDa else { return }
+                    Protokoll.schreib("[Player] Start gescheitert: \(grund)")
+                    startGescheitert = true
+                }
             }
             // Nach der Rückkehr aus Bild-im-Bild meldete die Fläche noch die
             // Größe des kleinen Fensters. Der Stapel richtete sich danach und
@@ -1304,7 +1350,7 @@ struct PlayerScreen: View {
     /// rechts die Restzeit. Der Titel steht jetzt oben.
     private var fuss: some View {
         Zeitzeile(position: $position, dauer: dauer, amSchieben: amSchieben,
-                  schrift: mass.zeit, pad: mass.pad,
+                  schrift: mass.zeit, pad: mass.pad, reglerOben: mass.reglerOben,
                   vorschau: { trickplay.bild(bei: $0, model: model) },
                   // **Beide Grenzen, nicht nur der Anfang.** Wo der Vorspann
                   // anfaengt, sagt allein noch nicht, wo er aufhoert — und
@@ -1887,6 +1933,8 @@ struct PlayerScreen: View {
             sprung = Wiedergabetakt.Sprung(ziel: ab)
             startNachWechsel = ab
         }
+        startGescheitert = false
+        startversuch += 1
         titelwechsel += 1
         // Eine neue Folge fängt eine eigene Zeitrechnung an. Bliebe die alte
         // stehen, wären Notbremse und Frischefenster sofort abgelaufen — auf
@@ -2416,6 +2464,8 @@ private struct Zeitzeile: View {
     let amSchieben: Bool
     let schrift: CGFloat
     let pad: Bool
+    /// Trefferfläche des Reglers über der Zeile (`Playermass.reglerOben`).
+    let reglerOben: CGFloat
     /// Das Trickplay-Bild zur Stelle, oder `nil`.
     let vorschau: (Double) -> CGImage?
     /// Grenzen der Abschnitte in Sekunden — Kerben auf dem Regler.
@@ -2431,7 +2481,7 @@ private struct Zeitzeile: View {
             Text(Spielzeit.text(position))
                 .accessibilityHidden(true)
             Zeitregler(wert: $position, bis: max(dauer, 1), marken: marken,
-                       beimSchieben: schiebt)
+                       trefferOben: reglerOben, beimSchieben: schiebt)
                 .overlay(alignment: .topLeading) {
                     if amSchieben { vorschauKasten }
                 }

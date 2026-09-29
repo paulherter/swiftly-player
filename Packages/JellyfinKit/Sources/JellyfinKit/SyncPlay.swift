@@ -174,6 +174,11 @@ public enum SyncPlayNachricht: Sendable, Equatable {
     case jemandGing(String)
     case zustand(SyncPlayGruppe.Zustand, grund: String?)
     case warteschlange(SyncPlayWarteschlange)
+    /// Vom Steuerkanal selbst, nicht vom Server: die Leitung ist abgerissen.
+    /// Der Server wirft die Sitzung damit aus der Gruppe.
+    case leitungVerloren
+    /// Vom Steuerkanal selbst: nach einem Abriss kommt wieder etwas an.
+    case leitungWieder
 
     /// Liest eine ganze Nachricht des Steuerkanals. `nil` für alles, was
     /// nicht SyncPlay ist oder sich nicht lesen lässt.

@@ -328,6 +328,68 @@ extension View {
     }
 }
 
+/// **Ein Teil einer Seite, der beim Kontowechsel ohne Ausblendbewegung
+/// verschwindet** und mit dem neuen Inhalt gestaffelt kommt — ``Reihenauftritt``
+/// ohne dessen kurzes Wegfahren (dort deckt ein Standbild die Seite, hier
+/// steht sie offen).
+struct Kontowechselteil: ViewModifier {
+    let index: Int
+    let da: Bool
+
+    func body(content: Content) -> some View {
+        let ruhig = Stil.bewegungReduziert
+        let verzug = Double(index) * Kontowechselkurve.reihenStaffel
+        content
+            .scaleEffect(da || ruhig ? 1 : Kontowechselkurve.reihenMass, anchor: .top)
+            .offset(y: da || ruhig ? 0 : Kontowechselkurve.reihenVersatz)
+            .opacity(da ? 1 : 0)
+            .animation(da ? (ruhig ? Stil.blendeReduziert
+                                   : .spring(response: 0.55, dampingFraction: 0.82).delay(verzug))
+                          : nil, value: da)
+    }
+}
+
+/// **Eine ganze Seite (Filme, Serien, Suche) hält beim Kontowechsel ihren
+/// Inhalt zurück** — wie die Startseite ihre Reihen: beim Tipp in der
+/// Profilauswahl ist der Inhalt des alten Kontos sofort weg, und erst wenn
+/// der Flug vorbei ist und `bereit` gilt, kommt der neue gestaffelt.
+/// `bereit` muss falsch sein, solange die Seite noch die Titel des vorigen
+/// Kontos hält. Der Zustand gehört der Seite (`wechsel`), damit auch Kopf und
+/// Störmeldung ihn lesen; nach vier Sekunden ist er in jedem Fall zu Ende.
+struct Kontowechselblende: ViewModifier {
+    let model: AppModel
+    let bereit: Bool
+    @Binding var wechsel: Bool
+
+    private var frei: Bool { bereit && !Kontowechselflug.geteilt.wartet }
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(Kontowechselteil(index: 1, da: !wechsel && !Kontowechselflug.geteilt.wartet))
+            .onChange(of: Kontowechselflug.geteilt.wartet) { _, wartet in
+                if wartet { wechsel = true } else if frei { wechsel = false }
+            }
+            .onChange(of: model.kontowechsel) { _, _ in wechsel = !frei }
+            .onChange(of: frei) { _, jetzt in
+                if jetzt, wechsel { wechsel = false }
+            }
+            .task(id: wechsel) {
+                guard wechsel else { return }
+                try? await Task.sleep(for: .seconds(4))
+                if !Task.isCancelled { wechsel = false }
+            }
+    }
+}
+
+extension View {
+    func kontowechselblende(model: AppModel, bereit: Bool, wechsel: Binding<Bool>) -> some View {
+        modifier(Kontowechselblende(model: model, bereit: bereit, wechsel: wechsel))
+    }
+    func kontowechselteil(_ index: Int = 0, da: Bool) -> some View {
+        modifier(Kontowechselteil(index: index, da: da))
+    }
+}
+
 /// Meldet den globalen Rahmen einer Ansicht, ohne Zustand zu setzen — für
 /// den Kontowechsel (Profilseite am iPhone und am Mac).
 struct Rahmenmelder: ViewModifier {

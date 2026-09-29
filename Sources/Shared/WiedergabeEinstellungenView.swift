@@ -313,6 +313,13 @@ struct Wahlzeile: View {
                      gedimmt: !bedienbar) {
             Schalter(an: $an)
         }
+        // Nicht nur die Kapsel: auch ein Tipp auf den Titel schaltet. Die
+        // Kapsel bleibt ein eigener Knopf und faengt ihren Tipp selbst ab.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Stil.ruck(.leicht)
+            an.toggle()
+        }
         // **Die ganze Zeile ist der Schalter.** Vorher las VoiceOver den
         // Titel, die Unterzeile und dann einen Schalter namens „Ein" — drei
         // Halte, und beim letzten fehlte, was er schaltet.

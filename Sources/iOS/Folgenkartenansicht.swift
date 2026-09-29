@@ -167,17 +167,16 @@ struct Folgenkartenansicht: View {
             }
     }
 
-    /// Klein und rund an der Ecke der Karte, 44 Punkt Trefferfläche.
+    /// Nacktes Zeichen an der Ecke der Karte wie die anderen Player-Symbole
+    /// (kein Kreis: ein Kreis ist ein Bild, kein Knopf), 44 Punkt Trefferfläche.
     private var schliessknopf: some View {
         Button {
             Protokoll.schreib("[Karte] × gedrückt")
             abbrechen()
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Stil.schrift)
-                .frame(width: 24, height: 24)
-                .background(Stil.flaeche.opacity(0.85), in: Circle())
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }

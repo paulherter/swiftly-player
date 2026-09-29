@@ -188,8 +188,18 @@ struct ItemDetailView: View {
     @State private var sammlungsreihen: [Sammlungsreihe.Reihe] = []
     /// Alles unter der Beschreibung ist beantwortet. Siehe `body`.
     @State private var untenDa = false
-    @State private var gemerkt = false
-    @State private var gesehen = false
+    /// Anfangswert aus dem Listenobjekt: Merkliste-Lesezeichen und Gesehen-
+    /// Haken stehen vom ersten Bild an richtig, nicht erst nach der letzten
+    /// Anfrage. `frisch` zieht nur noch nach.
+    @State private var gemerkt: Bool
+    @State private var gesehen: Bool
+
+    @MainActor init(model: AppModel, item: Item) {
+        self.model = model
+        self.item = item
+        _gemerkt = State(initialValue: item.userData?.isFavorite ?? false)
+        _gesehen = State(initialValue: item.userData?.played ?? false)
+    }
 
     private var aktuell: Item { frisch ?? item }
 
@@ -379,8 +389,17 @@ struct ItemDetailView: View {
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
             async let sammlung = model.sammlungsreihen(zu: item)
+            // **Titel und Plan gleich setzen, der Rest folgt getrennt.** Die
+            // langsamste Anfrage („Ähnliche", „Sammlungen") hielt sonst den
+            // Hauptknopf samt Direct-Play-Marke und „Fortsetzen ab …"
+            // zurück; die Serienseite trennt das schon.
             let neuerTitel = await frischerTitel
             let neuerPlan = await planung
+            frisch = neuerTitel
+            plan = neuerPlan
+            gemerkt = aktuell.userData?.isFavorite ?? false
+            gesehen = aktuell.userData?.played ?? false
+            withAnimation(Stil.einblenden) { planDa = true }
             // **Doppelte Kennungen raus.** Der Server liefert unter
             // „Aehnliches" denselben Titel gelegentlich zweimal, und `ForEach`
             // ordnet ueber die Kennung zu: zwei gleiche Kennungen heissen zwei
@@ -392,22 +411,15 @@ struct ItemDetailView: View {
             // dieselbe Auskunft zweimal.
             let neueExtras = (await extra) ?? []
             let neueSammlungen = await sammlung
-            // **Ein Einblenden, nicht fünf.** Erst wenn alles beantwortet
-            // ist, wird es auf einmal gesetzt.
-            frisch = neuerTitel
-            plan = neuerPlan
+            // **Ein Einblenden für den Rest.** Erst wenn alles darunter
+            // beantwortet ist, wird es auf einmal gesetzt.
             aehnlicheGestoert = frischeAehnliche == nil
             if let frischeAehnliche {
                 aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche)
             }
             extras = neueExtras
             sammlungsreihen = neueSammlungen
-            gemerkt = aktuell.userData?.isFavorite ?? false
-            gesehen = aktuell.userData?.played ?? false
-            withAnimation(Stil.einblenden) {
-                planDa = true
-                untenDa = true
-            }
+            withAnimation(Stil.einblenden) { untenDa = true }
             pruefe = false
         }
     }
@@ -535,7 +547,6 @@ struct ItemDetailView: View {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
                          titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
-                Stil.ruck(.leicht)
                 // Sofort umschalten, damit der Knopf antwortet — aber
                 // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
                 // Anzeige stehen und log.
@@ -667,22 +678,33 @@ struct ItemDetailView: View {
             Abschnitt(titel: "Extras") {
                 HStack(spacing: 12) {
                     ForEach(extras) { extra in
-                        VStack(alignment: .leading, spacing: 7) {
-                            Bild(url: model.imageURL(for: extra, maxHeight: 300),
-                                 breite: 210, hoehe: 118)
-                            Text(extra.name)
-                                .font(Stil.kachel).foregroundStyle(Stil.schrift).lineLimit(1)
-                            // Ein Extra ohne Laufzeit meldet 0, nicht nichts —
-                            // ohne die Regel stünde dort „0 Min.".
-                            if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
-                               let s = extra.runtimeSeconds {
-                                // Derselbe leiseste Ton wie unter jedem
-                                // anderen Plakat — ein Extra ist eine Kachel.
-                                Text(laufzeit(s)).font(Stil.klein)
-                                    .foregroundStyle(Stil.schriftSehrLeise)
+                        // Eine Kachel, die aussieht wie eine, ist auch eine: Tippen spielt das Extra.
+                        Button {
+                            Stil.ruck(.mittel)
+                            Abspielwunsch.starten(extra, model: model, bereitet: $bereitet,
+                                                  fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                                abspielen = $0
                             }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Bild(url: model.imageURL(for: extra, maxHeight: 300),
+                                     breite: 210, hoehe: 118)
+                                Text(extra.name)
+                                    .font(Stil.kachel).foregroundStyle(Stil.schrift).lineLimit(1)
+                                // Ein Extra ohne Laufzeit meldet 0, nicht nichts —
+                                // ohne die Regel stünde dort „0 Min.".
+                                if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
+                                   let s = extra.runtimeSeconds {
+                                    // Derselbe leiseste Ton wie unter jedem
+                                    // anderen Plakat — ein Extra ist eine Kachel.
+                                    Text(laufzeit(s)).font(Stil.klein)
+                                        .foregroundStyle(Stil.schriftSehrLeise)
+                                }
+                            }
+                            .frame(width: 210, alignment: .leading)
                         }
-                        .frame(width: 210, alignment: .leading)
+                        .buttonStyle(Stil.Druckknopf())
+                        .disabled(bereitet)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -709,7 +731,7 @@ struct ItemDetailView: View {
             }
         } else {
             Abschnitt(titel: "Ähnliche Titel") {
-                HStack(spacing: Stil.kachelAbstand) {
+                LazyHStack(spacing: Stil.kachelAbstand) {
                     ForEach(aehnliche) { titel in
                         NavigationLink(value: titel) {
                             PosterTile(model: model, item: titel)
