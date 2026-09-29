@@ -78,4 +78,25 @@ struct FarbumfangTests {
         #expect(s.codec == "hevc", "der Rest muss trotzdem ankommen")
         #expect(s.videoRangeType == nil)
     }
+
+    private func spur(_ typ: Farbumfang?, _ kennlinie: String?) -> MediaStream {
+        MediaStream(codec: "hevc", type: "Video", language: nil, displayTitle: nil,
+                    channels: nil, isDefault: nil, index: 0, height: 2160, width: 3840,
+                    videoRangeType: typ, colorTransfer: kennlinie, colorPrimaries: "bt2020")
+    }
+
+    @Test("Kennlinie der Bildspur fuer den eigenen Zeichenweg")
+    func kennlinieDerSpur() {
+        #expect(Farbauskunft.kennlinie(videospur: spur(.hdr10, "smpte2084")) == .pq)
+        #expect(Farbauskunft.kennlinie(videospur: spur(.dolbyVisionHDR10, nil)) == .pq)
+        #expect(Farbauskunft.kennlinie(videospur: spur(.hlg, nil)) == .hlg)
+        #expect(Farbauskunft.kennlinie(videospur: spur(.sdr, nil)) == nil)
+        #expect(Farbauskunft.kennlinie(videospur: spur(nil, nil)) == nil)
+        #expect(Farbauskunft.kennlinie(videospur: nil) == nil)
+        // Ungueltiges Dolby Vision: die Basisschicht zaehlt, also die rohen Angaben.
+        #expect(Farbauskunft.kennlinie(videospur: spur(.dolbyVisionUngueltig, "smpte2084")) == .pq)
+        #expect(Farbauskunft.kennlinie(videospur: spur(.dolbyVisionUngueltig, "bt709")) == nil)
+        // Ohne Typ tragen die rohen Angaben.
+        #expect(Farbauskunft.kennlinie(videospur: spur(nil, "arib-std-b67")) == .hlg)
+    }
 }

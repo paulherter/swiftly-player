@@ -215,12 +215,6 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
             Trennlinie()
             Wahlzeile(Zeichen.Wellensuche, uebersetzt("Technische Daten im Player"), an = e.technikschild) { e.technikschild = it }
             Trennlinie()
-            // Wie bei YouTube: Finger aufs Bild und liegen lassen. Nur am Telefon — der Fernseher hat keinen Finger.
-            if (!app.istFernseher) {
-                Wahlzeile(Zeichen.Doppeltempo, uebersetzt("Gedrückt halten für 2×"), uebersetzt("Solange der Finger auf dem Bild liegt"),
-                          e.festhaltenDoppelt) { e.festhaltenDoppelt = it }
-                Trennlinie()
-            }
             Wertzeile(Zeichen.Zurueckspulen, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
                 blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
             }

@@ -11020,54 +11020,6 @@
           }
         }
       }
-    },
-    "Gedrückt halten für 2×": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gedrückt halten für 2×"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Press and hold for 2×"
-          }
-        }
-      }
-    },
-    "Solange der Finger auf dem Bild liegt": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Solange der Finger auf dem Bild liegt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "While your finger stays on the picture"
-          }
-        }
-      }
-    },
-    "Doppelte Geschwindigkeit": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Doppelte Geschwindigkeit"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Double speed"
-          }
-        }
-      }
     }
   },
   "version": "1.0"

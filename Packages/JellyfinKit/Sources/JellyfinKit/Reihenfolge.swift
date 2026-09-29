@@ -59,6 +59,16 @@ public enum Listenregeln {
         return ergebnis
     }
 
+    /// Je Serienkennung die erste Folge, Filme bleiben alle — in der
+    /// Reihenfolge der Liste.
+    static func jeSerieEinmal(_ items: [Item]) -> [Item] {
+        var gesehen = Set<String>()
+        return items.filter { i in
+            guard i.type == "Episode", let serie = i.seriesId else { return true }
+            return gesehen.insert(serie).inserted
+        }
+    }
+
     /// **Die vollständigen Einträge in der Reihenfolge der schlanken.**
     ///
     /// Ein Abruf über `Ids` sortiert nach seiner eigenen Regel, nicht nach der
@@ -190,7 +200,14 @@ public extension JellyfinClient {
         guard let roh = try? await neuDazugekommen(parentID: bibliothek, limit: holen,
                                                    schlank: true)
         else { return nil }
-        let gewaehlt = Listenregeln.jeTitelEinmal(roh, zeigen: zeigen)
+        // **Über alle Bibliotheken: erst je Werk einmal** (``Werke``) — damit
+        // von zwei Kopien die aus der eigentlichen Bibliothek stehen bleibt,
+        // nicht die zuletzt eingelesene. Vorher je Serienkennung auf die
+        // neueste Folge gekürzt, damit nur Serien verglichen werden.
+        let vorab = bibliothek == nil
+            ? await jeWerkEinmal(Listenregeln.jeSerieEinmal(roh), folgenJeSerie: true)
+            : roh
+        let gewaehlt = Listenregeln.jeTitelEinmal(vorab, zeigen: zeigen)
         guard !gewaehlt.isEmpty else { return [] }
         guard let voll = try? await items(limit: gewaehlt.count, ids: gewaehlt.map(\.id))
         else { return nil }

@@ -351,30 +351,6 @@ class Spielwerk(
     /** Nach dem Zoom (oder dem Scheitern) — alles zurueck, ohne Bewegung. */
     fun karteAufraeumen() { kartenwechsel = null }
 
-    // MARK: Gedrueckt halten = 2× — `Festhaltetempo` im Kern, nur am Telefon.
-
-    /** Es laeuft gerade mit 2× — die Pille oben. */
-    var doppelt by mutableStateOf(false); private set
-
-    /** Der Finger liegt lange genug: 2×, wenn es erlaubt ist. `true`, wenn es jetzt schneller laeuft. */
-    fun festhaltenAn(): Boolean {
-        if (!Kern.festhaltenErlaubt(app.einstellungen.festhaltenDoppelt, inGruppe || gemeinsamAn,
-                spieler.isPlaying && bildFrei && !wechselt, amSchieben || kleinesFenster)) return false
-        spieler.rate = Kern.festhaltetempo()
-        doppelt = true
-        ruck(Ruck.Leicht)
-        Protokoll.schreib("[Tempo] gehalten: ${Kern.festhaltetempo()}×")
-        return true
-    }
-
-    /** Losgelassen: zurueck ins gewaehlte Tempo. */
-    fun festhaltenAus() {
-        if (!doppelt) return
-        val danach = Kern.festhaltenDanach(tempo)
-        spieler.rate = danach
-        doppelt = false
-        Protokoll.schreib("[Tempo] losgelassen: $danach×")
-    }
     /**
      * Setzt die Oberflaeche mit der **gewollten** Sichtbarkeit der Steuerung (`Angebotsebene.steuerung`):
      * Oeffnen sagt die Karte „Naechste Folge" ab. „Intro ueberspringen" steht sechs Sekunden Laufzeit ohne
@@ -1875,8 +1851,9 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             .pointerInput(Unit) {
                 var letzter = 0L
                 var letzteSeite = 0
-                val druckdauer = Kern.festhaltenDruckdauer()
-                val wegGrenze = Kern.festhaltenWegGrenze().toFloat() * density
+                // Ein Tipp ist vor der Drittelsekunde vorbei; wandert der Finger mehr als 14 dp, ist es ein Wisch.
+                val druckdauer = 300L
+                val wegGrenze = 14f * density
                 fun getippt(stelle: Offset) {
                     val seite = if (stelle.x < size.width / 2) -1 else 1
                     val jetzt = SystemClock.elapsedRealtime()
@@ -1890,9 +1867,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                         beruehrt++
                     }
                 }
-                // **Ein Tipp, zwei Tipps oder gedrueckt halten** — neben den Tipps, nicht statt ihrer: ein Tipp
-                // ist vor der Drittelsekunde vorbei, ein Halten danach (`Festhaltetempo`). Wandert der Finger
-                // weiter oder kommt ein zweiter dazu, ist es weder Tipp noch Halten.
+                // **Ein Tipp oder zwei Tipps.** Wandert der Finger weiter oder kommt ein zweiter dazu, ist es
+                // kein Tipp.
                 awaitEachGesture {
                     val runter = awaitFirstDown(requireUnconsumed = false)
                     var ausgang = ""
@@ -1910,17 +1886,9 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                     when (ausgang) {
                         "hoch" -> getippt(runter.position)
                         "gehalten" -> {
-                            // Die Drittelsekunde ist um: 2×, solange der Finger liegt — dann gilt das Loslassen
-                            // nicht als Tipp.
-                            if (werk.festhaltenAn()) {
-                                try {
-                                    do { val e = awaitPointerEvent() } while (e.changes.any { it.pressed })
-                                } finally { werk.festhaltenAus() }
-                            } else {
-                                // Nicht erlaubt (angehalten, in der Gruppe): ein langer Tipp bleibt ein Tipp.
-                                val hoch = waitForUpOrCancellation()
-                                if (hoch != null) getippt(runter.position)
-                            }
+                            // Ein langer Druck bleibt ein Tipp.
+                            val hoch = waitForUpOrCancellation()
+                            if (hoch != null) getippt(runter.position)
                         }
                     }
                 }
@@ -2112,18 +2080,6 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
         // Waehrend des Folgenwechsels laeuft die alte Folge weiter — der Ring sagt, dass etwas kommt.
         if (werk.bildFrei && werk.wechselt && werk.kartenwechsel == null) Lader(Modifier.align(Alignment.Center))
-
-        // **Die Pille oben mittig, solange es mit 2× laeuft** (gedrueckt halten, `doppeltPille`).
-        AnimatedVisibility(werk.doppelt && !imKleinenFenster, Modifier.align(Alignment.TopCenter).zIndex(4f)
-                .padding(top = rand.oben + Playermass.oben + 6.dp),
-            enter = fadeIn(tween(250, easing = Bewegung.weich)), exit = fadeOut(tween(300, easing = Bewegung.weich))) {
-            Row(Modifier.height(32.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.82f)).padding(horizontal = 14.dp)
-                    .clearAndSetSemantics { contentDescription = uebersetzt("Doppelte Geschwindigkeit") },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("2×", style = Stil.listentitel.copy(fontFeatureSettings = "tnum"), color = Stil.schrift)
-                Symbol(Zeichen.Doppeltempo, 11.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
-            }
-        }
 
         // **Die drei Ebenen** — Vollbild ueber dem Video, blenden 0,2 s easeOut; die Steuerung darunter weicht
         // im selben Takt (`blendkurve`, iOS cb6af09).

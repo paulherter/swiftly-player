@@ -116,7 +116,6 @@ struct WiedergabeEinstellungenView: View {
     }
 
     @AppStorage("technikschild") private var technikschild = false
-    @AppStorage("festhaltenDoppelt") private var festhaltenDoppelt = true
 
     private var verhalten: some View {
         Einstellungsgruppe(titel: "Verhalten") {
@@ -132,11 +131,6 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "waveform.badge.magnifyingglass",
                       titel: Text("Technische Daten im Player"),
                       an: $technikschild)
-            Blattlinie()
-            // Wie bei YouTube: Finger aufs Bild und liegen lassen.
-            Wahlzeile(symbol: "forward.fill", titel: Text("Gedrückt halten für 2×"),
-                      unter: Text("Solange der Finger auf dem Bild liegt"),
-                      an: $festhaltenDoppelt)
             Blattlinie()
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",

@@ -70,15 +70,81 @@ struct StartseitenladerTests {
         #expect(s.neueSerien?.map(\.id) == ["s"])
     }
 
-    @Test("Getrennt ohne Serienbibliothek: Reihe leer; Bibliotheken nicht lesbar: nil")
-    func getrenntOhneBibliothekDerArt() async {
-        let nurFilme = Quelle(neu: ["": [t("film")], "filme": [t("f")]],
-                              sichten: [Item(id: "filme", name: "Filme", collectionType: "movies")])
-        let s = await Startseitenlader.laden(von: nurFilme, .init(getrennt: true))
-        #expect(s.neueSerien?.isEmpty == true)
-        let weg = Quelle(neu: ["": [t("film")]], sichten: nil)
+    private func film(_ id: String) -> Item { Item(id: id, name: id, type: "Movie") }
+    private func folge(_ id: String) -> Item { Item(id: id, name: id, type: "Episode") }
+
+    /// Die Neuzugaenge aller Bibliotheken, wie sie ohne `ParentId` kommen.
+    private var ueberAlle: [Item] { [film("f1"), folge("e1"), film("f2"), folge("e2")] }
+
+    @Test("Nur gemischte Bibliotheken: Rueckfall ohne Bibliothek, je Gattung getrennt")
+    func nurGemischte() async {
+        // Bibliotheken ohne CollectionType und mit „mixed" — auf Apple ist
+        // dann auch keine Bibliothek gewaehlt.
+        let q = Quelle(neu: ["": ueberAlle, "a": [film("x")], "b": [folge("y")]],
+                       sichten: [Item(id: "a", name: "Medien"),
+                                 Item(id: "b", name: "Mediathek", collectionType: "mixed")])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f1", "f2"])
+        #expect(s.neueSerien?.map(\.id) == ["e1", "e2"])
+    }
+
+    @Test("Nur Filmbibliothek: Neue Serien faellt auf die Folgen aller Bibliotheken zurueck")
+    func nurFilme() async {
+        let q = Quelle(neu: ["": ueberAlle, "filme": [film("f")]],
+                       sichten: [Item(id: "filme", name: "Filme", collectionType: "movies")])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f"])
+        #expect(s.neueSerien?.map(\.id) == ["e1", "e2"])
+    }
+
+    @Test("Mehrere Filmbibliotheken, die erste leer: die naechste mit Neuzugaengen")
+    func mehrereDerArt() async {
+        let q = Quelle(neu: ["": ueberAlle, "leer": [], "filme2": [film("g")], "serien": [folge("s")]],
+                       sichten: [Item(id: "leer", name: "4K", collectionType: "movies"),
+                                 Item(id: "filme2", name: "Films", collectionType: "movies"),
+                                 Item(id: "serien", name: "Séries", collectionType: "tvshows")])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["g"])
+        #expect(s.neueSerien?.map(\.id) == ["s"])
+    }
+
+    @Test("CollectionType in anderer Schreibung wird erkannt")
+    func schreibung() async {
+        let q = Quelle(neu: ["": ueberAlle, "filme": [film("f")], "serien": [folge("s")]],
+                       sichten: [Item(id: "filme", name: "Filme", collectionType: "Movies"),
+                                 Item(id: "serien", name: "Serien", collectionType: "TvShows")])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f"])
+        #expect(s.neueSerien?.map(\.id) == ["s"])
+    }
+
+    @Test("Gewaehlte Bibliothek leer oder nicht erreichbar: Rueckfall statt leerer Reihe")
+    func gewaehlteLeer() async {
+        let q = Quelle(neu: ["": ueberAlle, "filme": []])
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true, filmBibliothek: "filme",
+                                                           serienBibliothek: "weg"))
+        #expect(s.neueFilme?.map(\.id) == ["f1", "f2"])
+        #expect(s.neueSerien?.map(\.id) == ["e1", "e2"])
+    }
+
+    @Test("Bibliotheksliste nicht lesbar (aelterer Server): Rueckfall; kommt gar nichts: nil")
+    func bibliothekenWeg() async {
+        let q = Quelle(neu: ["": ueberAlle], sichten: nil)
+        let s = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        #expect(s.neueFilme?.map(\.id) == ["f1", "f2"])
+        #expect(s.neueSerien?.map(\.id) == ["e1", "e2"])
+        let weg = Quelle(neu: [:], sichten: nil)
         let w = await Startseitenlader.laden(von: weg, .init(getrennt: true))
         #expect(w.neueFilme == nil && w.neueSerien == nil)
+    }
+
+    @Test("Der Rueckfall steht mit Grund im Protokoll")
+    func rueckfallImProtokoll() async {
+        let q = Quelle(neu: ["": ueberAlle], sichten: [Item(id: "a", name: "Medien")])
+        _ = await Startseitenlader.laden(von: q, .init(getrennt: true))
+        let zeilen = Protokollring.geteilt.auszug(sekunden: 60).joined(separator: "\n")
+        #expect(zeilen.contains("Neu movies: keine Bibliothek der Art"))
+        #expect(zeilen.contains("Neu tvshows: keine Bibliothek der Art"))
     }
 
     @Test("Nichts kam an: gestört; eine einzige Reihe genuegt dagegen")

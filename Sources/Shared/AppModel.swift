@@ -327,21 +327,9 @@ final class AppModel {
     /// Sieb, mit denselben Filtern wie die Seite.
     func titelsieb(_ quelle: Regalquelle, filter: Bibliotheksfilter) async -> Titelsieb? {
         guard let client else { return nil }
-        let typen = quelle.typen
         do {
-            let listen = try await withThrowingTaskGroup(of: [Item].self) { gruppe in
-                for id in quelle.nurAus {
-                    gruppe.addTask {
-                        try await client.titelkennungen(parentID: id, typen: typen,
-                                                        filters: filter.jellyfinFilter,
-                                                        istGesehen: filter.istGesehen)
-                    }
-                }
-                var alle: [Item] = []
-                for try await liste in gruppe { alle += liste }
-                return alle
-            }
-            return Titelsieb(kennungen: listen)
+            return try await client.titelsieb(quelle, filters: filter.jellyfinFilter,
+                                              istGesehen: filter.istGesehen)
         } catch {
             if !Task.isCancelled { errorMessage = lesbar(error) }
             return nil
@@ -1761,14 +1749,13 @@ final class AppModel {
         guard let client else { return nil }
         let gattungen = art.map { Bibliotheksgattung.typen(zu: $0) } ?? ["Movie", "Series"]
         do {
-            let antwort = try await client.items(parentID: nil,
-                                                 limit: anzahl,
-                                                 startIndex: startIndex,
-                                                 sortBy: sortierung.feld,
-                                                 sortOrder: sortierung.richtung,
-                                                 filters: ["IsFavorite"],
-                                                 recursive: true,
-                                                 includeItemTypes: gattungen)
+            // Je Werk einmal (``Werke``) — ein Film aus zwei Bibliotheken
+            // trägt den Haken in beiden.
+            let antwort = try await client.gemerkteWerke(typen: gattungen,
+                                                         sortBy: sortierung.feld,
+                                                         sortOrder: sortierung.richtung,
+                                                         startIndex: startIndex,
+                                                         limit: anzahl)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
             errorMessage = lesbar(error)

@@ -33,7 +33,9 @@ let package = Package(
         // uebersetzt dieselben Quellen wie auf Linux, nur mit MSVC und als
         // statische Bibliothek.
         .systemLibrary(name: "CRlottie"),
-        .target(name: "CBildbruecke", dependencies: ["CVLC"]),
+        // libepoxy fuer den HDR-Shader (`hdrbild.c`) - GTK bringt es ohnehin mit.
+        .target(name: "CBildbruecke", dependencies: ["CVLC"],
+                linkerSettings: [.linkedLibrary("epoxy")]),
         // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
         // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
         .target(name: "CMedientasten"),

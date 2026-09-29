@@ -44,7 +44,9 @@ let package = Package(
         // Der fadenkritische Teil in C: VLCs Rueckrufe laufen auf dem
         // Dekoderfaden und teilen sich einen Puffer mit GTKs Hauptfaden.
         // Begruendung in bildbruecke.h.
-        .target(name: "CBildbruecke", dependencies: ["CVLC"]),
+        // libepoxy fuer den HDR-Shader (`hdrbild.c`) - GTK bringt es ohnehin mit.
+        .target(name: "CBildbruecke", dependencies: ["CVLC"],
+                linkerSettings: [.linkedLibrary("epoxy")]),
         // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
         // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
         .target(name: "CMedientasten"),

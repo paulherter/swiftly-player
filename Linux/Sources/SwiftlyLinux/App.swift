@@ -4760,7 +4760,15 @@ final class App: @unchecked Sendable {
         // Genre antippt, sucht meist, was neu ist.
         let genre = was == .gattung ? offeneGattung : nil
         Task.detached { [self] in
-            let antwort = try? await client.items(parentID: nil,
+            // **Die Merkliste je Werk einmal** (`JellyfinClient.gemerkteWerke`),
+            // gezaehlt in Werken — `ab` bleibt die Zahl der geladenen Kacheln.
+            let antwort: ItemsResponse?
+            if was == .merkliste {
+                antwort = try? await client.gemerkteWerke(typen: gattungen, sortBy: sort.feld,
+                                                          sortOrder: sort.richtung,
+                                                          startIndex: ab, limit: 100)
+            } else {
+                antwort = try? await client.items(parentID: nil,
                                                   // 200 auf einen Schlag fuer
                                                   // ein Genre, sonst 100 je
                                                   // Seite — `GenreView.swift:70`.
@@ -4769,13 +4777,12 @@ final class App: @unchecked Sendable {
                                                   sortBy: genre != nil ? "DateCreated" : sort.feld,
                                                   sortOrder: genre != nil ? "Descending"
                                                                           : sort.richtung,
-                                                  filters: was == .merkliste
-                                                      ? ["IsFavorite"] : f.jellyfinFilter,
-                                                  istGesehen: was == .merkliste
-                                                      ? nil : f.istGesehen,
+                                                  filters: f.jellyfinFilter,
+                                                  istGesehen: f.istGesehen,
                                                   recursive: true,
                                                   includeItemTypes: gattungen,
                                                   gattungen: genre.map { [$0] } ?? [])
+            }
             aufHauptfaden {
                 self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
                                    items: antwort?.items ?? [],
@@ -4860,19 +4867,8 @@ final class App: @unchecked Sendable {
             if let altesSieb {
                 sieb = altesSieb
             } else {
-                let typen = quelle.typen
-                let listen: [Item]? = try? await withThrowingTaskGroup(of: [Item].self) { gruppe in
-                    for id in quelle.nurAus {
-                        gruppe.addTask {
-                            try await client.titelkennungen(parentID: id, typen: typen,
-                                                            filters: f.jellyfinFilter,
-                                                            istGesehen: f.istGesehen)
-                        }
-                    }
-                    var alle: [Item] = []
-                    for try await liste in gruppe { alle += liste }
-                    return alle
-                }
+                let listen = try? await client.titelsieb(quelle, filters: f.jellyfinFilter,
+                                                          istGesehen: f.istGesehen)
                 guard let listen else {
                     aufHauptfaden {
                         self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
@@ -4880,7 +4876,7 @@ final class App: @unchecked Sendable {
                     }
                     return
                 }
-                sieb = Titelsieb(kennungen: listen)
+                sieb = listen
             }
             var neu: [Item] = []
             var versatz = start

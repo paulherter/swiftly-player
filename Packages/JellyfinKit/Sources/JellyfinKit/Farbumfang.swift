@@ -85,4 +85,27 @@ public enum Farbauskunft {
         _ = primaervalenzen
         return .unbekannt
     }
+
+    /// **Welche Kennlinie das Bild einer Spur traegt** — fuer Player, die das
+    /// Bild selbst zeichnen und deshalb selbst auf SDR abbilden muessen
+    /// (Linux und Windows, libVLC ueber Rohbild-Rueckrufe).
+    ///
+    /// Dieselbe Ableitung wie das Technikschild (``Technikangaben/dynamik(_:)``):
+    /// ungueltige Dolby-Vision-Angaben spielt jeder Player als Basisschicht,
+    /// dann zaehlen die rohen Angaben. `nil` heisst SDR oder unbekannt — dann
+    /// bleibt das Bild, wie es ist.
+    public static func kennlinie(videospur spur: MediaStream?) -> Farbumfang.Kennlinie? {
+        guard let spur else { return nil }
+        var art = Self.umfang(typ: spur.videoRangeType, kennlinie: spur.colorTransfer,
+                              primaervalenzen: spur.colorPrimaries)
+        if art == .dolbyVisionUngueltig {
+            art = Self.umfang(typ: nil, kennlinie: spur.colorTransfer,
+                              primaervalenzen: spur.colorPrimaries)
+        }
+        return art.kennlinie
+    }
+
+    public static func kennlinie(quelle: MediaSource?) -> Farbumfang.Kennlinie? {
+        kennlinie(videospur: quelle.flatMap(Dateiangaben.videospur))
+    }
 }

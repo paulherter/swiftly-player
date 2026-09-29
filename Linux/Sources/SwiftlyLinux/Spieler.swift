@@ -129,7 +129,8 @@ extension App {
             abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer,
                               softwareDekoder: PlaybackPlan.vonDerPlatte(
                                   datei, container: nil,
-                                  bildcodec: downloads.posten(fuer: item.id)?.bildcodec).softwareDekoder)
+                                  bildcodec: downloads.posten(fuer: item.id)?.bildcodec).softwareDekoder,
+                              kennlinie: Farbauskunft.kennlinie(quelle: item.mediaSources?.first))
             abspieler.bildfuellend(wahlen.bildfuellend)
             technikschildSetzen(wahlen.technikschild)
             spielstand.position = ab
@@ -230,7 +231,8 @@ extension App {
                 self.warnungZeigen(plan)
                 Protokoll.mitUhr("VLC oeffnen") {
                     self.abspieler.oeffnen(plan.url, ab: stelle, puffer: self.wahlen.puffer,
-                                          softwareDekoder: plan.softwareDekoder)
+                                          softwareDekoder: plan.softwareDekoder,
+                                          kennlinie: Farbauskunft.kennlinie(quelle: plan.quelle))
                 }
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
@@ -1544,7 +1546,8 @@ extension App {
         tonVerlorenZuletzt = nil
         let stelle = spielstand.position
         abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer, pausiert: pausiert,
-                          softwareDekoder: plan.softwareDekoder)
+                          softwareDekoder: plan.softwareDekoder,
+                          kennlinie: Farbauskunft.kennlinie(quelle: plan.quelle))
         abspieler.bildfuellend(wahlen.bildfuellend)
         spielstand.spurenGesetzt = false
         spurlage.neuGeoeffnet()
@@ -1839,7 +1842,8 @@ extension App {
         // wieder bei 1,0 an, obwohl der Zuschauer 1,25 gewählt hat.
         let tempo = abspieler.tempo
         // Die nächste Folge startet **von vorn** (B5).
-        abspieler.oeffnen(plan.url, ab: ab, puffer: wahlen.puffer, softwareDekoder: plan.softwareDekoder)
+        abspieler.oeffnen(plan.url, ab: ab, puffer: wahlen.puffer, softwareDekoder: plan.softwareDekoder,
+                          kennlinie: Farbauskunft.kennlinie(quelle: plan.quelle))
         // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
         abspieler.bildfuellend(wahlen.bildfuellend)
         technikschildSetzen(wahlen.technikschild)

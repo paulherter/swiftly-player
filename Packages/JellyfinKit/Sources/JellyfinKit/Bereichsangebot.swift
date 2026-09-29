@@ -266,11 +266,11 @@ public struct Regalquelle: Equatable, Sendable {
 /// davon 16 verschiedene, und 13 davon aus der gemischten Bibliothek.
 ///
 /// Der Server sortiert und blättert (eine Abfrage ohne `ParentId`), das Sieb
-/// lässt nur durch, was aus den gewählten Bibliotheken stammt und als Titel
-/// noch nicht dastand (``Listenregeln/jeTitelEinmal(_:zeigen:)``, dieselbe
-/// Regel wie bei „Zuletzt hinzugefügt"). Es merkt sich das über Seiten
-/// hinweg — sonst stünde ein Film, dessen zweite Kopie erst auf Seite drei
-/// kommt, eben doch zweimal da.
+/// lässt je Werk genau einen Eintrag durch (``Werke``, dieselbe Regel wie auf
+/// der Startseite und in der Suche). **Welcher, steht vorher fest:** der aus
+/// der Bibliothek, die in der Reihenfolge des Kontos zuerst kommt — nicht der,
+/// den die Sortierung zufällig zuerst bringt. Ohne Anbieternummern wird nichts
+/// zusammengefasst.
 ///
 /// Wer aus welcher Bibliothek stammt, sagt die Antwort nicht; deshalb holt
 /// die Seite vorher die Kennungen der gewählten Bibliotheken (``erlaubt``),
@@ -281,18 +281,51 @@ public struct Titelsieb: Sendable {
     public let gesamt: Int
     private var gesehen = Set<String>()
 
-    /// - Parameter kennungen: Alles aus den gewählten Bibliotheken, mit
-    ///   Gattung, Namen, Jahr und Anbieternummern.
+    /// - Parameter je: Je gewählter Bibliothek, **in der Reihenfolge des
+    ///   Kontos**, alles aus ihr — mit Gattung und Anbieternummern.
+    public init(je bibliotheken: [(bibliothek: String, kennungen: [Item])]) {
+        var herkunft: [String: String] = [:]
+        for (von, liste) in bibliotheken { for i in liste { herkunft[i.id] = von } }
+        let werke = Werke.zusammenfassen(bibliotheken.flatMap(\.kennungen), herkunft: herkunft,
+                                         bibliotheken: bibliotheken.map { Item(id: $0.bibliothek, name: "") })
+        erlaubt = Set(werke.map(\.id))
+        gesamt = werke.count
+    }
+
+    /// Alles aus einer Liste; von Doppeln bleibt das erste.
     public init(kennungen: [Item]) {
-        erlaubt = Set(kennungen.map(\.id))
-        gesamt = Set(kennungen.map(Listenregeln.titelschluessel)).count
+        self.init(je: [("", kennungen)])
     }
 
     /// Was von einer Seite stehen bleibt, in ihrer Reihenfolge.
     public mutating func sieben(_ seite: [Item]) -> [Item] {
-        seite.filter { erlaubt.contains($0.id) && gesehen.insert(Listenregeln.titelschluessel($0)).inserted }
+        seite.filter { erlaubt.contains($0.id) && gesehen.insert($0.id).inserted }
     }
 
     /// Von vorn — beim Neuladen der ersten Seite.
     public mutating func vonVorn() { gesehen = [] }
+}
+
+public extension JellyfinClient {
+
+    /// **Das Sieb für „Alle"** — die Kennungen jeder gewählten Bibliothek,
+    /// nebeneinander geholt, in der Reihenfolge von `quelle.nurAus`. Die
+    /// Reihenfolge entscheidet, welche Kopie eines Werks stehen bleibt.
+    /// Mit denselben Filtern wie die Seite.
+    func titelsieb(_ quelle: Regalquelle, filters: [String] = [],
+                   istGesehen: Bool? = nil) async throws -> Titelsieb {
+        let typen = quelle.typen
+        let geholt = try await withThrowingTaskGroup(of: (Int, [Item]).self) { gruppe in
+            for (stelle, id) in quelle.nurAus.enumerated() {
+                gruppe.addTask {
+                    (stelle, try await self.titelkennungen(parentID: id, typen: typen,
+                                                           filters: filters, istGesehen: istGesehen))
+                }
+            }
+            var je: [Int: [Item]] = [:]
+            for try await (stelle, liste) in gruppe { je[stelle] = liste }
+            return je
+        }
+        return Titelsieb(je: quelle.nurAus.enumerated().map { ($1, geholt[$0] ?? []) })
+    }
 }
