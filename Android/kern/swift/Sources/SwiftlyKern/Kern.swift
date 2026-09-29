@@ -534,8 +534,9 @@ public final class Kern: @unchecked Sendable {
                            gattungen: [String], alsChips: Bool) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
-            // Ohne gemerkte Wahl sucht der Lader die erste Bibliothek ihrer
-            // Art selbst (`Startseitenlader.neu`) — wie auf Linux und Apple.
+            // Ohne gemerkte Wahl sucht der Lader die Bibliothek ihrer Art
+            // selbst und faellt sonst auf die Abfrage ohne Bibliothek zurueck
+            // (`Startseitenlader.neu`) — wie auf Linux und Apple.
             let filme = filmBibliothek.isEmpty ? nil : filmBibliothek
             let serien = serienBibliothek.isEmpty ? nil : serienBibliothek
             let stand = await Startseitenlader.laden(von: c, .init(
@@ -939,8 +940,9 @@ public final class Kern: @unchecked Sendable {
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
             let art = Merkgattung.zu(art: gattung.isEmpty ? nil : gattung)
             let s = Sortierung(rawValue: sortierung) ?? .neueste
-            let antwort = try await c.items(limit: anzahl, startIndex: ab, sortBy: s.feld, sortOrder: s.richtung,
-                                            filters: ["IsFavorite"], recursive: true, includeItemTypes: art.typen)
+            // Je Werk einmal (`JellyfinClient.gemerkteWerke`), gezaehlt in Werken.
+            let antwort = try await c.gemerkteWerke(typen: art.typen, sortBy: s.feld, sortOrder: s.richtung,
+                                                    startIndex: ab, limit: anzahl)
             let titel = ab == 0 ? Listenregeln.ohneDoppelte(antwort.items) : antwort.items
             return try json(Rasterseitenantwort(titel: titel.map { rasterkachel($0, a) }, gesamt: antwort.totalRecordCount))
         }
@@ -1356,19 +1358,6 @@ public final class Kern: @unchecked Sendable {
             protokoll("Vorpuffer: Anfang nicht geladen (\(type(of: error)))")
         }
     }
-
-    /// **Gedrueckt halten = 2×** (`Festhaltetempo`, nur Handy): ob ein langer Druck jetzt beschleunigt.
-    /// Kein AirPlay auf Android — ein fremder Abspieler kommt hier nicht vor.
-    public static func festhaltenErlaubt(eingeschaltet: Bool, inGruppe: Bool, laeuft: Bool, spult: Bool) -> Bool {
-        Festhaltetempo.erlaubt(eingeschaltet: eingeschaltet, inGruppe: inGruppe, fremderAbspieler: false,
-                               laeuft: laeuft, spult: spult)
-    }
-    public static func festhaltetempo() -> Float { Festhaltetempo.tempo }
-    /// So lange muss der Finger liegen, in Millisekunden.
-    public static func festhaltenDruckdauer() -> Int { Int(Festhaltetempo.druckdauer * 1000) }
-    /// So weit darf er wandern, in Punkt (dp).
-    public static func festhaltenWegGrenze() -> Double { Festhaltetempo.wegGrenze }
-    public static func festhaltenDanach(vorher: Float) -> Float { Festhaltetempo.danach(vorher: vorher) }
 
     /// **Der Regler rastet an den Kerben ein** (`Kerbenfang`): die Kerbe in Sekunden, `-1` wenn keine
     /// nah genug ist. `breite` in dp, wie die Fangweite.
@@ -3330,19 +3319,7 @@ public final class Kern: @unchecked Sendable {
             var versatz: Int
             var erste = anzahl
             if ab == 0 {
-                let typen = quelle.typen
-                let kennungen = try await withThrowingTaskGroup(of: [Item].self) { gruppe in
-                    for id in quelle.nurAus {
-                        gruppe.addTask {
-                            try await c.titelkennungen(parentID: id, typen: typen,
-                                                       filters: f.jellyfinFilter, istGesehen: f.istGesehen)
-                        }
-                    }
-                    var alle: [Item] = []
-                    for try await liste in gruppe { alle += liste }
-                    return alle
-                }
-                sieb = Titelsieb(kennungen: kennungen)
+                sieb = try await c.titelsieb(quelle, filters: f.jellyfinFilter, istGesehen: f.istGesehen)
                 versatz = 0
                 if let vorher, vorher.schluessel == schluessel { erste = max(anzahl, vorher.versatz) }
             } else {

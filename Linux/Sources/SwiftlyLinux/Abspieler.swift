@@ -25,6 +25,20 @@ final class Abspieler: @unchecked Sendable {
     private var spieler: OpaquePointer?
     private var bruecke: OpaquePointer?
     private var bildfeld: Widget!
+    /// **Das HDR-Bild.** Eine `GtkGLArea` neben dem `GtkPicture`: HDR kommt
+    /// als YUV zu zehn Bit an und wird auf der Grafikkarte auf SDR abgebildet
+    /// (`hdrbild.h`). Sichtbar ist immer nur eines von beiden.
+    private var glfeld: Widget!
+    /// Haelt Bildfeld und GL-Feld; das ist, was die Spielerseite einhaengt.
+    private var huelle: Widget!
+    private var hdr: OpaquePointer?
+    /// `HDRBILD_PQ`/`HDRBILD_HLG` fuer den laufenden Titel, 0 auf dem RGB-Weg.
+    private var hdrKennlinie: Int32 = 0
+    private var fuellend = false
+    /// Groesse des GL-Rahmenpuffers in Geraetepunkten, aus dem Signal `resize`.
+    fileprivate var glBreite: Int32 = 0
+    fileprivate var glHoehe: Int32 = 0
+    private var hdrFehlerGemeldet = false
     private var takt: guint = 0
 
     /// **Wie viele Bilder die Bruecke seit dem Oeffnen hergegeben hat.**
@@ -45,15 +59,15 @@ final class Abspieler: @unchecked Sendable {
     #endif
 
     /// Wie die Anzeige das Bild zeigt. Ein `GtkPicture`, sonst nichts.
-    var anzeige: Widget! { bildfeld }
+    var anzeige: Widget! { huelle }
 
     /// Zum Messen: haengt das Bildfeld im Fenster, hat es einen Taktgeber,
     /// und ist der Rueckruf angemeldet?
     var taktlage: String {
-        guard let bildfeld else { return "kein Bildfeld" }
-        let gemappt = gtk_widget_get_mapped(bildfeld) != 0
-        let uhr = gtk_widget_get_frame_clock(bildfeld) != nil
-        let eltern = gtk_widget_get_parent(bildfeld) != nil
+        guard let huelle else { return "kein Bildfeld" }
+        let gemappt = gtk_widget_get_mapped(huelle) != 0
+        let uhr = gtk_widget_get_frame_clock(huelle) != nil
+        let eltern = gtk_widget_get_parent(huelle) != nil
         return "mapped=\(gemappt ? 1 : 0) uhr=\(uhr ? 1 : 0) eltern=\(eltern ? 1 : 0) id=\(takt)"
     }
 
@@ -183,24 +197,34 @@ final class Abspieler: @unchecked Sendable {
         }
         bruecke = bildbruecke_neu()
         bildfeld = gtk_picture_new()
-        // **Das Bildfeld überlebt seine Seite.** Es wird einmal angelegt und
+        glfeld = gtk_gl_area_new()
+        huelle = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        hdr = hdrbild_neu()
+        // **Das Bildfeld überlebt seine Seite** — genauer die Huelle, in der
+        // es mit dem GL-Feld steckt. Es wird einmal angelegt und
         // bei jedem Öffnen in eine neue Player-Seite gehängt; wird die alte
         // Seite aus dem Stapel genommen, verliert es seinen Eltern — und damit
         // seine letzte Referenz. Beim zweiten Öffnen läge dann ein
         // freigegebener Zeiger in `anzeige`, und GObject stirbt daran mit
         // einer Adresse, die nach Zufall aussieht. Genau so ist die App
         // abgestürzt, als
-        g_object_ref_sink(bildfeld)
+        g_object_ref_sink(huelle)
         gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
-        gtk_widget_set_hexpand(bildfeld, 1)
-        gtk_widget_set_vexpand(bildfeld, 1)
+        for feld in [huelle, bildfeld, glfeld] {
+            gtk_widget_set_hexpand(feld, 1)
+            gtk_widget_set_vexpand(feld, 1)
+        }
+        gtk_box_append(alsBox(huelle), bildfeld)
+        gtk_box_append(alsBox(huelle), glfeld)
+        gtk_widget_set_visible(glfeld, 0)
+        glFeldAnschliessen()
         // **Und noch einmal, sobald das Bildfeld wieder im Fenster haengt.**
         // ``oeffnen(_:ab:puffer:)`` meldet den Takt an, aber es ist nicht
         // gesagt, dass das Umhaengen davor liegt: wer eine Seite baut,
         // waehrend schon gespielt wird, kaeme sonst wieder ohne Takt heraus.
         // Nur wenn ueberhaupt ein Spieler laeuft — sonst liesse ein Takt
         // ohne Bild GTK jeden Frame umsonst zeichnen.
-        beiSignal(bildfeld, "map") { [weak self] in
+        beiSignal(huelle, "map") { [weak self] in
             guard let self, self.spieler != nil else { return }
             self.bildTaktStarten()
         }
@@ -229,8 +253,12 @@ final class Abspieler: @unchecked Sendable {
 
     /// - Parameter softwareDekoder: gleich ohne Hardware dekodieren —
     ///   ``PlaybackPlan/softwareDekoder`` (MPEG-4 Part 2, XviD/DivX).
+    /// - Parameter kennlinie: PQ oder HLG laut Server
+    ///   (``Farbauskunft/kennlinie(quelle:)``), `nil` fuer SDR. Pflicht, aus
+    ///   demselben Grund wie der Puffer: ein vergessenes HDR ist wieder das
+    ///   ausgewaschene Bild.
     func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe, pausiert: Bool = false,
-                 softwareDekoder: Bool = false) {
+                 softwareDekoder: Bool = false, kennlinie: Farbumfang.Kennlinie?) {
         if kern == nil, kaputt {
             Protokoll.schreib("[Player] kein VLC, Titel kann nicht spielen")
             aufHauptfaden { [weak self] in self?.abgerissen?(true) }
@@ -241,7 +269,8 @@ final class Abspieler: @unchecked Sendable {
             Protokoll.schreib("[Player] VLC noch nicht bereit, Titel wartet")
             if wartetSeit == nil { wartetSeit = Date() }
             wartenderAuftrag = { [self] in
-                oeffnen(url, ab: ab, puffer: puffer, pausiert: pausiert, softwareDekoder: softwareDekoder)
+                oeffnen(url, ab: ab, puffer: puffer, pausiert: pausiert,
+                        softwareDekoder: softwareDekoder, kennlinie: kennlinie)
             }
             return
         }
@@ -317,6 +346,7 @@ final class Abspieler: @unchecked Sendable {
         spieler = libvlc_media_player_new_from_media(medium)
         libvlc_media_release(medium)
         guard let spieler else { return }
+        bildwegWaehlen(kennlinie)
         bildbruecke_anhaengen(bruecke, spieler)
         if let ereignisse = libvlc_media_player_event_manager(spieler) {
             let ich = Unmanaged.passUnretained(self).toOpaque()
@@ -357,7 +387,7 @@ final class Abspieler: @unchecked Sendable {
     /// Eine Zeile je Titel, kein Dauerlaerm — und sie beantwortet eine Frage,
     /// die sonst nur ein Blick auf den fremden Rechner beantwortet.
     private func rendererMelden() {
-        guard let bildfeld, let fenster = gtk_widget_get_native(bildfeld),
+        guard let huelle, let fenster = gtk_widget_get_native(huelle),
               let zeichner = gtk_native_get_renderer(fenster) else { return }
         let name = g_type_name_from_instance(
             unsafeBitCast(zeichner, to: UnsafeMutablePointer<GTypeInstance>.self))
@@ -664,11 +694,14 @@ final class Abspieler: @unchecked Sendable {
     /// Das richtige Mittel ist deshalb GTKs eigenes: `CONTAIN` legt das ganze
     /// Bild hinein und laesst Balken stehen, `COVER` fuellt und schneidet ab.
     /// Beides ohne Verzerren — `FILL` waere genau die Streckung, die es auf
-    /// keiner Plattform geben soll.
+    /// keiner Plattform geben soll. Das GL-Feld fuer HDR passt genauso ein
+    /// (`hdrbild_zeichnen`).
     func bildfuellend(_ an: Bool) {
         guard let bildfeld else { return }
+        fuellend = an
         gtk_picture_set_content_fit(OpaquePointer(bildfeld),
                                     an ? GTK_CONTENT_FIT_COVER : GTK_CONTENT_FIT_CONTAIN)
+        if let glfeld { gtk_gl_area_queue_render(alsGL(glfeld)) }
     }
 
 
@@ -689,12 +722,12 @@ final class Abspieler: @unchecked Sendable {
     /// Fenster nuetzt auch ein frischer Rueckruf nichts. Die Zeile bleibt
     /// als das, was sie ist: eine Annahme weniger.
     private func bildTaktStarten() {
-        if takt != 0, let bildfeld {
-            gtk_widget_remove_tick_callback(bildfeld, takt)
+        if takt != 0, let huelle {
+            gtk_widget_remove_tick_callback(huelle, takt)
             takt = 0
         }
-        guard let bildfeld else { return }
-        takt = gtk_widget_add_tick_callback(bildfeld, bildTakt,
+        guard let huelle else { return }
+        takt = gtk_widget_add_tick_callback(huelle, bildTakt,
                                             Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
@@ -718,11 +751,15 @@ final class Abspieler: @unchecked Sendable {
         }
         #endif
         guard let bruecke else { return }
-        var daten: UnsafePointer<UInt8>?
-        var breite: UInt32 = 0, hoehe: UInt32 = 0, zeilentakt: UInt32 = 0
-        guard bildbruecke_holen(bruecke, &daten, &breite, &hoehe, &zeilentakt),
-              let daten, breite > 0, hoehe > 0 else { return }
+        var stand = Bildstand()
+        guard bildbruecke_holen(bruecke, &stand), stand.breite > 0, stand.hoehe > 0 else { return }
         geholteBilder += 1
+        guard stand.art == Int32(BILDART_RGB24) else {
+            hdrBildLaden(&stand)
+            return
+        }
+        guard let daten = stand.ebene.0 else { return }
+        let breite = stand.breite, hoehe = stand.hoehe, zeilentakt = stand.takt.0
 
         let laenge = Int(zeilentakt) * Int(hoehe)
         guard let bytes = g_bytes_new(daten, gsize(laenge)) else { return }
@@ -732,6 +769,122 @@ final class Abspieler: @unchecked Sendable {
                                                   bytes, gsize(zeilentakt)) else { return }
         gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
         g_object_unref(UnsafeMutableRawPointer(textur))
+    }
+
+    // MARK: HDR
+
+    /// **RGB oder YUV zu zehn Bit — vor dem Start, fuer genau diesen Titel.**
+    ///
+    /// VLC rechnet auf dem RGB-Weg mit swscale um und laesst die Kennlinie
+    /// stehen: PQ-Werte, als sRGB gezeigt, sind das flaue, blasse Bild, das
+    /// ein Nutzer neben mpv gesehen hat. Tonemapping kann libVLC 3 nur in
+    /// seiner eigenen OpenGL-Ausgabe, nicht in den Rohbild-Rueckrufen, die
+    /// wir benutzen. Also bildet der Shader in `hdrbild.c` HDR selbst ab.
+    ///
+    /// SDR bleibt auf dem RGB-Weg, unveraendert. Ohne brauchbares GL (VM,
+    /// Fernsitzung) auch HDR — flau, aber mit Bild. `SWIFTLY_HDR=aus`
+    /// erzwingt den alten Weg zum Vergleich.
+    private func bildwegWaehlen(_ kennlinie: Farbumfang.Kennlinie?) {
+        guard let bruecke, let bildfeld, let glfeld else { return }
+        var weg: Int32 = 0
+        if let kennlinie {
+            if ProcessInfo.processInfo.environment["SWIFTLY_HDR"] == "aus" {
+                Protokoll.schreib("[Player] HDR (\(kennlinie)) ohne Tonemapping: SWIFTLY_HDR=aus")
+            } else if !Abspieler.glTauglich() {
+                Protokoll.schreib("[Player] HDR (\(kennlinie)) ohne Tonemapping: kein GL")
+            } else {
+                weg = kennlinie == .hlg ? Int32(HDRBILD_HLG) : Int32(HDRBILD_PQ)
+                Protokoll.schreib("[Player] HDR (\(kennlinie)): Tonemapping auf der Grafikkarte")
+            }
+        }
+        hdrKennlinie = weg
+        bildbruecke_hdr(bruecke, weg != 0)
+        gtk_widget_set_visible(glfeld, weg != 0 ? 1 : 0)
+        gtk_widget_set_visible(bildfeld, weg != 0 ? 0 : 1)
+    }
+
+    /// **Kann dieser Rechner den Shader ueberhaupt?** Einmal je Lauf in einem
+    /// eigenen GL-Kontext geprueft — bevor VLC das Format erfaehrt. Stellte
+    /// sich das erst am GL-Feld heraus, liefe der Titel schon in YUV, und
+    /// das Bild bliebe schwarz statt nur flau.
+    nonisolated(unsafe) private static var glGeprueft: Bool?
+    private static func glTauglich() -> Bool {
+        if let glGeprueft { return glGeprueft }
+        var tauglich = false
+        defer { glGeprueft = tauglich }
+        guard let anzeige = gdk_display_get_default() else { return false }
+        var fehler: UnsafeMutablePointer<GError>?
+        guard let kontext = gdk_display_create_gl_context(anzeige, &fehler) else {
+            glFehlerMelden("kein GL-Kontext", fehler)
+            return false
+        }
+        defer { g_object_unref(UnsafeMutableRawPointer(kontext)) }
+        guard gdk_gl_context_realize(kontext, &fehler) != 0 else {
+            glFehlerMelden("GL-Kontext nicht bereit", fehler)
+            return false
+        }
+        gdk_gl_context_make_current(kontext)
+        defer { gdk_gl_context_clear_current() }
+        guard let probe = hdrbild_neu() else { return false }
+        defer { hdrbild_frei(probe) }
+        tauglich = hdrbild_einrichten(probe, gdk_gl_context_get_use_es(kontext) != 0)
+        if !tauglich {
+            Protokoll.schreib("[Player] HDR-Shader: \(String(cString: hdrbild_fehler(probe)))")
+        }
+        hdrbild_aufgeben(probe)
+        return tauglich
+    }
+
+    private static func glFehlerMelden(_ was: String, _ fehler: UnsafeMutablePointer<GError>?) {
+        let grund = fehler.flatMap { $0.pointee.message.map { String(cString: $0) } } ?? "?"
+        Protokoll.schreib("[Player] HDR: \(was) (\(grund))")
+        if let fehler { g_error_free(fehler) }
+    }
+
+    private func glFeldAnschliessen() {
+        guard let glfeld else { return }
+        let feld = alsGL(glfeld)
+        gtk_gl_area_set_auto_render(feld, 0)
+        gtk_gl_area_set_has_depth_buffer(feld, 0)
+        let ich = Unmanaged.passUnretained(self).toOpaque()
+        g_signal_connect_data(UnsafeMutableRawPointer(glfeld), "render",
+                              unsafeBitCast(glZeichnenRuf, to: GCallback.self), ich, nil,
+                              GConnectFlags(rawValue: 0))
+        g_signal_connect_data(UnsafeMutableRawPointer(glfeld), "resize",
+                              unsafeBitCast(glGroesseRuf, to: GCallback.self), ich, nil,
+                              GConnectFlags(rawValue: 0))
+        g_signal_connect_data(UnsafeMutableRawPointer(glfeld), "unrealize",
+                              unsafeBitCast(glAbbauRuf, to: GCallback.self), ich, nil,
+                              GConnectFlags(rawValue: 0))
+    }
+
+    /// Ein HDR-Bild in die Texturen. Laeuft im Takt, wie der RGB-Weg; ohne
+    /// Kontext (Feld noch nicht im Fenster) wird das Bild uebersprungen.
+    private func hdrBildLaden(_ stand: inout Bildstand) {
+        guard let glfeld, let hdr, hdrKennlinie != 0,
+              gtk_widget_get_realized(glfeld) != 0 else { return }
+        let feld = alsGL(glfeld)
+        gtk_gl_area_make_current(feld)
+        guard gtk_gl_area_get_error(feld) == nil,
+              let kontext = gtk_gl_area_get_context(feld) else { return }
+        if !hdrbild_hochladen(hdr, &stand, gdk_gl_context_get_use_es(kontext) != 0),
+           !hdrFehlerGemeldet {
+            hdrFehlerGemeldet = true
+            Protokoll.schreib("[Player] HDR-Bild nicht geladen: \(String(cString: hdrbild_fehler(hdr)))")
+        }
+        gtk_gl_area_queue_render(feld)
+    }
+
+    fileprivate func glZeichnen(_ kontext: OpaquePointer?) {
+        guard let hdr else { return }
+        let es = kontext.map { gdk_gl_context_get_use_es($0) != 0 } ?? false
+        hdrbild_zeichnen(hdr, glBreite, glHoehe, fuellend, hdrKennlinie, 0, es)
+    }
+
+    fileprivate func glFeldAbbauen() {
+        guard let glfeld, let hdr, gtk_widget_get_realized(glfeld) != 0 else { return }
+        gtk_gl_area_make_current(alsGL(glfeld))
+        if gtk_gl_area_get_error(alsGL(glfeld)) == nil { hdrbild_aufgeben(hdr) }
     }
 
     // MARK: Schliessen
@@ -744,14 +897,53 @@ final class Abspieler: @unchecked Sendable {
             self.spieler = nil
         }
         guard !nurMedium else { return }
-        if takt != 0, let bildfeld {
-            gtk_widget_remove_tick_callback(bildfeld, takt)
+        if takt != 0, let huelle {
+            gtk_widget_remove_tick_callback(huelle, takt)
             takt = 0
         }
         if let bruecke { bildbruecke_frei(bruecke); self.bruecke = nil }
         if let kern { libvlc_release(kern); self.kern = nil }
-        if let bildfeld { g_object_unref(bildfeld); self.bildfeld = nil }
+        // Bildfeld und GL-Feld gehoeren der Huelle; mit ihr gehen sie.
+        // Die GL-Objekte gibt vorher ``glFeldAbbauen()`` frei (Signal
+        // `unrealize`), `hdr` selbst haelt keinen Kontext mehr.
+        if let huelle {
+            g_object_unref(huelle)
+            self.huelle = nil; self.bildfeld = nil; self.glfeld = nil
+        }
+        if let hdr { hdrbild_frei(hdr); self.hdr = nil }
     }
+}
+
+@inline(__always) private func alsGL(_ w: Widget) -> UnsafeMutablePointer<GtkGLArea> {
+    UnsafeMutableRawPointer(w).assumingMemoryBound(to: GtkGLArea.self)
+}
+
+/// `render` bringt den Kontext mit und will ein `gboolean` zurueck; wahr
+/// heisst „gezeichnet, nichts weiter".
+nonisolated(unsafe) private let glZeichnenRuf: @convention(c) (
+    UnsafeMutablePointer<GtkGLArea>?, OpaquePointer?, gpointer?
+) -> gboolean = { _, kontext, daten in
+    guard let daten else { return 0 }
+    Unmanaged<Abspieler>.fromOpaque(daten).takeUnretainedValue().glZeichnen(kontext)
+    return 1
+}
+
+/// `resize` meldet die Groesse des Rahmenpuffers in Geraetepunkten.
+nonisolated(unsafe) private let glGroesseRuf: @convention(c) (
+    UnsafeMutablePointer<GtkGLArea>?, Int32, Int32, gpointer?
+) -> Void = { _, breite, hoehe, daten in
+    guard let daten else { return }
+    let abspieler = Unmanaged<Abspieler>.fromOpaque(daten).takeUnretainedValue()
+    abspieler.glBreite = breite
+    abspieler.glHoehe = hoehe
+}
+
+/// `unrealize`: der Kontext geht, die GL-Objekte vorher mit ihm.
+nonisolated(unsafe) private let glAbbauRuf: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, gpointer?
+) -> Void = { _, daten in
+    guard let daten else { return }
+    Unmanaged<Abspieler>.fromOpaque(daten).takeUnretainedValue().glFeldAbbauen()
 }
 
 /// libVLCs Ereignis kommt auf VLCs eigenem Faden. **Hier nichts von libVLC

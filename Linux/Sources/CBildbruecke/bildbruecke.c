@@ -37,9 +37,14 @@ struct Bildbruecke {
     Schloss  schloss;
     uint8_t *puffer[2];      /* Doppelpuffer */
     size_t   groesse;
-    unsigned breite, hoehe, takt;   /* takt = Bytes je Zeile */
+    unsigned breite, hoehe;
+    int      art;            /* BILDART_* der jetzigen Puffer */
+    unsigned ebenen;         /* 1 bei RGB, 2 bei P010, 3 bei I0AL */
+    unsigned takt[3];        /* Bytes je Zeile, je Ebene */
+    size_t   versatz[3];     /* Beginn jeder Ebene im Puffer */
     int      schreibt;       /* in welchen Puffer VLC gerade schreibt */
     bool     neu;            /* seit dem letzten Holen dazugekommen */
+    bool     hdr;            /* Wunsch fuer das naechste Aufbauen */
 };
 
 Bildbruecke *bildbruecke_neu(void) {
@@ -59,34 +64,79 @@ void bildbruecke_frei(Bildbruecke *b) {
     free(b);
 }
 
-/* VLC fragt, in welchem Format es liefern soll, und nennt dabei die Maße.
- * RV32 ist BGRX zu 32 Bit — genau das, was GdkMemoryTexture ohne Umrechnen
- * annimmt. Die Zeilenlänge muss ein Vielfaches von 32 Bytes sein, sonst legt
- * VLC intern noch einmal um. */
+void bildbruecke_hdr(Bildbruecke *b, bool hdr) {
+    SCHLOSS_NEHMEN(&b->schloss);
+    b->hdr = hdr;
+    SCHLOSS_GEBEN(&b->schloss);
+}
+
+static unsigned auf32(unsigned n) { return (n + 31) & ~31u; }
+
+/* VLC fragt, in welchem Format es liefern soll, und nennt dabei die Maße —
+ * und in `chroma` steht beim Aufruf, was der Dekoder selbst liefert.
+ *
+ * **SDR: RV24**, drei Bytes je Punkt, das nimmt GdkMemoryTexture ohne
+ * Umrechnen an. **HDR: YUV zu zehn Bit.** Liefert der Dekoder schon P010
+ * (Hardware, zurueckkopiert), bleibt es dabei; sonst I0AL, das der
+ * Software-Dekoder fuer HEVC Main 10 ohnehin ausgibt — beides ohne jede
+ * Umrechnung auf der CPU. Die Zeilenlaenge ist ein Vielfaches von 32 Bytes,
+ * sonst legt VLC intern noch einmal um; die Zeilenzahl wird auf 16
+ * aufgerundet, weil VLCs Umrechner in ganzen Bloecken schreiben. */
 static unsigned aufbauen(void **opaque, char *chroma,
                          unsigned *breite, unsigned *hoehe,
                          unsigned *takte, unsigned *zeilen) {
     Bildbruecke *b = *opaque;
-    memcpy(chroma, "RV24", 4);
-    unsigned takt = (*breite * 3 + 31) & ~31u;   /* RV24: drei Bytes je Punkt */
-    size_t groesse = (size_t)takt * (*hoehe);
+    unsigned w = *breite, h = *hoehe;
+    unsigned cw = (w + 1) / 2, ch = (h + 1) / 2;
+    unsigned hz = (h + 15) & ~15u, chz = (ch + 15) & ~15u;
+
+    SCHLOSS_NEHMEN(&b->schloss);
+    bool hdr = b->hdr;
+    SCHLOSS_GEBEN(&b->schloss);
+
+    int art;
+    unsigned ebenen;
+    if (!hdr) {
+        memcpy(chroma, "RV24", 4);
+        art = BILDART_RGB24; ebenen = 1;
+        takte[0] = auf32(w * 3); zeilen[0] = h;
+    } else if (memcmp(chroma, "P010", 4) == 0) {
+        art = BILDART_P010; ebenen = 2;
+        takte[0] = auf32(w * 2);  zeilen[0] = hz;
+        takte[1] = auf32(cw * 4); zeilen[1] = chz;   /* U und V verschraenkt */
+    } else {
+        memcpy(chroma, "I0AL", 4);
+        art = BILDART_I0AL; ebenen = 3;
+        takte[0] = auf32(w * 2);  zeilen[0] = hz;
+        takte[1] = auf32(cw * 2); zeilen[1] = chz;
+        takte[2] = auf32(cw * 2); zeilen[2] = chz;
+    }
+    size_t versatz[3] = {0, 0, 0};
+    size_t groesse = 0;
+    for (unsigned i = 0; i < ebenen; i++) {
+        versatz[i] = groesse;
+        groesse += (size_t)takte[i] * zeilen[i];
+    }
 
     SCHLOSS_NEHMEN(&b->schloss);
     for (int i = 0; i < 2; i++) {
         free(b->puffer[i]);
-        b->puffer[i] = calloc(1, groesse);
+        b->puffer[i] = calloc(1, groesse + 64);
     }
     b->groesse = groesse;
-    b->breite = *breite;
-    b->hoehe = *hoehe;
-    b->takt = takt;
+    b->breite = w;
+    b->hoehe = h;
+    b->art = art;
+    b->ebenen = ebenen;
+    for (unsigned i = 0; i < 3; i++) {
+        b->takt[i] = i < ebenen ? takte[i] : 0;
+        b->versatz[i] = versatz[i];
+    }
     b->schreibt = 0;
     b->neu = false;
     SCHLOSS_GEBEN(&b->schloss);
 
-    takte[0] = takt;
-    zeilen[0] = *hoehe;
-    return 1;   /* eine Ebene */
+    return ebenen;
 }
 
 static void abbauen(void *opaque) {
@@ -102,7 +152,8 @@ static void abbauen(void *opaque) {
 static void *sperren(void *opaque, void **ebenen) {
     Bildbruecke *b = opaque;
     SCHLOSS_NEHMEN(&b->schloss);
-    ebenen[0] = b->puffer[b->schreibt];
+    for (unsigned i = 0; i < b->ebenen; i++)
+        ebenen[i] = b->puffer[b->schreibt] + b->versatz[i];
     return NULL;
 }
 
@@ -153,16 +204,19 @@ void bildbruecke_anhaengen(Bildbruecke *b, libvlc_media_player_t *mp) {
     libvlc_video_set_callbacks(mp, sperren, loesen, zeigen, b);
 }
 
-bool bildbruecke_holen(Bildbruecke *b, const uint8_t **daten,
-                       unsigned *breite, unsigned *hoehe, unsigned *takt) {
+bool bildbruecke_holen(Bildbruecke *b, Bildstand *stand) {
     SCHLOSS_NEHMEN(&b->schloss);
     bool da = b->neu && b->groesse > 0;
     if (da) {
         /* Der *nicht* beschriebene Puffer ist der fertige. */
-        *daten = b->puffer[1 - b->schreibt];
-        *breite = b->breite;
-        *hoehe = b->hoehe;
-        *takt = b->takt;
+        const uint8_t *fertig = b->puffer[1 - b->schreibt];
+        for (unsigned i = 0; i < 3; i++) {
+            stand->ebene[i] = i < b->ebenen ? fertig + b->versatz[i] : NULL;
+            stand->takt[i] = b->takt[i];
+        }
+        stand->breite = b->breite;
+        stand->hoehe = b->hoehe;
+        stand->art = b->art;
         b->neu = false;
     }
     SCHLOSS_GEBEN(&b->schloss);

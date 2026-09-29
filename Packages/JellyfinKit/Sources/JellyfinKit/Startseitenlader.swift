@@ -95,23 +95,55 @@ public enum Startseitenlader {
         }
     }
 
-    /// **Eine getrennte Neuzugangsreihe fragt nie ohne Bibliothek.**
+    /// **Eine getrennte Neuzugangsreihe: erst die Bibliothek, nie still leer.**
     ///
     /// Ohne `ParentId` liefert der Server die Neuzugaenge **aller**
-    /// Bibliotheken — und „Neue Serien" zeigte dieselben Filme wie „Neue
-    /// Filme". So auf Linux und Windows beim Start: die Startseite laedt dort
-    /// vor den Bibliotheken, beide Kennungen waren noch leer. Deshalb sucht der
-    /// Lader die erste Bibliothek der Art selbst (wie
-    /// `AppModel.gewaehlteBibliothek(art:)`), und gibt es keine, bleibt die
-    /// Reihe leer statt gemischt.
+    /// Bibliotheken — „Neue Serien" zeigte so dieselben Filme wie „Neue
+    /// Filme". Deshalb fragt die Reihe zuerst in der gewaehlten Bibliothek,
+    /// ohne Wahl in jeder Bibliothek der Art (die erste mit Neuzugaengen
+    /// zaehlt, wie `AppModel.gewaehlteBibliothek(art:)`).
+    ///
+    /// **Findet sich dort nichts, faellt sie auf die Abfrage ohne `ParentId`
+    /// zurueck** — nur mit Titeln der passenden Gattung, damit keine Filme in
+    /// „Neue Serien" stehen. Das trifft Server, deren Bibliotheken keine oder
+    /// eine gemischte Art tragen, deren Bibliotheksliste nicht lesbar ist, oder
+    /// deren gewaehlte Bibliothek leer ist. Bis 1.0.5 (15) blieb die Reihe dann
+    /// leer und fiel auf der Startseite ohne Hinweis weg. Grund und Fall stehen
+    /// im Protokoll (Profil → „Protokoll teilen").
     static func neu(von quelle: some Startseitenquelle, in bibliothek: String?,
                     art: String) async -> [Item]? {
+        let grund: String
         if let bibliothek {
-            return await quelle.zuletztHinzugefuegt(in: bibliothek, holen: 200, zeigen: 24)
+            let geholt = await quelle.zuletztHinzugefuegt(in: bibliothek, holen: 200, zeigen: 24)
+            if let geholt, !geholt.isEmpty { return geholt }
+            grund = geholt == nil ? "Abruf der gewaehlten Bibliothek kam nicht durch"
+                                  : "gewaehlte Bibliothek ohne Neuzugaenge"
+        } else if let alle = await quelle.bibliotheken() {
+            let passende = alle.filter { $0.collectionType?.lowercased() == art }
+            var leer = 0
+            for kandidat in passende {
+                if let geholt = await quelle.zuletztHinzugefuegt(in: kandidat.id, holen: 200, zeigen: 24) {
+                    if !geholt.isEmpty { return geholt }
+                    leer += 1
+                }
+            }
+            if passende.isEmpty {
+                let arten = alle.map { $0.collectionType ?? "ohne" }.joined(separator: ",")
+                grund = "keine Bibliothek der Art (\(alle.count) Bibliotheken: \(arten))"
+            } else {
+                grund = "\(passende.count) Bibliothek(en) der Art, \(leer) leer, Rest nicht erreichbar"
+            }
+        } else {
+            grund = "Bibliotheksliste nicht lesbar"
         }
-        guard let alle = await quelle.bibliotheken() else { return nil }
-        guard let erste = alle.first(where: { $0.collectionType == art }) else { return [] }
-        return await quelle.zuletztHinzugefuegt(in: erste.id, holen: 200, zeigen: 24)
+        let gattungen: Set<String> = art == "movies" ? ["Movie"] : ["Episode", "Series", "Season"]
+        guard let alle = await quelle.zuletztHinzugefuegt(in: nil, holen: 200, zeigen: 48) else {
+            Protokollring.geteilt.anhaengen("Startseite: Neu \(art): \(grund); Rueckfall ohne Bibliothek kam nicht durch")
+            return nil
+        }
+        let passend = Array(alle.filter { gattungen.contains($0.type ?? "") }.prefix(24))
+        Protokollring.geteilt.anhaengen("Startseite: Neu \(art): \(grund); Rueckfall ohne Bibliothek, \(passend.count) Titel")
+        return passend
     }
 
     public static func laden(von quelle: some Startseitenquelle, _ wunsch: Wunsch) async -> Startseite {

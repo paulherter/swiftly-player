@@ -523,6 +523,50 @@ public actor JellyfinClient {
         return try await send(try request("Items", query: query), as: ItemsResponse.self).items
     }
 
+    /// Genau diese Einträge — nur Kennung, Name, Gattung und Anbieternummern.
+    /// Für ``Werke``: die Nummern einer Serie, deren Folgen verglichen werden.
+    public func kennungen(ids: [String]) async throws -> [Item] {
+        guard !ids.isEmpty else { return [] }
+        let s = try requireSession()
+        let req = try request("Items", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "Ids", value: ids.joined(separator: ",")),
+            .init(name: "Fields", value: "ProviderIds"),
+            .init(name: "EnableImages", value: "false"),
+            .init(name: "EnableUserData", value: "false"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items
+    }
+
+    /// Die Ordner über einem Eintrag bis hinauf zur Bibliothek. Der
+    /// Bibliotheksordner kommt mit der Kennung, die auch `UserViews` nennt.
+    public func vorfahren(von id: String) async throws -> [Item] {
+        let s = try requireSession()
+        let req = try request("Items/\(id)/Ancestors", query: [
+            .init(name: "userId", value: s.userID),
+        ])
+        return try await send(req, as: [Item].self)
+    }
+
+    /// Die ganze Merkliste schlank — Kennung, Gattung, Nummern — in der
+    /// Sortierung der Seite. Für ``gemerkteWerke(typen:sortBy:sortOrder:startIndex:limit:)``.
+    public func gemerkteKennungen(typen: [String], sortBy: String,
+                                  sortOrder: String) async throws -> [Item] {
+        let s = try requireSession()
+        let req = try request("Items", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "Filters", value: "IsFavorite"),
+            .init(name: "IncludeItemTypes", value: typen.joined(separator: ",")),
+            .init(name: "SortBy", value: sortBy),
+            .init(name: "SortOrder", value: sortOrder),
+            .init(name: "Fields", value: "ProviderIds"),
+            .init(name: "EnableImages", value: "false"),
+            .init(name: "EnableUserData", value: "false"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items
+    }
+
     /// Was in einer Sammlung steht — nur Kennung und Gattung.
     ///
     /// **Nicht rekursiv:** die Titel einer Sammlung sind verknüpft, die erste
@@ -675,9 +719,10 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: "true"),
             .init(name: "IncludeItemTypes", value: "Movie,Series"),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
         ])
-        return try await send(req, as: ItemsResponse.self).items
+        // Quer über alle Bibliotheken — je Werk ein Treffer (``Werke``).
+        return await jeWerkEinmal(try await send(req, as: ItemsResponse.self).items)
     }
 
     /// Der Wiedergabestand eines Titels für dieses Konto — Stelle, gesehen,
@@ -846,10 +891,11 @@ public actor JellyfinClient {
         let req = try request("UserItems/Resume", query: [
             .init(name: "userId", value: s.userID),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
             .init(name: "MediaTypes", value: "Video"),
         ])
-        return try await send(req, as: ItemsResponse.self).items
+        // Quer über alle Bibliotheken — je Werk einmal (``Werke``).
+        return await jeWerkEinmal(try await send(req, as: ItemsResponse.self).items)
     }
 
     /// Die nächste ungesehene Folge laufender Serien.
@@ -858,9 +904,10 @@ public actor JellyfinClient {
         let req = try request("Shows/NextUp", query: [
             .init(name: "userId", value: s.userID),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
         ])
-        return try await send(req, as: ItemsResponse.self).items
+        // Quer über alle Bibliotheken — je Werk einmal (``Werke``).
+        return await jeWerkEinmal(try await send(req, as: ItemsResponse.self).items)
     }
 
     /// **Was zuletzt dazugekommen ist — über den gewöhnlichen Items-Endpunkt.**

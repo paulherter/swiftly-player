@@ -236,8 +236,10 @@ struct AlleAusMehrerenTests {
         let seite2 = [film("k1", "Toy Story 5", tmdb: "1"), film("f2", "Exit 8", tmdb: "2")]
         #expect(sieb.sieben(seite1).map(\.id) == ["f1"])
         #expect(sieb.sieben(seite2).map(\.id) == ["f2"])
+        // Welche Kopie bleibt, steht vorher fest — nicht, welche zuerst kommt.
         sieb.vonVorn()
-        #expect(sieb.sieben(seite2).map(\.id) == ["k1", "f2"])
+        #expect(sieb.sieben(seite2).map(\.id) == ["f2"])
+        #expect(sieb.sieben(seite1).map(\.id) == ["f1"])
     }
 
     @Test("Dieselbe Serie aus zwei Serienbibliotheken zählt einmal")

@@ -49,8 +49,8 @@ Write-Host ("    " + (Get-ChildItem $ziel -Filter *.swift).Count + " Dateien")
 $bruecke = Join-Path $hier 'Sources\CBildbruecke'
 if (Test-Path $bruecke) { Remove-Item -Recurse -Force $bruecke }
 New-Item -ItemType Directory -Force -Path (Join-Path $bruecke 'include') | Out-Null
-Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\bildbruecke.c') $bruecke
-Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\include\bildbruecke.h') (Join-Path $bruecke 'include')
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\*.c') $bruecke
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\include\*.h') (Join-Path $bruecke 'include')
 
 # Die Medientasten sind ebenfalls derselbe C-Code.
 $tasten = Join-Path $hier 'Sources\CMedientasten'

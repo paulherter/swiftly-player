@@ -37,10 +37,30 @@ void vlcspur_an(libvlc_instance_t *kern, Spurzeile ziel);
 
 void bildbruecke_anhaengen(Bildbruecke *b, libvlc_media_player_t *mp);
 
+/* **Welche Form ein Bild hat.** RGB ist der Weg fuer SDR: VLC rechnet selbst
+ * nach RGB, und GTK zeigt es als Speichertextur. Fuer HDR bleibt das Bild,
+ * wie der Dekoder es liefert — YUV zu zehn Bit —, und der Shader in
+ * `hdrbild.c` rechnet es um. VLCs eigene Umrechnung nach RGB kennt weder
+ * PQ noch HLG, genau daher kam das ausgewaschene Bild. */
+enum {
+    BILDART_RGB24 = 0,   /* RV24, eine Ebene */
+    BILDART_I0AL  = 1,   /* YUV 4:2:0, 10 Bit in 16, niedrige Bits, drei Ebenen */
+    BILDART_P010  = 2    /* YUV 4:2:0, 10 Bit in 16, hohe Bits, Y + UV verschraenkt */
+};
+
+typedef struct {
+    const uint8_t *ebene[3];
+    unsigned takt[3];          /* Bytes je Zeile */
+    unsigned breite, hoehe;    /* sichtbare Masse des Bildes */
+    int art;                   /* BILDART_* */
+} Bildstand;
+
+/* Vor dem Start: soll VLC YUV zu zehn Bit liefern (HDR) oder RGB (SDR)? */
+void bildbruecke_hdr(Bildbruecke *b, bool hdr);
+
 /* Holt das jüngste Bild. Gibt false zurück, wenn seit dem letzten Aufruf
  * keines dazugekommen ist — dann ist nichts zu tun.
- * Der Zeiger bleibt bis zum nächsten Aufruf gültig. */
-bool bildbruecke_holen(Bildbruecke *b, const uint8_t **daten,
-                       unsigned *breite, unsigned *hoehe, unsigned *takt);
+ * Die Zeiger bleiben bis zum nächsten Aufruf gültig. */
+bool bildbruecke_holen(Bildbruecke *b, Bildstand *stand);
 
 #endif

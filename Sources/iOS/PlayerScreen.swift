@@ -28,15 +28,6 @@ struct PlayerScreen: View {
     @State private var surface: VLCPlayerView?
     /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
     @AppStorage("technikschild") private var technikschild = false
-    /// Einstellungen → Wiedergabe → „Gedrückt halten für 2×", Vorgabe an.
-    @AppStorage("festhaltenDoppelt") private var festhaltenDoppelt = true
-    /// Der Finger liegt lange genug auf dem Bild (``Festhaltetempo``). Fällt
-    /// von selbst zurück, auch wenn die Geste abgebrochen wird.
-    @GestureState private var festhalten = false
-    /// Es läuft gerade mit 2× — und seit wann, damit der Tipp beim Loslassen
-    /// nicht auch noch die Steuerung umschaltet.
-    @State private var doppeltSeit: Date?
-    @State private var doppeltAn = false
     @State private var spielwerte: Spielwerte?
     /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
     /// nur, solange das Schild an ist.
@@ -605,10 +596,6 @@ struct PlayerScreen: View {
             }
 
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
-            if doppeltAn {
-                doppeltPille
-                    .transition(.opacity.combined(with: .scale(scale: Stil.bewegungReduziert ? 1 : 0.92)))
-            }
 
             // **Was in der Gruppe passiert, kurz oben** — damit niemand
             // rätselt, warum der Film steht.
@@ -776,8 +763,6 @@ struct PlayerScreen: View {
             fuellungStellen()
         }
         .onChange(of: tempo) { _, neu in surface?.tempo = neu }
-        // Der Finger ist weg (oder die Geste abgebrochen): sofort zurück.
-        .onChange(of: festhalten) { _, liegt in if !liegt { festhaltenGewechselt(false) } }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
@@ -1060,83 +1045,10 @@ struct PlayerScreen: View {
                 .frame(width: 108, height: 132)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    guard !tippGehoertZumHalten else { doppeltSeit = nil; return }
                     spielenUmschalten()
                 }
         }
         .ignoresSafeArea()
-        // **Gedrückt halten = 2×** — neben den Tipps, nicht statt ihrer: ein
-        // Tipp ist vor der Drittelsekunde vorbei, ein Halten danach.
-        //
-        // **Zwei Gesten, keine Folge** (27.09.2026, am iPhone: 2× kam erst
-        // Sekunden später). Die Folge „langer Druck, dann Ziehen" meldete
-        // ihren zweiten Teil erst, wenn der Finger sich bewegte — lag er
-        // still, kam lange nichts. Jetzt meldet der lange Druck sich genau
-        // nach der Drittelsekunde, und das Ende kommt vom Loslassen selbst.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: Festhaltetempo.druckdauer,
-                             maximumDistance: Festhaltetempo.wegGrenze)
-                .onEnded { _ in festhaltenGewechselt(true) })
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .updating($festhalten) { _, zustand, _ in zustand = true })
-    }
-
-    private func festhaltenGewechselt(_ an: Bool) {
-        if an {
-            guard Festhaltetempo.erlaubt(eingeschaltet: festhaltenDoppelt,
-                                         inGruppe: inGruppe || gemeinsamAn,
-                                         fremderAbspieler: airplayPlan != nil || imKleinenFenster,
-                                         laeuft: laeuft && bildFrei && !wechselt,
-                                         spult: amSchieben || ebeneOffen),
-                  let surface else { return }
-            surface.tempo = Festhaltetempo.tempo
-            doppeltSeit = Date()
-            Stil.ruck(.leicht)
-            withAnimation(Stil.bewegungReduziert ? Stil.blendeReduziert : .smooth(duration: 0.25)) {
-                doppeltAn = true
-            }
-            Protokoll.schreib("[Tempo] gehalten: 2×")
-        } else {
-            guard doppeltAn else { return }
-            surface?.tempo = Festhaltetempo.danach(vorher: tempo)
-            withAnimation(Stil.bewegungReduziert ? Stil.blendeReduziert : .smooth(duration: 0.3)) {
-                doppeltAn = false
-            }
-            Protokoll.schreib("[Tempo] losgelassen: \(Festhaltetempo.danach(vorher: tempo))×")
-            // Der Tipp, der mit dem Loslassen kommt, gilt nicht.
-            let seit = doppeltSeit
-            Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                if doppeltSeit == seit { doppeltSeit = nil }
-            }
-        }
-    }
-
-    /// War das gerade das Ende eines Haltens? Dann schaltet der Tipp nichts.
-    private var tippGehoertZumHalten: Bool {
-        doppeltSeit != nil
-    }
-
-    /// Die Pille oben mittig, solange es schneller läuft.
-    private var doppeltPille: some View {
-        HStack(spacing: 6) {
-            Text(verbatim: "2×")
-            Image(systemName: "forward.fill")
-                .font(.system(size: 11, weight: .semibold))
-        }
-        .font(Stil.listentitel)
-        .monospacedDigit()
-        .foregroundStyle(Stil.schrift)
-        .padding(.horizontal, 14)
-        .frame(height: 32)
-        .background(Capsule().fill(Stil.grund.opacity(0.82)))
-        .padding(.top, mass.oben + 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .ignoresSafeArea(edges: mass.obenUebergehen)
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Doppelte Geschwindigkeit"))
     }
 
     /// Ein Tipp schaltet die Steuerung, zwei spulen.
@@ -1163,7 +1075,6 @@ struct PlayerScreen: View {
     }
 
     private func tippen(richtung: Int) {
-        guard !tippGehoertZumHalten else { doppeltSeit = nil; return }
         let jetzt = Date()
         let fenster = inSpulkette ? Self.kettentipp : Self.doppeltipp
         if let vorher = letzterTipp, letzteSeite == richtung,
