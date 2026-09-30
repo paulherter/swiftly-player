@@ -331,7 +331,7 @@ final class AppModel {
             return try await client.titelsieb(quelle, filters: filter.jellyfinFilter,
                                               istGesehen: filter.istGesehen)
         } catch {
-            if !Task.isCancelled { errorMessage = lesbar(error) }
+            Self.log.error("Titelsieb fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -1381,6 +1381,12 @@ final class AppModel {
         return Bildwahl.kopf(item, adressen: bilder, breite: breite)
     }
 
+    /// Logo-Adresse für die `Titelmarke`; `nil`, wenn der Server keins führt.
+    func logoURL(for item: Item) -> URL? {
+        guard let bilder else { return nil }
+        return Bildwahl.logo(item, adressen: bilder)
+    }
+
     func kopfbildURL(for item: Item) -> URL? {
         guard let bilder else { return nil }
         if let url = Bildwahl.kopf(item, adressen: bilder, breite: 1200) { return url }
@@ -1743,7 +1749,10 @@ final class AppModel {
                                                  includeItemTypes: quelle.typen)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
-            errorMessage = lesbar(error)
+            // Nicht in `errorMessage`: das zeigen nur die Anmelde- und
+            // Serverseiten (und blieb dort Minuten später stehen). Die
+            // Bibliotheksseite zeigt ihre Störung selbst.
+            Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -1774,7 +1783,10 @@ final class AppModel {
                                                          limit: anzahl)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
-            errorMessage = lesbar(error)
+            // Nicht in `errorMessage`: das zeigen nur die Anmelde- und
+            // Serverseiten (und blieb dort Minuten später stehen). Die
+            // Bibliotheksseite zeigt ihre Störung selbst.
+            Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -2097,7 +2109,12 @@ final class AppModel {
         downloads.wiedergabeVermerken(item.id, ticks: ticks)
         // Auch nach einer Nachmeldung: die Seite soll dann wenigstens den
         // Stand des letzten Takts zeigen, nicht den von vor dem Abspielen.
-        defer { wiedergabeBeendet += 1 }
+        //
+        // **Nur, wenn der Player zu ist.** Beim Wechsel zur nächsten Folge
+        // stoppt die alte, während er offen bleibt; zählte das mit, luden
+        // Startseite, Filme, Serien und Detailseiten hinter dem Player neu
+        // (Audit 29.09.2026). Das Schließen meldet danach die letzte Folge.
+        defer { if !playerOffen { wiedergabeBeendet += 1 } }
         let eintrag = meldung(.stopp, item: item, plan: plan, seconds: seconds)
         // Vor dem Abwarten: Trakt hat seine eigene Reihe und wartet auf
         // Jellyfin nicht — und Jellyfin nicht auf Trakt.
@@ -2328,6 +2345,13 @@ final class AppModel {
         Task {
             // Name und Fassung stehen sonst nur nach einer frischen Verbindung
             // bereit — in den Einstellungen stand danach „Server · ?".
+            //
+            // **Beide Prüfungen nebeneinander.** `verbindungPruefen` wartet
+            // auf die liegengebliebenen Nachmeldungen (Frist je Anfrage bis
+            // 20 s); ein widerrufenes Merkmal kam so erst danach zur
+            // Abmeldung, und bis dahin zeigte die Startseite „Server ist
+            // abgetaucht", obwohl der Server antwortete.
+            async let gilt = neuer.sitzungGiltNoch()
             _ = await verbindungPruefen()
 
             // Und prüfen, ob das Merkmal überhaupt noch gilt.
@@ -2336,7 +2360,7 @@ final class AppModel {
             // Ein widerrufenes Merkmal führte damit nicht auf den
             // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
             // von dort gibt es keinen Weg zurück außer über das Profilmenü.
-            guard await neuer.sitzungGiltNoch() else {
+            guard await gilt else {
                 // **Nur, wenn dieses Konto noch das aktive ist.** Die Prüfung
                 // kann langsam sein; wer in der Zwischenzeit auf ein anderes
                 // Konto gewechselt hat, würde sonst mit ihrem Ergebnis

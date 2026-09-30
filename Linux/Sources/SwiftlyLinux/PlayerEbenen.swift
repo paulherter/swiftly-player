@@ -78,7 +78,7 @@ extension App {
     /// Breite der Symbolreihe oben rechts — der stehende Titel hält ihr den
     /// Platz frei, wie `symbolreihe.hidden()` auf dem Mac.
     func symbolreihenBreite() -> Int32 {
-        let anzahl: Int32 = hatFolgenebene ? 5 : 4
+        let anzahl: Int32 = hatFolgenebene ? 6 : 5
         return anzahl * Playermass.knopf + (anzahl - 1) * Playermass.reihenAbstand
     }
 

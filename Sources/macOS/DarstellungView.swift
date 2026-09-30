@@ -28,6 +28,7 @@ struct DarstellungView: View {
 
     /// Worüber die gezogene Zeile gerade schwebt — dort kommt die Linie hin.
     @State private var ueber: String?
+    @AppStorage("titelAlsLogo") private var titelAlsLogo = false
 
     var body: some View {
         ScrollView {
@@ -62,6 +63,10 @@ struct DarstellungView: View {
                           titel: Text("Fortschritt auf Kacheln"),
                           an: Binding(get: { model.fortschrittAufKacheln },
                                       set: { model.fortschrittAufKacheln = $0 }))
+            Schalterzeile(symbol: "textformat",
+                          titel: Text("Titel als Logo"),
+                          unter: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),
+                          an: $titelAlsLogo)
         }
     }
 

@@ -77,6 +77,12 @@ struct PlayerScreen: View {
 
     private var laeuftJetzt: Bool { laeuftAnzeige ?? stand.laeuft }
     @State private var amRegler = false
+    /// Lautstärke 0 bis 1, gilt über Titel hinweg; `davor` merkt den Wert für „Ton an".
+    @AppStorage("playerLautstaerke") private var lautstaerke = 1.0
+    @AppStorage("playerLautstaerkeDavor") private var lautstaerkeDavor = 1.0
+    @State private var lautstaerkeZieht = false
+    @State private var lautstaerkeKurz = false
+    @State private var lautstaerkeUhr: Task<Void, Never>?
     /// Welche der drei Ebenen offen ist — Audio & Untertitel, Folgen,
     /// Einstellungen. `nil` heißt: keine.
     @State private var offeneEbene: Playerebene?
@@ -183,6 +189,7 @@ struct PlayerScreen: View {
                          softwareDekoder: anfang.plan.softwareDekoder,
                          spuren: spurwunsch(titel, anfang.plan)) { neu in
                 flaeche = neu
+                neu.lautstaerkeSetzen(Int((lautstaerke * 100).rounded()))
                 // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
                 // nicht am Klick — siehe `laeuftAnzeige`.
                 // Dem Server im selben Moment (T1-N1) — `model` hier
@@ -424,6 +431,9 @@ struct PlayerScreen: View {
             if weg > 2 { steuerungZeigen(durch: .nebenbei) }
         }
         .onAppear { steuerungZeigen() }
+        .onChange(of: lautstaerke) { _, neu in
+            flaeche?.lautstaerkeSetzen(Int((neu * 100).rounded()))
+        }
         // Nach dem Schliessen einer Ebene laeuft die Viersekundenuhr neu an.
         .onChange(of: offeneEbene) { _, offen in if offen == nil { steuerungZeigen() } }
         // Die Einblendung hört auf die Steuerung. Nur Abgleich: ob das Öffnen
@@ -515,6 +525,14 @@ struct PlayerScreen: View {
                         .keyboardShortcut(.rightArrow, modifiers: [])
                 }
                 .disabled(offeneEbene != nil)
+                // Lautstärke: Pfeile hoch/runter ±5 %, M stumm.
+                Group {
+                    Button("") { lautstaerkeStufe(0.05) }.keyboardShortcut(.upArrow, modifiers: [])
+                    Button("") { lautstaerkeStufe(-0.05) }.keyboardShortcut(.downArrow, modifiers: [])
+                    Button("") { lautstaerkeStumm(); lautstaerkeKurzZeigen() }
+                        .keyboardShortcut("m", modifiers: [])
+                }
+                .disabled(offeneEbene != nil)
                 // **Verzögerung wie in VLC:** G/H Untertitel, J/K Ton, je
                 // 50 ms. Nicht bei offener Ebene — dort steht die Zeile
                 // selbst, und ihre Anzeige wüsste vom Tastendruck nichts.
@@ -583,6 +601,9 @@ struct PlayerScreen: View {
     /// ihm weg. Beim Spulen weichen die Symbole der Vorschau.
     private var symbolreihe: some View {
         HStack(spacing: 4) {
+            Lautstaerkeregler(mass: mass, wert: $lautstaerke,
+                              aufgeklappt: lautstaerkeKurz, zieht: $lautstaerkeZieht,
+                              stummUmschalten: lautstaerkeStumm)
             Symbolknopf(symbol: "captions.bubble", beschriftung: "Audio & Untertitel",
                         mass: mass) { ebeneOeffnen(.spuren) }
             if hatFolgen {
@@ -761,6 +782,34 @@ struct PlayerScreen: View {
             flaeche?.pause()
             steuerungZeigen()
             melde(String(localized: "Schlafzeit abgelaufen."))
+        }
+    }
+
+    /// Klick auf den Lautsprecher und Taste M: stumm, beim zweiten Mal
+    /// zurück auf den Wert davor.
+    private func lautstaerkeStumm() {
+        if lautstaerke > 0 {
+            lautstaerkeDavor = lautstaerke
+            lautstaerke = 0
+        } else {
+            lautstaerke = lautstaerkeDavor > 0 ? lautstaerkeDavor : 1
+        }
+    }
+
+    private func lautstaerkeStufe(_ schritt: Double) {
+        lautstaerke = min(max((lautstaerke + schritt).rounded(toPlaces: 2), 0), 1)
+        lautstaerkeKurzZeigen()
+    }
+
+    /// Klappt den Regler 1,2 s auf und hält die Leiste da, damit man den Wert sieht.
+    private func lautstaerkeKurzZeigen() {
+        steuerungZeigen()
+        lautstaerkeKurz = true
+        lautstaerkeUhr?.cancel()
+        lautstaerkeUhr = Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            lautstaerkeKurz = false
         }
     }
 
@@ -1134,7 +1183,7 @@ struct PlayerScreen: View {
             // Die Uhr faengt nach dem Schliessen von vorn an, siehe unten --
             // dieser Riegel sitzt nach dem Schlafen, die Aufgabe endet hier
             // also, ohne eine neue anzustossen.
-            guard !Task.isCancelled, stand.laeuft, !amRegler, offeneEbene == nil else { return }
+            guard !Task.isCancelled, stand.laeuft, !amRegler, !lautstaerkeZieht, offeneEbene == nil else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
                 steuerungDa = false
                 halter.setzeSteuerung(false)
@@ -2171,5 +2220,12 @@ private struct Sprungmarke: View {
         .frame(width: 108, height: 108)
         .background(.black.opacity(0.45), in: Circle())
         .onAppear { gedreht = true }
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces stellen: Int) -> Double {
+        let f = pow(10.0, Double(stellen))
+        return (self * f).rounded() / f
     }
 }

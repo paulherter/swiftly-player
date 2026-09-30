@@ -94,6 +94,9 @@ struct PersonView: View {
         .ignoresSafeArea()
         .bildgrund(url: bannerJetzt)
         .task(id: person.id) { await laden() }
+        // Gesehen/Gemerkt woanders: still nachladen (`laden` behaelt bei
+        // einem Fehlschlag, was da war).
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
         .task(id: banner.count) {
             // Weich wechseln, und langsam genug, dass man hinsieht, bevor es
             // weitergeht. Mit einem Bild gibt es nichts zu wechseln.
@@ -204,7 +207,7 @@ struct PersonView: View {
         async let fremde = filmografie(tmdb: a?.tmdbKennung)
         let geholt = await eigene
         // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
-        let b = geholt ?? titel
+        let b = geholt.map(Listenregeln.ohneDoppelte) ?? titel
 
         // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
         // Banner, was der erste als Ersatz hergibt.

@@ -210,6 +210,7 @@ fun SammlungSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zu
     val stand = remember(ziel.id, ziel.rolle) { Sammlungsstand(ziel.id, ziel.rolle) }
     val bereich = rememberCoroutineScope()
     LaunchedEffect(stand, stand.sortierung, stand.filter) { stand.laden(app.kern) }
+    BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val raster = rememberLazyGridState()
     val dichte = LocalDensity.current
     val versatz by remember {

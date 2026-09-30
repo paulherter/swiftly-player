@@ -199,7 +199,11 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
         if (sammlungenGewaehlt) { laedt = false; return }
         laedt = items.isEmpty()
         try {
-            val (neu, zahl) = seite(kern, 0)
+            // **Auffrischen holt so viel, wie schon dasteht** (bis 300, `Bibliotheksmodell.laden`): wer bei Titel 90
+            // etwas zu Ende sah, fand sonst dort einen alten Balken — nur die ersten 60 wurden frisch.
+            val fuerAbruf = "$wahl|$kennung|$sortierung|$filter"
+            val umfang = if (geladenFuer == fuerAbruf) minOf(300L, maxOf(SEITE, items.size.toLong())) else SEITE
+            val (neu, zahl) = seite(kern, 0, umfang)
             // **Beim Zurueckkommen nicht auf die erste Seite kuerzen** — `Listenregeln.auffrischen`.
             // `laden` laeuft bei jedem Wiedererscheinen der Seite; ersetzte die erste Seite alles,
             // war der geoeffnete Titel hinter Nummer 60 weg, der Fokus fiel auf Kachel 0, und ein
@@ -237,9 +241,9 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
         } finally { laedtNach = false }
     }
 
-    private suspend fun seite(kern: Kern, ab: Int): Pair<List<Rasterkachel>, Int> {
+    private suspend fun seite(kern: Kern, ab: Int, anzahl: Long = SEITE): Pair<List<Rasterkachel>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {
-            kern.bereichSeite(art, wahl, sortierung, filter, ab.toLong(), SEITE).await()
+            kern.bereichSeite(art, wahl, sortierung, filter, ab.toLong(), anzahl).await()
         })
         siebMehr = if (o.optBoolean("gesiebt")) o.optBoolean("nochMehr") else null
         val a = o.getJSONArray("titel")
@@ -255,6 +259,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
     val stand = remember(art) { app.bibliotheken.getOrPut(art) { Bibliotheksstand(art, app.ablage) } }
     val bereich = rememberCoroutineScope()
     LaunchedEffect(stand.sortierung, stand.filter) { stand.laden(app.kern) }
+    BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val raster = rememberLazyGridState()
     val dichte = LocalDensity.current
     // Daran haengt die Haarlinie unter dem Kopf.
@@ -301,6 +306,8 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
 
         if (sammlungen) {
             // Die Liste steht schon im Speicher: „Sammlungen" gibt es im Menue nur, wenn es welche gibt.
+        } else if (Kontowechselflug.wartet) {
+            // Beim Kontowechsel weder Stoer- noch Leerzustand (`BibliothekView`, `wechsel`).
         } else if (stand.gestoert) {
             // **Die Serverformel, woertlich wie auf jeder anderen Plattform** (BAUTEILE 6):
             // derselbe Wortlaut, derselbe Aufbau, dieselbe Adresse. Hier stand eine zweite

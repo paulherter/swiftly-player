@@ -161,7 +161,8 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              if (serie != null) serie.beschreibung else vorab?.beschreibung,
                              direktplay = serie?.planDa == true && serie.lossless,
                              hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null,
-                             knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
+                             knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf),
+                             logo = if (app.einstellungen.titelAlsLogo) serie?.logo else null) {
                     // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
                     // Vorlage: `SerienView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
                     val menue = de.paulherter.swiftly.LocalKachelmenue.current

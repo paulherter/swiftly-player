@@ -704,6 +704,8 @@ struct HauptView: View {
     }
 
     private func ausfuehren(_ kommando: Kommando) {
+        // Hinter dem laufenden Player wirkt kein Menübefehl.
+        guard steuerung.wunsch == nil else { return }
         switch kommando {
         case .start:  bereichWaehlen(.start)
         case .filme:  bereichWaehlen(.filme)
@@ -721,7 +723,6 @@ struct HauptView: View {
             // Kennung unterschieden, und zwei gleiche in einem `ForEach` sind
             // ein Fehler, kein Schönheitsproblem. Liegt die Seite schon
             // irgendwo, bleibt es dabei — sie ist ja offen.
-            guard !navigator.seiten(bereich).contains(.einstellungen) else { return }
             navigator.oeffne(.einstellungen, in: bereich)
         }
     }

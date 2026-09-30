@@ -138,7 +138,7 @@ struct MerklisteView: View {
         }
         .onDisappear { tafelOffen.wrappedValue = false }
         .animation(Stil.einblenden, value: stand.items.isEmpty)
-        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await stand.laden(model) }
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)|\(model.listenAuffrischen)") { await stand.laden(model) }
     }
 
     private var chipreihe: some View {

@@ -694,7 +694,10 @@ extension App {
         let name = beschriftung(titel.name, stil: "swiftly-heldtitel")
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_label_set_xalign(OpaquePointer(name), 0)
-        gtk_fixed_put(alsFeld2(feld), fach(name, breite: 640, hoehe: 42), 0, 0)
+        // Ein Logo blendet über den Text und bleibt im Fach von 42.
+        let titelfach = fach(name, breite: 640, hoehe: 42)
+        titelmarkeAnbinden(titelfach, text: name, titel: titel)
+        gtk_fixed_put(alsFeld2(feld), titelfach, 0, 0)
 
         // **26, nicht 20** (Mac 28d314fd): Plakette und Beleg sind 13 Punkt
         // Schrift mit 4 Punkt Luft oben und unten; in 20 wurden sie oben und
@@ -988,7 +991,7 @@ extension App {
             Task.detached { [self] in
                 do {
                     try await client.setzeMerkliste(itemID: titel.id, an: neu)
-                    aufHauptfaden { losgelassen(kiste) }
+                    aufHauptfaden { losgelassen(kiste); self.listenAuffrischen() }
                 } catch {
                     aufHauptfaden {
                         defer { losgelassen(kiste) }

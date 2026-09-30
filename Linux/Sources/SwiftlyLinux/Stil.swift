@@ -1204,11 +1204,19 @@ enum Stil {
             background-color: \(rand);
             border-radius: \(eckeKapsel)px;
             padding: 3px;
+            transition: background-color 220ms ease-out;
         }
         .swiftly-schalter.swiftly-aktiv { background-color: \(akzent); }
         /* Ein Kreis, kein abgerundetes Rechteck — `Circle()` auf dem Mac. */
-        .swiftly-knauf { background-color: \(schrift); border-radius: \(eckeKapsel)px; }
-        .swiftly-schalter.swiftly-aktiv .swiftly-knauf { background-color: \(grund); }
+        .swiftly-knauf {
+            background-color: \(schrift); border-radius: \(eckeKapsel)px;
+            margin-left: 0px;
+            transition: margin-left 220ms ease-out, background-color 220ms ease-out;
+        }
+        /* 38 - 2x3 Innenrand - 16 Knauf = 16 Weg nach rechts. */
+        .swiftly-schalter.swiftly-aktiv .swiftly-knauf {
+            background-color: \(grund); margin-left: 16px;
+        }
 
         /* `Werteliste` auf dem Mac: 4 oben und unten, 48 eingerueckt, auf
            `flaeche`; Zeilen 32 hoch, 12 seitlich. Gewaehlt heisst Weiss mit

@@ -39,8 +39,11 @@ extension Abspielwunsch {
         bereitet.wrappedValue = true
         Task {
             defer { bereitet.wrappedValue = false }
-            let ziel = frisch ? (await model.item(id: item.id) ?? item) : item
-            guard let plan = await model.plan(for: ziel.id) else { fehlt(); return }
+            // Nebeneinander: der Plan hängt nur an der Kennung.
+            async let frischerTitel: Item? = frisch ? model.item(id: item.id) : nil
+            async let planAbruf = model.plan(for: item.id)
+            let ziel = await frischerTitel ?? item
+            guard let plan = await planAbruf else { fehlt(); return }
             abspielen(Abspielwunsch(item: ziel, plan: plan,
                                     startAt: ab ?? ziel.fortsetzenAb ?? 0))
         }

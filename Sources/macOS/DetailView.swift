@@ -490,16 +490,11 @@ struct Heldenkopf: View {
         //     182  Knopfreihe   48
         //     230  Ende
         ZStack(alignment: .topLeading) {
-            Text(verbatim: titel.name)
-                // **Der Titel ueber einem Heldbild *ist* der Seitentitel**
-                // (BRAND 2): 28 Bold, Sperrung an der Stufe. 34 war eine
-                // eigene Stufe fuer dieselbe Rolle.
-                .font(Stil.titelGross)
-                .tracking(Stil.sperrungTitel)
-                .foregroundStyle(Stil.schrift)
-                .lineLimit(1)
-                // Ein langer Titel schrumpft, statt die Seite zu verschieben.
-                .minimumScaleFactor(0.62)
+            // **Der Titel ueber einem Heldbild *ist* der Seitentitel**
+            // (BRAND 2): 28 Bold, Sperrung an der Stufe. 34 war eine
+            // eigene Stufe fuer dieselbe Rolle. Ein langer Titel schrumpft,
+            // statt die Seite zu verschieben; ein Logo bleibt im Fach von 42.
+            Titelmarke(titel: titel.name, logo: model.logoURL(for: titel), platz: .fach(hoehe: 42))
                 .frame(width: 640, height: 42, alignment: .leading)
                 .offset(y: 0)
 
@@ -748,13 +743,28 @@ struct Heldenkopf: View {
             Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
                 withAnimation(Stil.sprung) { mehrOffen.toggle() }
             }
-            .overlay(alignment: .topLeading) {
+            // **Rechtsbündig über die Ausrichtung, nur senkrecht versetzt** —
+            // dieselbe Bauart wie `Wahlknopf`, gespiegelt. Hier stand
+            // `.offset(x: -206, …)` an einer linksbündigen Auflage: der
+            // Rahmen der Liste lag dann 212 pt rechts neben dem Sichtbaren,
+            // und `.scale(anchor: .topTrailing)` zog von dort — die Liste
+            // flog von rechts herein statt kurz aus der Ecke zu klappen.
+            .overlay(alignment: .topTrailing) {
                 if mehrOffen {
                     Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
-                        .offset(x: -206, y: Stil.hauptknopfHoehe + 8)
-                        // Sie oeffnet nach links, ihre obere **rechte** Ecke
-                        // liegt unter den drei Punkten.
+                        .offset(y: Stil.hauptknopfHoehe + 8)
                         .transition(.aufklappen(von: .topTrailing))
+                        .zIndex(40)
+                }
+            }
+            // Wie beim Wahlknopf: der Fang liegt unter der Tafel, ein Klick
+            // daneben schliesst sie.
+            .background {
+                if mehrOffen {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .frame(width: 4000, height: 4000)
+                        .onTapGesture { withAnimation(Stil.sprung) { mehrOffen = false } }
                 }
             }
 

@@ -2421,10 +2421,12 @@ private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Doub
         val ende = if (alsEnde) uebersetzt("Endet um %@",
             android.text.format.DateFormat.getTimeFormat(kontext).format(java.util.Date(System.currentTimeMillis() + (rest * 1000).toLong()))) else null
         Text(ende ?: ("−" + zeitText(rest)), style = ziffern, color = Stil.schriftLeise, maxLines = 1,
-             modifier = Modifier.tippen {
+             // Ausgeblendet nimmt die Restzeit keinen Tipp an: der geht an die Tippflaechen darunter und
+             // blendet die Steuerung ein. Vorher schaltete er unsichtbar zwischen Restzeit und Ende um.
+             modifier = (if (aktiv) Modifier.tippen {
                  alsEnde = !alsEnde
                  app.ablage.merken("restzeitAlsEnde", if (alsEnde) "1" else "0")
-             }.semantics {
+             } else Modifier).semantics {
                  contentDescription = ende ?: uebersetzt("Restzeit")
                  role = Role.Button
                  onClick(label = uebersetzt("Wechselt zwischen Restzeit und Ende")) { alsEnde = !alsEnde; app.ablage.merken("restzeitAlsEnde", if (alsEnde) "1" else "0"); true }

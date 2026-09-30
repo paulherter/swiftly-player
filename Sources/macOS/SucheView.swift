@@ -10,11 +10,15 @@ struct SucheView: View {
     @Environment(\.bereich) private var bereich
 
     @State private var begriff = ""
+    /// Ein Kontowechsel läuft: der Inhalt hält still, dann kommt er gestaffelt.
+    @State private var wechsel = false
     @State private var treffer: [Item] = []
     /// Was Seerr kennt und der eigene Server nicht — leer, wenn nichts
     /// angebunden ist.
     @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var gesucht = false
+    /// Wonach zuletzt gesucht wurde — der Leertext nennt diesen Begriff, nicht das, was gerade im Feld steht.
+    @State private var gesuchtBegriff = ""
     /// **`nil` heisst gestoert, `[]` heisst nichts gefunden.** `model.suche`
     /// gibt beides getrennt zurueck; hier stand `a ?? []`, und damit wurde
     /// aus einem Netzfehler die Aussage „nichts gefunden".
@@ -168,7 +172,7 @@ struct SucheView: View {
                     // sagt, wonach sie nichts gefunden hat, und der zweite
                     // Satz nimmt die Schaerfe heraus.
                     Leerzustand(symbol: "magnifyingglass",
-                                kopfzeile: "Nichts gefunden zu \u{201E}\(begriff)\u{201C}",
+                                kopfzeile: "Nichts gefunden zu \u{201E}\(gesuchtBegriff)\u{201C}",
                                 text: "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.")
                         .padding(.top, 120)
                 }
@@ -205,6 +209,12 @@ struct SucheView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        .kontowechselblende(model: model, bereit: true, wechsel: $wechsel)
+        // Begriff und Treffer gehören dem vorigen Konto.
+        .onChange(of: model.kontowechsel) { _, _ in
+            begriff = ""; treffer = []; seerrtreffer = []
+            gesucht = false; gestoert = false; laedt = false
+        }
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
         // aus über jede Scrollfläche — sie war nie in unserem Code, und
         // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
@@ -214,7 +224,7 @@ struct SucheView: View {
         // abgestellt wie das, was man selbst hinschreibt.
         .seitenscrollen()
         .onAppear { imFeld = true }
-        .task(id: begriff) {
+        .task(id: "\(begriff)|\(model.listenAuffrischen)") {
             // **Die Regel kommt aus dem Paket, nicht von hier.** Hier stand
             // `begriff.count > 1` — dasselbe Ergebnis, aber ohne Trimmen:
             // ein Leerzeichen und ein Buchstabe loesten auf dem Mac schon
@@ -228,23 +238,23 @@ struct SucheView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             laedt = true
-            // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
-            // kommt von dort nichts oder kommt es spaet, steht trotzdem
-            // sofort da, was der eigene Server hat.
-            async let eigene = model.suche(begriff)
-            async let fremde = model.seerr.suchen(begriff)
-            let (a, b) = await (eigene, fremde)
-            // **Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.**
-            //
-            // Am 07.09.2026 gemeldet: auf „Zuletzt hinzugefuegt" oeffnete ein
-            // Druck auf eine Serie die uebernaechste. `ForEach` ordnet ueber
-            // die Kennung zu, und der Server liefert denselben Titel
-            // gelegentlich zweimal. Die iPhone-Fassung faengt das hier ab —
-            // die Mac-Fassung hatte den Schutz nie bekommen.
+            // **Erst der eigene Server, Seerr danach.** Seerr ist eine
+            // Zugabe; was der eigene Server hat, steht sofort da. Der
+            // Begriff geht getrimmt hinaus.
+            let sauber = begriff.trimmingCharacters(in: .whitespacesAndNewlines)
+            async let fremde = model.seerr.suchen(sauber)
+            let a = await model.suche(sauber)
+            // Ein abgebrochener Lauf schreibt nichts — sonst stünde für einen
+            // Augenblick „Server ist abgetaucht" oder eine leere Fläche.
+            guard !Task.isCancelled else { return }
+            // Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.
             gestoert = a == nil
             treffer = Listenregeln.ohneDoppelte(a ?? [])
-            // Was schon auf dem Server liegt, gehoert in den oberen Block —
-            // sonst staende derselbe Titel zweimal auf der Seite.
+            gesuchtBegriff = sauber
+            if !treffer.isEmpty { gesucht = true }
+            let b = await fremde
+            guard !Task.isCancelled else { return }
+            // Was schon auf dem Server liegt, gehört in den oberen Block.
             seerrtreffer = b.filter { !$0.stand.schonDa }
             gesucht = true
             laedt = false

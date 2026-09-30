@@ -563,7 +563,7 @@ struct Ladeauswahl: View {
     ///
     /// Die Serienseite hat nur die gewählte Staffel geladen. Für „ganze Serie"
     /// braucht das Blatt jede — sonst stünde dort eine Zahl, die nicht stimmt.
-    /// Geholt wird nacheinander, damit der Server nicht sieben Anfragen auf
+    /// Geholt wird zu dritt, damit der Server nicht sieben Anfragen auf
     /// einmal bekommt, und was schon da ist, wird nicht neu geholt.
     ///
     /// **`nil` heißt gestört, `[]` heißt leer.** Gescheiterte Abrufe werden
@@ -573,13 +573,26 @@ struct Ladeauswahl: View {
         gestoert = false
         model.downloads.platzAuffrischen()
         folgen = vorgeladen
-        for staffel in staffeln where folgen[staffel.id] == nil {
-            guard let liste = await model.folgen(serie: serie.id, staffel: staffel.id) else {
-                gestoert = true
-                continue
+        // Höchstens drei Staffeln gleichzeitig: bei 20 Staffeln waren es 20
+        // Rundreisen hintereinander.
+        let offen = staffeln.filter { folgen[$0.id] == nil }
+        let serienID = serie.id
+        for beginn in stride(from: 0, to: offen.count, by: 3) {
+            let stapel = Array(offen[beginn..<min(beginn + 3, offen.count)])
+            let model = model
+            let antworten = await withTaskGroup(of: (Item, [Item]?).self) { gruppe in
+                for staffel in stapel {
+                    gruppe.addTask { (staffel, await model.folgen(serie: serienID, staffel: staffel.id)) }
+                }
+                var alle: [(Item, [Item]?)] = []
+                for await antwort in gruppe { alle.append(antwort) }
+                return alle
             }
-            folgen[staffel.id] = liste
-            Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel.id] = liste }
+            for (staffel, liste) in antworten {
+                guard let liste else { gestoert = true; continue }
+                folgen[staffel.id] = liste
+                Serienspeicher.geteilt.merken(serienID) { $0.folgen[staffel.id] = liste }
+            }
         }
         laedt = false
         // Was seit dem letzten Öffnen geladen wurde, ist nicht mehr wählbar —

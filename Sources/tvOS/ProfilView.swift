@@ -18,6 +18,7 @@ struct ProfilView: View {
     @State private var bereich: Bereichswahl = .wiedergabe
     /// Welche Wertzeile gerade ihre Auswahl zeigt.
     @State private var offen: String?
+    @AppStorage("titelAlsLogo") private var titelAlsLogo = false
     @State private var pruefung: String?
     /// Zeigt Quick Connect, um ein weiteres Konto aufzunehmen.
     @State private var kontoAufnehmen = false
@@ -459,6 +460,8 @@ struct ProfilView: View {
                 model.fortschrittAufKacheln.toggle()
             }
             .focused($rechts, equals: .oben)
+            Trennlinie()
+            Schalterzeile(titel: "Titel als Logo", an: titelAlsLogo) { titelAlsLogo.toggle() }
             Trennlinie()
 
             // **Welche Reihen auf der Startseite stehen — und in welcher
@@ -993,13 +996,15 @@ private struct Kontenstreifen: View {
                 Image(systemName: "plus")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(Stil.schriftLeise)
+                    // **Ein Feld auf `flaeche`, kein gestrichelter Kreis** —
+                    // wie am Mac und auf dem iPhone (ein Knopf ohne
+                    // Beschriftung ist quadratisch). Gleiche Grösse wie die
+                    // Kreise daneben, Ecke aus dem Token.
                     .frame(width: groesse, height: groesse)
-                    .overlay {
-                        Circle().strokeBorder(Color.white.opacity(0.28),
-                                              style: StrokeStyle(lineWidth: 3, dash: [6, 5]))
-                    }
+                    .background(Stil.flaeche,
+                                in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
             }
-            .buttonStyle(KontostreifenStil(groesse: groesse))
+            .buttonStyle(KontostreifenStil(groesse: groesse, quadratisch: true))
             .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
         }
         .focusSection()
@@ -1028,22 +1033,30 @@ private struct Kontenstreifen: View {
 /// die Kacheln, nur rund, weil ein Profilbild ein Bild ist.
 private struct KontostreifenStil: ButtonStyle {
     let groesse: CGFloat
+    var quadratisch = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration, groesse: groesse)
+        Inhalt(configuration: configuration, groesse: groesse, quadratisch: quadratisch)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         let groesse: CGFloat
+        let quadratisch: Bool
         @Environment(\.isFocused) private var fokus
 
         var body: some View {
             configuration.label
                 .overlay {
-                    Circle()
-                        .strokeBorder(Color.white, lineWidth: 4)
-                        .opacity(fokus ? 1 : 0)
+                    Group {
+                        if quadratisch {
+                            RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
+                                .strokeBorder(Color.white, lineWidth: 4)
+                        } else {
+                            Circle().strokeBorder(Color.white, lineWidth: 4)
+                        }
+                    }
+                    .opacity(fokus ? 1 : 0)
                 }
                 .frame(width: groesse, height: groesse)
                 // Kein Schatten — siehe `PlayerScreen`. Die Lupe sagt es.

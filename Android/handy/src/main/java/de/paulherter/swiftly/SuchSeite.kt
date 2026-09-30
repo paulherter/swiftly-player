@@ -85,9 +85,31 @@ class Suchstand {
     var nochmal by mutableIntStateOf(0)
     internal var gesucht = ""
 
+    /** Begriff, Treffer und Stoerung gehoeren dem Konto, das gewechselt wurde (`SucheView`, `onChange(of: kontowechsel)`). */
+    fun vergessen() {
+        begriff = ""; treffer = emptyList(); seerr = emptyList()
+        sucht = false; gestoert = false; suchmodus = false; gesucht = ""
+    }
+
+    companion object {
+        /** **Der Verlauf gehoert dem Konto, nicht dem Geraet.** Den alten, gemeinsamen Eintrag bekommt das aktive Konto beim ersten Mal. */
+        fun verlaufSchluessel(app: SwiftlyAnwendung): String =
+            Kern.suchverlaufSchluesselKonto(app.ablage.konten?.let { Kern.bundAktiveKennung(it) }.orEmpty())
+
+        fun verlaufLesen(app: SwiftlyAnwendung): String {
+            val schluessel = verlaufSchluessel(app)
+            if (schluessel != Kern.suchverlaufSchluessel() && app.ablage.merkwert(schluessel) == null) {
+                app.ablage.merken(schluessel, app.ablage.merkwert(Kern.suchverlaufSchluessel()).orEmpty())
+            }
+            return app.ablage.merkwert(schluessel).orEmpty()
+        }
+
+        fun verlaufSchreiben(app: SwiftlyAnwendung, roh: String) = app.ablage.merken(verlaufSchluessel(app), roh)
+    }
+
     /** Suchen wie `SucheView.suchen` — Telefon und Fernseher rufen beide hierher. */
     suspend fun suchen(app: SwiftlyAnwendung, sauber: String) {
-            if (!Kern.suchbegriffTaugt(sauber)) { treffer = emptyList(); seerr = emptyList(); sucht = false; gesucht = sauber; return }
+            if (!Kern.suchbegriffTaugt(sauber)) { treffer = emptyList(); seerr = emptyList(); gestoert = false; sucht = false; gesucht = sauber; return }
             sucht = true
             gestoert = false
             delay(300)
@@ -125,13 +147,13 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val st = app.suche
     val fokus = remember { FocusRequester() }
     val fokusVerwalter = LocalFocusManager.current
-    var verlaufRoh by remember { mutableStateOf(app.ablage.merkwert(Kern.suchverlaufSchluessel()).orEmpty()) }
+    var verlaufRoh by remember { mutableStateOf(Suchstand.verlaufLesen(app)) }
     val verlauf = remember(verlaufRoh) {
         JSONArray(Kern.suchverlaufListe(verlaufRoh)).let { a -> (0 until a.length()).map { a.getString(it) } }
     }
     fun merken() {
         verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh)
-        app.ablage.merken(Kern.suchverlaufSchluessel(), verlaufRoh)
+        Suchstand.verlaufSchreiben(app, verlaufRoh)
     }
 
     // Der zweite Tipp auf den Reiter — nur neue Tipps zaehlen, nicht der Stand beim Wiederkommen.
@@ -146,6 +168,12 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         val sauber = st.begriff.trim()
         if (sauber == st.gesucht && !st.gestoert) return@LaunchedEffect
         st.suchen(app, sauber)
+    }
+
+    // Haken und Balken der Treffer: nach einer Aenderung am Sehstand neu suchen; die Treffer bleiben stehen, bis die neuen da sind.
+    BeiSehstandaenderung(app) {
+        val sauber = st.begriff.trim()
+        if (Kern.suchbegriffTaugt(sauber)) st.suchen(app, sauber)
     }
 
     val raster = rememberLazyGridState()
@@ -212,7 +240,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 when {
                     sauber.isEmpty() && verlauf.isEmpty() -> ganz("hinweis") { Leerhinweis() }
                     sauber.isEmpty() -> ganz("verlauf") {
-                        Verlauf(verlauf, loeschen = { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }) { wort ->
+                        Verlauf(verlauf, loeschen = { verlaufRoh = ""; Suchstand.verlaufSchreiben(app, "") }) { wort ->
                             // Fuellt das Feld und sucht — die Tastatur bleibt zu.
                             st.begriff = wort
                             fokusVerwalter.clearFocus()
@@ -226,7 +254,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // **Gestoert ist nicht leer.** Vorher stand hier auch bei einem Netzfehler
                     // „Keine Treffer fuer …" — eine Aussage ueber den Bestand, die niemand
                     // geprueft hat.
-                    st.gestoert && st.treffer.isEmpty() && st.seerr.isEmpty() -> ganz("gestoert") {
+                    st.gestoert && st.treffer.isEmpty() && st.seerr.isEmpty() && !Kontowechselflug.wartet -> ganz("gestoert") {
                         // Die ganze Serverformel, wie auf jeder anderen Seite — oben 24.
                         Box(Modifier.fillMaxWidth().padding(top = 24.dp).height(360.dp)) {
                             Leerzustand(Zeichen.ServerWeg, uebersetzt("Server ist abgetaucht"),
@@ -243,7 +271,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             }
                         }
                         if (verlauf.isNotEmpty()) ganz("verlauf-leer") {
-                            Verlauf(verlauf, loeschen = { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }) { wort ->
+                            Verlauf(verlauf, loeschen = { verlaufRoh = ""; Suchstand.verlaufSchreiben(app, "") }) { wort ->
                                 st.begriff = wort
                                 fokusVerwalter.clearFocus()
                             }

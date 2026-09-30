@@ -65,14 +65,15 @@ fun GenreSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     // Fehler stand in `GenreView` auf iOS als `?? []` und ist dort am 21.09. behoben.
     var gestoert by remember(ziel.id) { mutableStateOf(false) }
     var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    BeiSehstandaenderung(app) { versuch++ }
     LaunchedEffect(ziel.id, versuch) {
         gestoert = false
         try {
             titel = JSONArray(withContext(Dispatchers.IO) { app.kern.genre(ziel.id).await() })
                 .let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
-            gestoert = true
-            titel = emptyList()
+            // Was schon dasteht, bleibt stehen — die Stoerung ersetzt keine vorhandene Liste.
+            if (titel.isNullOrEmpty()) { gestoert = true; titel = emptyList() }
         }
     }
     val raster = rememberLazyGridState()

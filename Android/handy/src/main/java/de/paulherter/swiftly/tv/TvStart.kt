@@ -265,10 +265,16 @@ fun Modifier.tvAbschnitt(abschnitte: TvAbschnitte, schluessel: String, art: TvAb
 @Composable
 fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewertung: Double?,
                  freigabe: String?, beschreibung: String?, modifier: Modifier = Modifier,
-                 schluss: @Composable () -> Unit = {}) {
+                 logo: String? = null, schluss: @Composable () -> Unit = {}) {
     Column(modifier.width(500.dp)) {
-        Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.height(34.dp))
+        // Mit „Titel als Logo" (Einstellungen → Darstellung) steht hier das Logo. Die Zeile behaelt ihre
+        // 34 dp; ein hoeheres Logo waechst nach oben in den freien Abstand, nichts darunter rutscht.
+        Box(Modifier.height(34.dp).wrapContentHeight(Alignment.Bottom, unbounded = true)) {
+            Titelmarke(titel, logo, zeile = 28.dp) {
+                Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                     modifier = Modifier.height(34.dp))
+            }
+        }
         zweitzeile?.let {
             Text(it, style = TvStil.auskunftZweitzeile, color = Stil.schriftLeise, maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp).height(22.dp))
@@ -533,15 +539,16 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
 
     // Wie auf Apple: „gar nichts geladen" ist etwas anderes als „nichts vorhanden" —
     // Genre-Chips sind ein Einstieg, kein Inhalt, und zaehlen deshalb nicht mit.
-    val alleLeer = liste != null && liste.isEmpty() && !gestoert
+    val imWechsel = de.paulherter.swiftly.Kontowechselflug.wartet
+    val alleLeer = liste != null && liste.isEmpty() && !gestoert && !imWechsel
 
     // Vorlage: `HomeView` `.bildgrund(url: kulissenURL)` und `querbild` — gezeichnet in `TvHaupt`
     // (`TvKulissenebene`), damit sie beim Oeffnen einer Seite einfach stehen bleiben. Kopfschatten
     // dort ebenso. Fehler- und Leerzustand ohne Kulisse, wie bisher.
-    TvKulisseMelden(if (gestoert || alleLeer) null else bild)
+    TvKulisseMelden(if ((gestoert && !imWechsel) || alleLeer) null else bild)
     Box(Modifier.fillMaxSize()) {
         when {
-            gestoert -> TvStoerung(app, erneut = { lauf.launch { laden() } })
+            gestoert && !imWechsel -> TvStoerung(app, erneut = { lauf.launch { laden() } })
             alleLeer -> TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald auf dem Server etwas liegt, taucht es hier auf."))
             else -> {
                 Column(Modifier.fillMaxSize()) {

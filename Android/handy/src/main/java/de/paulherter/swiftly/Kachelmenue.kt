@@ -231,6 +231,18 @@ internal fun kachelmenueEintraege(app: SwiftlyAnwendung, w: Kachelmenuewunsch): 
  * **Die Handlungen** — die, die es schon gibt; sie ueberleben das Menue (es ist zu, bevor der Server
  * antwortet). Nach einer Aenderung am Sehstand frischen die Seiten auf (`sehstandGeaendert`).
  */
+/**
+ * **Eine Liste mit Haken und Balken frischt auf**, wenn die Wiedergabe endet oder ein Kachelmenue den Sehstand
+ * aendert (`listenAuffrischen` / `nachholen` auf Apple). Seiten, die verdeckt sind, sind nicht gebaut und laden beim
+ * Zurueckkommen ohnehin neu; nur die oberste Seite muss das hier tun. Der Stand beim Bauen zaehlt nicht.
+ */
+@androidx.compose.runtime.Composable
+fun BeiSehstandaenderung(app: SwiftlyAnwendung, tun: suspend () -> Unit) {
+    val zaehler = app.wiedergabeBeendet.intValue + app.sehstandGeaendert.intValue
+    val anfang = androidx.compose.runtime.remember { zaehler }
+    androidx.compose.runtime.LaunchedEffect(zaehler) { if (zaehler != anfang) tun() }
+}
+
 internal fun kachelmenueHandeln(app: SwiftlyAnwendung, w: Kachelmenuewunsch, was: String, oeffnen: (Ziel) -> Unit) {
     val nachher = w.nachher
     app.anwendungslauf.launch {

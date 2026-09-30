@@ -53,6 +53,12 @@ struct BibliothekView: View {
     /// Filterzeile.
     @State private var kopfstand = Kopfstand()
 
+    /// Ein Kontowechsel läuft: der Inhalt hält still und kommt erst gestaffelt,
+    /// wenn das neue Konto geladen ist. Gehört der Seite, nicht dem Zähler:
+    /// eine Seite, die erst nach dem Wechsel geöffnet wird, beginnt mit `false`
+    /// und tritt nicht noch einmal auf.
+    @State private var wechsel = false
+
     /// Wie weit die Wertreihe schon zugegangen ist, 0 bis 1.
     private var zugegangen: Double {
         Double(min(max(kopfstand.versatz / Stil.wertreihenWeg, 0), 1))
@@ -225,6 +231,11 @@ struct BibliothekView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // Beim Kontowechsel wie die Startseite: alter Inhalt sofort weg, der
+        // neue blendet gestaffelt ein (wie am iPhone).
+        .kontowechselblende(model: model,
+                            bereit: !regal.veraltet(model) && (!regal.items.isEmpty || !regal.laedt) && !regal.gestoert,
+                            wechsel: $wechsel)
         // **Der Titel bleibt oben stehen, mit dem Verlauf dahinter** — wie
         // auf dem iPhone. Der grosse Titel scrollt weg, der kleine blendet
         // ein; die beiden sind nie zugleich zu sehen.
@@ -258,6 +269,8 @@ struct BibliothekView: View {
         // vorigen Kontos, und das neue sieht womöglich eine andere Auswahl.
         // Geleert wird nichts — `Bibliotheksmodell` ersetzt die Einträge
         // erst, wenn die neuen da sind.
+        // Nach Wiedergabe, „Als gesehen“ oder Merkliste stehen Haken und Balken sonst alt da.
+        .onChange(of: model.listenAuffrischen) { _, _ in neuLaden() }
         .onChange(of: model.kontowechsel) { _, _ in
             neuLaden()
         }

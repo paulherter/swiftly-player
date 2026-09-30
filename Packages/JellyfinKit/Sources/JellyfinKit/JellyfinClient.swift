@@ -822,6 +822,21 @@ public actor JellyfinClient {
         return try await send(req, as: ItemsResponse.self).items
     }
 
+    /// **Nur die erste Folge der Serie** — für Rückfälle („durchgesehen",
+    /// Kopfbild-Ersatz), die sonst alle Folgen aller Staffeln samt
+    /// Beschreibung und Mediendateien holten, um `.first` zu nehmen.
+    /// Fehlende (nicht vorhandene) Folgen zählen nicht.
+    public func ersteFolge(seriesID: String) async throws -> Item? {
+        let s = try requireSession()
+        let req = try request("Shows/\(seriesID)/Episodes", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "isMissing", value: "false"),
+            .init(name: "Limit", value: "1"),
+            .init(name: "Fields", value: "Overview,MediaSources"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items.first
+    }
+
     /// Trailer, die als eigene Dateien auf dem Server liegen.
     ///
     /// Sie lassen sich wie jeder andere Titel abspielen — der Server liefert

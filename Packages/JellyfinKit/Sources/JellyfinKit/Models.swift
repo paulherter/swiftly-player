@@ -141,6 +141,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// Das quer liegende Vorschaubild eines Titels, falls eines hinterlegt
     /// ist. Bei Serien häufig gepflegt, bei Folgen selten.
     public let parentThumbImageTag: String?
+    /// Das Logo der Serie, mitgeliefert an jeder Folge.
+    public let parentLogoImageTag: String?
     public let parentThumbItemId: String?
     /// Bei einer Person der Geburtstag, sonst die Erstausstrahlung.
     public let premiereDate: String?
@@ -180,6 +182,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case parentBackdropImageTags = "ParentBackdropImageTags"
         case parentBackdropItemId = "ParentBackdropItemId"
         case parentThumbImageTag = "ParentThumbImageTag"
+        case parentLogoImageTag = "ParentLogoImageTag"
         case parentThumbItemId = "ParentThumbItemId"
         case premiereDate = "PremiereDate"
         case productionLocations = "ProductionLocations"
@@ -324,6 +327,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 parentBackdropImageTags: [String]? = nil,
                 parentBackdropItemId: String? = nil,
                 parentThumbImageTag: String? = nil,
+                parentLogoImageTag: String? = nil,
                 parentThumbItemId: String? = nil,
                 premiereDate: String? = nil,
                 productionLocations: [String]? = nil,
@@ -345,6 +349,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.parentBackdropImageTags = parentBackdropImageTags
         self.parentBackdropItemId = parentBackdropItemId
         self.parentThumbImageTag = parentThumbImageTag
+        self.parentLogoImageTag = parentLogoImageTag
         self.parentThumbItemId = parentThumbItemId
         self.premiereDate = premiereDate
         self.productionLocations = productionLocations

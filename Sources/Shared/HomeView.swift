@@ -124,7 +124,15 @@ struct HomeView: View {
         }
         // Neu geholt wird nach der Endmeldung, nicht beim Zumachen: beim
         // Zumachen ist sie noch unterwegs (`AppModel.wiedergabeBeendet`).
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
+        .nachholen(bei: model.seitenAuffrischen) { Task { await laden() } }
+        // Rückkehr in den Vordergrund (VERHALTEN D8, Frist 30 s): wer auf
+        // einem anderen Gerät weitergeschaut hat, sieht nicht den Stand von
+        // gestern.
+        .onChange(of: lebenslage) { _, neu in
+            guard neu == .active, stand.brauchtAuffrischung,
+                  !Kontowechselflug.geteilt.wartet else { return }
+            Task { await laden() }
+        }
         .overlay(alignment: .topTrailing) {
             Handlungsblatt(offen: $abmeldeblatt,
                            titel: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
@@ -327,8 +335,12 @@ struct HomeView: View {
         Task {
             defer { bereitet = false }
             // Frisch holen: die Position im Listeneintrag ist oft veraltet.
-            let aktuell = await model.item(id: item.id) ?? item
-            guard let plan = await model.plan(for: aktuell.id) else {
+            // Der Plan hängt nicht vom frischen Eintrag ab: beide
+            // nebeneinander holen, nicht nacheinander.
+            async let frisch = model.item(id: item.id)
+            async let planAbruf = model.plan(for: item.id)
+            let aktuell = await frisch ?? item
+            guard let plan = await planAbruf else {
                 // Statt Stille: sagen, dass es nicht ging.
                 meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
                 return

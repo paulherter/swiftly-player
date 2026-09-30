@@ -677,6 +677,7 @@ public final class Kern: @unchecked Sendable {
                 id: i.id, name: i.name, typ: i.type ?? "", nebenzeile: i.nebenzeile,
                 jahrLaufzeit: jahrLaufzeit,
                 kopfbild: Bildwahl.kopfMitErsatz(i, folge: nil, adressen: a)?.absoluteString,
+                logo: Bildwahl.logo(i, adressen: a)?.absoluteString,
                 bewertung: i.communityRating, freigabe: i.officialRating,
                 planDa: p != nil, lossless: p?.isLossless ?? false, methode: p.map { $0.method.rawValue },
                 fortsetzenAb: ab, fortsetzenText: ab.map { zeitText($0) },
@@ -737,6 +738,7 @@ public final class Kern: @unchecked Sendable {
                 gattungen: serie.genres.flatMap { $0.isEmpty ? nil : $0.prefix(2).joined(separator: ", ") },
                 // `stand` ist die naechste oder erste Folge — dieselbe, die iOS fuer den Ersatz sucht.
                 kopfbild: Bildwahl.kopfMitErsatz(serie, folge: stand, adressen: a)?.absoluteString,
+                logo: Bildwahl.logo(serie, adressen: a)?.absoluteString,
                 bewertung: serie.communityRating, freigabe: serie.officialRating, beschreibung: serie.beschreibung,
                 gemerkt: serie.userData?.isFavorite ?? false, gesehen: serie.userData?.played ?? false,
                 trailer: serie.remoteTrailers?.first?.url.map { "\($0)" },
@@ -976,6 +978,8 @@ public final class Kern: @unchecked Sendable {
 
     /// Der Verlauf liegt als eine Zeichenkette in der Ablage; Regeln (acht, ohne Doppelte, neu vorn) im Paket.
     public static func suchverlaufSchluessel() -> String { Suchverlauf.schluessel }
+    /// Der Verlauf gehoert dem Konto (`Suchverlauf.schluessel(konto:)`); ohne Konto der alte, gemeinsame Schluessel.
+    public static func suchverlaufSchluesselKonto(konto: String) -> String { Suchverlauf.schluessel(konto: konto) }
     public static func suchverlaufMerken(wort: String, roh: String) -> String { Suchverlauf.merken(wort, in: roh) }
     public static func suchverlaufListe(roh: String) -> String {
         (try? JSONEncoder().encode(Suchverlauf.liste(roh))).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
@@ -1403,6 +1407,21 @@ public final class Kern: @unchecked Sendable {
         Bildtonrechnung.punkte(toene, spalten: spalten, zeilen: zeilen, hoehe: hoehe,
                                farbhoehe: farbhoehe, ab: ab, auslauf: auslauf)
     }
+    /// **Titel als Logo** (`Titelmarkenmass`): Ausschnitt ohne transparenten Rand. `rgba` ist 8 Bit,
+    /// **vormultipliziert**. Antwort: x, y, Breite, Hoehe, Dichte, Luminanz — leer, wenn nichts deckt.
+    public static func titelmarkeMessen(rgba: [UInt8], breite: Int, hoehe: Int) -> [Double] {
+        guard let m = Titelmarkenmass.messen(rgba: rgba, breite: breite, hoehe: hoehe) else { return [] }
+        return [Double(m.x), Double(m.y), Double(m.breite), Double(m.hoehe), m.dichte, m.luminanz]
+    }
+    /// Breite und Hoehe des Logos in denselben Einheiten wie `zeile` (eine Titelzeile) und `maxBreite`.
+    public static func titelmarkeGroesse(seitenverhaeltnis: Double, dichte: Double, zeile: Double,
+                                         maxBreite: Double) -> [Double] {
+        let g = Titelmarkenmass.groesse(seitenverhaeltnis: seitenverhaeltnis, dichte: dichte,
+                                        zeile: zeile, maxBreite: maxBreite)
+        return [g.breite, g.hoehe]
+    }
+    /// Ueberwiegend dunkel — das Logo steht dann als weisse Silhouette.
+    public static func titelmarkeDunkel(luminanz: Double) -> Bool { Titelmarkenmass.istDunkel(luminanz: luminanz) }
     /// Die Farbe an einer Stelle der Flaeche als ARGB — fuer die Staffelliste im Seitenton.
     public static func bildtonFarbe(toene: [Double], x: Double, y: Double) -> Int32 {
         let c = Bildtonrechnung.farbe(toene, x: x, y: y)
@@ -3466,6 +3485,8 @@ struct Titelantwort: Encodable {
     /// „2026 · 1 Std. 52 Min." — ohne Gattung, fuer den Fernseher.
     let jahrLaufzeit: String
     let kopfbild: String?
+    /// Titel-Logo, wenn der Server eins fuehrt (`Bildwahl.logo`).
+    let logo: String?
     let bewertung: Double?
     let freigabe: String?
     let planDa, lossless: Bool
@@ -3489,6 +3510,8 @@ struct Serienantwort: Encodable {
     let jahr, staffelzeile: String?
     let staffelzahl: Int?
     let gattungen, kopfbild: String?
+    /// Titel-Logo, wenn der Server eins fuehrt (`Bildwahl.logo`).
+    let logo: String?
     let bewertung: Double?
     let freigabe, beschreibung: String?
     let gemerkt, gesehen: Bool

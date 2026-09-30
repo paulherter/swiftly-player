@@ -74,6 +74,7 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     // **Ohne Antwort nicht ewig Platzhalter** (Audit 27.09.): der Fehler wurde verschluckt, die Seite
     // blieb leer und bot kein „Erneut versuchen".
     var fehlgeschlagen by remember(ziel.id) { mutableStateOf(false) }
+    BeiSehstandaenderung(app) { versuch++ }
     LaunchedEffect(ziel.id, versuch) {
         fehlgeschlagen = false
         try {

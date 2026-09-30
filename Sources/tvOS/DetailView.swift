@@ -97,7 +97,7 @@ struct Detailkopf<Knoepfe: View>: View {
             // **Derselbe Baustein wie auf der Startseite.** Der Header ist
             // dort und hier identisch; das Einzige, was hier dazukommt, ist
             // die Knopfreihe. Siehe `Kopfauskunft`.
-            Kopfauskunft(item: item) {
+            Kopfauskunft(item: item, logoModell: model) {
                 // **Der Beleg blendet ein, der Rest des Kopfes nicht.**
                 //
                 // Er haengt an `plan`, und der kommt vom Server — im Kopf,
@@ -405,9 +405,18 @@ struct DetailView: View {
             // Instant bleibt, was schon auf der Startseite stand: Titel,
             // Angaben, Beschreibung, Bild, Grund. Ueberblendet wird nur, was
             // neu dazukommt.
+            // **Titel und Plan zuerst und gleich.** Hauptknopf („Fortsetzen
+            // ab ..."), Merken, Gesehen und die Direct-Play-Marke haengen nur
+            // an diesen beiden; sie warten nicht auf Trailer und Sammlungen.
             let neuerTitel = await frischerTitel
             let neuerPlan = await planung
-            let neueAehnliche = (await aehnlich) ?? []
+            withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
+                if let neuerTitel { frisch = neuerTitel }
+                plan = neuerPlan
+            }
+            gemerkt = aktuell.userData?.isFavorite ?? false
+            gesehen = aktuell.istGesehen
+            let neueAehnliche = Listenregeln.ohneDoppelte((await aehnlich) ?? [])
 
             // Der Trailer steht vorn in den Extras: er war einmal eine eigene
             // Pille, und die Knopfreihe des Entwurfs hat dafuer keinen Platz.
@@ -418,15 +427,11 @@ struct DetailView: View {
             let neueSammlungen = await sammlung
 
             withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
-                frisch = neuerTitel
-                plan = neuerPlan
                 aehnliche = neueAehnliche
                 extras = regal
                 sammlungsreihen = neueSammlungen
                 untenDa = true
             }
-            gemerkt = aktuell.userData?.isFavorite ?? false
-            gesehen = aktuell.istGesehen
         }
     }
 
@@ -516,7 +521,7 @@ struct DetailView: View {
         // seinen Plan ist ein halber Stand.
         async let frischerTitel = model.item(id: item.id)
         async let planung = model.plan(for: item.id)
-        frisch = await frischerTitel
+        if let neu = await frischerTitel { frisch = neu }
         plan = await planung
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.istGesehen

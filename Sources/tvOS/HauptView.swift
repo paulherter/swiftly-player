@@ -284,6 +284,11 @@ struct HauptView: View {
             if let wunsch = abspielen {
                 PlayerScreen(model: model, item: wunsch.item, plan: wunsch.plan,
                              startAt: wunsch.startAt) { abspielen = nil }
+                // Die Blende gehört der Hülle (`.animation` unten), nicht dem
+                // Inhalt: was im Player beim Auftritt oder Abgang seine
+                // Größe oder Lage wechselt — Sicherheitsrand, Videofläche —,
+                // zog sich sonst mit der Blende auf und zu.
+                .transaction(value: abspielen?.id) { $0.animation = nil }
                 .transition(.opacity)
                 // **Ohne feste Ebene blendete er nicht aus.** Ein Kind im
                 // ZStack ohne `zIndex` rutscht beim Entfernen hinter seine

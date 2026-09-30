@@ -371,6 +371,7 @@ final class Abspieler: @unchecked Sendable {
             + ", ab \(Int(ab)) s, Puffer \(puffer)"
             + (softwareDekoder ? ", Dekoder Software" : ""))
         libvlc_media_player_play(spieler)
+        libvlc_audio_set_volume(spieler, lautstaerkeProzent)
         bildTaktStarten()
         rendererMelden()
     }
@@ -422,15 +423,22 @@ final class Abspieler: @unchecked Sendable {
         Protokoll.schreib("[Player] VLC-Meldungen an")
     }
 
-    /// Schaltet den Ton um. Wahr heisst: jetzt stumm; `nil`, wenn nichts
-    /// laeuft. **Gelesen, dann gesetzt** statt `toggle`: ohne Tonausgabe
-    /// (Geraet gerade gewechselt) meldet VLC -1, und `toggle` taete dann
-    /// nichts, waehrend der Hinweis „Ton aus" sagte.
-    func stummUmschalten() -> Bool? {
-        guard let spieler else { return nil }
-        let neu = libvlc_audio_get_mute(spieler) != 1
-        libvlc_audio_set_mute(spieler, neu ? 1 : 0)
-        return neu
+    /// **Lautstärke 0 bis 100** über `libvlc_audio_set_volume`. Der Wert wird
+    /// gemerkt und bei jedem Start neu gesetzt: VLC kennt ihn erst, wenn die
+    /// Tonausgabe steht.
+    private(set) var lautstaerkeProzent: Int32 = 100
+    func lautstaerkeSetzen(_ prozent: Int) {
+        lautstaerkeProzent = Int32(min(max(prozent, 0), 100))
+        guard let spieler else { return }
+        // Ein früheres „stumm" von VLC selbst (Systemtaste) bleibt nicht hängen.
+        if libvlc_audio_get_mute(spieler) == 1 { libvlc_audio_set_mute(spieler, 0) }
+        libvlc_audio_set_volume(spieler, lautstaerkeProzent)
+    }
+
+    /// Sobald die Tonausgabe steht, gilt der gemerkte Wert (siehe oben).
+    func lautstaerkeNachziehen() {
+        guard let spieler, libvlc_audio_get_volume(spieler) != lautstaerkeProzent else { return }
+        libvlc_audio_set_volume(spieler, lautstaerkeProzent)
     }
 
     func abspielen() { spieler.map { libvlc_media_player_set_pause($0, 0) } }
@@ -958,7 +966,7 @@ nonisolated(unsafe) private let laufzustandRuf: @convention(c) (
     aufHauptfaden {
         guard let zeiger = UnsafeMutableRawPointer(bitPattern: adresse) else { return }
         let abspieler = Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue()
-        if laeuft { abspieler.verzoegerungNachziehen() }
+        if laeuft { abspieler.verzoegerungNachziehen(); abspieler.lautstaerkeNachziehen() }
         abspieler.laufzustandVermerken(laeuft)
         abspieler.laufzustand?(laeuft)
     }

@@ -810,7 +810,12 @@ struct Handlungsliste: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(handlungen) { handlung in
+            // **Die Zeile heisst nach ihrer Stelle, nicht nach `handlung.id`.**
+            // `Titelhandlung.id` ist ein frischer `UUID()` je Berechnung; die
+            // Seite baut die Liste bei jeder Auffrischung neu, und jede Zeile
+            // gaelte dann als neu — statt der einen Tafel-Bewegung des
+            // Wahlknopfs blendete die Liste zeilenweise ein und aus.
+            ForEach(Array(handlungen.enumerated()), id: \.offset) { _, handlung in
                 Handlungszeile(handlung: handlung) {
                     handlung.tun()
                     withAnimation(Stil.sprung) { offen = false }

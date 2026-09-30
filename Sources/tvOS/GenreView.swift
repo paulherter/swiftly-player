@@ -84,13 +84,17 @@ struct GenreView: View {
         }
         .animation(Stil.einblenden, value: laedt)
         .task(id: name) { await laden() }
+        // Gesehen/Gemerkt woanders: still nachladen, die Liste bleibt stehen.
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden(still: true) } }
     }
 
-    private func laden() async {
-        laedt = true
+    private func laden(still: Bool = false) async {
+        if !still { laedt = true }
         let antwort = await model.titel(gattung: name, limit: 200)
+        // Still nachgeladen und gescheitert: der alte Stand bleibt.
+        if still, antwort == nil { return }
         gestoert = antwort == nil
-        items = antwort ?? []
+        items = Listenregeln.ohneDoppelte(antwort ?? [])
         laedt = false
     }
 }

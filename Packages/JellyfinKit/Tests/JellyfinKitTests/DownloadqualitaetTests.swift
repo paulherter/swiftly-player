@@ -145,7 +145,10 @@ struct DownloadqualitaetTests {
                                session: .init(accessToken: "tok", userID: "u1", userName: "n",
                                               serverURL: URL(string: "https://tv.example.de")!))
         let orig = try await c.downloadURL(itemID: "abc", mediaSourceID: "q", qualitaet: .original)
-        #expect(orig == (try await c.downloadURL(itemID: "abc", mediaSourceID: "q")))
+        // Erst holen, dann vergleichen: `await` im `#expect` übersetzt der
+        // Linux-Übersetzer der Prüfaktion nicht (Autoclosure ohne Nebenläufigkeit).
+        let ohneStufe = try await c.downloadURL(itemID: "abc", mediaSourceID: "q")
+        #expect(orig == ohneStufe)
         #expect(orig.query?.contains("static=true") == true)
 
         let klein = try await c.downloadURL(itemID: "abc", mediaSourceID: "q", qualitaet: .hd720)

@@ -46,7 +46,11 @@ struct SucheView: View {
     ///
     /// Gemerkt wird beim Abschicken, nicht beim Tippen: wer „Ga", „Gam",
     /// „Game" eingibt, hat einmal gesucht und nicht dreimal.
-    @AppStorage(Suchverlauf.schluessel) private var letzteRoh = ""
+    ///
+    /// **Je Konto** (`Suchverlauf.schluessel(konto:)`): das Kinderprofil sah
+    /// nach dem Wechsel die Suchen des Elternprofils. Der alte, gemeinsame
+    /// Eintrag wird beim ersten Mal dem aktiven Konto zugeschlagen.
+    @State private var letzteRoh = ""
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
@@ -57,8 +61,26 @@ struct SucheView: View {
 
     /// Die Regel selbst steht in `Suchverlauf` — der Fernseher zeigt dieselbe
     /// Liste, und eine zweite Fassung davon wäre eine kopierte Funktion.
+    private var verlaufsschluessel: String {
+        Suchverlauf.schluessel(konto: model.session?.kontoschluessel)
+    }
+
+    private func verlaufLaden() {
+        let ablage = UserDefaults.standard
+        let schluessel = verlaufsschluessel
+        if schluessel != Suchverlauf.schluessel, ablage.object(forKey: schluessel) == nil {
+            ablage.set(ablage.string(forKey: Suchverlauf.schluessel) ?? "", forKey: schluessel)
+        }
+        letzteRoh = ablage.string(forKey: schluessel) ?? ""
+    }
+
+    private func verlaufSetzen(_ neu: String) {
+        letzteRoh = neu
+        UserDefaults.standard.set(neu, forKey: verlaufsschluessel)
+    }
+
     private func merken(_ wort: String) {
-        letzteRoh = Suchverlauf.merken(wort, in: letzteRoh)
+        verlaufSetzen(Suchverlauf.merken(wort, in: letzteRoh))
     }
 
     var body: some View {
@@ -340,13 +362,16 @@ struct SucheView: View {
             begriff = ""
             treffer = []
             seerrtreffer = []
+            gestoert = false
             sucht = false
             suchmodus = false
+            verlaufLaden()
         }
+        .onAppear { verlaufLaden() }
         // Gesehen-/Lesezeichenwechsel auf einer Detailseite: die Kachel
         // darunter soll nicht den alten Stand zeigen. Die Treffer bleiben
         // stehen, bis die neuen da sind.
-        .onChange(of: model.listenAuffrischen) { _, _ in
+        .nachholen(bei: model.listenAuffrischen, vorn: aktiv) {
             if !begriff.isEmpty { suchen(begriff) }
         }
     }
@@ -499,7 +524,7 @@ struct SucheView: View {
                 // gewesen, die Stufe ist aber dieselbe.
                 rubrik("Zuletzt gesucht")
                 Spacer(minLength: 8)
-                Button { letzteRoh = "" } label: {
+                Button { verlaufSetzen("") } label: {
                     Text("Löschen")
                         .mitwachsend(13, .medium)
                         .foregroundStyle(Stil.schriftSehrLeise)
@@ -590,6 +615,8 @@ struct SucheView: View {
         guard Anzeigeregeln.suchbegriffTaugt(sauber) else {
             treffer = []
             seerrtreffer = []
+            // Eine frühere Störung gehört zu einer früheren Suche.
+            gestoert = false
             sucht = false
             return
         }
@@ -612,7 +639,11 @@ struct SucheView: View {
             guard !Task.isCancelled else { return }
             // Was der eigene Server schon hat, gehört nicht in den unteren
             // Block — sonst stünde derselbe Titel zweimal auf der Seite.
-            seerrtreffer = dazu.filter { !$0.stand.schonDa }
+            // Animiert: kommt Seerr später, schiebt die Überschrift „Auf
+            // deinem Server" sonst alle Treffer ohne Übergang nach unten.
+            withAnimation(Stil.einblenden) {
+                seerrtreffer = dazu.filter { !$0.stand.schonDa }
+            }
         }
     }
 }

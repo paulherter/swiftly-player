@@ -56,19 +56,24 @@ class Merklistenstand(private val ablage: Ablage) {
     /** Leer heisst: Filme **und** Serien — kein dritter Fall. */
     var gattung by mutableStateOf(ablage.merkwert("gattung.merkliste").orEmpty()); private set
     private var laedtNach = false
+    private var geladenFuer: String? = null
 
     val nochMehrDa: Boolean get() = items.size < gesamt
 
     fun sortierungSetzen(wert: String) { sortierung = wert; ablage.merken("sortierung.merkliste", wert) }
     fun gattungSetzen(wert: String) { gattung = wert; ablage.merken("gattung.merkliste", wert) }
-    fun vergessen() { items = emptyList(); gesamt = 0; laedt = true }
+    fun vergessen() { items = emptyList(); gesamt = 0; laedt = true; gestoert = false; geladenFuer = null }
 
     suspend fun laden(kern: Kern) {
         laedt = items.isEmpty()
         gestoert = false
         try {
-            val (neu, zahl) = seite(kern, 0)
+            // Auffrischen holt so viel, wie schon dasteht (bis 300) — `Merklistenmodell.laden`.
+            val fuer = "$sortierung|$gattung"
+            val umfang = if (geladenFuer == fuer) minOf(300, maxOf(60, items.size)) else 60
+            val (neu, zahl) = seite(kern, 0, umfang)
             items = neu
+            geladenFuer = fuer
             gesamt = zahl
         } catch (e: CancellationException) {
             // Ein Abbruch ist kein Ausfall: der Nachfolger laedt schon.
@@ -92,8 +97,8 @@ class Merklistenstand(private val ablage: Ablage) {
         } finally { laedtNach = false }
     }
 
-    private suspend fun seite(kern: Kern, ab: Int): Pair<List<Rasterkachel>, Int> {
-        val o = JSONObject(withContext(Dispatchers.IO) { kern.merkliste(gattung, sortierung, ab.toLong(), 60L).await() })
+    private suspend fun seite(kern: Kern, ab: Int, anzahl: Int = 60): Pair<List<Rasterkachel>, Int> {
+        val o = JSONObject(withContext(Dispatchers.IO) { kern.merkliste(gattung, sortierung, ab.toLong(), anzahl.toLong()).await() })
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } to o.getInt("gesamt")
     }
@@ -112,6 +117,7 @@ fun MerklisteSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -
     val stand = app.merkliste
     // Bei jedem Ankommen neu — was auf einer Titelseite entfernt wurde, ist dann weg.
     LaunchedEffect(stand.sortierung, stand.gattung) { stand.laden(app.kern) }
+    BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val gattungen = remember { wahlenLesen(Kern.merkgattungen()) }
     val raster = rememberLazyGridState()
     val bereich = rememberCoroutineScope()
@@ -156,7 +162,9 @@ fun MerklisteSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -
                 if (stand.items.isNotEmpty() && stand.nochMehrDa) items(anzahl, key = { "nachschub$it" }) { Kachelplatzhalter() }
             }
             // **Gestoert und leer sind zwei Zustaende.** Vorlage: `MerklisteView`.
-            if (stand.gestoert && stand.items.isEmpty() && !stand.laedt) {
+            if (Kontowechselflug.wartet) {
+                // Beim Kontowechsel weder Stoer- noch Leerzustand.
+            } else if (stand.gestoert && stand.items.isEmpty() && !stand.laedt) {
                 Leerzustand(Zeichen.ServerWeg, uebersetzt("Server ist abgetaucht"),
                     uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serveradresse()),
                     hauptknopf = uebersetzt("Erneut versuchen") to { bereich.launch { stand.laden(app.kern) } })

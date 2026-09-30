@@ -218,7 +218,7 @@ struct BibliothekView: View {
         // Sortierung — alles Werte, die sich beim Wechsel nicht aendern.
         // Die Seite behielt damit die Titel des vorigen Kontos, samt deren
         // Haken. iPhone und iPad haengen den Zaehler seit je an.
-        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)|\(model.listenAuffrischen)") { await laden() }
     }
 
     /// **Ein Grund fuer alle Bestandsseiten, und zwar unserer.**

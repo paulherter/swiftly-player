@@ -82,7 +82,7 @@ import java.util.Locale
 @Composable
 fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freigabe: String?, beschreibung: String?,
                  direktplay: Boolean, hinweis: String?, knopfAlpha: () -> Float = { 1f }, modifier: Modifier = Modifier,
-                 knoepfe: @Composable () -> Unit) {
+                 logo: String? = null, knoepfe: @Composable () -> Unit) {
     // **306,5 dp statt 177 — aus `Stil.heldenHoeheDetail` halbiert.** Vorher war die Zone knapp
     // bemessen und die Beschreibung wuchs mit ihrem Inhalt: eine kurze liess die Knopfreihe fast an
     // ihr kleben, tvOS reserviert dafuer immer drei Zeilen (`Stil.auskunftHoehe`).
@@ -100,7 +100,7 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
     // Seite, jeder Weg zu ihr fuehrt auf die Serienseite (A8). Siehe `Kopfauskunft`.
     Box(modifier.fillMaxWidth().height(306.5.dp)) {
         Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
-            Kopfauskunft(titel, null, jahrLaufzeit, bewertung, freigabe, beschreibung) {
+            Kopfauskunft(titel, null, jahrLaufzeit, bewertung, freigabe, beschreibung, logo = logo) {
                 TvBelegzeile(direktplay, hinweis, bewertung = null, freigabe = null)
             }
             Row(Modifier.padding(top = 18.dp).tvEingeblendet(knopfAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
@@ -359,7 +359,8 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              if (titel != null) titel.beschreibung else vorab?.beschreibung,
                              direktplay = titel?.planDa == true && titel.lossless,
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
-                             knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
+                             knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf),
+                             logo = if (app.einstellungen.titelAlsLogo) titel?.logo else null) {
                     // Vorlage: `DetailView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
                     val menue = de.paulherter.swiftly.LocalKachelmenue.current
                     TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Zeichen.Abspielen, Modifier.focusRequester(haupt),
@@ -478,6 +479,7 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // war fokussierbar — eine Sackgasse. Jetzt der Stoerzustand mit „Erneut versuchen", im Fokus.
     var fehlgeschlagen by remember(ziel.id) { mutableStateOf(false) }
     var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { versuch++ }
     LaunchedEffect(ziel.id, versuch) {
         fehlgeschlagen = false
         try { stand = personLesen(withContext(Dispatchers.IO) { app.kern.person(ziel.id).await() }).also { app.personenSpeicher[ziel.id] = it } }
@@ -594,13 +596,14 @@ fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // Netzfehler die Aussage „in diesem Genre gibt es nichts" — derselbe Fehler wie am Telefon.
     var gestoert by remember(ziel.id) { mutableStateOf(false) }
     var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { versuch++ }
     LaunchedEffect(ziel.id, versuch) {
         gestoert = false
         try {
             titel = JSONArray(withContext(Dispatchers.IO) { app.kern.genre(ziel.id).await() }).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
-            gestoert = true
-            titel = emptyList()
+            // Was schon dasteht, bleibt stehen — die Stoerung ersetzt keine vorhandene Liste.
+            if (titel.isNullOrEmpty()) { gestoert = true; titel = emptyList() }
         }
     }
     val liste = titel

@@ -26,6 +26,12 @@ final class Navigator {
         // **Ohne Animation anlegen.** Die Seite soll erst dastehen und
         // ausgelegt sein; die Bewegung startet `HauptView` ein Einzelbild
         // später über `gezeigteTiefe`.
+        // Liegt das Ziel schon im Stapel, gilt seine Kennung nur einmal:
+        // dann zurück auf diese Seite statt zweimal anhängen.
+        if let stelle = stapel[bereich]?.firstIndex(where: { $0.id == ziel.id }) {
+            zurueck(in: bereich, bis: stelle + 1)
+            return
+        }
         stapel[bereich, default: []].append(ziel)
     }
 

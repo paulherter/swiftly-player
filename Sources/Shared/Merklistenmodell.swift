@@ -67,9 +67,29 @@ final class Merklistenmodell {
     /// `Bibliotheksmodell` seit Tagen.
     private(set) var gestoert = false
 
+    /// Zu welchem Kontostand `items` gehört (`nil`: noch nichts geladen).
+    private var fuerKonto: Int?
+
     func laden(_ model: AppModel) async {
+        // **Ein anderes Konto: nichts vom vorigen stehen lassen.** Sonst
+        // zeigte die Seite bis zur Antwort die Merkliste des vorigen Profils,
+        // oder — war der letzte Abruf gestört — „Server ist abgetaucht" /
+        // „Noch nichts gemerkt" vor dem ersten Laden. Wie
+        // `Bibliotheksmodell.veraltet(_:)`.
+        if let fuerKonto, fuerKonto != model.kontowechsel {
+            items = []
+            gesamt = 0
+            gestoert = false
+            geladenFuer = nil
+        }
+        fuerKonto = model.kontowechsel
         laedt = items.isEmpty
-        let antwort = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0)
+        // Beim Auffrischen so viel holen, wie schon dasteht (bis 300) — siehe
+        // `Bibliotheksmodell.laden`.
+        let umfang = geladenFuer == "\(kennung)|\(model.kontowechsel)"
+            ? min(300, max(AppModel.seitengroesse, items.count)) : AppModel.seitengroesse
+        let antwort = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0,
+                                           anzahl: umfang)
         gestoert = antwort == nil
         if let seite = antwort {
             // Dieselbe Regel wie auf der Startseite — siehe `Listenregeln`.

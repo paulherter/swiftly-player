@@ -228,6 +228,7 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
     val stand = remember { app.bibliotheken.getOrPut(art) { Bibliotheksstand(art, app.ablage) } }
     val lauf = rememberCoroutineScope()
     LaunchedEffect(stand.sortierung, stand.filter) { stand.laden(app.kern) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val sammlungen = stand.sammlungenGewaehlt
     val fokus = ersterFokus(!stand.laedt || sammlungen)
     Box(Modifier.fillMaxSize()) {
@@ -277,6 +278,8 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
                 }
                 if (sammlungen) {
                     // Die Liste steht schon im Speicher: „Sammlungen" gibt es in der Tafel nur, wenn es welche gibt.
+                } else if (de.paulherter.swiftly.Kontowechselflug.wartet) {
+                    // Beim Kontowechsel weder Stoer- noch Leerzustand.
                 } else if (stand.gestoert) TvStoerung(app, erneut = { lauf.launch { stand.laden(app.kern) } })
                 else if (!stand.laedt && stand.items.isEmpty()) {
                     if (stand.filter == "alle") TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
@@ -387,6 +390,7 @@ fun TvMerkliste(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val lauf = rememberCoroutineScope()
     val gattungen = remember { wahlenLesen(Kern.merkgattungen()) }
     LaunchedEffect(stand.gattung, stand.sortierung) { stand.laden(app.kern) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val fokus = ersterFokus(!stand.laedt)
     TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {
         Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
@@ -401,7 +405,8 @@ fun TvMerkliste(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             // Kein Ausweg-Knopf hier — anders als in der Bibliothek, tvOS' `MerklisteView.leer`
             // hat keinen: es gibt nichts zu aktualisieren oder zurueckzusetzen, nur den Hinweis,
             // wo man Titel hinzufuegt.
-            if (stand.gestoert) TvStoerung(app, erneut = { lauf.launch { stand.laden(app.kern) } })
+            if (de.paulherter.swiftly.Kontowechselflug.wartet) { /* Beim Kontowechsel weder Stoer- noch Leerzustand. */ }
+            else if (stand.gestoert) TvStoerung(app, erneut = { lauf.launch { stand.laden(app.kern) } })
             else if (!stand.laedt && stand.items.isEmpty()) {
                 TvLeer(uebersetzt("Noch nichts gemerkt"),
                     uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."),
@@ -419,11 +424,12 @@ fun TvMerkliste(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
 @Composable
 fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val st = app.suche
-    var verlaufRoh by remember { mutableStateOf(app.ablage.merkwert(Kern.suchverlaufSchluessel()).orEmpty()) }
+    var verlaufRoh by remember { mutableStateOf(de.paulherter.swiftly.Suchstand.verlaufLesen(app)) }
     val verlauf = remember(verlaufRoh) { runCatching { JSONArray(Kern.suchverlaufListe(verlaufRoh)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList()) }
     LaunchedEffect(st.begriff) { st.suchen(app, st.begriff.trim()) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { if (Kern.suchbegriffTaugt(st.begriff.trim())) st.suchen(app, st.begriff.trim()) }
     val feld = ersterFokus()
-    fun merken() { verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh); app.ablage.merken(Kern.suchverlaufSchluessel(), verlaufRoh) }
+    fun merken() { verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh); de.paulherter.swiftly.Suchstand.verlaufSchreiben(app, verlaufRoh) }
 
     TvRaster(st.treffer, oeffnen = oeffnen, laedt = st.sucht && st.treffer.isEmpty(), platzhalterReihen = 1, kopf = {
         Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
@@ -459,13 +465,13 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                          color = Stil.schriftLeise, modifier = Modifier.padding(12.dp))
                     verlauf.forEach { w -> TvZeile(w, Zeichen.Verlauf) { st.begriff = w } }
                     // Als letzte Zeile in der Karte, nicht als Knopf daneben — sonst eine Fokusfalle.
-                    TvZeile(uebersetzt("Verlauf löschen"), Zeichen.Papierkorb) { verlaufRoh = ""; app.ablage.merken(Kern.suchverlaufSchluessel(), "") }
+                    TvZeile(uebersetzt("Verlauf löschen"), Zeichen.Papierkorb) { verlaufRoh = ""; de.paulherter.swiftly.Suchstand.verlaufSchreiben(app, "") }
                 }
                 !Kern.suchbegriffTaugt(st.begriff.trim()) -> Text(uebersetzt("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."),
                                                                style = TvStil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(top = 20.dp))
                 // **Gestoert ist nicht leer** — sonst sagt die Suche „Nichts gefunden", wenn
                 // in Wahrheit niemand geantwortet hat.
-                st.gestoert -> TvStoerung(app, erneut = { st.begriff = st.begriff + " "; st.begriff = st.begriff.trim() })
+                st.gestoert && !de.paulherter.swiftly.Kontowechselflug.wartet -> TvStoerung(app, erneut = { st.begriff = st.begriff + " "; st.begriff = st.begriff.trim() })
                 !st.sucht && st.gesucht.isNotEmpty() && st.treffer.isEmpty() && st.seerr.isEmpty() ->
                     TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Versuch es mit einem anderen Wort."), symbol = Zeichen.Lupe)
             }

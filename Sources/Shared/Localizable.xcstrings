@@ -7657,6 +7657,40 @@
         }
       }
     },
+    "Titel als Logo": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titel als Logo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title as logo"
+          }
+        }
+      }
+    },
+    "Auf Film- und Serienseiten, wenn dein Server eins hat": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf Film- und Serienseiten, wenn dein Server eins hat"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On movie and series pages, if your server has one"
+          }
+        }
+      }
+    },
     "Titel auf diesen Mac laden und offline schauen": {
       "extractionState": "manual",
       "localizations": {
@@ -8228,6 +8262,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Video"
+          }
+        }
+      }
+    },
+    "Lautstärke": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lautstärke"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volume"
+          }
+        }
+      }
+    },
+    "Ton aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mute"
+          }
+        }
+      }
+    },
+    "Ton an": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton an"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmute"
           }
         }
       }

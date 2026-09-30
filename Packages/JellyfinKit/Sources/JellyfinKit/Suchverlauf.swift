@@ -14,6 +14,14 @@ public enum Suchverlauf {
     public static let schluessel = "letzteSuchen"
     public static let hoechstens = 8
 
+    /// **Der Verlauf gehört dem Konto, nicht dem Gerät:** wer das Profil
+    /// wechselt, sieht dort nicht die Suchen des vorigen (geteiltes iPad).
+    /// Ohne Konto der gemeinsame Schlüssel von früher.
+    public static func schluessel(konto: String?) -> String {
+        guard let konto, !konto.isEmpty else { return schluessel }
+        return "\(schluessel).\(konto)"
+    }
+
     public static func liste(_ roh: String) -> [String] {
         roh.split(separator: "\n").map(String.init)
     }

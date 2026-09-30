@@ -230,7 +230,8 @@ struct ItemDetailView: View {
                         Heldkopf(bild: model.kopfbildURL(for: aktuell),
                                  poster: model.imageURL(for: aktuell, maxHeight: 600,
                                                         hochkant: true),
-                                 titel: aktuell.name, nebenzeile: nebenzeile,
+                                 titel: aktuell.name, logo: model.logoURL(for: aktuell),
+                                 nebenzeile: nebenzeile,
                                  fortschritt: aktuell.userData?.playedPercentage
                                      .map { $0 / 100 }) {
                             VStack(alignment: .leading, spacing: 14) {
@@ -382,10 +383,10 @@ struct ItemDetailView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
+        .nachholen(bei: model.seitenAuffrischen) { Task { await auffrischen() } }
         .task {
             async let frischerTitel = model.item(id: item.id)
-            async let planung = model.plan(for: item.id)
+            async let planung = model.plan(for: item.id, still: true)
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
             async let sammlung = model.sammlungsreihen(zu: item)
@@ -406,6 +407,9 @@ struct ItemDetailView: View {
             // gleiche Kacheln und ein Tipp, der danebengreift. Dieselbe Regel
             // wie in Suche, Startseite und Merkliste — sie fehlte nur hier.
             let frischeAehnliche = await aehnlich
+            // Abgebrochen (Seite überdeckt) ist keine Störung; die Aufgabe
+            // startet beim Zurückkommen neu.
+            if Task.isCancelled { return }
             // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
             // fehlt die Reihe. Ein zweiter Stoerhinweis unter dem ersten waere
             // dieselbe Auskunft zweimal.
@@ -413,7 +417,7 @@ struct ItemDetailView: View {
             let neueSammlungen = await sammlung
             // **Ein Einblenden für den Rest.** Erst wenn alles darunter
             // beantwortet ist, wird es auf einmal gesetzt.
-            aehnlicheGestoert = frischeAehnliche == nil
+            aehnlicheGestoert = frischeAehnliche == nil && aehnliche.isEmpty
             if let frischeAehnliche {
                 aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche)
             }
@@ -433,7 +437,7 @@ struct ItemDetailView: View {
     /// Wege, die dasselbe holen sollen, und einer weiß weniger.
     private func auffrischen() async {
         async let frischerTitel = model.item(id: item.id)
-        async let planung = model.plan(for: item.id)
+        async let planung = model.plan(for: item.id, still: true)
         frisch = await frischerTitel
         plan = await planung
         gemerkt = aktuell.userData?.isFavorite ?? false
@@ -448,10 +452,14 @@ struct ItemDetailView: View {
             .overlay(alignment: .bottom) { Heldauslauf(bild: model.kopfbildURL(for: aktuell)) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
+                    #if os(iOS)
+                    Titelmarke(titel: aktuell.name, logo: model.logoURL(for: aktuell))
+                    #else
                     Text(aktuell.name)
                         .font(Stil.titel)
                         .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
+                    #endif
                     Text(nebenzeile)
                         // Jahr, Laufzeit, Genre sind eine Angabe: 12. Vorher
                         // 14, was in keiner Stufe vorkommt.

@@ -425,6 +425,18 @@ final class VLCPlayerView: Basisansicht {
     /// `setMuted:` ist bei VLCKit eine Verklemmung gemeldet (Fehler 111).
     private var lautstaerkeVorher: Int32?
 
+    /// Die vom Zuschauer gestellte Lautstärke (0 bis 100), `nil` = nie gestellt.
+    /// Wird beim Freigeben des Rückhalts eingesetzt und sonst sofort.
+    private var wunschLautstaerke: Int32?
+
+    func lautstaerkeSetzen(_ prozent: Int) {
+        let wert = Int32(min(max(prozent, 0), 100))
+        wunschLautstaerke = wert
+        // Solange der Ton zurückgehalten wird, gehört ihm die Lautstärke.
+        guard lautstaerkeVorher == nil, let ton = player.audio else { return }
+        ton.volume = wert
+    }
+
     private func tonZurueckhalten(_ zurueck: Bool) {
         // **Der stille Ausgang.** Gibt es den Tonausgang beim Oeffnen noch
         // nicht, faellt der Rueckhalt hier lautlos aus — und der Zuschauer
@@ -452,7 +464,9 @@ final class VLCPlayerView: Basisansicht {
         } else if let vorher = lautstaerkeVorher {
             lautstaerkeVorher = nil
             Startmessung.geteilt.marke("Ton freigegeben")
-            let ziel = vorher > 0 ? vorher : 100
+            // Der Wunsch des Zuschauers (Lautstärkeregler), sonst der Stand
+            // von vor dem Rückhalt. 0 ist nur dann Ziel, wenn er es gestellt hat.
+            let ziel = wunschLautstaerke ?? (vorher > 0 ? vorher : 100)
             if Self.uebergabeAufblenden {
                 Self.uebergabeAufblenden = false
                 tonAufblenden(ton, auf: ziel)

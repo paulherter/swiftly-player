@@ -700,7 +700,7 @@ struct BibliothekView: View {
         // was gewählt sein darf, wird neu geladen.
         // Gesehen- oder Lesezeichenwechsel anderswo: still nachladen, die
         // Kacheln zeigen sonst Balken und Haken von vorher.
-        .onChange(of: model.listenAuffrischen) { _, _ in neuLaden() }
+        .nachholen(bei: model.listenAuffrischen) { neuLaden() }
         .onChange(of: angebotskennung) { _, _ in
             let neu = model.bereichswahl(art: art)
             guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
@@ -754,7 +754,18 @@ struct BibliothekView: View {
                 // **Kein Ring beim Nachladen.** Die naechste Reihe kommt
                 // ohnehin von selbst; ein Ring darunter sagt nur, dass
                 // gerade etwas laeuft, und genau das soll man nicht merken.
-                if stand.nochMehrDa, wahl != .sammlungen {
+                if stand.nochMehrDa, wahl != .sammlungen, stand.nachladenGescheitert,
+                   let quelle {
+                    Button("Erneut versuchen") {
+                        Task { await stand.nachladen(model, aus: quelle) }
+                    }
+                    .buttonStyle(Stil.Druckknopf())
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Stil.akzent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .padding(.top, 12)
+                } else if stand.nochMehrDa, wahl != .sammlungen {
                     Rasterplatzhalter(spalten: anzahl, reihen: 1)
                         .padding(.horizontal, Stil.rand(breit: breit))
                         .padding(.top, 20)
@@ -1076,6 +1087,12 @@ struct StaffelZiel: View {
                 SeriesDetailView(model: model, serie: serie,
                                  startStaffelID: frischeStaffelID ?? folge.seasonId,
                                  startStaffelNummer: folge.parentIndexNumber)
+            } else if gestoert {
+                // Der Abruf der Serie ist gescheitert: sonst bliebe eine
+                // schwarze Seite, aus der nur der Wisch zurück hilft.
+                Stoerhinweis(model: model, erneut: { Task { await serieHolen() } },
+                             abstandOben: 120)
+                    .frame(maxHeight: .infinity, alignment: .top)
             } else {
                 // Kein Ring: die Seite kommt gleich von selbst.
                 Color.clear
@@ -1092,17 +1109,25 @@ struct StaffelZiel: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .task {
-            guard let id = folge.seriesId else { return }
-            async let frisch = model.item(id: folge.id)
-            if serie == nil {
-                let geholt = await model.item(id: id)
-                // Damit der naechste Weg auf dieselbe Serie ihn nicht wieder
-                // geht — Suche, „Aehnliches", ein zweiter Anlauf.
-                if let geholt { Serienspeicher.geteilt.merken(geholt) }
-                serie = geholt
-            }
-            frischeStaffelID = await frisch?.seasonId
+        .task { await serieHolen() }
+    }
+
+    /// Der Abruf der Serie ist gescheitert — nicht abgebrochen.
+    @State private var gestoert = false
+
+    private func serieHolen() async {
+        guard let id = folge.seriesId else { return }
+        gestoert = false
+        async let frisch = model.item(id: folge.id)
+        if serie == nil {
+            let geholt = await model.item(id: id)
+            // Damit der naechste Weg auf dieselbe Serie ihn nicht wieder
+            // geht — Suche, „Aehnliches", ein zweiter Anlauf.
+            if let geholt { Serienspeicher.geteilt.merken(geholt) }
+            if geholt == nil, Task.isCancelled { return }
+            serie = geholt
+            gestoert = geholt == nil
         }
+        frischeStaffelID = await frisch?.seasonId
     }
 }

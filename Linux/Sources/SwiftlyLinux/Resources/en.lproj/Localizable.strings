@@ -16,6 +16,8 @@
 "Hinzufügen" = "Add";
 "Lieber Name und Passwort" = "Use name and password instead";
 "Mit Quick Connect anmelden" = "Sign in with Quick Connect";
+"Ton an" = "Unmute";
+"Ton aus" = "Mute";
 "Weiteres Konto" = "Another account";
 "oder" = "or";
 "Auf demselben Server" = "On the same server";
@@ -472,3 +474,5 @@
 "in %lld s" = "in %lld s";
 "Aus Weiterschauen entfernen" = "Remove from Continue Watching";
 "Zur Übersicht" = "Back to overview";
+"Titel als Logo" = "Title as logo";
+"Auf Film- und Serienseiten, wenn dein Server eins hat" = "On movie and series pages, if your server has one";

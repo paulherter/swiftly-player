@@ -247,6 +247,9 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
             Wahlzeile(Zeichen.Rechtecke, uebersetzt("Querformat im Player sperren"), an = e.querformatFest) { e.querformatFest = it }
             Trennlinie()
             Wahlzeile(Zeichen.BalkenVoll, uebersetzt("Fortschritt auf Kacheln"), an = e.fortschritt) { e.fortschritt = it }
+            Trennlinie()
+            Wahlzeile(Zeichen.Textblock, uebersetzt("Titel als Logo"), uebersetzt("Auf Film- und Serienseiten, wenn dein Server eins hat"),
+                      e.titelAlsLogo) { e.titelAlsLogo = it }
         }
 
         Einstellungsgruppe(uebersetzt("Startseite")) {

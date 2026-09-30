@@ -222,7 +222,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             //
             // Stehen schon Reihen da, bleibt es bei der leisen Zeile — dann ist der Inhalt da
             // und nur das Auffrischen misslungen.
-            if (fehler != null && reihen.isNullOrEmpty()) item(key = "gestoert") {
+            if (fehler != null && reihen.isNullOrEmpty() && !Kontowechselflug.wartet) item(key = "gestoert") {
                 Box(Modifier.fillMaxWidth().height(420.dp)) {
                     Leerzustand(Zeichen.ServerWeg, uebersetzt("Server ist abgetaucht"),
                         uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serveradresse()),
