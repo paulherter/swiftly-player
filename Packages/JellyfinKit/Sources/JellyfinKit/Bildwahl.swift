@@ -109,6 +109,21 @@ public enum Bildwahl {
         return hochkant(item, adressen: adressen, maxHoehe: breite)
     }
 
+    /// Das Logo eines Titels; bei Folgen das der Serie. `nil`, wenn der Server keines führt.
+    public static func logo(_ item: Item, adressen: Bildadresse, maxHoehe: Int = 240) -> URL? {
+        let quelle: (id: String, marke: String)?
+        if let serie = item.seriesId, let marke = item.parentLogoImageTag {
+            quelle = (serie, marke)
+        } else if let marke = item.imageTags?["Logo"] {
+            quelle = (item.id, marke)
+        } else {
+            quelle = nil
+        }
+        guard let quelle else { return nil }
+        return adressen.bauen(itemID: quelle.id, art: .logo, marke: quelle.marke,
+                              mass: .hoechstensHoch(maxHoehe))
+    }
+
     public static func hochkant(_ item: Item, adressen: Bildadresse,
                                 maxHoehe: Int = 480) -> URL? {
         let quelle: (id: String, marke: String)?

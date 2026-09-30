@@ -106,8 +106,14 @@ final class Serienspeicher {
     /// dort die alte Folge genannt und eine Sekunde spaeter die richtige.
     /// Der Knopf nennt nie eine geratene Folge; also weg damit, und die
     /// Seite zeigt bis zum Abruf ein neutrales „Abspielen".
+    ///
+    /// **Und die gemerkten Folgen mit** — samt Haken und Balken sind sie nach
+    /// dem Abspielen genauso alt; wer aus „Weiterschauen" schaute und die Serie
+    /// danach öffnete, sah zuerst den alten Stand, der eine Wimpernschlag
+    /// später umsprang. Die Staffelliste ändert sich nicht und bleibt.
     func standVergessen(_ serie: String) {
         staende[serie]?.weiterMit = nil
+        staende[serie]?.folgen = [:]
         naechste[serie] = nil
     }
 
@@ -211,11 +217,18 @@ final class Serienspeicher {
             .subtracting(laufend)
         guard !offen.isEmpty else { return }
         laufend.formUnion(offen)
+        let konto = model.kontowechsel
 
         for id in offen {
             Task { @MainActor in
-                if let serie = await model.item(id: id) { bekannt[id] = serie }
-                laufend.remove(id)
+                let serie = await model.item(id: id)
+                // Inzwischen ein anderes Konto: die Antwort trägt dessen
+                // Vorgänger-Sehstand und gehört nicht in den neuen Speicher
+                // (`gueltig` hat `laufend` dann schon geleert).
+                if konto == model.kontowechsel {
+                    if let serie { bekannt[id] = serie }
+                    laufend.remove(id)
+                }
             }
         }
     }

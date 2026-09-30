@@ -51,6 +51,16 @@ if (Test-Path $bruecke) { Remove-Item -Recurse -Force $bruecke }
 New-Item -ItemType Directory -Force -Path (Join-Path $bruecke 'include') | Out-Null
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\*.c') $bruecke
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\include\*.h') (Join-Path $bruecke 'include')
+# Kommt ein Header dazu, merkt SwiftPM es im alten Bauordner nicht: der
+# gemerkte Bauplan und die Modulbeschreibung bleiben die von vorher, und Swift
+# findet die neuen Namen nicht. Bauplan und Ordner dieses einen Moduls werden
+# deshalb neu erzeugt; alles Uebrige bleibt im Zwischenspeicher.
+if (Test-Path (Join-Path $hier '.build')) {
+    Get-ChildItem (Join-Path $hier '.build') -Recurse -Directory -Filter 'CBildbruecke.build' -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem (Join-Path $hier '.build') -Recurse -File -Include 'debug.yaml','release.yaml','description.json' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
 
 # Die Medientasten sind ebenfalls derselbe C-Code.
 $tasten = Join-Path $hier 'Sources\CMedientasten'

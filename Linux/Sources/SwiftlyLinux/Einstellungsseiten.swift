@@ -936,6 +936,13 @@ extension App {
             // beim naechsten Laden (M8). Raster bauen sich beim Oeffnen neu.
             self?.startseiteLaden()
         })
+        anhaengen(ga.raum, schalterzeile(symbol: "format-text-bold-symbolic",
+                                         titel: uebersetzt("Titel als Logo"),
+                                         unter: uebersetzt("Auf Film- und Serienseiten, wenn dein Server eins hat"),
+                                         an: wahlen.titelAlsLogo) { [weak self] an in
+            self?.wahlen.titelAlsLogo = an
+            self?.wahlen.sichern()
+        })
         anhaengen(links, ga.aussen)
         anhaengen(links, luftHoch(26))
 

@@ -44,6 +44,18 @@ enum Playermass {
     /// Einzug der Zeilen auf den Ebenen — Spaltentitel, Wahlzeile und
     /// Verzögerung stehen damit auf einer Textkante.
     static let einzug: CGFloat = 26
+    /// Breite zwischen den sicheren Rändern (90 pt) auf 1920 pt.
+    static let sichereBreite: CGFloat = 1740
+
+    /// Wie breit eine Spalte ist, wenn `anzahl` nebeneinanderstehen. Bis drei
+    /// bleibt es beim Maß der Vorlage; mit vier oder fünf (Qualität, Gruppe)
+    /// rücken sie zusammen, statt über den Bildrand zu laufen.
+    static func spaltenbreite(anzahl: Int) -> CGFloat {
+        guard anzahl > 3 else { return spalte }
+        return min(spalte, (sichereBreite - CGFloat(anzahl - 1) * enger) / CGFloat(anzahl))
+    }
+    static func spaltenabstand(anzahl: Int) -> CGFloat { anzahl > 3 ? enger : spaltenAbstand }
+    private static let enger: CGFloat = 48
 
     /// Wie breit die Symbolreihe ist — der stehende Titel hält ihr den Platz frei.
     static func symbolreihe(anzahl: Int) -> CGFloat {
@@ -130,6 +142,7 @@ private struct DunklerWeichzeichner: UIViewRepresentable {
 /// Fokus, jede für sich. Fünfzig Untertitel laufen so unter der Überschrift
 /// durch, statt sie zu überdecken.
 private struct Wahlspalte<Inhalt: View>: View {
+    @Environment(\.spaltenbreite) private var breite
     let titel: LocalizedStringKey
     @ViewBuilder let inhalt: Inhalt
 
@@ -151,7 +164,7 @@ private struct Wahlspalte<Inhalt: View>: View {
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: Playermass.spalte, alignment: .leading)
+        .frame(width: breite, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         // Links und rechts wechselt die Spalte, statt quer durch die Zeilen
         // zu springen.
@@ -229,13 +242,25 @@ private struct Teilnehmerzeile: View {
     }
 }
 
+private struct SpaltenbreiteKey: EnvironmentKey {
+    static let defaultValue: CGFloat = Playermass.spalte
+}
+private extension EnvironmentValues {
+    var spaltenbreite: CGFloat {
+        get { self[SpaltenbreiteKey.self] }
+        set { self[SpaltenbreiteKey.self] = newValue }
+    }
+}
+
 /// Spalten nebeneinander, mittig. Unten enden sie am Bildrand; was darüber
 /// hinausgeht, scrollt in seiner Spalte.
 private struct Spaltenreihe<Inhalt: View>: View {
+    var anzahl = 2
     @ViewBuilder let inhalt: Inhalt
 
     var body: some View {
-        HStack(alignment: .top, spacing: Playermass.spaltenAbstand) { inhalt }
+        HStack(alignment: .top, spacing: Playermass.spaltenabstand(anzahl: anzahl)) { inhalt }
+            .environment(\.spaltenbreite, Playermass.spaltenbreite(anzahl: anzahl))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, Playermass.spaltenOben)
     }
@@ -402,7 +427,7 @@ struct EinstellungsEbene: View {
     var body: some View {
         ZStack(alignment: .top) {
             Ebenengrund()
-            Spaltenreihe {
+            Spaltenreihe(anzahl: 3 + (gemeinsam?.gruppe != nil ? 1 : 0) + (qualitaet != nil ? 1 : 0)) {
                 // **Gemeinsam zuerst** (Entwurf A, wie am iPhone): wer dabei
                 // ist, und darunter der Ausgang. Die Namen tun nichts — sie
                 // sind kein Fokusziel, der Fokus springt über sie hinweg auf

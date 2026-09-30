@@ -209,6 +209,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             }.getOrDefault("")
             nachStopp(meldung)
             protokollSchreiben()
+            // Gemerkte Titel, Serien und Folgen tragen den Stand von vor dem Schauen: wer danach eine Serie oeffnet,
+            // sah sonst erst Haken und Balken von gestern (`Serienspeicher.vergessen` in `reportStopped`).
+            titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear()
             wiedergabeBeendet.intValue += 1
         }
     }
@@ -575,7 +578,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
         servername.value = null
         merkliste.vergessen()
-        suche.begriff = ""; suche.treffer = emptyList(); suche.suchmodus = false
+        suche.vergessen()
         // Vorlage: `AppModel.nachDemWechsel`/Abmelden auf Apple, `Regal.leeren()` — sonst
         // zeigt Watch Next auf dem Fernseher-Startbildschirm weiter die Filme und Serien
         // des vorigen Kontos, sichtbar fuer jeden im Raum.

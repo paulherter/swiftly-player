@@ -335,7 +335,7 @@ private data class Serverkarte(val adresse: String, val host: String, val aktiv:
 
 /**
  * Vorlage: `Kontokarte` in `ProfilView.swift` — eine Karte je Server. Vorn das Konto, das gerade
- * gilt; darunter die anderen und ein gestricheltes Plus. **Randbuendig, kein Anschnitt:** mit
+ * gilt; darunter die anderen und ein Plus als Feld. **Randbuendig, kein Anschnitt:** mit
  * einem Server deutet nichts ein Wischen an; ab zwei blaettert man die Karten, Punkte darunter.
  * Beim Wechsel wird nicht abgemeldet — das verlassene Konto bleibt gueltig fuer den Weg zurueck.
  */
@@ -409,18 +409,14 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
             }) { Profilzeichen(k.name, k.bild, 40.dp) }
         }
         // Das Plus: am eigenen Server ein weiteres Konto, an einem fremden die Aufnahme mit seiner Adresse.
-        Box(Modifier.size(40.dp)
-                .drawBehind {
-                    val strich = 1.5.dp.toPx()
-                    drawCircle(Stil.rand, radius = size.minDimension / 2 - strich / 2,
-                               style = Stroke(width = strich, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
-                }
+        // Ein Feld auf `flaeche`, kein gestrichelter Kreis (Vorlage: iPhone, ein Knopf ohne Beschriftung ist quadratisch).
+        Box(Modifier.size(40.dp).background(Stil.flaeche, RoundedCornerShape(Stil.ecke))
                 .antippen {
                     if (karte.aktiv) oeffnen(Ziel("weiteresKonto", uebersetzt("Konto hinzufügen"), "WeiteresKonto"))
                     else oeffnen(Ziel(karte.adresse, uebersetzt("Konto hinzufügen"), "ServerAufnahme"))
                 },
             contentAlignment = Alignment.Center) {
-            Symbol(Zeichen.Plus, 15.dp, farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Konto hinzufügen"))
+            Symbol(Zeichen.Plus, 15.dp, farbe = Stil.schriftLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Konto hinzufügen"))
         }
     }
 }

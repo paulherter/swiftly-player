@@ -96,6 +96,8 @@ class Einstellungen(ablage: Ablage) {
     var startGenres by Merkwert(a, "startGenres", liste("startGenres"), alsListe)
     /** Genres als Chips ueber den Reihen statt als eigene Reihen — nie beides. */
     var genreChips by Merkwert(a, "genreChips", bool("genreChips", false), jaNein)
+    /** Titel als Logo auf Film- und Serienseite (`titelAlsLogo`) — aus, bis jemand es will. */
+    var titelAlsLogo by Merkwert(a, "titelAlsLogo", bool("titelAlsLogo", false), jaNein)
     /** H1: aus, bis jemand es will. */
     var downloadsAn by Merkwert(a, "downloadsAn", bool("downloadsAn", false), jaNein)
     /**

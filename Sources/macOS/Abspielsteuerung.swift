@@ -15,9 +15,12 @@ import SwiftUI
 @Observable
 final class Abspielsteuerung {
     var wunsch: Abspielwunsch?
-    /// Steht hier, wenn der Server die Wiedergabe verweigert. Fehler stehen
-    /// dort, wo sie entstehen — kein Hinweisfenster.
+    /// Steht hier, wenn der Server die Wiedergabe verweigert; gezeigt wird es
+    /// im Meldungsstreifen der Hauptansicht.
     var fehler: String?
+
+    /// Wahr, solange ein Start den Plan holt.
+    private(set) var bereitet = false
 
     private let model: AppModel
 
@@ -26,7 +29,12 @@ final class Abspielsteuerung {
     /// Startet dort, wo der Server sagt: angefangenes an seiner Position,
     /// sonst von vorn. Wörtlich die Regel der iPhone-Fassung.
     func starte(_ item: Item, ab: Double? = nil) {
+        // Ein zweiter Klick, solange der Plan noch unterwegs ist, startet
+        // nichts Zweites, das `wunsch` überschriebe.
+        guard !bereitet else { return }
+        bereitet = true
         Task {
+            defer { bereitet = false }
             // **Die Stelle frisch holen, wenn keine vorgegeben ist** (Audit
             // 16.09., T2-M5). Die aus der Kachel kann alt sein: auf dem Handy
             // weitergeschaut, am Mac geklickt, bevor die Startseite neu lud —
@@ -39,7 +47,10 @@ final class Abspielsteuerung {
                 // Der Fehler nennt den Server, nicht nur „ging nicht" — sonst
                 // weiß man bei mehreren Servern nicht, welcher gemeint ist.
                 let wo = model.serverName ?? String(localized: "dem Server")
-                fehler = String(localized: "Die Wiedergabe hat nicht geklappt. Von \(wo) kamen keine Daten zum Abspielen.")
+                let text = String(localized: "Die Wiedergabe hat nicht geklappt. Von \(wo) kamen keine Daten zum Abspielen.")
+                fehler = text
+                // Der Streifen unten im Inhalt zeigt es (`Kachelmeldungsstreifen`).
+                Kachelmeldung.geteilt.text = text
                 return
             }
             let frischer = await frisch

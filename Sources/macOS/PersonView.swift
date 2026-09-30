@@ -129,7 +129,7 @@ struct PersonView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: person.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task(id: person.id) { await laden() }
+        .task(id: "\(person.id)|\(model.listenAuffrischen)") { await laden() }
         .task(id: bannerJetzt) { await farbe.laden(bannerJetzt) }
         // **Die dekorative Bannerschleife ist weg.**
         //

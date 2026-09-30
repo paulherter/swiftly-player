@@ -920,6 +920,26 @@ final class App: @unchecked Sendable {
         // fremde Sammlung stehenbleiben.
         offeneSammlung = nil
         angebotWartende = []
+        // **Alter Inhalt sofort weg** (Mac `kontowechselblende`): die Raster von
+        // Filme, Serien, Merkliste und Genre, die Startreihen und die Suche
+        // gehoeren dem vorigen Konto. Was nicht im Bild ist, zeigte beim
+        // Zurueckkehren sonst kurz den alten Stand, bevor der neue kommt.
+        // Der neue Inhalt kommt gestaffelt (``rasterAntwort``).
+        for was in Array(rasterFeld.keys) {
+            rasterAuftrag[was, default: 0] += 1
+            rasterLaedt.remove(was)
+            rasterLaderZeigen(was, false)
+            rasterItems[was] = []
+            rasterQuelle[was] = nil
+            rasterSieb[was] = nil
+            rasterRoh[was] = nil
+            if let raster = rasterFeld[was] { rasterFuellen(raster, []) }
+            if let zahl = zahlFeld[was] { gtk_widget_set_visible(zahl, 0) }
+            if let feld = leerFeld[was] { leeren(feld); gtk_widget_set_visible(feld, 0) }
+            rasterStaffeln.insert(was)
+        }
+        if let r = reihenstapel { leeren(r) }
+        suchergebnisseVerwerfen()
         // Sammlungen und Anteile gehoeren dem vorigen Konto.
         sammlungsverzeichnis = nil
         bibliotheksanteile = [:]
@@ -1745,6 +1765,31 @@ final class App: @unchecked Sendable {
         // beide koennen gemerkt sein, ohne dass die Serie es ist.
         folgenspeicher[item.id] = nil
         if let staffel = item.seasonId { folgenspeicher[staffel] = nil }
+        // Wer den Sehstand aendert, aendert auch, was die Listen zeigen.
+        listenAuffrischen()
+    }
+
+    /// **Listen frischen nach Sehstand und Merkliste auf** (Mac: `listenAuffrischen`).
+    /// Nach Wiedergabe, „Als gesehen" oder Merkliste stuenden Haken und Balken in
+    /// Filme, Serien, Merkliste und Genre sonst alt da. Was im Bild ist, holt
+    /// sofort neu — **so viel, wie schon dasteht** (bis 300), sonst schrumpfte
+    /// die Liste auf die erste Seite; der Rest gilt als ungeladen und holt beim
+    /// naechsten Besuch.
+    func listenAuffrischen() {
+        for was in [Bereich.filme, .serien, .merkliste, .gattung] {
+            guard geladen.contains(was), rasterFeld[was] != nil, !rasterLaedt.contains(was) else { continue }
+            if bereich == was {
+                rasterLaden(was, umfang: min(300, max(100, (rasterItems[was] ?? []).count)))
+            } else {
+                geladen.remove(was)
+            }
+        }
+        // Und eine stehende Suche: ihre Kacheln tragen Haken und Balken auch.
+        if bereich == .suche, suchfeld != nil,
+           Anzeigeregeln.suchbegriffTaugt(text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)) {
+            suchtakt += 1
+            suchen(suchtakt)
+        }
     }
 
     // MARK: Spieler
@@ -1884,6 +1929,11 @@ final class App: @unchecked Sendable {
     /// Ziehen am Regler weichen beide der Vorschau (Mac: `amRegler`).
     var spielerMitte: Widget!
     var spielerSymbolreihe: Widget!
+    /// Der Lautstärkeregler ganz links in der Symbolreihe; `lautstaerkeZieht`
+    /// hält die Steuerung im Bild, solange jemand am Griff zieht.
+    var spielerLautstaerke: Lautstaerkeregler?
+    var lautstaerkeZieht = false
+    var lautstaerkeUhr = 0
     /// Der Knopf, der eine Ebene geöffnet hat — dorthin geht der Fokus
     /// zurück, wenn sie schliesst.
     var spielerEbenenknoepfe: [Playerebene: Widget] = [:]
@@ -1955,6 +2005,8 @@ final class App: @unchecked Sendable {
     /// Woraus eine Rasterseite zuletzt gelesen hat — wechselt es mit dem
     /// Angebot, wird neu geladen.
     var rasterQuelle: [Bereich: String] = [:]
+    /// Nach einem Kontowechsel: Raster, deren neuer Inhalt gestaffelt kommt.
+    var rasterStaffeln: Set<Bereich> = []
     /// **Aus mehreren Bibliotheken wird gesiebt** (``Titelsieb``): je Titel
     /// einmal. Dazu, wie weit die rohen Seiten des Servers schon gelesen sind.
     var rasterSieb: [Bereich: Titelsieb] = [:]
@@ -2161,6 +2213,14 @@ final class App: @unchecked Sendable {
             // hier gar keinen Weg dazu.
             case 0x06D where offeneEbene == nil, 0x04D where offeneEbene == nil:
                 stummUmschalten()
+                lautstaerkeKurzZeigen()
+                return true
+            // **Lautstärke wie am Mac:** Pfeil hoch und runter ±5 %.
+            case 0xFF52 where offeneEbene == nil:          // Pfeil hoch
+                lautstaerkeStufe(0.05)
+                return true
+            case 0xFF54 where offeneEbene == nil:          // Pfeil runter
+                lautstaerkeStufe(-0.05)
                 return true
             case 0xFF0D, 0xFF8D:                           // Eingabe, Ziffernblock
                 // **Steht die Einblendung da, löst Eingabe sie aus** — ohne
@@ -3676,7 +3736,7 @@ final class App: @unchecked Sendable {
         gtk_button_set_child(alsKnopf(verlaufWeg),
                              beschriftung(uebersetzt("Löschen"), stil: "swiftly-zaehlmarke"))
         beiSignal(verlaufWeg, "clicked") { [weak self] in
-            self?.wahlen.suchverlauf = ""
+            self?.suchverlaufSetzen("")
             self?.wahlen.sichern()
             self?.suchverlaufZeigen()
         }
@@ -4671,7 +4731,7 @@ final class App: @unchecked Sendable {
         rasterLaden(was, ab: schon)
     }
 
-    private func rasterLaden(_ was: Bereich, ab: Int = 0) {
+    private func rasterLaden(_ was: Bereich, ab: Int = 0, umfang: Int? = nil) {
         guard let client else { return }
         // **Filme und Serien fragen nach Sammlungen und gemischten
         // Bibliotheken** — nebenher, die Seite wartet nicht darauf
@@ -4726,7 +4786,7 @@ final class App: @unchecked Sendable {
             rasterRoh[was] = nil
             Task.detached { [self] in
                 let antwort = try? await client.items(parentID: quelle.eltern,
-                                                      limit: 100,
+                                                      limit: umfang ?? 100,
                                                       startIndex: ab,
                                                       sortBy: sort.feld,
                                                       sortOrder: quelle.richtung(sort),
@@ -4766,13 +4826,13 @@ final class App: @unchecked Sendable {
             if was == .merkliste {
                 antwort = try? await client.gemerkteWerke(typen: gattungen, sortBy: sort.feld,
                                                           sortOrder: sort.richtung,
-                                                          startIndex: ab, limit: 100)
+                                                          startIndex: ab, limit: umfang ?? 100)
             } else {
                 antwort = try? await client.items(parentID: nil,
                                                   // 200 auf einen Schlag fuer
                                                   // ein Genre, sonst 100 je
                                                   // Seite — `GenreView.swift:70`.
-                                                  limit: genre != nil ? 200 : 100,
+                                                  limit: umfang ?? (genre != nil ? 200 : 100),
                                                   startIndex: ab,
                                                   sortBy: genre != nil ? "DateCreated" : sort.feld,
                                                   sortOrder: genre != nil ? "Descending"
@@ -4834,6 +4894,11 @@ final class App: @unchecked Sendable {
         }
         gtk_label_set_text(OpaquePointer(zahl), String(zahlwert))
         gtk_widget_set_visible(zahl, zahlwert > 0 ? 1 : 0)
+        // **Nach einem Kontowechsel kommt der neue Inhalt gestaffelt** — wie
+        // die Reihen der Startseite (Mac: `Kontowechselteil`, Index 1).
+        if ab == 0, rasterStaffeln.remove(was) != nil, !(rasterItems[was] ?? []).isEmpty {
+            reiheAuftreten(raster, nummer: 1)
+        }
         // **Gestoert ist nicht leer** — ein gescheiterter Abruf sagt „Server
         // ist abgetaucht", nicht „hier ist nichts".
         let nichts = (rasterItems[was] ?? []).isEmpty
@@ -4963,9 +5028,43 @@ final class App: @unchecked Sendable {
     /// Antwort auf „Herr" die Treffer unter „Herr der Ringe".
     /// Baut „Zuletzt gesucht" neu und blendet den Block aus, wenn er leer ist
     /// oder gerade gesucht wird.
+    private var suchverlaufSchluessel: String {
+        Suchverlauf.schluessel(konto: bund?.aktives.kontoschluessel)
+    }
+
+    /// „Zuletzt gesucht" des aktiven Kontos. Fehlt ihm ein Eintrag, erbt es
+    /// einmal den gemeinsamen von früher (wie am Mac).
+    func suchverlaufLesen() -> String {
+        let schluessel = suchverlaufSchluessel
+        if let roh = wahlen.suchverlaufJeKonto[schluessel] { return roh }
+        guard schluessel != Suchverlauf.schluessel else { return wahlen.suchverlauf }
+        wahlen.suchverlaufJeKonto[schluessel] = wahlen.suchverlauf
+        return wahlen.suchverlauf
+    }
+
+    func suchverlaufSetzen(_ neu: String) {
+        let schluessel = suchverlaufSchluessel
+        if schluessel == Suchverlauf.schluessel { wahlen.suchverlauf = neu }
+        wahlen.suchverlaufJeKonto[schluessel] = neu
+    }
+
+    /// Begriff, Treffer und Störung gehören dem vorigen Konto (Mac: `onChange`
+    /// von `kontowechsel` in `SucheView`).
+    func suchergebnisseVerwerfen() {
+        guard suchraster != nil else { return }
+        suchtakt += 1
+        if suchfeld != nil { gtk_editable_set_text(OpaquePointer(suchfeld), "") }
+        rasterFuellen(suchraster, [])
+        eigeneTrefferLeer = false
+        seerrTrefferZeigen([])
+        if suchleer != nil { gtk_widget_set_visible(suchleer, 0) }
+        if suchstoerung != nil { leeren(suchstoerung); gtk_widget_set_visible(suchstoerung, 0) }
+        suchverlaufZeigen()
+    }
+
     func suchverlaufZeigen() {
         guard suchverlaufliste != nil else { return }
-        let worte = Suchverlauf.liste(wahlen.suchverlauf)
+        let worte = Suchverlauf.liste(suchverlaufLesen())
         let feldLeer = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         gtk_widget_set_visible(suchverlaufblock, (feldLeer && !worte.isEmpty) ? 1 : 0)
         if suchhinweis != nil {
@@ -5013,7 +5112,7 @@ final class App: @unchecked Sendable {
             return
         }
         if merken {
-            wahlen.suchverlauf = Suchverlauf.merken(begriff, in: wahlen.suchverlauf)
+            suchverlaufSetzen(Suchverlauf.merken(begriff, in: suchverlaufLesen()))
             wahlen.sichern()
         }
         suchverlaufZeigen()

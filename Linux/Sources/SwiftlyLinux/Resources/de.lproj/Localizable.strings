@@ -19,6 +19,8 @@
 "Hinzufügen" = "Hinzufügen";
 "Lieber Name und Passwort" = "Lieber Name und Passwort";
 "Mit Quick Connect anmelden" = "Mit Quick Connect anmelden";
+"Ton an" = "Ton an";
+"Ton aus" = "Ton aus";
 "Weiteres Konto" = "Weiteres Konto";
 "oder" = "oder";
 "Auf demselben Server" = "Auf demselben Server";
@@ -475,3 +477,5 @@
 "in %lld s" = "in %lld s";
 "Aus Weiterschauen entfernen" = "Aus Weiterschauen entfernen";
 "Zur Übersicht" = "Zur Übersicht";
+"Titel als Logo" = "Titel als Logo";
+"Auf Film- und Serienseiten, wenn dein Server eins hat" = "Auf Film- und Serienseiten, wenn dein Server eins hat";

@@ -80,6 +80,9 @@ struct Wahlen: Codable {
     var zurueckSekunden = 10
     var vorSekunden = 30
     var fortschrittAufKacheln = true
+    /// **Titel als Logo** auf Film- und Serienseite, wenn der Server eins führt
+    /// (Apple: `@AppStorage("titelAlsLogo")`, Vorgabe aus).
+    var titelAlsLogo = false
     /// **Bild formatfuellend statt vollstaendig.**
     ///
     /// Dieselbe Wahl wie die Zusammenziehgeste auf iPhone und iPad und die
@@ -91,6 +94,11 @@ struct Wahlen: Codable {
     /// **Restzeit oder Ende** im Player: „−12:34" oder „Endet um 22:41", ein
     /// Klick schaltet um, die Wahl bleibt (iOS `@AppStorage("restzeitAlsEnde")`).
     var restzeitAlsEnde = false
+    /// **Lautstärke im Player**, 0 bis 1, gilt über Titel hinweg (Mac:
+    /// `@AppStorage("playerLautstaerke")`). `lautstaerkeDavor` merkt den Wert
+    /// für „Ton an" nach dem Stummschalten.
+    var lautstaerke = 1.0
+    var lautstaerkeDavor = 1.0
     /// **Das Technikschild — die Auskunft, die stehenbleibt.**
     ///
     /// Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Der Schalter
@@ -136,6 +144,10 @@ struct Wahlen: Codable {
     /// ohne Doppelte. Hier liegt nur die Zeichenkette, damit das Format an
     /// einer Stelle steht und nicht in drei Ansichten.
     var suchverlauf = ""
+    /// **Je Konto** (`Suchverlauf.schluessel(konto:)` im Paket): wer das Konto
+    /// wechselt, sieht nicht die Suchen des vorigen. Der alte, gemeinsame
+    /// Eintrag oben wird beim ersten Lesen dem aktiven Konto zugeschlagen.
+    var suchverlaufJeKonto: [String: String] = [:]
 
     /// **Zu Ende geschaute Titel, nur auf diesem Rechner gezaehlt** — fuer den
     /// Discord-Hinweis nach dem fuenften (`Gemeinschaft.anstoss`). Nichts
@@ -232,14 +244,18 @@ struct Wahlen: Codable {
         zurueckSekunden        = w(.zurueckSekunden, 10)
         vorSekunden            = w(.vorSekunden, 30)
         fortschrittAufKacheln  = w(.fortschrittAufKacheln, true)
+        titelAlsLogo           = w(.titelAlsLogo, false)
         bildfuellend           = w(.bildfuellend, false)
         restzeitAlsEnde        = w(.restzeitAlsEnde, false)
+        lautstaerke            = min(max(w(.lautstaerke, 1.0), 0), 1)
+        lautstaerkeDavor       = min(max(w(.lautstaerkeDavor, 1.0), 0), 1)
         technikschild          = w(.technikschild, false)
         downloadsAn            = w(.downloadsAn, false)
         nurUeberWLAN           = w(.nurUeberWLAN, true)
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
         suchverlauf            = w(.suchverlauf, "")
+        suchverlaufJeKonto     = w(.suchverlaufJeKonto, [String: String]())
         fertigGeschaut         = w(.fertigGeschaut, 0)
         discordHinweisGezeigt  = w(.discordHinweisGezeigt, false)
         merkgattung            = w(.merkgattung, "")
@@ -269,9 +285,9 @@ struct Wahlen: Codable {
         case bitratenGrenzeGeraet = "bitratenGrenze"
         case wiedergabeJeServer
         case tonSprache, untertitelSprache, untertitelAutomatisch, neuzugaengeGetrennt,
-             naechsteAutomatischGewaehlt, zurueckSekunden, vorSekunden, fortschrittAufKacheln,
-             bildfuellend, restzeitAlsEnde, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
-             discordAnzeigen, suchverlauf, fertigGeschaut, discordHinweisGezeigt, merkgattung, startReihen, startAus, startGenres,
+             naechsteAutomatischGewaehlt, zurueckSekunden, vorSekunden, fortschrittAufKacheln, titelAlsLogo,
+             bildfuellend, restzeitAlsEnde, lautstaerke, lautstaerkeDavor, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
+             discordAnzeigen, suchverlauf, suchverlaufJeKonto, fertigGeschaut, discordHinweisGezeigt, merkgattung, startReihen, startAus, startGenres,
              genreChips, sortierungJeOrt, filterJeOrt, bibliothekJeGattung,
              fensterBreite, fensterHoehe, fensterMaximiert
     }
@@ -289,14 +305,18 @@ struct Wahlen: Codable {
         try c.encode(zurueckSekunden, forKey: .zurueckSekunden)
         try c.encode(vorSekunden, forKey: .vorSekunden)
         try c.encode(fortschrittAufKacheln, forKey: .fortschrittAufKacheln)
+        try c.encode(titelAlsLogo, forKey: .titelAlsLogo)
         try c.encode(bildfuellend, forKey: .bildfuellend)
         try c.encode(restzeitAlsEnde, forKey: .restzeitAlsEnde)
+        try c.encode(lautstaerke, forKey: .lautstaerke)
+        try c.encode(lautstaerkeDavor, forKey: .lautstaerkeDavor)
         try c.encode(technikschild, forKey: .technikschild)
         try c.encode(downloadsAn, forKey: .downloadsAn)
         try c.encode(nurUeberWLAN, forKey: .nurUeberWLAN)
         try c.encode(pufferstufe, forKey: .pufferstufe)
         try c.encode(discordAnzeigen, forKey: .discordAnzeigen)
         try c.encode(suchverlauf, forKey: .suchverlauf)
+        try c.encode(suchverlaufJeKonto, forKey: .suchverlaufJeKonto)
         try c.encode(fertigGeschaut, forKey: .fertigGeschaut)
         try c.encode(discordHinweisGezeigt, forKey: .discordHinweisGezeigt)
         try c.encode(merkgattung, forKey: .merkgattung)

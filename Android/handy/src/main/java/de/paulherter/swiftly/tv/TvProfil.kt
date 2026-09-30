@@ -77,7 +77,7 @@ private fun Gruppenkopf(text: String) {
  *
  * **Aufbau am 15.09.2026 auf tvOS gezogen** — vorher stand hier ein Kopf ueber der ganzen Seite,
  * die Abteile trugen Symbole und die Zeilen "An"/"Aus" als Text. Jetzt: die Kontokarte links oben
- * (Bild, Name, Server, Trennlinie, Kontenstreifen mit gestricheltem Plus), darunter die
+ * (Bild, Name, Server, Trennlinie, Kontenstreifen mit Plus als Feld), darunter die
  * Abteile nur als Text — gewaehlt in Akzentflaeche und Akzentschrift, wie `BereichsStil`. Rechts
  * eine gruppierte Karte mit Haarlinien statt einer flachen Liste, Zeilen ohne Symbole, gezeichnete
  * Schalter statt Text und ein Pfeil an jeder Auswahlzeile.
@@ -211,6 +211,8 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         }
                         Abteil.Darstellung -> {
                             TvSchalterzeile(uebersetzt("Fortschritt auf Kacheln"), e.fortschritt, modifier = erste) { e.fortschritt = !e.fortschritt }
+                            Trennlinie()
+                            TvSchalterzeile(uebersetzt("Titel als Logo"), e.titelAlsLogo) { e.titelAlsLogo = !e.titelAlsLogo }
                             Trennlinie()
                             Gruppenkopf(uebersetzt("Startseite"))
                             val reihen = remember(e.startReihen, e.neuzugangGetrennt) { wahlenLesen(Kern.startreihen(e.startReihen.toTypedArray(), e.neuzugangGetrennt)) }
@@ -471,13 +473,10 @@ private fun Kontenstreifen(karten: List<JSONObject>, aufnehmen: () -> Unit, wech
             }
         }
         Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = aufnehmen) { fokus ->
-            Box(Modifier.size(groesse)
-                    .drawBehind {
-                        drawCircle(color = Stil.schriftSehrLeise,
-                                   style = Stroke(width = 1.5.dp.toPx(),
-                                       pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.5.dp.toPx()))))
-                    }
-                    .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
+            // Ein Feld auf `flaeche` statt gestricheltem Kreis, Fokusring passend quadratisch.
+            val form = RoundedCornerShape(Stil.ecke)
+            Box(Modifier.size(groesse).background(Stil.flaeche, form)
+                    .then(if (fokus) Modifier.border(2.dp, Color.White, form) else Modifier),
                 contentAlignment = Alignment.Center) {
                 Symbol(Zeichen.Plus, 12.dp, farbe = Stil.schriftLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Weiteres Konto hinzufügen"))
             }

@@ -87,6 +87,8 @@ data class Serie(
     val darsteller: List<Mitwirkender>,
     /** Nur fuer den Fernseher — siehe `Kachel.kulisse`. */
     val kulisse: String? = null,
+    /** Titel-Logo, wenn der Server eins fuehrt — siehe `Titelmarke`. */
+    val logo: String? = null,
 ) {
     /**
      * Jahr · Staffeln · Gattungen. **Eine einzige Staffel steht mit ihrem Namen da**, nicht als
@@ -111,7 +113,7 @@ internal fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
           o.feldListe("staffeln") { Staffel(it.getString("id"), it.getString("name")) },
           o.feldText("gewaehlt"),
           o.feldListe("darsteller") { Mitwirkender(it.getString("id"), it.getString("name"), it.feldText("rolle"), it.feldText("bild")) },
-          if (o.has("kulisse")) o.feldText("kulisse") else null)
+          if (o.has("kulisse")) o.feldText("kulisse") else null, o.feldText("logo"))
 }
 
 internal fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->
@@ -195,7 +197,6 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             val alt = serie
             val neu = if (alt != null && alt.stand?.id == gelesen.stand?.id)
                 gelesen.copy(planDa = alt.planDa, lossless = alt.lossless, methode = alt.methode) else gelesen
-            neu.stand?.let { st -> bereich.launch { planLaden(st.id) } } ?: run { planGeladen = true }
             val wahl = if (!selbstGewaehlt || staffel == null) neu.gewaehlt else staffel
             // **Ein Einblenden, nicht zwei.** Steht noch keine Folge da, kommen Serie und Folgen im selben
             // Bild: bis zum 23.09.2026 stand erst die Serie mit Platzhaltern, dann schrumpfte die Liste auf
@@ -205,6 +206,9 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
             serie = neu
             app.serienSpeicher[ziel.id] = neu
+            // Erst jetzt den Plan holen: `planLaden` schreibt in `serie`. Vorher gestartet, war `serie` beim ersten Oeffnen
+            // noch leer (der Abruf der Folgen laeuft davor) — das Ergebnis ging verloren, die Plakette blieb weg.
+            neu.stand?.let { st -> bereich.launch { planLaden(st.id) } } ?: run { planGeladen = true }
             aehnlicheGestoert = umfeld == null
             umfeld?.let { aehnliche = it }
             gemerkt = neu.gemerkt
@@ -277,7 +281,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         CompositionLocalProvider(LocalAufBildfarbe provides true, LocalBildtoene provides stimmung.toene) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).stimmungsgrund(stimmung, Stil.heldHoehe)) {
-            Held(s?.kopfbild, name, s?.nebenzeile.orEmpty(), stimmung)
+            Held(s?.kopfbild, name, s?.nebenzeile.orEmpty(), stimmung,
+                 logo = if (app.einstellungen.titelAlsLogo) s?.logo else null)
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {

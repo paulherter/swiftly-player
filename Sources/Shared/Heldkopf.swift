@@ -31,6 +31,8 @@ struct Heldkopf<Inhalt: View>: View {
     let bild: URL?
     let poster: URL?
     let titel: String
+    /// Logo-Adresse für „Titel als Logo"; `nil`: immer der Text.
+    var logo: URL?
     let nebenzeile: String
     /// Anteil des schon Gesehenen, als Balken am unteren Rand des Posters.
     ///
@@ -76,7 +78,7 @@ struct Heldkopf<Inhalt: View>: View {
                 // `inhalt()` bleibt bewusst draussen: das sind Knoepfe, und
                 // die muss man einzeln erreichen koennen.
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(titel)
+                    Titelmarke(titel: titel, logo: logo, platz: .spalte)
                         // **Der Titel ueber einem Heldbild *ist* der
                         // Seitentitel** — dieselbe Stufe wie „Einstellungen",
                         // und iPad und Mac tragen sie 1:1 wie das iPhone.
@@ -86,10 +88,8 @@ struct Heldkopf<Inhalt: View>: View {
                         // anfing. Die Sperrung bleibt bei −0,021 em, gerechnet
                         // auf 28 — dieselben −0,6 wie auf Film- und
                         // Serienseite.
-                        .font(Stil.titel)
-                        .tracking(Stil.sperrungTitel)
-                        .foregroundStyle(Stil.schrift)
-                        .lineLimit(2)
+                        // Die Titelmarke trägt dieselbe Schrift, Sperrung und zwei
+                        // Zeilen; mit „Titel als Logo" steht das Logo an ihrer Stelle.
                     Text(nebenzeile)
                         // Jahr, Staffeln, Genre sind eine Angabe, und die steht
                         // in der Leiter auf 12. Vorher 14 — eine Zahl, die in

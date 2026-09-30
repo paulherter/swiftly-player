@@ -53,6 +53,7 @@ fun TvSammlung(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     val stand = remember(ziel.id, ziel.rolle) { Sammlungsstand(ziel.id, ziel.rolle) }
     val lauf = rememberCoroutineScope()
     LaunchedEffect(stand, stand.sortierung, stand.filter) { stand.laden(app.kern) }
+    de.paulherter.swiftly.BeiSehstandaenderung(app) { stand.laden(app.kern) }
     val fokus = ersterFokus(!stand.laedt)
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {

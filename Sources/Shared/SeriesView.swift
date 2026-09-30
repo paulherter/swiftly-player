@@ -112,6 +112,9 @@ struct SeriesDetailView: View {
     @State private var ladetitel = ""
     @State private var aehnliche: [Item] = []
     @State private var aehnlicheGestoert = false
+    /// Die Ähnlichen kommen nach dem Rest der Seite; bis dahin Platzhalter
+    /// statt „Nichts Ähnliches gefunden.".
+    @State private var aehnlicheLaedt = true
     @State private var laedt = true
     @State private var abspielen: Abspielwunsch?
     @State private var mehrOffen = false
@@ -142,7 +145,8 @@ struct SeriesDetailView: View {
                         Heldkopf(bild: model.kopfbildURL(for: serie),
                                  poster: model.imageURL(for: serie, maxHeight: 600,
                                                         hochkant: true),
-                                 titel: serie.name, nebenzeile: nebenzeile,
+                                 titel: serie.name, logo: model.logoURL(for: serie),
+                                 nebenzeile: nebenzeile,
                                  fortschritt: serie.userData?.playedPercentage
                                      .map { $0 / 100 }) {
                             VStack(alignment: .leading, spacing: 14) {
@@ -314,8 +318,8 @@ struct SeriesDetailView: View {
         // **Nach dem Player neu holen**, und zwar erst, wenn die Endmeldung
         // durch ist — siehe `AppModel.wiedergabeBeendet`. Sonst blieben
         // Fortschritt und „gesehen" auf dem Stand von vor dem Abspielen.
-        .onChange(of: model.seitenAuffrischen) { _, _ in
-            Task { await laden(); await folgenLaden() }
+        .nachholen(bei: model.seitenAuffrischen) {
+            Task { await laden(nachWiedergabe: true) }
         }
         // **Die mitgebrachte Staffel kann nachtraeglich eintreffen.**
         //
@@ -342,10 +346,14 @@ struct SeriesDetailView: View {
     /// Der tvOS-Chat hat denselben Fehler bei sich gefunden und ihn treffend
     /// benannt: `auffrischen` galt als Stellvertreter für „alles ist wieder
     /// frisch", weil es meistens mit ihm zusammenfällt. Meistens.
-    private func laden() async {
+    /// `nachWiedergabe`: nur Stand, Serie und Folgen der gewählten Staffel.
+    /// Staffeln und Ähnliche ändern sich beim Schauen nicht — sie mitzuholen
+    /// (und die Folgen danach noch einmal) kostete nach jedem Player-Schließen
+    /// mehrere Anfragen, genau wenn die Endmeldung läuft.
+    private func laden(nachWiedergabe: Bool = false) async {
         async let a = model.standInSerie(serie)
-        async let b = model.staffeln(serie)
-        async let c = model.aehnliche(serie)
+        async let b = nachWiedergabe ? nil : staffelnHolen()
+        async let c = nachWiedergabe ? nil : aehnlicheHolen()
         // **Die Serie selbst frisch.** Gemerkt und gesehen standen aus dem
         // Eintrag, mit dem die Seite geoeffnet wurde — und der aendert sich
         // nie. Nach „Serie als gesehen" lud die Seite neu, las wieder den
@@ -359,7 +367,10 @@ struct SeriesDetailView: View {
         // Seite, was sie hatte, und merkt sich die Stoerung. Vorher setzte
         // derselbe Fall beide Listen auf leer — die Staffelwahl verschwand und
         // darunter stand „Nichts Ähnliches gefunden".
-        let (frischerStand, frischeStaffeln, frischeAehnliche) = await (a, b, c)
+        // **Ähnliche warten nicht.** Der Abruf ist auf großen Servern der
+        // langsamste; Stand und Staffeln reichen für die Folgenliste, die
+        // Ähnlichen kommen am Ende.
+        let (frischerStand, frischeStaffeln) = await (a, b)
         let staffelnJetzt = frischeStaffeln ?? staffeln
         // Kommt man von einer Folge, deren Staffel — sonst die, in der man
         // zuletzt war. Beim Auffrischen bleibt die getroffene Wahl stehen.
@@ -382,12 +393,12 @@ struct SeriesDetailView: View {
         // blendet nur die Belegzeile ein, deren Platz schon steht.
         async let p = planHolen(frischerStand?.id)
         let geholt = await model.folgen(serie: serie.id, staffel: wahl?.id)
+        // Abgebrochen ist keine Störung: nichts setzen, die Seite behält ihren Stand.
+        if Task.isCancelled { return }
         withAnimation(Stil.einblenden) {
             stand = frischerStand
-            staffelnGestoert = frischeStaffeln == nil
+            if !nachWiedergabe { staffelnGestoert = frischeStaffeln == nil }
             staffeln = staffelnJetzt
-            aehnlicheGestoert = frischeAehnliche == nil
-            if let frischeAehnliche { aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche) }
             standGeklaert = true
             // Hat der Nutzer waehrenddessen selbst eine Staffel gewaehlt,
             // gehoert die Liste seiner Wahl, nicht dieser Antwort.
@@ -413,13 +424,27 @@ struct SeriesDetailView: View {
         // sichtbar nach rechts, die Zeile glitt von links herein.
         if frischerStand != nil { plan = await p }
         withAnimation(Stil.einblenden) { planDa = true }
+        // Ähnliche zuletzt: nichts darüber wartet auf sie. `nil` ist keine
+        // leere Liste — der Abruf lief nicht oder scheiterte.
+        if !nachWiedergabe {
+            let frischeAehnliche = await c
+            if Task.isCancelled { return }
+            withAnimation(Stil.einblenden) {
+                aehnlicheLaedt = false
+                aehnlicheGestoert = frischeAehnliche == nil && aehnliche.isEmpty
+                if let frischeAehnliche { aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche) }
+            }
+        }
     }
 
     private func auffrischen() async { await laden() }
 
+    private func staffelnHolen() async -> [Item]? { await model.staffeln(serie) }
+    private func aehnlicheHolen() async -> [Item]? { await model.aehnliche(serie) }
+
     private func planHolen(_ folgeID: String?) async -> PlaybackPlan? {
         guard let folgeID else { return nil }
-        return await model.plan(for: folgeID)
+        return await model.plan(for: folgeID, still: true)
     }
 
     // MARK: Teile
@@ -429,10 +454,14 @@ struct SeriesDetailView: View {
             .overlay(alignment: .bottom) { Heldauslauf(bild: model.kopfbildURL(for: serie)) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
+                    #if os(iOS)
+                    Titelmarke(titel: serie.name, logo: model.logoURL(for: serie))
+                    #else
                     Text(serie.name)
                         .font(Stil.titel)
                         .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
+                    #endif
                     Text(nebenzeile)
                         // Jahr, Staffeln, Genre sind eine Angabe: 12. Vorher
                         // 14, was in keiner Stufe vorkommt.
@@ -790,7 +819,7 @@ struct SeriesDetailView: View {
     private var aehnlichesbereich: some View {
         if aehnlicheGestoert && aehnliche.isEmpty {
             Stoerhinweis(model: model) { Task { await laden() } }
-        } else if aehnliche.isEmpty && laedt {
+        } else if aehnliche.isEmpty && (laedt || aehnlicheLaedt) {
             // Eine Reihe in derselben Spaltenrechnung wie das Raster darunter.
             Rasterplatzhalter(spalten: Stil.spalten(nutzbar: rasterbreite - 2 * Stil.rand(breit: breit),
                                                     breit: breit),
@@ -853,6 +882,8 @@ struct SeriesDetailView: View {
         folgenLaedt = true
         let fuer = gewaehlteStaffel?.id
         let geholt = await model.folgen(serie: serie.id, staffel: fuer)
+        // Abgebrochen (Seite verlassen, neuer Lauf) ist keine Störung.
+        if Task.isCancelled { return }
         // Wer inzwischen eine andere Staffel gewaehlt hat, bekommt nicht die
         // Folgen der alten unter den Namen der neuen.
         guard gewaehlteStaffel?.id == fuer else { return }
@@ -877,7 +908,9 @@ struct SeriesDetailView: View {
 
     private func folgenAnnehmen(_ geholt: [Item]?) {
         folgenLaedt = false
-        folgenGestoert = geholt == nil
+        // Nur eine leere Seite zeigt die Störung; steht schon eine Liste,
+        // bleibt sie stehen (Funkloch nach dem Player, abgebrochene Aufgabe).
+        folgenGestoert = geholt == nil && folgen.isEmpty
         // Gescheitert: die alte Liste bleibt stehen, und nichts kommt in den
         // Speicher — ein zwischengespeicherter Netzfehler waere schlimmer als
         // gar keiner.
@@ -1248,7 +1281,8 @@ struct SeasonView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
-        .task(id: model.seitenAuffrischen) { await folgenLaden() }
+        .task { await folgenLaden() }
+        .nachholen(bei: model.seitenAuffrischen) { Task { await folgenLaden() } }
     }
 
     private func folgenLaden() async {

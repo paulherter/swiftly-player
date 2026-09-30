@@ -67,6 +67,10 @@ final class Startseitenmodell {
             && gattungsreihen.allSatisfy { $0.items.isEmpty }
     }
 
+    /// Der Stand gehört zu einem früheren Konto — die Startseite war beim
+    /// Wechsel nicht im Baum und hat ihn nicht mitbekommen.
+    func veraltet(_ model: AppModel) -> Bool { fuerKonto != model.kontowechsel }
+
     func laden(_ model: AppModel) async {
         let diesesKonto = model.kontowechsel
         laufendeLaeufe += 1
@@ -135,6 +139,10 @@ final class Startseitenmodell {
             gattungen: nil,
             bisherWeiterschauen: weiterschauen))
         guard gilt() else { return }
+        // **Abgebrochen heißt nicht „Server stumm".** Sonst gälten alle
+        // Abrufe als `nil`: `geladen = true`, leere Reihen und „Hier ist noch
+        // nichts", bis der Neustart des `task` durch ist.
+        guard !Task.isCancelled else { return }
         // **Beim ersten Einblenden alles in einem Zug.** Steht noch nichts
         // da — erster Start oder frisch nach einem Kontowechsel —, wartet die
         // Seite auch auf die Genres, statt sie einen Moment spaeter unter die
@@ -160,7 +168,11 @@ final class Startseitenmodell {
             zuletzt = uebernehmen(stand.zuletzt, zuletzt)
         }
         gestoert = !Task.isCancelled && stand.gestoert
-        if !gestoert { zuletztGeladen = Date() }
+        // Kam nur einer der festen Abrufe nicht durch, bleibt der alte Stand
+        // stehen — und gilt nicht als frisch: die nächste Rückkehr holt neu,
+        // statt die veraltete Reihe über die Frist hinaus zu halten.
+        let teilausfall = stand.weiterschauen == nil || stand.naechsteFolge == nil
+        if !gestoert, !teilausfall { zuletztGeladen = Date() }
         geladen = true
         // **Und der alte Stand bleibt stehen, bis der neue da ist.**
         //

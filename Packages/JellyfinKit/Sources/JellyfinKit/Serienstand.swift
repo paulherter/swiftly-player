@@ -19,7 +19,7 @@ public extension JellyfinClient {
         if let offen = try? await naechsteFolgeDerSerie(seriesID: seriesID) {
             return offen
         }
-        return (try? await folgen(seriesID: seriesID))?.first
+        return try? await ersteFolge(seriesID: seriesID)
     }
 
     /// Dasselbe, aber ein gestörter Abruf **wirft**, statt als „nichts da"
@@ -29,7 +29,7 @@ public extension JellyfinClient {
         if let offen = try await naechsteFolgeDerSerie(seriesID: seriesID) {
             return offen
         }
-        return try await folgen(seriesID: seriesID).first
+        return try await ersteFolge(seriesID: seriesID)
     }
 }
 
@@ -90,7 +90,7 @@ public extension JellyfinClient {
             // Nicht mit `??` in einer Zeile: dessen rechte Seite ist eine
             // Autoclosure und darf nicht `await` enthalten.
             var folge = try? await naechsteFolgeDerSerie(seriesID: item.id)
-            if folge == nil { folge = (try? await folgen(seriesID: item.id))?.first }
+            if folge == nil { folge = try? await ersteFolge(seriesID: item.id) }
             if let folge, let url = Bildwahl.quer(folge, adressen: adressen,
                                                   breite: breite)?.url {
                 return url
@@ -130,7 +130,7 @@ public extension JellyfinClient {
         // Autoclosure und darf kein `await` enthalten.
         if item.type == "Series" {
             var folge = try? await naechsteFolgeDerSerie(seriesID: item.id)
-            if folge == nil { folge = (try? await folgen(seriesID: item.id))?.first }
+            if folge == nil { folge = try? await ersteFolge(seriesID: item.id) }
             if let folge,
                let g = Bildwahl.quer(folge, adressen: adressen, breite: gross)?.url,
                let k = Bildwahl.quer(folge, adressen: adressen, breite: klein)?.url {

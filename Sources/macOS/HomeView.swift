@@ -53,7 +53,13 @@ struct HomeView: View {
     @State private var aufbau = false
     /// Die Reihen stehen — kein Wechsel unterwegs. Beim Klick in der
     /// Profilseite gehen sie sofort aus, noch bevor das Konto wechselt.
-    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
+    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet && !veraltet }
+    /// **Der Wechsel geschah, während die Startseite nicht im Baum war**
+    /// (man stand auf Filme oder Serien). Ihr `onChange` hat ihn nicht
+    /// gesehen; sie kam mit den Reihen des alten Kontos zurück, die dann
+    /// Platzhaltern und dem neuen Inhalt wichen. Wie beim Wechsel selbst:
+    /// Reihen aus, laden, gestaffelt ein.
+    private var veraltet: Bool { stand.geladen && stand.veraltet(model) }
     /// Die Reihen stehen im Baum — außer zwischen Klick und Freigabe: was
     /// mitten im Flug ankommt, wird nicht gesetzt und nicht entschlüsselt.
     private var gebaut: Bool { zeigen || aufbau }
@@ -150,8 +156,18 @@ struct HomeView: View {
                         .padding(.top, 120)
                 }
             }
+            // **Die Reihen gehen beim Klick sofort weg, ohne Bewegung.** Sonst
+            // gerieten sie in den Seitenschub der Profilseite, die gleich
+            // darauf hinausfährt, und blendeten unter ihr aus.
+            .transaction(value: gebaut) { if !$0.disablesAnimations, !gebaut { $0.animation = nil } }
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
+            // **Volle Breite, auch ohne Reihen.** Fallen die Reihen beim Klick
+            // in der Profilseite aus dem Baum, blieb nur der Titel, und die
+            // ganze Startseite schrumpfte auf dessen Breite (173 statt 1131
+            // Punkt, gemessen). Unter der hinausfahrenden Profilseite stand
+            // dann ein schmaler Block mit Schleier statt der Seite.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.never)
         // Derselbe stehende Titel wie auf Filme, Serien und Merkliste.
@@ -185,6 +201,15 @@ struct HomeView: View {
         }
         .animation(Stil.einblenden, value: geladen)
         .task { await laden() }
+        .onAppear {
+            if veraltet {
+                wechsel = true
+                Task {
+                    await alleinAuffrischen()
+                    if wechsel, freigegeben { einblenden() }
+                }
+            }
+        }
         // **Die Einstellung greift sofort, nicht beim nächsten Öffnen.**
         //
         // Umschalten ändert, welche Reihen es überhaupt gibt — und die stehen

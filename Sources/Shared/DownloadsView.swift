@@ -890,7 +890,9 @@ struct DownloadserieView: View {
     private var folgen: [Downloadposten] {
         model.downloads.posten
             .filter { $0.serienId == route.serienId }
-            .sorted { ($0.staffel ?? 0, $0.folge ?? 0) < ($1.staffel ?? 0, $1.folge ?? 0) }
+            // Folgen ohne Staffelnummer ans Ende: sie bilden eine eigene Gruppe
+            // und sortierten sonst zwischen Staffel 0 und 1.
+            .sorted { ($0.staffel ?? .max, $0.folge ?? .max) < ($1.staffel ?? .max, $1.folge ?? .max) }
     }
 
     /// Nach Staffel, in der Reihenfolge der Staffeln.

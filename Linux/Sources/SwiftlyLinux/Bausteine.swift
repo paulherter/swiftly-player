@@ -574,16 +574,17 @@ func schalterzeile(symbol: String, titel: String, unter: String? = nil,
     gtk_widget_add_css_class(knauf, "swiftly-knauf")
     gtk_widget_set_size_request(knauf, 16, 16)
     gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
+    // Immer links; die Lage kommt aus `margin-left` im Stilblatt, damit sie
+    // gleiten kann (eine andere `halign` springt, GTK animiert sie nicht).
+    gtk_widget_set_halign(knauf, GTK_ALIGN_START)
     anhaengen(schalter, knauf)
 
     func anmalen() {
         if zustand {
             gtk_widget_add_css_class(schalter, "swiftly-aktiv")
-            gtk_widget_set_halign(knauf, GTK_ALIGN_END)
-        } else {
+                    } else {
             gtk_widget_remove_css_class(schalter, "swiftly-aktiv")
-            gtk_widget_set_halign(knauf, GTK_ALIGN_START)
-        }
+                    }
     }
     anmalen()
 
@@ -872,16 +873,17 @@ func kleinerSchalter(an: Bool, name: String,
     gtk_widget_add_css_class(knauf, "swiftly-knauf")
     gtk_widget_set_size_request(knauf, 16, 16)
     gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
+    // Immer links; die Lage kommt aus `margin-left` im Stilblatt, damit sie
+    // gleiten kann (eine andere `halign` springt, GTK animiert sie nicht).
+    gtk_widget_set_halign(knauf, GTK_ALIGN_START)
     anhaengen(schalter, knauf)
 
     func anmalen() {
         if zustand {
             gtk_widget_add_css_class(schalter, "swiftly-aktiv")
-            gtk_widget_set_halign(knauf, GTK_ALIGN_END)
-        } else {
+                    } else {
             gtk_widget_remove_css_class(schalter, "swiftly-aktiv")
-            gtk_widget_set_halign(knauf, GTK_ALIGN_START)
-        }
+                    }
     }
     anmalen()
 

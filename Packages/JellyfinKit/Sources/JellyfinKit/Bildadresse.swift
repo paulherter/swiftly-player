@@ -7,6 +7,8 @@ public enum Bildart: String, Sendable {
     /// Quer liegendes Vorschaubild. Jellyfin pflegt es bei Serien oft, bei
     /// Folgen selten — als Rückfall für eine 16:9-Kachel taugt es trotzdem.
     case vorschau  = "Thumb"
+    /// Das Titel-Logo (Schriftzug) mit Transparenz.
+    case logo      = "Logo"
 }
 
 /// Wie das Bild zugeschnitten werden soll.

@@ -755,21 +755,18 @@ private struct Kontokarte: View {
                     Button {
                         if aktiv { hinzufuegen() } else if let server { hinzufuegenAuf(server) }
                     } label: {
+                        // **Ein Feld auf `flaeche`, kein gestrichelter Kreis** —
+                        // wie am Mac (BRAND 7: ein Knopf ohne Beschriftung ist
+                        // quadratisch). Aus dem Token, nicht als eigene Zahl:
+                        // dieselbe Stufe wie ein Listenzeilentitel.
                         Image(systemName: "plus")
-                            // Aus dem Token, nicht als eigene Zahl: dieselbe
-                            // Stufe wie ein Listenzeilentitel.
                             .font(Stil.listentitel)
-                            .foregroundStyle(Stil.schriftSehrLeise)
-                            // **Der Kreis bleibt 40, das Ziel wird 44.**
-                            // Apples Mindestmass fuer eine Treffflaeche ist
-                            // 44; das Plus lag mit 40 darunter. Der
-                            // gestrichelte Kreis haengt im `.overlay` an den
-                            // inneren 40, damit sich sichtbar nichts aendert.
+                            .foregroundStyle(Stil.schriftLeise)
+                            // **Das Feld bleibt 40, das Ziel wird 44** —
+                            // Apples Mindestmass fuer eine Treffflaeche.
                             .frame(width: 40, height: 40)
-                            .overlay {
-                                Circle().strokeBorder(Stil.rand,
-                                                      style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                            }
+                            .background(Stil.flaeche,
+                                        in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }

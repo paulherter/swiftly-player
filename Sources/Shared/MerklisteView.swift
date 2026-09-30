@@ -13,6 +13,8 @@ struct MerklisteView: View {
     /// liest sie von dort ab.
     @State private var gattung: Merkgattung
     @State private var gattungslisteOffen = false
+    /// Zählerstand, bei dem zuletzt aufgefrischt wurde — siehe `nachholen`.
+    @State private var auffrischStand = 0
     @State private var sortierlisteOffen = false
     /// Wie weit gescrollt wurde — daran hängt die Kante unter dem Kopf.
     ///
@@ -57,9 +59,10 @@ struct MerklisteView: View {
         // (`laden` frischt auf, ohne Platzhalter und ohne die Stelle zu
         // verlieren), sonst zeigt die Kachel Balken und Haken von vorher und
         // ein ausgetragener Titel bliebe stehen.
-        .task(id: "\(stand.kennung)|\(model.kontowechsel)|\(model.listenAuffrischen)") {
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)|\(auffrischStand)") {
             await stand.laden(model)
         }
+        .nachholen(bei: model.listenAuffrischen) { auffrischStand = model.listenAuffrischen }
     }
 
     @ViewBuilder

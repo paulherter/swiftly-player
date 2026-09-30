@@ -47,7 +47,8 @@ struct SucheView: View {
                     Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
                                 aussen: $amFeld) {
                         letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh)
-                        Task { await suchen() }
+                        suchlauf?.cancel()
+                        suchlauf = Task { await suchen() }
                     }
                     .frame(width: 1000)
 
@@ -226,6 +227,7 @@ struct SucheView: View {
             suchlauf?.cancel()
             guard !neu.isEmpty else {
                 treffer = []
+                seerrtreffer = []
                 gesucht = false
                 gestoert = false
                 laeuft = false
@@ -238,6 +240,23 @@ struct SucheView: View {
             }
         }
         .onDisappear { suchlauf?.cancel() }
+        // Treffer und Begriff gehoeren dem vorigen Konto.
+        .onChange(of: model.kontowechsel) { _, _ in
+            suchlauf?.cancel()
+            begriff = ""
+            treffer = []
+            seerrtreffer = []
+            gesucht = false
+            gestoert = false
+            laeuft = false
+        }
+        // Gesehen-/Merkstand woanders geaendert: die Kachel soll nicht den
+        // alten Stand zeigen. Die Treffer bleiben stehen, bis neue da sind.
+        .onChange(of: model.listenAuffrischen) { _, _ in
+            guard !begriff.isEmpty else { return }
+            suchlauf?.cancel()
+            suchlauf = Task { await suchen() }
+        }
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         // **Gemerkt wird, wer mit Treffern das Feld verlässt.** Hier wird schon

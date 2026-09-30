@@ -82,6 +82,11 @@ final class Bibliotheksmodell {
     var kennung: String { "\(sortierung.rawValue)|\(filter.rawValue)" }
 
     /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
+    /// **Das Nachladen ist gescheitert** (Tunnel, Server kurz weg). Ohne das
+    /// stand unten dauerhaft die Skelettzeile, als käme noch etwas; die
+    /// Ansicht zeigt dann eine Zeile zum Antippen.
+    private(set) var nachladenGescheitert = false
+
     var nochMehrDa: Bool {
         sieb == nil ? Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt)
                     : Listenregeln.nochMehrDa(geladen: rohVersatz, gesamt: rohGesamt)
@@ -140,6 +145,7 @@ final class Bibliotheksmodell {
         }
         laedt = items.isEmpty
         gestoert = false
+        nachladenGescheitert = false
         fuerKonto = model.kontowechsel
         guard let quelle else {
             // Zwei Faelle sehen hier gleich aus: ein Server ohne Bibliothek
@@ -155,8 +161,14 @@ final class Bibliotheksmodell {
             return
         }
         sieb = nil
+        // **Beim Auffrischen so viel holen, wie schon dasteht** (bis 300):
+        // wer bei Titel 90 etwas zu Ende sah, fand sonst dort einen alten
+        // Balken — nur die ersten 60 wurden frisch.
+        let fuerAbruf = "\(quelle.schluessel)|\(kennung)|\(fuerKonto)"
+        let umfang = geladenFuer == fuerAbruf
+            ? min(300, max(AppModel.seitengroesse, items.count)) : AppModel.seitengroesse
         let antwort = await model.items(aus: quelle, sortierung: sortierung,
-                                        filter: filter, ab: 0)
+                                        filter: filter, ab: 0, anzahl: umfang)
         // Ein juengerer Lauf ist unterwegs — er schreibt, dieser nicht.
         guard meiner == lauf else { return }
         if let seite = antwort {
@@ -202,10 +214,15 @@ final class Bibliotheksmodell {
         laedtNach = true
         defer { laedtNach = false }
         let vorher = geladenFuer
+        nachladenGescheitert = false
         if quelle.siebt, var s = sieb {
-            guard let (neu, versatz, roh) = await fuellen(model, aus: quelle, sieb: &s,
-                                                          ab: rohVersatz, erste: AppModel.seitengroesse),
-                  geladenFuer == vorher else { return }
+            let gefuellt = await fuellen(model, aus: quelle, sieb: &s,
+                                         ab: rohVersatz, erste: AppModel.seitengroesse)
+            guard geladenFuer == vorher else { return }
+            guard let (neu, versatz, roh) = gefuellt else {
+                if !Task.isCancelled { nachladenGescheitert = true }
+                return
+            }
             sieb = s
             items = Listenregeln.anhaengen(neu, an: items)
             rohVersatz = versatz
@@ -214,7 +231,10 @@ final class Bibliotheksmodell {
         }
         guard let seite = await model.items(aus: quelle, sortierung: sortierung,
                                             filter: filter, ab: items.count)
-        else { return }
+        else {
+            if !Task.isCancelled { nachladenGescheitert = true }
+            return
+        }
         // Wurde inzwischen umsortiert oder gefiltert, gehört die Seite zu
         // einer anderen Liste.
         guard geladenFuer == vorher else { return }

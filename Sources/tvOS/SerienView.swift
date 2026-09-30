@@ -577,10 +577,10 @@ struct SerienView: View {
         }
         Serienspeicher.geteilt.naechsteMerken(neuerStand, fuer: serie.id)
         withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) {
-            frisch = neueSerie
+            if let neueSerie { frisch = neueSerie }
             if let geholteStaffeln { staffeln = geholteStaffeln }
             aehnlicheGestoert = neueAehnliche == nil
-            if let neueAehnliche { aehnliche = neueAehnliche }
+            if let neueAehnliche { aehnliche = Listenregeln.ohneDoppelte(neueAehnliche) }
             // Hat man waehrenddessen selbst eine Staffel gewaehlt, gehoert
             // die Liste dieser Wahl, nicht dieser Antwort.
             if !staffelSelbstGewaehlt || gewaehlteStaffel?.id == wahl?.id {
@@ -613,7 +613,7 @@ struct SerienView: View {
         let neueAehnliche = await model.aehnliche(serie)
         withAnimation(Stil.bewegung(.easeOut(duration: 0.3))) {
             aehnlicheGestoert = neueAehnliche == nil
-            if let neueAehnliche { aehnliche = neueAehnliche }
+            if let neueAehnliche { aehnliche = Listenregeln.ohneDoppelte(neueAehnliche) }
         }
     }
 

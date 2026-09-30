@@ -17,6 +17,9 @@ struct DarstellungView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var genrewahl = false
+    #if os(iOS)
+    @AppStorage("titelAlsLogo") private var titelAlsLogo = false
+    #endif
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -80,6 +83,12 @@ struct DarstellungView: View {
                       an: Binding(get: { model.fortschrittAufKacheln },
                                   set: { model.fortschrittAufKacheln = $0 }))
                 .zeile()
+            #if os(iOS)
+            Wahlzeile(symbol: "textformat", titel: Text("Titel als Logo"),
+                      unter: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),
+                      an: $titelAlsLogo)
+                .zeile()
+            #endif
         } header: {
             Rubrik(text: "Allgemein")
         }

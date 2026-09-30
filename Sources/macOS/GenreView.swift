@@ -85,11 +85,11 @@ struct GenreView: View {
         }
         .scrollIndicators(.never)
         .seitenscrollen()
-        .task(id: name) { await holen() }
+        .task(id: "\(name)|\(model.listenAuffrischen)") { await holen() }
     }
 
     private func holen() async {
-        laedt = true
+        laedt = items.isEmpty
         let ergebnis = await model.titel(gattung: name, limit: 200)
         gestoert = ergebnis == nil
         items = ergebnis ?? []

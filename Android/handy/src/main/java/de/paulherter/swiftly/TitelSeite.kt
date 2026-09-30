@@ -90,6 +90,8 @@ data class Titel(
     /** „Noch 25 Min." unter dem Hauptknopf, und der Anteil fuer den Balken darunter. */
     val restzeit: String? = null,
     val fortschritt: Double? = null,
+    /** Titel-Logo, wenn der Server eins fuehrt — siehe `Titelmarke`. */
+    val logo: String? = null,
 )
 
 internal fun JSONObject.feldText(feld: String): String? = if (isNull(feld)) null else getString(feld)
@@ -111,7 +113,7 @@ internal fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
           o.optJSONObject("datei")?.let { d ->
               Datei(d.feldText("container"), d.feldText("video"), d.feldTexte("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
           }, if (o.has("kulisse")) o.feldText("kulisse") else null,
-          o.feldText("restzeit"), o.feldZahl("fortschritt"))
+          o.feldText("restzeit"), o.feldZahl("fortschritt"), o.feldText("logo"))
 }
 
 /** Die Fassade meldet „nicht angemeldet" als Kennung, weil der Wortlaut im App-Katalog steht. */
@@ -244,7 +246,8 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         CompositionLocalProvider(LocalAufBildfarbe provides true, LocalBildtoene provides stimmung.toene) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).stimmungsgrund(stimmung, Stil.heldHoehe)) {
-            Held(t?.kopfbild, name, t?.nebenzeile.orEmpty(), stimmung)
+            Held(t?.kopfbild, name, t?.nebenzeile.orEmpty(), stimmung,
+                logo = if (app.einstellungen.titelAlsLogo) t?.logo else null)
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -359,7 +362,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 
 /** Vorlage: `Heldbild` + `Heldauslauf` — 300 hoch, Verlauf 190, Titel und Nebenzeile unten links. */
 @Composable
-internal fun Held(bild: String?, name: String, nebenzeile: String, stimmung: Bildtonstand? = null) {
+internal fun Held(bild: String?, name: String, nebenzeile: String, stimmung: Bildtonstand? = null, logo: String? = null) {
     Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
         AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Heldauslauf(Modifier.align(Alignment.BottomStart), stimmung)
@@ -368,7 +371,10 @@ internal fun Held(bild: String?, name: String, nebenzeile: String, stimmung: Bil
             // **Der Titel ueber einem Heldbild *ist* der Seitentitel** — dieselbe Stufe wie
             // „Einstellungen" (BRAND 2). Die Sperrung bringt die Stufe schon mit.
             // Hoechstens zwei Zeilen (Audit 27.09.): ein sehr langer Titel schob sonst die Nebenzeile aus dem Bild.
-            Text(name, style = Stil.titel, color = Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Mit „Titel als Logo" (Einstellungen → Darstellung) steht hier das Logo, sobald es bereit ist.
+            Titelmarke(name, logo, zeile = 28.dp) {
+                Text(name, style = Stil.titel, color = Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             // **Die Nebenzeile haelt ihren Platz, auch solange sie leer ist.** Der Titel steht sofort
             // da (aus dem Ziel), die Nebenzeile erst nach dem Laden — und die Spalte haengt unten.
             // Kam die Zeile nachtraeglich dazu, rutschte der Titel um eine Zeilenhoehe nach oben.

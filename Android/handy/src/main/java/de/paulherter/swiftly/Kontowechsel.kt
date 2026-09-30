@@ -34,6 +34,9 @@ import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import android.view.Choreographer
+import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -102,6 +105,8 @@ object Kontowechselflug {
     var freigabeUm = 0L; private set
     /** Wo das Profilbild oben steht, in Wurzelkoordinaten — gemeldet vom Kopf. */
     var ziel: Rect = Rect.Zero; private set
+    /** Das Ziel, auf das die Bahn beim Tipp gerechnet wurde — der Kopf federt dann noch und steht spaeter anders. */
+    var zielBeiTipp: Rect = Rect.Zero; private set
     /** Der Schirm als aufgezeichnete Ebene (`MainActivity`) — daraus das Standbild. */
     var schirm: GraphicsLayer? = null
 
@@ -110,9 +115,10 @@ object Kontowechselflug {
     val gewechselt: Boolean get() = wechseln == null
     private var laeufe = 0
 
-    /** **Nur, wenn es wirklich oben rechts steht** — mitten im Schieben einer Seite steht es weiter links. */
+    /** **Nur, wenn es wirklich oben rechts steht** — mitten im Schieben einer Seite steht es weiter links (gemessen: 846 statt 949 px). */
     fun zielMelden(rahmen: Rect, breite: Float) {
-        if (rahmen.width > 0 && rahmen.right > breite - 60 * (rahmen.width / 34f)) ziel = rahmen
+        // Ruhig steht der Rand 16 dp vom Schirmrand; 30 dp lassen die Feder-Ruhe zu, aber kein Schieben.
+        if (rahmen.width > 0 && rahmen.right > breite - 30 * (rahmen.width / 34f)) ziel = rahmen
     }
 
     private fun notiz(text: String) = Protokoll.schreib("[Kontowechsel] $text")
@@ -131,6 +137,7 @@ object Kontowechselflug {
         app.anwendungslauf.launch {
             val beginn = System.nanoTime()
             val standbild = runCatching { schirm?.toImageBitmap() }.getOrNull()
+            zielBeiTipp = ziel
             val kurve = if (!ruhig && von.width > 0 && ziel.width > 0) runCatching {
                 Kurve(Kern.kontowechselKurve((von.center.x / dichte).toDouble(), (von.center.y / dichte).toDouble(),
                     (von.width / dichte).toDouble(), (ziel.center.x / dichte).toDouble(), (ziel.center.y / dichte).toDouble(),
@@ -141,7 +148,11 @@ object Kontowechselflug {
             if (kurve != null) flug = Flug(kennung)
             notiz("1: Tipp, Flug ${if (kurve == null) "aus" else "an"}, Standbild in ${(System.nanoTime() - beginn) / 1_000_000} ms")
             // Ein Bild spaeter: unter dem Standbild springt der Stapel zurueck, bevor sich etwas bewegt.
-            withFrameNanos { }
+            // **Nicht `withFrameNanos`.** Der Anwendungslauf ist kein
+            // Compose-Lauf und hat keine `MonotonicFrameClock` — die App stürzte
+            // beim Kontowechsel sofort ab. Der Choreographer liefert dasselbe
+            // „ein Bild später“ ohne Compose.
+            naechstesBild()
             zurueck++
             notiz("1b: Stapel leer (unter dem Standbild)")
             fun gilt() = laeufe == meiner
@@ -152,6 +163,8 @@ object Kontowechselflug {
             if (kurve != null) {
                 bis(kurve.tausch)
                 if (!gilt()) return@launch
+                val e = kurve.lage(kurve.tausch); val d = dichte
+                notiz("MESSEN Tausch: Bild Mitte ${e.first * d}/${e.second * d} Groesse ${e.third * d} px, echtes Ziel ${ziel} (${ziel.width}x${ziel.height}), beim Tipp ${zielBeiTipp}")
                 notiz("4: Bild ruht, Tausch gegen das echte (${(kurve.tausch * 1000).toInt()} ms nach Tipp)")
                 flug = flug?.copy(ersetzt = true)
             }
@@ -240,7 +253,17 @@ fun Kontowechselebene() {
                 transformOrigin = TransformOrigin(0.5f, 0.5f)
                 translationX = x * dichte - basis * dichte / 2
                 translationY = y * dichte - basis * dichte / 2
-                scaleX = s / basis; scaleY = s / basis
+                // Der Kopf federt beim Tipp noch: das Ziel steht bei der Landung anders als beim Tipp.
+                // Der Unterschied wird bis zum Tausch eingerechnet, damit das Bild genau dort landet,
+                // wo das echte steht.
+                val p = (zeit / k.tausch.toFloat()).coerceIn(0f, 1f)
+                val z = Kontowechselflug.ziel; val z0 = Kontowechselflug.zielBeiTipp
+                val korr = z.width > 0 && z0.width > 0
+                val dx = if (korr) (z.center.x - z0.center.x) * p else 0f
+                val dy = if (korr) (z.center.y - z0.center.y) * p else 0f
+                val f = if (korr) 1f + (z.width / z0.width - 1f) * p else 1f
+                translationX += dx; translationY += dy
+                scaleX = s / basis * f; scaleY = s / basis * f
             }) { Profilzeichen(b.name, b.bild, basis.dp) }
         }
         // 3. Der Ring, nur angedeutet: ab der Landung, hoechstens 55 %.
@@ -281,4 +304,9 @@ fun Modifier.reihenauftritt(index: Int): Modifier = composed {
         translationY = (1f - l) * 14.dp.toPx()
         alpha = deckung.value
     }
+}
+
+/** Wartet auf das nächste Bild des Hauptfadens, ohne Compose-Uhr. */
+private suspend fun naechstesBild() = suspendCancellableCoroutine<Unit> { weiter ->
+    Choreographer.getInstance().postFrameCallback { if (weiter.isActive) weiter.resume(Unit) }
 }

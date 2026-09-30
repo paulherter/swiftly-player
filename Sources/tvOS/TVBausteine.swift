@@ -1096,6 +1096,8 @@ struct Kopfauskunft<Schluss: View>: View {
     /// Fehlt sie noch, bleibt die Zeile leer, bis sie da ist, statt kurz die
     /// Werte der Folge zu zeigen.
     var serie: Item?
+    /// Nur auf Detailseiten gesetzt: erst damit kann „Titel als Logo" greifen.
+    var logoModell: AppModel?
     /// Was hinten steht: „Direct Play" auf der Detailseite, sonst nichts.
     @ViewBuilder var schluss: () -> Schluss
 
@@ -1106,15 +1108,12 @@ struct Kopfauskunft<Schluss: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
-                // Seitentitel aus der Leiter; 60 gibt es dort nicht.
-                .font(Stil.titelGross)
-                .tracking(Stil.sperrungTitel)
-                .foregroundStyle(Stil.schrift)
-                .lineLimit(1)
-                // Ein langer Titel schrumpft, statt die Seite zu verschieben.
-                .minimumScaleFactor(0.62)
-                .frame(height: 68, alignment: .leading)
+            // Seitentitel aus der Leiter; 60 gibt es dort nicht. Ein langer
+            // Titel schrumpft, statt die Seite zu verschieben; ein Logo
+            // bleibt im Fach von 68. Bei einer Folge steht das Logo der Serie.
+            Titelmarke(titel: item.type == "Episode" ? (item.seriesName ?? item.name) : item.name,
+                       logo: logoModell.flatMap { $0.logoURL(for: angabenVon ?? item) },
+                       zeile: 56, platz: .fach(hoehe: 68))
 
             if let zweitzeile {
                 Text(zweitzeile)
@@ -1315,9 +1314,6 @@ final class Kulissenbilder {
 struct Kulisse: View {
     let url: URL?
     @State private var bild: Image?
-    /// Neuer Anlauf nach einem abgebrochenen Abruf — siehe `Bild.anlauf`.
-    @State private var anlauf = 0
-
     /// Was bekannt ist, steht sofort — nicht erst im naechsten Durchgang.
     /// Dieselbe Ueberlegung wie bei `Bildgrund`: ein nachgereichter Wert
     /// kommt zu spaet, der leere Durchgang hat dann schon stattgefunden.
@@ -1330,41 +1326,26 @@ struct Kulisse: View {
         ZStack {
             if let bild {
                 bild.resizable().aspectRatio(contentMode: .fill)
-            } else if let url, !Eigenkoepfe.fuer(url).isEmpty {
-                // **Nur hinter einem Vorposten.** `AsyncImage` kann keine
-                // eigenen Header senden (Issue #4); `Netzbild` holt ueber den
-                // `Bildspeicher`, und der kann es. Fuer alle anderen bleibt
-                // es beim Bisherigen.
-                Netzbild(url: url, vorrang: true)
-            } else {
-                AsyncImage(url: url) { phase in
-                    if case let .success(geladen) = phase {
-                        geladen.resizable().aspectRatio(contentMode: .fill)
-                            // Beim Zeigen merken, nicht davor: so steht es
-                            // beim naechsten Mal bereit, ohne dass hier ein
-                            // Durchgang mehr noetig waere.
-                            .task {
-                                guard let url else { return }
-                                Kulissenbilder.geteilt.merken(geladen, fuer: url)
-                            }
-                    } else {
-                        // Dieselbe Regel wie bei `Bild`: ein abgebrochener
-                        // Abruf bekommt bis zu zwei neue Anlaeufe, statt die
-                        // Kulisse leer stehen zu lassen.
-                        Color.clear
-                            .task(id: Bild.abgebrochen(phase)) {
-                                guard Bild.abgebrochen(phase), anlauf < 2 else { return }
-                                anlauf += 1
-                            }
-                    }
-                }
-                .id(anlauf)
             }
+        }
+        // **Ueber den `Bildspeicher`, nicht ueber `AsyncImage`** — wie `Bild`
+        // (siehe `Stil.swift`): `AsyncImage` entschluesselt auf dem Hauptlauf,
+        // legt nichts auf die Platte und bricht beim Verschwinden ab; auf der
+        // Startseite wechselt die Kulisse mit jedem Fokus-Halt. Der
+        // `Bildspeicher` kann ausserdem eigene Kopfzeilen (Vorposten, #4).
+        // Das Ergebnis merkt zusaetzlich `Kulissenbilder`, damit die Kulisse
+        // der Startseite auch nach mehreren Detailseiten noch steht.
+        .task(id: url) {
+            guard let url else { return }
+            if let da = Kulissenbilder.geteilt.bild(url) { bild = da; return }
+            guard let geladen = await Bildspeicher.geteilt.laden(url, vorrang: true) else { return }
+            guard !Task.isCancelled else { return }
+            Kulissenbilder.geteilt.merken(geladen, fuer: url)
+            bild = geladen
         }
         // Eine neue Adresse bei stehender Ansicht: nicht das alte Bild
         // weiterzeigen, sondern nehmen, was fuer die neue bekannt ist.
         .onChange(of: url) { _, neu in
-            anlauf = 0
             bild = neu.flatMap { Kulissenbilder.geteilt.bild($0) }
         }
         .frame(width: 1180, height: 700)

@@ -45,6 +45,8 @@ extension App {
                         stelleFrisch: Bool = false, vorgeplant: PlaybackPlan? = nil,
                         gruppe: Bool = false) {
         guard client != nil || datei != nil else { return }
+        // Die Lautstärke gilt über Titel hinweg (Mac: `playerLautstaerke`).
+        abspieler.lautstaerkeSetzen(Int((wahlen.lautstaerke * 100).rounded()))
         // Verzoegerung: derselbe Titel oder dieselbe Serie behaelt sie, sonst
         // null — vor dem Schliessen unten, das `laufenderTitel` leert.
         abspieler.verzoegerungFuerNeuenTitel(alterTitel: laufenderTitel?.id ?? "",
@@ -364,6 +366,8 @@ extension App {
         steuerungOffen = false
         spielerMitte = nil
         spielerSymbolreihe = nil
+        spielerLautstaerke = nil
+        lautstaerkeZieht = false
         spielerEbenenknoepfe = [:]
         spielerTitelplatz = nil
         spielerWeiter = nil
@@ -633,6 +637,9 @@ extension App {
         spielerSymbolreihe = reihe
         spielerEbenenknoepfe = [:]
 
+        // Lautstärke als erster Knopf der Reihe (Mac: `Lautstaerkeregler`).
+        anhaengen(reihe, lautstaerkeBauen())
+
         let (spuren, _) = symbolknopf("untertitel", beschriftung: uebersetzt("Audio & Untertitel")) {
             [weak self] in self?.ebeneOeffnen(.spuren)
         }
@@ -774,8 +781,72 @@ extension App {
     /// streifen (``melden(_:)``) gehoert der Detailseite und laege unter dem
     /// Player; was man hoert, ist hier die Rueckmeldung.
     func stummUmschalten() {
-        guard let stumm = abspieler.stummUmschalten() else { return }
-        Protokoll.schreib("[Player] Ton \(stumm ? "aus" : "an")")
+        if wahlen.lautstaerke > 0 {
+            wahlen.lautstaerkeDavor = wahlen.lautstaerke
+            lautstaerkeAnwenden(0)
+        } else {
+            lautstaerkeAnwenden(wahlen.lautstaerkeDavor > 0 ? wahlen.lautstaerkeDavor : 1)
+        }
+        wahlen.sichern()
+        Protokoll.schreib("[Player] Ton \(wahlen.lautstaerke > 0 ? "an" : "aus")")
+    }
+
+    /// Pfeile hoch und runter: ±5 %, der Regler klappt kurz auf.
+    func lautstaerkeStufe(_ schritt: Double) {
+        lautstaerkeAnwenden(((wahlen.lautstaerke + schritt) * 100).rounded() / 100)
+        wahlen.sichern()
+        lautstaerkeKurzZeigen()
+    }
+
+    /// Setzt den Wert in Player, Regler und Einstellungen (ohne zu sichern).
+    func lautstaerkeAnwenden(_ neu: Double) {
+        let w = min(max(neu, 0), 1)
+        wahlen.lautstaerke = w
+        abspieler.lautstaerkeSetzen(Int((w * 100).rounded()))
+        spielerLautstaerke?.setzen(w)
+    }
+
+    /// Klappt den Regler 1,2 s auf und hält die Leiste da, damit man den Wert sieht.
+    func lautstaerkeKurzZeigen() {
+        steuerungZeigen()
+        spielerLautstaerke?.kurzZeigen(true)
+        lautstaerkeUhr += 1
+        let meine = lautstaerkeUhr
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            aufHauptfaden {
+                guard self.lautstaerkeUhr == meine else { return }
+                self.spielerLautstaerke?.kurzZeigen(false)
+            }
+        }
+    }
+
+    /// Lautsprecher-Knopf mit ausklappbarem Regler.
+    func lautstaerkeBauen() -> Widget! {
+        let (knopf, zeichen) = symbolknopf("lautsprecher-laut", beschriftung: uebersetzt("Ton aus")) {
+            [weak self] in
+            self?.stummUmschalten()
+            self?.steuerungZeigen()
+        }
+        let regler = Lautstaerkeregler(wert: wahlen.lautstaerke, zeichen: zeichen, knopf: knopf!)
+        regler.geaendert = { [weak self] w in
+            guard let self else { return }
+            self.wahlen.lautstaerke = w
+            self.abspieler.lautstaerkeSetzen(Int((w * 100).rounded()))
+        }
+        regler.ziehen = { [weak self] an in
+            guard let self else { return }
+            self.lautstaerkeZieht = an
+            if !an {
+                self.wahlen.sichern()
+                self.steuerungZeigen()
+            }
+        }
+        spielerLautstaerke = regler
+        beiSignal(regler.anzeige, "destroy") { [weak self] in
+            if self?.spielerLautstaerke === regler { self?.spielerLautstaerke = nil }
+        }
+        return regler.anzeige
     }
 
     /// Mittig im Bild: zurück, abspielen, vor — Abstand 80, Zeichen 30 und 40
@@ -1994,7 +2065,7 @@ extension App {
 
     func steuerungVerbergen() {
         guard laufenderTitel != nil, spielerSteuerung != nil,
-              offeneEbene == nil, spielstand.laeuft, !amRegler else { return }
+              offeneEbene == nil, spielstand.laeuft, !amRegler, !lautstaerkeZieht else { return }
         steuerungstakt += 1
         steuerungOffen = false
         steuerungSichtbarkeit()
@@ -2032,7 +2103,7 @@ extension App {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             aufHauptfaden {
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
-                      self.offeneEbeneArt == nil, !self.amRegler,
+                      self.offeneEbeneArt == nil, !self.amRegler, !self.lautstaerkeZieht,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 self.steuerungOffen = false
                 self.steuerungSichtbarkeit()
