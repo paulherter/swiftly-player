@@ -144,10 +144,15 @@ struct ProfilView: View {
                         // Neben „Fehler melden", weil es dazugehört: wer
                         // im Discord einen Fehler meldet, hängt das hier an.
                         Profilzeile(symbol: "doc.text", titel: "Protokoll teilen",
-                                    unter: "Die letzte Stunde, ohne Zugangsdaten",
-                                    letzte: true) {
+                                    unter: "Die letzte Stunde, ohne Zugangsdaten") {
                             protokoll = Protokolldatei.schreiben()
                         }
+                        // Zuletzt, weil es nichts einstellt: hier steht, was
+                        // in der App steckt und wo der Quelltext von VLCKit
+                        // liegt (LGPL).
+                        Profilzeile(symbol: "text.book.closed", titel: "Open-Source-Lizenzen",
+                                    unter: "Was in Swiftly steckt, und der Quelltext von VLCKit",
+                                    letzte: true, ziel: LizenzenRoute())
                     }
 
 

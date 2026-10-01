@@ -79,6 +79,7 @@ struct HomeView: View {
         // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
         // eintreffen.
         .animation(Stil.einblenden, value: stand.gattungsreihen.map(\.name))
+        .animation(Stil.einblenden, value: bibliotheken.map(\.id))
             }
         }
         // **Nach dem Zusehen neu holen, ohne Frist.**
@@ -98,7 +99,7 @@ struct HomeView: View {
         // Erscheinen, der zweite fand `geladen` noch falsch und holte alle
         // Reihen ein zweites Mal (gemessen 25.09.2026: zwei Laeufe in
         // derselben Millisekunde).
-        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startBibliotheken.map(\.id).joined(separator: "|"))") {
             // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
             // Seite, die mit ihm zusammenfällt (sonst holte sie noch einmal
             // das alte Konto).
@@ -276,10 +277,20 @@ struct HomeView: View {
                 // **Sie blenden ein, statt zu erscheinen.** Sie kommen einen
                 // Netzweg spaeter als die festen Reihen — ohne Uebergang stand
                 // dort erst nichts und dann auf einen Schlag alles.
+                // **Davor die gewählten Bibliotheken und Sammlungen** (Darstellung →
+                // Startseite → „+"): Titel ist ihr Name, der Kopf öffnet sie.
+                // Ohne Wahl ist die Liste leer und diese Zeile kostet nichts.
+                ForEach(Array(bibliotheken.enumerated()), id: \.element.id) { j, r in
+                    Reihe(model: model, titel: "", name: r.name, items: r.items,
+                          ziel: SammlungRoute(sammlung: model.startBibliotheken.first { $0.id == r.id }?.item
+                                                ?? Item(id: r.id, name: r.name), art: nil))
+                        .transition(.opacity)
+                        .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                }
                 ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, r in
                     Reihe(model: model, titel: "", name: r.name, items: r.items)
                         .transition(.opacity)
-                        .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                        .reihenauftritt(festeReihen.count + bibliotheken.count + 1 + j, da: zeigen)
                 }
                 }
                 // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
@@ -420,6 +431,10 @@ struct HomeView: View {
         Kontowechselflug.notiz("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
     }
 
+    private var bibliotheken: [Startseite.Bibliotheksreihe] {
+        stand.bibliotheksreihen(fuer: model.startBibliotheken)
+    }
+
     private var festeReihen: [Startreihe] {
         model.startReihen.filter {
             !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
@@ -452,6 +467,8 @@ private struct Reihe: View {
     /// nicht übersetzt.
     var name: String? = nil
     let items: [Item]
+    /// Gesetzt heißt: die Überschrift führt auf die Seite dahinter.
+    var ziel: SammlungRoute? = nil
     /// Waagerechte Kacheln statt hochkant — nur für „Weiterschauen".
     var quer = false
     /// Zeigt statt der Folgennummer, *was* neu dazugekommen ist.
@@ -494,8 +511,15 @@ private struct Reihe: View {
             // Serverfall als eigene `Text`-Kette — mit Sperrung −0,3, während
             // `Reihentitel` −0,24 trägt. Dieselbe Stufe, zwei Werte, und der
             // Baustein kann `name` seit seinem Herauslösen selbst.
-            Reihentitel(text: titel, name: name)
-                .padding(.horizontal, Stil.rand(breit: breit))
+            Group {
+                if let ziel {
+                    NavigationLink(value: ziel) { Reihentitel(text: titel, name: name) }
+                        .buttonStyle(Stil.Druckknopf())
+                } else {
+                    Reihentitel(text: titel, name: name)
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 // Oben ausrichten: ohne das zentriert der Stapel, und eine

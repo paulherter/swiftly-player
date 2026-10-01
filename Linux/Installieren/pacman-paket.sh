@@ -60,6 +60,13 @@ cp "$quelle/Linux/Installieren/$KENNUNG.desktop" \
 cp -r "$quelle/Linux/Ressourcen/icons" "$werk/inhalt/icons"
 cp -r "$quelle/Linux/Ressourcen" "$werk/inhalt/Ressourcen"
 cp "$quelle/LICENSE" "$werk/inhalt/LICENSE"
+# **Lizenzen aus der einen Quelle.** `LICENSES/` hat die Volltexte und
+# `bausteine.json`, `THIRD-PARTY-NOTICES.md` das schriftliche Angebot fuer
+# libVLC (LGPL-2.1-or-later). Fehlt etwas davon, gibt es kein Paket.
+[ -f "$quelle/LICENSES/bausteine.json" ] && [ -f "$quelle/THIRD-PARTY-NOTICES.md" ] ||
+    { echo "LICENSES/ oder THIRD-PARTY-NOTICES.md fehlt in $quelle" >&2; exit 1; }
+cp -r "$quelle/LICENSES" "$werk/inhalt/LICENSES"
+cp "$quelle/THIRD-PARTY-NOTICES.md" "$werk/inhalt/THIRD-PARTY-NOTICES.md"
 
 cat > "$werk/PKGBUILD" <<PKG
 pkgname=$PROGRAMM
@@ -90,6 +97,14 @@ package() {
             "\$pkgdir/usr/share/icons/hicolor/\${grad}x\${grad}/apps/$KENNUNG.png"
     done
     install -Dm644 "\$startdir/inhalt/LICENSE" "\$pkgdir/usr/share/licenses/$PROGRAMM/LICENSE"
+    install -Dm644 "\$startdir/inhalt/THIRD-PARTY-NOTICES.md" \\
+        "\$pkgdir/usr/share/licenses/$PROGRAMM/THIRD-PARTY-NOTICES.md"
+    # Alle Volltexte, darunter LGPL-2.1-or-later.txt; die App liest dieselben
+    # Dateien aus Ressourcen/Lizenzen.
+    for t in "\$startdir/inhalt/LICENSES"/*; do
+        install -Dm644 "\$t" "\$pkgdir/usr/share/licenses/$PROGRAMM/LICENSES/\$(basename "\$t")"
+        install -Dm644 "\$t" "\$pkgdir/usr/lib/$PROGRAMM/Ressourcen/Lizenzen/\$(basename "\$t")"
+    done
 }
 PKG
 

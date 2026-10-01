@@ -87,7 +87,70 @@ baum_fuellen() {
             "$quelle/Linux/Ressourcen/icons/hicolor/${grad}x${grad}/apps/$KENNUNG.png" \
             "$w/usr/share/icons/hicolor/${grad}x${grad}/apps/$KENNUNG.png"
     done
-    install -Dm644 "$quelle/LICENSE" "$w/usr/share/doc/$PROGRAMM/LICENSE"
+    lizenzen_legen "$w"
+}
+
+# **Lizenzen: Texte, Urheber, Quelle — und das Angebot.**
+#
+# libVLC steht unter der LGPL-2.1-or-later; die verlangt, dass der Text und
+# der Hinweis auf den Quelltext mitgeliefert werden. Gelegt wird dreierlei:
+#   - `/usr/share/doc/$PROGRAMM/`: LICENSE (die App, MPL-2.0),
+#     THIRD-PARTY-NOTICES.md (mit dem schriftlichen Angebot) und der Ordner
+#     LICENSES mit allen Volltexten;
+#   - `Ressourcen/Lizenzen`: dieselben Dateien, aus denen die App ihre Seite
+#     „Open-Source-Lizenzen" liest.
+# Alles kommt aus `LICENSES/` — keine zweite Kopie im Repo.
+lizenzen_legen() {
+    local w="$1" d="$1/usr/share/doc/$PROGRAMM" f
+    [ -f "$quelle/LICENSES/bausteine.json" ] && [ -f "$quelle/THIRD-PARTY-NOTICES.md" ] ||
+        { echo "LICENSES/ oder THIRD-PARTY-NOTICES.md fehlt in $quelle" >&2; return 1; }
+    install -Dm644 "$quelle/LICENSE" "$d/LICENSE"
+    install -Dm644 "$quelle/THIRD-PARTY-NOTICES.md" "$d/THIRD-PARTY-NOTICES.md"
+    for f in "$quelle"/LICENSES/*; do
+        install -Dm644 "$f" "$d/LICENSES/$(basename "$f")"
+        install -Dm644 "$f" "$w/usr/lib/$PROGRAMM/Ressourcen/Lizenzen/$(basename "$f")"
+    done
+}
+
+# Die Datei `copyright` nach Debian-Brauch (maschinenlesbar, Format 1.0).
+debian_copyright() {
+    cat > "$1" <<'CR'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Swiftly Player
+Source: https://github.com/paulherter/swiftly-player
+Comment: libVLC and
+ GTK 4 are not part of this package; they come from the system (packages
+ vlc and gtk4) and keep their own licenses (LGPL-2.1-or-later). The source
+ code of libVLC is available from VideoLAN, https://www.videolan.org/vlc/,
+ and the written offer is in THIRD-PARTY-NOTICES.md. The full license
+ texts are in /usr/share/doc/swiftly-jellyfin/LICENSES/.
+
+Files: *
+Copyright: Paul Herter
+License: MPL-2.0
+ This Source Code Form is subject to the terms of the Mozilla Public
+ License, v. 2.0. The full text is in /usr/share/common-licenses/MPL-2.0
+ and in /usr/share/doc/swiftly-jellyfin/LICENSE.
+
+Files: usr/lib/swiftly-jellyfin/Ressourcen/Schriften/*
+Copyright: 2020 The Inter Project Authors (https://github.com/rsms/inter)
+License: OFL-1.1
+ This Font Software is licensed under the SIL Open Font License, Version
+ 1.1. The full text is in
+ /usr/share/doc/swiftly-jellyfin/LICENSES/OFL-1.1-Inter.txt.
+
+Files: usr/lib/swiftly-jellyfin/librlottie.so*
+Copyright: Samsung Electronics Co., Ltd. and the rlottie authors
+License: MIT
+ The full text is in /usr/share/doc/swiftly-jellyfin/LICENSES/MIT.txt.
+
+License: LGPL-2.1+
+ The libraries libVLC and GTK 4, which this program uses, are licensed
+ under the GNU Lesser General Public License, version 2.1 or (at your
+ option) any later version. The full text is in
+ /usr/share/doc/swiftly-jellyfin/LICENSES/LGPL-2.1-or-later.txt and in
+ /usr/share/common-licenses/LGPL-2.1.
+CR
 }
 
 # ------------------------------------------------------------------- .deb
@@ -114,6 +177,8 @@ Description: Jellyfin client that never transcodes
  Stream. The server never re-encodes, so the picture stays untouched and the
  machine stays quiet.
 EOF
+debian_copyright "$deb/usr/share/doc/$PROGRAMM/copyright"
+chmod 644 "$deb/usr/share/doc/$PROGRAMM/copyright"
 dpkg-deb --build --root-owner-group "$deb" "$raus/${PROGRAMM}_${debfassung}_amd64.deb" >/dev/null
 rm -rf "$deb"
 
@@ -147,7 +212,10 @@ machine stays quiet.
 /usr/share/applications/$KENNUNG.desktop
 /usr/share/metainfo/$KENNUNG.metainfo.xml
 /usr/share/icons/hicolor/*/apps/$KENNUNG.png
-/usr/share/doc/$PROGRAMM/LICENSE
+%dir /usr/share/doc/$PROGRAMM
+%license /usr/share/doc/$PROGRAMM/LICENSE
+%license /usr/share/doc/$PROGRAMM/LICENSES
+%doc /usr/share/doc/$PROGRAMM/THIRD-PARTY-NOTICES.md
 
 %changelog
 EOF

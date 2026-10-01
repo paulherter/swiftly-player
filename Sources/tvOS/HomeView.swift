@@ -137,7 +137,7 @@ struct HomeView: View {
         // umstellt — Umschalten aendert, welche Reihen es ueberhaupt gibt,
         // und die stehen erst nach einer neuen Abfrage fest. Mit einem
         // zweiten, schlichten `task` daneben lief beim Oeffnen alles doppelt.
-        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startBibliotheken.map(\.id).joined(separator: "|"))") {
             // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
             // Seite, die mit ihm zusammenfällt.
             if Kontowechselflug.geteilt.wartet { return }
@@ -205,6 +205,8 @@ struct HomeView: View {
         case .neueSerien:    stand.neueSerien
         case let .gattung(name):
             stand.gattungsreihen.first { $0.name == name }?.items ?? []
+        case let .bibliothek(id):
+            bibliotheken.first { $0.id == id }?.items ?? []
         }
     }
 
@@ -214,6 +216,11 @@ struct HomeView: View {
         model.startReihen.filter {
             !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
         }
+    }
+
+    /// Die gewählten Bibliotheken und Sammlungen, die gerade Titel haben.
+    private var bibliotheken: [Startseite.Bibliotheksreihe] {
+        stand.bibliotheksreihen(fuer: model.startBibliotheken)
     }
 
     /// Die Fokuskennung zu einer eingestellten Reihe.
@@ -432,7 +439,18 @@ struct HomeView: View {
                     feste(reihe).reihenauftritt(i + 2, da: zeigen)
                 }
 
-                // Die gewählten Genres als eigene Reihen, nach den festen.
+                // Die gewählten Bibliotheken und Sammlungen (Profil → Darstellung →
+                // Startseite), danach die Genres.
+                ForEach(Array(bibliotheken.enumerated()), id: \.element.id) { j, bib in
+                    reihenabschnitt {
+                        Reihentitel(name: bib.name)
+                    } inhalt: {
+                        Streifen(model: model, items: bib.items,
+                                 reihe: .bibliothek(bib.id),
+                                 amTitel: $amTitel, vorderste: vorderste)
+                    }
+                    .reihenauftritt(festeReihen.count + 2 + j, da: zeigen)
+                }
                 ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, gattung in
                     if !gattung.items.isEmpty {
                         reihenabschnitt {
@@ -442,7 +460,7 @@ struct HomeView: View {
                                      reihe: .gattung(gattung.name),
                                      amTitel: $amTitel, vorderste: vorderste)
                         }
-                        .reihenauftritt(festeReihen.count + 2 + j, da: zeigen)
+                        .reihenauftritt(festeReihen.count + bibliotheken.count + 2 + j, da: zeigen)
                     }
                 }
             }
@@ -795,6 +813,8 @@ private enum Reihenkennung: Hashable {
     /// Ein gewähltes Genre. Der Name ist die Kennung; zwei Reihen desselben
     /// Genres gibt es nicht.
     case gattung(String)
+    /// Eine gewählte Bibliothek oder Sammlung; die Kennung des Servers.
+    case bibliothek(String)
 }
 
 /// Was der Fokus auf der Startseite bezeichnet: **Reihe und Titel**.

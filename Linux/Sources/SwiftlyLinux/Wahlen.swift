@@ -177,6 +177,24 @@ struct Wahlen: Codable {
     /// früherer Anlauf auf Apple zeigte als Chips plötzlich alle Genres des
     /// Servers, und niemand verstand, warum.
     var genreChips = false
+    /// **Die gewählten Bibliotheken und Sammlungen je Server**, als das JSON
+    /// des Pakets (`Startbibliotheken`) — Kennungen gelten nur auf ihrem
+    /// Server. Als Text abgelegt, damit ein beschädigter Eintrag nicht die
+    /// ganze Datei verwirft: gelesen wird tolerant, nie werfend.
+    var startBibliothekenJeServer: [String: String] = [:]
+    /// Die Wahl des aktiven Servers, in der Reihenfolge der Startseite.
+    var startBibliotheken: [Startbibliothek] {
+        get {
+            Startbibliotheken.lesen(startBibliothekenJeServer[aktiverServer]?.data(using: .utf8))
+        }
+        set {
+            guard !aktiverServer.isEmpty else { return }
+            let sauber = Startbibliotheken.sauber(newValue)
+            if sauber.isEmpty { startBibliothekenJeServer[aktiverServer] = nil; return }
+            startBibliothekenJeServer[aktiverServer] =
+                Startbibliotheken.daten(sauber).flatMap { String(data: $0, encoding: .utf8) }
+        }
+    }
 
     // MARK: Was je Ort gemerkt wird
 
@@ -263,6 +281,7 @@ struct Wahlen: Codable {
         startAus               = w(.startAus, [])
         startGenres            = w(.startGenres, [])
         genreChips             = w(.genreChips, false)
+        startBibliothekenJeServer = w(.startBibliothekenJeServer, [String: String]())
         sortierungJeOrt        = w(.sortierungJeOrt, [:])
         filterJeOrt            = w(.filterJeOrt, [:])
         bibliothekJeGattung    = w(.bibliothekJeGattung, [:])
@@ -288,7 +307,7 @@ struct Wahlen: Codable {
              naechsteAutomatischGewaehlt, zurueckSekunden, vorSekunden, fortschrittAufKacheln, titelAlsLogo,
              bildfuellend, restzeitAlsEnde, lautstaerke, lautstaerkeDavor, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
              discordAnzeigen, suchverlauf, suchverlaufJeKonto, fertigGeschaut, discordHinweisGezeigt, merkgattung, startReihen, startAus, startGenres,
-             genreChips, sortierungJeOrt, filterJeOrt, bibliothekJeGattung,
+             genreChips, startBibliothekenJeServer, sortierungJeOrt, filterJeOrt, bibliothekJeGattung,
              fensterBreite, fensterHoehe, fensterMaximiert
     }
 
@@ -324,6 +343,7 @@ struct Wahlen: Codable {
         try c.encode(startAus, forKey: .startAus)
         try c.encode(startGenres, forKey: .startGenres)
         try c.encode(genreChips, forKey: .genreChips)
+        try c.encode(startBibliothekenJeServer, forKey: .startBibliothekenJeServer)
         try c.encode(sortierungJeOrt, forKey: .sortierungJeOrt)
         try c.encode(filterJeOrt, forKey: .filterJeOrt)
         try c.encode(bibliothekJeGattung, forKey: .bibliothekJeGattung)

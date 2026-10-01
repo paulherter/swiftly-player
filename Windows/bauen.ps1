@@ -82,6 +82,13 @@ $mittelZiel = Join-Path $hier 'Ressourcen'
 if (Test-Path $mittelZiel) { Remove-Item -Recurse -Force $mittelZiel }
 Copy-Item -Path $mittel -Destination $mittelZiel -Recurse
 
+# Die Lizenztexte (LICENSES\ im Repo, die eine Quelle) liegen neben dem Programm
+# unter Ressourcen\Lizenzen; die App liest dort bausteine.json und die Volltexte.
+# libVLC steht unter der LGPL, ohne diese Dateien darf nichts ausgeliefert werden.
+$lizenzen = Join-Path (Split-Path -Parent $hier) 'LICENSES'
+if (-not (Test-Path (Join-Path $lizenzen 'bausteine.json'))) { throw "LICENSES\bausteine.json fehlt: $lizenzen" }
+Copy-Item -Path $lizenzen -Destination (Join-Path $mittelZiel 'Lizenzen') -Recurse
+
 # ------------------------------------------------------------- Suchpfade
 #
 # GTK verteilt seine Kopfdateien auf ein Dutzend Verzeichnisse, und zwei davon

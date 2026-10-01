@@ -137,6 +137,13 @@ echo "── Katalog ───────────────────�
 python3 "$(dirname "$0")/katalogpruefen.py" || fehler=1
 echo
 
+# **Die Lizenzliste hat eine Quelle** (`LICENSES/bausteine.json`); die lesbare
+# Fassung entsteht daraus. Veraltet sie, steht in der Datei etwas anderes als
+# in der App.
+echo "── Lizenzen ───────────────────────────────────────────"
+python3 "$(dirname "$0")/lizenzen-erzeugen.py" --pruefen || fehler=1
+echo
+
 # **Android liest denselben Katalog** (`Texte.kt` zieht die `.xcstrings` beim Bau heran). Ein
 # Schluessel, der dort fehlt, steht auf dem Telefon als deutscher Text im englischen Geraet —
 # kein Bau bricht daran. Deshalb hier, statt erst am Geraet.

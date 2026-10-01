@@ -635,7 +635,8 @@ struct PlayerScreen: View {
         HStack(spacing: 4) {
             Lautstaerkeregler(mass: mass, wert: $lautstaerke,
                               aufgeklappt: lautstaerkeKurz, zieht: $lautstaerkeZieht,
-                              stummUmschalten: lautstaerkeStumm)
+                              stummUmschalten: lautstaerkeStumm,
+                              radGedreht: { lautstaerkeRad($0) })
             Symbolknopf(symbol: "captions.bubble", beschriftung: "Audio & Untertitel",
                         mass: mass) { ebeneOeffnen(.spuren) }
             if hatFolgen {
@@ -830,6 +831,12 @@ struct PlayerScreen: View {
 
     private func lautstaerkeStufe(_ schritt: Double) {
         lautstaerke = min(max((lautstaerke + schritt).rounded(toPlaces: 2), 0), 1)
+        lautstaerkeKurzZeigen()
+    }
+
+    /// Mausrad über dem Regler: stufenlos, ohne zu runden, 0 bis 1.
+    private func lautstaerkeRad(_ schritt: Double) {
+        lautstaerke = min(max(lautstaerke + schritt, 0), 1)
         lautstaerkeKurzZeigen()
     }
 

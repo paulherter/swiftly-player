@@ -137,6 +137,13 @@ struct ProfilView: View {
                     Wertezeile(symbol: "doc.text", titel: Text("Protokoll teilen"),
                                unter: Text("Die letzte Stunde, ohne Zugangsdaten"),
                                aktion: { protokollTeilen() })
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
+                    // Zuletzt, weil es nichts einstellt: hier steht, was in
+                    // der App steckt und wo der Quelltext von VLCKit liegt.
+                    Wertezeile(symbol: "text.book.closed", titel: Text("Open-Source-Lizenzen"),
+                               unter: Text("Was in Swiftly steckt, und der Quelltext von VLCKit"),
+                               pfeil: true,
+                               aktion: { navigator.oeffne(.lizenzen, in: bereich) })
                 }
 
                 // **Nicht getippt.** Hier stand „Swiftly 1.0" — seit der

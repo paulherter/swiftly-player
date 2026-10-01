@@ -78,3 +78,6 @@ __pycache__/
 # liegen nur auf den Bau-Rechnern; ohne die Datei gibt es in der App kein
 # Trakt. Aufbau steht in `Trakt.swift` beim Typ `TraktZugang`.
 Packages/JellyfinKit/Sources/JellyfinKit/Resources/Trakt.json
+
+# Beim Bau aus LICENSES/ kopiert (Linux/bauen.sh) - nie von Hand pflegen.
+Linux/Ressourcen/Lizenzen/

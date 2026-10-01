@@ -150,6 +150,9 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let productionLocations: [String]?
     /// `Tmdb`, `Imdb` … — über die TMDB-Kennung findet Seerr eine Person.
     public let providerIds: [String: String]?
+    /// Art eines Extras (`Clip`, `BehindTheScenes`, `Interview`, `Trailer` …);
+    /// nur an Einträgen aus `SpecialFeatures` gesetzt.
+    public let extraType: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -187,6 +190,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case premiereDate = "PremiereDate"
         case productionLocations = "ProductionLocations"
         case providerIds = "ProviderIds"
+        case extraType = "ExtraType"
     }
 
     /// Namen der Regie, für die Zeile unter der Beschreibung.
@@ -331,7 +335,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 parentThumbItemId: String? = nil,
                 premiereDate: String? = nil,
                 productionLocations: [String]? = nil,
-                providerIds: [String: String]? = nil) {
+                providerIds: [String: String]? = nil,
+                extraType: String? = nil) {
         self.id = id; self.name = name; self.type = type
         self.collectionType = collectionType; self.productionYear = productionYear
         self.overview = overview; self.runTimeTicks = runTimeTicks
@@ -354,6 +359,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.premiereDate = premiereDate
         self.productionLocations = productionLocations
         self.providerIds = providerIds
+        self.extraType = extraType
     }
 
 }

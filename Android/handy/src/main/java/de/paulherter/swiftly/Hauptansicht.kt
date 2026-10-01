@@ -311,8 +311,12 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "Einstellungen" -> EinstellungenSeite(app, oeffnen, zurueck)
         "Seerr" -> SeerrEinstellungenSeite(app, zurueck)
         "EigeneKoepfe" -> EigeneKoepfeSeite(app, zurueck)
+        "Lizenzen" -> LizenzenSeite(oeffnen, zurueck, app)
+        "Lizenz" -> LizenzSeite(ziel, zurueck, app)
+        "Lizenzangebot" -> LizenzangebotSeite(zurueck)
         "Seerrtitel" -> SeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
+        "Bibliothekswahl" -> BibliothekswahlSeite(app, zurueck)
         "Downloadserie" -> DownloadserieSeite(app, ziel, zurueck)
         else -> TitelSeite(app, ziel, oeffnen, zurueck)
     }

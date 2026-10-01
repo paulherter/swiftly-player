@@ -37,7 +37,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 17
+        versionCode = 18
         versionName = "1.0.5"
         // **Nur die ABIs, fuer die der Swift-Kern gebaut wird** (`kern/build.gradle`); auf jeder
         // anderen stuerzte die App beim Start. libVLC brachte vier ABIs mit — x86 lief nie.
@@ -97,3 +97,12 @@ val startanimationKopieren by tasks.registering(Copy::class) {
 }
 android.sourceSets.getByName("main").assets.srcDir(file("build/generated/startanimation"))
 tasks.named("preBuild") { dependsOn(startanimationKopieren) }
+
+// **Die Lizenztexte liegen einmal im Repo** (`LICENSES/`) und werden beim Bau als Assets unter
+// `lizenzen/` mitgegeben — die Seite „Open-Source-Lizenzen" liest sie von dort.
+val lizenzenKopieren by tasks.registering(Copy::class) {
+    from(rootProject.file("../LICENSES"))
+    into(layout.buildDirectory.dir("generated/lizenzen/lizenzen"))
+}
+android.sourceSets.getByName("main").assets.srcDir(file("build/generated/lizenzen"))
+tasks.named("preBuild") { dependsOn(lizenzenKopieren) }

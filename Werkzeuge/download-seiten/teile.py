@@ -294,7 +294,7 @@ def fuss(aktuell, mit_kopieren=False):
           <li><a href="/impressum.html">Impressum</a></li>
           <li><a href="/privacy.html">Privacy</a></li>
           <li><a href="/datenschutz.html">Datenschutz</a></li>
-          <li><a href="{GITHUB}/blob/main/LICENSE" target="_blank" rel="noopener">Licences</a></li>
+          <li><a href="/licenses/">Open-source licenses</a></li>
         </ul>
       </div>
     </div>
@@ -304,7 +304,8 @@ def fuss(aktuell, mit_kopieren=False):
       service mark of Apple Inc. Google Play and Android are trademarks of Google LLC. Windows is a
       trademark of Microsoft Corporation. The drawings on this page are our own and show no material
       from those companies. The code is under the MPL-2.0; the name, the wordmark and the app icon
-      are not.
+      are not. Playback uses VLCKit and libVLC by VideoLAN under the LGPL-2.1-or-later:
+      <a href="/licenses/">licenses and source</a>.
     </p>
   </div>
 </footer>
@@ -359,6 +360,11 @@ def mitmachen(titel, satz, punkte):
 {inhalt}
       </ul>
   </section>"""
+
+# Steht auf jeder Download-Seite: wer die App laedt, erfaehrt dort, dass VLCKit
+# bzw. libVLC drinsteckt und wo Lizenz und Quelltext liegen (LGPL 2.1, Abschnitt 6).
+VLC_HINWEIS = """  <p class="lizenzhinweis">Swiftly Player uses VLCKit and libVLC by VideoLAN under the LGPL 2.1 or later. <a href="/licenses/">Licenses and source</a></p>
+"""
 
 HILFE = f"""  <div class="hilfe">
     <p>Stuck somewhere? Ask on Discord.</p>

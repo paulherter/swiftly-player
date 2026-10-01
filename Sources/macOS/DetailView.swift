@@ -170,7 +170,7 @@ struct FilmView: View {
                                         herkunft: film.name)
                         // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
                         // Reihenfolge wie auf iOS (A9).
-                        Titelreihe(titel: "Extras", eintraege: extras, model: model)
+                        Titelreihe(titel: "Extras", eintraege: extras, model: model, spielen: true)
                         // Über „Ähnliches": die Sammlung ist die nähere
                         // Verwandtschaft. Nur bei Titeln, die in einer stehen.
                         ForEach(sammlungsreihen, id: \.sammlung.id) { reihe in
@@ -260,6 +260,10 @@ struct Titelreihe: View {
     let titel: LocalizedStringKey
     let eintraege: [Item]
     let model: AppModel
+    /// Extras sind etwas zum Abspielen: Klick startet sie, statt eine Seite
+    /// zu öffnen — wie auf iPhone und Apple TV.
+    var spielen = false
+    @Environment(Abspielsteuerung.self) private var steuerung
 
     var body: some View {
         if !eintraege.isEmpty {
@@ -269,7 +273,10 @@ struct Titelreihe: View {
                 Reihentitel(text: titel)
                 Blätterreihe(rand: 0) {
                     ForEach(eintraege, id: \.id) { eintrag in
-                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
+                        Button {
+                            if spielen { steuerung.starte(eintrag, ab: 0) }
+                            else { navigator.oeffne(.titel(eintrag), in: bereich) }
+                        } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true),

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.gemeinsam.Stil
@@ -113,6 +114,10 @@ fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> U
             // Neben „Fehler melden", weil es dazugehoert: wer im Discord einen Fehler meldet, haengt das hier an.
             Profilzeile(Zeichen.Dokument, uebersetzt("Protokoll teilen"), uebersetzt("Die letzte Stunde, ohne Zugangsdaten")) {
                 Protokolldatei.teilen(kontext)
+            }
+            Trennlinie()
+            Profilzeile(Zeichen.Dokument, uebersetzt("Open-Source-Lizenzen")) {
+                oeffnen(Ziel("lizenzen", uebersetzt("Open-Source-Lizenzen"), "Lizenzen"))
             }
         }
         // Weiss auf 30 Prozent ist gerechnet 2,67:1 und fuer Text verboten (BRAND 1).
@@ -278,6 +283,32 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
         }
         Fusszeile(uebersetzt("Zum Umsortieren an den Griffen rechts ziehen."))
 
+        // Vorlage: `bibliotheksreihen` in `DarstellungView` — eigene Reihen aus Bibliotheken und Sammlungen
+        // des Servers, nach den festen Reihen, untereinander sortierbar.
+        Einstellungsgruppe(uebersetzt("Bibliotheken und Sammlungen")) {
+            Umsortierbar(e.startBibliotheken, { it.id }, verschieben = { b, schritt ->
+                val liste = e.startBibliotheken.toMutableList()
+                val von = liste.indexOfFirst { it.id == b.id }
+                val nach = (von + schritt).coerceIn(0, liste.lastIndex)
+                if (von >= 0 && von != nach) { liste.removeAt(von); liste.add(nach, b); e.startBibliotheken = liste }
+            }) { b ->
+                Row(Modifier.fillMaxWidth().padding(start = Stil.randAbstand).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Der Name kommt vom Server, nicht uebersetzt.
+                    Text(b.name, style = Stil.koerper, color = Stil.schrift, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.size(44.dp).antippen { e.startBibliotheken = e.startBibliotheken.filter { it.id != b.id } }, contentAlignment = Alignment.Center) {
+                        Symbol(Zeichen.KreuzKreis, 17.dp, farbe = Stil.schriftSehrLeise, beschreibung = uebersetzt("Löschen"))
+                    }
+                }
+            }
+            if (e.startBibliotheken.isNotEmpty()) Trennlinie()
+            Row(Modifier.fillMaxWidth().druckzeile { oeffnen(Ziel("bibliothekswahl", uebersetzt("Bibliothek hinzufügen"), "Bibliothekswahl")) }
+                    .padding(horizontal = Stil.randAbstand, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.width(Stil.zeichenSpalte), contentAlignment = Alignment.Center) { Symbol(Zeichen.Plus, 15.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett) }
+                Text(uebersetzt("Bibliothek hinzufügen"), style = Stil.listentitel, color = Stil.akzent)
+            }
+        }
+
         Einstellungsgruppe(uebersetzt("Genres")) {
             // Eine Liste, zwei Formen.
             Darstellungsform(Zeichen.Zeilen, uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
@@ -394,3 +425,36 @@ fun GenrewahlSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         }
     }
 }
+
+/** Vorlage: `BibliothekswahlView` — Bibliotheken und Sammlungen des Servers, die noch nicht auf der Startseite stehen. Ein Tipp nimmt eine auf. */
+@Composable
+fun BibliothekswahlSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
+    val e = app.einstellungen
+    var frei by remember { mutableStateOf<List<Startbib>?>(null) }
+    LaunchedEffect(Unit) { frei = startAuswahlLaden(app) }
+    Einstellungsseite(uebersetzt("Bibliothek hinzufügen"), zurueck) {
+        val liste = frei ?: return@Einstellungsseite
+        if (liste.isEmpty()) {
+            // Zwei Faelle, zwei Saetze: der Server hat keine, oder alle stehen schon da.
+            Text(uebersetzt(if (e.startBibliotheken.isEmpty()) "Auf deinem Server gibt es keine Bibliotheken." else "Alle Bibliotheken und Sammlungen stehen schon auf der Startseite."),
+                 style = Stil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 8.dp))
+        } else {
+            Einstellungsgruppe(uebersetzt("Auf deinem Server")) {
+                liste.forEachIndexed { i, b ->
+                    if (i > 0) Trennlinie()
+                    Box(Modifier.antippen { e.startBibliotheken = e.startBibliotheken + b; zurueck() }) {
+                        Wertzeile(if (b.sammlung) Zeichen.Ablage else Zeichen.Raster, b.name)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Was als eigene Startreihe zur Wahl steht (`Kern.startAuswahl`); bei einem Fehler leer. */
+suspend fun startAuswahlLaden(app: SwiftlyAnwendung): List<Startbib> = try {
+    val roh = app.einstellungen.startBibliothekenJson()
+    JSONArray(withContext(Dispatchers.IO) { app.kern.startAuswahl(roh).await() }).let { a ->
+        (0 until a.length()).map { a.getJSONObject(it).let { o -> Startbib(o.getString("id"), o.optString("name"), o.optBoolean("sammlung", false)) } }
+    }
+} catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }

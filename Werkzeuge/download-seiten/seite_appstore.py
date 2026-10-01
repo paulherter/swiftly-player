@@ -117,6 +117,7 @@ seite = kopf(
 
 {andere("/download/app-store/")}
 
+{VLC_HINWEIS}
 {HILFE}
 """ + fuss("/download/app-store/")
 

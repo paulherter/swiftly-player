@@ -353,7 +353,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
                                     app.ablage.merkwert("bibliothek-movies").orEmpty(), app.ablage.merkwert("bibliothek-tvshows").orEmpty(),
-                                    e.startGenres.toTypedArray(), e.genreChips).await()
+                                    e.startGenres.toTypedArray(), e.genreChips, e.startBibliothekenJson()).await()
             }
         }.onSuccess { json ->
             val liste = reihenLesen(json).also { app.startReihen = it }
@@ -368,7 +368,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             }
         }.onFailure { gestoert = true }
     }
-    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) { laden() }
+    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips, e.startBibliotheken.map { it.id }) { laden() }
     // **D8: der Player macht neu, ohne Frist; der Vordergrund macht neu, mit 30 s Frist.**
     // Derselbe Auslauf wie `StartSeite.kt` auf dem Telefon — der Player liegt auch auf dem
     // Fernseher in einer eigenen Aktivitaet (Bild-im-Bild, Vordergrunddienst), nicht in einer

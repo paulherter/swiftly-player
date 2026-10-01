@@ -531,9 +531,14 @@ public final class Kern: @unchecked Sendable {
     /// Namen aus den Einstellungen (wie `startReihen`/`startAus` auf Apple).
     public func startseite(getrennt: Bool, abgelegt: [String], aus: [String],
                            filmBibliothek: String, serienBibliothek: String,
-                           gattungen: [String], alsChips: Bool) async throws -> String {
+                           gattungen: [String], alsChips: Bool, bibliotheken: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+            // Die gewaehlten Bibliotheken und Sammlungen (`Startbibliotheken`, liest tolerant),
+            // zugleich mit den festen Reihen geholt.
+            let wahl = Startbibliotheken.lesen(Data(bibliotheken.utf8))
+            async let bibliotheksstand: [Startseite.Bibliotheksreihe] = wahl.isEmpty ? [] :
+                Startseitenlader.bibliotheksreihen(von: c, wahl: wahl)
             // Ohne gemerkte Wahl sucht der Lader die Bibliothek ihrer Art
             // selbst und faellt sonst auf die Abfrage ohne Bibliothek zurueck
             // (`Startseitenlader.neu`) — wie auf Linux und Apple.
@@ -560,6 +565,14 @@ public final class Kern: @unchecked Sendable {
                     return Reihenantwort(titelSchluessel: r.reihentitel, name: nil, quer: quer,
                                          kacheln: items.map { kachel($0, neuzugang: neu, mitMarke: marke, a) })
                 }
+            // Zwischen den festen Reihen und den Genre-Reihen, in der Folge der Wahl.
+            let je = Dictionary((await bibliotheksstand).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            reihen += wahl.compactMap { w in
+                guard let r = je[w.id] else { return nil }
+                return Reihenantwort(titelSchluessel: nil, name: w.name, quer: false,
+                                     kacheln: r.items.map { kachel($0, neuzugang: false, mitMarke: true, a) },
+                                     bibliothek: w.id, sammlung: w.sammlung)
+            }
             reihen += stand.gattungsreihen.map {
                 Reihenantwort(titelSchluessel: nil, name: $0.name, quer: false,
                               kacheln: $0.items.map { kachel($0, neuzugang: false, mitMarke: true, a) })
@@ -919,6 +932,25 @@ public final class Kern: @unchecked Sendable {
         let kodierer = JSONEncoder()
         kodierer.outputFormatting = [.sortedKeys]
         return (try? kodierer.encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+    }
+
+    // MARK: Startreihen aus Bibliotheken
+
+    /// Was als eigene Startreihe zur Wahl steht (`AppModel.startAuswahl`): die Bibliotheken des
+    /// Kontos und seine Sammlungen, ohne das schon Gewaehlte (`gewaehlt` = abgelegte Wahl als JSON).
+    /// Antwort: `[{"id","name","sammlung"}]`.
+    public func startAuswahl(gewaehlt: String) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client else { throw Kernfehler.nichtVerbunden }
+            let ansichten = try await ansichten(c)
+            await angebotLaden()
+            let sammlungen = verzeichnis(c)?.alle.map(\.item) ?? []
+            let frei = Startbibliotheken.auswahl(
+                bibliotheken: ansichten.filter { Startbibliotheken.waehlbar($0) },
+                sammlungen: sammlungen,
+                gewaehlt: Startbibliotheken.lesen(Data(gewaehlt.utf8)))
+            return try json(frei.map { Startbibliothek($0) })
+        }
     }
 
     // MARK: Genre
@@ -3470,6 +3502,9 @@ struct Reihenantwort: Encodable {
     let name: String?
     let quer: Bool
     let kacheln: [Kachelantwort]
+    /// Nur bei einer gewaehlten Bibliothek oder Sammlung: ihre Kennung — der Kopf der Reihe oeffnet sie.
+    var bibliothek: String? = nil
+    var sammlung: Bool = false
 }
 struct Rasterseitenantwort: Encodable { let titel: [Rasterkachelantwort]; let gesamt: Int }
 struct Rasterkachelantwort: Encodable {

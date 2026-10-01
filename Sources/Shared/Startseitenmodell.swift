@@ -27,6 +27,18 @@ final class Startseitenmodell {
     /// Die gewählten Genres als eigene Reihen — nur, wenn keine Chips.
     private(set) var gattungsreihen: [Gattungsreihe] = []
 
+    /// Die gewählten Bibliotheken und Sammlungen als eigene Reihen. Gezeigt
+    /// wird in der Folge der Wahl (`bibliotheksreihen(fuer:)`), nicht in der
+    /// des Abrufs.
+    private(set) var bibliotheksreihen: [Startseite.Bibliotheksreihe] = []
+
+    /// Die Reihen zur **jetzigen** Wahl: was nicht mehr gewählt ist, fällt
+    /// sofort weg, auch wenn der nächste Abruf noch läuft.
+    func bibliotheksreihen(fuer wahl: [Startbibliothek]) -> [Startseite.Bibliotheksreihe] {
+        let je = Dictionary(bibliotheksreihen.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return wahl.compactMap { je[$0.id] }
+    }
+
     struct Gattungsreihe: Identifiable {
         let name: String
         let items: [Item]
@@ -65,6 +77,7 @@ final class Startseitenmodell {
         weiterschauen.isEmpty && naechsteFolge.isEmpty
             && zuletzt.isEmpty && neueFilme.isEmpty && neueSerien.isEmpty
             && gattungsreihen.allSatisfy { $0.items.isEmpty }
+            && bibliotheksreihen.isEmpty
     }
 
     /// Der Stand gehört zu einem früheren Konto — die Startseite war beim
@@ -128,6 +141,13 @@ final class Startseitenmodell {
             Startseitenlader.gattungsreihen(von: client, namen: model.startGenres)
                 .map { Gattungsreihe(name: $0.name, items: $0.items) }
 
+        // **Die Bibliotheksreihen laufen ebenso nebenher**, alle zugleich und
+        // höchstens einmal je Lauf. Eine Bibliothek, die es nicht mehr gibt
+        // oder die dem Profil nicht gehört, liefert nichts und fällt still weg.
+        let wahl = model.startBibliotheken
+        async let bibliotheksstand: [Startseite.Bibliotheksreihe] = wahl.isEmpty ? [] :
+            Startseitenlader.bibliotheksreihen(von: client, wahl: wahl)
+
         // **Die Regel steht im Paket** (`Startseitenlader`), gemeinsam mit
         // Linux/Windows und Android. Hier wird nur noch in den Zustand
         // uebernommen — mit derselben Unterscheidung wie vorher: kam ein Abruf
@@ -150,6 +170,7 @@ final class Startseitenmodell {
         // beim Auffrischen einer stehenden Seite bleibt es beim Nachreichen.
         let ersteMal = !geladen
         let vorab: [Gattungsreihe]? = ersteMal ? await gattungen : nil
+        let vorabBibliotheken: [Startseite.Bibliotheksreihe]? = ersteMal ? await bibliotheksstand : nil
         guard gilt() else { return }
         let wechsel = diesesKonto != fuerKonto
         fuerKonto = diesesKonto
@@ -188,6 +209,13 @@ final class Startseitenmodell {
             let frische = await gattungen
             guard gilt() else { return }
             if !frische.isEmpty || wechsel || model.genreChips { gattungsreihen = frische }
+        }
+        if let vorabBibliotheken {
+            bibliotheksreihen = vorabBibliotheken
+        } else {
+            let frische = await bibliotheksstand
+            guard gilt() else { return }
+            if !frische.isEmpty || wechsel || wahl.isEmpty { bibliotheksreihen = frische }
         }
         // **Nicht auf dem Fernseher.** Das Vorholen fuellt den Vorrat, den
         // `Serienspeicher.serie(fuer:mit:)` liest — und das tun nur iPhone,
@@ -292,6 +320,7 @@ final class Startseitenmodell {
         neueFilme = []
         neueSerien = []
         gattungsreihen = []
+        bibliotheksreihen = []
         geladen = false
         gestoert = false
         zuletztGeladen = nil

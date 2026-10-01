@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// **Lautstärke im Player** — Lautsprecher-Knopf als erster der Symbolreihe;
@@ -14,8 +15,12 @@ struct Lautstaerkeregler: View {
     /// Zieht gerade jemand? Der Player blendet die Leiste dann nicht aus.
     @Binding var zieht: Bool
     let stummUmschalten: () -> Void
+    /// Das Rad hat den Wert verstellt (Anteil von 0 bis 1, mit Vorzeichen).
+    /// Der Player hält dann die Leiste und den Regler offen.
+    let radGedreht: (Double) -> Void
 
     @State private var drueber = false
+    @State private var radfang = Radfang()
 
     private var offen: Bool { drueber || zieht || aufgeklappt }
 
@@ -51,7 +56,11 @@ struct Lautstaerkeregler: View {
                         beschriftung: wert <= 0 ? "Ton an" : "Ton aus",
                         mass: mass, aktion: stummUmschalten)
         }
-        .onHover { drueber = $0 }
+        .onHover { innen in
+            drueber = innen
+            if innen { radfang.starten(radGedreht) } else { radfang.beenden() }
+        }
+        .onDisappear { radfang.beenden() }
         .animation(Stil.bewegungReduziert ? nil : .easeOut(duration: 0.18), value: offen)
         .accessibilityElement(children: .contain)
     }
@@ -61,6 +70,41 @@ struct Lautstaerkeregler: View {
     /// Hälfte darüber hinaus, schnitt ihn das Fach an einer harten Kante ab.
     static func griffX(_ wert: Double, breite: CGFloat) -> CGFloat {
         6 + (breite - 12) * CGFloat(min(max(wert, 0), 1))
+    }
+
+    /// **Mausrad und Zwei-Finger-Scrollen über Regler und Lautsprecher.**
+    ///
+    /// Ein Ereignisfänger statt einer Ansicht darüber: die läge über dem
+    /// Regler und nähme ihm die Klicks. Er läuft nur, solange der Zeiger
+    /// darüber steht, und **schluckt** das Ereignis — sonst scrollte darunter
+    /// weiter, was das Rad sonst bekäme.
+    ///
+    /// `scrollingDeltaY` trägt die Systemrichtung schon in sich (natürliches
+    /// Scrollen an oder aus), nach oben ist lauter. Ein Rad rastet: eine
+    /// Raststufe sind 5 %, höchstens drei auf einmal. Ein Touchpad liefert
+    /// Punkte: 24 Punkte sind 5 %, **ohne Runden**, damit kein kleiner Schub
+    /// verschluckt wird.
+    @MainActor
+    final class Radfang {
+        private var fang: Any?
+
+        func starten(_ gedreht: @escaping (Double) -> Void) {
+            guard fang == nil else { return }
+            fang = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { ereignis in
+                let d = Double(ereignis.scrollingDeltaY)
+                guard d != 0 else { return nil }
+                let schritt = ereignis.hasPreciseScrollingDeltas
+                    ? d / 24 * 0.05
+                    : min(max(d, -3), 3) * 0.05
+                gedreht(schritt)
+                return nil
+            }
+        }
+
+        func beenden() {
+            if let fang { NSEvent.removeMonitor(fang) }
+            fang = nil
+        }
     }
 
     private struct Regler: View {

@@ -1327,15 +1327,15 @@ def seite(titel, beschreibung, url, inhalt, og_typ="website", zusatz_kopf="", ld
           <li><a href="/impressum.html">Impressum</a></li>
           <li><a href="/privacy.html">Privacy</a></li>
           <li><a href="/datenschutz.html">Datenschutz</a></li>
-          <li><a href="{GITHUB}/blob/main/LICENSE" target="_blank" rel="noopener">Licences</a></li>
+          <li><a href="/licenses/">Open-source licenses</a></li>
         </ul>
       </div>
     </div>
     <div class="fuss__linie"></div>
     <p class="fuss__klein">
       Swiftly Player is not part of the Jellyfin project and hosts nothing itself. The code is
-      under the MPL-2.0; the name, the wordmark and the app icon are not. Playback uses VLCKit
-      under the LGPL-2.1-or-later. App Store is a service mark of Apple Inc. The Android robot is
+      under the MPL-2.0; the name, the wordmark and the app icon are not. Playback uses VLCKit and
+      libVLC by VideoLAN under the LGPL-2.1-or-later: <a href="/licenses/" style="color:inherit;text-decoration:underline">licenses and source</a>. App Store is a service mark of Apple Inc. The Android robot is
       reproduced or modified from work created and shared by Google and used according to terms
       described in the Creative Commons 3.0 Attribution License.
     </p>
@@ -2132,6 +2132,18 @@ def sitemap_eintraege(liste, seiten):
     return eintraege
 
 
+NOINDEX_SEIT = "2026-09-28"
+
+
+def sitemap_noindex(liste, seiten):
+    """Zweite Sitemap nur mit den Adressen, die auf noindex stehen. Google ruft
+    sie dadurch zuegig neu ab und sieht das noindex; sonst bleiben sie wochenlang
+    mit altem Stand im Index. Kann weg, sobald site: sie nicht mehr zeigt."""
+    heute = dt.date.today()
+    return ([{"loc": s["url"], "lastmod": NOINDEX_SEIT} for s in seiten if not s["index"]]
+            + [{"loc": a["url"], "lastmod": NOINDEX_SEIT} for a in liste if not a["index"] and a["datum"] <= heute])
+
+
 def llms_kopf(seiten):
     zeilen = ["# Swiftly Player", "",
               "> A free, open-source video player for your own Jellyfin server. It plays files as Direct Play "
@@ -2306,6 +2318,7 @@ def bauen_live(artikel, seiten):
     schreiben(os.path.join(WEBSITE, ".htaccess"), HTACCESS_WURZEL)
     # Rueckfall, falls ein Rewrite fehlt: ohne Blog, damit nichts Kuenftiges durchsickert.
     schreiben(os.path.join(WEBSITE, "sitemap.xml"), sitemap_text(sitemap_eintraege([], seiten)))
+    schreiben(os.path.join(WEBSITE, "sitemap-recrawl.xml"), sitemap_text(sitemap_noindex(liste, seiten)))
     schreiben(os.path.join(WEBSITE, "llms.txt"), "\n".join(llms_kopf(seiten)))
     landingpages_bauen(WEBSITE, seiten)
     startseite_pflegen(seiten)

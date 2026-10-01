@@ -43,6 +43,9 @@ final class Lautstaerkeregler: @unchecked Sendable {
     var geaendert: ((Double) -> Void)?
     /// Ziehen beginnt oder endet.
     var ziehen: ((Bool) -> Void)?
+    /// Das Rad dreht über Regler oder Lautsprecher: Anteil von 0 bis 1 mit
+    /// Vorzeichen, **nicht gerundet**.
+    var radGedreht: ((Double) -> Void)?
 
     init(wert: Double, zeichen: Playerzeichen, knopf: Widget) {
         self.wert = min(max(wert, 0), 1)
@@ -87,6 +90,27 @@ final class Lautstaerkeregler: @unchecked Sendable {
                               unsafeBitCast(reglerZugEnde, to: GCallback.self),
                               daten, nil, GConnectFlags(rawValue: 0))
         gtk_widget_add_controller(huelle, geste)
+
+        // **Mausrad und Zwei-Finger-Scrollen** (Mac: `Radfang`). Auf der
+        // ganzen Hülle, also über Regler und Lautsprecher; der Rückruf
+        // meldet `TRUE`, damit das Ereignis nicht nach oben weiterläuft.
+        let rad = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL)
+        g_signal_connect_data(UnsafeMutableRawPointer(rad), "scroll",
+                              unsafeBitCast(reglerRad, to: GCallback.self),
+                              daten, nil, GConnectFlags(rawValue: 0))
+        gtk_widget_add_controller(huelle, rad)
+    }
+
+    /// Eine Raststufe des Rads sind 5 %, höchstens drei auf einmal; ein
+    /// Touchpad liefert Punkte, 24 davon sind 5 % — ohne Runden, damit kein
+    /// kleiner Schub verschluckt wird. GTK zählt nach unten positiv, lauter
+    /// ist also nach oben: das Vorzeichen kehrt sich um, die Systemrichtung
+    /// (natürliches Scrollen) steckt schon in `dy`.
+    fileprivate func radStand(dy: Double, rast: Bool) -> Bool {
+        guard lebt, dy != 0 else { return true }
+        let anteil = rast ? min(max(dy, -3), 3) * 0.05 : dy / 24 * 0.05
+        radGedreht?(-anteil)
+        return true
     }
 
     // MARK: Zustand
@@ -222,6 +246,15 @@ nonisolated(unsafe) private let reglerZugEnde: @convention(c) (
 ) -> Void = { _, _, _, daten in
     guard let daten else { return }
     Unmanaged<Lautstaerkeregler>.fromOpaque(daten).takeUnretainedValue().zugEnde()
+}
+
+nonisolated(unsafe) private let reglerRad: @convention(c) (
+    UnsafeMutableRawPointer?, Double, Double, gpointer?
+) -> Int32 = { horcher, _, dy, daten in
+    guard let daten, let horcher else { return 0 }
+    let r = Unmanaged<Lautstaerkeregler>.fromOpaque(daten).takeUnretainedValue()
+    let rast = gtk_event_controller_scroll_get_unit(OpaquePointer(horcher)) == GDK_SCROLL_UNIT_WHEEL
+    return r.radStand(dy: dy, rast: rast) ? 1 : 0
 }
 
 nonisolated(unsafe) private let reglerFeldMalen: @convention(c) (

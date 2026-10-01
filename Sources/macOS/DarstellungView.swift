@@ -38,7 +38,7 @@ struct DarstellungView: View {
                 HStack(alignment: .top, spacing: Stil.randAbstand * 2) {
                     VStack(alignment: .leading, spacing: 0) { allgemein; reihen }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) { genres }
+                    VStack(alignment: .leading, spacing: 0) { bibliotheksreihen; genres }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -126,6 +126,45 @@ struct DarstellungView: View {
     }
 
 
+    // MARK: Bibliotheken und Sammlungen
+
+    /// Eigene Reihen aus dem Server, in der Folge dieser Liste, nach den
+    /// festen Reihen. Wie bei den Genres: ziehen am Griff, Kreuz zum Entfernen.
+    private var bibliotheksreihen: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Einstellungsgruppe(titel: "Bibliotheken und Sammlungen") {
+                ForEach(model.startBibliotheken) { eintrag in
+                    Genrezeile(name: eintrag.name, symbol: eintrag.sammlung ? "square.stack" : "rectangle.stack") {
+                        withAnimation(Stil.einblenden) {
+                            model.startBibliotheken.removeAll { $0.id == eintrag.id }
+                        }
+                    }
+                    .ziehbar("bibliothek:" + eintrag.id, ueber: $ueber) { quelle in
+                        bibliothekAblegen(quelle, auf: eintrag.id)
+                    }
+                    Blattlinie().padding(.leading, Stil.trennEinzugKarte)
+                }
+                Button { navigator.oeffne(.bibliothekswahl, in: bereich) } label: {
+                    Wertezeile(symbol: "plus", titel: Text("Bibliothek hinzufügen"),
+                               akzent: true, pfeil: true, schwebbar: true)
+                }
+                .buttonStyle(Stil.Druckzeile())
+            }
+        }
+        .padding(.bottom, 22)
+    }
+
+    private func bibliothekAblegen(_ quelle: String, auf ziel: String) {
+        let bewegt = String(quelle.dropFirst("bibliothek:".count))
+        guard bewegt != ziel,
+              let von = model.startBibliotheken.firstIndex(where: { $0.id == bewegt }),
+              let nach = model.startBibliotheken.firstIndex(where: { $0.id == ziel }) else { return }
+        withAnimation(Stil.einblenden) {
+            let eintrag = model.startBibliotheken.remove(at: von)
+            model.startBibliotheken.insert(eintrag, at: nach)
+        }
+    }
+
     // MARK: Genres
 
     /// **Eine Liste, zwei Formen.** Welche Genres, stellt man einmal ein; ob
@@ -188,13 +227,14 @@ struct DarstellungView: View {
 /// steht dafür ein Knopf, wie überall sonst im Fenster.
 private struct Genrezeile: View {
     let name: String
+    var symbol = "tag"
     let entfernen: () -> Void
 
     @State private var schwebt = false
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "tag")
+            Image(systemName: symbol)
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
                 .frame(width: 20)
@@ -378,5 +418,57 @@ struct GenrewahlView: View {
         gestoert = geholt == nil
         if let geholt { alle = geholt }
         geladen = true
+    }
+}
+
+
+/// **Eine Bibliothek oder Sammlung als Startreihe wählen.** Ein Klick nimmt
+/// sie auf und geht zurück; was schon gewählt ist, steht hier nicht mehr.
+struct BibliothekswahlView: View {
+    let model: AppModel
+    let zurueck: () -> Void
+
+    @State private var auswahl: [Item] = []
+    @State private var geladen = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Unterseitenkopf(titel: "Bibliothek hinzufügen", zurueck: zurueck)
+
+                if geladen, auswahl.isEmpty {
+                    Text(model.views.isEmpty ? "Auf deinem Server gibt es keine Bibliotheken."
+                                             : "Alle Bibliotheken und Sammlungen stehen schon auf der Startseite.")
+                        .font(Stil.koerper)
+                        .foregroundStyle(Stil.schriftLeise)
+                        .padding(.top, 22)
+                } else if !auswahl.isEmpty {
+                    Einstellungsgruppe(titel: "Auf deinem Server") {
+                        ForEach(Array(auswahl.enumerated()), id: \.element.id) { stelle, item in
+                            if stelle > 0 { Blattlinie().padding(.leading, Stil.trennEinzugKarte) }
+                            Button {
+                                model.startBibliotheken.append(Startbibliothek(item))
+                                zurueck()
+                            } label: {
+                                Wertezeile(symbol: item.type == "BoxSet" ? "square.stack" : "rectangle.stack",
+                                           titel: Text(verbatim: item.name), schwebbar: true)
+                            }
+                            .buttonStyle(Stil.Druckzeile())
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Stil.randAbstand)
+            .padding(.top, Stil.inhaltOben)
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.never)
+        .seitenscrollen()
+        .task {
+            auswahl = await model.startAuswahl()
+            geladen = true
+        }
     }
 }

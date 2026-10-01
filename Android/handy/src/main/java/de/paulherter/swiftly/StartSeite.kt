@@ -87,7 +87,9 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
  * Watch-Next-Regal braucht den rohen Schluessel: er bleibt in jeder Spracheinstellung
  * derselbe, der uebersetzte Titel nicht.
  */
-data class Reihe(val titel: String, val schluessel: String?, val quer: Boolean, val kacheln: List<Kachel>)
+data class Reihe(val titel: String, val schluessel: String?, val quer: Boolean, val kacheln: List<Kachel>,
+                 /** Nur bei einer gewaehlten Bibliothek oder Sammlung: ihre Kennung; der Kopf oeffnet sie. */
+                 val bibliothek: String? = null)
 
 /** Liest die Antwort von `Kern.startseite` — die Reihen stehen dort schon fertig. */
 internal fun reihenLesen(json: String): List<Reihe> {
@@ -97,7 +99,8 @@ internal fun reihenLesen(json: String): List<Reihe> {
         val schluessel = if (r.isNull("titelSchluessel")) null else r.getString("titelSchluessel")
         val titel = schluessel?.let { uebersetzt(it) } ?: r.optString("name")
         val kacheln = r.getJSONArray("kacheln")
-        Reihe(titel, schluessel, r.getBoolean("quer"), (0 until kacheln.length()).map { k ->
+        val bibliothek = r.optString("bibliothek").takeIf { r.has("bibliothek") && !r.isNull("bibliothek") && it.isNotEmpty() }
+        Reihe(titel, schluessel, r.getBoolean("quer"), bibliothek = bibliothek, kacheln = (0 until kacheln.length()).map { k ->
             val o = kacheln.getJSONObject(k)
             Kachel(o.getString("id"), o.getString("name"), o.getString("typ"),
                    o.optString("unterzeile").takeIf { !o.isNull("unterzeile") },
@@ -153,7 +156,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             val json = withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
                                     app.ablage.merkwert("bibliothek-movies").orEmpty(), app.ablage.merkwert("bibliothek-tvshows").orEmpty(),
-                                    e.startGenres.toTypedArray(), e.genreChips).await()
+                                    e.startGenres.toTypedArray(), e.genreChips, e.startBibliothekenJson()).await()
             }
             reihen = reihenLesen(json).also { app.startReihen = it }
             app.startGeladenUm = System.currentTimeMillis()
@@ -163,7 +166,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         }
     }
     // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
-    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) { laden() }
+    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips, e.startBibliotheken.map { it.id }) { laden() }
     // **Nach dem Zusehen neu holen, ohne Frist** (D8): „Weiterschauen" ist dann sicher veraltet.
     val spielt = app.spiel.value != null
     var hatGespielt by remember { mutableStateOf(false) }
@@ -243,7 +246,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 Box(Modifier.reihenauftritt(0)) { Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) } }
             }
             val sichtbar = if (wechselt) emptyList() else reihen ?: emptyList()
-            itemsIndexed(sichtbar, key = { _, r -> r.titel }) { i, reihe ->
+            itemsIndexed(sichtbar, key = { _, r -> (r.bibliothek?.let { "bib$it" } ?: r.titel) }) { i, reihe ->
                 ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, nachher,
                              Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null).reihenauftritt(i + 1))
             }
@@ -269,8 +272,10 @@ private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, versatz: (
 private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, nachher: () -> Unit, modifier: Modifier = Modifier) {
     // 12 zwischen Titel und Reihe; der Titel traegt die Sperrung seiner Stufe (−0,24).
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Eine gewaehlte Bibliothek oder Sammlung: der Kopf oeffnet sie (Vorlage: `Reihe` mit `ziel` in HomeView).
+        val kopf = Modifier.padding(horizontal = Stil.randAbstand)
         Text(reihe.titel, style = Stil.reihe, color = Stil.schrift,
-             modifier = Modifier.padding(horizontal = Stil.randAbstand))
+             modifier = if (reihe.bibliothek != null) kopf.antippen { oeffnen(sammlungsziel(reihe.bibliothek, reihe.titel, null)) } else kopf)
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
             items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer, weiterschauen = reihe.quer, nachher) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }

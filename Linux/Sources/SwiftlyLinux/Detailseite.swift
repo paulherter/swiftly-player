@@ -295,8 +295,7 @@ extension App {
                     anhaengen(block, self.besetzungsreihe(titel.darsteller, herkunft: titel.name))
                 }
                 if !extras.isEmpty {
-                    anhaengen(block, self.reiheBauen(titel: uebersetzt("Extras"), art: .neu,
-                                                     items: extras))
+                    anhaengen(block, self.extrareihe(extras, titel: uebersetzt("Extras")))
                 }
                 // Über „Ähnliches": die Sammlung ist die nähere Verwandtschaft.
                 for (sammlung, andere) in sammlungen {
