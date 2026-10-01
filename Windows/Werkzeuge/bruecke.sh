@@ -22,8 +22,10 @@ rm -rf "$lieferung"; mkdir -p "$lieferung"
 # Bau. `COPYFILE_DISABLE` verhindert, dass bsdtar neue erzeugt.
 ( cd "$wurzel" && COPYFILE_DISABLE=1 bsdtar -a -cf "$lieferung/quellen.zip" \
       --exclude '*/.build/*' --exclude '*/.git/*' --exclude '._*' \
-      Linux/Sources Linux/Ressourcen Windows Packages/JellyfinKit )
+      Linux/Sources Linux/Ressourcen Windows Packages/JellyfinKit \
+      LICENSES LICENSE THIRD-PARTY-NOTICES.md )
 cp "$(dirname "${BASH_SOURCE[0]}")/hol.ps1" "$lieferung/hol.ps1"
+cp "$(dirname "${BASH_SOURCE[0]}")/release.ps1" "$lieferung/release.ps1"
 
 pkill -f "http.server ${port}" 2>/dev/null || true
 # **Alle drei Kanaele abklemmen, nicht nur zwei.** Ohne `< /dev/null` haelt
