@@ -323,6 +323,8 @@ struct HauptView: View {
         // `Stil.einblenden` statt einer eigenen Kurve: dieselbe Dauer, und
         // bei reduzierter Bewegung wird aus dem Hereinblenden ein kurzer Wechsel.
         .animation(Stil.einblenden, value: steuerung.wunsch?.id)
+        .focusedSceneValue(\.playerOffen, steuerung.wunsch != nil)
+        .focusedSceneValue(\.downloadsAn, model.downloadsAn)
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }
             ausfuehren(kommando)
@@ -672,7 +674,15 @@ struct HauptView: View {
     /// einen anderen Bereich, und zurueck auf „Start" lag das Profil wieder
     /// obenauf. Das Zweite erledigt `.onChange(of: bereich)`.
     private func bereichWaehlen(_ neu: Bereich) {
-        if neu == bereich { kontozweigZu(animiert: true) }
+        if neu == bereich {
+            // Auf dem Mac führt der Klick auf die aktive Zeile zur Wurzel
+            // (wie im Finder); liegt der Kontozweig darauf, schließt zuerst er.
+            if navigator.imKonto(bereich) {
+                kontozweigZu(animiert: true)
+            } else {
+                navigator.zurueck(in: bereich, bis: 0)
+            }
+        }
         bereich = neu
     }
 
@@ -724,6 +734,10 @@ struct HauptView: View {
             // ein Fehler, kein Schönheitsproblem. Liegt die Seite schon
             // irgendwo, bleibt es dabei — sie ist ja offen.
             navigator.oeffne(.einstellungen, in: bereich)
+        // Gehören dem Player; hier, hinter keinem Film, tun sie nichts.
+        case .spielUmschalten, .spielZurueck, .spielVor, .spielVollbild,
+             .spielPause, .lauter, .leiser, .stumm:
+            break
         }
     }
 }

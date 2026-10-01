@@ -84,7 +84,7 @@ struct Sammlungsmosaik: View {
         .frame(width: breite, height: hoehe)
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
         .task(id: sammlung.id) {
-            let gefunden = await model.sammlungstitel(sammlung, art: art)
+            let gefunden = await model.sammlungsplakate(sammlung, art: art)
             withAnimation(Stil.einblenden) { titel = Array((gefunden ?? []).prefix(4)) }
         }
     }

@@ -193,7 +193,13 @@ if [ "${aus_quelle:-0}" = "0" ]; then
         if [ -e "$ZIEL/share/$PROGRAMM/$PROGRAMM" ] || [ -L "$ZIEL/bin/$PROGRAMM" ]; then
             leise "Eine aeltere, selbst gebaute Fassung unter $ZIEL wird entfernt."
             eigene_fassung_entfernen
-            leise "Laeuft Swiftly gerade, einmal beenden und neu starten."
+        fi
+        # **Eine noch laufende alte Kopie hielte den Namen auf D-Bus.** Dann
+        # holte ein Klick auf das Symbol sie nach vorn statt der eben
+        # installierten Fassung (01.10.2026, CachyOS). Beendet wird nur, was
+        # aus einem Swiftly-Verzeichnis laeuft; die Einstellungen bleiben.
+        if pkill -f '/swiftly-jellyfin/swiftly-jellyfin( |$)' 2>/dev/null; then
+            leise "Eine laufende aeltere Swiftly-Kopie wurde beendet — jetzt neu starten."
         fi
         sagen "Fertig."
         echo

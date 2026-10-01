@@ -25,6 +25,11 @@ struct PersonView: View {
     @Environment(\.breit) private var breit
     @State private var auskunft: Item?
     @State private var titel: [Item] = []
+    /// Eintraege, die der Server insgesamt hat, und wie viele davon schon
+    /// abgerufen sind (nicht `titel.count`: Doppelte fallen je Seite weg).
+    @State private var gesamt = 0
+    @State private var abgerufen = 0
+    @State private var laedtNach = false
     @State private var anfragbar: [Seerrtreffer] = []
     @State private var geladen = false
     /// **`nil` heisst gestoert.** Vorher stand bei einem stummen Server
@@ -226,6 +231,11 @@ struct PersonView: View {
                             }
                             .buttonStyle(Stil.Druckknopf())
                             .kachelmenue(item, model: model)
+                            .onAppear {
+                                guard Listenregeln.imNachladebereich(item.id, in: titel, spalten: 1)
+                                else { return }
+                                Task { await nachladen() }
+                            }
                         }
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
@@ -269,12 +279,12 @@ struct PersonView: View {
         // auf die wartete die ganze Seite. Jetzt steht sie, sobald der Server
         // geantwortet hat, und „Kann angefragt werden" kommt unten dazu —
         // unten, damit sich darüber nichts verschiebt.
-        async let eigene = model.titel(person: person.id)
+        async let eigene = model.titelMitZahl(person: person.id)
         let a = await model.item(id: person.id)
         async let fremde = filmografie(tmdb: a?.tmdbKennung)
         let geholt = await eigene
         // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
-        let b = geholt ?? titel
+        let b = geholt?.items ?? titel
 
         // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
         // Banner, was der erste als Ersatz hergibt.
@@ -289,6 +299,10 @@ struct PersonView: View {
             auskunft = a
             gestoert = geholt == nil
             titel = b
+            if let geholt {
+                gesamt = geholt.gesamt
+                abgerufen = AppModel.seitengroesse
+            }
             banner = bilder
             geladen = true
         }
@@ -302,6 +316,22 @@ struct PersonView: View {
             anfragbar = neu
             seerrFertig = true
         }
+    }
+
+    /// Die naechste Seite der Filmografie — Personen in grossen Serien haben
+    /// mehr als eine.
+    private func nachladen() async {
+        guard abgerufen < gesamt, !laedtNach, geladen else { return }
+        laedtNach = true
+        defer { laedtNach = false }
+        let ab = abgerufen
+        guard let seite = await model.titelMitZahl(person: person.id, startIndex: ab),
+              ab == abgerufen else { return }
+        // Die Seite fasst nur ihre eigenen Doppelten zusammen — seitenuebergreifend
+        // faengt das Anhaengen sie nach Kennung ab.
+        titel = Listenregeln.anhaengen(seite.items, an: titel)
+        gesamt = seite.gesamt
+        abgerufen = ab + AppModel.seitengroesse
     }
 
     private func filmografie(tmdb: Int?) async -> [Seerrtreffer] {

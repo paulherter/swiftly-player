@@ -65,13 +65,21 @@ struct Kachelmenue: ViewModifier {
                 Label("Zur Übersicht", systemImage: "info.circle")
             }
         }
-        // **Beide Einträge immer, nicht der passende** — wie am iPhone: eine
-        // Folge, durch die man nur gesprungen ist, gilt als angefangen.
-        Button { gesehen(true) } label: {
-            Label("Als gesehen markieren", systemImage: "checkmark.circle")
+        // **Nur der Eintrag mit Wirkung** — außer bei Serien (teils gesehen)
+        // und angefangenen Titeln: eine Folge, durch die man nur gesprungen
+        // ist, gilt als angefangen, und „ungesehen" holt sie aus
+        // „Weiterschauen". Wie am iPhone (`Shared/Kachelmenue.swift`).
+        let istGesehen = item.userData?.played ?? false
+        let angefangen = item.fortsetzenAb != nil
+        if istSerie || !istGesehen {
+            Button { gesehen(true) } label: {
+                Label("Als gesehen markieren", systemImage: "checkmark.circle")
+            }
         }
-        Button { gesehen(false) } label: {
-            Label("Als ungesehen markieren", systemImage: "eye.slash")
+        if istSerie || istGesehen || angefangen {
+            Button { gesehen(false) } label: {
+                Label("Als ungesehen markieren", systemImage: "eye.slash")
+            }
         }
         if !istSerie, !imPlayer, Gemeinsammodell.geteilt.darfAnlegen {
             Button { Gemeinsammodell.geteilt.anlegenFuer = item } label: {
@@ -94,11 +102,17 @@ struct Kachelmenue: ViewModifier {
         Task {
             var ziel = item
             if item.type == "Series" {
-                guard let stand = await model.standInSerie(item) else {
-                    Kachelmeldung.geteilt.text = String(localized: "Danach kommt nichts mehr.")
+                // **Gestört ist nicht „nichts mehr"** — wie am iPhone.
+                do {
+                    guard let stand = try await model.standInSerieGeprueft(item) else {
+                        Kachelmeldung.geteilt.text = String(localized: "Danach kommt nichts mehr.")
+                        return
+                    }
+                    ziel = stand
+                } catch {
+                    Kachelmeldung.geteilt.text = lesbarerFehler(error)
                     return
                 }
-                ziel = stand
             }
             steuerung.starte(ziel)
         }

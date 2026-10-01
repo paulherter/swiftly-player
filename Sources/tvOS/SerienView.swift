@@ -116,6 +116,8 @@ struct SerienView: View {
     /// Ob `weiterMit` ein Stand ist — aus dem Speicher, einer angefangenen
     /// Startfolge oder vom Server. Bis dahin heisst der Knopf „Abspielen".
     @State private var standDa: Bool
+    /// Zählt die Ladeläufe von `laden()`; nur der jüngste schreibt.
+    @State private var ladelauf = 0
     @State private var aehnliche: [Item] = []
     /// **Leer und gestoert sind zwei Lagen.** Ohne diese Flaggen sagte die
     /// Seite „Keine Folgen in dieser Staffel", wenn der Server geschwiegen
@@ -395,7 +397,7 @@ struct SerienView: View {
                 .focused($amHauptknopf)
                 // Langer Druck: das Kachelmenü der Serie, wie an ihrer
                 // Kachel (``Kachelmenue``).
-                .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
+                .kachelmenue(aktuell, model: model)
 
                 // Nur, wenn ueberhaupt etwas fortzusetzen ist — sonst meinte
                 // „Von vorn" dasselbe wie der Knopf daneben.
@@ -470,8 +472,7 @@ struct SerienView: View {
                     .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
             } else {
                 Folgenstreifen(model: model, folgen: folgen,
-                               weiterMit: folgeVorn, amFolge: $amFolge,
-                               nachher: { await auffrischen() }) { folge in
+                               weiterMit: folgeVorn, amFolge: $amFolge) { folge in
                     starte(folge)
                 }
                 // Nicht bei jedem Zustand der Seite neu — siehe
@@ -532,6 +533,8 @@ struct SerienView: View {
     /// daneben; eingeblendet wird er im `Detailkopf`, der die Blende an den
     /// Plan selbst haengt.
     private func laden() async {
+        ladelauf += 1
+        let meiner = ladelauf
         async let frischeSerie = model.item(id: serie.id)
         async let liste = model.staffeln(serie)
         async let stand = model.standInSerie(serie)
@@ -564,6 +567,8 @@ struct SerienView: View {
         let holen = wahl != nil || (geholteStaffeln?.isEmpty ?? false)
         let geholteFolgen = holen ? await model.folgen(serie: serie.id, staffel: wahl?.id) : nil
         let neueAehnliche = await aehnlich
+        // Ein jüngerer Lauf hat begonnen: dessen Stand gilt.
+        guard meiner == ladelauf else { return }
 
         // **Der Stand setzt sich ohne Bewegung.** Kam er erst jetzt, stand
         // der Knopf auf „Abspielen"; die Folge kommt dazu, ohne dass die
@@ -601,7 +606,10 @@ struct SerienView: View {
         }
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.userData?.played ?? false
-        if neuerStand != nil { plan = await p }
+        if neuerStand != nil {
+            let neuerPlan = await p
+            if meiner == ladelauf { plan = neuerPlan }
+        }
     }
 
     private func planHolen(_ folgeID: String?) async -> PlaybackPlan? {
@@ -654,7 +662,12 @@ struct SerienView: View {
         switch zuletztFokus {
         case .hauptknopf: amHauptknopf = true
         case .mehrknopf: amMehrknopf = true
-        case .folge(let id): amFolge = id
+        case .folge(let id):
+            // Die Folge kann inzwischen aus der Liste sein (andere Staffel):
+            // dann an die Folge vorn, sonst an den Hauptknopf.
+            if folgen.contains(where: { $0.id == id }) { amFolge = id }
+            else if let vorn = folgeVorn { amFolge = vorn }
+            else { amHauptknopf = true }
         }
     }
 
@@ -667,7 +680,6 @@ struct SerienView: View {
                                   model: model,
                                   folgeStarten: { folgeStarten($0, ab: $1) },
                                   melden: { meldung = $0 },
-                                  auffrischen: { await auffrischen() },
                                   gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
                                       ? { Gemeinsammodell.geteilt.anlegenFuer = $0 } : nil)
     }

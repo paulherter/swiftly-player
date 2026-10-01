@@ -203,6 +203,9 @@ struct DetailView: View {
 
     @State private var frisch: Item?
     @State private var plan: PlaybackPlan?
+    /// Zählt die Abrufe von Titel und Plan; nur der jüngste schreibt (Öffnen und
+    /// Auffrischen können sich überholen).
+    @State private var titellauf = 0
     @State private var gemerkt = false
     @State private var gesehen = false
     @State private var meldung: String?
@@ -383,6 +386,8 @@ struct DetailView: View {
         // läuft kein zweites Mal. Siehe `AppModel.wiedergabeBeendet`.
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
         .task {
+            titellauf += 1
+            let meiner = titellauf
             async let frischerTitel = model.item(id: item.id)
             async let planung = model.plan(for: item.id)
             async let aehnlich = model.aehnliche(item)
@@ -410,12 +415,14 @@ struct DetailView: View {
             // an diesen beiden; sie warten nicht auf Trailer und Sammlungen.
             let neuerTitel = await frischerTitel
             let neuerPlan = await planung
-            withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
-                if let neuerTitel { frisch = neuerTitel }
-                plan = neuerPlan
+            if meiner == titellauf {
+                withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
+                    if let neuerTitel { frisch = neuerTitel }
+                    plan = neuerPlan
+                }
+                gemerkt = aktuell.userData?.isFavorite ?? false
+                gesehen = aktuell.istGesehen
             }
-            gemerkt = aktuell.userData?.isFavorite ?? false
-            gesehen = aktuell.istGesehen
             let neueAehnliche = Listenregeln.ohneDoppelte((await aehnlich) ?? [])
 
             // Der Trailer steht vorn in den Extras: er war einmal eine eigene
@@ -463,7 +470,7 @@ struct DetailView: View {
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
                     .focused($amHauptknopf)
-                    .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
+                    .kachelmenue(aktuell, model: model)
 
                     // Neu und ausdruecklich im Entwurf: wer schon angefangen
                     // hat, kam sonst nur ueber die Tafel an den Anfang zurueck.
@@ -480,7 +487,7 @@ struct DetailView: View {
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
                     .focused($amHauptknopf)
-                    .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
+                    .kachelmenue(aktuell, model: model)
                 }
 
                 Zustandsknoepfe(model: model, item: aktuell,
@@ -511,7 +518,6 @@ struct DetailView: View {
         + Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
                                    starten: { starte(ab: $0) },
                                    melden: { meldung = $0 },
-                                   auffrischen: { await auffrischen() },
                                    gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
                                        ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
     }
@@ -519,10 +525,15 @@ struct DetailView: View {
     private func auffrischen() async {
         // Auch den Plan: er traegt den Direct-Play-Beleg, und ein Stand ohne
         // seinen Plan ist ein halber Stand.
+        titellauf += 1
+        let meiner = titellauf
         async let frischerTitel = model.item(id: item.id)
         async let planung = model.plan(for: item.id)
-        if let neu = await frischerTitel { frisch = neu }
-        plan = await planung
+        let neu = await frischerTitel
+        let neuerPlan = await planung
+        guard meiner == titellauf else { return }
+        if let neu { frisch = neu }
+        plan = neuerPlan
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.istGesehen
     }

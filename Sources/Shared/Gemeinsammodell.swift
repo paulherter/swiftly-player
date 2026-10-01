@@ -161,7 +161,7 @@ final class Gemeinsammodell {
             await sitzung.rechtHolen()
             while !Task.isCancelled {
                 if !Spielstand.spielerLaeuft { await sitzung.angeboteFragen() }
-                try? await Task.sleep(for: .seconds(Uebernahmemodell.taktsekunden))
+                await Vordergrund.warten(sekunden: Uebernahmemodell.taktsekunden)
             }
         }
     }

@@ -59,6 +59,8 @@ struct HomeView: View {
     /// gesehen; sie kam mit den Reihen des alten Kontos zurück, die dann
     /// Platzhaltern und dem neuen Inhalt wichen. Wie beim Wechsel selbst:
     /// Reihen aus, laden, gestaffelt ein.
+    /// Siehe die Aufgabe mit der Kennung der Einstellungen.
+    @State private var erstlaufDerWahl = true
     private var veraltet: Bool { stand.geladen && stand.veraltet(model) }
     /// Die Reihen stehen im Baum — außer zwischen Klick und Freigabe: was
     /// mitten im Flug ankommt, wird nicht gesetzt und nicht entschlüsselt.
@@ -219,6 +221,14 @@ struct HomeView: View {
             // Läuft ein Kontowechsel, lädt der — nicht das Erscheinen, das
             // mit ihm zusammenfällt (sonst holte es noch das alte Konto).
             if Kontowechselflug.geteilt.wartet { return }
+            // **Der Erstlauf gehört `laden()`.** Beide Aufgaben starten beim
+            // ersten Erscheinen zugleich; die zweite brach die erste ab und
+            // schickte alle Abfragen noch einmal. Ist die Seite schon geladen
+            // (Rückkehr über die Leiste), bleibt es beim Auffrischen.
+            if erstlaufDerWahl {
+                erstlaufDerWahl = false
+                if !stand.geladen { return }
+            }
             await alleinAuffrischen()
         }
         // **Der Kontowechsel hängt nicht an `phase`.**

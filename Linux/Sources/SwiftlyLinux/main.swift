@@ -120,6 +120,13 @@ nonisolated(unsafe) let laufmarken: [HANDLE?] = ["SwiftlyPlayer", "Global\\Swift
 let merkmale = GApplicationFlags(rawValue: 0)
 #endif
 
+// **Vorher wegräumen, was von einer älteren Fassung noch läuft oder liegt**
+// (`Altlauf.swift`) — sonst holt die zweite Kopie die erste nach vorn, und die
+// ist nach einem Update die alte.
+#if os(Linux)
+Altlauf.aufraeumen()
+#endif
+
 let anwendung = gtk_application_new("de.paulherter.swiftly", merkmale)
 g_signal_connect_data(UnsafeMutableRawPointer(anwendung), "activate",
                       unsafeBitCast(starten, to: GCallback.self),

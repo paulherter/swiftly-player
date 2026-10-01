@@ -40,6 +40,47 @@ import MediaPlayer
 /// Der Weg ueber eine gemeinsame Ablage statt ueber einen Rueckruf je
 /// Plattform ist Absicht: sonst muesste jede Fassung eine Zeile setzen, und
 /// die eine, die es vergisst, faellt niemandem auf.
+/// **Steht die App gerade vorn?** Fuer Takte, die nur etwas bringen, solange
+/// jemand hinsieht (Sitzungs- und Gruppenabfrage alle fuenf Sekunden).
+///
+/// iOS/tvOS: Anwendungszustand `active`. Mac: Programm aktiv **und** ein
+/// Fenster sichtbar (nicht minimiert, nicht verdeckt).
+@MainActor
+enum Vordergrund {
+    static var aktiv: Bool {
+        #if os(macOS)
+        NSApp.isActive && NSApp.occlusionState.contains(.visible)
+        #else
+        UIApplication.shared.applicationState == .active
+        #endif
+    }
+
+    /// Wartet `sekunden` — oder, steht die App nicht vorn, bis sie wieder
+    /// vorn steht. Nach dem Warten im Hintergrund kehrt sie sofort zurueck,
+    /// damit der Aufrufer beim Zurueckkommen einmal fragt.
+    static func warten(sekunden: Double) async {
+        if aktiv {
+            try? await Task.sleep(for: .seconds(sekunden))
+            return
+        }
+        #if os(macOS)
+        let namen: [Notification.Name] = [NSApplication.didBecomeActiveNotification,
+                                          NSApplication.didChangeOcclusionStateNotification]
+        #else
+        let namen: [Notification.Name] = [UIApplication.didBecomeActiveNotification]
+        #endif
+        let mitte = NotificationCenter.default
+        let (strom, weiter) = AsyncStream<Void>.makeStream()
+        let beobachter = namen.map { name in
+            mitte.addObserver(forName: name, object: nil, queue: .main) { _ in weiter.yield() }
+        }
+        defer { beobachter.forEach { mitte.removeObserver($0) } }
+        for await _ in strom {
+            if Task.isCancelled || aktiv { return }
+        }
+    }
+}
+
 @MainActor
 enum Spielstand {
     private(set) static var stelle: Double = 0

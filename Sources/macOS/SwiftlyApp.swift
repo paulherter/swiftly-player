@@ -70,7 +70,17 @@ struct SwiftlyApp: App {
 ///
 /// Die Befehle laufen deshalb über `Kommando` als Nachricht an die Ansicht,
 /// statt hier eigene Logik zu tragen.
+/// Was das vorderste Fenster der Menüleiste sagt: läuft ein Film, gibt es die
+/// Downloads?
+extension FocusedValues {
+    @Entry var playerOffen: Bool?
+    @Entry var downloadsAn: Bool?
+}
+
 struct Menueleiste: Commands {
+    @FocusedValue(\.playerOffen) private var playerOffen
+    @FocusedValue(\.downloadsAn) private var downloadsAn
+
     var body: some Commands {
         // Apples Vorgaben, die es nicht braucht: keine Tellerränder wie
         // „Drucken" oder „Neu". **Ein neues Fenster gibt es nicht** — siehe
@@ -112,10 +122,28 @@ struct Menueleiste: Commands {
             Kommandoknopf("Serien",    .serien,    "3")
             Kommandoknopf("Merkliste", .merkliste, "4")
             Kommandoknopf("Downloads", .downloads, "5")
+                .disabled(downloadsAn == false)
             Divider()
             Kommandoknopf("Suchen", .suche,  "f")
             Divider()
             Kommandoknopf("Zurück", .zurueck, "[")
+        }
+
+        // **Was im Player ohnehin auf Tasten liegt**, auch in der Menüleiste
+        // zu finden. Ohne Kürzel hier: Leertaste, Pfeile und F gehören dem
+        // Player selbst (`PlayerScreen`), ein zweites Kürzel gleicher Taste
+        // träfe nur eines von beiden.
+        CommandMenu(Text("Wiedergabe")) {
+            Button("Abspielen") { Kommandopost.senden(.spielUmschalten) }.disabled(playerOffen != true)
+            Button("Zurückspulen") { Kommandopost.senden(.spielZurueck) }.disabled(playerOffen != true)
+            Button("Vorspulen") { Kommandopost.senden(.spielVor) }.disabled(playerOffen != true)
+            Button("Pause") { Kommandopost.senden(.spielPause) }.disabled(playerOffen != true)
+            Divider()
+            Button("Lauter") { Kommandopost.senden(.lauter) }.disabled(playerOffen != true)
+            Button("Leiser") { Kommandopost.senden(.leiser) }.disabled(playerOffen != true)
+            Button("Ton aus") { Kommandopost.senden(.stumm) }.disabled(playerOffen != true)
+            Divider()
+            Button("Vollbild") { Kommandopost.senden(.spielVollbild) }.disabled(playerOffen != true)
         }
     }
 }
@@ -124,6 +152,8 @@ struct Menueleiste: Commands {
 /// sichtbare Entsprechung in der Oberfläche.
 enum Kommando: String {
     case start, filme, serien, merkliste, downloads, suche, zurueck, einstellungen
+    /// Nur für den Player (Menü „Wiedergabe").
+    case spielUmschalten, spielPause, spielZurueck, spielVor, spielVollbild, lauter, leiser, stumm
 }
 
 /// Ein Menüeintrag, der sein Kommando als Nachricht schickt.

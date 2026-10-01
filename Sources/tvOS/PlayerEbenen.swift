@@ -572,6 +572,8 @@ struct FolgenEbene: View {
     @State private var staffeln: [Item] = []
     @State private var gewaehlteStaffel: Item?
     @State private var folgen: [Item] = []
+    /// Der Server hat geschwiegen und es gibt nichts zu zeigen.
+    @State private var gestoert = false
     @State private var staffelwahlOffen = false
     /// **Die Einträge der offenen Staffelwahl, einmal gebaut.** Jede
     /// `Titelhandlung` trägt eine neue Kennung; aus dem `body` gerechnet
@@ -642,6 +644,10 @@ struct FolgenEbene: View {
                 // Alte und neue Reihe liegen beim Staffelwechsel übereinander
                 // und blenden über — wie auf der Serienseite.
                 ZStack(alignment: .topLeading) {
+                    if folgen.isEmpty, gestoert {
+                        Stoerzustand(model: model, erneut: { Task { await laden() } })
+                            .frame(maxWidth: .infinity)
+                    }
                     if !folgen.isEmpty {
                         Folgenstreifen(model: model, folgen: folgen,
                                        weiterMit: folgen.contains { $0.id == item.id } ? item.id : nil,
@@ -706,7 +712,12 @@ struct FolgenEbene: View {
     private func laden() async {
         guard let serie = Item.vorlaeufigeSerie(zu: item) else { return }
         // `nil` heisst gestoert: dann bleibt stehen, was der Speicher hatte.
-        guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
+        guard let frisch = await model.staffeln(serie) else {
+            gestoert = true
+            return
+        }
+        guard !frisch.isEmpty else { return }
+        gestoert = false
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
             gewaehlteStaffel = Staffelwahlregel.waehle(aus: frisch, stand: item)
@@ -726,7 +737,11 @@ struct FolgenEbene: View {
         let staffel = gewaehlteStaffel?.id
         // Gescheitert heisst: die Liste bleibt, wie sie war. Sie leer zu
         // setzen hiesse behaupten, die Staffel habe keine Folgen.
-        guard let geladen = await model.folgen(serie: serie, staffel: staffel) else { return }
+        guard let geladen = await model.folgen(serie: serie, staffel: staffel) else {
+            gestoert = true
+            return
+        }
+        gestoert = false
         // Wer inzwischen eine andere Staffel gewählt hat, bekommt deren Folgen.
         guard staffel == gewaehlteStaffel?.id else { return }
         if staffelGewechselt {

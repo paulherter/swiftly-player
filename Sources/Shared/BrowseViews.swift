@@ -529,7 +529,7 @@ struct ItemDetailView: View {
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
             // Langer Druck: das Kachelmenü des Titels, wie an seiner Kachel.
-            .kachelmenue(aktuell, model: model, nachher: { await auffrischen() })
+            .kachelmenue(aktuell, model: model)
             // Nur waehrend der Plan beim Druck unterwegs ist. Vorher hing der
             // Knopf am vorab geladenen Plan: scheiterte dieser eine Abruf,
             // blieb er fuer immer grau, ohne ein Wort.
@@ -632,7 +632,13 @@ struct ItemDetailView: View {
     private var dateiauszug: some View {
         if let quelle = plan?.quelle {
             VStack(alignment: .leading, spacing: 0) {
-                Gruppentitel(text: "Datei").padding(.top, 22)
+                // **Den eigenen Rand zurücknehmen.** `Gruppentitel` rückt sich
+                // selbst um `randAbstand` ein, und der Stapel hier legt den
+                // Seitenrand noch einmal darum — „Datei" stand doppelt so weit
+                // innen wie seine Zeilen und wie „Besetzung" darunter.
+                Gruppentitel(text: "Datei")
+                    .padding(.horizontal, -Stil.randAbstand)
+                    .padding(.top, 22)
                 Rectangle().fill(Stil.linie).frame(height: 1)
                 if quelle.container != nil {
                     Dateizeile(bezeichnung: "Container", wert: Dateiangaben.container(quelle) ?? "")
@@ -807,7 +813,18 @@ struct Abschnitt<Inhalt: View>: View {
             }
             .padding(.horizontal, Stil.rand(breit: breit))
 
-            ScrollView(.horizontal, showsIndicators: false) { inhalt() }
+            ScrollView(.horizontal, showsIndicators: false) {
+                inhalt()
+                    #if os(iOS)
+                    // **Der Zug vom linken Rand gehört der Seite.** Ohne das
+                    // fing die Reihe ihn ab — auf der Personenseite fuhr „Auf
+                    // deinem Server" auf, statt dass die Seite zurückging.
+                    // Im Inhalt, nicht als Hintergrund: siehe `Wischzeile`.
+                    .overlay(alignment: .topLeading) {
+                        RandGesteVorrang().frame(width: 0, height: 0)
+                    }
+                    #endif
+            }
         }
         // 28, nicht 26: „Reihe zu Reihe" ist eine Zahl, und die
                         // Startseite nimmt 28. Zwei Rhythmen fuer dieselbe
@@ -828,7 +845,6 @@ extension ItemDetailView {
         Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
                                  starten: { starte(ab: $0) },
                                  melden: { meldung = $0 },
-                                 auffrischen: { await auffrischen() },
                                  gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
                                      ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
     }

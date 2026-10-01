@@ -224,7 +224,22 @@ final class Bildspeicher {
         #endif
     }()
 
-    func bild(_ url: URL) -> Image? { bekannt[schluessel(url)]?.bild }
+    func bild(_ url: URL) -> Image? {
+        let merkmal = schluessel(url)
+        guard let da = bekannt[merkmal] else { return nil }
+        zuletzt(merkmal)
+        return da.bild
+    }
+
+    /// **Ein Treffer rueckt ans Ende der Reihenfolge**, damit beim Verdraengen
+    /// das am laengsten Unbenutzte geht und nicht das am laengsten Gespeicherte.
+    /// Von hinten gesucht: was gerade gezeigt wird, steht meist hinten.
+    private func zuletzt(_ merkmal: URL) {
+        guard reihenfolge.last != merkmal,
+              let i = reihenfolge.lastIndex(of: merkmal) else { return }
+        reihenfolge.remove(at: i)
+        reihenfolge.append(merkmal)
+    }
 
     /// **Der Zugang gehört nicht zum Bild.** Jede Bildadresse trägt
     /// `api_key` — nach einem Kontowechsel hiesse dasselbe Plakat plötzlich
@@ -292,7 +307,7 @@ final class Bildspeicher {
     func laden(_ url: URL, vorrang: Bool = false, aufGeraet: Bool = false,
                kante gewuenscht: Int? = nil) async -> Image? {
         let merkmal = schluessel(url)
-        if let da = bekannt[merkmal] { return da.bild }
+        if let da = bekannt[merkmal] { zuletzt(merkmal); return da.bild }
         if let lauf = laufend[merkmal] { return await lauf.value?.bild }
 
         // **Vor dem Abzweig gelesen.** `kantenlaenge` gehört dem Hauptlauf;
@@ -415,7 +430,8 @@ final class Bildspeicher {
         bekannt[url] = eintrag
         belegt += eintrag.byte
 
-        // **Aeltestes zuerst, bis der Betrag wieder passt.** `removeFirst`
+        // **Am laengsten Unbenutztes zuerst, bis der Betrag wieder passt.**
+        // Treffer ruecken in `zuletzt(_:)` ans Ende. `removeFirst`
         // verschiebt das Feld, ist hier aber ein Verschieben von Zeigern
         // gegen ein entschluesseltes JPEG — bewusst so gelassen und nicht
         // gegen einen Ring getauscht, der mehr Bau als Nutzen waere.

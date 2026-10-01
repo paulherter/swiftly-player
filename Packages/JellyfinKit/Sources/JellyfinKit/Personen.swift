@@ -66,3 +66,39 @@ public extension JellyfinClient {
         return Listenregeln.ohneDoppelte(antwort.items)
     }
 }
+
+public extension JellyfinClient {
+
+    /// Eine Seite der Filmografie **mit der Gesamtzahl des Servers** —
+    /// `titel(person:)` verwirft sie. Wer nachlädt, braucht sie für die
+    /// Zählmarke und für die Frage „gibt es noch mehr". Je Werk einmal
+    /// (``Werke``) innerhalb der Seite; `gesamt` zählt Einträge des Servers.
+    /// `nil` heisst: der Server hat nicht geantwortet.
+    func titelMitZahl(person id: String, limit: Int = 60,
+                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+        guard let antwort = try? await items(limit: limit, startIndex: startIndex,
+                                             sortBy: "ProductionYear,SortName",
+                                             sortOrder: "Descending",
+                                             recursive: true,
+                                             includeItemTypes: ["Movie", "Series"],
+                                             personIDs: [id])
+        else { return nil }
+        let ohne = Listenregeln.ohneDoppelte(antwort.items)
+        return (await jeWerkEinmal(ohne), max(antwort.totalRecordCount, antwort.items.count))
+    }
+
+    /// Eine Seite eines Genres, zuletzt hinzugefügte zuerst, **mit der
+    /// Gesamtzahl des Servers**. Sonst wie ``titelMitZahl(person:limit:startIndex:)``.
+    func titelMitZahl(gattung: String, limit: Int = 24,
+                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+        guard let antwort = try? await items(limit: limit, startIndex: startIndex,
+                                             sortBy: "DateCreated",
+                                             sortOrder: "Descending",
+                                             recursive: true,
+                                             includeItemTypes: ["Movie", "Series"],
+                                             gattungen: [gattung])
+        else { return nil }
+        let ohne = Listenregeln.ohneDoppelte(antwort.items)
+        return (await jeWerkEinmal(ohne), max(antwort.totalRecordCount, antwort.items.count))
+    }
+}

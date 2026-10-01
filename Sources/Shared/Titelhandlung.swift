@@ -99,6 +99,10 @@ enum Trailerstart {
 ///
 /// Die Rückrufe reicht die Ansicht herein: nur sie weiß, wie bei ihr
 /// abgespielt, gemeldet und aufgefrischt wird.
+///
+/// `auffrischen` nur, wo die Ansicht nicht schon auf `seitenAuffrischen`
+/// hoert: `setzeGesehen` zaehlt den Sehstand hoch und laedt sie damit ohnehin
+/// neu — ein zweiter Ruf lud sie doppelt.
 @MainActor
 enum Titelhandlungen {
 
@@ -109,7 +113,7 @@ enum Titelhandlungen {
     static func fuerFilm(_ titel: Item, plan: PlaybackPlan?, model: AppModel,
                          starten: @escaping (Double) -> Void,
                          melden: @escaping (String) -> Void,
-                         auffrischen: @escaping () async -> Void,
+                         auffrischen: (() async -> Void)? = nil,
                          gemeinsam: (() -> Void)? = nil) -> [Titelhandlung] {
         var liste: [Titelhandlung] = []
         // Nur wenn es überhaupt etwas zurückzusetzen gibt: „von vorn" bei
@@ -126,7 +130,7 @@ enum Titelhandlungen {
                         return
                     }
                     melden(String(localized: "Der Fortschritt ist zurückgesetzt."))
-                    await auffrischen()
+                    await auffrischen?()
                 }
             })
         }
@@ -144,7 +148,7 @@ enum Titelhandlungen {
     static func fuerSerie(_ serie: Item, stand: Item?, staffel: Item?, model: AppModel,
                           folgeStarten: @escaping (Item, Double) -> Void,
                           melden: @escaping (String) -> Void,
-                          auffrischen: @escaping () async -> Void,
+                          auffrischen: (() async -> Void)? = nil,
                           gemeinsam: ((Item) -> Void)? = nil) -> [Titelhandlung] {
         var liste: [Titelhandlung] = []
         if let stand {
@@ -177,7 +181,7 @@ enum Titelhandlungen {
                         return
                     }
                     melden(String(localized: "\(staffel.name) ist als gesehen vermerkt."))
-                    await auffrischen()
+                    await auffrischen?()
                 }
             })
         }

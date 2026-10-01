@@ -120,3 +120,57 @@ struct PersonenTests {
         #expect(titel?.isEmpty == true)
     }
 }
+
+extension PersonenTests {
+
+    private func client() async -> JellyfinClient {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [Spy.self]
+        let c = JellyfinClient(baseURL: URL(string: "https://tv.example.de")!,
+                               deviceID: "d", deviceName: "P",
+                               urlSession: URLSession(configuration: config))
+        await c.setSession(Session(accessToken: "t", userID: "u1", userName: "T",
+                                   serverURL: URL(string: "https://tv.example.de")!))
+        return c
+    }
+
+    private func q() -> [String: String] {
+        let t = URLComponents(url: Spy.captured!.url!, resolvingAgainstBaseURL: false)
+        return Dictionary(uniqueKeysWithValues: (t?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+    }
+
+    @Test("Person und Genre liefern die Gesamtzahl des Servers und reichen startIndex durch")
+    func zahl() async throws {
+        Spy.body = Data("""
+        {"Items":[{"Id":"a","Name":"A","Type":"Movie"},{"Id":"b","Name":"B","Type":"Series"}],
+         "TotalRecordCount":800}
+        """.utf8)
+        let c = await client()
+        let p = try #require(await c.titelMitZahl(person: "p1", limit: 2, startIndex: 4))
+        #expect(p.gesamt == 800 && p.items.count == 2)
+        #expect(q()["StartIndex"] == "4")
+        let g = try #require(await c.titelMitZahl(gattung: "Krimi", limit: 2))
+        #expect(g.gesamt == 800)
+        #expect(q()["SortBy"] == "DateCreated")
+    }
+
+    @Test("Staffeln und Folgen fragen ohne fehlende Folgen")
+    func fehlende() async throws {
+        Spy.body = Data(#"{"Items":[],"TotalRecordCount":0}"#.utf8)
+        let c = await client()
+        _ = try await c.staffeln(seriesID: "s")
+        #expect(q()["isMissing"] == "false")
+        _ = try await c.folgen(seriesID: "s", seasonID: "x")
+        #expect(q()["isMissing"] == "false")
+        #expect(q()["seasonId"] == "x")
+    }
+
+    @Test("Ohne Doppel kostet je Werk einmal keine Abfrage, auch mit durchgereichten Bibliotheken")
+    func ohneDoppelKeineAbfrage() async {
+        Spy.captured = nil
+        let c = await client()
+        let a = [Item(id: "a", name: "A", type: "Movie")]
+        let r = await c.jeWerkEinmal(a, bibliotheken: [])
+        #expect(r.count == 1 && Spy.captured == nil)
+    }
+}

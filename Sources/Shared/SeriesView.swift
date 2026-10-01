@@ -53,11 +53,19 @@ struct SeriesDetailView: View {
         _staffeln = State(initialValue: staffeln)
 
         let hinweis = startStaffelID != nil || startStaffelNummer != nil
+        // Mit Hinweis die mitgebrachte Staffel, sonst die, in der die Seite
+        // beim letzten Besuch stand.
         let staffel = hinweis
             ? staffeln.first { $0.id == startStaffelID }
                 ?? staffeln.first { $0.indexNumber != nil
                                     && $0.indexNumber == startStaffelNummer }
-            : nil
+            : staffeln.first { $0.id == gemerkt?.gewaehlteStaffel }
+        // Nur mit gemerkter Folge steht auch der Stand da; der Plan gehoert
+        // zu genau dieser Folge (`standVergessen` leert beides).
+        _stand = State(initialValue: gemerkt?.weiterMit)
+        _standGeklaert = State(initialValue: gemerkt?.weiterMit != nil)
+        _plan = State(initialValue: gemerkt?.weiterMit != nil ? gemerkt?.plan : nil)
+        _planDa = State(initialValue: gemerkt?.weiterMit != nil && gemerkt?.plan != nil)
         _gewaehlteStaffel = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -87,9 +95,9 @@ struct SeriesDetailView: View {
     /// den Stand; mit gemerkten Folgen stand `laedt` deshalb schon am Anfang
     /// auf fertig, und der Knopf sagte eine Sekunde lang „Keine Folgen", bis
     /// der Stand kam. Bis hierhin heißt es jetzt „Lädt…".
-    @State private var standGeklaert = false
+    @State private var standGeklaert: Bool
     /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
-    @State private var planDa = false
+    @State private var planDa: Bool
     @State private var staffeln: [Item] = []
     /// **Drei Zustaende, nicht zwei.** `[]` heisst „die Serie hat keine
     /// Staffeln", diese Flagge heisst „der Server hat nicht geantwortet".
@@ -416,13 +424,22 @@ struct SeriesDetailView: View {
         // einer Folge aus, der sonst die Serie jedes Mal nachholt.
         let aktuell = await d ?? serie
         Serienspeicher.geteilt.merken(aktuell)
-        Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = staffeln }
+        let gewaehlteID = gewaehlteStaffel?.id
+        Serienspeicher.geteilt.merken(serie.id) {
+            $0.staffeln = staffeln
+            $0.gewaehlteStaffel = gewaehlteID
+            if let frischerStand { $0.weiterMit = frischerStand }
+        }
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.userData?.played ?? false
         // Der Plan ohne Animation, nur das Einblenden mit: im animierten
         // Zug schob die neue Direct-Play-Marke Bewertung und Freigabe
         // sichtbar nach rechts, die Zeile glitt von links herein.
-        if frischerStand != nil { plan = await p }
+        if frischerStand != nil {
+            let frischerPlan = await p
+            plan = frischerPlan
+            Serienspeicher.geteilt.merken(serie.id) { $0.plan = frischerPlan }
+        }
         withAnimation(Stil.einblenden) { planDa = true }
         // Ähnliche zuletzt: nichts darüber wartet auf sie. `nil` ist keine
         // leere Liste — der Abruf lief nicht oder scheiterte.
@@ -550,7 +567,7 @@ struct SeriesDetailView: View {
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
             // Langer Druck: das Kachelmenü der Serie, wie an ihrer Kachel.
-            .kachelmenue(serie, model: model, nachher: { await auffrischen() })
+            .kachelmenue(serie, model: model)
             // **Waehrend geladen wird bleibt er an und zeigt „Laedt…".**
             //
             // Auf tvOS ist ein abgeschalteter Knopf kein Fokusziel: kam man aus
@@ -749,8 +766,7 @@ struct SeriesDetailView: View {
                     // (``Kachelmenue``) — Abspielen, gesehen/ungesehen, Laden,
                     // Gemeinsam schauen. Vorher stand hier nur „Gemeinsam
                     // schauen".
-                    .kachelmenue(folge, model: model, quer: true,
-                                 nachher: { await folgenLaden() })
+                    .kachelmenue(folge, model: model, quer: true)
                     // **Keine Trennlinie mehr.** Das Standbild trennt die
                     // Zeilen schon; eine Haarlinie daneben sagt dasselbe ein
                     // zweites Mal. Wo die Liste ueberhaupt eine Marke braucht —
@@ -903,6 +919,7 @@ struct SeriesDetailView: View {
             folgenGestoert = false
             folgenLaedt = gemerkt == nil
         }
+        Serienspeicher.geteilt.merken(serie.id) { $0.gewaehlteStaffel = staffel.id }
         Task { await folgenLaden() }
     }
 
@@ -1253,8 +1270,7 @@ struct SeasonView: View {
                             Folgenzeile(model: model, folge: folge)
                         }
                         // Dasselbe Kachelmenü wie auf der Serienseite.
-                        .kachelmenue(folge, model: model, quer: true,
-                                     nachher: { await folgenLaden() })
+                        .kachelmenue(folge, model: model, quer: true)
                         // Keine Trennlinie: das Standbild trennt schon. Hier
                         // stand dieselbe von Hand gebaute Linie wie auf der
                         // Serienseite — beide sind weg.
@@ -1354,7 +1370,6 @@ extension SeriesDetailView {
                                               model: model,
                                               folgeStarten: { folgeStarten($0, ab: $1) },
                                               melden: { meldung = $0 },
-                                              auffrischen: { await auffrischen() },
                                               gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
                                                   ? { Gemeinsammodell.geteilt.anlegenFuer = $0 } : nil)
         // Der Trailer, wenn Laden seinen Platz in der Reihe hat. Nicht

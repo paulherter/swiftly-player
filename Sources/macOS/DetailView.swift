@@ -431,7 +431,7 @@ struct Heldenkopf: View {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.istGesehen
             // Vorab geholt (Überfahren der Kachel): der Beleg steht sofort.
-            if plan == nil, let schon = Planvorrat.plan(titel.id) { plan = schon }
+            if plan == nil, let schon = Planvorrat.plan(titel.id, mit: model) { plan = schon }
             if titel.type == "Series" {
                 let stand = await model.standInSerie(titel)
                 await Einfahrt.abwarten()
@@ -459,6 +459,11 @@ struct Heldenkopf: View {
                 guard !Task.isCancelled else { return }
                 plan = neu
             }
+        }
+        // Der Knopf folgt dem Titel, nicht dem Lauf der Aufgabe oben: kommt
+        // die frische Seite erst nach ihr, zieht der Stand sonst nicht nach.
+        .onChange(of: titel.userData?.isFavorite) { _, neu in
+            merkliste = neu ?? false
         }
     }
 
@@ -767,6 +772,7 @@ struct Heldenkopf: View {
                         .onTapGesture { withAnimation(Stil.sprung) { mehrOffen = false } }
                 }
             }
+            .tafelEscape(mehrOffen) { withAnimation(Stil.sprung) { mehrOffen = false } }
 
             if let meldung { Hinweisstreifen(text: meldung) }
             Spacer(minLength: 0)

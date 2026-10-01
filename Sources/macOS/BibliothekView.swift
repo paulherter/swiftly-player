@@ -52,6 +52,9 @@ struct BibliothekView: View {
     /// zeichnet nur neu, wer den Wert **liest** — die Leiste und die
     /// Filterzeile.
     @State private var kopfstand = Kopfstand()
+    @State private var position = ScrollPosition()
+    /// Einmal je Aufbau der Seite: der gemerkte Stand wird nur beim Eintritt gesetzt.
+    @State private var rueckgekehrt = false
 
     /// Ein Kontowechsel läuft: der Inhalt hält still und kommt erst gestaffelt,
     /// wenn das neue Konto geladen ist. Gehört der Seite, nicht dem Zähler:
@@ -67,6 +70,11 @@ struct BibliothekView: View {
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
                   spacing: Stil.kachelAbstand, alignment: .topLeading)]
+    }
+
+    /// Wohin der Scrollstand dieser Seite gehört (Leiste, Sammlung, Sortierung).
+    private var merkschluessel: String {
+        "\(bereich)|\(sammlung?.item.id ?? "")|\(regal.kennung)"
     }
 
     var body: some View {
@@ -242,8 +250,27 @@ struct BibliothekView: View {
         .overlay(alignment: .top) {
             Bestandsleiste(titel: titel, name: kopfname, stand: kopfstand, zurueck: zurueck)
         }
+        .scrollPosition($position)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
+        }
+        // **Anderer Filter oder andere Sortierung: von oben.** Die Fläche
+        // blieb sonst mitten in der neuen Liste stehen.
+        .onChange(of: regal.kennung) { _, _ in
+            position.scrollTo(edge: .top)
+        }
+        // **Der Leistenwechsel baut die Wurzel neu** (`.id(bereich)`); die
+        // Titel bleiben im `Bibliotheksmodell`, der Scrollstand nicht. Er wird
+        // beim Verlassen gemerkt und beim Wiedereintritt gesetzt.
+        .onDisappear { Scrollmerker.stand[merkschluessel] = kopfstand.versatz }
+        .onChange(of: regal.items.isEmpty, initial: true) { _, leer in
+            guard !leer, !rueckgekehrt else { return }
+            rueckgekehrt = true
+            guard let y = Scrollmerker.stand[merkschluessel], y > 1 else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(60))
+                position.scrollTo(y: y)
+            }
         }
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
         // aus über jede Scrollfläche — sie war nie in unserem Code, und
@@ -452,4 +479,10 @@ extension Sortierung {
         case .erscheinung: "calendar"
         }
     }
+}
+
+/// Der Scrollstand der Bibliotheksseiten über den Leistenwechsel hinweg.
+@MainActor
+enum Scrollmerker {
+    static var stand: [String: CGFloat] = [:]
 }

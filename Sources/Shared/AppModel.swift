@@ -355,11 +355,25 @@ final class AppModel {
     /// sie, fehlt sie — eine Fehlermeldung über der ganzen Seite wäre für
     /// eine Reihe, nach der niemand gefragt hat, zu laut.
     func sammlungstitel(_ sammlung: Sammlung, art: String) async -> [Item]? {
-        let schluessel = sammlung.id + "|" + art
+        await sammlungstitel(sammlung, art: art, limit: 100)
+    }
+
+    /// **Die ersten vier Plakate fuer das Mosaik** einer Sammlung ohne eigenes
+    /// Bild — vier Titel, nicht hundert. Steht die volle Liste schon im
+    /// Speicher, kommen sie daraus.
+    func sammlungsplakate(_ sammlung: Sammlung, art: String) async -> [Item]? {
+        if let voll = sammlungstitelSpeicher[sammlung.id + "|" + art] {
+            return Array(voll.prefix(4))
+        }
+        return await sammlungstitel(sammlung, art: art, limit: 4)
+    }
+
+    private func sammlungstitel(_ sammlung: Sammlung, art: String, limit: Int) async -> [Item]? {
+        let schluessel = sammlung.id + "|" + art + (limit == 100 ? "" : "|\(limit)")
         if let gespeichert = sammlungstitelSpeicher[schluessel] { return gespeichert }
         guard let client else { return nil }
         let quelle = Regalquelle(eltern: sammlung.id, art: art, sammlung: true)
-        guard let gefunden = try? await client.items(parentID: quelle.eltern, limit: 100,
+        guard let gefunden = try? await client.items(parentID: quelle.eltern, limit: limit,
                                        sortBy: Sortierung.erscheinung.feld,
                                        sortOrder: quelle.richtung(.erscheinung),
                                        recursive: quelle.rekursiv,
@@ -543,11 +557,11 @@ final class AppModel {
     var server: [URL] { bund?.server ?? [] }
     func konten(auf server: URL) -> [Session] { bund?.konten(auf: server) ?? [] }
 
-    private static let sessionKey = "session"
+    nonisolated private static let sessionKey = "session"
     /// Der Schlüssel für den ganzen Bund. Der alte oben bleibt liegen: wer
     /// noch einmal eine ältere Fassung startet, findet dort seine Sitzung.
     private static let kontenKey = "konten"
-    static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
+    nonisolated static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
     /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
     /// **Nicht mehr `private`.** `Uebernahmemodell` muss die eigene Kennung
@@ -631,7 +645,11 @@ final class AppModel {
         Spur.schreiben = { Protokoll.schreib($0) }
         Stromweiterleiter.protokoll = { Protokoll.schreib($0) }
 
-        Self.keychainSelbsttest()
+        // **Abseits des Hauptlaufs:** der Test liest und schreibt nur den
+        // Eintrag „dauertest" und meldet ins Protokoll — nichts, was die
+        // Anmeldung braucht. Vorher lagen bis zu vier Keychain-Aufrufe vor
+        // dem ersten Bild.
+        Task.detached(priority: .utility) { Self.keychainSelbsttest() }
         // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste
         // Abruf die eigenen Header — und die ersten Plakate gleich danach.
         Self.eigeneKoepfeLaden()
@@ -718,7 +736,7 @@ final class AppModel {
     /// Schreibt und liest beim Start einen Testwert. Schlägt das fehl, geht
     /// auch die Sitzung verloren — dann steht der Grund im Log statt dass man
     /// sich wundert, warum man sich ständig neu anmelden muss.
-    private static func keychainSelbsttest() {
+    nonisolated private static func keychainSelbsttest() {
         // Bleibt bewusst liegen: so lässt sich messen, ob Einträge eine
         // Neuinstallation überleben — genau das ist die Frage.
         if let alt = Keychain.load(key: "dauertest"),
@@ -1345,6 +1363,21 @@ final class AppModel {
         return await client.titel(gattung: gattung, limit: limit)
     }
 
+    /// Eine Seite eines Genres **mit der Gesamtzahl des Servers** — fuer
+    /// Zaehlmarke und Nachladen. `nil` heisst: der Server hat nicht geantwortet.
+    func titelMitZahl(gattung: String, limit: Int = AppModel.seitengroesse,
+                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+        guard let client else { return nil }
+        return await client.titelMitZahl(gattung: gattung, limit: limit, startIndex: startIndex)
+    }
+
+    /// Eine Seite der Filmografie mit der Gesamtzahl des Servers.
+    func titelMitZahl(person id: String, limit: Int = AppModel.seitengroesse,
+                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+        guard let client else { return nil }
+        return await client.titelMitZahl(person: id, limit: limit, startIndex: startIndex)
+    }
+
     /// **`nil` heisst gestoert, `[]` heisst: der Server kennt keine Genres.**
     ///
     /// Die Genre-Auswahl in den Einstellungen stand bei jedem Netzfehler leer
@@ -1780,7 +1813,10 @@ final class AppModel {
                                                          sortBy: sortierung.feld,
                                                          sortOrder: sortierung.richtung,
                                                          startIndex: startIndex,
-                                                         limit: anzahl)
+                                                         limit: anzahl,
+                                                         // Die Bibliotheken liegen schon da — das spart
+                                                         // `UserViews` bei jeder Seite.
+                                                         bibliotheken: views.isEmpty ? nil : views)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
             // Nicht in `errorMessage`: das zeigen nur die Anmelde- und

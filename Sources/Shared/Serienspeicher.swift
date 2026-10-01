@@ -42,6 +42,11 @@ final class Serienspeicher {
         var weiterMit: Item?
         /// Je Staffel. Der Schlüssel ist die Staffel-ID.
         var folgen: [String: [Item]] = [:]
+        /// Staffel, in der die Seite zuletzt stand, und der Wiedergabeplan der
+        /// naechsten Folge — damit der zweite Besuch Staffelwahl, Folgen und
+        /// Wiedergabeart-Zeile gleich zeigt (iPhone/iPad).
+        var gewaehlteStaffel: String?
+        var plan: PlaybackPlan?
     }
 
     /// Serien nach ihrer eigenen Kennung — für `serie(fuer:)`.
@@ -114,6 +119,7 @@ final class Serienspeicher {
     func standVergessen(_ serie: String) {
         staende[serie]?.weiterMit = nil
         staende[serie]?.folgen = [:]
+        staende[serie]?.plan = nil
         naechste[serie] = nil
     }
 
