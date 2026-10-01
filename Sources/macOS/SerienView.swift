@@ -442,16 +442,27 @@ struct SerienView: View {
                     // Fläche beim Überfahren dort. Eine Zeile in einer Liste
                     // leuchtet aber über die **ganze** Breite — den Rand
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
-                    VStack(spacing: 0) {
-                        ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge)
-                                // **Rechtsklick: das Kachelmenü**, wie an
-                                // jeder Kachel (``Kachelmenue``). Vorher stand
-                                // hier nur „Gemeinsam schauen".
-                                .kachelmenue(folge, model: model,
-                                             nachher: { await folgenLaden() })
-                            // Keine Haarlinie zwischen den Folgen — das
-                            // iPhone trennt sie nur durch Luft.
+                    //
+                    // **Erst ab 60 Zeilen faul.** Eine Staffel mit 200 Folgen
+                    // (Anime, Tagesserien) baute sonst alle Zeilen und alle
+                    // Bildabrufe auf einmal. Die Zeilenhöhe steht fest
+                    // (`bildHoehe + 24`), also bleibt der Sprung beim
+                    // Hochziehen dort klein, wo es sich lohnt.
+                    let zeilen = ForEach(folgen, id: \.id) { folge in
+                        Folgenzeile(model: model, folge: folge)
+                            // **Rechtsklick: das Kachelmenü**, wie an
+                            // jeder Kachel (``Kachelmenue``). Vorher stand
+                            // hier nur „Gemeinsam schauen".
+                            .kachelmenue(folge, model: model,
+                                         nachher: { await folgenLaden() })
+                        // Keine Haarlinie zwischen den Folgen — das
+                        // iPhone trennt sie nur durch Luft.
+                    }
+                    Group {
+                        if folgen.count > 60 {
+                            LazyVStack(spacing: 0) { zeilen }
+                        } else {
+                            VStack(spacing: 0) { zeilen }
                         }
                     }
                     .transition(.opacity)
@@ -740,6 +751,16 @@ struct Staffelwahl: View {
                 .transition(.aufklappen(von: .topLeading))
             }
         }
+        // Klick daneben und Escape schließen, wie bei den anderen Tafeln.
+        .background {
+            if offen {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .frame(width: 4000, height: 4000)
+                    .onTapGesture { withAnimation(Stil.sprung) { offen = false } }
+            }
+        }
+        .tafelEscape(offen) { withAnimation(Stil.sprung) { offen = false } }
     }
 }
 
@@ -805,7 +826,11 @@ struct Folgenzeile: View {
     var aktion: ((Item) -> Void)?
 
     @State private var schwebt = false
-    @State private var gesehen = false
+    /// Vom Stand der Folge überschrieben, sobald die Aufgabe unten lief; bis
+    /// dahin gilt `folge.istGesehen` schon im ersten Bild (sonst standen Haken
+    /// und Balken verkehrt da).
+    @State private var gesehenMerker: Bool?
+    private var gesehen: Bool { gesehenMerker ?? folge.istGesehen }
     // **Hier stand `Zeilenkante`** — die Unterkante der Zeile, damit die
     // Ladetafel unter dem angeklickten Ring aufgehen konnte. Mit dem Ring ist
     // sie weg, und mit ihr die Messung, die jede sichtbare Zeile je Bild
@@ -926,7 +951,7 @@ struct Folgenzeile: View {
         .animation(Stil.zeitSchweben, value: schwebt)
         // An den Stand gebunden, nicht nur ans Erscheinen: nach dem Player
         // kommt dieselbe Folge mit neuem Stand zurück.
-        .task(id: folge.istGesehen) { gesehen = folge.istGesehen }
+        .task(id: folge.istGesehen) { gesehenMerker = folge.istGesehen }
     }
 
     private var kopfzeile: String {

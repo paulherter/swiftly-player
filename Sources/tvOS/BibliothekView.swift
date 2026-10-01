@@ -73,6 +73,9 @@ struct BibliothekView: View {
     /// Detailseite öffnet; `zuletztAmTitel` behält den Titel.
     @FocusState private var amTitel: String?
     @State private var zuletztAmTitel: String?
+    /// Sortierung oder Filter wurden umgestellt, die Antwort steht noch aus:
+    /// das Raster zeigt bis dahin die alte Reihenfolge und wird abgedunkelt.
+    @State private var umgestellt = false
 
     /// Der Merkname steht beim Anlegen fest — siehe `Bibliotheksmodell`.
     /// Eine benannte Bibliothek merkt sich ihre eigene Sortierung, eine
@@ -127,6 +130,8 @@ struct BibliothekView: View {
                             leer
                         } else {
                             gitter
+                                .opacity(umgestellt ? 0.4 : 1)
+                                .animation(Stil.einblenden, value: umgestellt)
                         }
                     }
                     // **Die Kapselreihe beginnt bei `Stil.inhaltOben`**, wo
@@ -163,7 +168,7 @@ struct BibliothekView: View {
             }
         }
         // Eine andere Liste — der gemerkte Titel gehört nicht mehr dazu.
-        .onChange(of: stand.kennung) { zuletztAmTitel = nil }
+        .onChange(of: stand.kennung) { zuletztAmTitel = nil; umgestellt = true }
         .onChange(of: wahl) { zuletztAmTitel = nil }
         // **Sammlungen und gemischte Bibliotheken kommen nach** (aus
         // `angebotLaden()`). Aendert sich damit, was „Alle" liest oder was
@@ -532,12 +537,21 @@ struct BibliothekView: View {
     }
 
     private func laden() async {
+        // Ein abgebrochener Lauf lässt es stehen: sein Nachfolger räumt auf.
+        defer { if !Task.isCancelled { umgestellt = false } }
         if bibliothek == nil, model.views.isEmpty { await model.loadViews() }
         if ueberGattung {
             // Sammlungen und gemischte Bibliotheken kommen nebenher: die
             // Seite wartet nicht auf sie. Treffen sie ein, meldet
             // `angebotskennung` es, und die Wahl wird neu geprueft.
-            Task { await model.angebotLaden() }
+            // Gibt es noch keine Quelle (nur gemischte Bibliotheken, Anteile
+            // fehlen), wird hier gewartet: sonst stünde „Hier ist noch nichts"
+            // da, bis das Angebot kommt.
+            if quelle == nil {
+                await model.angebotLaden()
+            } else {
+                Task { await model.angebotLaden() }
+            }
             // **Die gemerkte Wahl gehoert einem Konto.** Bei jedem Laden gegen
             // das Angebot des angemeldeten Kontos geprueft; eine Bibliothek
             // des vorigen Kontos gibt es darin nicht, und die Seite faellt
@@ -603,7 +617,7 @@ struct Sammlungsmosaik: View {
         .frame(width: breite, height: hoehe)
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
         .task(id: sammlung.id) {
-            let gefunden = await model.sammlungstitel(sammlung, art: art)
+            let gefunden = await model.sammlungsplakate(sammlung, art: art)
             withAnimation(Stil.einblenden) { titel = Array((gefunden ?? []).prefix(4)) }
         }
     }

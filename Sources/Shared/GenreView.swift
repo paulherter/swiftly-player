@@ -13,6 +13,17 @@ struct GenreView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var items: [Item] = []
+    /// Titel, die der Server insgesamt hat — fuer die Zaehlmarke und die
+    /// Frage „gibt es noch mehr".
+    @State private var gesamt = 0
+    /// Wie viele Eintraege des Servers schon abgerufen sind. **Nicht
+    /// `items.count`:** Doppelte (ein Werk in zwei Bibliotheken) fallen je
+    /// Seite weg, der Server zaehlt sie aber mit — nachgeladen wird ab
+    /// dem Abrufstand, sonst kaeme dieselbe Seite wieder.
+    @State private var abgerufen = 0
+    @State private var laedtNach = false
+    /// Aendert sich bei Sehstand oder Merkliste anderswo — dann still neu.
+    @State private var auffrischStand = 0
     @State private var laedt = true
     /// Der Abruf ist gescheitert — nicht „das Genre ist leer".
     @State private var gestoert = false
@@ -47,15 +58,48 @@ struct GenreView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .task(id: name) { await holen() }
+        // Auch bei Gesehen-/Lesezeichenwechsel anderswo: still neu laden
+        // (ohne Platzhalter, mit so viel, wie schon dasteht), sonst zeigt die
+        // Kachel Balken und Haken von vorher.
+        .task(id: "\(name)|\(auffrischStand)") { await holen() }
+        .nachholen(bei: model.listenAuffrischen) { auffrischStand = model.listenAuffrischen }
     }
 
     private func holen() async {
-        laedt = true
-        let ergebnis = await model.titel(gattung: name, limit: 200)
-        gestoert = ergebnis == nil
-        items = ergebnis ?? []
+        laedt = items.isEmpty
+        let stand = abgerufen
+        let umfang = min(300, max(AppModel.seitengroesse, stand))
+        let ergebnis = await model.titelMitZahl(gattung: name, limit: umfang)
+        // Ein abgebrochener Lauf (`.task(id:)`) hat nichts mehr zu sagen.
+        guard !Task.isCancelled else { return }
+        // Hat `nachladen` waehrenddessen eine Seite angehaengt, ist diese
+        // Antwort kuerzer als das, was dasteht: die Liste wuerde schrumpfen
+        // und gleich wieder nachladen. Dann noch einmal mit dem neuen Umfang.
+        guard stand == abgerufen else { return await holen() }
+        if let ergebnis {
+            gestoert = false
+            items = ergebnis.items
+            gesamt = ergebnis.gesamt
+            abgerufen = umfang
+        } else {
+            // Bleibt eine Liste stehen, ist sie besser als eine Stoermeldung.
+            gestoert = items.isEmpty
+        }
         laedt = false
+    }
+
+    private func nachladen() async {
+        guard abgerufen < gesamt, !laedtNach, !laedt else { return }
+        laedtNach = true
+        defer { laedtNach = false }
+        let ab = abgerufen
+        guard let seite = await model.titelMitZahl(gattung: name, startIndex: ab),
+              ab == abgerufen else { return }
+        // Seitenuebergreifend nach Kennung: die Seite fasst nur ihre eigenen
+        // Doppelten zusammen.
+        items = Listenregeln.anhaengen(seite.items, an: items)
+        gesamt = seite.gesamt
+        abgerufen = ab + AppModel.seitengroesse
     }
 
     /// **Derselbe Kopf wie auf den beiden anderen gepushten Rasterseiten.**
@@ -81,7 +125,7 @@ struct GenreView: View {
             // Bibliotheksseite, weil dort bei zwei Konten zwei
             // Bibliotheken gleich heißen können.
             Unterseitenkopf(titel: name, zurueck: { zurueck() }) {
-                if !items.isEmpty { Zaehlmarke(anzahl: items.count) }
+                if !items.isEmpty { Zaehlmarke(anzahl: max(gesamt, items.count)) }
             }
             .padding(.horizontal, -Stil.rand(breit: breit))
         }
@@ -104,6 +148,11 @@ struct GenreView: View {
                     }
                     .buttonStyle(Stil.Druckknopf())
                     .kachelmenue(item, model: model)
+                    .onAppear {
+                        guard Listenregeln.imNachladebereich(item.id, in: items, spalten: spalten)
+                        else { return }
+                        Task { await nachladen() }
+                    }
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))

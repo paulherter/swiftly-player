@@ -805,6 +805,7 @@ public actor JellyfinClient {
         let s = try requireSession()
         let req = try request("Shows/\(seriesID)/Seasons", query: [
             .init(name: "userId", value: s.userID),
+            .init(name: "isMissing", value: "false"),
             .init(name: "Fields", value: "Overview"),
         ])
         return try await send(req, as: ItemsResponse.self).items
@@ -815,6 +816,7 @@ public actor JellyfinClient {
         let s = try requireSession()
         var query: [URLQueryItem] = [
             .init(name: "userId", value: s.userID),
+            .init(name: "isMissing", value: "false"),
             .init(name: "Fields", value: "Overview,MediaSources"),
         ]
         if let seasonID { query.append(.init(name: "seasonId", value: seasonID)) }

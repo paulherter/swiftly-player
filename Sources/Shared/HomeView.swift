@@ -277,8 +277,7 @@ struct HomeView: View {
                 // Netzweg spaeter als die festen Reihen — ohne Uebergang stand
                 // dort erst nichts und dann auf einen Schlag alles.
                 ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, r in
-                    Reihe(model: model, titel: "", name: r.name, items: r.items,
-                          nachGesehen: { await laden() })
+                    Reihe(model: model, titel: "", name: r.name, items: r.items)
                         .transition(.opacity)
                         .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
                 }
@@ -358,36 +357,31 @@ struct HomeView: View {
         case .weiterschauen:
             if !stand.weiterschauen.isEmpty {
                 Reihe(model: model, titel: "Weiterschauen",
-                      items: stand.weiterschauen, quer: true, restzeit: true, direkt: starte,
-                      nachGesehen: { await laden() })
+                      items: stand.weiterschauen, quer: true, restzeit: true, direkt: starte)
             }
         case .naechsteFolge:
             if !stand.naechsteFolge.isEmpty {
                 // Ohne 'direkt': eine noch nicht angefangene Folge will
                 // man erst ansehen, nicht sofort starten. Nur
                 // 'Weiterschauen' springt direkt in die Wiedergabe.
-                Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge,
-                      nachGesehen: { await laden() })
+                Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge)
             }
         // Hier führt der Tipp auf die Seite: was man noch nicht
         // angefangen hat, will man erst ansehen.
         case .neueFilme:
             if !stand.neueFilme.isEmpty {
                 Reihe(model: model, titel: "Zuletzt hinzugefügte Filme",
-                      items: stand.neueFilme, neuzugang: true,
-                      nachGesehen: { await laden() })
+                      items: stand.neueFilme, neuzugang: true)
             }
         case .neueSerien:
             if !stand.neueSerien.isEmpty {
                 Reihe(model: model, titel: "Zuletzt hinzugefügte Serien",
-                      items: stand.neueSerien, neuzugang: true,
-                      nachGesehen: { await laden() })
+                      items: stand.neueSerien, neuzugang: true)
             }
         case .neuzugaenge:
             if !stand.zuletzt.isEmpty {
                 Reihe(model: model, titel: "Zuletzt hinzugefügt",
-                      items: stand.zuletzt, neuzugang: true,
-                      nachGesehen: { await laden() })
+                      items: stand.zuletzt, neuzugang: true)
             }
         }
     }
@@ -468,8 +462,9 @@ private struct Reihe: View {
     var direkt: ((Item) -> Void)? = nil
     /// Die Kachel, die gerade startet: gedaempft, mit Lader.
     var laedt: String? = nil
-    /// Wird nach „gesehen/ungesehen" gerufen, damit die Startseite nachzieht.
-    var nachGesehen: (() async -> Void)? = nil
+    // Nach „gesehen/ungesehen" zieht die Startseite selbst nach: sie hoert auf
+    // `seitenAuffrischen` (`nachholen` oben). Ein eigener Ruf hier lud sie
+    // ein zweites Mal.
 
     /// **Die Hoehe steht fest, sie wird nicht gemessen.**
     ///
@@ -526,14 +521,13 @@ private struct Reihe: View {
                             // Zur Serie kommt man weiterhin — nur nicht mehr
                             // im Weg der Wiedergabe: „Zur Übersicht" steht im
                             // Kachelmenü, dazu alles, was jede Kachel kann.
-                            .kachelmenue(item, model: model, weiterschauen: true, quer: quer,
-                                         nachher: nachGesehen)
+                            .kachelmenue(item, model: model, weiterschauen: true, quer: quer)
                         } else {
                             NavigationLink(value: item) {
                                 Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
                             }
                             .buttonStyle(Stil.Druckknopf())
-                            .kachelmenue(item, model: model, quer: quer, nachher: nachGesehen)
+                            .kachelmenue(item, model: model, quer: quer)
                         }
                     }
                 }

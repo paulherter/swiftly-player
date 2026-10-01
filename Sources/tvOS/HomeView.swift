@@ -688,16 +688,9 @@ struct HomeView: View {
 
 
     private func starte(_ item: Item) {
-        guard !bereitet else { return }
-        bereitet = true
-        Task {
-            defer { bereitet = false }
-            // Frisch holen: die Stelle im Listeneintrag ist oft veraltet.
-            let aktuell = await model.item(id: item.id) ?? item
-            guard let plan = await model.plan(for: aktuell.id) else { return }
-            abspielen.wrappedValue = Abspielwunsch(item: aktuell, plan: plan,
-                                                   startAt: aktuell.fortsetzenAb ?? 0)
-        }
+        // Frisch holen: die Stelle im Listeneintrag ist oft veraltet.
+        Abspielwunsch.starten(item, frisch: true, model: model, bereitet: $bereitet,
+                              abspielen: { abspielen.wrappedValue = $0 })
     }
 
     private func laden() async {
@@ -705,7 +698,9 @@ struct HomeView: View {
         let a = Date()
         await stand.laden(model)
         Kontowechselflug.notiz("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
-        regalSchreiben()
+        // Gestörte Abfrage und nichts da: keine leere Vorschau über eine gute
+        // schreiben.
+        if !(stand.gestoert && stand.alleLeer) { regalSchreiben() }
     }
 
     /// Erst bauen (unsichtbar), im nächsten Durchgang zeigen — sonst
@@ -756,6 +751,16 @@ struct HomeView: View {
         if !stand.zuletzt.isEmpty {
             rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügt"), quer: false,
                                   eintraege: eintraege(stand.zuletzt, quer: false)))
+        }
+        // Getrennte Neuzugänge: `zuletzt` ist dann leer, die Startseite zeigt
+        // Filme und Serien einzeln — das Regal auch.
+        if !stand.neueFilme.isEmpty {
+            rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügte Filme"), quer: false,
+                                  eintraege: eintraege(stand.neueFilme, quer: false)))
+        }
+        if !stand.neueSerien.isEmpty {
+            rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügte Serien"), quer: false,
+                                  eintraege: eintraege(stand.neueSerien, quer: false)))
         }
         // **Abseits des Hauptakteurs.** Lesen, Vergleichen und Schreiben der
         // Datei lagen nach jedem Laden der Startseite auf dem Hauptakteur —

@@ -69,8 +69,14 @@ final class Merklistenmodell {
 
     /// Zu welchem Kontostand `items` gehört (`nil`: noch nichts geladen).
     private var fuerKonto: Int?
+    /// Zaehlt jeden Ladelauf; nur der juengste schreibt. Ein per `.task(id:)`
+    /// abgebrochener Lauf (Sortierung oder Gattung schnell umgestellt) sagte
+    /// sonst „gestoert" und „fertig", waehrend der neue noch unterwegs war.
+    private var lauf = 0
 
     func laden(_ model: AppModel) async {
+        lauf += 1
+        let meiner = lauf
         // **Ein anderes Konto: nichts vom vorigen stehen lassen.** Sonst
         // zeigte die Seite bis zur Antwort die Merkliste des vorigen Profils,
         // oder — war der letzte Abruf gestört — „Server ist abgetaucht" /
@@ -84,16 +90,20 @@ final class Merklistenmodell {
         }
         fuerKonto = model.kontowechsel
         laedt = items.isEmpty
+        // **Beim Start festhalten, wofuer gefragt wird** — nach der Antwort
+        // kann die Sortierung schon eine andere sein, und eine spaete Antwort
+        // landete dann unter dem Schluessel der neuen.
+        let fuer = "\(kennung)|\(model.kontowechsel)"
         // Beim Auffrischen so viel holen, wie schon dasteht (bis 300) — siehe
         // `Bibliotheksmodell.laden`.
-        let umfang = geladenFuer == "\(kennung)|\(model.kontowechsel)"
+        let umfang = geladenFuer == fuer
             ? min(300, max(AppModel.seitengroesse, items.count)) : AppModel.seitengroesse
         let antwort = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0,
                                            anzahl: umfang)
+        guard meiner == lauf, !Task.isCancelled else { return }
         gestoert = antwort == nil
         if let seite = antwort {
             // Dieselbe Regel wie auf der Startseite — siehe `Listenregeln`.
-            let fuer = "\(kennung)|\(model.kontowechsel)"
             items = geladenFuer == fuer
                 ? Listenregeln.auffrischen(seite.titel, in: items,
                                            gesamtVorher: gesamt, gesamtJetzt: seite.gesamt)
@@ -109,9 +119,10 @@ final class Merklistenmodell {
         laedtNach = true
         defer { laedtNach = false }
         let vorher = geladenFuer
+        let wofuer = kennung
         guard let seite = await model.gemerkte(art: gattung, sortierung: sortierung,
                                                ab: items.count),
-              geladenFuer == vorher else { return }
+              geladenFuer == vorher, kennung == wofuer else { return }
         // Nur wirklich Neues anhängen: der Server kann eine Seite doppelt
         // liefern, und `ForEach` beschwert sich über die doppelte Kennung.
         items = Listenregeln.anhaengen(seite.titel, an: items)

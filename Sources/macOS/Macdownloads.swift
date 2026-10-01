@@ -536,7 +536,7 @@ struct MacDownloadzeile: View {
     var body: some View {
         Group {
             if kommtWas {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { takt in
+                TimelineView(.animation(minimumInterval: 1.0 / 10)) { takt in
                     zeile(geladen: schaetzer.s.wert(um: takt.date))
                 }
             } else if posten.stand == .angehalten || posten.stand == .laedt {

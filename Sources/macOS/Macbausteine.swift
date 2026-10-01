@@ -543,8 +543,13 @@ struct Rasterplatzhalter: View {
     var reihen: Int = 3
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
-                                 count: max(spalten, 1)),
+        // **Dieselben Spalten wie das echte Raster** (`.adaptive` auf
+        // Kachelbreite, links bündig): mit `.flexible` standen die Felder in
+        // breiten Zellen, und die Kacheln sprangen beim Einblenden nach links.
+        // `spalten` bestimmt nur noch, wie viele Felder es sind.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: Stil.kachelBreite,
+                                               maximum: Stil.kachelBreite),
+                                     spacing: Stil.kachelAbstand, alignment: .topLeading)],
                   alignment: .leading, spacing: 20) {
             ForEach(0 ..< (max(spalten, 1) * reihen), id: \.self) { _ in
                 Kachelplatzhalter(breite: Stil.kachelBreite)
@@ -1360,6 +1365,33 @@ final class Wahlaufsicht {
     var offen: UUID?
 }
 
+/// Escape für eine offene Aufklapptafel. `onExitCommand` hängt an der
+/// Antwortkette und erreicht eine Tafel in einer Auflage nicht (siehe
+/// `Ladetafel`); ein unsichtbarer Knopf mit `cancelAction` tut es. Nur da,
+/// solange die Tafel offen ist, damit Escape sonst anderen gehört.
+private struct TafelEscape: ViewModifier {
+    let offen: Bool
+    let zu: () -> Void
+    func body(content: Content) -> some View {
+        content.background {
+            if offen {
+                Button("") { zu() }
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+extension View {
+    /// Escape schließt die Tafel, solange sie offen ist.
+    func tafelEscape(_ offen: Bool, zu: @escaping () -> Void) -> some View {
+        modifier(TafelEscape(offen: offen, zu: zu))
+    }
+}
+
 struct Wahlknopf<Eintrag: Identifiable>: View {
     let symbol: String
     /// Was gerade gilt — die Beschriftung des Knopfes.
@@ -1399,6 +1431,7 @@ struct Wahlknopf<Eintrag: Identifiable>: View {
                     .onTapGesture { withAnimation(Stil.sprung) { aufsicht.offen = nil } }
             }
         }
+        .tafelEscape(offen) { withAnimation(Stil.sprung) { aufsicht.offen = nil } }
         .overlay(alignment: .topLeading) {
             if offen {
                 tafel
@@ -1524,6 +1557,7 @@ struct Titelwahl<Eintrag: Identifiable>: View {
                     .onTapGesture { withAnimation(Stil.sprung) { aufsicht.offen = nil } }
             }
         }
+        .tafelEscape(offen) { withAnimation(Stil.sprung) { aufsicht.offen = nil } }
         .overlay(alignment: .topLeading) {
             if offen {
                 Wahltafel(eintraege: eintraege, beschriftung: beschriftung,

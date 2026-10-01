@@ -86,12 +86,15 @@ final class Uebernahmemodell {
     /// von „nichts Neues" unterscheiden.
     static let taktsekunden: Double = 5
 
+    /// Steht die App nicht vorn (Hintergrund, Mac: Fenster inaktiv oder
+    /// minimiert), ruht der Takt (`Vordergrund.warten`) und fragt beim
+    /// Zurueckkommen sofort einmal.
     func starten(_ model: AppModel) {
         guard takt == nil else { return }
         takt = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.einmalFragen(model)
-                try? await Task.sleep(for: .seconds(Self.taktsekunden))
+                await Vordergrund.warten(sekunden: Self.taktsekunden)
             }
         }
     }

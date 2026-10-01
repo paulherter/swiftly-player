@@ -185,16 +185,32 @@ public extension JellyfinClient {
     /// und je Doppel seine Bibliothek. Scheitert davon etwas, wird trotzdem
     /// zusammengefasst — dann bleibt der frühere Eintrag.
     func jeWerkEinmal(_ items: [Item], folgenJeSerie: Bool = false) async -> [Item] {
+        await jeWerkEinmal(items, folgenJeSerie: folgenJeSerie, bibliotheken: nil)
+    }
+
+    /// Wie oben, aber mit den Bibliotheken des Kontos, falls der Aufrufer sie
+    /// schon hat (`model.views`) — das spart eine Rundreise je Aufruf. Mit
+    /// `nil` holt die Funktion sie selbst, und zwar nur, wenn es Doppel gibt.
+    /// Gibt es Folgen, die eine Serie verdächtigen, laufen die Abfrage der
+    /// Seriennummern und die der Bibliotheken gleichzeitig statt nacheinander.
+    func jeWerkEinmal(_ items: [Item], folgenJeSerie: Bool = false,
+                      bibliotheken vorhanden: [Item]?) async -> [Item] {
         let verdacht = Werke.serienVerdacht(items)
         var serien: Werke.Seriennummern = [:]
-        if !verdacht.isEmpty, let geholt = try? await kennungen(ids: Array(verdacht)) {
-            for s in geholt { serien[s.id] = s.providerIds ?? [:] }
+        var bibliotheken = vorhanden
+        if !verdacht.isEmpty {
+            async let geholt = try? kennungen(ids: Array(verdacht))
+            let braucheAnsichten = bibliotheken == nil
+            async let ansichten: [Item]? = braucheAnsichten ? try? userViews() : nil
+            for s in (await geholt) ?? [] { serien[s.id] = s.providerIds ?? [:] }
+            if braucheAnsichten { bibliotheken = await ansichten }
         }
         let doppel = Werke.mitDoppel(items, serien: serien, folgenJeSerie: folgenJeSerie)
         guard !doppel.isEmpty else { return items }
-        let bibliotheken = (try? await userViews()) ?? []
-        let herkunft = await herkunft(von: doppel.map(\.id), unter: Set(bibliotheken.map(\.id)))
-        return Werke.zusammenfassen(items, herkunft: herkunft, bibliotheken: bibliotheken,
+        if bibliotheken == nil { bibliotheken = (try? await userViews()) ?? [] }
+        let ansicht = bibliotheken ?? []
+        let herkunft = await herkunft(von: doppel.map(\.id), unter: Set(ansicht.map(\.id)))
+        return Werke.zusammenfassen(items, herkunft: herkunft, bibliotheken: ansicht,
                                     serien: serien, folgenJeSerie: folgenJeSerie)
     }
 
@@ -226,8 +242,17 @@ public extension JellyfinClient {
     /// Kennungen.
     func gemerkteWerke(typen: [String], sortBy: String, sortOrder: String,
                        startIndex: Int, limit: Int) async throws -> ItemsResponse {
+        try await gemerkteWerke(typen: typen, sortBy: sortBy, sortOrder: sortOrder,
+                                startIndex: startIndex, limit: limit, bibliotheken: nil)
+    }
+
+    /// Wie oben, mit den schon bekannten Bibliotheken des Kontos (spart
+    /// `UserViews` bei jeder Seite, sobald es Doppel gibt).
+    func gemerkteWerke(typen: [String], sortBy: String, sortOrder: String,
+                       startIndex: Int, limit: Int,
+                       bibliotheken: [Item]?) async throws -> ItemsResponse {
         let alle = try await gemerkteKennungen(typen: typen, sortBy: sortBy, sortOrder: sortOrder)
-        let werke = await jeWerkEinmal(alle)
+        let werke = await jeWerkEinmal(alle, bibliotheken: bibliotheken)
         let seite = Array(werke.dropFirst(startIndex).prefix(limit))
         guard !seite.isEmpty else { return ItemsResponse(items: [], totalRecordCount: werke.count) }
         let voll = try await items(limit: seite.count, ids: seite.map(\.id))

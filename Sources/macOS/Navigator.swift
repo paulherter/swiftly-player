@@ -284,7 +284,24 @@ enum Planvorrat {
     private static var gemerkt: [String: PlaybackPlan] = [:]
     private static var laufend: [String: Task<PlaybackPlan?, Never>] = [:]
 
-    static func plan(_ id: String) -> PlaybackPlan? { gemerkt[id] }
+    /// Wovon ein Plan abhängt: Direct-Play-Schalter, Bitratengrenze, Konto.
+    /// Ändert sich eines, gelten die gemerkten Pläne nicht mehr — sonst zeigte
+    /// der Kopf kurz „Direct Play", wo der neue Plan umwandelt.
+    private static var schluessel = ""
+
+    private static func abgleichen(_ model: AppModel) {
+        let neu = "\(model.immerDirectPlay)|\(model.bitratenGrenze)|\(model.kontowechsel)"
+        guard neu != schluessel else { return }
+        schluessel = neu
+        gemerkt.removeAll()
+        laufend.values.forEach { $0.cancel() }
+        laufend.removeAll()
+    }
+
+    static func plan(_ id: String, mit model: AppModel) -> PlaybackPlan? {
+        abgleichen(model)
+        return gemerkt[id]
+    }
 
     static func merken(_ id: String, _ plan: PlaybackPlan?) {
         gemerkt[id] = plan
@@ -293,6 +310,7 @@ enum Planvorrat {
     /// `PlaybackInfo` ist ein POST, bei dem der Server die Datei anfasst —
     /// je Titel einer, auch wenn Überfahren und Öffnen zusammenfallen.
     static func vorholen(_ item: Item, mit model: AppModel) {
+        abgleichen(model)
         guard item.type == "Movie" || item.type == "Series",
               gemerkt[item.id] == nil, laufend[item.id] == nil else { return }
         let id = item.id
@@ -302,6 +320,8 @@ enum Planvorrat {
             if serie { ziel = await model.standInSerie(item)?.id } else { ziel = id }
             guard let ziel else { laufend[id] = nil; return nil }
             let plan = await model.plan(for: ziel, still: true)
+            // Abgebrochen (Einstellung oder Konto gewechselt): der Plan gilt nicht mehr.
+            guard !Task.isCancelled else { return nil }
             if let plan { gemerkt[id] = plan }
             laufend[id] = nil
             return plan

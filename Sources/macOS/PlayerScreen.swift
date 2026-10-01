@@ -241,6 +241,10 @@ struct PlayerScreen: View {
             // **Klick ins Bild** holt die Steuerung bewusst — das sagt eine
             // laufende Karte „Nächste Folge" ab, anders als die Zeigerbewegung.
             .simultaneousGesture(TapGesture().onEnded { steuerungZeigen() })
+            // **Doppelklick ins Bild: Vollbild** (QuickTime, IINA, VLC). Der
+            // Einzelklick zeigt nur die Steuerung und schaltet nichts um,
+            // läuft also beim Doppelklick harmlos zweimal mit.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { halter.vollbildUmschalten() })
 
             // **Deckend**, nicht nur ein Rädchen. Vorher stand hier ein
             // durchsichtiger `Lader()`, und das Video lief die ganze Zeit
@@ -504,6 +508,34 @@ struct PlayerScreen: View {
             model.playerOffen = false
         }
         .task { await mitlaufen() }
+        // **Absicherung, nicht Behebung eines belegten Fehlers:** ob SwiftUI
+        // beim Schließen des Fensters (⌘W) `onDisappear` zuverlässig ruft, ist
+        // nicht gemessen. Schließt das Fenster mit laufendem Film, nimmt dies
+        // den Ton weg und meldet Stelle und Ende — dieselben Aufrufe wie in
+        // `beenden()`, die ein zweites Mal nichts tun (`zaehlen` ist
+        // einmalig, `pause` ist billig).
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { n in
+            guard let fenster = n.object as? NSWindow, fenster === halter.fenster else { return }
+            let stelle = stand.position
+            zaehlen(bei: stelle)
+            flaeche?.pause()
+            folgenwechsel.schliessen(stoppen: stoppMeldung(bei: stelle))
+        }
+        // Das Menü „Wiedergabe" — dieselben Handgriffe wie die Tasten.
+        .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
+            guard offeneEbene == nil, let kommando = Kommandopost.empfangen(post) else { return }
+            switch kommando {
+            case .spielUmschalten: umschalten()
+            case .spielZurueck: springe(-Double(model.zurueckSekunden))
+            case .spielVor: springe(Double(model.vorSekunden))
+            case .spielPause: if laeuftJetzt { umschalten() }
+            case .spielVollbild: halter.vollbildUmschalten()
+            case .lauter: lautstaerkeStufe(0.05)
+            case .leiser: lautstaerkeStufe(-0.05)
+            case .stumm: lautstaerkeStumm(); lautstaerkeKurzZeigen()
+            default: break
+            }
+        }
         // Tastenkürzel. Sie stehen zusätzlich in der Menüleiste, damit man sie
         // findet, ohne sie zu kennen.
         .background {
