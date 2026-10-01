@@ -204,6 +204,7 @@ def bauen():
     <ul>
       <li><a href="/licenses/LGPL-2.1-or-later.txt">Full text of the LGPL 2.1</a></li>{gpl}
       <li><a href="{REPO["Werkzeuge/vlckit-patches/"]}" target="_blank" rel="noopener">Swiftly's patches on GitHub</a></li>
+      <li><a href="{GITHUB}/tree/main/Werkzeuge/vlckit-bau" target="_blank" rel="noopener">Build scripts on GitHub</a></li>
       <li><a href="https://code.videolan.org/videolan/VLCKit" target="_blank" rel="noopener">VLCKit at VideoLAN</a></li>
       <li><a href="#written-offer">Written offer for the source code</a></li>
     </ul>
