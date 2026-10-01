@@ -42,6 +42,9 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 import org.json.JSONArray
 import kotlin.reflect.KProperty
 
+/** Eine Bibliothek oder Sammlung als eigene Startreihe (`Startbibliothek` im Paket). */
+data class Startbib(val id: String, val name: String, val sammlung: Boolean)
+
 /** Ein gemerkter Wert — Zustand fuer Compose, geschrieben in die Ablage bei jeder Aenderung. */
 private class Merkwert<T>(private val ablage: Ablage, private val schluessel: String, anfang: T, private val schreiben: (T) -> String) {
     private val zustand = mutableStateOf(anfang)
@@ -94,6 +97,44 @@ class Einstellungen(ablage: Ablage) {
     var startReihen by Merkwert(a, "startReihen", liste("startReihen"), alsListe)
     var startAus by Merkwert(a, "startAus", liste("startAus"), alsListe)
     var startGenres by Merkwert(a, "startGenres", liste("startGenres"), alsListe)
+    /** Der Server des geltenden Kontos, klein und ohne Schraegstrich — die Wahl gehoert zu ihm. Setzt die Anwendung. */
+    var serverSchluessel: () -> String = { "" }
+    private val bibliothekenStand = mutableIntStateOf(0)
+    private var bibliothekenRoh: String? = null
+    private var bibliothekenGeladen = false
+    private fun bibliothekenKey() = "startBibliotheken|" + serverSchluessel()
+    /** Nach Konto- oder Serverwechsel: die Wahl des neuen Servers lesen. */
+    fun bibliothekenNeuLesen() { bibliothekenGeladen = false; bibliothekenStand.intValue++ }
+    /**
+     * **Bibliotheken und Sammlungen als eigene Startreihen**, in der gewaehlten Folge — je Server
+     * (`startBibliotheken|<server>`), wie auf Apple. Gelesen wird tolerant: ein fehlender Schluessel
+     * oder ein kaputter Eintrag nimmt nie die ganze Wahl mit. Eine Kennung, die es dort nicht mehr gibt,
+     * bleibt stehen und liefert nur keine Reihe.
+     */
+    var startBibliotheken: List<Startbib>
+        get() {
+            bibliothekenStand.intValue
+            if (!bibliothekenGeladen) { bibliothekenRoh = a.merkwert(bibliothekenKey()); bibliothekenGeladen = true }
+            return bibliothekenRoh?.let { roh ->
+                runCatching { JSONArray(roh) }.getOrNull()?.let { j ->
+                    (0 until j.length()).mapNotNull { i ->
+                        val o = j.optJSONObject(i) ?: return@mapNotNull null
+                        val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                        Startbib(id, o.optString("name"), o.optBoolean("sammlung", false))
+                    }
+                }
+            }?.distinctBy { it.id } ?: emptyList()
+        }
+        set(wert) {
+            val sauber = wert.filter { it.id.isNotEmpty() }.distinctBy { it.id }
+            val roh = JSONArray(sauber.map { org.json.JSONObject().put("id", it.id).put("name", it.name).put("sammlung", it.sammlung) }).toString()
+            bibliothekenRoh = roh; bibliothekenGeladen = true
+            a.merken(bibliothekenKey(), roh)
+            bibliothekenStand.intValue++
+        }
+    /** Die abgelegte Wahl als JSON fuer den Kern. */
+    fun startBibliothekenJson(): String = JSONArray(startBibliotheken.map {
+        org.json.JSONObject().put("id", it.id).put("name", it.name).put("sammlung", it.sammlung) }).toString()
     /** Genres als Chips ueber den Reihen statt als eigene Reihen — nie beides. */
     var genreChips by Merkwert(a, "genreChips", bool("genreChips", false), jaNein)
     /** Titel als Logo auf Film- und Serienseite (`titelAlsLogo`) — aus, bis jemand es will. */

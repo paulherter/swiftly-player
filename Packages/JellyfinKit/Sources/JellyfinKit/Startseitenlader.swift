@@ -16,9 +16,24 @@ public protocol Startseitenquelle: Sendable {
     /// Die zuletzt erweiterten **Serien** selbst (`IncludeItemTypes=Series`) —
     /// dieselbe Abfrage wie die Serien-Seite, unabhaengig vom Bibliothekstyp.
     func neueSerien(in bibliothek: String?, zeigen: Int) async -> [Item]?
+    /// Die neuesten Titel **einer** Bibliothek oder Sammlung — `nil`, wenn der
+    /// Abruf nicht durchkam (auch: es gibt sie dort nicht mehr).
+    func neuesteTitel(in bibliothek: String, sammlung: Bool, zeigen: Int) async -> [Item]?
+}
+
+public extension Startseitenquelle {
+    func neuesteTitel(in bibliothek: String, sammlung: Bool, zeigen: Int) async -> [Item]? { nil }
 }
 
 extension JellyfinClient: Startseitenquelle {
+    /// Die zuletzt hinzugefügten Filme und Serien der Bibliothek (rekursiv,
+    /// ohne Folgen und Ordner); bei einer Sammlung ihre Mitglieder.
+    public func neuesteTitel(in bibliothek: String, sammlung: Bool, zeigen: Int) async -> [Item]? {
+        try? await items(parentID: bibliothek, limit: zeigen,
+                         sortBy: "DateCreated", sortOrder: "Descending",
+                         recursive: !sammlung,
+                         includeItemTypes: ["Movie", "Series", "Video"]).items
+    }
     public func bibliotheken() async -> [Item]? { try? await userViews() }
     public func zuletztHinzugefuegt(in bibliothek: String?, holen: Int, zeigen: Int) async -> [Item]? {
         await zuletztHinzugefuegt(in: bibliothek, holen: holen, zeigen: zeigen, gattungen: "Movie,Episode")
@@ -45,6 +60,13 @@ public struct Startseite: Sendable {
         public let name: String
         public let items: [Item]
         public var id: String { name }
+    }
+
+    /// Eine gewählte Bibliothek oder Sammlung als Reihe.
+    public struct Bibliotheksreihe: Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        public let items: [Item]
     }
 
     public let weiterschauen: [Item]?
@@ -110,6 +132,30 @@ public enum Startseitenlader {
         return namen.indices.compactMap { i in
             guard let titel = geholt[i], !titel.isEmpty else { return nil }
             return .init(name: namen[i], items: Listenregeln.ohneDoppelte(titel))
+        }
+    }
+
+    /// **Die gewählten Bibliotheken als Reihen — alle zugleich, nicht nacheinander.**
+    ///
+    /// In der gewählten Folge. Eine Reihe, deren Abruf scheitert (Bibliothek
+    /// gelöscht, dem Profil nicht zugänglich) oder die leer ist, fällt still
+    /// weg; die Wahl selbst bleibt unberührt. Was schon in „Neue Filme" und
+    /// Co. steht, ändert daran nichts — die Reihe zeigt ihre eigene Bibliothek.
+    public static func bibliotheksreihen(von quelle: some Startseitenquelle,
+                                         wahl: [Startbibliothek]) async -> [Startseite.Bibliotheksreihe] {
+        let wahl = Startbibliotheken.sauber(wahl)
+        let geholt = await withTaskGroup(of: (Int, [Item]?).self) { gruppe in
+            for (i, w) in wahl.enumerated() {
+                gruppe.addTask { (i, await quelle.neuesteTitel(in: w.id, sammlung: w.sammlung, zeigen: 24)) }
+            }
+            var je: [Int: [Item]] = [:]
+            for await (i, titel) in gruppe { if let titel { je[i] = titel } }
+            return je
+        }
+        return wahl.indices.compactMap { i in
+            guard let titel = geholt[i], !titel.isEmpty else { return nil }
+            return .init(id: wahl[i].id, name: wahl[i].name,
+                         items: Listenregeln.ohneDoppelte(titel))
         }
     }
 

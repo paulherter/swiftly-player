@@ -1934,6 +1934,8 @@ final class App: @unchecked Sendable {
     var spielerLautstaerke: Lautstaerkeregler?
     var lautstaerkeZieht = false
     var lautstaerkeUhr = 0
+    /// Das Rad hat den Wert verstellt, gesichert ist er noch nicht.
+    var lautstaerkeRadOffen = false
     /// Der Knopf, der eine Ebene geöffnet hat — dorthin geht der Fokus
     /// zurück, wenn sie schliesst.
     var spielerEbenenknoepfe: [Playerebene: Widget] = [:]
@@ -4646,6 +4648,7 @@ final class App: @unchecked Sendable {
         let ausgeblendet = wahlen.startAus
         let gattungen = wahlen.startGenres
         let alsChips = wahlen.genreChips
+        let bibliotheksWahl = wahlen.startBibliotheken
         Task.detached { [self] in
             // **Hier wird der Fehler gelesen, nicht verschluckt.** Die
             // Startseite lädt bei jedem Wechsel in den Vordergrund (D8) und
@@ -4682,6 +4685,11 @@ final class App: @unchecked Sendable {
             let startseite = await Startseitenlader.laden(von: client, .init(
                 getrennt: getrennt, filmBibliothek: filmBib, serienBibliothek: serienBib,
                 gattungen: alsChips ? nil : gattungen))
+            // **Die Bibliotheksreihen laufen nebenher**, alle zugleich und ein
+            // Abruf je Reihe (`Startseitenlader.bibliotheksreihen`); eine, die
+            // es nicht mehr gibt oder die leer ist, fällt still weg.
+            let bibliotheken = bibliotheksWahl.isEmpty ? [] :
+                await Startseitenlader.bibliotheksreihen(von: client, wahl: bibliotheksWahl)
             let inhalt: [Startreihe: (Reihenart, [Item])] = [
                 .weiterschauen: (.weiterschauen, startseite.weiterschauen ?? []),
                 .naechsteFolge: (.naechste, startseite.naechsteFolge ?? []),
@@ -4689,13 +4697,19 @@ final class App: @unchecked Sendable {
                 .neueFilme:     (.neu, startseite.neueFilme ?? []),
                 .neueSerien:    (.neu, startseite.neueSerien ?? []),
             ]
-            var gesammelt: [(String, Reihenart, [Item])] = Startreihenfolge
+            var gesammelt: [Startreihenzeile] = Startreihenfolge
                 .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
                 .compactMap { r in
                     guard let (art, items) = inhalt[r], !items.isEmpty else { return nil }
-                    return (uebersetzt(r.reihentitel), art, items)
+                    return (uebersetzt(r.reihentitel), art, items, nil)
                 }
-            gesammelt += startseite.gattungsreihen.map { ($0.name, .neu, $0.items) }
+            // Zwischen den festen Reihen und den Genres, wie auf Apple. Der
+            // Kopf öffnet die Bibliothek oder Sammlung.
+            gesammelt += bibliotheken.map { r in
+                (r.name, .neu, r.items,
+                 bibliotheksWahl.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name))
+            }
+            gesammelt += startseite.gattungsreihen.map { ($0.name, .neu, $0.items, nil) }
             let reihen = gesammelt
 
             aufHauptfaden {
@@ -5197,7 +5211,7 @@ final class App: @unchecked Sendable {
         return flaeche
     }
 
-    func reihenZeigen(_ reihen: [(String, Reihenart, [Item])], gestoert: Bool = false,
+    func reihenZeigen(_ reihen: [Startreihenzeile], gestoert: Bool = false,
                       gestaffelt: Bool = false) {
         // **Waehrend das Profilbild fliegt, warten die Reihen** (Entwurf D,
         // iOS „wechsel 5"): sie kommen erst nach dem Tausch, gestaffelt.
@@ -5236,8 +5250,11 @@ final class App: @unchecked Sendable {
                                   oben: 120))
             return
         }
-        for (i, (titel, art, titelListe)) in reihen.enumerated() {
-            let reihe = reiheBauen(titel: titel, art: art, items: titelListe)
+        for (i, (titel, art, titelListe, kopf)) in reihen.enumerated() {
+            let reihe = reiheBauen(titel: titel, art: art, items: titelListe,
+                                   kopf: kopf.map { eintrag in
+                                       { [weak self] in self?.sammlungOeffnen(eintrag, art: nil) }
+                                   })
             anhaengen(reihenstapel, reihe)
             if gestaffelt { reiheAuftreten(reihe, nummer: i + takt) }
         }
@@ -5261,13 +5278,13 @@ final class App: @unchecked Sendable {
     ///   einer Überschrift, die bei 24 beginnt. Steht wörtlich so an
     ///   `Blätterreihe` auf dem Mac; genau daran ist es hier aufgefallen.
     func reiheBauen(titel: String, art: Reihenart, items: [Item],
-                    rand: Int = Stil.randAbstand) -> Widget! {
+                    rand: Int = Stil.randAbstand, kopf: (() -> Void)? = nil) -> Widget! {
         let quer = art == .weiterschauen
         return reiheBauen(titel: titel,
                           bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe,
                           stueck: (quer ? Stil.querBreite : Stil.kachelBreite)
                                   + Stil.kachelAbstand,
-                          rand: rand,
+                          rand: rand, kopf: kopf,
                           kacheln: items.map { kachelBauen($0, art: art) })
     }
 
@@ -5280,7 +5297,8 @@ final class App: @unchecked Sendable {
     /// waere die kopierte Funktion, gegen die die Regel steht, und sie waere
     /// prompt auseinandergelaufen.
     func reiheBauen(titel: String, bildHoehe: Int, stueck: Int,
-                    rand: Int = Stil.randAbstand, kacheln: [Widget?]) -> Widget! {
+                    rand: Int = Stil.randAbstand, kopf: (() -> Void)? = nil,
+                    kacheln: [Widget?]) -> Widget! {
         // 12, nicht 10: dieselbe Rolle traegt auf der Detailseite 12 (Mac
         // `Reihe`).
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
@@ -5300,7 +5318,22 @@ final class App: @unchecked Sendable {
         gtk_widget_set_halign(ueberschrift, GTK_ALIGN_START)
         gtk_widget_set_margin_start(ueberschrift, Int32(rand))
         gtk_widget_set_margin_end(ueberschrift, Int32(rand))
-        anhaengen(block, ueberschrift)
+        if let kopf {
+            // **Der Kopf ist ein Knopf, wenn die Reihe eine Seite hat**
+            // (Bibliotheksreihe): Rand und Ausrichtung wandern an den Knopf.
+            gtk_widget_set_margin_start(ueberschrift, 0)
+            gtk_widget_set_margin_end(ueberschrift, 0)
+            let knopf: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(knopf, "swiftly-reihenkopf")
+            gtk_button_set_child(alsKnopf(knopf), ueberschrift)
+            gtk_widget_set_halign(knopf, GTK_ALIGN_START)
+            gtk_widget_set_margin_start(knopf, Int32(rand))
+            gtk_widget_set_margin_end(knopf, Int32(rand))
+            beiSignal(knopf, "clicked", kopf)
+            anhaengen(block, knopf)
+        } else {
+            anhaengen(block, ueberschrift)
+        }
 
         let scroller = gtk_scrolled_window_new()
         // `EXTERNAL` heisst: blättern ja, Leiste nein.

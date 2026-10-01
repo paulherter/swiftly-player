@@ -531,6 +531,15 @@ extension View {
             .navigationDestination(for: DarstellungRoute.self) { _ in
                 DarstellungView(model: model)
             }
+            .navigationDestination(for: LizenzenRoute.self) { _ in
+                LizenzenView()
+            }
+            .navigationDestination(for: LizenzRoute.self) { route in
+                if let b = Lizenzbestand.geteilt?.baustein(id: route.id) { LizenzView(baustein: b) }
+            }
+            .navigationDestination(for: LizenzangebotRoute.self) { _ in
+                LizenzangebotView()
+            }
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             // Der Modifikator darueber gilt der Wurzel; die geschobenen Ziele

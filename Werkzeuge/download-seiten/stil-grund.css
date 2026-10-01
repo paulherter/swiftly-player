@@ -214,3 +214,7 @@ main > :not(.schein) { position: relative; z-index: 6; }
   .abschnitt > h2 { font-size: 34px; }
   .frage__knopf h3 { font-size: 18px; }
 }
+
+/* Hinweis auf VLCKit/libVLC auf den Download-Seiten und Links im Kleingedruckten der Fusszeile. */
+.lizenzhinweis { margin-top: 56px; color: var(--leise); font-size: 15px; line-height: 1.55; }
+.lizenzhinweis a, .fuss__klein a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }

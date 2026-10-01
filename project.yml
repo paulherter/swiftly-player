@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "19"
+    CURRENT_PROJECT_VERSION: "20"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -73,6 +73,10 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/iOS
+      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
+      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      - path: LICENSES
+        type: folder
     dependencies:
       - package: JellyfinKit
       - package: Lottie
@@ -329,10 +333,15 @@ targets:
       # größer.
       - path: Sources/Shared/Startanimation.swift
       - path: Sources/Shared/Mittel
+      - path: Sources/Shared/Lizenzen.swift
       # Die Toene eines Kulissenbilds — der Fernseher faerbt damit seine
       # Detailseiten, das iPhone seinen Grund darunter.
       - path: Sources/Shared/Bildton.swift
       - path: Sources/tvOS
+      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
+      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      - path: LICENSES
+        type: folder
     dependencies:
       - package: JellyfinKit
       - package: Lottie
@@ -620,8 +629,13 @@ targets:
       # Kontowechsel D und die Karte aus dem Abzeichen: Ablauf und Kurve
       # geteilt, die Bühne steht in `Sources/macOS/Kontowechselbuehne.swift`.
       - path: Sources/Shared/Kontowechselflug.swift
+      - path: Sources/Shared/Lizenzen.swift
       - path: Sources/Shared/Uebergaenge.swift
       - path: Sources/macOS
+      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
+      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      - path: LICENSES
+        type: folder
     dependencies:
       - package: JellyfinKit
       # Fuer die Startanimation — dieselbe Vorlage wie iPhone und Fernseher.

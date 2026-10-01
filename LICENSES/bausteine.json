@@ -1,0 +1,1387 @@
+{
+ "schema": 1,
+ "hinweis": "Einzige Quelle für alle Lizenzangaben. THIRD-PARTY-NOTICES.md wird daraus mit Werkzeuge/lizenzen-erzeugen.py erzeugt; die Apps lesen diese Datei und LICENSES/*.txt aus dem Bündel. Das Feld \"pruefen\" ist intern (offene Punkte) und wird nirgends angezeigt.",
+ "angebot": {
+  "titel": "VLCKit / libVLC — Source and your rights",
+  "kurz": "Swiftly Player uses VLCKit and libVLC by VideoLAN (LGPL-2.1 or later).",
+  "kontakt": "info@swiftlyplayer.com",
+  "quelle_swiftly": "https://github.com/paulherter/swiftly-player",
+  "abschnitte": [
+   {
+    "titel": "What is used",
+    "absaetze": [
+     "Swiftly Player plays video and audio with VLCKit and libVLC by VideoLAN, which are licensed under the GNU Lesser General Public License, version 2.1 or (at your option) any later version (LGPL-2.1-or-later). Copyright VideoLAN and VLC authors. The full license text is included in this app and in LICENSES/LGPL-2.1-or-later.txt.",
+     "On Apple platforms (iPhone, iPad, Mac, Apple TV) the app contains VLCKit 4.0.0-a23 as a dynamic framework (VLCKit.framework), built from VideoLAN's sources with the Swiftly patches listed below. VLCKit in turn contains libVLC and the libraries listed on the licenses page; those libraries carry their own licenses. VLC is built without its GPL modules (--disable-gpl); FFmpeg is built without --enable-gpl.",
+     "On Windows the app ships the official VLC 3.0.21 runtime with its plugins, as distributed by VideoLAN. libVLC and libvlccore are LGPL-2.1-or-later; some of the bundled plugins are GPL-2.0-or-later (see COPYING in the source archive below for which). On Linux the app does not bundle libVLC but uses the one of your system."
+    ]
+   },
+   {
+    "titel": "Source code",
+    "absaetze": [
+     "Upstream VLCKit: https://code.videolan.org/videolan/VLCKit, tag 4.0.0-a23 (commit e3774eb2).",
+     "Upstream libVLC: https://code.videolan.org/videolan/vlc, commit 2cd8705589 (the commit VLCKit 4.0.0-a23 pins as TESTEDHASH).",
+     "Bundled libraries: the exact release tarballs are those of VLC's contrib system (libvlc/vlc/contrib/src/*), in the versions listed on the licenses page.",
+     "VLC for Windows: the source archive of VLC 3.0.21 at https://download.videolan.org/pub/videolan/vlc/3.0.21/ (vlc-3.0.21.tar.xz). Swiftly does not patch this runtime.",
+     "Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Nine patches against libVLC (0028, 0030 to 0034 and 0036 to 0038) and one against VLCKit itself (VLCKit-pause-ohne-warteschlange.patch, for Sources/Playback/VLCMediaPlayer.m). Patch 0035 is in the same directory but is not part of any shipped build.",
+     "How to rebuild: Documentation/VLCKit.md in the same repository describes the steps, and Documentation/Building.md describes how to build Swiftly against your own VLCKit."
+    ]
+   },
+   {
+    "titel": "Your rights",
+    "absaetze": [
+     "You may modify the library and use your modified version with Swiftly Player. To do so, build VLCKit from the sources above (with or without our patches), assemble Vendor/VLCKit-gepatcht.xcframework from your build, and build and sign Swiftly Player from its published source code as described in Documentation/Building.md. Swiftly Player's own code is published under the MPL-2.0.",
+     "You may copy and pass on the library under the terms of the LGPL. You may reverse engineer the application as far as needed to debug modifications of the library."
+    ]
+   },
+   {
+    "titel": "Written offer",
+    "absaetze": [
+     "On request we will provide the complete corresponding source code of VLCKit, libVLC (including the VLC 3.0.21 runtime and plugins shipped for Windows) and the bundled libraries of every version of Swiftly Player that we distribute, including the Swiftly patches and the scripts used to build it, on a data medium or as a download. The offer is valid for at least three years after the release of the respective version. We may charge no more than the cost of physically performing the delivery.",
+     "Send the request, with the version and platform you have, to info@swiftlyplayer.com."
+    ]
+   }
+  ]
+ },
+ "bausteine": [
+  {
+   "id": "vlckit",
+   "name": "VLCKit",
+   "version": "4.0.0-a23, built with Swiftly's patches",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLAN and VLC authors",
+   "quelle": "https://code.videolan.org/videolan/VLCKit",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "player",
+   "notiz": "Modified: Swiftly ships a VLCKit built with its own patches (see the written offer above)."
+  },
+  {
+   "id": "libvlc",
+   "name": "libVLC (VLC core, libvlccore and modules)",
+   "version": "VLC 4.0 development snapshot 2cd8705589 (Apple); libvlc-all 3.6.3 (Android)",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLAN and VLC authors",
+   "quelle": "https://www.videolan.org/vlc/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos",
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "player",
+   "notiz": "On Apple platforms built with --disable-gpl, without VLC's GPL modules."
+  },
+  {
+   "id": "libvlc-windows",
+   "name": "VLC 3.0.21 runtime and plugins (Windows)",
+   "version": "3.0.21",
+   "spdx": "LGPL-2.1-or-later AND GPL-2.0-or-later",
+   "urheber": "VideoLAN and VLC authors",
+   "quelle": "https://download.videolan.org/pub/videolan/vlc/3.0.21/",
+   "plattformen": [
+    "windows"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt",
+    "GPL-2.0-or-later.txt"
+   ],
+   "gruppe": "player",
+   "notiz": "The official VLC 3.0.21 runtime with its plugins folder, as distributed by VideoLAN. libVLC and libvlccore are LGPL-2.1-or-later; some of the bundled plugins are GPL-2.0-or-later. See COPYING in the source archive (vlc-3.0.21.tar.xz) for the modules."
+  },
+  {
+   "id": "libvlc-linux",
+   "name": "libVLC of the system",
+   "version": "as installed by your distribution (package dependency vlc / libvlc5)",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLAN and VLC authors",
+   "quelle": "https://www.videolan.org/vlc/",
+   "plattformen": [
+    "linux"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "player",
+   "notiz": "Not bundled: the app uses the libVLC that your system provides. Its source code comes from your distribution."
+  },
+  {
+   "id": "lottie-ios",
+   "name": "Lottie (lottie-ios)",
+   "version": "4.6.1",
+   "spdx": "Apache-2.0",
+   "urheber": "Airbnb, Inc.",
+   "quelle": "https://github.com/airbnb/lottie-ios",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "inter",
+   "name": "Inter (typeface)",
+   "version": "Inter-SemiBold.ttf (18pt SemiBold); on Linux and Windows also InterVariable.ttf",
+   "spdx": "OFL-1.1",
+   "urheber": "The Inter Project Authors",
+   "quelle": "https://github.com/rsms/inter",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos",
+    "linux",
+    "windows"
+   ],
+   "texte": [
+    "OFL-1.1-Inter.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "figtree",
+   "name": "Figtree (typeface of the website)",
+   "version": "Webfont, see Website/schrift/",
+   "spdx": "OFL-1.1",
+   "urheber": "The Figtree Project Authors",
+   "quelle": "https://github.com/erikdkennedy/figtree",
+   "plattformen": [
+    "website"
+   ],
+   "texte": [],
+   "gruppe": "app",
+   "notiz": "Website only; the license text is in Website/schrift/OFL.txt."
+  },
+  {
+   "id": "ffmpeg",
+   "name": "FFmpeg (libavcodec, libavformat, libavutil, libswscale)",
+   "version": "8.1.2",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "The FFmpeg developers",
+   "quelle": "https://ffmpeg.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Built without --enable-gpl (license of the build: LGPL version 2.1 or later)."
+  },
+  {
+   "id": "dav1d",
+   "name": "dav1d",
+   "version": "1.5.4",
+   "spdx": "BSD-2-Clause",
+   "urheber": "VideoLAN and dav1d authors",
+   "quelle": "https://code.videolan.org/videolan/dav1d",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "flac",
+   "name": "FLAC (libFLAC)",
+   "version": "1.5.0",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Josh Coalson; Xiph.Org Foundation",
+   "quelle": "https://xiph.org/flac/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "fluidlite",
+   "name": "FluidLite",
+   "version": "Commit b0f187b404e393ee0a495b277154d55d7d03cbeb",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "FluidLite and FluidSynth authors",
+   "quelle": "https://github.com/divideconcept/FluidLite",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "pruefen": "Copyright holders not checked individually in the source tree."
+  },
+  {
+   "id": "freetype",
+   "name": "FreeType",
+   "version": "2.13.1",
+   "spdx": "FTL",
+   "urheber": "The FreeType Project (David Turner, Robert Wilhelm, Werner Lemberg and others)",
+   "quelle": "https://freetype.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "FTL.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "FreeType is available under the FreeType License or the GPL-2.0; Swiftly uses it under the FreeType License. Portions of this software are copyright The FreeType Project (www.freetype.org). All rights reserved."
+  },
+  {
+   "id": "fribidi",
+   "name": "GNU FriBidi",
+   "version": "1.0.16",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "The FriBidi authors",
+   "quelle": "https://github.com/fribidi/fribidi",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "gsm",
+   "name": "GSM 06.10 (libgsm)",
+   "version": "1.0-pl22",
+   "spdx": "LicenseRef-GSM",
+   "urheber": "Jutta Degener and Carsten Bormann, Technische Universität Berlin",
+   "quelle": "http://www.quut.com/gsm/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "GSM.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "harfbuzz",
+   "name": "HarfBuzz",
+   "version": "14.2.1",
+   "spdx": "MIT",
+   "urheber": "Google, Inc.; Ebrahim Byagowi and others (see COPYING upstream)",
+   "quelle": "https://github.com/harfbuzz/harfbuzz",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The \"Old MIT\" license; some parts carry other licenses, see COPYING upstream."
+  },
+  {
+   "id": "lame",
+   "name": "LAME (libmp3lame)",
+   "version": "3.100",
+   "spdx": "LGPL-2.0-or-later",
+   "urheber": "The LAME Project",
+   "quelle": "https://lame.sourceforge.io",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The source states \"LGPL, version 2 or later\"; used under LGPL-2.1."
+  },
+  {
+   "id": "libarchive",
+   "name": "libarchive",
+   "version": "3.8.8",
+   "spdx": "BSD-2-Clause",
+   "urheber": "Tim Kientzle and others",
+   "quelle": "https://www.libarchive.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos"
+   ],
+   "texte": [
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Not in the tvOS slice."
+  },
+  {
+   "id": "libaribcaption",
+   "name": "libaribcaption",
+   "version": "1.1.1",
+   "spdx": "MIT",
+   "urheber": "magicxqq",
+   "quelle": "https://github.com/xqq/libaribcaption",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libass",
+   "name": "libass",
+   "version": "0.17.5",
+   "spdx": "ISC",
+   "urheber": "libass contributors",
+   "quelle": "https://github.com/libass/libass",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "ISC.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libdsm",
+   "name": "libdsm",
+   "version": "0.4.3",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLabs and VideoLAN",
+   "quelle": "https://github.com/videolabs/libdsm",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libdvbpsi",
+   "name": "libdvbpsi",
+   "version": "1.3.3",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLAN",
+   "quelle": "https://code.videolan.org/videolan/libdvbpsi",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libebml",
+   "name": "libebml",
+   "version": "1.4.6",
+   "spdx": "LGPL-2.1-only",
+   "urheber": "Steve Lhomme, Moritz Bunkus and the libebml authors",
+   "quelle": "https://github.com/Matroska-Org/libebml",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libmatroska",
+   "name": "libmatroska",
+   "version": "1.7.2",
+   "spdx": "LGPL-2.1-only",
+   "urheber": "Steve Lhomme, Moritz Bunkus and the libmatroska authors",
+   "quelle": "https://github.com/Matroska-Org/libmatroska",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libebur128",
+   "name": "libebur128",
+   "version": "1.2.6",
+   "spdx": "MIT",
+   "urheber": "Jan Kokemüller",
+   "quelle": "https://github.com/jiixyj/libebur128",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libgcrypt",
+   "name": "Libgcrypt",
+   "version": "1.12.2",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "g10 Code GmbH and the GnuPG contributors",
+   "quelle": "https://gnupg.org/software/libgcrypt/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libgpg-error",
+   "name": "libgpg-error",
+   "version": "1.61",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "g10 Code GmbH and the GnuPG contributors",
+   "quelle": "https://gnupg.org/software/libgpg-error/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libjpeg-turbo",
+   "name": "libjpeg-turbo",
+   "version": "3.1.4.1",
+   "spdx": "IJG AND BSD-3-Clause AND Zlib",
+   "urheber": "The Independent JPEG Group; D. R. Commander and the libjpeg-turbo contributors",
+   "quelle": "https://libjpeg-turbo.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "libjpeg-turbo.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libmodplug",
+   "name": "libmodplug",
+   "version": "0.8.9.0",
+   "spdx": "LicenseRef-PublicDomain",
+   "urheber": "Olivier Lapicque, Konstanty Bialkowski and others (public domain)",
+   "quelle": "https://modplug-xmms.sourceforge.net",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [],
+   "gruppe": "in-vlckit",
+   "notiz": "The source declares libmodplug to be in the public domain; there is no license text."
+  },
+  {
+   "id": "libmysofa",
+   "name": "libmysofa",
+   "version": "1.2.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Symonics GmbH, Christian Hoene",
+   "quelle": "https://github.com/hoene/libmysofa",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libnfs",
+   "name": "libnfs",
+   "version": "6.0.2",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "Ronnie Sahlberg and the libnfs contributors",
+   "quelle": "https://github.com/sahlberg/libnfs",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt",
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The library is LGPL-2.1+; some protocol files are BSD-2-Clause."
+  },
+  {
+   "id": "libogg",
+   "name": "libogg",
+   "version": "1.3.6",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Xiph.Org Foundation",
+   "quelle": "https://xiph.org/ogg/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libplacebo",
+   "name": "libplacebo",
+   "version": "5.264.1",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "The libplacebo authors",
+   "quelle": "https://code.videolan.org/videolan/libplacebo",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libpng",
+   "name": "libpng",
+   "version": "1.6.58",
+   "spdx": "libpng-2.0",
+   "urheber": "The PNG Reference Library Authors",
+   "quelle": "http://www.libpng.org/pub/png/libpng.html",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "PNG-libpng-2.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "librist",
+   "name": "librist",
+   "version": "0.2.20",
+   "spdx": "BSD-2-Clause",
+   "urheber": "VideoLAN and librist authors",
+   "quelle": "https://code.videolan.org/rist/librist",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libshout",
+   "name": "libshout",
+   "version": "2.4.6",
+   "spdx": "LGPL-2.0-or-later",
+   "urheber": "Xiph.Org Foundation",
+   "quelle": "https://icecast.org/download/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The source states the \"Library GPL, version 2\"; used under LGPL-2.1.",
+   "pruefen": "Licence header says only LGPL-2.0; confirm the 'or later' wording."
+  },
+  {
+   "id": "libsmb2",
+   "name": "libsmb2",
+   "version": "6.1",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "Ronnie Sahlberg and the libsmb2 contributors",
+   "quelle": "https://github.com/sahlberg/libsmb2",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt",
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The library is LGPL-2.1+; some files are BSD-2-Clause."
+  },
+  {
+   "id": "libssh2",
+   "name": "libssh2",
+   "version": "1.11.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Sara Golemon, Daniel Stenberg and the libssh2 contributors",
+   "quelle": "https://libssh2.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libtasn1",
+   "name": "libtasn1",
+   "version": "4.21.0",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "Free Software Foundation, Inc.",
+   "quelle": "https://www.gnu.org/software/libtasn1/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "The library is LGPL; the package's tools are GPL and are not bundled."
+  },
+  {
+   "id": "libtheora",
+   "name": "libtheora",
+   "version": "1.2.0",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Xiph.Org Foundation",
+   "quelle": "https://theora.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libvorbis",
+   "name": "libvorbis",
+   "version": "1.3.7",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Xiph.Org Foundation",
+   "quelle": "https://xiph.org/vorbis/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libvpx",
+   "name": "libvpx",
+   "version": "1.16.0",
+   "spdx": "BSD-3-Clause",
+   "urheber": "The WebM Project authors",
+   "quelle": "https://www.webmproject.org/code/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "libxml2",
+   "name": "libxml2",
+   "version": "2.15.3",
+   "spdx": "MIT",
+   "urheber": "Daniel Veillard and the libxml2 contributors",
+   "quelle": "https://gitlab.gnome.org/GNOME/libxml2",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "live555",
+   "name": "LIVE555 Streaming Media",
+   "version": "2016.10.21",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "Live Networks, Inc.",
+   "quelle": "http://www.live555.com/liveMedia/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "mpg123",
+   "name": "mpg123",
+   "version": "1.33.6",
+   "spdx": "LGPL-2.1-only",
+   "urheber": "Michael Hipp and others",
+   "quelle": "https://www.mpg123.de",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "openapv",
+   "name": "OpenAPV",
+   "version": "0.3.0.0",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Samsung Electronics Co., Ltd.",
+   "quelle": "https://github.com/AcademySoftwareFoundation/openapv",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "opencv",
+   "name": "OpenCV",
+   "version": "4.4.0",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Intel Corporation, Willow Garage, Itseez and the OpenCV contributors",
+   "quelle": "https://opencv.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Only the modules core, imgproc, imgcodecs, features2d, calib3d, flann and objdetect are built in."
+  },
+  {
+   "id": "openjpeg",
+   "name": "OpenJPEG",
+   "version": "2.5.4",
+   "spdx": "BSD-2-Clause",
+   "urheber": "Université catholique de Louvain; Professor Benoit Macq; and others (see upstream LICENSE)",
+   "quelle": "https://www.openjpeg.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "opus",
+   "name": "Opus",
+   "version": "1.6.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Xiph.Org Foundation, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon",
+   "quelle": "https://opus-codec.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "protobuf",
+   "name": "Protocol Buffers",
+   "version": "3.21.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Google Inc.",
+   "quelle": "https://github.com/protocolbuffers/protobuf",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Not in the tvOS slice."
+  },
+  {
+   "id": "rnnoise",
+   "name": "RNNoise",
+   "version": "0.1.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Mozilla; Jean-Marc Valin; Xiph.Org Foundation",
+   "quelle": "https://gitlab.xiph.org/xiph/rnnoise",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "soxr",
+   "name": "SoX Resampler (libsoxr)",
+   "version": "0.1.3",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "robs@users.sourceforge.net",
+   "quelle": "https://sourceforge.net/projects/soxr/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "spatialaudio",
+   "name": "libspatialaudio",
+   "version": "0.3.0",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "Videolabs and the libspatialaudio authors",
+   "quelle": "https://github.com/videolabs/libspatialaudio",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "speex",
+   "name": "Speex and SpeexDSP",
+   "version": "1.2.1",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Xiph.Org Foundation; Jean-Marc Valin",
+   "quelle": "https://www.speex.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "taglib",
+   "name": "TagLib",
+   "version": "2.3",
+   "spdx": "LGPL-2.1-only",
+   "urheber": "Scott Wheeler, Lukáš Lalinský and the TagLib contributors",
+   "quelle": "https://taglib.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "TagLib is available under LGPL-2.1 or MPL-1.1; Swiftly uses it under LGPL-2.1."
+  },
+  {
+   "id": "twolame",
+   "name": "TwoLAME",
+   "version": "0.4.0",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "The TwoLAME project",
+   "quelle": "https://www.twolame.org",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Not in the macOS slice."
+  },
+  {
+   "id": "pupnp",
+   "name": "libupnp (pupnp)",
+   "version": "1.14.31",
+   "spdx": "BSD-3-Clause",
+   "urheber": "Intel Corporation, Ricardo Rosales Hernandez, Todd Carmichael, Marcelo Roberto Jimenez and others",
+   "quelle": "https://pupnp.github.io/pupnp/",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "pruefen": "Not verified against the linker that libupnp is linked into the shipped VLCKit; source is in the contrib tree."
+  },
+  {
+   "id": "zlib",
+   "name": "zlib",
+   "version": "1.3.2",
+   "spdx": "Zlib",
+   "urheber": "Jean-loup Gailly and Mark Adler",
+   "quelle": "https://zlib.net",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "Zlib.txt"
+   ],
+   "gruppe": "in-vlckit"
+  },
+  {
+   "id": "zvbi",
+   "name": "ZVBI (libzvbi)",
+   "version": "0.2.44",
+   "spdx": "LGPL-2.0-or-later AND GPL-2.0-or-later AND BSD-2-Clause AND MIT",
+   "urheber": "Michael H. Schimek, Iñaki García Etxebarria, Martin Buck, Edgar Toernig, Paul Ortyl and others",
+   "quelle": "https://github.com/zapping-vbi/zvbi",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Mixed licensing; the library parts are LGPL-2.0+.",
+   "pruefen": "Check whether GPL-only files are compiled into the shipped build."
+  },
+  {
+   "id": "glslang",
+   "name": "glslang",
+   "version": "12.3.1",
+   "spdx": "BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0",
+   "urheber": "The Khronos Group Inc., Google Inc., LunarG, NVIDIA, Advanced Micro Devices and others",
+   "quelle": "https://github.com/KhronosGroup/glslang",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "BSD-3-Clause.txt",
+    "BSD-2-Clause.txt",
+    "MIT.txt",
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Individual files carry different licenses; see LICENSE.txt upstream.",
+   "pruefen": "Breakdown of per-file licenses not verified."
+  },
+  {
+   "id": "glad",
+   "name": "glad",
+   "version": "2.0.4",
+   "spdx": "MIT",
+   "urheber": "David Herberth",
+   "quelle": "https://github.com/Dav1dde/glad",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "Generated OpenGL loader used by VLC's video output."
+  },
+  {
+   "id": "libaom",
+   "name": "AOMedia AV1 (libaom)",
+   "version": "3.14.1",
+   "spdx": "BSD-2-Clause",
+   "urheber": "Alliance for Open Media",
+   "quelle": "https://aomedia.googlesource.com/aom/",
+   "plattformen": [
+    "macos"
+   ],
+   "texte": [
+    "BSD-2-Clause.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "macOS slice only. Used together with the AOM Patent License 1.0 of the upstream project.",
+   "pruefen": "Present in the macOS contrib tree only; verify that it is linked."
+  },
+  {
+   "id": "libiconv",
+   "name": "GNU libiconv",
+   "version": "1.18",
+   "spdx": "LGPL-2.0-or-later",
+   "urheber": "Free Software Foundation, Inc.",
+   "quelle": "https://www.gnu.org/software/libiconv/",
+   "plattformen": [
+    "macos"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "in-vlckit",
+   "notiz": "macOS slice only.",
+   "pruefen": "Present in the macOS contrib tree only (libiconv.a); verify that it is linked and the exact license wording (LGPL-2.0+ vs 2.1+)."
+  },
+  {
+   "id": "coil",
+   "name": "Coil",
+   "version": "3.0.4",
+   "spdx": "Apache-2.0",
+   "urheber": "Coil Contributors",
+   "quelle": "https://github.com/coil-kt/coil",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "okhttp",
+   "name": "OkHttp and Okio (via coil-network-okhttp)",
+   "version": "as resolved by Gradle",
+   "spdx": "Apache-2.0",
+   "urheber": "Square, Inc.",
+   "quelle": "https://square.github.io/okhttp/",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app",
+   "pruefen": "Version not fixed in the source files; read from the Gradle tree in part 2."
+  },
+  {
+   "id": "lottie-android",
+   "name": "Lottie for Android",
+   "version": "6.5.2",
+   "spdx": "Apache-2.0",
+   "urheber": "Airbnb, Inc.",
+   "quelle": "https://github.com/airbnb/lottie-android",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "kotlin",
+   "name": "Kotlin standard library and kotlinx.coroutines",
+   "version": "Kotlin 2.0.21; coroutines 1.10.2",
+   "spdx": "Apache-2.0",
+   "urheber": "JetBrains s.r.o. and Kotlin Programming Language contributors",
+   "quelle": "https://kotlinlang.org",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "androidx",
+   "name": "AndroidX (core-ktx 1.16.0, lifecycle-runtime-ktx 2.9.2, activity-compose 1.10.1, tvprovider 1.0.0) and Jetpack Compose (BOM 2024.09.00: ui, foundation, material3)",
+   "version": "see the parentheses in the name",
+   "spdx": "Apache-2.0",
+   "urheber": "The Android Open Source Project",
+   "quelle": "https://developer.android.com/jetpack/androidx",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "play-review",
+   "name": "Google Play In-App Review (review-ktx)",
+   "version": "2.0.2",
+   "spdx": "LicenseRef-Google-Play-Terms",
+   "urheber": "Google LLC",
+   "quelle": "https://developer.android.com/guide/playcore/in-app-review",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [],
+   "gruppe": "app",
+   "notiz": "Proprietary, under Google's terms for the Play Core SDK.",
+   "pruefen": "Check in part 2 whether it is in non-Play builds and what text to show."
+  },
+  {
+   "id": "swift-java",
+   "name": "swift-java (swiftkit-core, JNI bridge) and the Swift runtime on Android",
+   "version": "swift-java 0.6.0; swiftkit-core without a fixed version in Gradle",
+   "spdx": "Apache-2.0",
+   "urheber": "Apple Inc. and the Swift.org project authors",
+   "quelle": "https://github.com/swiftlang/swift-java",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app",
+   "notiz": "The Swift runtime and Foundation are Apache-2.0 with the Runtime Library Exception.",
+   "pruefen": "Package.resolved also lists swift-collections 1.6.0, swift-log 1.15.1, swift-system 1.8.1, swift-java-jni-core 0.5.1, swift-subprocess 0.4.0, swift-syntax 603.0.2, swift-argument-parser 1.8.2 (Apache-2.0); which of them reach the app: part 2."
+  },
+  {
+   "id": "libvlc-android",
+   "name": "Android: libVLC contents (libvlc-all)",
+   "version": "libvlc-all 3.6.3",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "VideoLAN and VLC authors",
+   "quelle": "https://code.videolan.org/videolan/vlc-android",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "player",
+   "pruefen": "libvlc-all 3.6.3 brings libVLC 3.0.x with its own contrib libraries (FFmpeg and others); list them in part 2."
+  },
+  {
+   "id": "gtk4",
+   "name": "GTK 4 and its libraries (GLib, Pango, Cairo, GdkPixbuf, HarfBuzz, FreeType, libpng and others)",
+   "version": "bundled GTK 4 runtime (gvsbuild) on Windows; system library on Linux",
+   "spdx": "LGPL-2.1-or-later",
+   "urheber": "The GTK Team, The GNOME Project and the authors of the bundled libraries",
+   "quelle": "https://www.gtk.org",
+   "plattformen": [
+    "windows",
+    "linux"
+   ],
+   "texte": [
+    "LGPL-2.1-or-later.txt"
+   ],
+   "gruppe": "app",
+   "notiz": "Every bundled library carries its own license, mostly LGPL-2.1+, MIT or BSD.",
+   "pruefen": "Windows bundles the DLLs of the gvsbuild release after removing unused ones; list them in part 2."
+  },
+  {
+   "id": "swift-runtime",
+   "name": "Swift runtime and Foundation",
+   "version": "version of the toolchain used",
+   "spdx": "Apache-2.0",
+   "urheber": "Apple Inc. and the Swift.org project authors",
+   "quelle": "https://www.swift.org",
+   "plattformen": [
+    "windows",
+    "linux",
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app",
+   "notiz": "With the Runtime Library Exception.",
+   "pruefen": "Foundation brings libxml2 (MIT), libcurl (curl license) and ICU (Unicode-3.0); list in part 2."
+  },
+  {
+   "id": "rlottie",
+   "name": "rlottie",
+   "version": "current main branch at build time (Werkzeuge/rlottie-bauen.sh)",
+   "spdx": "MIT",
+   "urheber": "Samsung Electronics Co., Ltd. and the rlottie authors",
+   "quelle": "https://github.com/Samsung/rlottie",
+   "plattformen": [
+    "windows",
+    "linux"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "app",
+   "notiz": "Some parts (for example freetype excerpts, pixman) carry other licenses upstream.",
+   "pruefen": "Check in part 2."
+  },
+  {
+   "id": "epoxy",
+   "name": "libepoxy",
+   "version": "system library",
+   "spdx": "MIT",
+   "urheber": "The Khronos Group Inc., Intel Corporation and the libepoxy authors",
+   "quelle": "https://github.com/anholt/libepoxy",
+   "plattformen": [
+    "linux",
+    "windows"
+   ],
+   "texte": [
+    "MIT.txt"
+   ],
+   "gruppe": "app",
+   "pruefen": "Check in part 2 whether it ships on Windows."
+  }
+ ]
+}

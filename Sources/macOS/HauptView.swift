@@ -644,7 +644,16 @@ struct HauptView: View {
         case .einstellungen:    EinstellungenView(model: model) { schliessen(ziel) }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { schliessen(ziel) }
         case .darstellung:      DarstellungView(model: model) { schliessen(ziel) }
+        case .lizenzen:         LizenzenView { schliessen(ziel) }
+        case let .lizenz(id):
+            if let baustein = Lizenzbestand.geteilt?.baustein(id: id) {
+                LizenzView(baustein: baustein) { schliessen(ziel) }
+            } else {
+                Color.clear.onAppear { schliessen(ziel) }
+            }
+        case .lizenzangebot:    LizenzangebotView { schliessen(ziel) }
         case .genrewahl:        GenrewahlView(model: model) { schliessen(ziel) }
+        case .bibliothekswahl:  BibliothekswahlView(model: model) { schliessen(ziel) }
         case .quickConnect:     QuickConnectView(model: model) { schliessen(ziel) }
         case .kontoHinzufuegen: KontoHinzufuegenView(model: model) { schliessen(ziel) }
         case let .serverHinzufuegen(url):

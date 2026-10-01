@@ -24,6 +24,11 @@ fi
 echo
 echo "── Bauen ──────────────────────────────────────────────"
 cd "$hier" || exit 1
+# Die Lizenzen kommen aus `LICENSES/` (die eine Quelle) neben das Programm;
+# `Ressourcen/Lizenzen` ist gitignoriert, nie von Hand pflegen.
+rm -rf "${hier}/Ressourcen/Lizenzen"
+mkdir -p "${hier}/Ressourcen/Lizenzen"
+cp "${hier}/../LICENSES/"* "${hier}/Ressourcen/Lizenzen/" || { echo "LICENSES/ fehlt"; exit 1; }
 konfiguration="${KONFIGURATION:-debug}"
 swift build -c "$konfiguration" || exit 1
 

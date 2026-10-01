@@ -334,7 +334,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                 kachelnMitSchluessel(t.darsteller, { it.id }) { p -> Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
             }
             if (extras.isNotEmpty()) Abschnitt(uebersetzt("Extras"), 12.dp) {
-                kachelnMitSchluessel(extras, { it.id }) { e -> Extrakachel(e) }
+                kachelnMitSchluessel(extras, { it.id }) { e -> Extrakachel(e) { ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(e.id, null) } }
             }
             // Ueber „Aehnliche Titel": die Sammlung ist die naehere Verwandtschaft. Nur bei Titeln,
             // die in einer stehen (`Sammlungsreihe`).
@@ -572,8 +572,8 @@ internal fun Besetzungskachel(p: Mitwirkender, tun: () -> Unit = {}) {
 
 /** Vorlage: `extrasreihe` — 210 × 118, Titel, Laufzeit nur wenn bekannt. */
 @Composable
-private fun Extrakachel(e: Extra) {
-    Column(Modifier.width(210.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+internal fun Extrakachel(e: Extra, spielen: () -> Unit) {
+    Column(Modifier.width(210.dp).clickable(onClick = spielen), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         AsyncImage(model = e.bild, contentDescription = null, contentScale = ContentScale.Crop,
                    modifier = Modifier.size(210.dp, 118.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche))
         Text(e.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)

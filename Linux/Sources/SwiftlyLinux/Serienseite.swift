@@ -10,12 +10,13 @@ import JellyfinKit
 extension App {
 
     enum Reiter: CaseIterable {
-        case folgen, besetzung, aehnliches
+        case folgen, besetzung, aehnliches, extras
         var beschriftung: String {
             switch self {
             case .folgen:     uebersetzt("Folgen")
             case .besetzung:  uebersetzt("Besetzung")
             case .aehnliches: uebersetzt("Ähnliches")
+            case .extras:     uebersetzt("Extras")
             }
         }
     }
@@ -53,6 +54,10 @@ extension App {
             beiSignal(knopf, "clicked") { [weak self] in
                 self?.reiterZeigen?(fall)
             }
+            // **„Extras" erst, wenn der Server welche liefert** (Mac
+            // `SerienView`, `Reiterreihe`): bis dahin und ohne sie gibt es
+            // den Reiter nicht.
+            if fall == .extras { gtk_widget_set_visible(knopf, 0) }
             anhaengen(zeile, knopf)
         }
         anhaengen(reiterraum, zeile)
@@ -108,6 +113,8 @@ extension App {
             seiten[fall] = raum
         }
         serieNachladen(serie, folgen: seiten[.folgen] ?? nil, aehnliches: seiten[.aehnliches] ?? nil)
+        extrasNachladen(serie, in: seiten[.extras] ?? nil,
+                        knopf: reiterknoepfe[Reiter.allCases.firstIndex(of: .extras) ?? 0])
 
         let zeigen: (Reiter) -> Void = { fall in
             gewaehlt = fall
@@ -123,6 +130,50 @@ extension App {
         zeigen(.folgen)
         // Damit das Fernsteuerpult den Reiter wechseln kann, ohne zu klicken.
         reiterWaehlen = zeigen
+    }
+
+    /// Holt die Extras der Serie; ohne welche bleibt der Reiter unsichtbar.
+    private func extrasNachladen(_ serie: Item, in raum: Widget!, knopf: Widget?) {
+        guard let client, let raum, let knopf else { return }
+        let raumKiste = gehalten(raum)
+        let knopfKiste = gehalten(knopf)
+        Task.detached { [self] in
+            let extras = (try? await client.extras(itemID: serie.id)) ?? []
+            nachDemSchub {
+                defer { losgelassen(raumKiste); losgelassen(knopfKiste) }
+                guard !extras.isEmpty, let raum = raumKiste.widget,
+                      let knopf = knopfKiste.widget else { return }
+                anhaengen(raum, self.extrareihe(extras, titel: uebersetzt("Extras")))
+                gtk_widget_set_visible(knopf, 1)
+            }
+        }
+    }
+
+    /// **Die Extras als Reihe** (Mac `Titelreihe(spielen: true)`, Kachel nach
+    /// `Extrakachel`): Bild 210 x 118, darunter Name und Laufzeit. Ein Klick
+    /// spielt das Extra ab Anfang, mit demselben Plan wie jeden Titel —
+    /// Direct Play, nie Transkodieren. Auf der Serienseite steht dieselbe
+    /// Überschrift im Reiter „Extras" wie auf dem Mac.
+    func extrareihe(_ extras: [Item], titel: String) -> Widget! {
+        let breite = 210
+        let hoehe = 118
+        let kacheln: [Widget?] = extras.map { extra in
+            let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe, stil: "swiftly-plakat")
+            if let adresse = adressen.flatMap({ Bildwahl.quer(extra, adressen: $0, breite: breite * 2)?.url }) {
+                bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
+                          kante: breite * 2)
+            } else {
+                zeichenLegen(kaefig, serie: false)
+            }
+            // Ein Extra ohne Laufzeit meldet 0, nicht nichts — dann keine Zeile.
+            let unten: String? = Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds)
+                ? extra.runtimeSeconds.map { laufzeit($0) } : nil
+            return kachelhuelle(bild: kaefig, breite: breite, oben: extra.name, unten: unten) {
+                [weak self] in self?.starte(extra, ab: 0)
+            }
+        }
+        return reiheBauen(titel: titel, bildHoehe: hoehe, stueck: breite + Stil.kachelAbstand,
+                          kacheln: kacheln)
     }
 
     private func reiterInhalt(_ was: Reiter, serie: Item, in raum: Widget!) {
@@ -143,6 +194,9 @@ extension App {
             } else {
                 anhaengen(raum, besetzungsreihe(serie.darsteller, herkunft: serie.name))
             }
+        case .extras:
+            // Bleibt leer, bis ``extrasNachladen`` Extras findet.
+            break
         case .aehnliches:
             // Bleibt leer, bis ``serieNachladen`` antwortet — kein
             // Platzhalter und kein „Nichts Ähnliches", solange geladen wird.

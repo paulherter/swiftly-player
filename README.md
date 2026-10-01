@@ -461,6 +461,12 @@ icon.
 Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit) under the
 **LGPL-2.1-or-later** — see [Documentation/VLCKit.md](Documentation/VLCKit.md).
 
+The libraries bundled with the apps keep their own licenses (LGPL for VLCKit
+and libVLC and several others, plus BSD, MIT, Apache-2.0 and the SIL OFL for
+the Inter font). The list, the license texts and the source offer for the LGPL
+parts are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and
+[LICENSES/](LICENSES/).
+
 The screenshots show films by the [Blender
 Foundation](https://studio.blender.org/films/) — *Big Buck Bunny*, *Sintel*,
 *Agent 327*, *Sprite Fright* and others — released under Creative Commons

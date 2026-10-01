@@ -806,6 +806,14 @@ extension App {
         spielerLautstaerke?.setzen(w)
     }
 
+    /// Mausrad über dem Regler: stufenlos, 0 bis 1. Gesichert wird erst, wenn
+    /// der Regler wieder zuklappt — nicht bei jedem Rastschritt.
+    func lautstaerkeRad(_ schritt: Double) {
+        lautstaerkeAnwenden(wahlen.lautstaerke + schritt)
+        lautstaerkeRadOffen = true
+        lautstaerkeKurzZeigen()
+    }
+
     /// Klappt den Regler 1,2 s auf und hält die Leiste da, damit man den Wert sieht.
     func lautstaerkeKurzZeigen() {
         steuerungZeigen()
@@ -817,6 +825,10 @@ extension App {
             aufHauptfaden {
                 guard self.lautstaerkeUhr == meine else { return }
                 self.spielerLautstaerke?.kurzZeigen(false)
+                if self.lautstaerkeRadOffen {
+                    self.lautstaerkeRadOffen = false
+                    self.wahlen.sichern()
+                }
             }
         }
     }
@@ -842,6 +854,7 @@ extension App {
                 self.steuerungZeigen()
             }
         }
+        regler.radGedreht = { [weak self] anteil in self?.lautstaerkeRad(anteil) }
         spielerLautstaerke = regler
         beiSignal(regler.anzeige, "destroy") { [weak self] in
             if self?.spielerLautstaerke === regler { self?.spielerLautstaerke = nil }

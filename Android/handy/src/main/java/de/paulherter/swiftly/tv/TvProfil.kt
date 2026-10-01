@@ -119,6 +119,10 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             JSONArray(withContext(Dispatchers.IO) { app.kern.gattungen().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
         } catch (x: CancellationException) { throw x } catch (_: Exception) { emptyList() }
     }
+    // Fuer „Bibliothek hinzufuegen": Bibliotheken und Sammlungen, die noch nicht gewaehlt sind (`BibliothekswahlSeite`).
+    var freieBibliotheken by remember { mutableStateOf<List<de.paulherter.swiftly.Startbib>>(emptyList()) }
+    val gewaehlteKennungen = app.einstellungen.startBibliotheken.map { it.id }
+    LaunchedEffect(gewaehlteKennungen) { freieBibliotheken = de.paulherter.swiftly.startAuswahlLaden(app) }
     var pruefung by remember { mutableStateOf<String?>(null) }
     val karten = remember(app.kontowechsel.intValue) {
         app.ablage.konten?.let { b -> runCatching { JSONArray(Kern.bundUebersicht(b)).let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }.getOrNull() }.orEmpty()
@@ -229,6 +233,26 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             }
                             TvSchalterzeile(uebersetzt("Neuzugänge getrennt"), e.neuzugangGetrennt) { e.neuzugangGetrennt = !e.neuzugangGetrennt }
                             Trennlinie()
+                            Gruppenkopf(uebersetzt("Bibliotheken und Sammlungen"))
+                            // Eigene Reihen aus dem Server, nach den festen (Vorlage: `ProfilView` auf tvOS).
+                            val bibliotheken = e.startBibliotheken
+                            bibliotheken.forEachIndexed { idx, b ->
+                                TvBibliothekszeile(b.name, kannHoch = idx != 0, kannRunter = idx != bibliotheken.lastIndex,
+                                    entfernen = { e.startBibliotheken = e.startBibliotheken.filter { it.id != b.id } },
+                                    schieben = { schritt ->
+                                        val liste = e.startBibliotheken.toMutableList()
+                                        val von = liste.indexOfFirst { it.id == b.id }
+                                        val nach = von + schritt
+                                        if (von >= 0 && nach in liste.indices) { liste.removeAt(von); liste.add(nach, b); e.startBibliotheken = liste }
+                                    })
+                                Trennlinie()
+                            }
+                            TvHandlung(uebersetzt("Bibliothek hinzufügen"), wert = if (freieBibliotheken.isEmpty()) uebersetzt("Keins offen") else "") {
+                                if (freieBibliotheken.isNotEmpty()) blatt(uebersetzt("Bibliothek hinzufügen"), freieBibliotheken.map { Wahl(it.id, it.name) }, "") { id ->
+                                    freieBibliotheken.firstOrNull { it.id == id }?.let { e.startBibliotheken = e.startBibliotheken + it }
+                                }
+                            }
+                            Trennlinie()
                             Gruppenkopf(uebersetzt("Genres"))
                             // **Eine Liste, zwei Formen** — dieselbe Wertzeile wie „Puffer" &c., nicht zwei
                             // Zeilen mit Haken: das war die Fassung vor dem Angleich an `ProfilView.swift`.
@@ -307,6 +331,10 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             TvAnzeige(uebersetzt("Discord beitreten"), app.gemeinschaftAdresse("discordKurz"))
                             Trennlinie()
                             TvAnzeige(uebersetzt("Fehler melden"), app.gemeinschaftAdresse("fehlerKurz"))
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Open-Source-Lizenzen")) {
+                                oeffnen(Ziel("lizenzen", uebersetzt("Open-Source-Lizenzen"), "Lizenzen"))
+                            }
                         }
                     }
                 }
@@ -410,6 +438,18 @@ private fun TvReihenzeile(name: String, an: Boolean, kannHoch: Boolean, kannRunt
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TvSchalterzeile(name, an, modifier = Modifier.weight(1f), tun = umschalten)
+        TvKnopf(null, Zeichen.WinkelHoch, hoehe = 28.dp, freigegeben = kannHoch, beschreibung = uebersetzt("Nach oben")) { schieben(-1) }
+        TvKnopf(null, Zeichen.WinkelRunter, hoehe = 28.dp, freigegeben = kannRunter, beschreibung = uebersetzt("Nach unten")) { schieben(1) }
+    }
+}
+
+/** Eine gewaehlte Bibliothek oder Sammlung: OK entfernt sie, die Pfeile schieben sie. Der Name kommt vom Server. */
+@Composable
+private fun TvBibliothekszeile(name: String, kannHoch: Boolean, kannRunter: Boolean,
+                               entfernen: () -> Unit, schieben: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TvHandlung(name = name, wert = uebersetzt("Entfernen"), pfeil = false, modifier = Modifier.weight(1f), tun = entfernen)
         TvKnopf(null, Zeichen.WinkelHoch, hoehe = 28.dp, freigegeben = kannHoch, beschreibung = uebersetzt("Nach oben")) { schieben(-1) }
         TvKnopf(null, Zeichen.WinkelRunter, hoehe = 28.dp, freigegeben = kannRunter, beschreibung = uebersetzt("Nach unten")) { schieben(1) }
     }

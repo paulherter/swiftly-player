@@ -32,6 +32,8 @@ struct ProfilView: View {
     /// Trakt verbinden — Code und QR-Code brauchen dieselbe ganze Seite.
     @State private var traktOffen = false
     @State private var gemeinschaftsziel: Gemeinschaftsziel?
+    /// Open-Source-Lizenzen — ganze Seite: links die Bausteine, rechts der Text.
+    @State private var lizenzenOffen = false
 
     /// **Erst ansehen, dann hineingehen.** Wandert der Fokus links durch die
     /// Bereiche, zeigt die rechte Seite den jeweiligen schon — gedimmt, damit
@@ -56,6 +58,20 @@ struct ProfilView: View {
     /// hatte.** In eine Einstellungszeile passt kein ganzseitiger Hinweis, in
     /// ihren Wert aber sehr wohl derselbe Wortlaut wie ueberall sonst.
     @State private var gattungenGestoert = false
+
+    /// Bibliotheken und Sammlungen des Servers für „Bibliothek hinzufügen".
+    @State private var alleBibliotheken: [Item] = []
+    private var freieBibliotheken: [Item] {
+        alleBibliotheken.filter { b in !model.startBibliotheken.contains { $0.id == b.id } }
+    }
+
+    /// Verschiebt eine gewählte Bibliothek um eine Stelle.
+    private func verschieben(_ eintrag: Startbibliothek, um schritt: Int) {
+        guard let von = model.startBibliotheken.firstIndex(of: eintrag) else { return }
+        let nach = von + schritt
+        guard model.startBibliotheken.indices.contains(nach) else { return }
+        withAnimation(Stil.einblenden) { model.startBibliotheken.swapAt(von, nach) }
+    }
 
     private var freieGattungen: [String] {
         alleGattungen.filter { !model.startGenres.contains($0) }
@@ -127,6 +143,7 @@ struct ProfilView: View {
                 let geholt = await model.gattungen()
                 gattungenGestoert = geholt == nil
                 if let geholt { alleGattungen = geholt }
+                alleBibliotheken = await model.startAuswahl()
             }
     }
 
@@ -285,6 +302,9 @@ struct ProfilView: View {
         }
         .fullScreenCover(item: $gemeinschaftsziel) { ziel in
             Codeblatt(ziel: ziel) { gemeinschaftsziel = nil }
+        }
+        .fullScreenCover(isPresented: $lizenzenOffen) {
+            TVLizenzenView { lizenzenOffen = false }
         }
     }
 
@@ -489,6 +509,32 @@ struct ProfilView: View {
             }
             Trennlinie()
 
+            // **Eigene Reihen aus dem Server**: Bibliotheken und Sammlungen, in
+            // der Folge dieser Liste, nach den festen Reihen.
+            Gruppentitel(text: "Bibliotheken und Sammlungen")
+                .padding(.horizontal, 26)
+                .padding(.top, 18)
+            ForEach(model.startBibliotheken) { eintrag in
+                Startbibliothekszeile(
+                    name: eintrag.name,
+                    kannHoch: model.startBibliotheken.first != eintrag,
+                    kannRunter: model.startBibliotheken.last != eintrag,
+                    entfernen: {
+                        withAnimation(Stil.einblenden) {
+                            model.startBibliotheken.removeAll { $0.id == eintrag.id }
+                        }
+                    },
+                    schieben: { schritt in verschieben(eintrag, um: schritt) })
+                Trennlinie()
+            }
+            wertzeile("Bibliothek hinzufügen",
+                      wert: freieBibliotheken.isEmpty ? String(localized: "Keins offen") : "",
+                      eintraege: freieBibliotheken,
+                      beschriftung: \.name,
+                      an: { _ in false },
+                      waehlen: { model.startBibliotheken.append(Startbibliothek($0)) })
+            Trennlinie()
+
             // **Eine Liste, zwei Formen.** Welche Genres, stellt man einmal
             // ein; ob sie als Reihen unten oder als Chips oben stehen, ist
             // nur noch die Form.
@@ -553,6 +599,10 @@ struct ProfilView: View {
             Handlungszeile(titel: "Discord beitreten") { gemeinschaftsziel = .discord }
             Trennlinie()
             Handlungszeile(titel: "Fehler melden") { gemeinschaftsziel = .fehler }
+            Trennlinie()
+            // Zuletzt, weil es nichts einstellt: hier steht, was in der App
+            // steckt und wo der Quelltext von VLCKit liegt (LGPL).
+            Handlungszeile(titel: "Open-Source-Lizenzen") { lizenzenOffen = true }
 
         case .server:
             Anzeigezeile(titel: "Adresse", wert: model.serverName ?? "—")
@@ -841,30 +891,54 @@ struct Reihenzeile: View {
                 Toggle(isOn: .constant(an)) { Text(name) }
             }
 
-            schiebeknopf("chevron.up", an: kannHoch) { schieben(-1) }
-            schiebeknopf("chevron.down", an: kannRunter) { schieben(1) }
+            Schiebeknopf(symbol: "chevron.up", an: kannHoch) { schieben(-1) }
+            Schiebeknopf(symbol: "chevron.down", an: kannRunter) { schieben(1) }
         }
         .padding(.trailing, 26)
     }
+}
 
-    /// **Gesperrt statt versteckt.** Fiele der Pfeil an der obersten Zeile
-    /// weg, ruecken die Knoepfe der Nachbarzeilen seitlich — und der Fokus
-    /// springt beim Hinauffahren in die falsche Spalte.
-    private func schiebeknopf(_ symbol: String, an: Bool,
-                              tun: @escaping () -> Void) -> some View {
+/// Ein Pfeil rechts neben einer Zeile, die sich verschieben lässt.
+///
+/// **Gesperrt statt versteckt.** Fiele der Pfeil an der obersten Zeile
+/// weg, ruecken die Knoepfe der Nachbarzeilen seitlich — und der Fokus
+/// springt beim Hinauffahren in die falsche Spalte.
+struct Schiebeknopf: View {
+    let symbol: String
+    let an: Bool
+    let tun: () -> Void
+
+    var body: some View {
         Button(action: tun) {
             Image(systemName: symbol)
                 .font(.system(size: 26, weight: .semibold))
         }
         // **Nicht `.buttonStyle(.card)`.** Apples Karte bringt Schatten,
         // Parallaxe und ein Aufblitzen mit — `tvOS/Stil.swift` schliesst sie
-        // gleich im Kopf aus, und hier stand sie trotzdem. `KnopfStil` traegt
-        // dieselben drei Zustaende wie jeder andere Knopf der App, den
-        // gesperrten eingeschlossen: gedaempfte Schrift auf ruhiger Flaeche
-        // statt einer durchscheinenden Karte.
+        // gleich im Kopf aus. `KnopfStil` traegt dieselben drei Zustaende wie
+        // jeder andere Knopf der App, den gesperrten eingeschlossen.
         .buttonStyle(KnopfStil(nurSymbol: true, hoehe: 56))
         .disabled(!an)
         .accessibilityLabel(symbol == "chevron.up" ? Text("Nach oben") : Text("Nach unten"))
+    }
+}
+
+/// Eine gewählte Bibliothek oder Sammlung: ein Druck auf den Namen entfernt
+/// sie, die Pfeile schieben sie in der Folge der Startseite.
+struct Startbibliothekszeile: View {
+    let name: String
+    let kannHoch: Bool
+    let kannRunter: Bool
+    let entfernen: () -> Void
+    let schieben: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 24) {
+            Handlungszeile(name: name, wert: String(localized: "Entfernen"), aktion: entfernen)
+            Schiebeknopf(symbol: "chevron.up", an: kannHoch) { schieben(-1) }
+            Schiebeknopf(symbol: "chevron.down", an: kannRunter) { schieben(1) }
+        }
+        .padding(.trailing, 26)
     }
 }
 

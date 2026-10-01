@@ -156,6 +156,13 @@ if ($dumpbin) {
 
 Sag 'Eigene Mittel'
 Copy-Item (Join-Path $hier 'Ressourcen') "$Ziel\Ressourcen" -Recurse -Force
+# **Ohne Lizenztexte kein Paket.** libVLC (LGPL-2.1-or-later) verlangt Text, Urheber
+# und Quellenangabe; die App zeigt sie aus Ressourcen\Lizenzen, bauen.ps1 legt sie dorthin.
+foreach ($l in 'bausteine.json','LGPL-2.1-or-later.txt') {
+    if (-not (Test-Path "$Ziel\Ressourcen\Lizenzen\$l")) { throw "Lizenzdatei fehlt: Ressourcen\Lizenzen\$l - erst bauen.ps1 laufen lassen." }
+}
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'THIRD-PARTY-NOTICES.md') "$Ziel\THIRD-PARTY-NOTICES.md" -Force
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'LICENSE') "$Ziel\LICENSE.txt" -Force
 
 # Eine Verknuepfung eine Ebene hoeher, damit niemand in `bin` suchen muss.
 Sag 'Verknuepfung'

@@ -57,6 +57,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     /** Die Serie kam beim ersten Laden nicht (Audit 27.09.) — vorher „Lädt…" ohne Ende. */
     var gestoert by remember(ziel.id) { mutableStateOf(false) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
+    var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
 
     // **Der Plan kommt nach, wie auf dem Telefon** (`SerienSeite.planLaden`) — `Kern.serie` liefert
     // ihn nicht mit, weil `PlaybackInfo` bei einer frisch vermessenen Datei Sekunden braucht und
@@ -113,6 +114,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
             s = neu
             app.serienSpeicher[ziel.id] = neu
             neueAehnliche?.let { aehnliche = it }
+            umfeld?.let { u -> runCatching { JSONObject(u).feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) } }.getOrNull() }?.let { extras = it }
             // Hat der Nutzer waehrenddessen selbst eine Staffel gewaehlt, gehoert die Liste seiner Wahl.
             if (!selbstGewaehlt || staffel == null || staffel == wahl) {
                 staffel = wahl
@@ -305,6 +307,9 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                 }
                 if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliches"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+                }
+                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "extras")) {
+                    items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
                 }
                 Spacer(Modifier.height(40.dp))
         }

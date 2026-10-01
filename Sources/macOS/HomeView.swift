@@ -70,6 +70,30 @@ struct HomeView: View {
         (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
     }
 
+    private var bibliotheken: [Startseite.Bibliotheksreihe] {
+        stand.bibliotheksreihen(fuer: model.startBibliotheken)
+    }
+
+    /// Die Plakate einer Reihe aus Genre oder Bibliothek.
+    @ViewBuilder
+    private func postern(_ items: [Item]) -> some View {
+        ForEach(items, id: \.id) { titel in
+                            Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
+                                Posterkachel(titel: titel.name,
+                                             zweitzeile: titel.productionYear.map { "\($0)" },
+                                             bild: model.imageURL(for: titel, hochkant: true),
+                                             fortschritt: fortschritt(titel),
+                                             zeichen: zeichen(titel),
+                                             vorholen: {
+                Serienspeicher.geteilt.vorholen(titel, mit: model)
+                Planvorrat.vorholen(titel, mit: model)
+            })
+                            }
+                            .buttonStyle(Stil.Druckknopf())
+                            .kachelmenue(titel, model: model)
+                        }
+    }
+
     private var festeReihen: [Startreihe] {
         model.startReihen.filter {
             !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
@@ -113,26 +137,22 @@ struct HomeView: View {
                     feste(reihe).reihenauftritt(i + 1, da: zeigen)
                 }
 
-                // Die gewählten Genres als eigene Reihen, nach den festen.
+                // **Die gewählten Bibliotheken und Sammlungen** (Darstellung →
+                // Startseite → „+"): Titel ist ihr Name, der Kopf öffnet sie.
+                // Danach die Genres als eigene Reihen.
+                ForEach(Array(bibliotheken.enumerated()), id: \.element.id) { j, r in
+                    Reihe(name: r.name, kopf: {
+                        let eintrag = model.startBibliotheken.first { $0.id == r.id }?.item
+                            ?? Item(id: r.id, name: r.name)
+                        navigator.oeffne(.sammlung(eintrag, art: nil), in: bereich)
+                    }) { postern(r.items) }
+                    .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                }
                 ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, gattung in
                     Reihe(name: gattung.name) {
-                        ForEach(gattung.items, id: \.id) { titel in
-                            Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
-                                Posterkachel(titel: titel.name,
-                                             zweitzeile: titel.productionYear.map { "\($0)" },
-                                             bild: model.imageURL(for: titel, hochkant: true),
-                                             fortschritt: fortschritt(titel),
-                                             zeichen: zeichen(titel),
-                                             vorholen: {
-                Serienspeicher.geteilt.vorholen(titel, mit: model)
-                Planvorrat.vorholen(titel, mit: model)
-            })
-                            }
-                            .buttonStyle(Stil.Druckknopf())
-                            .kachelmenue(titel, model: model)
-                        }
+                        postern(gattung.items)
                     }
-                    .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                    .reihenauftritt(festeReihen.count + bibliotheken.count + 1 + j, da: zeigen)
                 }
                 }
 
@@ -217,7 +237,7 @@ struct HomeView: View {
         // Umschalten ändert, welche Reihen es überhaupt gibt — und die stehen
         // erst nach einer neuen Abfrage fest. Ohne das sah man seine eigene
         // Einstellung erst beim nächsten Start und hielt sie für wirkungslos.
-        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startBibliotheken.map(\.id).joined(separator: "|"))") {
             // Läuft ein Kontowechsel, lädt der — nicht das Erscheinen, das
             // mit ihm zusammenfällt (sonst holte es noch das alte Konto).
             if Kontowechselflug.geteilt.wartet { return }
@@ -496,6 +516,8 @@ struct Reihe<Inhalt: View>: View {
     /// Statt `titel`, wenn die Überschrift vom Server kommt — ein Genre wird
     /// nicht übersetzt.
     var name: String? = nil
+    /// Gesetzt heißt: ein Klick auf die Überschrift öffnet die Seite dahinter.
+    var kopf: (() -> Void)? = nil
     /// Waagerechte Kacheln — nur „Weiterschauen".
     var quer = false
     @ViewBuilder let inhalt: Inhalt
@@ -528,7 +550,14 @@ struct Reihe<Inhalt: View>: View {
             // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
             // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
             // Breite: ohne sie rutscht der Titel in die Mitte.
-            Reihentitel(text: titel, name: name)
+            Group {
+                if let kopf {
+                    Button(action: kopf) { Reihentitel(text: titel, name: name) }
+                        .buttonStyle(Stil.Druckknopf())
+                } else {
+                    Reihentitel(text: titel, name: name)
+                }
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
             // **Jede Reihe mit ihrem eigenen Maß.** Vorher rechnete auch die

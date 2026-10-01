@@ -122,6 +122,19 @@ final class AppModel {
     /// bleibt, wie sie war, bis jemand etwas will.
     var genreChips: Bool { didSet { merken(genreChips, "genreChips") } }
     var startGenres: [String] { didSet { merken(startGenres, "startGenres") } }
+    /// **Bibliotheken und Sammlungen als eigene Startreihen**, in der
+    /// gewählten Folge. Die Wahl gehört zum Server (`serverSchluessel`) — die
+    /// Kennungen sind seine —, und sie bleibt auch stehen, wenn eine Bibliothek
+    /// dort verschwindet oder dem Profil nicht zugänglich ist: die Reihe fehlt
+    /// dann nur (`Startseitenlader.bibliotheksreihen`). Die Rechnung liegt im
+    /// Paket (`Startbibliotheken`).
+    var startBibliotheken: [Startbibliothek] {
+        didSet {
+            let sauber = Startbibliotheken.sauber(startBibliotheken)
+            guard sauber == startBibliotheken else { startBibliotheken = sauber; return }
+            merken(Startbibliotheken.daten(startBibliotheken) ?? Data(), "startBibliotheken" + serverSchluessel)
+        }
+    }
     /// Wie viel Vorrat der Player haelt. Siehe ``Pufferstufe`` im Paket.
     var pufferstufe: Pufferstufe { didSet { merken(pufferstufe.rawValue, "pufferstufe") } }
     /// **Zeigt Discord, was gerade laeuft — und ist aus, bis man es
@@ -211,6 +224,7 @@ final class AppModel {
             ?? ablage.object(forKey: "immerDirectPlay") as? Bool ?? true
         bitratenGrenze = ablage.object(forKey: "bitratenGrenze" + k) as? Int
             ?? ablage.integer(forKey: "bitratenGrenze")
+        startBibliotheken = Startbibliotheken.lesen(ablage.data(forKey: "startBibliotheken" + k))
     }
 
     private func merken(_ wert: Any, _ name: String) {
@@ -618,6 +632,7 @@ final class AppModel {
         startAus = Set((ablage.stringArray(forKey: "startAus") ?? []).compactMap(Startreihe.init(rawValue:)))
         genreChips = ablage.object(forKey: "genreChips") as? Bool ?? false
         startGenres = ablage.stringArray(forKey: "startGenres") ?? []
+        startBibliotheken = Startbibliotheken.lesen(ablage.data(forKey: "startBibliotheken"))
         pufferstufe = (ablage.string(forKey: "pufferstufe")
                        .flatMap(Pufferstufe.init(rawValue:))) ?? .normal
         discordAnzeigen = ablage.object(forKey: "discordAnzeigen") as? Bool ?? false
@@ -1382,6 +1397,19 @@ final class AppModel {
     ///
     /// Die Genre-Auswahl in den Einstellungen stand bei jedem Netzfehler leer
     /// da — als hätte der Server keine Genres, nicht als hätte er geschwiegen.
+    /// Was als eigene Startreihe zur Wahl steht: die Bibliotheken des Kontos
+    /// und seine Sammlungen, ohne das, was schon gewählt ist. Der Auswahl
+    /// fehlen die Sammlungen, bis das Verzeichnis geholt ist — es wird hier
+    /// abgewartet.
+    func startAuswahl() async -> [Item] {
+        await angebotLaden()
+        let gilt = angebotFuer == angebotsschluessel
+        let sammlungen = gilt ? (sammlungsverzeichnis?.alle.map(\.item) ?? []) : []
+        return Startbibliotheken.auswahl(
+            bibliotheken: views.filter { Startbibliotheken.waehlbar($0) },
+            sammlungen: sammlungen, gewaehlt: startBibliotheken)
+    }
+
     func gattungen() async -> [String]? {
         guard let client else { return nil }
         return try? await client.gattungen()

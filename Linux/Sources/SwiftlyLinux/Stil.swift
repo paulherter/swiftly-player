@@ -435,7 +435,7 @@ enum Stil {
         button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
         button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
         button.swiftly-pfeil, button.swiftly-zurueck, button.swiftly-neben,
-        button.swiftly-reiter,
+        button.swiftly-reiter, button.swiftly-reihenkopf,
         button.swiftly-einstellzeile, button.swiftly-wertzeile,
         button.swiftly-handlung, button.swiftly-spielrund,
         button.swiftly-spielrund-gross {
@@ -458,6 +458,7 @@ enum Stil {
             font-size: \(rubrikGross)px;
             font-weight: 600;
         }
+        button.swiftly-reihenkopf:hover label { color: \(schriftLeise); }
         button.swiftly-haupt:hover { background-color: rgba(255,255,255,0.88); }
         /* Der Mac legt `.opacity(0.4)` über den ganzen Knopf. Dieselbe
            Wirkung, nur ausgerechnet: Weiß zu 40 % über dem Grund. */

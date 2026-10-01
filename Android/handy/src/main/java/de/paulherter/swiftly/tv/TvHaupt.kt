@@ -462,6 +462,7 @@ private fun TvUnterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> U
         "Einstellungen" -> EinstellungenSeite(app, oeffnen, zurueck)
         "Seerr" -> TvSeerrSeite(app, zurueck)
         "EigeneKoepfe" -> { androidx.activity.compose.BackHandler(onBack = zurueck); TvEigeneKoepfeSeite(app, zurueck) }
+        "Lizenzen" -> TvLizenzen(app, zurueck)
         "Seerrtitel" -> TvSeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
         "Merkliste" -> TvMerkliste(app, oeffnen)

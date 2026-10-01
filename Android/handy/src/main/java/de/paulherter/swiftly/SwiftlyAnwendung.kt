@@ -387,6 +387,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         super.onCreate()
         ablage = Ablage(this)
         einstellungen = Einstellungen(ablage)
+        einstellungen.serverSchluessel = { aktiverServer().orEmpty().lowercase().trimEnd('/') }
         Texte.laden(this)
         // Vor der ersten Anfrage des Kerns: eigene Zertifizierungsstellen auch fuer URLSession und VLC.
         Zertifikate.bereitstellen(this)
@@ -502,7 +503,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         val vorher = ablage.konten
         ablage.konten = Kern.bundAufnehmen(sitzung, vorher.orEmpty())
         kern.sitzungSetzen(sitzung)
-        if (vorher != null) nachDemWechsel() else kontovorgabenHolen()
+        if (vorher != null) nachDemWechsel() else { einstellungen.bibliothekenNeuLesen(); kontovorgabenHolen() }
     }
 
     /**
@@ -575,6 +576,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         // Der Socket gehoert dem vorigen Konto; die Hauptansicht startet ihn fuer das neue.
         lauf.launch { runCatching { kern.fernsteuerungBeenden().await() } }
         startReihen = null
+        einstellungen.bibliothekenNeuLesen()
         bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
         servername.value = null
         merkliste.vergessen()

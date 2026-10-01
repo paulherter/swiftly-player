@@ -17,7 +17,7 @@ final class Kontoflug {
     var takt: guint = 0
     /// Bis zum Tausch halten die Reihen der Startseite still.
     var reihenHalten = true
-    var wartendeReihen: (reihen: [(String, Reihenart, [Item])], gestoert: Bool)?
+    var wartendeReihen: (reihen: [Startreihenzeile], gestoert: Bool)?
 
     init(kurve: Kontowechselkurve?) { self.kurve = kurve }
     var seit: Double { Date().timeIntervalSince(beginn) }

@@ -35,6 +35,8 @@ struct SerienView: View {
     @State private var staffelnGestoert = false
     @State private var aehnliche: [Item] = []
     @State private var aehnlicheGestoert = false
+    /// Extras der Serie; leer heißt: kein Reiter.
+    @State private var extras: [Item] = []
     @State private var staffelOffen = false
     @State private var staffeltafelOffen = false
     @State private var ladeposten: [Downloadposten] = []
@@ -157,13 +159,14 @@ struct SerienView: View {
     @State private var kopfstand = Kopfstand()
 
     enum Reiter: String, CaseIterable {
-        case folgen, besetzung, aehnliches
+        case folgen, besetzung, aehnliches, extras
 
         var beschriftung: LocalizedStringKey {
             switch self {
             case .folgen:     "Folgen"
             case .besetzung:  "Besetzung"
             case .aehnliches: "Ähnliches"
+            case .extras:     "Extras"
             }
         }
     }
@@ -190,7 +193,8 @@ struct SerienView: View {
                     // ineinander.
                     .zIndex(1)
 
-                Reiterreihe(auswahl: $reiter)
+                Reiterreihe(auswahl: $reiter, faelle: extras.isEmpty ? [.folgen, .besetzung, .aehnliches]
+                                                                    : SerienView.Reiter.allCases)
                     .padding(.top, 26)
 
                 abschnitt
@@ -474,6 +478,9 @@ struct SerienView: View {
             Besetzungsreihe(model: model, leute: serie.darsteller,
                             herkunft: serie.name)
 
+        case .extras:
+            Titelreihe(titel: "Extras", eintraege: extras, model: model, spielen: true)
+
         case .aehnliches:
             // Leerhinweise erst, wenn das Laden vorbei ist — wie auf dem
             // iPhone. Vorher stand hier „Nichts Ähnliches gefunden", während
@@ -527,6 +534,7 @@ struct SerienView: View {
         async let stand: Item? = (gewaehlt == nil && ohneHinweis) ? await model.standInSerie(serie) : nil
         async let liste = model.staffeln(serie)
         async let aehnlich = model.aehnliche(serie)
+        async let extra = model.extras(serie)
         let geholt = await liste
         // Gescheitert: die Staffeln aus dem Speicher bleiben stehen, nichts
         // wird gemerkt. Der Abschnitt sagt es, wenn keine dastehen.
@@ -541,6 +549,7 @@ struct SerienView: View {
         let holen = wahl != nil || (geholt?.isEmpty ?? false)
         let neueFolgen = holen ? await model.folgen(serie: serie.id, staffel: wahl?.id) : nil
         let neueAehnliche = await aehnlich
+        let neueExtras = await extra
         // Staffeln, Folgenliste und Ähnliches bauen die halbe Seite neu aus —
         // erst, wenn sie steht (`Einfahrt`).
         await Einfahrt.abwarten()
@@ -550,6 +559,8 @@ struct SerienView: View {
         if let geholt { staffeln = geholt }
         aehnlicheGestoert = neueAehnliche == nil
         if let neueAehnliche { aehnliche = neueAehnliche }
+        if let neueExtras { extras = neueExtras }
+        if extras.isEmpty && reiter == .extras { reiter = .folgen }
         // Hat man währenddessen selbst eine Staffel gewählt, gehört die
         // Liste dieser Wahl, nicht dieser Antwort — `.task(id:)` holt sie.
         if gewaehlt == nil || gewaehlt?.id == wahl?.id {
@@ -620,11 +631,12 @@ struct SerienView: View {
 /// dieselben Werte wie auf dem iPhone.
 struct Reiterreihe: View {
     @Binding var auswahl: SerienView.Reiter
+    let faelle: [SerienView.Reiter]
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 26) {
-                ForEach(SerienView.Reiter.allCases, id: \.self) { fall in
+                ForEach(faelle, id: \.self) { fall in
                     Reiterknopf(beschriftung: fall.beschriftung,
                                 aktiv: auswahl == fall) { auswahl = fall }
                 }

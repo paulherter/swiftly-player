@@ -142,6 +142,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var selbstGewaehlt by remember(ziel.id) { mutableStateOf(false) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>?>(null) }
     var aehnlicheGestoert by remember(ziel.id) { mutableStateOf(false) }
+    var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
     // Ohne gemerkte Folgen stehen die Platzhalter vom ersten Bild an da, nicht erst mit dem Abruf.
     var folgenLaedt by remember(ziel.id) { mutableStateOf(folgen.isEmpty()) }
     var folgenGestoert by remember(ziel.id) { mutableStateOf(false) }
@@ -188,7 +189,11 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             val (gelesen, umfeld) = coroutineScope {
                 val a = async(Dispatchers.IO) { app.kern.serie(ziel.id).await() }
                 val b = async(Dispatchers.IO) {
-                    try { JSONObject(app.kern.titelUmfeld(ziel.id).await()).feldListe("aehnliche") { rasterkachelLesen(it) } }
+                    try {
+                        val o = JSONObject(app.kern.titelUmfeld(ziel.id).await())
+                        o.feldListe("aehnliche") { rasterkachelLesen(it) } to
+                            o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
+                    }
                     catch (e: CancellationException) { throw e } catch (_: Exception) { null }
                 }
                 serieLesen(a.await()) to b.await()
@@ -210,7 +215,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             // noch leer (der Abruf der Folgen laeuft davor) — das Ergebnis ging verloren, die Plakette blieb weg.
             neu.stand?.let { st -> bereich.launch { planLaden(st.id) } } ?: run { planGeladen = true }
             aehnlicheGestoert = umfeld == null
-            umfeld?.let { aehnliche = it }
+            umfeld?.let { aehnliche = it.first; extras = it.second; if (it.second.isEmpty() && reiter == 3) reiter = 0 }
             gemerkt = neu.gemerkt
             gesehen = neu.gesehen
             if (!selbstGewaehlt || staffel == null) staffel = wahl
@@ -384,7 +389,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             }
 
             Spacer(Modifier.height(22.dp))
-            Reiter(listOf(uebersetzt("Folgen"), uebersetzt("Besetzung"), uebersetzt("Ähnliches")), reiter) { reiter = it }
+            Reiter(listOfNotNull(uebersetzt("Folgen"), uebersetzt("Besetzung"), uebersetzt("Ähnliches"), if (extras.isNotEmpty()) uebersetzt("Extras") else null), reiter) { reiter = it }
 
             Crossfade(reiter, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
@@ -434,6 +439,9 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                                 Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) }
                             }
                         }
+                    }
+                    3 -> Raster(extras, spalten = { breite -> maxOf(1, ((breite + 12f) / (210f + 12f)).toInt()) }, abstand = 12) { x ->
+                        Extrakachel(x) { ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(x.id, null) }
                     }
                     else -> {
                         val liste = aehnliche

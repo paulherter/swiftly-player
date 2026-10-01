@@ -129,3 +129,56 @@ struct StartreihenTests {
         #expect(Startreihe.weiterschauen.listenname == Startreihe.weiterschauen.reihentitel)
     }
 }
+
+/// **Bibliotheken als eigene Startreihen.**
+@Suite("Startbibliotheken")
+struct StartbibliothekenTests {
+    private struct Quelle: Startseitenquelle {
+        var je: [String: [Item]] = [:]
+        struct Weg: Error {}
+        func resumeItems(limit: Int) async throws -> [Item] { [] }
+        func nextUp(limit: Int) async throws -> [Item] { [] }
+        func zuletztHinzugefuegt(in bibliothek: String?, holen: Int, zeigen: Int) async -> [Item]? { [] }
+        func titel(gattung: String, limit: Int) async -> [Item]? { [] }
+        func bibliotheken() async -> [Item]? { [] }
+        func neuzugaenge(gattung: String, holen: Int, zeigen: Int) async -> [Item]? { [] }
+        func neueSerien(in bibliothek: String?, zeigen: Int) async -> [Item]? { [] }
+        func neuesteTitel(in bibliothek: String, sammlung: Bool, zeigen: Int) async -> [Item]? { je[bibliothek] }
+    }
+    private func t(_ id: String) -> Item { Item(id: id, name: id) }
+
+    @Test("Eine alte Ablage ohne Wahl gibt keine Reihen")
+    func fehlendeAblage() {
+        #expect(Startbibliotheken.lesen(nil).isEmpty)
+        #expect(Startbibliotheken.lesen(Data("kaputt".utf8)).isEmpty)
+    }
+
+    @Test("Ein Eintrag ohne Namen wirft die Wahl nicht weg")
+    func eintragOhneName() {
+        let d = Data(#"[{"id":"a"},{"name":"ohne Kennung"},{"id":"b","name":"B"},{"id":"a","name":"doppelt"}]"#.utf8)
+        #expect(Startbibliotheken.lesen(d).map(\.id) == ["a", "b"])
+    }
+
+    @Test("Schreiben und Lesen gehen hin und zurück")
+    func hinUndZurueck() {
+        let w = [Startbibliothek(id: "x", name: "Filme"), Startbibliothek(id: "y", name: "Marvel")]
+        #expect(Startbibliotheken.lesen(Startbibliotheken.daten(w)) == w)
+    }
+
+    @Test("Die Reihen kommen in der gewählten Folge; Verschwundene und Leere fallen still weg")
+    func reihen() async {
+        let q = Quelle(je: ["a": [t("1"), t("1"), t("2")], "c": []])
+        let w = [Startbibliothek(id: "c", name: "leer"), Startbibliothek(id: "a", name: "A"),
+                 Startbibliothek(id: "weg", name: "gelöscht")]
+        let r = await Startseitenlader.bibliotheksreihen(von: q, wahl: w)
+        #expect(r.map(\.id) == ["a"])
+        #expect(r.first?.items.map(\.id) == ["1", "2"])
+    }
+
+    @Test("Die Auswahl lässt Gewähltes weg")
+    func auswahl() {
+        let a = Startbibliotheken.auswahl(bibliotheken: [t("a"), t("b")], sammlungen: [t("c"), t("a")],
+                                          gewaehlt: [Startbibliothek(id: "b", name: "B")])
+        #expect(a.map(\.id) == ["a", "c"])
+    }
+}

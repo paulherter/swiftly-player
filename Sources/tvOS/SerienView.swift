@@ -119,6 +119,8 @@ struct SerienView: View {
     /// Zählt die Ladeläufe von `laden()`; nur der jüngste schreibt.
     @State private var ladelauf = 0
     @State private var aehnliche: [Item] = []
+    /// Extras der Serie; leer heißt: keine Reihe.
+    @State private var extras: [Item] = []
     /// **Leer und gestoert sind zwei Lagen.** Ohne diese Flaggen sagte die
     /// Seite „Keine Folgen in dieser Staffel", wenn der Server geschwiegen
     /// hatte — und die Reihe „Ähnliches" fiel wortlos weg.
@@ -200,6 +202,21 @@ struct SerienView: View {
                         Reihentitel(text: "Ähnliches")
                     } inhalt: {
                         Titelstreifen(model: model, items: aehnliche)
+                    }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
+                }
+                if !extras.isEmpty {
+                    // Etwas zum Abspielen: Auswahl startet das Extra, wie
+                    // auf der Filmseite.
+                    reihenabschnitt {
+                        Reihentitel(text: "Extras")
+                    } inhalt: {
+                        Titelstreifen(model: model, items: extras) { extra in
+                            Abspielwunsch.starten(extra, ab: 0, model: model, bereitet: $bereitet,
+                                                  fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                                  abspielen: { abspielen.wrappedValue = $0 })
+                        }
                     }
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
@@ -539,6 +556,7 @@ struct SerienView: View {
         async let liste = model.staffeln(serie)
         async let stand = model.standInSerie(serie)
         async let aehnlich = model.aehnliche(serie)
+        async let extra = model.extras(serie)
 
         let neueSerie = await frischeSerie
         // **`nil` heisst gestoert.** Eine leere Liste in den
@@ -567,6 +585,7 @@ struct SerienView: View {
         let holen = wahl != nil || (geholteStaffeln?.isEmpty ?? false)
         let geholteFolgen = holen ? await model.folgen(serie: serie.id, staffel: wahl?.id) : nil
         let neueAehnliche = await aehnlich
+        let neueExtras = await extra
         // Ein jüngerer Lauf hat begonnen: dessen Stand gilt.
         guard meiner == ladelauf else { return }
 
@@ -586,6 +605,7 @@ struct SerienView: View {
             if let geholteStaffeln { staffeln = geholteStaffeln }
             aehnlicheGestoert = neueAehnliche == nil
             if let neueAehnliche { aehnliche = Listenregeln.ohneDoppelte(neueAehnliche) }
+            if let neueExtras { extras = Listenregeln.ohneDoppelte(neueExtras) }
             // Hat man waehrenddessen selbst eine Staffel gewaehlt, gehoert
             // die Liste dieser Wahl, nicht dieser Antwort.
             if !staffelSelbstGewaehlt || gewaehlteStaffel?.id == wahl?.id {

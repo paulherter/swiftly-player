@@ -178,8 +178,14 @@ enum Seitenziel: Hashable, Identifiable {
     case wiedergabe
     /// Wie die App aussieht und was auf der Startseite steht.
     case darstellung
+    /// Open-Source-Lizenzen: die Liste, ein Baustein (nach Kennung) und Quelltext samt Angebot.
+    case lizenzen
+    case lizenz(String)
+    case lizenzangebot
     /// Ein Genre für die Startseite dazunehmen.
     case genrewahl
+    /// Eine Bibliothek oder Sammlung als eigene Startreihe dazunehmen.
+    case bibliothekswahl
     case quickConnect
     case kontoHinzufuegen
     /// **Ein zweiter Jellyfin.** Mit Adresse, wenn das Konto auf einem
@@ -203,7 +209,11 @@ enum Seitenziel: Hashable, Identifiable {
         case .einstellungen:    "einstellungen"
         case .wiedergabe:       "wiedergabe"
         case .darstellung:      "darstellung"
+        case .lizenzen:         "lizenzen"
+        case let .lizenz(id):   "lizenz-\(id)"
+        case .lizenzangebot:    "lizenzangebot"
         case .genrewahl:        "genrewahl"
+        case .bibliothekswahl:  "bibliothekswahl"
         case .quickConnect:     "quickconnect"
         case .kontoHinzufuegen: "kontohinzufuegen"
         case let .serverHinzufuegen(url): "serverneu-\(url?.absoluteString ?? "")"
@@ -220,7 +230,7 @@ enum Seitenziel: Hashable, Identifiable {
     var imKontozweig: Bool {
         switch self {
         case .profil, .einstellungen, .wiedergabe, .seerr, .trakt, .darstellung,
-             .genrewahl, .quickConnect, .kontoHinzufuegen, .serverHinzufuegen: true
+             .lizenzen, .lizenz, .lizenzangebot, .genrewahl, .bibliothekswahl, .quickConnect, .kontoHinzufuegen, .serverHinzufuegen: true
         // **Die Personenseite gehoert zum Bereich, nicht zum Konto.** Man
         // kommt aus einem Titel dorthin und will von dort weiter in den
         // naechsten — sie liegt im selben Zweig wie die Seite, die sie

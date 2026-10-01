@@ -134,6 +134,7 @@ seite = kopf(
 
 {andere("/android/")}
 
+{VLC_HINWEIS}
 {HILFE}
 """ + fuss("/android/")
 

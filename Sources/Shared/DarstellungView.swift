@@ -17,6 +17,7 @@ struct DarstellungView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var genrewahl = false
+    @State private var bibliothekswahl = false
     #if os(iOS)
     @AppStorage("titelAlsLogo") private var titelAlsLogo = false
     #endif
@@ -38,15 +39,16 @@ struct DarstellungView: View {
                 if breit {
                     HStack(alignment: .top, spacing: 0) {
                         liste { allgemein; reihen }
-                        liste { genres }
+                        liste { bibliotheksreihen; genres }
                     }
                 } else {
-                    liste { allgemein; reihen; genres }
+                    liste { allgemein; reihen; bibliotheksreihen; genres }
                 }
             }
         }
         .tint(Stil.akzent)
         .navigationDestination(isPresented: $genrewahl) { GenrewahlView(model: model) }
+        .navigationDestination(isPresented: $bibliothekswahl) { BibliothekswahlView(model: model) }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
@@ -134,6 +136,36 @@ struct DarstellungView: View {
         var sichtbar = sichtbareReihen
         sichtbar.move(fromOffsets: von, toOffset: nach)
         model.startReihen = sichtbar + model.startReihen.filter { !sichtbar.contains($0) }
+    }
+
+    // MARK: Bibliotheken und Sammlungen
+
+    /// **Eigene Reihen aus dem Server**: eine Bibliothek oder Sammlung, die
+    /// mit dem „+" auf die Startseite kommt — in der Folge dieser Liste, nach
+    /// den festen Reihen. Weg damit per Wischen oder im Bearbeitungsmodus.
+    private var bibliotheksreihen: some View {
+        Section {
+            ForEach(model.startBibliotheken) { eintrag in
+                // Vom Server, also nicht übersetzt.
+                Text(verbatim: eintrag.name)
+                    .mitwachsend(15)
+                    .foregroundStyle(Stil.schrift)
+                    .listRowBackground(Stil.gruppenflaeche)
+            }
+            .onMove { model.startBibliotheken.move(fromOffsets: $0, toOffset: $1) }
+            .onDelete { model.startBibliotheken.remove(atOffsets: $0) }
+
+            Button { bibliothekswahl = true } label: {
+                Label("Bibliothek hinzufügen", systemImage: "plus")
+                    .mitwachsend(15, .semibold)
+                    .foregroundStyle(Stil.akzent)
+            }
+            .buttonStyle(Stil.Druckzeile())
+            .listRowBackground(Stil.gruppenflaeche)
+            .deleteDisabled(true)
+        } header: {
+            Rubrik(text: "Bibliotheken und Sammlungen")
+        }
     }
 
     // MARK: Genres
@@ -317,5 +349,65 @@ struct GenrewahlView: View {
         gestoert = geholt == nil
         if let geholt { alle = geholt }
         geladen = true
+    }
+}
+
+
+/// **Eine Bibliothek oder Sammlung als Startreihe wählen.** Ein Tipp nimmt
+/// sie auf und geht zurück; was schon gewählt ist, steht hier nicht mehr.
+struct BibliothekswahlView: View {
+    let model: AppModel
+
+    @Environment(\.dismiss) private var zurueck
+    @Environment(\.breit) private var breit
+    @State private var auswahl: [Item] = []
+    @State private var geladen = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Stil.grund.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Unterseitenkopf(titel: String(localized: "Bibliothek hinzufügen")) { zurueck() }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if geladen, auswahl.isEmpty {
+                            Text(model.views.isEmpty ? "Auf deinem Server gibt es keine Bibliotheken."
+                                                     : "Alle Bibliotheken und Sammlungen stehen schon auf der Startseite.")
+                                .mitwachsend(15)
+                                .foregroundStyle(Stil.schriftLeise)
+                                .padding(.horizontal, Stil.rand(breit: breit))
+                                .padding(.top, 8)
+                        } else if !auswahl.isEmpty {
+                            Einstellungsgruppe(titel: "Auf deinem Server") {
+                                ForEach(Array(auswahl.enumerated()), id: \.element.id) { stelle, item in
+                                    if stelle > 0 {
+                                        Blattlinie()
+                                    }
+                                    Button {
+                                        model.startBibliotheken.append(Startbibliothek(item))
+                                        zurueck()
+                                    } label: {
+                                        Wertzeile(symbol: item.type == "BoxSet" ? "square.stack" : "rectangle.stack",
+                                                  titel: Text(verbatim: item.name))
+                                    }
+                                    .buttonStyle(Stil.Druckknopf())
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: breit ? Stil.lesebreite : .infinity, alignment: .leading)
+                    .padding(.bottom, 40)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+        .background(WischZurueck())
+        #endif
+        .task {
+            auswahl = await model.startAuswahl()
+            geladen = true
+        }
     }
 }

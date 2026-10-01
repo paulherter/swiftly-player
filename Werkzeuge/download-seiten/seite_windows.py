@@ -3,6 +3,12 @@ import sys, json
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from teile import *
 
+# Unter Windows liegt die VLC-Laufzeit von VideoLAN bei, und ein Teil ihrer Module
+# steht unter der GPL. Der Satz stammt aus THIRD-PARTY-NOTICES.md.
+VLC_WINDOWS = VLC_HINWEIS.replace(' <a href="/licenses/">',
+    ' On Windows the app ships the VLC 3.0.21 runtime; some of its plugins are under the GPL 2.0 or later. <a href="/licenses/">')
+assert VLC_WINDOWS != VLC_HINWEIS
+
 S1 = skizze(1, "A browser window with its download list open; the file Swiftly-Setup.exe is marked",
     BROWSER +
     '<path d="M352 28v11m-4.5-4.5 4.5 4.5 4.5-4.5" stroke="var(--leise)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
@@ -192,6 +198,7 @@ seite = kopf(
 
 {andere("/download/windows/")}
 
+{VLC_WINDOWS}
 {HILFE}
 """ + fuss("/download/windows/").replace("{kopieren}", "").replace("\n})();", DOWNLOAD_JS + "})();")
 

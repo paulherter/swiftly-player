@@ -120,6 +120,7 @@ seite = kopf(
 
 {andere("/download/linux/")}
 
+{VLC_HINWEIS}
 {HILFE}
 """ + fuss("/download/linux/", mit_kopieren=True)
 

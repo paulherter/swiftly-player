@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, trakt, einstellungen, kontoHinzufuegen, serverAufnahme, darstellung, genrewahl }
+    enum Unterseite: Hashable { case profil, quickConnect, wiedergabe, seerr, trakt, einstellungen, kontoHinzufuegen, serverAufnahme, darstellung, genrewahl, bibliothekswahl, lizenzen, lizenztext(String) }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -113,6 +113,9 @@ extension App {
         case .serverAufnahme:   serverAufnahmeBauen(block)
         case .darstellung:      darstellungBauen(block)
         case .genrewahl:        genrewahlBauen(block)
+        case .bibliothekswahl:  bibliothekswahlBauen(block)
+        case .lizenzen:         lizenzenBauen(block)
+        case .lizenztext(let id): lizenztextBauen(block, id: id)
         }
 
         let scroller = seitenscroller()
@@ -156,6 +159,8 @@ extension App {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
             bereichZeigen(bereich.kennung, schub: .zurueck)
+        } else if case .lizenztext = offeneUnterseite {
+            unterseiteOeffnen(.lizenzen, schub: .zurueck)
         } else {
             unterseiteOeffnen(.profil, schub: .zurueck)
         }
@@ -265,6 +270,15 @@ extension App {
                                       unter: uebersetzt("Die letzte Stunde, ohne Zugangsdaten")) {
             guard let datei = Protokolldatei.schreiben() else { return }
             imDateimanagerZeigen(datei)
+        })
+        // **Pflicht, nicht Zierde:** libVLC steht unter der LGPL, und die
+        // verlangt Lizenztext, Urheber und Quelle in der App selbst.
+        anhaengen(g4.raum, zeilenstrich())
+        anhaengen(g4.raum, wertezeile(symbol: "text-x-generic-symbolic",
+                                      titel: uebersetzt("Open-Source-Lizenzen"),
+                                      unter: uebersetzt("Was in Swiftly steckt und woher der Quelltext kommt"),
+                                      pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.lizenzen)
         })
         #if os(Windows)
         // **Nur unter Windows.** Auf Linux kommt die Aktualisierung aus der
@@ -995,6 +1009,24 @@ extension App {
         // **Zwei Formen derselben Auswahl**, nicht zwei Mengen. Wie die
         // übrigen Zeilen der Karte: ein Symbol, das die Form zeigt, kein
         // Auswahl-Kreis — der Haken steht rechts.
+        // **Zwischen den festen Reihen und den Genres**, wie auf Apple: eigene
+        // Reihen aus dem Server, nur untereinander umsortierbar.
+        let gb = einstellungsgruppe(uebersetzt("Bibliotheken und Sammlungen"))
+        let wahl = wahlen.startBibliotheken
+        for (stelle, eintrag) in wahl.enumerated() {
+            if stelle > 0 { anhaengen(gb.raum, zeilenstrich()) }
+            anhaengen(gb.raum, bibliothekszeile(eintrag, stelle: stelle, von: wahl.count))
+        }
+        if !wahl.isEmpty { anhaengen(gb.raum, trennlinie()) }
+        anhaengen(gb.raum, wertezeile(symbol: "list-add-symbolic",
+                                      titel: uebersetzt("Bibliothek hinzufügen"),
+                                      akzent: true,
+                                      pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.bibliothekswahl)
+        })
+        anhaengen(rechts, gb.aussen)
+        anhaengen(rechts, luftHoch(26))
+
         let g2 = einstellungsgruppe(uebersetzt("Genres"))
         anhaengen(g2.raum, wertezeile(symbol: "view-grid-symbolic",
                                       titel: uebersetzt("Als eigene Reihen"),
@@ -1136,6 +1168,92 @@ extension App {
         wahlen.sichern()
         geladen.remove(.start)
         unterseiteOeffnen(.darstellung, schub: .ohne)
+    }
+
+    /// Eine gewählte Bibliothek oder Sammlung: Name, zwei Pfeile, Entfernen.
+    /// Der Name kommt vom Server und wird nicht übersetzt (E7).
+    private func bibliothekszeile(_ eintrag: Startbibliothek, stelle: Int, von: Int) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_add_css_class(zeile, "swiftly-zeilenrumpf")
+        let bild: Widget! = gtk_image_new_from_icon_name(
+            eintrag.sammlung ? "view-grid-symbolic" : "folder-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(bild), 15)
+        gtk_widget_set_size_request(bild, 22, -1)
+        anhaengen(zeile, bild)
+        let l = beschriftung(eintrag.name, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(zeile, l)
+        anhaengen(zeile, listenpfeil("go-up-symbolic", name: uebersetzt("Nach oben"), an: stelle > 0) { [weak self] in
+            self?.bibliothekVerschieben(eintrag.id, um: -1)
+        })
+        anhaengen(zeile, listenpfeil("go-down-symbolic", name: uebersetzt("Nach unten"), an: stelle < von - 1) { [weak self] in
+            self?.bibliothekVerschieben(eintrag.id, um: 1)
+        })
+        anhaengen(zeile, listenpfeil("list-remove-symbolic", name: uebersetzt("Entfernen"), an: true) { [weak self] in
+            guard let self else { return }
+            self.wahlen.startBibliotheken.removeAll { $0.id == eintrag.id }
+            self.wahlen.sichern()
+            self.geladen.remove(.start)
+            self.unterseiteOeffnen(.darstellung, schub: .ohne)
+        })
+        return zeile
+    }
+
+    private func bibliothekVerschieben(_ id: String, um schritt: Int) {
+        var liste = wahlen.startBibliotheken
+        guard let von = liste.firstIndex(where: { $0.id == id }) else { return }
+        let nach = von + schritt
+        guard nach >= 0, nach < liste.count else { return }
+        let e = liste.remove(at: von)
+        liste.insert(e, at: nach)
+        wahlen.startBibliotheken = liste
+        wahlen.sichern()
+        geladen.remove(.start)
+        unterseiteOeffnen(.darstellung, schub: .ohne)
+    }
+
+    /// Was als eigene Startreihe zur Wahl steht: die Bibliotheken des Kontos
+    /// und seine Sammlungen, ohne das, was schon gewählt ist. Ein Klick
+    /// nimmt auf und geht zurück. Die Sammlungen kommen mit dem Verzeichnis,
+    /// auf das hier gewartet wird.
+    private func bibliothekswahlBauen(_ block: Widget!) {
+        anhaengen(block, unterseitenkopf(uebersetzt("Bibliothek hinzufügen")))
+        let gruppe = zeilengruppe()
+        anhaengen(block, gruppe.aussen)
+        let kiste = gehalten(gruppe.raum)
+        angebotLaden { [weak self] in
+            defer { losgelassen(kiste) }
+            guard let self else { return }
+            let sammlungen = self.angebotFuer != nil
+                ? (self.sammlungsverzeichnis?.alle.map(\.item) ?? []) : []
+            let frei = Startbibliotheken.auswahl(
+                bibliotheken: self.sichten.filter { Startbibliotheken.waehlbar($0) },
+                sammlungen: sammlungen, gewaehlt: self.wahlen.startBibliotheken)
+            guard !frei.isEmpty else {
+                let text = self.sichten.isEmpty
+                    ? uebersetzt("Auf deinem Server gibt es keine Bibliotheken.")
+                    : uebersetzt("Alle Bibliotheken und Sammlungen stehen schon auf der Startseite.")
+                let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
+                gtk_widget_set_margin_start(l, 14)
+                gtk_widget_set_margin_top(l, 12)
+                gtk_widget_set_margin_bottom(l, 12)
+                anhaengen(kiste.widget, l)
+                return
+            }
+            for (stelle, item) in frei.enumerated() {
+                if stelle > 0 { anhaengen(kiste.widget, zeilenstrich()) }
+                anhaengen(kiste.widget, wertezeile(
+                    symbol: item.type == "BoxSet" ? "view-grid-symbolic" : "folder-symbolic",
+                    titel: item.name) { [weak self] in
+                    guard let self else { return }
+                    self.wahlen.startBibliotheken.append(Startbibliothek(item))
+                    self.wahlen.sichern()
+                    self.geladen.remove(.start)
+                    self.unterseiteOeffnen(.darstellung)
+                })
+            }
+        }
     }
 
     /// Die freien Genres des Servers.

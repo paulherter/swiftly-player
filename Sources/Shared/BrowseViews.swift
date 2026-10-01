@@ -692,33 +692,10 @@ struct ItemDetailView: View {
             Abschnitt(titel: "Extras") {
                 HStack(spacing: 12) {
                     ForEach(extras) { extra in
-                        // Eine Kachel, die aussieht wie eine, ist auch eine: Tippen spielt das Extra.
-                        Button {
-                            Stil.ruck(.mittel)
-                            Abspielwunsch.starten(extra, model: model, bereitet: $bereitet,
-                                                  fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
-                                abspielen = $0
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 7) {
-                                Bild(url: model.imageURL(for: extra, maxHeight: 300),
-                                     breite: 210, hoehe: 118)
-                                Text(extra.name)
-                                    .font(Stil.kachel).foregroundStyle(Stil.schrift).lineLimit(1)
-                                // Ein Extra ohne Laufzeit meldet 0, nicht nichts —
-                                // ohne die Regel stünde dort „0 Min.".
-                                if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
-                                   let s = extra.runtimeSeconds {
-                                    // Derselbe leiseste Ton wie unter jedem
-                                    // anderen Plakat — ein Extra ist eine Kachel.
-                                    Text(laufzeit(s)).font(Stil.klein)
-                                        .foregroundStyle(Stil.schriftSehrLeise)
-                                }
-                            }
-                            .frame(width: 210, alignment: .leading)
+                        Extrakachel(model: model, extra: extra, bereitet: $bereitet,
+                                    fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                            abspielen = $0
                         }
-                        .buttonStyle(Stil.Druckknopf())
-                        .disabled(bereitet)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))

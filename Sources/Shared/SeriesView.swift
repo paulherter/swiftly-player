@@ -120,6 +120,8 @@ struct SeriesDetailView: View {
     @State private var ladetitel = ""
     @State private var aehnliche: [Item] = []
     @State private var aehnlicheGestoert = false
+    /// Extras der Serie (Specials, Hinter den Kulissen …). Leer: kein Reiter.
+    @State private var extras: [Item] = []
     /// Die Ähnlichen kommen nach dem Rest der Seite; bis dahin Platzhalter
     /// statt „Nichts Ähnliches gefunden.".
     @State private var aehnlicheLaedt = true
@@ -207,11 +209,14 @@ struct SeriesDetailView: View {
                     .padding(.bottom, 22)
                     }
 
-                    Reiter(titel: ["Folgen", "Besetzung", "Ähnliches"], gewaehlt: $reiter)
+                    Reiter(titel: extras.isEmpty ? ["Folgen", "Besetzung", "Ähnliches"]
+                                                 : ["Folgen", "Besetzung", "Ähnliches", "Extras"],
+                           gewaehlt: $reiter)
 
                     switch reiter {
                     case 0: folgenbereich
                     case 1: besetzung
+                    case 3 where !extras.isEmpty: extrasbereich
                     default: aehnlichesbereich
                     }
                 }
@@ -362,6 +367,7 @@ struct SeriesDetailView: View {
         async let a = model.standInSerie(serie)
         async let b = nachWiedergabe ? nil : staffelnHolen()
         async let c = nachWiedergabe ? nil : aehnlicheHolen()
+        async let e = nachWiedergabe ? nil : model.extras(serie)
         // **Die Serie selbst frisch.** Gemerkt und gesehen standen aus dem
         // Eintrag, mit dem die Seite geoeffnet wurde — und der aendert sich
         // nie. Nach „Serie als gesehen" lud die Seite neu, las wieder den
@@ -445,8 +451,12 @@ struct SeriesDetailView: View {
         // leere Liste — der Abruf lief nicht oder scheiterte.
         if !nachWiedergabe {
             let frischeAehnliche = await c
+            // Gestört oder keine: dann gibt es den Reiter nicht.
+            let frischeExtras = await e
             if Task.isCancelled { return }
             withAnimation(Stil.einblenden) {
+                if let frischeExtras { extras = Listenregeln.ohneDoppelte(frischeExtras) }
+                if extras.isEmpty && reiter == 3 { reiter = 0 }
                 aehnlicheLaedt = false
                 aehnlicheGestoert = frischeAehnliche == nil && aehnliche.isEmpty
                 if let frischeAehnliche { aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche) }
@@ -829,6 +839,21 @@ struct SeriesDetailView: View {
             .padding(.horizontal, Stil.rand(breit: breit))
             .padding(.top, 20)
         }
+    }
+
+    private var extrasbereich: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 12) {
+                ForEach(extras) { extra in
+                    Extrakachel(model: model, extra: extra, bereitet: $bereitet,
+                                fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                        abspielen = $0
+                    }
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+        }
+        .padding(.top, 20)
     }
 
     @ViewBuilder
