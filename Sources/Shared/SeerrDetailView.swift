@@ -174,7 +174,11 @@ struct SeerrDetailView: View {
     private func detailLaden() async {
         let geholt = await model.seerr.detail(treffer)
         detailGestoert = geholt == nil
-        if let geholt { detail = geholt }
+        if let geholt {
+            detail = geholt
+            // Der Server weiß es besser als der Suchtreffer von vorhin.
+            if let neu = geholt.stand { stand = neu }
+        }
     }
 
     // MARK: Teile
@@ -517,8 +521,12 @@ struct SeerrDetailView: View {
                 staffeln = nil
             }
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
-            angefragt = true
-            stand = .wartetAufFreigabe
+            // **Den Stand lesen, nicht annehmen.** Gibt Seerr die Anfrage
+            // sofort frei, ist der Titel „lädt" oder da, nicht „wartet".
+            gewaehlt = []
+            await detailLaden()
+            if stand.anfragbar { stand = .wartetAufFreigabe }
+            angefragt = stand == .wartetAufFreigabe
         } catch {
             fehler = lesbarerFehler(error)
         }

@@ -459,7 +459,7 @@ extension App {
         }
         let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         let tafel = tafelAn(zeile)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         anhaengen(liste, handlungszeile("user-trash-symbolic",
                                         uebersetzt("Download entfernen")) { [weak self] in
             gtk_popover_popdown(alsTafel(tafel))
@@ -508,7 +508,7 @@ extension App {
     /// Rechnung). Mal der Skalierung, damit es scharf ist.
     func downloadkopfpixel() -> Int {
         let breite = Double(max(gtk_widget_get_width(buehne), 1))
-        let teiler = Double(max(gtk_widget_get_scale_factor(fenster), 1))
+        let teiler = Skalierung.geraetepunkte(fenster)
         let punkte = max(breite * 0.62, Double(Stil.heldHoehe) * 1.62 * 16 / 9)
         return Int((punkte * teiler).rounded(.up))
     }

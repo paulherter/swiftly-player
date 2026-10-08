@@ -899,9 +899,9 @@ extension App {
         // seiner Kachel (Apple: `.kachelmenue(titel, …)` am Hauptknopf).
         // Danach fragt der Knopf sein Ziel neu.
         let plakat = adressen.flatMap { Bildwahl.hochkant(titel, adressen: $0,
-                                                          maxHoehe: Stil.kachelHoehe * 2) }
+                                                          maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }
         kachelmenueAnlegen(haupt, Kachelmenueangabe(
-            item: titel, bild: plakat, kante: Stil.kachelHoehe * 2,
+            item: titel, bild: plakat, kante: Skalierung.bildkante(Stil.kachelHoehe),
             nachher: { [weak self] _ in self?.kopfAuffrischen?.tun() }))
 
         // **„Von vorn" nur bei angefangenen Titeln.** Wo es das nicht gibt,
@@ -1062,7 +1062,7 @@ extension App {
         // Rechtsbuendig unter dem Knopf, und sie waechst aus der rechten
         // oberen Ecke — `.aufklappen(von: .topTrailing)` auf dem Mac.
         let tafel = tafelOeffnen(an: knopf, buendig: GTK_ALIGN_END)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
 
         anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {
             [weak self] in
@@ -1291,7 +1291,7 @@ extension App {
         gtk_widget_set_size_request(liste, 280, -1)
 
         let tafel = tafelOeffnen(an: knopf)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
 
         // Steht er schon in der Liste, geht es nicht ums Anfangen.
         if let vorhanden = downloads.posten(fuer: titel.id) {

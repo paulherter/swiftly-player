@@ -219,6 +219,9 @@ struct Wahlen: Codable {
     var fensterBreite = 0
     var fensterHoehe = 0
     var fensterMaximiert = false
+    /// **Groesse der Oberflaeche**, 0,8 bis 1,5 — multipliziert, was das
+    /// System schon vorgibt (``Skalierung``). 1 heisst: wie das System.
+    var oberflaeche = 1.0
 
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
 
@@ -288,6 +291,7 @@ struct Wahlen: Codable {
         fensterBreite          = w(.fensterBreite, 0)
         fensterHoehe           = w(.fensterHoehe, 0)
         fensterMaximiert       = w(.fensterMaximiert, false)
+        oberflaeche            = w(.oberflaeche, 1.0)
     }
 
     /// Schluessel frueherer Fassungen, die nur noch gelesen werden.
@@ -308,7 +312,7 @@ struct Wahlen: Codable {
              bildfuellend, restzeitAlsEnde, lautstaerke, lautstaerkeDavor, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
              discordAnzeigen, suchverlauf, suchverlaufJeKonto, fertigGeschaut, discordHinweisGezeigt, merkgattung, startReihen, startAus, startGenres,
              genreChips, startBibliothekenJeServer, sortierungJeOrt, filterJeOrt, bibliothekJeGattung,
-             fensterBreite, fensterHoehe, fensterMaximiert
+             fensterBreite, fensterHoehe, fensterMaximiert, oberflaeche
     }
 
     func encode(to encoder: Encoder) throws {
@@ -350,6 +354,7 @@ struct Wahlen: Codable {
         try c.encode(fensterBreite, forKey: .fensterBreite)
         try c.encode(fensterHoehe, forKey: .fensterHoehe)
         try c.encode(fensterMaximiert, forKey: .fensterMaximiert)
+        try c.encode(oberflaeche, forKey: .oberflaeche)
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.

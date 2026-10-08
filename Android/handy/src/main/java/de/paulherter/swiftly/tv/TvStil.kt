@@ -436,9 +436,17 @@ fun Modifier.fernbedienbaresFeld(): Modifier {
  */
 @Composable
 fun TvFeld(wert: String, aendern: (String) -> Unit, platzhalter: String, modifier: Modifier = Modifier,
-          geheim: Boolean = false, imeAction: ImeAction = ImeAction.Done,
+          geheim: Boolean = false, imeAction: ImeAction = ImeAction.Next,
           tastaturTyp: KeyboardType = KeyboardType.Text, tastaturAktion: () -> Unit = {}) {
     var fokus by remember { mutableStateOf(false) }
+    val fokusLenker = androidx.compose.ui.platform.LocalFocusManager.current
+    val tastatur = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    // **Die Taste der Bildschirmtastatur muss immer weiterfuehren.** Eigene `KeyboardActions`
+    // ersetzen das Vorgabeverhalten (Tastatur schliessen): ein Feld ohne `tastaturAktion` hatte
+    // „Fertig", das nichts tat — beim Benutzernamen kam man nicht zum Kennwort. Vorgabe ist deshalb
+    // „Weiter" ins naechste Feld; die abschliessende Aktion raeumt die Tastatur weg, damit das
+    // Steuerkreuz danach wieder die Seite bedient.
+    val abschliessen = { tastatur?.hide(); tastaturAktion() }
     if (geheim) Sichtschutz()
     val farbe = if (fokus) Stil.grund else Stil.schrift
     BasicTextField(wert, aendern, singleLine = true,
@@ -446,7 +454,8 @@ fun TvFeld(wert: String, aendern: (String) -> Unit, platzhalter: String, modifie
         cursorBrush = SolidColor(farbe),
         visualTransformation = if (geheim) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(imeAction = imeAction, keyboardType = tastaturTyp),
-        keyboardActions = KeyboardActions(onDone = { tastaturAktion() }, onGo = { tastaturAktion() }, onSearch = { tastaturAktion() }),
+        keyboardActions = KeyboardActions(onDone = { abschliessen() }, onGo = { abschliessen() }, onSearch = { abschliessen() },
+            onNext = { fokusLenker.moveFocus(androidx.compose.ui.focus.FocusDirection.Next) }),
         modifier = modifier.height(TvStil.knopfHoehe).onFocusChanged { fokus = it.isFocused }.fernbedienbaresFeld(),
         decorationBox = { innen ->
             // **Kein Rand** (BRAND 4): ein Feld ist eine gefuellte Kapsel, kein gezeichneter

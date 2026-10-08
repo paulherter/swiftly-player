@@ -215,8 +215,10 @@ final class Abspieler: @unchecked Sendable {
             gtk_widget_set_vexpand(feld, 1)
         }
         gtk_box_append(alsBox(huelle), bildfeld)
-        gtk_box_append(alsBox(huelle), glfeld)
         gtk_widget_set_visible(glfeld, 0)
+        // Eins zu eins in Geraetepunkten, auch wenn die Oberflaeche
+        // vergroessert gezeichnet wird — siehe ``Skalierung``.
+        gtk_box_append(alsBox(huelle), Skalierung.entzerrt(glfeld))
         glFeldAnschliessen()
         // **Und noch einmal, sobald das Bildfeld wieder im Fenster haengt.**
         // ``oeffnen(_:ab:puffer:)`` meldet den Takt an, aber es ist nicht
@@ -387,6 +389,19 @@ final class Abspieler: @unchecked Sendable {
     ///
     /// Eine Zeile je Titel, kein Dauerlaerm — und sie beantwortet eine Frage,
     /// die sonst nur ein Blick auf den fremden Rechner beantwortet.
+    /// **Der Nutzer hat die Groesse der Oberflaeche verstellt**, und beim
+    /// Bau war der Faktor 1 — das GL-Feld steht dann ohne Gegenhuelle da und
+    /// bekaeme seinen Bildspeicher in der verkleinerten Aufloesung. Hier wird
+    /// sie nachgereicht. Steht sie schon, rechnet sie von selbst neu.
+    func glFeldEntzerren() {
+        guard Skalierung.faktor != 1, let huelle, let glfeld,
+              gtk_widget_get_parent(glfeld) == huelle else { return }
+        g_object_ref(glfeld)
+        gtk_box_remove(alsBox(huelle), glfeld)
+        gtk_box_append(alsBox(huelle), Skalierung.entzerrt(glfeld))
+        g_object_unref(glfeld)
+    }
+
     private func rendererMelden() {
         guard let huelle, let fenster = gtk_widget_get_native(huelle),
               let zeichner = gtk_native_get_renderer(fenster) else { return }

@@ -474,7 +474,7 @@ func zeilenstrich() -> Widget! {
 
 /// Der Rumpf jeder Zeile: Symbol (22 breit), 14 Abstand, Titel, Unterzeile,
 /// rechts etwas. Mindestens 44 hoch, 12 seitlich.
-private func zeilenrumpf(symbol: String, titel: String, unter: String?,
+func zeilenrumpf(symbol: String, titel: String, unter: String?,
                          akzent: Bool, rechts: Widget?) -> Widget! {
     // **„14 + Inhalt + 14" als Innenabstand, nicht als feste Hoehe** (Mac
     // 8eb1ca13): eine Mindesthoehe rechnet den Inhalt nicht mit, und eine

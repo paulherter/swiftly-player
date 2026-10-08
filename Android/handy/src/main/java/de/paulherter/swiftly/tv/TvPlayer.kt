@@ -676,8 +676,9 @@ private fun TvSymbolknopf(symbol: Zeichen, beschreibung: String, aktiv: Boolean,
 }
 
 /**
- * **Die Ueberspringen-Pille: weiss, dunkle Schrift** (`PillenStil` auf tvOS). Der Countdown fuellt sie
- * dunkel von links — die Akzentfarbe gehoert im Player allein dem Griff der Leiste.
+ * **Die Ueberspringen-Pille** (`PillenStil` auf tvOS): ruhend dunkle Flaeche mit weisser Schrift, im Fokus
+ * weisse Flaeche mit dunkler Schrift und Lupe — wie die Symbolknoepfe. Der Countdown fuellt sie von links;
+ * die Akzentfarbe gehoert im Player allein dem Griff der Leiste.
  */
 @Composable
 private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuft: Boolean, laenge: Double,
@@ -690,14 +691,15 @@ private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuf
         // **Keine Schatten** (BRAND 4), auch nicht unter der Ueberspringen-Pille: ein weicher
         // Schatten wird auf drei Meter zu Schlamm, und es waere die einzige Plattform mit
         // Schatten. Der Fokus sagt es ueber Groesse und Flaeche.
-        Row(Modifier.height(36.dp).clip(form).background(Stil.schrift)
+        val schrift = if (fokus) Stil.grund else Stil.schrift
+        Row(Modifier.height(36.dp).clip(form).background(if (fokus) Stil.schrift else Color.Black.copy(alpha = 0.55f))
                 .drawBehind {
-                    if (anteil != null) drawRect(Stil.grund.copy(alpha = 0.16f), size = size.copy(width = size.width * fuellung))
+                    if (anteil != null) drawRect(schrift.copy(alpha = 0.16f), size = size.copy(width = size.width * fuellung))
                 }
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Symbol(Zeichen.Ueberspringen, 15.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
-            Text(text, style = TvStil.knopf, color = Stil.grund, maxLines = 1)
+            Symbol(Zeichen.Ueberspringen, 15.dp, farbe = schrift, staerke = Staerke.Halbfett)
+            Text(text, style = TvStil.knopf, color = schrift, maxLines = 1)
         }
     }
 }

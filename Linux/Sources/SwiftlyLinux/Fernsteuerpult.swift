@@ -81,6 +81,34 @@ extension App {
         case "quickconnect": unterseiteOeffnen(.quickConnect)
         case "zurueck":     zurueck()
 
+        #if DEBUG
+        /// Die Probeseite fuer die Bildzeit (``Messprobe``): `probe:60`.
+        case "probe":
+            _ = Messprobe.seiteZeigen(self, kacheln: Int(teile.count > 1 ? teile[1] : "") ?? 60)
+
+        /// Faktor 1,0 und 1,5, je 4, 20 und 60 Kacheln: Scrollen und eine
+        /// einzelne Kachel. `messreihe:1.5` misst nur diesen Faktor.
+        case "messreihe":
+            guard Messprobe.laufend == nil else { break }
+            // `messreihe:1.5:ohneBild,ohneEcke` — Faktor, dann Optionen.
+            let teil = wort.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            let faktoren = teil.count > 1 && !teil[1].isEmpty ? [Double(teil[1]) ?? 1] : [1.0, 1.5]
+            let optionen = Set(teil.count > 2 ? teil[2].split(separator: ",").map(String.init) : [])
+            let kacheln = optionen.contains("nur60") ? [60] : [4, 20, 60]
+            Messprobe(app: self, schritte: faktoren.flatMap { f in kacheln.map { (f, $0) } },
+                      optionen: optionen).starten()
+
+        /// Eine Seite des Hauptstapels zeigen, auch ohne Anmeldung:
+        /// `stapel:start` — so erreicht eine Maschine ohne Konto die
+        /// Einstellungsseiten.
+        case "stapel":
+            gtk_stack_set_visible_child_name(OpaquePointer(seiten), teile.count > 1 ? teile[1] : "start")
+        #endif
+
+        /// Groesse der Oberflaeche wie am Regler: `groesse:1.2`.
+        case "groesse":
+            oberflaecheSkalieren(Double(teile.count > 1 ? teile[1] : "") ?? 1)
+
         /// Den ersten Titel einer Reihe öffnen — ohne seine Kennung zu kennen.
         case "ersterTitel":
             if let erster = rasterItems[bereich]?.first ?? letzteStartreihe.first {

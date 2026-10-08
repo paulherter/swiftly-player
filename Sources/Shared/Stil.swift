@@ -1746,6 +1746,9 @@ struct Zeitregler: View {
     /// Vorspann endet, wo der Abspann anfaengt. Leer heisst „keine bekannt",
     /// und dann sieht der Regler aus wie vorher.
     var marken: [Double] = []
+    /// **Die Kapitel der Datei** (``Kapitelleiste/brauchbar(_:)``) — sie
+    /// teilen den Regler in Stücke. Leer: ein Stück, wie vorher.
+    var kapitel: [Kapitel] = []
     /// **Wie weit die Trefferfläche über den Regler hinausragt** (nach oben,
     /// nie nach unten): unter dem Regler liegt der Home-Indikator, und wer
     /// dort hochwischt, will die App verlassen, nicht spulen.
@@ -1776,14 +1779,40 @@ struct Zeitregler: View {
             .filter { $0 > 0.01 && $0 < 0.99 }
     }
 
-    var body: some View {
-        // **Im Stehen nur der Strich, beim Spulen Griff in Akzentfarbe.** So
-        // steht es im Entwurf des Players: vier Punkt ohne Griff, beim
-        // Anfassen sechs Punkt und ein Griff — die einzige Stelle im Player,
-        // an der die Akzentfarbe auftaucht.
-        let dicke: CGFloat = amSchieben ? 6 : 4
-        let griff: CGFloat = 18
+    /// Lücke zwischen zwei Kapiteln: so breit wie eine Kerbe.
+    private static let luecke: CGFloat = 2
+    /// Schmaler wird kein Stück; ein engerer Schnitt fällt weg
+    /// (``Kapitelleiste/stuecke(grenzen:dauer:breite:mindestbreite:)``).
+    private static let mindestbreite: CGFloat = 8
 
+    private var stuecke: [Kapitelleiste.Stueck] {
+        Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: bis), dauer: bis,
+                              breite: Double(breite), mindestbreite: Double(Self.mindestbreite))
+    }
+
+    /// **Woran der Regler einrastet:** die Kerben der Abschnitte und die
+    /// Schnitte zwischen den Kapiteln — aber nur die, die man sieht, und nur
+    /// mit Platz daneben (``Kapitelleiste/fangschnitte(_:dauer:breite:)``).
+    /// Sonst spränge er bei dicht gesetzten Kapiteln nur noch von einem zum
+    /// nächsten.
+    private func fangmarken(_ stuecke: [Kapitelleiste.Stueck]) -> [Double] {
+        marken + Kapitelleiste.fangschnitte(stuecke, dauer: bis, breite: Double(breite))
+    }
+
+    /// Für VoiceOver: Stelle, Länge und — wenn es eins gibt — das Kapitel.
+    private var gesprochenerWert: String {
+        let stelle = String(localized: "\(Self.gesprochen(wert)) von \(Self.gesprochen(bis))")
+        guard let name = Kapitelleiste.kapitel(bei: wert, in: kapitel)?.name, !name.isEmpty
+        else { return stelle }
+        return String(localized: "\(stelle), \(name)")
+    }
+
+    private static let dicke: CGFloat = 4
+    private static let dickeGehoben: CGFloat = 6
+
+    /// **Spur, Balken und Kerben — in voller Höhe, ohne Form.** Die Ecken,
+    /// die Lücken und wie dick welches Stück ist, gibt erst die Maske.
+    private var spur: some View {
         ZStack(alignment: .leading) {
             // **Weiss 18 %.** Die Playersteuerung liegt auf reinem Schwarz
             // (BRAND 4), also traegt die Spur einen hellen Ton und der Balken
@@ -1791,8 +1820,11 @@ struct Zeitregler: View {
             // der hier stand, gehoerte zum Blattgriff und ist dorthin
             // zurueckgezogen; dunkel bleibt die Spur nur da, wo sie ueber
             // einem Plakat liegt — am Kachelbalken.
-            Capsule().fill(Color.white.opacity(0.18)).frame(height: dicke)
-            Capsule().fill(.white).frame(width: breite * anteil, height: dicke)
+            Rectangle().fill(Color.white.opacity(0.18))
+            // In der Dicke des Reglers, nicht der Maske: sonst wäre das Ende
+            // des Balkens im Stehen ein flacher Bogen statt eines runden.
+            Capsule().fill(.white)
+                .frame(width: breite * anteil, height: amSchieben ? Self.dickeGehoben : Self.dicke)
 
             // **Kerben an den Abschnittsgrenzen.**
             //
@@ -1806,9 +1838,38 @@ struct Zeitregler: View {
             // und eine Kerbe direkt an der Kante liest sich als Ausfransen.
             ForEach(kerben, id: \.self) { stelle in
                 Rectangle().fill(Stil.grund)
-                    .frame(width: 2, height: dicke)
+                    .frame(width: 2)
                     .offset(x: breite * stelle - 1)
             }
+        }
+        .frame(height: Self.dickeGehoben)
+    }
+
+    var body: some View {
+        // **Im Stehen nur der Strich, beim Spulen Griff in Akzentfarbe.** So
+        // steht es im Entwurf des Players: vier Punkt ohne Griff, beim
+        // Anfassen sechs Punkt und ein Griff — die einzige Stelle im Player,
+        // an der die Akzentfarbe auftaucht.
+        //
+        // **Mit Kapiteln hebt sich nur das Stück unter dem Finger** auf sechs
+        // Punkt, die anderen bleiben bei vier — so sieht man beim Spulen, in
+        // welchem Kapitel man ist, ohne die Vorschau lesen zu müssen. Ohne
+        // Kapitel ist die ganze Leiste das eine Stück, und alles bleibt wie
+        // im Entwurf.
+        let griff: CGFloat = 18
+        let stuecke = stuecke
+
+        ZStack(alignment: .leading) {
+            spur
+                // Die Form kommt aus der Maske: eine Kapsel, oder ein Stück
+                // je Kapitel.
+                .mask(alignment: .leading) {
+                    Kapitelmaske(stuecke: stuecke, breite: breite, luecke: Self.luecke,
+                                 dicke: Self.dicke,
+                                 gehoben: amSchieben
+                                     ? Kapitelleiste.stueck(bei: Double(anteil), in: stuecke) : nil,
+                                 dickeGehoben: Self.dickeGehoben, bewegung: Stil.umschalten)
+                }
 
             Circle().fill(Stil.akzent).frame(width: griff, height: griff)
                 .scaleEffect(amSchieben ? 1 : 0.4)
@@ -1820,7 +1881,7 @@ struct Zeitregler: View {
         // `adjustableAction` lässt sich die Stelle auch wischend ändern.
         .accessibilityElement()
         .accessibilityLabel("Abspielstelle")
-        .accessibilityValue(String(localized: "\(Self.gesprochen(wert)) von \(Self.gesprochen(bis))"))
+        .accessibilityValue(gesprochenerWert)
         .accessibilityAdjustableAction { richtung in
             let schritt = max(bis / 20, 10)
             switch richtung {
@@ -1863,7 +1924,7 @@ struct Zeitregler: View {
         // **An den Kerben rastet er ein** (`Kerbenfang`): nah
         // genug an einer Abschnittsgrenze steht er genau darauf,
         // mit einem leichten Tick beim Einrasten.
-        if let kerbe = Kerbenfang.kerbe(wert: roh, bis: bis, marken: marken,
+        if let kerbe = Kerbenfang.kerbe(wert: roh, bis: bis, marken: fangmarken(stuecke),
                                         breite: Double(breite)) {
             wert = kerbe
             if eingerastet != kerbe {

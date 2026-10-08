@@ -159,9 +159,9 @@ extension App {
         let hoehe = 118
         let kacheln: [Widget?] = extras.map { extra in
             let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe, stil: "swiftly-plakat")
-            if let adresse = adressen.flatMap({ Bildwahl.quer(extra, adressen: $0, breite: breite * 2)?.url }) {
+            if let adresse = adressen.flatMap({ Bildwahl.quer(extra, adressen: $0, breite: Skalierung.anfragekante(breite))?.url }) {
                 bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                          kante: breite * 2)
+                          kante: Skalierung.bildkante(breite))
             } else {
                 zeichenLegen(kaefig, serie: false)
             }

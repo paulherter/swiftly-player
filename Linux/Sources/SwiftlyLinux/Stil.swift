@@ -1857,6 +1857,11 @@ enum Stil {
             outline-offset: 2px;
         }
         flowboxchild:focus-visible { border-radius: \(eckeKachel)px; }
+        .swiftly-groessenregler:focus-visible {
+            outline: 2px solid \(akzent);
+            outline-offset: 0;
+            border-radius: 8px;
+        }
         """
     }
 
@@ -1876,6 +1881,29 @@ enum Stil {
         _ = ordner.withCString { schriften_laden($0) }
     }
 
+    /// **Was neben der vergroesserten Huelle steht, waechst hier mit.**
+    ///
+    /// ``Skalierung`` zeichnet den Inhalt von Fenster und Tafeln groesser;
+    /// der Rahmen einer Tafel und das Hinweisschildchen unter dem Zeiger
+    /// gehoeren GTK selbst und liegen ausserhalb. Ohne diese Regeln haette
+    /// die Tafel bei 150 % eine Ecke von 16 um einen Inhalt mit 24. Die
+    /// Zahlen sind die der Regeln oben (`popover.swiftly-mehr > contents`).
+    /// Ohne Faktor — unter Linux bei Vorgabe — bleibt es leer.
+    private static var ausserhalbDerHuelle: String {
+        let f = Skalierung.faktor
+        guard f != 1 else { return "" }
+        func m(_ punkte: Int) -> String {
+            String(format: "%.1fpx", locale: Locale(identifier: "en_US_POSIX"), Double(punkte) * f)
+        }
+        return """
+
+        popover.swiftly-mehr > contents { border-radius: \(m(eckeFlaeche)); padding: \(m(4)) 0; }
+        popover.swiftly-mehr.swiftly-kachelmenue > contents { padding: 0 0 \(m(4)) 0; }
+        tooltip { padding: \(m(6)) \(m(10)); border-radius: \(m(6)); }
+        tooltip label { font-size: \(m(zweitzeile)); }
+        """
+    }
+
     /// Lädt das Stilblatt in die Anzeige.
     static func anwenden() {
         schriftMitbringen()
@@ -1891,6 +1919,26 @@ enum Stil {
                 800)   // GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
         }
         g_object_unref(UnsafeMutableRawPointer(anbieter))
+        ausserhalbLaden()
+    }
+
+    /// Der Anbieter fuer ``ausserhalbDerHuelle`` — ein eigener, weil sich
+    /// sein Inhalt aendert, sobald der Nutzer die Groesse der Oberflaeche
+    /// verstellt. Das grosse Blatt bleibt dabei liegen.
+    nonisolated(unsafe) private static var ausserhalbAnbieter: UnsafeMutablePointer<GtkCssProvider>?
+
+    /// Beim Start und nach jeder Aenderung des Faktors.
+    static func ausserhalbLaden() {
+        if ausserhalbAnbieter == nil, let anzeige = gdk_display_get_default() {
+            let neu = gtk_css_provider_new()
+            meckern(neu)
+            // Eins ueber dem grossen Blatt: bei gleicher Spezifitaet gilt
+            // die Regel von hier.
+            gtk_style_context_add_provider_for_display(anzeige, OpaquePointer(neu), 801)
+            ausserhalbAnbieter = neu
+        }
+        guard let anbieter = ausserhalbAnbieter else { return }
+        gtk_css_provider_load_from_string(anbieter, ausserhalbDerHuelle)
     }
 
     /// **GTK meldet einen Fehler im Stilblatt nicht auf der Fehlerleitung**,

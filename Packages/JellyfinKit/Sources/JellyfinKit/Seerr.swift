@@ -144,12 +144,17 @@ public struct Seerrdetail: Sendable, Equatable, Codable {
     ///
     /// Kommt aus einem **zweiten** Abruf — siehe ``Seerr/vorschlaege(aus:art:)``.
     public let aehnliches: [Seerrtreffer]
+    /// **Der Stand des ganzen Titels, frisch vom Server.** Der Suchtreffer
+    /// trägt nur den Stand vom Zeitpunkt der Suche; nach einer Anfrage (die
+    /// Seerr womöglich sofort freigibt) und beim erneuten Öffnen gilt dieser.
+    /// `nil`, wenn die Antwort ihn nicht trägt — dann bleibt der Treffer.
+    public let stand: Seerrstand?
 
     /// Dieselbe Auskunft, nur mit den Vorschlaegen aus dem zweiten Abruf.
     public func mit(aehnliches neu: [Seerrtreffer]) -> Seerrdetail {
         Seerrdetail(beschreibung: beschreibung, genres: genres, laufzeit: laufzeit,
                     bewertung: bewertung, staffeln: staffeln, besetzung: besetzung,
-                    aehnliches: neu)
+                    aehnliches: neu, stand: stand)
     }
 }
 
@@ -302,6 +307,7 @@ public enum Seerr {
             let credits: Besetzung?
             let mediaInfo: MedienInfo?
             struct MedienInfo: Decodable {
+                let status: Int?
                 struct Staffelstand: Decodable { let seasonNumber: Int; let status: Int? }
                 let seasons: [Staffelstand]?
             }
@@ -340,7 +346,9 @@ public enum Seerr {
                            // **Leer, und das ist kein Versehen.** Die
                            // Vorschlaege kommen aus einem eigenen Abruf;
                            // ``SeerrClient/detail(art:id:)`` setzt sie nach.
-                           aehnliches: [])
+                           aehnliches: [],
+                           // Fehlt `mediaInfo`, hat noch nie jemand gefragt.
+                           stand: a.mediaInfo?.status.flatMap(Seerrstand.init(rawValue:)) ?? .offen)
     }
 
     /// Die Vorschlaege zu einem Titel.

@@ -18,7 +18,7 @@
 #define Name "Swiftly"
 #define Fassung "1.0.5"
 ; Baunummer wie `Fassung.bau` in Linux/Sources/SwiftlyLinux/Fassung.swift.
-#define Bau "6"
+#define Bau "8"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"

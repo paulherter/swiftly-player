@@ -282,7 +282,11 @@ struct SeerrDetailView: View {
     private func detailLaden() async {
         let geholt = await model.seerr.detail(treffer)
         detailGestoert = geholt == nil
-        if let geholt { detail = geholt }
+        if let geholt {
+            detail = geholt
+            // Der Server weiß es besser als der Suchtreffer von vorhin.
+            if let neu = geholt.stand { stand = neu }
+        }
     }
 
     /// **Derselbe Kopf wie auf einer echten Detailseite.**
@@ -643,10 +647,8 @@ struct SeerrDetailView: View {
             // nicht. Seerr sagt es in der Suche; die Staffeln kommen mit der
             // Detailseite neu. Schweigt Seerr, bleibt es bei der Annahme.
             gewaehlt = []
-            async let frisch = model.seerr.suchen(treffer.titel)
             await detailLaden()
-            let neu = await frisch.first { $0.id == treffer.id && $0.art == treffer.art }?.stand
-            stand = neu ?? .wartetAufFreigabe
+            if stand.anfragbar { stand = .wartetAufFreigabe }
             angefragt = stand == .wartetAufFreigabe
         } catch {
             fehler = lesbarerFehler(error)

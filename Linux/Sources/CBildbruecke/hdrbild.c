@@ -375,3 +375,13 @@ void hdrbild_aufgeben(Hdrbild *h) {
     memset(h, 0, sizeof *h);
     memcpy(h->fehler, fehler, sizeof fehler);
 }
+
+const char *hdrbild_gl_auskunft(void) {
+    static char text[384];
+    const char *hersteller = (const char *)glGetString(GL_VENDOR);
+    const char *geraet = (const char *)glGetString(GL_RENDERER);
+    const char *fassung = (const char *)glGetString(GL_VERSION);
+    snprintf(text, sizeof text, "%s | %s | %s",
+             hersteller ? hersteller : "?", geraet ? geraet : "?", fassung ? fassung : "?");
+    return text;
+}
