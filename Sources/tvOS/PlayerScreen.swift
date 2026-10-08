@@ -58,6 +58,8 @@ struct PlayerScreen: View {
     @State private var startGemeldet = false
     /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
     @State private var abschnitte: [JellyfinKit.Abschnitt] = []
+    /// Die Kapitel der Datei — sie teilen die Leiste. Leer: ein Stück.
+    @State private var kapitel: [Kapitel] = []
     /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne Steuerung.
     /// Was wann zu sehen ist, steht in `Angebotsebene` im Paket.
     /// Die Karte der nächsten Folge wartet, solange die Steuerung offen ist,
@@ -769,6 +771,14 @@ struct PlayerScreen: View {
         .task { await nachschlagen(fuer: item) }
         // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
         .task(id: item.id) { await trickplay.laden(model: model, item: item, plan: plan) }
+        // **Je Fassung, nicht je Titel** — ein Director's Cut hat andere
+        // Kapitel. Bis sie da sind, zeigt die Leiste keine fremden.
+        .task(id: [item.id, plan.mediaSourceID]) {
+            kapitel = []   // auch beim Wechsel der Fassung ohne neuen Titel
+            let gefunden = await model.kapitel(fuer: item.id, quelle: plan.mediaSourceID)
+            guard !Task.isCancelled else { return }
+            kapitel = gefunden
+        }
         // Das Folgenbild für eine mögliche Übergabe schon bereit — die Karte
         // des Abgebers braucht es im ersten Bild (``Uebergabeabgang``).
         .task(id: item.id) { await Uebergabeabgang.vorladen(item, model: model) }
@@ -898,16 +908,25 @@ struct PlayerScreen: View {
                        vorschau: { trickplay.bild(bei: $0, model: model) },
                        // Beide Grenzen, nicht nur der Anfang: wo der Vorspann
                        // anfaengt, sagt nicht, wo er aufhoert.
-                       abschnittsgrenzen: abschnitte.flatMap { [$0.von, $0.bis] })
+                       abschnittsgrenzen: abschnitte.flatMap { [$0.von, $0.bis] },
+                       kapitel: kapitel)
                 .focused($fokus, equals: .leiste)
                 // Die Leiste ist eine Zeichnung: die Stelle steht nur als
                 // Balkenlaenge da. Ohne Wert bliebe sie stumm.
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Abspielstelle")
-                .accessibilityValue(Text("\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))"))
+                .accessibilityValue(Text(verbatim: gesprochenerStand))
         }
         .padding(.horizontal, Stil.randSeite)
         .padding(.vertical, Stil.randOben)
+    }
+
+    /// Für VoiceOver: Stelle, Länge und — wenn es eins gibt — das Kapitel.
+    private var gesprochenerStand: String {
+        let stelle = String(localized: "\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))")
+        guard let name = Kapitelleiste.kapitel(bei: position, in: kapitel)?.name, !name.isEmpty
+        else { return stelle }
+        return String(localized: "\(stelle), \(name)")
     }
 
     /// Links Platz für den Titel und darunter die Metazeile, rechts die
@@ -2033,6 +2052,7 @@ struct PlayerScreen: View {
         // **Nichts zeigt mehr auf die alte Folge** (T1-M4).
         naechste = nil
         abschnitte = []
+        kapitel = []
         ebene.neueFolge()
         zentraleUebernehmen()
 
@@ -2388,8 +2408,22 @@ struct Zeitleiste: View {
     /// in einem Blick, wie der Film gebaut ist — wo der Vorspann endet, wo der
     /// Abspann anfaengt. Dieselbe Ergaenzung wie am iPhone.
     var abschnittsgrenzen: [Double] = []
+    /// **Die Kapitel teilen die Leiste in Stücke** — beim Spulen hebt sich
+    /// das, in dem das Ziel liegt, und über dem Vorschaubild steht sein Name.
+    /// Dieselbe Ergänzung wie am iPhone.
+    var kapitel: [Kapitel] = []
 
     private var spult: Bool { marke != nil }
+
+    /// Lücke wie die Kerbe hier: vier Punkt, auf drei Meter das Doppelte des
+    /// iPhones. Das kleinste Stück im selben Verhältnis.
+    private static let luecke: CGFloat = 4
+    private static let mindestbreite: CGFloat = 16
+
+    private func stuecke(breite: CGFloat) -> [Kapitelleiste.Stueck] {
+        Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: dauer), dauer: dauer,
+                              breite: Double(breite), mindestbreite: Double(Self.mindestbreite))
+    }
 
     /// Die Grenzen als Anteil, ohne die an den beiden Kanten: eine Kerbe
     /// direkt am Rand liest sich als Ausfransen.
@@ -2405,8 +2439,14 @@ struct Zeitleiste: View {
         return min(max(sekunden / dauer, 0), 1)
     }
 
-    private var balkenHoehe: CGFloat { spult ? 12 : 8 }
+    /// Acht Punkt im Stehen, zwölf beim Spulen — mit Kapiteln nur das Stück,
+    /// in dem das Ziel liegt (``Kapitelmaske``).
+    private let balkenHoehe: CGFloat = 8
+    private let balkenHoeheGehoben: CGFloat = 12
     private let griff: CGFloat = 36
+    /// Wie breit der Kasten über dem Griff wirklich ist — mit Kapitelname,
+    /// aber ohne Vorschaubild hängt das am Namen.
+    @State private var kastenBreite: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 28) {
@@ -2428,32 +2468,45 @@ struct Zeitleiste: View {
                 let breite = rahmen.size.width
                 let stand = anteil(position)
                 let ziel = anteil(gezeigt)
+                let stuecke = stuecke(breite: breite)
 
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Playermass.leisteGrund)
-                        .frame(height: balkenHoehe)
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(Playermass.leisteGrund)
 
-                    // Bis zur wirklichen Stelle: das ist gesehen.
-                    Capsule().fill(Stil.schrift)
-                        .frame(width: breite * min(stand, ziel), height: balkenHoehe)
+                        // Bis zur wirklichen Stelle: das ist gesehen. In der
+                        // Dicke der Leiste, nicht der Maske — sonst wäre sein
+                        // Ende im Stehen ein flacher Bogen statt eines runden.
+                        Capsule().fill(Stil.schrift)
+                            .frame(width: breite * min(stand, ziel),
+                                   height: spult ? balkenHoeheGehoben : balkenHoehe)
 
-                    // **Die Strecke zwischen Stand und Ziel.** Ohne sie sagt
-                    // die Leiste beim Spulen nur, wo man hinwill — nicht, wie
-                    // weit das von hier ist.
-                    if spult {
-                        Capsule().fill(Color.white.opacity(0.55))
-                            .frame(width: breite * abs(ziel - stand), height: balkenHoehe)
-                            .offset(x: breite * min(stand, ziel))
+                        // **Die Strecke zwischen Stand und Ziel.** Ohne sie sagt
+                        // die Leiste beim Spulen nur, wo man hinwill — nicht, wie
+                        // weit das von hier ist.
+                        if spult {
+                            Capsule().fill(Color.white.opacity(0.55))
+                                .frame(width: breite * abs(ziel - stand), height: balkenHoeheGehoben)
+                                .offset(x: breite * min(stand, ziel))
+                        }
+
+                        // **Kerben an den Abschnittsgrenzen.** Vier Punkt breit
+                        // — auf drei Meter das Doppelte der iPhone-Kerbe —, in
+                        // `grund`, weil sie sowohl auf der hellen Spur als auch
+                        // auf dem weissen Balken zu sehen sein muessen.
+                        ForEach(kerben(), id: \.self) { stelle in
+                            Rectangle().fill(Stil.grund)
+                                .frame(width: 4)
+                                .offset(x: breite * stelle - 2)
+                        }
                     }
-
-                    // **Kerben an den Abschnittsgrenzen.** Vier Punkt breit
-                    // — auf drei Meter das Doppelte der iPhone-Kerbe —, in
-                    // `grund`, weil sie sowohl auf der hellen Spur als auch
-                    // auf dem weissen Balken zu sehen sein muessen.
-                    ForEach(kerben(), id: \.self) { stelle in
-                        Rectangle().fill(Stil.grund)
-                            .frame(width: 4, height: balkenHoehe)
-                            .offset(x: breite * stelle - 2)
+                    .frame(height: balkenHoeheGehoben)
+                    .mask(alignment: .leading) {
+                        Kapitelmaske(stuecke: stuecke, breite: breite, luecke: Self.luecke,
+                                     dicke: balkenHoehe,
+                                     gehoben: spult ? Kapitelleiste.stueck(bei: ziel, in: stuecke) : nil,
+                                     dickeGehoben: balkenHoeheGehoben,
+                                     bewegung: Stil.bewegung(.easeInOut(duration: 0.18)))
                     }
 
                     Circle()
@@ -2512,12 +2565,16 @@ struct Zeitleiste: View {
     /// **Über dem Griff: Vorschaubild, darunter die Zeit.** Am Rand bleibt der
     /// Kasten ganz auf der Leiste stehen; ohne Trickplay nur die Zeit — kein
     /// leerer Kasten.
+    ///
+    /// **Mit Kapiteln steht sein Name vor der Zeit**, in einer Zeile und
+    /// höchstens so breit wie das Vorschaubild — wie am iPhone.
     private func vorschauKasten(breite: CGFloat, anteil: Double) -> some View {
         let bild = vorschau(gezeigt)
         let bildbreite: CGFloat = 400
         let bildhoehe = bildbreite * 9 / 16
         let zeitHoehe: CGFloat = 40
-        let halb = bild == nil ? 70 : bildbreite / 2
+        let name = Kapitelleiste.kapitel(bei: gezeigt, in: kapitel)?.name ?? ""
+        let halb = bild != nil ? bildbreite / 2 : max(name.isEmpty ? 70 : kastenBreite / 2, 70)
         let x = min(max(breite * anteil, halb), max(breite - halb, halb))
         let hoehe = (bild == nil ? 0 : bildhoehe + 12) + zeitHoehe
         return VStack(spacing: 12) {
@@ -2530,12 +2587,23 @@ struct Zeitleiste: View {
                     .overlay(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                         .strokeBorder(.white.opacity(0.35), lineWidth: 2))
             }
-            Text(Spielzeit.text(gezeigt))
-                .font(.system(size: Playermass.vorschauZeit, weight: .semibold).monospacedDigit())
-                .foregroundStyle(Stil.schrift)
-                .frame(height: zeitHoehe)
+            HStack(spacing: 12) {
+                if !name.isEmpty {
+                    Text(verbatim: name)
+                        .font(.system(size: Playermass.vorschauZeit))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Text(Spielzeit.text(gezeigt))
+                    .font(.system(size: Playermass.vorschauZeit, weight: .semibold).monospacedDigit())
+                    .layoutPriority(1)
+            }
+            .foregroundStyle(Stil.schrift)
+            .frame(height: zeitHoehe)
         }
-        .fixedSize()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { kastenBreite = $0 }
+        .frame(maxWidth: bildbreite)
+        .fixedSize(horizontal: false, vertical: true)
         // Unterkante knapp über der Zeile der Leiste.
         .position(x: x, y: -hoehe / 2 - 8)
         .allowsHitTesting(false)

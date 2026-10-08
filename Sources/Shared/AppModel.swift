@@ -1935,6 +1935,13 @@ final class AppModel {
         return await client.trickplay(itemID: itemID, mediaSourceID: quelle)
     }
 
+    /// Die Kapitel der laufenden Fassung — leer, wenn die Datei keine hat
+    /// oder der Server nicht antwortet. Dann bleibt die Leiste ein Stück.
+    func kapitel(fuer itemID: String, quelle: String?) async -> [Kapitel] {
+        guard let client else { return [] }
+        return await client.kapitel(itemID: itemID, mediaSourceID: quelle)
+    }
+
     func trickplayBlatt(_ itemID: String, quelle: String?, breite: Int, blatt: Int) async -> Data? {
         guard let client else { return nil }
         return await client.trickplayBlatt(itemID: itemID, mediaSourceID: quelle,

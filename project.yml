@@ -315,6 +315,9 @@ targets:
       # Vorschaubilder beim Spulen: Holen und Zwischenspeicher der
       # Trickplay-Blaetter, geteilt mit iPhone und Mac.
       - path: Sources/Shared/Trickplaybilder.swift
+      # Die Zeitleiste in Stuecken, eins je Kapitel — dieselbe Maske wie am
+      # iPhone und am Mac.
+      - path: Sources/Shared/Kapitelmaske.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
       # „Hier weiterschauen" als Karte (Entwurf B): Bühne über allem und
@@ -552,6 +555,9 @@ targets:
       # der neuen Player-Gestaltung unter Sources/iOS, obwohl der Code
       # selbst schon plattformneutral war (nur CoreGraphics/ImageIO).
       - path: Sources/Shared/Trickplaybilder.swift
+      # Die Zeitleiste in Stücken, eins je Kapitel — wie am iPhone und am
+      # Fernseher.
+      - path: Sources/Shared/Kapitelmaske.swift
       # Bildlader mit eigenem Speicher — entschluesselt abseits des
       # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
       - path: Sources/Shared/Spielwerte.swift

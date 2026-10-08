@@ -1153,6 +1153,38 @@ public actor JellyfinClient {
         }
     }
 
+    /// **Die Kapitel der laufenden Fassung**, schon bereinigt
+    /// (``Kapitelleiste/brauchbar(_:)``). Leer bei jedem Fehlschlag: dann ist
+    /// die Leiste ein Stück wie bisher, und niemand vermisst etwas.
+    ///
+    /// **Gefragt wird nach der Quelle, nicht nach dem Titel.** Hat ein Film
+    /// mehrere Fassungen, ist jede am Server ein eigener Titel, und die
+    /// Kennung der Quelle ist seine — ein Director's Cut hat andere Kapitel
+    /// als die Kinofassung. Kennt der Server die Quelle nicht als Titel
+    /// (sie ist dann keiner), gilt der Titel selbst.
+    public func kapitel(itemID: String, mediaSourceID: String?) async -> [Kapitel] {
+        if let quelle = mediaSourceID, quelle.lowercased() != itemID.lowercased(),
+           let gefunden = await kapitelAbfragen(quelle) {
+            return Kapitelleiste.brauchbar(gefunden)
+        }
+        // Abgebrochen (der Titel ist schon gewechselt): nicht noch einmal fragen.
+        guard !Task.isCancelled else { return [] }
+        return Kapitelleiste.brauchbar(await kapitelAbfragen(itemID) ?? [])
+    }
+
+    private func kapitelAbfragen(_ itemID: String) async -> [Kapitel]? {
+        do {
+            let s = try requireSession()
+            let req = try request("Items/\(itemID)", query: [
+                .init(name: "userId", value: s.userID),
+                .init(name: "Fields", value: "Chapters"),
+            ])
+            return try await send(req, as: KapitelAntwort.self).kapitel
+        } catch {
+            return nil
+        }
+    }
+
     /// Adresse eines Kachelblatts. Angemeldet wie die übrigen Bildabrufe,
     /// über `ApiKey`.
     public func trickplayURL(itemID: String, mediaSourceID: String?, breite: Int, blatt: Int) -> URL? {
