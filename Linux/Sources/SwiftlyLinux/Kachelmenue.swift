@@ -72,7 +72,7 @@ extension App {
         gtk_widget_set_size_request(liste, Int32(breite), -1)
         let tafel = tafelOeffnen(an: knopf)
         gtk_widget_add_css_class(tafel, "swiftly-kachelmenue")
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
 
         // Die Vorschau: Bild ohne Rand, darunter Titel und Zeile.
         let (huelle, bild) = gerahmtesBild(breite: breite, hoehe: hoehe, stil: "swiftly-kachelvorschau")

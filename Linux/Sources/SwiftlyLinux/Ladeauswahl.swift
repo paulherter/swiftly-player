@@ -53,7 +53,7 @@ extension App {
         let tafel = tafelOeffnen(an: knopf)
         let rumpf = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_size_request(rumpf, 420, -1)
-        gtk_popover_set_child(alsTafel(tafel), rumpf)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(rumpf))
 
         let kopf = beschriftung(serie.name, stil: "swiftly-leistentitel")
         gtk_label_set_xalign(OpaquePointer(kopf), 0)

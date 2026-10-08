@@ -201,7 +201,7 @@ final class Startanimation: @unchecked Sendable {
     /// keine Vorgeschichte.
     fileprivate func malen(_ cr: OpaquePointer, _ breite: Int32, _ hoehe: Int32) {
         guard lebt, let tier else { return }
-        let t = max(gtk_widget_get_scale_factor(anzeige), 1)
+        let t = Skalierung.raster(anzeige)
         // **520 Punkt Kante, wie auf dem Mac** (`Startanimation.swift:189`:
         // „das Fenster ist kleiner als ein Fernseher und groesser als ein
         // Telefon; 520 sitzt zwischen beiden"). Hier standen 360 als reiner

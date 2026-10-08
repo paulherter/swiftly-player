@@ -53,4 +53,8 @@ bool hdrbild_zeichnen(Hdrbild *h, int breite, int hoehe, bool fuellen,
 /* Gibt die GL-Objekte frei — vor dem Abbau des Kontexts. */
 void hdrbild_aufgeben(Hdrbild *h);
 
+/* Hersteller, Geraet und Fassung des gerade aktuellen GL-Kontexts, fuer die
+ * Startzeile im Protokoll. Ein fester Puffer, nur vom Hauptfaden zu rufen. */
+const char *hdrbild_gl_auskunft(void);
+
 #endif

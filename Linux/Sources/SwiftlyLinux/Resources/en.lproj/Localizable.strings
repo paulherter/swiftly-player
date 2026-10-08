@@ -493,3 +493,5 @@
 "Urheber" = "Author";
 "Quelle" = "Source";
 "Der Lizenztext fehlt in dieser Fassung. Du findest ihn auf GitHub im Ordner LICENSES." = "The license text is missing from this version. You can find it on GitHub in the LICENSES folder.";
+"Größe der Oberfläche" = "Interface size";
+"Kommt zur Skalierung des Systems dazu" = "On top of your system's display scaling";

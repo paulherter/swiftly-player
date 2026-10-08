@@ -253,6 +253,20 @@ struct SeerrTests {
         #expect(d.laufzeit == 112)
     }
 
+    /// Nach einer Anfrage und beim erneuten Öffnen gilt der Stand der
+    /// Detailantwort (`mediaInfo.status`), nicht der alte Suchtreffer.
+    @Test("Die Detailantwort trägt den Stand des Titels")
+    func detailStand() throws {
+        func stand(_ json: String) throws -> Seerrstand? {
+            try #require(Seerr.detail(aus: Data(json.utf8))).stand
+        }
+        #expect(try stand(#"{"mediaInfo":{"status":2}}"#) == .wartetAufFreigabe)
+        #expect(try stand(#"{"mediaInfo":{"status":3}}"#) == .laedt)
+        #expect(try stand(#"{"mediaInfo":{"status":4}}"#) == .teilweiseDa)
+        #expect(try stand(#"{"mediaInfo":{"status":5}}"#) == .da)
+        #expect(try stand(#"{"overview":"x"}"#) == .offen)
+    }
+
     /// Eine leere Beschreibung ist keine Beschreibung — sonst stünde auf der
     /// Seite eine Überschrift über nichts.
     @Test("Leere Beschreibung zählt als keine")

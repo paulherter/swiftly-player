@@ -81,6 +81,8 @@ nonisolated(unsafe) let app = App()
 
 nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { anwendung, _ in
     Startstufe.melden("oberflaeche")
+    // Vor dem Stilblatt und vor dem ersten Mass: beide fragen den Faktor.
+    Skalierung.einrichten(nutzer: app.wahlen.oberflaeche)
     Stil.anwenden()
     app.aufbauen(anwendung: anwendung!.assumingMemoryBound(to: GtkApplication.self))
     app.kopfzeileEinrichten()

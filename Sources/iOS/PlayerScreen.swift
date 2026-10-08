@@ -228,6 +228,8 @@ struct PlayerScreen: View {
     // `JellyfinKit.` ausgeschrieben: `Abschnitt` heisst in
     // `BrowseViews.swift` schon eine Ansicht, und die hiess zuerst so.
     @State private var abschnitte: [JellyfinKit.Abschnitt] = []
+    /// Die Kapitel der Datei — sie teilen die Leiste. Leer: ein Stück.
+    @State private var kapitel: [Kapitel] = []
     /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne dass die
     /// Steuerung aufgehen muss. Was wann gilt, steht in `Angebotsebene`.
     /// Die Karte der nächsten Folge wartet, solange die Steuerung offen ist
@@ -893,6 +895,14 @@ struct PlayerScreen: View {
         .task { await beobachten() }
         // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
         .task(id: item.id) { await trickplay.laden(model: model, item: item, plan: plan) }
+        // **Je Fassung, nicht je Titel** — ein Director's Cut hat andere
+        // Kapitel. Bis sie da sind, zeigt die Leiste keine fremden.
+        .task(id: [item.id, plan.mediaSourceID]) {
+            kapitel = []   // auch beim Wechsel der Fassung ohne neuen Titel
+            let gefunden = await model.kapitel(fuer: item.id, quelle: plan.mediaSourceID)
+            guard !Task.isCancelled else { return }
+            kapitel = gefunden
+        }
         // Das Folgenbild für eine mögliche Übergabe schon bereit — die Karte
         // des Abgebers braucht es im ersten Bild (``Uebergabeabgang``).
         .task(id: item.id) { await Uebergabeabgang.vorladen(item, model: model) }
@@ -1355,7 +1365,8 @@ struct PlayerScreen: View {
                   // **Beide Grenzen, nicht nur der Anfang.** Wo der Vorspann
                   // anfaengt, sagt allein noch nicht, wo er aufhoert — und
                   // genau das will man sehen, bevor man greift.
-                  marken: abschnitte.flatMap { [$0.von, $0.bis] }) { schiebt in
+                  marken: abschnitte.flatMap { [$0.von, $0.bis] },
+                  kapitel: kapitel) { schiebt in
             if schiebt {
                 // **Der Regler ist das Bauteil, an dem der Finger am
                 // laengsten liegt** — und die ganze App hatte bis zum 21.09.
@@ -1945,6 +1956,7 @@ struct PlayerScreen: View {
         // Vorspann-Knopf sprang an die Stellen der vorigen.
         naechsteFolge = nil
         abschnitte = []
+        kapitel = []
         ebene.neueFolge()
         zentraleUebernehmen()
         surface?.puffer = model.pufferstufe
@@ -2470,8 +2482,13 @@ private struct Zeitzeile: View {
     let vorschau: (Double) -> CGImage?
     /// Grenzen der Abschnitte in Sekunden — Kerben auf dem Regler.
     let marken: [Double]
+    /// Die Kapitel — Stücke auf dem Regler, ihr Name über dem Griff.
+    let kapitel: [Kapitel]
     /// `true` beim Anfassen, `false` beim Loslassen.
     let schiebt: (Bool) -> Void
+    /// Wie breit der Kasten über dem Griff wirklich ist — mit Kapitelname,
+    /// aber ohne Vorschaubild hängt das am Namen.
+    @State private var kastenBreite: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 14) {
@@ -2480,7 +2497,7 @@ private struct Zeitzeile: View {
             // zweites Mal, und schlechter.
             Text(Spielzeit.text(position))
                 .accessibilityHidden(true)
-            Zeitregler(wert: $position, bis: max(dauer, 1), marken: marken,
+            Zeitregler(wert: $position, bis: max(dauer, 1), marken: marken, kapitel: kapitel,
                        trefferOben: reglerOben, beimSchieben: schiebt)
                 .overlay(alignment: .topLeading) {
                     if amSchieben { vorschauKasten }
@@ -2527,14 +2544,20 @@ private struct Zeitzeile: View {
 
     /// **Über dem Griff: Vorschaubild, darunter die Zeit.** Ohne Trickplay
     /// am Server nur die Zeit — kein leerer Kasten.
+    ///
+    /// **Mit Kapiteln steht sein Name vor der Zeit**, in derselben Kapsel:
+    /// eine Zeile, nicht zwei, damit der Kasten nicht höher wird und die
+    /// Unterkante bleibt, wo sie abgenommen ist. Ein langer Name wird
+    /// gekürzt, nicht die Zeit.
     private var vorschauKasten: some View {
         GeometryReader { g in
             let bild = vorschau(position)
             let breite: CGFloat = pad ? 200 : 160
             let hoehe = breite * 9 / 16
             let anteil = dauer > 0 ? min(max(position / dauer, 0), 1) : 0
+            let name = Kapitelleiste.kapitel(bei: position, in: kapitel)?.name ?? ""
             // Am Rand bleibt der Kasten ganz auf der Leiste stehen.
-            let halb = (bild == nil ? 40 : breite / 2)
+            let halb = bild != nil ? breite / 2 : max(name.isEmpty ? 40 : kastenBreite / 2, 40)
             let x = min(max(g.size.width * anteil, halb), max(g.size.width - halb, halb))
             VStack(spacing: 6) {
                 if let bild {
@@ -2548,23 +2571,36 @@ private struct Zeitzeile: View {
                         .overlay(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                             .strokeBorder(Stil.rand, lineWidth: 1))
                 }
-                Text(Spielzeit.text(position))
-                    // Bold trägt allein der Seitentitel (BRAND 2), hier also
-                    // Semibold. Der Grad bleibt `mass.zeit`: er rechnet mit der
-                    // Fenstergröße.
-                    .font(.system(size: schrift, weight: .semibold).monospacedDigit())
-                    // Vorher rohes `.white`.
-                    .foregroundStyle(Stil.schrift)
-                    // **Eine eigene Fläche, weil hier kein Schleier liegt.**
-                    // Die Zeit stand blank über dem Trickplay-Standbild: über
-                    // einem weißen Bild 1,09:1, Grenze 4,5. Auf `Stil.grund`
-                    // mit 0,82 — dieselbe Deckkraft wie am Technikschild —
-                    // sind es 10,93:1, und zwar über jedem Standbild.
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Stil.grund.opacity(0.82)))
+                HStack(spacing: 6) {
+                    if !name.isEmpty {
+                        Text(verbatim: name)
+                            .font(.system(size: schrift))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Text(Spielzeit.text(position))
+                        // Bold trägt allein der Seitentitel (BRAND 2), hier also
+                        // Semibold. Der Grad bleibt `mass.zeit`: er rechnet mit der
+                        // Fenstergröße.
+                        .font(.system(size: schrift, weight: .semibold).monospacedDigit())
+                        .layoutPriority(1)
+                }
+                // Vorher rohes `.white`.
+                .foregroundStyle(Stil.schrift)
+                // **Eine eigene Fläche, weil hier kein Schleier liegt.**
+                // Die Zeit stand blank über dem Trickplay-Standbild: über
+                // einem weißen Bild 1,09:1, Grenze 4,5. Auf `Stil.grund`
+                // mit 0,82 — dieselbe Deckkraft wie am Technikschild —
+                // sind es 10,93:1, und zwar über jedem Standbild.
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Stil.grund.opacity(0.82)))
             }
-            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { kastenBreite = $0 }
+            // Höchstens so breit wie das Vorschaubild — sonst schöbe ein
+            // langer Kapitelname die Kapsel über den Rand der Leiste.
+            .frame(maxWidth: breite)
+            .fixedSize(horizontal: false, vertical: true)
             // Unterkante knapp über der Trefferfläche — die Leiste selbst
             // liegt in deren Mitte.
             // `schrift + 6`: die Kapsel um die Zeit trägt oben und unten je

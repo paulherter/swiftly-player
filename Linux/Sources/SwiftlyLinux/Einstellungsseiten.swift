@@ -941,6 +941,29 @@ extension App {
         // **Allgemein** — dieselbe Rubrik wie auf Apple
         // (`DarstellungView.swift:79`).
         let ga = einstellungsgruppe(uebersetzt("Allgemein"))
+        // **Größe der Oberfläche** — auf Wunsch eines Nutzers mit 4K-Schirm.
+        // Wirkt sofort (``oberflaecheSkalieren(_:)``); „Zurücksetzen" steht
+        // nur da, solange etwas anderes als 100 % gilt.
+        let regler = Groessenregler(wert: wahlen.oberflaeche,
+                                    titel: uebersetzt("Größe der Oberfläche"),
+                                    unter: uebersetzt("Kommt zur Skalierung des Systems dazu"))
+        anhaengen(ga.raum, regler.anzeige)
+        let ruecksprung = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        anhaengen(ruecksprung, zeilenstrich())
+        anhaengen(ruecksprung, wertezeile(symbol: "edit-undo-symbolic",
+                                          titel: uebersetzt("Zurücksetzen"),
+                                          akzent: true) { [weak self, weak regler] in
+            regler?.setzen(1)
+            gtk_widget_set_visible(ruecksprung, 0)
+            self?.oberflaecheSkalieren(1)
+        })
+        gtk_widget_set_visible(ruecksprung, wahlen.oberflaeche != 1 ? 1 : 0)
+        regler.gewaehlt = { [weak self] wert in
+            gtk_widget_set_visible(ruecksprung, wert != 1 ? 1 : 0)
+            self?.oberflaecheSkalieren(wert)
+        }
+        anhaengen(ga.raum, ruecksprung)
+        anhaengen(ga.raum, zeilenstrich())
         anhaengen(ga.raum, schalterzeile(symbol: "view-list-symbolic",
                                          titel: uebersetzt("Fortschritt auf Kacheln"),
                                          an: wahlen.fortschrittAufKacheln) { [weak self] an in

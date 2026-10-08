@@ -218,6 +218,8 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
     val ruck = rememberRuck()
     LaunchedEffect(ziel.id) {
         detail = runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()
+        // Der Server weiss es besser als der Suchtreffer von vorhin (`Seerrdetail.stand`).
+        detail?.takeIf { it.has("stand") && !it.isNull("stand") }?.let { stand = it.getInt("stand"); anfragbar = it.optBoolean("anfragbar") }
     }
     LaunchedEffect(bestaetigt) { if (bestaetigt) { delay(5000); bestaetigt = false } }
 
@@ -226,7 +228,15 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
         laeuft = true
         lauf.launch {
             val grund = withContext(Dispatchers.IO) { app.kern.seerrAnfragen(k.art, k.id.toLong(), staffeln.joinToString(",")).await() }
-            if (grund.isEmpty()) { angefragt = true; stand = 2; anfragbar = false } else meldung = fehlertext(grund)
+            if (grund.isEmpty()) {
+                // Den Stand lesen, nicht annehmen: gibt Seerr sofort frei, ist der Titel nicht „wartet".
+                runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()?.let { frisch ->
+                    detail = frisch
+                    if (frisch.has("stand") && !frisch.isNull("stand")) { stand = frisch.getInt("stand"); anfragbar = frisch.optBoolean("anfragbar") }
+                }
+                if (anfragbar) { stand = 2; anfragbar = false }
+                angefragt = stand == 2
+            } else meldung = fehlertext(grund)
             laeuft = false
             bestaetigt = false
         }

@@ -26,6 +26,8 @@ struct PlayerScreen: View {
     @State private var naechsteFolge: Item?
     /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
     @State private var abschnitte: [JellyfinKit.Abschnitt] = []
+    /// Die Kapitel der Datei — sie teilen die Leiste. Leer: ein Stück.
+    @State private var kapitel: [Kapitel] = []
     /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne dass die
     /// Steuerung aufgehen muss. Was wann gilt, steht in `Angebotsebene`.
     /// Die Karte der nächsten Folge wartet, solange die Steuerung bewusst
@@ -485,6 +487,14 @@ struct PlayerScreen: View {
         }
         // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
         .task(id: titel.id) { await trickplay.laden(model: model, item: titel, plan: plan) }
+        // **Je Fassung, nicht je Titel** — ein Director's Cut hat andere
+        // Kapitel. Bis sie da sind, zeigt die Leiste keine fremden.
+        .task(id: [titel.id, plan.mediaSourceID]) {
+            kapitel = []   // auch beim Wechsel der Fassung ohne neuen Titel
+            let gefunden = await model.kapitel(fuer: titel.id, quelle: plan.mediaSourceID)
+            guard !Task.isCancelled else { return }
+            kapitel = gefunden
+        }
         // Das Folgenbild für eine mögliche Übergabe schon bereit — die Karte
         // des Abgebers braucht es im ersten Bild (``Uebergabeabgang``).
         .task(id: titel.id) { await Uebergabeabgang.vorladen(titel, model: model) }
@@ -787,7 +797,7 @@ struct PlayerScreen: View {
     /// rechts die Restzeit.
     private var fuss: some View {
         Zeitzeile(position: $stand.position, dauer: stand.dauer, amRegler: $amRegler,
-                  mass: mass, marken: abschnitte.flatMap { [$0.von, $0.bis] },
+                  mass: mass, marken: abschnitte.flatMap { [$0.von, $0.bis] }, kapitel: kapitel,
                   vorschau: { trickplay.bild(bei: $0, model: model) }) { ziel in
             if inGruppe { gemeinsam.bitteSpringen(auf: ziel) }
             else { flaeche?.seek(toSeconds: ziel) }
@@ -1442,6 +1452,7 @@ struct PlayerScreen: View {
         // **Nichts zeigt mehr auf die alte Folge** (T1-M4).
         naechsteFolge = nil
         abschnitte = []
+        kapitel = []
         ebene.neueFolge()
         zentraleUebernehmen()
         // **Auch hier vor `play`.** Ohne das behielte die nächste Folge die
@@ -1732,6 +1743,8 @@ private struct Zeitzeile: View {
     let mass: Playermass
     /// Vorspann, Rückblick, Abspann — Anfang und Ende als Kerben.
     let marken: [Double]
+    /// Die Kapitel — Stücke auf der Leiste, ihr Name in der Vorschau.
+    let kapitel: [Kapitel]
     /// Das Trickplay-Bild zur Stelle, oder `nil`.
     let vorschau: (Double) -> CGImage?
     /// Beim Loslassen: wohin gesprungen wird.
@@ -1746,7 +1759,7 @@ private struct Zeitzeile: View {
         HStack(spacing: 14) {
             Text(Spielzeit.text(position))
             Zeitregler(position: $position, dauer: dauer, amRegler: $amRegler, mass: mass,
-                       marken: marken, vorschau: vorschau, springe: springe)
+                       marken: marken, kapitel: kapitel, vorschau: vorschau, springe: springe)
             restzeit
         }
         .font(.system(size: mass.zeit).monospacedDigit())
@@ -1790,6 +1803,10 @@ private struct Zeitregler: View {
     /// Abschnittsgrenzen in Sekunden — als Kerben gezeichnet, und beim Ziehen
     /// rastet der Griff an ihnen ein (``Kerbenfang``).
     let marken: [Double]
+    /// **Die Kapitel teilen die Leiste in Stücke** — beim Ziehen hebt sich
+    /// das unter dem Griff, wie am iPhone. Beim blossen Überfahren nicht:
+    /// dort bleibt der Balken ruhig, und nur die Vorschau nennt das Kapitel.
+    let kapitel: [Kapitel]
     let vorschau: (Double) -> CGImage?
     let springe: (Double) -> Void
 
@@ -1803,10 +1820,39 @@ private struct Zeitregler: View {
         guard dauer > 0 else { return [] }
         return marken.map { CGFloat($0 / dauer) }.filter { $0 > 0.01 && $0 < 0.99 }
     }
+
+    /// Lücke und kleinstes Stück wie am iPhone (`Zeitregler` in
+    /// `Sources/Shared/Stil.swift`).
+    private static let luecke: CGFloat = 2
+    private static let mindestbreite: CGFloat = 8
+    private static let dicke: CGFloat = 4
+    private static let dickeGehoben: CGFloat = 6
+
+    private func stuecke(breite: CGFloat) -> [Kapitelleiste.Stueck] {
+        Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: dauer), dauer: dauer,
+                              breite: Double(breite), mindestbreite: Double(Self.mindestbreite))
+    }
+
+    /// Eingerastet wird an den Kerben und an den Schnitten mit Platz daneben
+    /// (``Kapitelleiste/fangschnitte(_:dauer:breite:)``) — wie am iPhone.
+    private func fangmarken(_ stuecke: [Kapitelleiste.Stueck], breite: CGFloat) -> [Double] {
+        marken + Kapitelleiste.fangschnitte(stuecke, dauer: dauer, breite: Double(breite))
+    }
+
+    /// Für VoiceOver: Stelle, Länge und — wenn es eins gibt — das Kapitel.
+    private var gesprochenerWert: String {
+        let stelle = String(localized: "\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))")
+        guard let name = Kapitelleiste.kapitel(bei: position, in: kapitel)?.name, !name.isEmpty
+        else { return stelle }
+        return String(localized: "\(stelle), \(name)")
+    }
     @State private var zugAnteil: CGFloat = 0
     /// Anteil unter dem Zeiger, unabhängig vom Ziehen — `nil`, solange der
     /// Zeiger nicht über der Leiste steht.
     @State private var hoverAnteil: CGFloat?
+    /// Wie breit der Kasten über dem Zeiger wirklich ist — mit Kapitelname,
+    /// aber ohne Vorschaubild hängt das am Namen.
+    @State private var kastenBreite: CGFloat = 0
 
     private var anzeigeAnteil: CGFloat {
         zieht ? zugAnteil : (dauer > 0 ? CGFloat(min(max(position / dauer, 0), 1)) : 0)
@@ -1818,20 +1864,34 @@ private struct Zeitregler: View {
 
     var body: some View {
         GeometryReader { raum in
-            let dicke: CGFloat = zieht ? 6 : 4
             let anteil = anzeigeAnteil
+            let stuecke = stuecke(breite: raum.size.width)
             ZStack(alignment: .leading) {
-                // Dieselbe helle Spur wie auf dem iPhone. Weiss mit 28 %
-                // steht in BRAND 1 unter den gerechnet zu schwachen Werten.
-                Capsule().fill(Color.white.opacity(0.18)).frame(height: dicke)
-                Capsule().fill(.white)  // Akzent nur am Griff, wie auf iOS und tvOS
-                    .frame(width: raum.size.width * anteil, height: dicke)
-                // **Kerben an den Abschnittsgrenzen**, zwei Punkt in `grund`
-                // — auf Spur und Balken zu sehen, wie am iPhone.
-                ForEach(kerben, id: \.self) { stelle in
-                    Rectangle().fill(Stil.grund)
-                        .frame(width: 2, height: dicke)
-                        .offset(x: raum.size.width * stelle - 1)
+                ZStack(alignment: .leading) {
+                    // Dieselbe helle Spur wie auf dem iPhone. Weiss mit 28 %
+                    // steht in BRAND 1 unter den gerechnet zu schwachen Werten.
+                    Rectangle().fill(Color.white.opacity(0.18))
+                    Capsule().fill(.white)  // Akzent nur am Griff, wie auf iOS und tvOS
+                        .frame(width: raum.size.width * anteil,
+                               height: zieht ? Self.dickeGehoben : Self.dicke)
+                    // **Kerben an den Abschnittsgrenzen**, zwei Punkt in `grund`
+                    // — auf Spur und Balken zu sehen, wie am iPhone.
+                    ForEach(kerben, id: \.self) { stelle in
+                        Rectangle().fill(Stil.grund)
+                            .frame(width: 2)
+                            .offset(x: raum.size.width * stelle - 1)
+                    }
+                }
+                .frame(height: Self.dickeGehoben)
+                // Vier Punkt im Stehen, sechs beim Ziehen — mit Kapiteln nur
+                // das Stück unter dem Griff (``Kapitelmaske``). Ohne Bewegung,
+                // wie bisher: der Mac schaltet die Dicke um, er federt nicht.
+                .mask(alignment: .leading) {
+                    Kapitelmaske(stuecke: stuecke, breite: raum.size.width, luecke: Self.luecke,
+                                 dicke: Self.dicke,
+                                 gehoben: zieht
+                                     ? Kapitelleiste.stueck(bei: Double(anteil), in: stuecke) : nil,
+                                 dickeGehoben: Self.dickeGehoben, bewegung: nil)
                 }
                 if zieht {
                     Circle().fill(Stil.akzent).frame(width: 18, height: 18)
@@ -1865,7 +1925,8 @@ private struct Zeitregler: View {
                         // eine Maus ohne Force Touch rastet still ein.
                         if dauer > 0,
                            let kerbe = Kerbenfang.kerbe(wert: Double(roh) * dauer, bis: dauer,
-                                                         marken: marken,
+                                                         marken: fangmarken(stuecke,
+                                                                            breite: raum.size.width),
                                                          breite: Double(raum.size.width)) {
                             zugAnteil = CGFloat(kerbe / dauer)
                             if eingerastet != kerbe {
@@ -1894,7 +1955,7 @@ private struct Zeitregler: View {
         // namenlose Fläche.
         .accessibilityElement()
         .accessibilityLabel("Abspielstelle")
-        .accessibilityValue(String(localized: "\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))"))
+        .accessibilityValue(gesprochenerWert)
         .accessibilityAdjustableAction { richtung in
             let schritt = max(dauer / 20, 10)
             switch richtung {
@@ -1913,13 +1974,17 @@ private struct Zeitregler: View {
     /// genau wie auf iOS: `.position(x:y:)` setzt die Mitte innerhalb des
     /// eigenen Rahmens, und der muss deshalb selbst über die volle Breite der
     /// Leiste reichen, nicht nur über die schmale Breite des Kastens.
+    ///
+    /// **Mit Kapiteln steht sein Name vor der Zeit**, in einer Zeile und
+    /// höchstens so breit wie das Vorschaubild — wie am iPhone.
     private func vorschauKasten(anteil: CGFloat) -> some View {
         GeometryReader { g in
             let stelle = dauer * anteil
             let bild = vorschau(stelle)
             let box: CGFloat = 170
             let hoehe = box * 9 / 16
-            let halb = (bild == nil ? 40 : box / 2)
+            let name = Kapitelleiste.kapitel(bei: stelle, in: kapitel)?.name ?? ""
+            let halb = bild != nil ? box / 2 : max(name.isEmpty ? 40 : kastenBreite / 2, 40)
             let x = min(max(g.size.width * anteil, halb), max(g.size.width - halb, halb))
             VStack(spacing: 6) {
                 if let bild {
@@ -1936,11 +2001,22 @@ private struct Zeitregler: View {
                                                   style: .continuous)
                             .strokeBorder(Stil.rand, lineWidth: 1))
                 }
-                Text(Spielzeit.text(stelle))
-                    .font(.system(size: mass.zeit, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    if !name.isEmpty {
+                        Text(verbatim: name)
+                            .font(.system(size: mass.zeit))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Text(Spielzeit.text(stelle))
+                        .font(.system(size: mass.zeit, weight: .semibold).monospacedDigit())
+                        .layoutPriority(1)
+                }
+                .foregroundStyle(.white)
             }
-            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { kastenBreite = $0 }
+            .frame(maxWidth: box)
+            .fixedSize(horizontal: false, vertical: true)
             .position(x: x, y: -((bild == nil ? 0 : hoehe + 6) + mass.zeit) / 2 - 2)
         }
         .allowsHitTesting(false)

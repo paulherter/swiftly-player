@@ -102,7 +102,7 @@ func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
     gtk_widget_add_css_class(tafel, stil)
     gtk_popover_set_position(alsTafel(tafel), lage)
     gtk_popover_set_has_arrow(alsTafel(tafel), 0)
-    gtk_popover_set_offset(alsTafel(tafel), 0, 8)
+    gtk_popover_set_offset(alsTafel(tafel), 0, Skalierung.fenstermass(8))
     gtk_widget_set_halign(tafel, buendig)
     gtk_widget_add_css_class(tafel, buendig == GTK_ALIGN_START ? "swiftly-links"
                                   : buendig == GTK_ALIGN_END ? "swiftly-rechts" : "swiftly-mitte")
@@ -407,7 +407,7 @@ func sanft(auf widget: Widget!, von: Double, nach: Double,
         lauf.dauer = Stil.zeitReduziert
         lauf.linear = true
     }
-    lauf.teiler = Double(max(gtk_widget_get_scale_factor(widget), 1))
+    lauf.teiler = Skalierung.geraetepunkte(widget)
     let b = Unmanaged.passRetained(lauf).toOpaque()
     _ = gtk_widget_add_tick_callback(widget, bewegungsTakt, b, nil)
 }
@@ -582,7 +582,7 @@ nonisolated(unsafe) private let radGedreht: @convention(c) (
     w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
     if w.takt == 0, let horcher,
        let ziel = gtk_event_controller_get_widget(OpaquePointer(horcher)) {
-        w.teiler = Double(max(gtk_widget_get_scale_factor(ziel), 1))
+        w.teiler = Skalierung.geraetepunkte(ziel)
         w.takt = gtk_widget_add_tick_callback(ziel, weichTakt,
                                               Unmanaged.passRetained(w).toOpaque(), nil)
     }

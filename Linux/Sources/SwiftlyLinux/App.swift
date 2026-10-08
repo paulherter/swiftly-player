@@ -1,3 +1,4 @@
+import CBildbruecke
 import CGtk
 import Foundation
 import CVLC
@@ -133,6 +134,111 @@ final class App: @unchecked Sendable {
     /// Groesse und Maximiert fuer den naechsten Start. **Nicht im Vollbild**
     /// — dann stuende nach dem Film die Bildschirmgroesse als Fenstermass
     /// da; es gilt, was vorher war.
+    /// **Womit GTK das Hauptfenster zeichnet — eine Zeile bei jedem Start.**
+    ///
+    /// `GskCairoRenderer` heisst: auf der CPU. Bei einem 4K-Schirm ist dann
+    /// jedes Bild beim Scrollen acht Millionen Pixel Software. Die Zeile im
+    /// Player (``Abspieler``) kam erst mit dem ersten Titel; wer ueber
+    /// Ruckeln im Raster schreibt, hat oft noch keinen gespielt.
+    ///
+    /// Dazu, ob ein GL-Kontext zustande kommt und mit welchem Treiber — oder
+    /// mit welchem Fehler nicht. Das ist dieselbe Pruefung, an der GTK selbst
+    /// entscheidet, ob es auf Cairo zurueckfaellt.
+    private func zeichenwerkMelden() {
+        var zeile = "[Start] Zeichenwerk "
+        let natur = gtk_widget_get_native(fenster)
+        if let natur, let werk = gtk_native_get_renderer(natur),
+           let name = g_type_name_from_instance(unsafeBitCast(werk, to: UnsafeMutablePointer<GTypeInstance>.self)) {
+            zeile += String(cString: name)
+        } else {
+            zeile += "unbekannt"
+        }
+        if let wunsch = ProcessInfo.processInfo.environment["GSK_RENDERER"] {
+            zeile += " (GSK_RENDERER=\(wunsch))"
+        }
+        var fehler: UnsafeMutablePointer<GError>?
+        if let anzeige = gdk_display_get_default(), gdk_display_prepare_gl(anzeige, &fehler) != 0,
+           let natur, let flaeche = gtk_native_get_surface(natur),
+           let kontext = gdk_surface_create_gl_context(flaeche, &fehler) {
+            if gdk_gl_context_realize(kontext, &fehler) != 0 {
+                gdk_gl_context_make_current(kontext)
+                var gross: Int32 = 0, klein: Int32 = 0
+                gdk_gl_context_get_version(kontext, &gross, &klein)
+                let art = gdk_gl_context_get_api(kontext) == GDK_GL_API_GLES ? "GLES" : "GL"
+                zeile += ", \(art) \(gross).\(klein): " + String(cString: hdrbild_gl_auskunft())
+                gdk_gl_context_clear_current()
+            }
+            g_object_unref(UnsafeMutableRawPointer(kontext))
+        }
+        if let f = fehler {
+            zeile += ", GL nicht verfuegbar: " + String(cString: f.pointee.message)
+            g_error_free(f)
+        }
+        Protokoll.schreib(zeile)
+    }
+
+    /// Die Flaeche des ersten Schirms in Fenstermass.
+    private func ersterSchirm() -> (breite: Int32, hoehe: Int32)? {
+        guard let anzeige = gdk_display_get_default(),
+              let liste = gdk_display_get_monitors(anzeige),
+              g_list_model_get_n_items(liste) > 0,
+              let roh = g_list_model_get_item(liste, 0) else { return nil }
+        var flaeche = GdkRectangle()
+        gdk_monitor_get_geometry(OpaquePointer(roh), &flaeche)
+        g_object_unref(roh)
+        return (flaeche.width, flaeche.height)
+    }
+
+    /// **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
+    /// plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
+    /// Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
+    /// In Punkten der Oberflaeche, also mit dem ganzen Faktor — beim Start
+    /// und jedes Mal, wenn der Nutzer die Groesse verstellt.
+    private func fensterMindestmassSetzen() {
+        let schirm = ersterSchirm()
+        gtk_widget_set_size_request(
+            fenster,
+            Skalierung.fenstermass(Stil.fensterMinBreite, hoechstens: schirm?.breite),
+            Skalierung.fenstermass(Stil.fensterMinHoehe, hoechstens: schirm?.hoehe))
+    }
+
+    /// **Die Groesse der Oberflaeche aendern, ohne Neustart.**
+    ///
+    /// Stehende Huellen lesen den Faktor beim Auslegen und rechnen einfach
+    /// neu. Wo beim Start keine entstand — der Faktor war 1, unter Linux der
+    /// Normalfall —, wird sie jetzt eingesetzt: um den Fensterinhalt, um die
+    /// Titelzeile und um das GL-Feld des Players. Tafeln entstehen bei jedem
+    /// Oeffnen neu und fragen dann selbst.
+    func oberflaecheSkalieren(_ anteil: Double) {
+        guard Skalierung.nutzerSetzen(anteil) else { return }
+        wahlen.oberflaeche = Skalierung.nutzeranteil
+        wahlen.sichern()
+        let f = alsFenster(fenster)
+        if Skalierung.faktor != 1 {
+            if let decke = fensterdecke, !Skalierung.istGehuellt(decke) {
+                g_object_ref(decke)
+                gtk_window_set_child(f, nil)
+                gtk_window_set_child(f, Skalierung.gehuellt(decke))
+                g_object_unref(decke)
+            }
+            if let kopf = kopfzeile, !Skalierung.istGehuellt(kopf) {
+                // Erst ein Platzhalter: `gtk_window_set_titlebar(nil)` naehme
+                // dem Fenster die eigene Titelzeile ganz und baute es um.
+                g_object_ref(kopf)
+                gtk_window_set_titlebar(f, gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0))
+                gtk_window_set_titlebar(f, Skalierung.gehuellt(kopf))
+                g_object_unref(kopf)
+            }
+            abspieler.glFeldEntzerren()
+        }
+        Skalierung.neuAuslegen()
+        fensterMindestmassSetzen()
+        Stil.ausserhalbLaden()
+        Protokoll.schreib(String(format: "[Darstellung] Groesse der Oberflaeche %d %%, Faktor %.2f",
+                                 locale: Locale(identifier: "en_US_POSIX"),
+                                 Int((Skalierung.nutzeranteil * 100).rounded()), Skalierung.faktor))
+    }
+
     func fensterstandMerken() {
         let f = alsFenster(fenster)
         guard gtk_window_is_fullscreen(f) == 0 else { return }
@@ -142,9 +248,12 @@ final class App: @unchecked Sendable {
         // Maximieren — also das Mass, zu dem das Fenster zurueckkehrt.
         gtk_window_get_default_size(f, &breite, &hoehe)
         wahlen.fensterMaximiert = maximiert
-        if breite >= Int32(Stil.fensterMinBreite), hoehe >= Int32(Stil.fensterMinHoehe) {
-            wahlen.fensterBreite = Int(breite)
-            wahlen.fensterHoehe = Int(hoehe)
+        // In Punkten, nicht in Fenstermass — siehe ``Skalierung``.
+        let punktBreite = Skalierung.punkte(breite), punktHoehe = Skalierung.punkte(hoehe)
+        if punktBreite >= Skalierung.mindestpunkte(Stil.fensterMinBreite),
+           punktHoehe >= Skalierung.mindestpunkte(Stil.fensterMinHoehe) {
+            wahlen.fensterBreite = punktBreite
+            wahlen.fensterHoehe = punktHoehe
         }
         wahlen.sichern()
     }
@@ -186,29 +295,20 @@ final class App: @unchecked Sendable {
         // man das Fenster gezogen hatte. Die Bildschirmpruefung darunter
         // gilt fuer beide: ein gemerktes Mass von einem groesseren Schirm
         // passt auf dem kleineren nicht.
-        let breite = wahlen.fensterBreite >= Stil.fensterMinBreite ? wahlen.fensterBreite : 1440
-        let hoehe = wahlen.fensterHoehe >= Stil.fensterMinHoehe ? wahlen.fensterHoehe : 900
-        gtk_window_set_default_size(alsFenster(fenster), Int32(breite), Int32(hoehe))
+        let breite = Skalierung.fenstergroesse(
+            wahlen.fensterBreite >= Skalierung.mindestpunkte(Stil.fensterMinBreite) ? wahlen.fensterBreite : 1440)
+        let hoehe = Skalierung.fenstergroesse(
+            wahlen.fensterHoehe >= Skalierung.mindestpunkte(Stil.fensterMinHoehe) ? wahlen.fensterHoehe : 900)
+        gtk_window_set_default_size(alsFenster(fenster), breite, hoehe)
         if wahlen.fensterMaximiert { gtk_window_maximize(alsFenster(fenster)) }
         // **Passt es nicht, dann maximiert.** Windows kuerzt eine Vorgabe, die
         // groesser als der Bildschirm ist, nicht — auf 1280 x 800 stand das
         // Fenster unten hinter der Taskleiste und rechts ueber den Rand.
-        if let anzeige = gdk_display_get_default(),
-           let liste = gdk_display_get_monitors(anzeige),
-           g_list_model_get_n_items(liste) > 0,
-           let roh = g_list_model_get_item(liste, 0) {
-            var flaeche = GdkRectangle()
-            gdk_monitor_get_geometry(OpaquePointer(roh), &flaeche)
-            g_object_unref(roh)
-            if flaeche.width < Int32(breite) + 40 || flaeche.height < Int32(hoehe) + 80 {
-                gtk_window_maximize(alsFenster(fenster))
-            }
+        if let schirm = ersterSchirm(),
+           schirm.breite < breite + 40 || schirm.hoehe < hoehe + 80 {
+            gtk_window_maximize(alsFenster(fenster))
         }
-        // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
-        // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
-        // Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
-        gtk_widget_set_size_request(fenster, Int32(Stil.fensterMinBreite),
-                                    Int32(Stil.fensterMinHoehe))
+        fensterMindestmassSetzen()
 
         seiten = gtk_stack_new()
         // Keine Kreuzblende — der Wechsel läuft über ``stapelWechseln``.
@@ -221,7 +321,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(seiten), startseite, "start")
 
         kopfzeile = gtk_header_bar_new()
-        gtk_window_set_titlebar(alsFenster(fenster), kopfzeile)
+        gtk_window_set_titlebar(alsFenster(fenster), Skalierung.gehuellt(kopfzeile))
         let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
         anhaengen(inhalt, seiten)
 
@@ -259,7 +359,7 @@ final class App: @unchecked Sendable {
                 aufHauptfaden { self.startanimation?.abschliessen() }
             }
         }
-        gtk_window_set_child(alsFenster(fenster), decke)
+        gtk_window_set_child(alsFenster(fenster), Skalierung.gehuellt(decke))
         fensterdecke = decke
 
         tastenEinrichten()
@@ -301,6 +401,7 @@ final class App: @unchecked Sendable {
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
+        zeichenwerkMelden()
         Startstufe.melden("bereit")
         // **Den Abspieler jetzt anlegen, nicht beim ersten Tippen.**
         //
@@ -2612,7 +2713,7 @@ final class App: @unchecked Sendable {
         anhaengen(liste, hinweis)
 
         let tafel = tafelOeffnen(an: uebernahmezeile)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         for sitzung in angebote {
             let geraet = sitzung.geraetename ?? uebersetzt("Gerät")
             let stelle = Spielzeit.text(sitzung.stand?.stelle ?? 0)
@@ -2802,7 +2903,7 @@ final class App: @unchecked Sendable {
 
         gtk_widget_insert_before(richtung == .tiefer ? ziel : alt, buehne, nil)
         Schubsperre.beginnen()
-        let teiler = Double(max(gtk_widget_get_scale_factor(buehne), 1))
+        let teiler = Skalierung.geraetepunkte(buehne)
         // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen: eine
         // Kante auf einem halben Punkt wird geglättet und säumt.
         func rasten(_ x: Double) -> Double { (x * teiler).rounded() / teiler }
@@ -3111,7 +3212,7 @@ final class App: @unchecked Sendable {
             let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
             gtk_widget_set_size_request(liste, 220, -1)
             let tafel = self.tafelOeffnen(an: knopf)
-            gtk_popover_set_child(alsTafel(tafel), liste)
+            gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
             for e in eintraege {
                 anhaengen(liste, self.wahlzeile(e.text, gewaehlt: e.gewaehlt, tafel: tafel, tun: e.tun))
             }
@@ -3227,7 +3328,7 @@ final class App: @unchecked Sendable {
         let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_size_request(liste, 260, -1)
         let tafel = tafelOeffnen(an: t.knopf)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         for eintrag in an.eintraege {
             // Vor der ersten Bibliothek: Strich und Rubrik, wie `Wahltafel`.
             if eintrag == an.ersteBibliothek {
@@ -3633,9 +3734,9 @@ final class App: @unchecked Sendable {
                                            stil: "swiftly-plakat")
         if item.imageTags?["Primary"] != nil,
            let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
-                                                              maxHoehe: Stil.kachelHoehe * 2) }) {
+                                                              maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }) {
             bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: Stil.kachelHoehe * 2)
+                      kante: Skalierung.bildkante(Stil.kachelHoehe))
         } else {
             mosaikLegen(kaefig, sammlung: sammlung, art: gattung)
         }
@@ -5476,15 +5577,16 @@ final class App: @unchecked Sendable {
         // tritt das Plakat ein** — beschnitten, aber immer noch das Cover und
         // kein Standbild.
         let hoch = adressen.flatMap {
-            Bildwahl.hochkant(item, adressen: $0, maxHoehe: hoehe * 2)
+            Bildwahl.hochkant(item, adressen: $0, maxHoehe: Skalierung.anfragekante(hoehe))
         }
         let adresse: URL? = quer
-            ? (adressen.flatMap { Bildwahl.quer(item, adressen: $0, breite: breite * 2)?.url } ?? hoch)
+            ? (adressen.flatMap { Bildwahl.quer(item, adressen: $0, breite: Skalierung.anfragekante(breite))?.url } ?? hoch)
             : hoch
         if let adresse {
-            // Doppelte Kachelkante: dieselbe Groesse, die die Adresse erbittet.
+            // Doppelte Kachelkante — oder unter der Huelle genau die
+            // Geraetepunkte, siehe ``Skalierung/bildkante(_:)``.
             bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: max(breite, hoehe) * 2,
+                      kante: Skalierung.bildkante(max(breite, hoehe)),
                       ersatzSerie: item.seriesId != nil || item.type == "Series")
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
@@ -5517,7 +5619,7 @@ final class App: @unchecked Sendable {
         return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten,
                             name: kachelname(item, oben: oben, unten: unten),
                             menue: Kachelmenueangabe(
-                                item: item, quer: quer, bild: adresse, kante: max(breite, hoehe) * 2,
+                                item: item, quer: quer, bild: adresse, kante: Skalierung.bildkante(max(breite, hoehe)),
                                 weiterschauen: art == .weiterschauen,
                                 uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil),
                             vorholen: { [weak self] in
@@ -5568,12 +5670,12 @@ final class App: @unchecked Sendable {
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
         if let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
-                                                              maxHoehe: Stil.kachelHoehe * 2) }) {
+                                                              maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }) {
             bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: Stil.kachelHoehe * 2,
+                      kante: Skalierung.bildkante(Stil.kachelHoehe),
                       ersatzSerie: item.seriesId != nil || item.type == "Series")
             wache?.aufnehmen(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                             kante: Stil.kachelHoehe * 2)
+                             kante: Skalierung.bildkante(Stil.kachelHoehe))
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
@@ -5589,12 +5691,12 @@ final class App: @unchecked Sendable {
         // keiner startet (A7b).
         let unten: String? = auskunft ? item.trefferauskunft : item.productionYear.map(String.init)
         let adresse = adressen.flatMap { Bildwahl.hochkant(item, adressen: $0,
-                                                           maxHoehe: Stil.kachelHoehe * 2) }
+                                                           maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
                                   oben: item.name, unten: unten,
                                   name: kachelname(item, oben: item.name, unten: unten),
                                   menue: Kachelmenueangabe(item: item, bild: adresse,
-                                                           kante: Stil.kachelHoehe * 2),
+                                                           kante: Skalierung.bildkante(Stil.kachelHoehe)),
                                   vorholen: { [weak self] in self?.planVorholenBald(item) }) {
             [weak self] in self?.oeffne(item)
         }

@@ -343,7 +343,7 @@ extension App {
         anhaengen(liste, haupt)
 
         let tafel = tafelOeffnen(an: knopf)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         gemeinsam.tafel = tafel
         gemeinsam.tafelKnopf = haupt
         let feldKiste = Zeigerkiste(feld)
@@ -408,7 +408,7 @@ extension App {
         anhaengen(liste, haupt)
 
         let tafel = tafelOeffnen(an: knopf)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         gemeinsam.tafel = tafel
         gemeinsam.tafelKnopf = haupt
         beiSignal(haupt, "clicked") { [weak self] in
@@ -445,7 +445,7 @@ extension App {
         anhaengen(liste, kopf)
 
         let tafel = tafelOeffnen(an: knopf)
-        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
         gemeinsam.tafel = tafel
         gemeinsam.tafelKnopf = nil
         for s in geraete {

@@ -25,7 +25,7 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#android)
 &nbsp;
-[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=5CD1C2)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5-18-android.apk)
+[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=5CD1C2)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5-20-android.apk)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#windows)
 &nbsp;
@@ -243,7 +243,7 @@ Updates arrive through the Play Store like for any other app; bugs and feedback
 go to the [Discord](https://discord.gg/MeGwfv3UwN).
 
 **Rather install it yourself?**
-**[Download Swiftly-1.0.5-18-android.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5-18-android.apk)** — one APK for phones and Android TV,
+**[Download Swiftly-1.0.5-20-android.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5-20-android.apk)** — one APK for phones and Android TV,
 Android 9 or newer. It is the same build as on Google Play, signed with the
 same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
 install it with an app like Downloader or over `adb install`.
@@ -444,6 +444,14 @@ commit history says so — every commit carries a `Co-Authored-By` line. The
 decisions, the testing and the responsibility are mine; a good deal of the
 typing was not. It seemed more honest to say that here than to let someone
 work it out.
+
+<br>
+
+## Contributors
+
+Thank you to everyone who sends code, not only reports.
+
+- **[Jens de Rond](https://github.com/Jensderond)** built chapters on the player timeline: the bar is split per chapter, the scrub preview shows the chapter name, and scrubbing snaps to chapter cuts ([#11](https://github.com/paulherter/swiftly-player/pull/11)).
 
 <br>
 

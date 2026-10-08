@@ -2966,7 +2966,8 @@ public final class Kern: @unchecked Sendable {
             beschreibung: d.beschreibung, genres: d.genres, laufzeit: d.laufzeit, bewertung: d.bewertung,
             staffeln: d.staffeln.map { Seerrstaffelantwort(nummer: $0.nummer, folgen: $0.folgen, stand: $0.stand.rawValue, anfragbar: $0.stand.anfragbar) },
             besetzung: d.besetzung.map { Personantwort(id: String($0.id), name: $0.name, rolle: $0.rolle, bild: $0.bild()?.absoluteString) },
-            aehnliches: d.aehnliches.map(Self.seerrkachel)))
+            aehnliches: d.aehnliches.map(Self.seerrkachel),
+            stand: d.stand?.rawValue, anfragbar: d.stand?.anfragbar))
     }
 
     /// Leer heisst: erledigt. `staffeln` als „1,2" — bei einem Film ohne Bedeutung, bei einer Serie nie leer.
@@ -3685,6 +3686,9 @@ struct Seerrdetailantwort: Encodable {
     let staffeln: [Seerrstaffelantwort]
     let besetzung: [Personantwort]
     let aehnliches: [Seerrkachelantwort]
+    /// Der frische Stand des ganzen Titels (`Seerrdetail.stand`); fehlt, wenn die Antwort ihn nicht trug.
+    let stand: Int?
+    let anfragbar: Bool?
 }
 struct Personantwort: Encodable { let id, name: String; let rolle, bild: String? }
 struct Dateiantwort: Encodable {
