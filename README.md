@@ -19,19 +19,19 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 
-[![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
+[![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-50D5DA?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
 &nbsp;
-[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=5CD1C2)](https://testflight.apple.com/join/MqeP2cnj)
+[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=50D5DA)](https://testflight.apple.com/join/MqeP2cnj)
 &nbsp;
-[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#android)
+[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=50D5DA)](#android)
 &nbsp;
-[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=5CD1C2)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5.apk)
+[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5.apk)
 &nbsp;
-[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#windows)
+[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=50D5DA)](#windows)
 &nbsp;
-[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=5CD1C2)](#linux)
+[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=50D5DA)](#linux)
 &nbsp;
-[![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=5CD1C2)](https://discord.gg/MeGwfv3UwN)
+[![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=50D5DA)](https://discord.gg/MeGwfv3UwN)
 
 <sub>[Release feed (Atom)](https://github.com/paulherter/swiftly-player/releases.atom)</sub>
 
@@ -187,20 +187,20 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| iPhone | **1.0.3** on the App Store · next build on TestFlight |
-| iPad | **1.0.3** on the App Store · ships with the iPhone app |
-| Apple TV | **1.0.3** on the App Store |
-| Mac | **1.0.3** on the App Store |
-| Android | **1.0.4** beta on Google Play · [join](#android) · [APK](#android) |
-| Android TV | **1.0.4** beta on Google Play · same app, [join](#android) · [APK](#android) |
-| Linux | **1.0.4** · [install](#linux) |
-| Windows | **1.0.4** · [download](#windows) |
+| iPhone | **1.0.5** on the App Store · 1.0.6 on TestFlight |
+| iPad | **1.0.5** on the App Store · ships with the iPhone app |
+| Apple TV | **1.0.5** on the App Store · 1.0.6 on TestFlight |
+| Mac | **1.0.5** on the App Store · 1.0.6 on TestFlight |
+| Android | **1.0.5** · submitted to Google Play, beta and [APK](#android) until it is listed |
+| Android TV | **1.0.5** · same app, [join the beta](#android) or [APK](#android) |
+| Linux | **1.0.5** · [install](#linux) |
+| Windows | **1.0.5** · [download](#windows) |
 
 **One download covers iPhone, iPad, Mac and Apple TV:**
 [App Store](https://apps.apple.com/app/id6806824067).
 
 **The beta runs alongside it.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
-— the next build lands there first, one link for all four. What each build
+— the next version lands there first, one link for all four. What each build
 wants tested is written in its release notes, and it is usually five specific
 things rather than "have a look around".
 
@@ -208,8 +208,9 @@ things rather than "have a look around".
 
 ## Android
 
-**The Android app is in beta on Google Play**, for phones and Android TV with
-Android 9 or newer. On the phone it is the same app as on the iPhone: Direct Play through libVLC,
+**The Android app is submitted to Google Play** and waiting for Google's review.
+Until it is listed in the Play Store, the beta below and the APK are the way to
+get it, for phones and Android TV with Android 9 or newer. On the phone it is the same app as on the iPhone: Direct Play through libVLC,
 downloads for offline viewing, continue on this device, several accounts,
 Seerr requests, skip intro, Picture in Picture and Quick Connect.
 
@@ -237,10 +238,10 @@ step** — the one signed in to the Play Store on your phone.
 
 </details>
 
-**Why joining now helps.** Google lets a new app go public only after at least
-12 testers have been in its test for 14 days. Every tester counts towards that.
-Updates arrive through the Play Store like for any other app; bugs and feedback
-go to the [Discord](https://discord.gg/MeGwfv3UwN).
+**What happens next.** Once Google has reviewed the release, Swiftly Player
+appears in the Play Store for everyone and this beta can be left. Updates arrive
+through the Play Store like for any other app; bugs and feedback go to the
+[Discord](https://discord.gg/MeGwfv3UwN).
 
 **Rather install it yourself?**
 **[Download Swiftly-1.0.5.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5.apk)** — one APK for phones and Android TV,
@@ -248,7 +249,7 @@ Android 9 or newer. It is the same build as on Google Play, signed with the
 same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
 install it with an app like Downloader or over `adb install`.
 
-**Android TV** is part of the same beta and was built from the Apple TV app,
+**Android TV** is part of the same app and was built from the Apple TV app,
 screen by screen: the row layout on the home screen, detail pages, the profile,
 Seerr, Resume on this Device and a player made for the remote. Once you have
 joined, open the Play Store on the TV with the same Google account and install
