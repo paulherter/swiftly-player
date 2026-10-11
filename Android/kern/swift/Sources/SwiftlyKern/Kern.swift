@@ -23,6 +23,9 @@ public final class Kern: @unchecked Sendable {
     private var _adressen: Bildadresse?
     private var _sitzung: Session?
     private var _wiedergabe: Wiedergabe?
+    /// Die Kapitel der laufenden Fassung (``Kapitelleiste/brauchbar(_:)``) — leer bis
+    /// ``kapitelLaden()`` zurueck ist und bei jedem Titelwechsel.
+    private var _kapitel: [Kapitel] = []
     /// Der Folgenwechsel des offenen Players — je Oeffnen neu, `schliessen` ist endgueltig.
     private var _folgenwechsel = Folgenwechsel()
     /// Was dem Server zuletzt als Laufzustand gesagt wurde — VLCs Meldung geht einmal je Wechsel hinaus.
@@ -854,6 +857,54 @@ public final class Kern: @unchecked Sendable {
                                     breite: breite, blatt: blatt)?.absoluteString ?? ""
     }
 
+    /// **Kapitel der laufenden Fassung** — Vorlage `AppModel.kapitel(fuer:quelle:)`. Holt sie vom
+    /// Server und haelt sie fuer ``kapitelLeiste(dauer:breite:mindestbreite:)`` und
+    /// ``kapitelName(bei:)``; gibt ihre Zahl zurueck. 0 ohne Kapitel, ohne Server oder ohne
+    /// laufende Wiedergabe — dann ist die Leiste ein Stueck wie bisher. Je Titel (und Fassung) einmal.
+    public func kapitelLaden() async -> Int {
+        sperre.lock(); _kapitel = []; let w = _wiedergabe; sperre.unlock()
+        guard let c = client, let w else { return 0 }
+        let gefunden = await c.kapitel(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID)
+        sperre.lock(); defer { sperre.unlock() }
+        // Zwischenzeitlich ein anderer Titel: die Kapitel gehoeren nicht mehr dazu.
+        guard let jetzt = _wiedergabe, jetzt.item.id == w.item.id,
+              jetzt.plan.mediaSourceID == w.plan.mediaSourceID else { return 0 }
+        _kapitel = gefunden
+        return gefunden.count
+    }
+
+    /// **Die Stuecke der Zeitleiste** (`Kapitelleiste.stuecke`) und die Schnitte, an denen der Regler
+    /// einrastet (`fangschnitte`, in Sekunden), als JSON `{"stuecke":[[von,bis,x,breite],…],"fang":[…]}`:
+    /// `von`/`bis` als Anteil 0…1, `x`/`breite` der Rahmen auf der Leiste (`Stueck.rahmen`, die Luecke
+    /// je zur Haelfte von den Nachbarn). `breite`, `mindestbreite` und `luecke` in dp. Ohne Kapitel ein
+    /// Stueck ueber die ganze Breite und kein Fang.
+    public func kapitelLeiste(dauer: Double, breite: Double, mindestbreite: Double, luecke: Double) -> String {
+        let kapitel = sperreLesen { _kapitel }
+        let stuecke = Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: dauer),
+                                            dauer: dauer, breite: breite, mindestbreite: mindestbreite)
+        return Self.kodiert(Kapitelleistenantwort(
+            stuecke: stuecke.map { s in
+                let r = s.rahmen(breite: breite, luecke: luecke)
+                return [s.von, s.bis, r.x, r.breite]
+            },
+            fang: Kapitelleiste.fangschnitte(stuecke, dauer: dauer, breite: breite)))
+    }
+
+    /// Der Name des Kapitels an einer Stelle (`Kapitelleiste.kapitel(bei:in:)`), leer ohne Kapitel.
+    /// Vom Server, unuebersetzt.
+    public func kapitelName(bei stelle: Double) -> String {
+        Kapitelleiste.kapitel(bei: stelle, in: sperreLesen { _kapitel })?.name ?? ""
+    }
+
+    /// Das Stueck der Leiste, in dem ein Anteil liegt (`Kapitelleiste.stueck(bei:in:)`), `-1` ohne
+    /// Anteil. Dieselben Stuecke wie ``kapitelLeiste(dauer:breite:mindestbreite:)``.
+    public func kapitelStueck(bei anteil: Double, dauer: Double, breite: Double, mindestbreite: Double) -> Int {
+        let kapitel = sperreLesen { _kapitel }
+        let stuecke = Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: dauer),
+                                            dauer: dauer, breite: breite, mindestbreite: mindestbreite)
+        return Kapitelleiste.stueck(bei: anteil, in: stuecke) ?? -1
+    }
+
     // MARK: Konto und Server
 
     /// Name und Fassung des Servers — fuer Profil und Einstellungen.
@@ -1027,7 +1078,7 @@ public final class Kern: @unchecked Sendable {
     public func wiedergabeOeffnen(id: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             let w = try await wiedergabeHolen(id: id)
-            sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel()
+            sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel(); _kapitel = []
             _vorbereitet = nil; _vorbereitungFuer = nil; sperre.unlock()
             return try spielplanantwort(w)
         }
@@ -3746,6 +3797,7 @@ struct Platzantwort: Encodable {
 }
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
 struct Planantwort: Encodable { let lossless: Bool; let methode: String }
+struct Kapitelleistenantwort: Encodable { let stuecke: [[Double]]; let fang: [Double] }
 struct Trickplayantwort: Encodable { let breite, hoehe, kachelnBreit, kachelnHoch, anzahl, intervall: Int }
 struct Angebotantwort: Encodable {
     let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String

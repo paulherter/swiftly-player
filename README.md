@@ -25,7 +25,7 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=50D5DA)](#android)
 &nbsp;
-[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5.apk)
+[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6.apk)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=50D5DA)](#windows)
 &nbsp;
@@ -187,14 +187,14 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| iPhone | **1.0.5** on the App Store · 1.0.6 on TestFlight |
+| iPhone | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
 | iPad | **1.0.5** on the App Store · ships with the iPhone app |
-| Apple TV | **1.0.5** on the App Store · 1.0.6 on TestFlight |
-| Mac | **1.0.5** on the App Store · 1.0.6 on TestFlight |
-| Android | **1.0.5** · submitted to Google Play, beta and [APK](#android) until it is listed |
-| Android TV | **1.0.5** · same app, [join the beta](#android) or [APK](#android) |
-| Linux | **1.0.5** · [install](#linux) |
-| Windows | **1.0.5** · [download](#windows) |
+| Apple TV | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
+| Mac | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
+| Android | **1.0.6** · submitted to Google Play, beta and [APK](#android) until it is listed |
+| Android TV | **1.0.6** · same app, [join the beta](#android) or [APK](#android) |
+| Linux | **1.0.6** · [install](#linux) |
+| Windows | **1.0.6** · [download](#windows) |
 
 **One download covers iPhone, iPad, Mac and Apple TV:**
 [App Store](https://apps.apple.com/app/id6806824067).
@@ -244,7 +244,7 @@ through the Play Store like for any other app; bugs and feedback go to the
 [Discord](https://discord.gg/MeGwfv3UwN).
 
 **Rather install it yourself?**
-**[Download Swiftly-1.0.5.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5.apk)** — one APK for phones and Android TV,
+**[Download Swiftly-1.0.6.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6.apk)** — one APK for phones and Android TV,
 Android 9 or newer. It is the same build as on Google Play, signed with the
 same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
 install it with an app like Downloader or over `adb install`.
@@ -366,7 +366,7 @@ transcodes" rests on.
 
 ## Windows
 
-**[Download Swiftly-1.0.5-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.5/Swiftly-1.0.5-Setup.exe)** — 77 MB, Windows 10 and 11, 64-bit. It installs over an older version, and from 1.0.4 on it updates itself: Settings → Check for updates asks GitHub for a newer version, downloads the installer and runs it.
+**[Download Swiftly-1.0.6-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6-Setup.exe)** — 77 MB, Windows 10 and 11, 64-bit. It installs over an older version, and from 1.0.4 on it updates itself: Settings → Check for updates asks GitHub for a newer version, downloads the installer and runs it.
 
 The installer puts Swiftly where it belongs: Program Files (or your own folder
 if you run it without admin rights — you choose in the dialog), a Start menu

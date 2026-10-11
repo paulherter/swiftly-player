@@ -230,6 +230,7 @@ extension App {
                 self.laufenderPlan = plan
                 self.spurlageNeu(item, plan: plan)
                 self.spielerTrickplay?.laden(client: client, item: item, plan: plan)
+                self.kapitelLaden(client: client, item: item, plan: plan)
                 self.warnungZeigen(plan)
                 Protokoll.mitUhr("VLC oeffnen") {
                     self.abspieler.oeffnen(plan.url, ab: stelle, puffer: self.wahlen.puffer,
@@ -379,6 +380,7 @@ extension App {
         angebotsebene.neueFolge()
         zeigerZeigen(true)
         abschnitte = []
+        spielerKapitel = []
         // **Ein alter Wecker haelt sonst spaeter eine andere Wiedergabe an.**
         schlaftakt += 1
         schlafminuten = nil
@@ -1002,6 +1004,13 @@ extension App {
         beiSignal(kerben, "destroy") { [weak self] in
             if self?.spielerKerben == kerben { self?.spielerKerben = nil }
         }
+        // Mit Kapiteln malt die Ueberlagerung auch den Balken: bei jedem
+        // neuen Wert nachzeichnen.
+        beiSignal(spielerRegler, "value-changed") { [weak self] in
+            if let k = self?.spielerKerben, self?.spielerKapitel.isEmpty == false {
+                gtk_widget_queue_draw(k)
+            }
+        }
         anhaengen(leiste, reglerhuelle)
         spielerRest = beschriftung("−0:00", stil: "swiftly-spielerzeit")
         gtk_widget_set_size_request(spielerRest, 58, -1)
@@ -1038,10 +1047,20 @@ extension App {
         spielerVorschauhuelle = rahmen
         anhaengen(huelle, rahmen)
 
+        // **Mit Kapiteln steht der Name vor der Zeit**, in einer Zeile; ist er
+        // zu lang, wird er gekuerzt, die Zeit nie (Mac `vorschauKasten`).
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+        gtk_widget_set_halign(zeile, GTK_ALIGN_CENTER)
+        let name = beschriftung("", stil: "swiftly-vorschauname")
+        gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(name), 18)
+        gtk_widget_set_visible(name, 0)
+        spielerVorschauname = name
+        anhaengen(zeile, name)
         let zeit = beschriftung("0:00", stil: "swiftly-vorschauzeit")
-        gtk_widget_set_halign(zeit, GTK_ALIGN_CENTER)
         spielerVorschauzeit = zeit
-        anhaengen(huelle, zeit)
+        anhaengen(zeile, zeit)
+        anhaengen(huelle, zeile)
 
         spielerVorschau = huelle
         return huelle
@@ -1061,15 +1080,26 @@ extension App {
         }
         gtk_widget_set_visible(spielerVorschauhuelle, hatBild ? 1 : 0)
         gtk_label_set_text(OpaquePointer(zeitfeld), Spielzeit.text(stelle))
+        let kapitelname = Kapitelleiste.kapitel(bei: stelle, in: spielerKapitel)?.name ?? ""
+        if let namenfeld = spielerVorschauname {
+            gtk_label_set_text(OpaquePointer(namenfeld), kapitelname)
+            gtk_widget_set_visible(namenfeld, kapitelname.isEmpty ? 0 : 1)
+        }
 
         // Mittig über der Stelle, am Rand festgehalten; 2 über der
-        // Trefferfläche der Leiste.
-        let halb = hatBild ? 85.0 : 40.0
+        // Trefferfläche der Leiste. Ohne Bild haengt die Breite am Namen.
+        var halb = hatBild ? 85.0 : 40.0
+        if !hatBild, !kapitelname.isEmpty {
+            gtk_widget_set_size_request(huelle, -1, -1)
+            var klein: Int32 = 0, natuerlich: Int32 = 0
+            gtk_widget_measure(huelle, GTK_ORIENTATION_HORIZONTAL, -1, &klein, &natuerlich, nil, nil)
+            halb = max(Double(natuerlich) / 2, 40)
+        }
         let rahmenBreite = Double(gtk_widget_get_width(rahmen))
         let mitteX = Double(r.origin.x) + Double(r.size.width) * anteil
         let ziel = min(max(mitteX, halb), max(rahmenBreite - halb, halb))
         gtk_widget_set_margin_start(huelle, Int32((ziel - halb).rounded()))
-        if !hatBild { gtk_widget_set_size_request(huelle, 80, -1) }
+        if !hatBild { gtk_widget_set_size_request(huelle, kapitelname.isEmpty ? 80 : -1, -1) }
         else { gtk_widget_set_size_request(huelle, 170, -1) }
         let untenAb = Double(gtk_widget_get_height(rahmen)) - Double(r.origin.y) + 2
         gtk_widget_set_margin_bottom(huelle, Int32(untenAb.rounded()))
@@ -1919,6 +1949,7 @@ extension App {
         seitOeffnen = Date()
         // **Nichts zeigt mehr auf die alte Folge** (T1-M4).
         abschnitte = []
+        spielerKapitel = []
         vorgeholteFolge = nil
         angebotsebene.neueFolge()
         // **Das Tempo überlebt den Folgenwechsel.** Linux legt je Folge einen
@@ -1935,10 +1966,29 @@ extension App {
         medienstandMelden()
         // Neue Folge, neues Blatt — ``Trickplaybilder`` erkennt das an der
         // geänderten `titel`-Kennung und holt es sich neu.
-        if let client { spielerTrickplay?.laden(client: client, item: folge, plan: plan) }
+        if let client {
+            spielerTrickplay?.laden(client: client, item: folge, plan: plan)
+            kapitelLaden(client: client, item: folge, plan: plan)
+        }
         // **Titel und Metazeile nachziehen** — dieselbe Folge, dieselbe
         // Serie, aber „Staffel 1 · Folge 3" wird zu „Staffel 1 · Folge 4".
         titelstandAuffrischen(folge)
+    }
+
+    /// **Die Kapitel dieser Fassung holen** (Apple 5180e295, Beitrag von
+    /// Jens de Rond). Je Fassung, nicht je Titel: ein Director's Cut hat
+    /// andere Kapitel. Bis sie da sind — und ohne Antwort — bleibt die Leiste
+    /// ein Stueck. Uebernommen wird nur, wenn noch dieser Titel laeuft.
+    func kapitelLaden(client: JellyfinClient, item: Item, plan: PlaybackPlan) {
+        spielerKapitel = []
+        let quelle = plan.mediaSourceID
+        Task.detached { [self] in
+            let gefunden = await client.kapitel(itemID: item.id, mediaSourceID: quelle)
+            aufHauptfaden {
+                guard self.laufenderTitel?.id == item.id else { return }
+                self.spielerKapitel = gefunden
+            }
+        }
     }
 
     /// **Abschnitte und naechste Folge zur laufenden Folge nachholen** — nur
@@ -1998,7 +2048,10 @@ extension App {
         let breite = Double(gtk_widget_get_width(spielerRegler))
         guard amRegler, dauer > 0, breite > 0,
               let kerbe = Kerbenfang.kerbe(wert: roh * dauer, bis: dauer,
-                                            marken: abschnitte.flatMap { [$0.von, $0.bis] },
+                                            marken: abschnitte.flatMap { [$0.von, $0.bis] }
+                                                + Kapitelleiste.fangschnitte(
+                                                    kapitelstuecke(breite: breite),
+                                                    dauer: dauer, breite: breite),
                                             breite: breite) else {
             reglerGesetzt(roh)
             return false
@@ -2007,6 +2060,14 @@ extension App {
         gtk_range_set_value(alsBereich(spielerRegler), anteil)
         reglerGesetzt(anteil)
         return true
+    }
+
+    /// Die Stuecke der Leiste bei dieser Breite — ein einziges ohne Kapitel.
+    /// Lücke und kleinstes Stück wie am Mac (`Zeitregler`).
+    func kapitelstuecke(breite: Double) -> [Kapitelleiste.Stueck] {
+        let dauer = spielstand.dauer
+        return Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(spielerKapitel, dauer: dauer),
+                                     dauer: dauer, breite: breite, mindestbreite: 8)
     }
 
     /// Der Zeitregler wurde gezogen. **Der Sprung greift sofort**, und der
@@ -2167,17 +2228,66 @@ nonisolated(unsafe) let kerbenMalen: @convention(c) (
     guard let cr, let daten else { return }
     let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
     let dauer = app.spielstand.dauer
-    guard dauer > 0, !app.abschnitte.isEmpty else { return }
     let w = Double(breite), h = Double(hoehe)
-    let dicke: Double = app.amRegler ? 6 : 4
+    let mitKapiteln = !app.spielerKapitel.isEmpty && dauer > 0
+    guard dauer > 0, mitKapiteln || !app.abschnitte.isEmpty else { return }
+
+    // **Mit Kapiteln: ein Stueck je Kapitel** (Mac `Kapitelmaske`). Spur und
+    // Balken malt hier die Ueberlagerung, die Spur des Reglers ist dann
+    // durchsichtig. Beim Ziehen hebt sich nur das Stueck unter dem Griff,
+    // von vier auf sechs Punkt; beim blossen Ueberfahren bleibt es ruhig.
+    var gehoben: Int?
+    var stuecke: [Kapitelleiste.Stueck] = []
+    if mitKapiteln {
+        stuecke = app.kapitelstuecke(breite: w)
+        let stelle = app.spielerRegler.map { gtk_range_get_value(alsBereich($0)) } ?? 0
+        if app.amRegler { gehoben = Kapitelleiste.stueck(bei: stelle, in: stuecke) }
+        let gefuellt = w * min(max(stelle, 0), 1)
+        for (i, stueck) in stuecke.enumerated() {
+            let rahmen = stueck.rahmen(breite: w, luecke: 2)
+            guard rahmen.breite > 0 else { continue }
+            let d: Double = i == gehoben ? 6 : 4
+            let y = (h - d) / 2
+            cairo_save(cr)
+            kapselPfad(cr, x: rahmen.x, y: y, breite: rahmen.breite, hoehe: d)
+            cairo_clip(cr)
+            // Weiss 18 % wie die Spur des Reglers, darueber der Balken.
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.18)
+            cairo_paint(cr)
+            let bis = min(gefuellt, rahmen.x + rahmen.breite)
+            if bis > rahmen.x {
+                cairo_set_source_rgba(cr, 1, 1, 1, 1)
+                cairo_rectangle(cr, rahmen.x, y, bis - rahmen.x, d)
+                cairo_fill(cr)
+            }
+            cairo_restore(cr)
+        }
+    }
+
+    // **Kerben an den Abschnittsgrenzen**, zwei Punkt in `grund`.
     // `grund` #101010.
     cairo_set_source_rgba(cr, 16.0 / 255, 16.0 / 255, 16.0 / 255, 1)
     for grenze in app.abschnitte.flatMap({ [$0.von, $0.bis] }) {
         let anteil = grenze / dauer
         guard anteil > 0.01, anteil < 0.99 else { continue }
+        var dicke: Double = app.amRegler ? 6 : 4
+        if mitKapiteln {
+            let dort = Kapitelleiste.stueck(bei: anteil, in: stuecke)
+            dicke = (gehoben != nil && dort == gehoben) ? 6 : 4
+        }
         cairo_rectangle(cr, (w * anteil - 1).rounded(), (h - dicke) / 2, 2, dicke)
     }
     cairo_fill(cr)
+}
+
+/// Eine Kapsel als Pfad — Halbkreise an den Enden, wie `border-radius` der
+/// Spur (die Haelfte der Dicke).
+private func kapselPfad(_ cr: OpaquePointer, x: Double, y: Double, breite: Double, hoehe: Double) {
+    let r = min(hoehe, breite) / 2
+    cairo_new_sub_path(cr)
+    cairo_arc(cr, x + breite - r, y + r, r, -Double.pi / 2, Double.pi / 2)
+    cairo_arc(cr, x + r, y + r, r, Double.pi / 2, 3 * Double.pi / 2)
+    cairo_close_path(cr)
 }
 
 /// Der Taktgeber. Wie jeder C-Rückruf trägt er die App als Zeiger.

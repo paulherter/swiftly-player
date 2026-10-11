@@ -436,6 +436,18 @@ class Spielwerk(
     /** **In der Gruppe keine naechste Folge** — jeder schaltete sonst fuer sich weiter (iOS `nachschlagen`). */
     val hatNaechste: Boolean get() = plan?.naechste == true && !inGruppe
 
+    // MARK: Kapitel — Vorlage `kapitel` in `PlayerScreen` (iOS); Regeln im Kern (`Kapitelleiste`).
+    /** Wie viele brauchbare Kapitel die laufende Fassung hat — 0: die Leiste bleibt ein Stueck. Zaehlt
+     *  zugleich als Schluessel, damit die Leiste nach dem Laden neu gerechnet wird. */
+    var kapitelAnzahl by mutableIntStateOf(0); private set
+
+    suspend fun kapitelLaden() {
+        kapitelAnzahl = 0
+        val n = withContext(Dispatchers.IO) { app.kern.kapitelLaden().await() }
+        Protokoll.schreib("[Kapitel] " + if (n > 0L) "$n" else "keine")
+        kapitelAnzahl = n.toInt()
+    }
+
     // MARK: Trickplay — Vorschau beim Spulen, Vorlage `Trickplaybilder` im Paket.
     var trickplayAngabe by mutableStateOf<Trickplayangabe?>(null); private set
     /** Entschluesselte Kachelblaetter, hoechstens sechs — wie auf iOS wird nur eine Handvoll behalten. */
@@ -573,11 +585,29 @@ class Spielwerk(
     fun sitzungAufraeumen() {
         WiedergabeDienst.aus(kontext)
         app.medienToken = null
+        schirmWachHalten(false)
         sitzung.isActive = false
         sitzung.release()
     }
 
+    private var schirmWach = false
+
+    /**
+     * **Auf dem Fernseher folgt der Bildschirm dem Laufzustand.** `PlayerAktivitaet` setzt
+     * `FLAG_KEEP_SCREEN_ON` nur auf dem Telefon; der Fernseher bekam es nie, und Google TV blendete nach
+     * 10 bis 15 Minuten den Bildschirmschoner ueber das laufende Bild. Das Flag steht, solange VLC spielt,
+     * und faellt bei Pause und Ende, damit der Schoner dann wieder darf.
+     */
+    private fun schirmWachHalten(an: Boolean) {
+        if (!app.istFernseher || an == schirmWach) return
+        val fenster = kontext.aktivitaet()?.window ?: return
+        schirmWach = an
+        if (an) fenster.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else fenster.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
     private fun sitzungMelden() {
+        schirmWachHalten(laeuft)
         var aktionen = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND
         // „Nächste" nur, wenn es eine gibt; „vorige" nie — grau ist ehrlicher als ins Leere.
@@ -618,6 +648,7 @@ class Spielwerk(
         }
         plan = neu
         lauf.launch { trickplayLaden() }
+        lauf.launch { kapitelLaden() }
         bildFrei = false
         zeigtBild[0] = false
         puffert = false
@@ -2029,7 +2060,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                 Spacer(Modifier.weight(1f))
                 // **Die Leiste ueber die volle Breite**, Zeit links, Restzeit rechts (Vorlage `fuss`).
                 Box(Modifier.fillMaxWidth().height(Playermass.leiste).padding(horizontal = Playermass.seite)) {
-                    Zeitzeile(app, { werk.position }, werk.dauer, werk.amSchieben, aktiv, werk.plan?.marken.orEmpty(), { werk.trickplayBild(it) },
+                    Zeitzeile(app, { werk.position }, werk.dauer, werk.amSchieben, aktiv, werk.plan?.marken.orEmpty(), werk.kapitelAnzahl, { werk.trickplayBild(it) },
                               { werk.amSchieben = it; beruehrt++ }) { werk.springe(it) }
                 }
             }
@@ -2307,6 +2338,21 @@ private fun Lader(modifier: Modifier = Modifier, groesse: Dp = 34.dp, staerke: D
     }
 }
 
+/** Masse der Kapitelleiste (iOS `Zeitregler`): Luecke so breit wie eine Kerbe, schmaler wird kein Stueck. */
+internal object KapitelMass { const val luecke = 2.0; const val mindestbreite = 8.0 }
+
+/** Ein Stueck der Leiste: Anteil von/bis und sein Rahmen in dp — gerechnet im Kern (`Kapitelleiste`). */
+internal class Kapitelstueck(val von: Double, val bis: Double, val x: Float, val breite: Float)
+
+internal class Kapitelleistenform(val stuecke: List<Kapitelstueck>, val fang: List<Double>)
+
+internal fun kapitelLeisteLesen(json: String): Kapitelleistenform = JSONObject(json).let { o ->
+    val s = o.getJSONArray("stuecke"); val f = o.getJSONArray("fang")
+    Kapitelleistenform(
+        List(s.length()) { i -> s.getJSONArray(i).let { Kapitelstueck(it.getDouble(0), it.getDouble(1), it.getDouble(2).toFloat(), it.getDouble(3).toFloat()) } },
+        List(f.length()) { f.getDouble(it) })
+}
+
 /**
  * Vorlage: `Zeitzeile` + `Zeitregler` auf iOS. Zeit links, Restzeit rechts, 13 mit gleich breiten Ziffern,
  * leise. **Im Stehen nur der Strich** (4 dick), **beim Spulen 6 und ein Griff in Akzentfarbe** — die einzige
@@ -2315,13 +2361,13 @@ private fun Lader(modifier: Modifier = Modifier, groesse: Dp = 34.dp, staerke: D
  */
 @Composable
 private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean, marken: List<Double>,
+                      kapitelAnzahl: Int,
                       vorschau: (Double) -> android.graphics.Bitmap?,
                       schieben: (Boolean) -> Unit, springen: (Double) -> Unit) {
     var ziel by remember { mutableStateOf<Double?>(null) }
     // `position` ist ein Lambda: gelesen wird erst hier, sonst setzte jeder Takt die ganze Playerseite neu.
     val gezeigt = ziel ?: position()
     val ziffern = Stil.kachel.copy(fontWeight = FontWeight.Normal, fontFeatureSettings = "tnum")
-    val dicke by animateDpAsState(if (amSchieben) 6.dp else 4.dp, Bewegung.umschalten(), label = "spur")
     val griffSkala by animateFloatAsState(if (amSchieben) 1f else 0.4f, Bewegung.umschalten(), label = "griffSkala")
     val griffDeckung by animateFloatAsState(if (amSchieben) 1f else 0f, Bewegung.umschalten(), label = "griffDeckung")
     val laenge by rememberUpdatedState(dauer)
@@ -2343,9 +2389,13 @@ private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Doub
                     // **An den Kerben rastet er ein** (`Kerbenfang`): nah genug an einer Abschnittsgrenze steht er
                     // genau darauf, mit einem leichten Tick beim Einrasten — einmal, nicht bei jeder Bewegung darauf.
                     var eingerastet = -1.0
+                    // **Dazu die Schnitte zwischen den Kapiteln** — nur die, die man sieht und mit Platz daneben
+                    // (`Kapitelleiste.fangschnitte`, aus dem Kern); einmal je Griff, die Breite aendert sich dabei nicht.
+                    val fangMarken = markenJetzt + kapitelLeisteLesen(
+                        app.kern.kapitelLeiste(laenge, (size.width / density).toDouble(), KapitelMass.mindestbreite, KapitelMass.luecke)).fang
                     fun stelle(x: Float): Double {
                         val roh = (x / size.width).coerceIn(0f, 1f).toDouble() * laenge
-                        val kerbe = Kern.kerbe(roh, laenge, markenJetzt, (size.width / density).toDouble())
+                        val kerbe = Kern.kerbe(roh, laenge, fangMarken, (size.width / density).toDouble())
                         if (kerbe < 0) { eingerastet = -1.0; return roh }
                         if (kerbe != eingerastet) { eingerastet = kerbe; ruck(Ruck.Leicht) }
                         return kerbe
@@ -2372,21 +2422,38 @@ private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Doub
             } else Modifier)
             // TalkBack liest die Stelle vor und kann sie verstellen — wie `accessibilityAdjustableAction`.
             .semantics {
-                stateDescription = zeitText(gezeigt) + " / " + zeitText(dauer)
+                // Mit Kapitel: „12:00 / 45:00, Kapitelname" — der Name vom Server, unuebersetzt.
+                stateDescription = zeitText(gezeigt) + " / " + zeitText(dauer) +
+                    (if (kapitelAnzahl > 0) app.kern.kapitelName(gezeigt).let { if (it.isEmpty()) "" else ", $it" } else "")
                 if (dauer > 0) progressBarRangeInfo = ProgressBarRangeInfo(gezeigt.toFloat().coerceIn(0f, dauer.toFloat()), 0f..dauer.toFloat())
                 setProgress { wert -> springen(wert.toDouble()); true }
             },
             contentAlignment = Alignment.CenterStart) {
             val anteil = if (dauer > 0) (gezeigt / dauer).toFloat().coerceIn(0f, 1f) else 0f
             val breite = maxWidth
-            val spur = Modifier.height(dicke).clip(CircleShape)
-            // Spur weiss 18 %.
-            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.18f)))
-            Box(Modifier.width(breite * anteil).then(spur).background(Color.White))
+            // **Ein Stueck je Kapitel** (Vorlage `Kapitelmaske`): Luecke, Schnitte und welche zu eng sind sagt
+            // der Kern; ohne Kapitel ist es ein Stueck ueber die ganze Breite, wie vorher. Beim Spulen hebt
+            // sich nur das Stueck unter dem Finger auf 6, die anderen bleiben bei 4.
+            val leiste = remember(kapitelAnzahl, dauer, breite) {
+                kapitelLeisteLesen(app.kern.kapitelLeiste(dauer, breite.value.toDouble(), KapitelMass.mindestbreite, KapitelMass.luecke))
+            }
+            val gehoben = if (amSchieben) app.kern.kapitelStueck(anteil.toDouble(), dauer, breite.value.toDouble(), KapitelMass.mindestbreite).toInt() else -1
             // **Kerben an den Abschnittsgrenzen**, 2 breit in `grund` — wo der Vorspann anfaengt, sagt
             // allein noch nicht, wo er aufhoert, und genau das will man sehen, bevor man greift.
-            if (dauer > 0) marken.map { (it / dauer).toFloat() }.filter { it > 0.01f && it < 0.99f }.forEach { stelle ->
-                Box(Modifier.offset(x = breite * stelle - 1.dp).width(2.dp).height(dicke).background(Stil.grund))
+            val kerben = if (dauer > 0) marken.map { (it / dauer).toFloat() }.filter { it > 0.01f && it < 0.99f } else emptyList()
+            leiste.stuecke.forEachIndexed { i, stueck ->
+                key(i) {
+                    val hoehe by animateDpAsState(if (i == gehoben) 6.dp else 4.dp, Bewegung.umschalten(), label = "stueck")
+                    // Spur weiss 18 %, der gespielte Teil weiss.
+                    Box(Modifier.offset(x = stueck.x.dp).width(stueck.breite.dp).height(hoehe)
+                        .clip(CircleShape).background(Color.White.copy(alpha = 0.18f))) {
+                        Box(Modifier.width((breite * anteil - stueck.x.dp).coerceIn(0.dp, stueck.breite.dp))
+                            .fillMaxHeight().background(Color.White))
+                        kerben.forEach { stelle ->
+                            Box(Modifier.offset(x = breite * stelle - 1.dp - stueck.x.dp).width(2.dp).fillMaxHeight().background(Stil.grund))
+                        }
+                    }
+                }
             }
             Box(Modifier.offset(x = breite * anteil - 9.dp).size(18.dp)
                 .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
@@ -2410,9 +2477,19 @@ private fun Zeitzeile(app: SwiftlyAnwendung, position: () -> Double, dauer: Doub
                             modifier = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(Stil.ecke))
                                 .border(1.dp, Stil.rand, RoundedCornerShape(Stil.ecke)))
                     }
-                    // Semibold, nicht Bold; auf eigener Kapsel, weil hier kein Schleier liegt.
-                    Text(zeitText(gezeigt), style = ziffern.copy(fontWeight = FontWeight.SemiBold), color = Stil.schrift,
-                         modifier = Modifier.clip(CircleShape).background(Stil.grund.copy(alpha = 0.82f)).padding(horizontal = 8.dp, vertical = 3.dp))
+                    // Semibold, nicht Bold; auf eigener Kapsel, weil hier kein Schleier liegt. **Mit Kapitel steht
+                    // sein Name vor der Zeit**, in derselben Kapsel — eine Zeile, hoechstens so breit wie das
+                    // Vorschaubild; ein langer Name wird gekuerzt, nie die Zeit.
+                    val name = if (kapitelAnzahl > 0) app.kern.kapitelName(gezeigt) else ""
+                    Row(Modifier.widthIn(max = 160.dp).clip(CircleShape).background(Stil.grund.copy(alpha = 0.82f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (name.isNotEmpty()) {
+                            Text(name, style = ziffern.copy(fontFeatureSettings = null), color = Stil.schrift, maxLines = 1,
+                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        }
+                        Text(zeitText(gezeigt), style = ziffern.copy(fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 1)
+                    }
                 }
             }
         }

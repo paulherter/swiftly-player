@@ -104,13 +104,19 @@ enum Titellogospeicher {
 struct Titelfelder: @unchecked Sendable {
     let bild: Widget!
     let text: Widget!
+    /// Der Rahmen, der die Groesse des Logos haelt. Ein `GtkPicture` ist
+    /// von Natur aus so gross wie seine Textur; mit `halign: START` im
+    /// Ueberlagerungsfach bekam es diese Groesse (hoechstens das Fach) und
+    /// `GTK_CONTENT_FIT_FILL` zog das Bild auf 640 x 42 — gestreckt. Die
+    /// Groesse aus `Titelmarkenmass.groesse` sitzt deshalb am Rahmen.
+    let rahmen: Widget!
 
     static func zeigen(_ logo: Titellogo, in f: Titelfelder, weich: Bool) {
         let g = Titelmarkenmass.groesse(seitenverhaeltnis: logo.messung.seitenverhaeltnis,
                                         dichte: logo.messung.dichte,
                                         zeile: Double(Stil.titelGross), maxBreite: 640,
                                         maxHoehe: 42)
-        gtk_widget_set_size_request(f.bild, Int32(g.breite.rounded()), Int32(g.hoehe.rounded()))
+        gtk_widget_set_size_request(f.rahmen, Int32(g.breite.rounded()), Int32(g.hoehe.rounded()))
         gtk_picture_set_paintable(OpaquePointer(f.bild), logo.textur)
         guard weich, !Schubsperre.faehrt else {
             gtk_widget_set_opacity(f.bild, 1)
@@ -141,14 +147,20 @@ extension App {
               let url = Bildwahl.logo(titel, adressen: adressen) else { return }
         let bildfeld: Widget! = gtk_picture_new()
         gtk_picture_set_can_shrink(OpaquePointer(bildfeld), 1)
-        gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_FILL)
-        gtk_widget_set_halign(bildfeld, GTK_ALIGN_START)
-        gtk_widget_set_valign(bildfeld, GTK_ALIGN_CENTER)
+        // CONTAIN: das Seitenverhaeltnis der Textur bleibt, was der Rahmen
+        // auch an Platz gibt.
+        gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
         gtk_widget_set_can_target(bildfeld, 0)
         gtk_widget_set_opacity(bildfeld, 0)
-        gtk_overlay_add_overlay(OpaquePointer(huelle), bildfeld)
+        let rahmen = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        gtk_widget_set_halign(rahmen, GTK_ALIGN_START)
+        gtk_widget_set_valign(rahmen, GTK_ALIGN_CENTER)
+        gtk_widget_set_overflow(rahmen, GTK_OVERFLOW_HIDDEN)
+        gtk_widget_set_can_target(rahmen, 0)
+        anhaengen(rahmen, bildfeld)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), rahmen)
 
-        let felder = Titelfelder(bild: bildfeld, text: text)
+        let felder = Titelfelder(bild: bildfeld, text: text, rahmen: rahmen)
         if let gemerkt = Titellogospeicher.gemerkt(url) {
             if let logo = gemerkt { Titelfelder.zeigen(logo, in: felder, weich: false) }
             return

@@ -1579,6 +1579,12 @@ enum Stil {
             margin: 13px 0;
             border-radius: 3px;
         }
+        /* **Mit Kapiteln malt die Ueberlagerung Spur und Balken** (ein Stueck je
+           Kapitel); hier bleibt nur der Griff. */
+        scale.swiftly-regler.swiftly-regler-kapitel trough,
+        scale.swiftly-regler.swiftly-regler-kapitel highlight {
+            background-color: transparent;
+        }
         scale.swiftly-regler highlight {
             margin: 0;
             padding: 0;
@@ -1708,6 +1714,10 @@ enum Stil {
         .swiftly-vorschaubild {
             border-radius: \(ecke)px;
             border: 1px solid rgba(255,255,255,0.35);
+        }
+        .swiftly-vorschauname {
+            font-size: 13px;
+            color: \(schrift);
         }
         .swiftly-vorschauzeit {
             font-size: 13px;

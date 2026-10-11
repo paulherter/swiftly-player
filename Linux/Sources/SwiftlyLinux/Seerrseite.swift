@@ -37,6 +37,7 @@ extension App {
         seerrStaffelnOffen = false
         seerrLaeuft = false
         seerrAngefragt = false
+        seerrStand = nil
         seerrFehler = nil
         let scheibe: Widget! = naechsteScheibe()
         // **Keine der Einstellungsunterseiten** — sonst hielte ein zweiter
@@ -214,8 +215,11 @@ extension App {
             return
         }
 
-        guard t.stand.anfragbar else {
-            let wort = beschriftung(seerrStandwort(t.stand), stil: "swiftly-koerper")
+        // **Der Server weiss es besser als der Suchtreffer von vorhin** (Apple
+        // 2aed5e3f): beim erneuten Oeffnen und nach der Anfrage gilt sein Stand.
+        let stand = seerrStand ?? t.stand
+        guard stand.anfragbar else {
+            let wort = beschriftung(seerrStandwort(stand), stil: "swiftly-koerper")
             gtk_widget_add_css_class(wort, "swiftly-leise")
             gtk_widget_set_valign(wort, GTK_ALIGN_CENTER)
             anhaengen(seerrKnopfreihe, wort)
@@ -315,6 +319,10 @@ extension App {
                     gtk_widget_set_margin_start(h, Int32(Stil.randAbstand))
                     anhaengen(self.seerrBlock, h)
                     return
+                }
+                if let neu = d.stand, neu != (self.seerrStand ?? t.stand) {
+                    self.seerrStand = neu
+                    self.seerrKnopfreiheFuellen(t)
                 }
                 self.seerrAngabenFuellen(t, d)
                 if let text = d.beschreibung, !text.isEmpty {
@@ -445,21 +453,35 @@ extension App {
         seerrKnopfreiheFuellen(t)
         Task.detached { [self] in
             let fehler: String?
+            var neuesDetail: Seerrdetail?
             do {
                 try await client.anfragen(art: t.art, id: t.id, staffeln: staffeln)
                 fehler = nil
+                // **Den Stand lesen, nicht annehmen.** Gibt Seerr die Anfrage
+                // sofort frei, ist der Titel „laedt" oder da, nicht „wartet".
+                neuesDetail = await client.detail(art: t.art, id: t.id)
             } catch {
                 fehler = lesbarerFehler(error)
             }
+            let frisch = neuesDetail
             aufHauptfaden {
                 guard let jetzt = self.seerrKnopfreihe, Int(bitPattern: jetzt) == reihe else { return }
                 self.seerrLaeuft = false
                 if let fehler {
                     self.seerrFehler = fehler
                 } else {
-                    self.seerrAngefragt = true
+                    var stand = frisch?.stand ?? self.seerrStand ?? t.stand
+                    if stand.anfragbar { stand = .wartetAufFreigabe }
+                    self.seerrStand = stand
+                    self.seerrAngefragt = stand == .wartetAufFreigabe
                     if let auf = self.seerrStaffelaufklapp {
                         gtk_revealer_set_reveal_child(alsAufklapp(auf), 0)
+                    }
+                    // Die Staffelliste zeigt den frischen Stand je Staffel.
+                    if let d = frisch {
+                        self.seerrGewaehlteStaffeln = []
+                        self.seerrStaffelnOffen = false
+                        self.seerrUnterbauFuellen(t, d)
                     }
                 }
                 self.seerrKnopfreiheFuellen(t)

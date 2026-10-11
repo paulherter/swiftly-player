@@ -37,8 +37,8 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.0.5"
+        versionCode = 22
+        versionName = "1.0.6"
         // **Nur die ABIs, fuer die der Swift-Kern gebaut wird** (`kern/build.gradle`); auf jeder
         // anderen stuerzte die App beim Start. libVLC brachte vier ABIs mit — x86 lief nie.
         // armeabi-v7a fuer Fernseher mit 32-Bit-Android: ohne sie war die App dort im Store unsichtbar.

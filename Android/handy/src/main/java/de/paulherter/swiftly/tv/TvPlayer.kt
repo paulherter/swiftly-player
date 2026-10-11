@@ -82,7 +82,9 @@ import de.paulherter.swiftly.Abspielwunsch
 import de.paulherter.swiftly.Folge
 import de.paulherter.swiftly.R
 import de.paulherter.swiftly.Spielplan
+import de.paulherter.swiftly.KapitelMass
 import de.paulherter.swiftly.Spielwerk
+import de.paulherter.swiftly.kapitelLeisteLesen
 import de.paulherter.swiftly.Gemeinsamereignis
 import de.paulherter.swiftly.Gruppenereignis
 import de.paulherter.swiftly.Gruppenzeile
@@ -516,9 +518,11 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()
                         .semantics(mergeDescendants = true) {
                             contentDescription = uebersetzt("Abspielstelle")
-                            stateDescription = zeitText(werk.position) + " / " + zeitText(werk.dauer)
+                            // Mit Kapitel: „12:00 / 45:00, Kapitelname" — der Name vom Server, unuebersetzt.
+                            stateDescription = zeitText(werk.position) + " / " + zeitText(werk.dauer) +
+                                (if (werk.kapitelAnzahl > 0) app.kern.kapitelName(werk.position).let { if (it.isEmpty()) "" else ", $it" } else "")
                         }) {
-                    TvZeitleiste({ werk.position }, werk.dauer, spulziel, werk.laeuft, alsEnde) { werk.trickplayBild(it) }
+                    TvZeitleiste(app, { werk.position }, werk.dauer, spulziel, werk.laeuft, alsEnde, werk.kapitelAnzahl) { werk.trickplayBild(it) }
                 }
             }
         }
@@ -711,14 +715,13 @@ private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuf
  * erscheint in Akzentfarbe, darueber das Trickplay-Bild mit der Zielzeit (ohne Trickplay nur die Zeit).
  */
 @Composable
-private fun TvZeitleiste(position: () -> Double, dauer: Double, marke: Double?, laeuft: Boolean, alsEnde: Boolean,
-                         vorschau: (Double) -> android.graphics.Bitmap?) {
+private fun TvZeitleiste(app: SwiftlyAnwendung, position: () -> Double, dauer: Double, marke: Double?, laeuft: Boolean, alsEnde: Boolean,
+                         kapitelAnzahl: Int, vorschau: (Double) -> android.graphics.Bitmap?) {
     val spult = marke != null
     // `position` ist ein Lambda: gelesen wird erst hier, nicht je Takt im ganzen Player.
     val jetzt = position()
     val gezeigt = marke ?: jetzt
     fun anteil(s: Double): Float = if (dauer > 0) (s / dauer).coerceIn(0.0, 1.0).toFloat() else 0f
-    val balken by animateDpAsState(if (spult) 6.dp else 4.dp, tween(180), label = "balken")
     val griffSkala by animateFloatAsState(if (spult) 1f else 0.4f, tween(180), label = "griffSkala")
     val griffDeckung by animateFloatAsState(if (spult) 1f else 0f, tween(180), label = "griffDeckung")
     val ziffern = TextStyle(fontSize = TvPlayermass.zeit, fontFeatureSettings = "tnum")
@@ -736,12 +739,28 @@ private fun TvZeitleiste(position: () -> Double, dauer: Double, marke: Double?, 
             val breite = maxWidth
             val stand = anteil(jetzt)
             val ziel = anteil(gezeigt)
-            Box(Modifier.fillMaxWidth().height(balken).clip(CircleShape).background(TvPlayermass.leisteGrund))
-            // Bis zur wirklichen Stelle: das ist gesehen.
-            Box(Modifier.width(breite * minOf(stand, ziel)).height(balken).clip(CircleShape).background(Stil.schrift))
-            // Die Strecke zwischen Stand und Ziel — wie weit das Spulen von hier entfernt landet.
-            if (spult) Box(Modifier.offset(x = breite * minOf(stand, ziel)).width(breite * abs(ziel - stand)).height(balken)
-                    .clip(CircleShape).background(Color.White.copy(alpha = 0.55f)))
+            // **Ein Stueck je Kapitel** (Vorlage `Kapitelmaske`): Luecken und zu enge Schnitte rechnet der Kern
+            // (`Kapitelleiste`); ohne Kapitel ein Stueck ueber die ganze Breite, wie vorher. Beim Spulen hebt
+            // sich nur das Stueck, in dem das Ziel liegt, auf 6, die anderen bleiben bei 4. Lueckenmass wie am
+            // Handy: tvOS rechnet 4 pt bei 8 pt Balken, hier 2 dp bei 4 dp.
+            val leiste = remember(kapitelAnzahl, dauer, breite) {
+                kapitelLeisteLesen(app.kern.kapitelLeiste(dauer, breite.value.toDouble(), KapitelMass.mindestbreite, KapitelMass.luecke))
+            }
+            val gehoben = if (spult) app.kern.kapitelStueck(ziel.toDouble(), dauer, breite.value.toDouble(), KapitelMass.mindestbreite).toInt() else -1
+            val vonStand = breite * minOf(stand, ziel)
+            leiste.stuecke.forEachIndexed { i, stueck ->
+                key(i) {
+                    val balken by animateDpAsState(if (i == gehoben) 6.dp else 4.dp, tween(180), label = "balken")
+                    Box(Modifier.offset(x = stueck.x.dp).width(stueck.breite.dp).height(balken)
+                        .clip(CircleShape).background(TvPlayermass.leisteGrund)) {
+                        // Bis zur wirklichen Stelle: das ist gesehen.
+                        Box(Modifier.width((vonStand - stueck.x.dp).coerceIn(0.dp, stueck.breite.dp)).fillMaxHeight().background(Stil.schrift))
+                        // Die Strecke zwischen Stand und Ziel — wie weit das Spulen von hier entfernt landet.
+                        if (spult) Box(Modifier.offset(x = vonStand - stueck.x.dp).width(breite * abs(ziel - stand)).fillMaxHeight()
+                            .background(Color.White.copy(alpha = 0.55f)))
+                    }
+                }
+            }
             Box(Modifier.offset(x = breite * ziel - 9.dp).size(18.dp)
                     .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
                     .background(Stil.akzent, CircleShape))
@@ -764,8 +783,18 @@ private fun TvZeitleiste(position: () -> Double, dauer: Double, marke: Double?, 
                             modifier = Modifier.size(200.dp, 112.5.dp).clip(RoundedCornerShape(TvStil.ecke))
                                 .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(TvStil.ecke)))
                     }
-                    Text(zeitText(gezeigt), style = TextStyle(fontSize = TvPlayermass.vorschauZeit, fontWeight = FontWeight.SemiBold,
-                         fontFeatureSettings = "tnum"), color = Stil.schrift)
+                    // **Mit Kapitel steht sein Name vor der Zeit**, in einer Zeile und hoechstens so breit wie das
+                    // Vorschaubild; ein langer Name wird gekuerzt, nie die Zeit.
+                    val name = if (kapitelAnzahl > 0) app.kern.kapitelName(gezeigt) else ""
+                    Row(Modifier.widthIn(max = 200.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
+                        if (name.isNotEmpty()) {
+                            Text(name, style = TextStyle(fontSize = TvPlayermass.vorschauZeit), color = Stil.schrift, maxLines = 1,
+                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        }
+                        Text(zeitText(gezeigt), style = TextStyle(fontSize = TvPlayermass.vorschauZeit, fontWeight = FontWeight.SemiBold,
+                             fontFeatureSettings = "tnum"), color = Stil.schrift, maxLines = 1)
+                    }
                 }
             }
         }

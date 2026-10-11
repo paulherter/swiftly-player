@@ -322,6 +322,16 @@ final class App: @unchecked Sendable {
 
         kopfzeile = gtk_header_bar_new()
         gtk_window_set_titlebar(alsFenster(fenster), Skalierung.gehuellt(kopfzeile))
+        // **Der Zeiger bleibt auch ueber der Titelzeile sichtbar, solange er
+        // sich bewegt.** Im Player haengt die Bewegungserkennung am Bild
+        // (`ueber`); die Titelzeile liegt ausserhalb. Beim Verlassen des
+        // Bildes nach oben wurde der Zeiger ausgeblendet (`steuerungVerbergen`)
+        // und kam ueber den Fensterknoepfen nicht zurueck — das Fenster
+        // liess sich bei laufender Wiedergabe kaum anfassen.
+        beiBewegung(kopfzeile) { [weak self] in
+            guard let self, self.laufenderTitel != nil, self.spielerSteuerung != nil else { return }
+            self.steuerungZeigen(durch: .nebenbei)
+        }
         let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
         anhaengen(inhalt, seiten)
 
@@ -1669,6 +1679,9 @@ final class App: @unchecked Sendable {
     /// Oeffnen einer Seerr-Seite zurueckgesetzt.
     var seerrLaeuft = false
     var seerrAngefragt = false
+    /// Der Stand des Titels, wie ihn der Server zuletzt gemeldet hat
+    /// (`Seerrdetail.stand`); `nil`, solange nur der Suchtreffer vorliegt.
+    var seerrStand: Seerrstand?
     var seerrFehler: String?
     /// H10: die Nachfrage vor dem Abschalten, in den Einstellungen.
     var downloadabschaltfrage: Widget!
@@ -1707,6 +1720,19 @@ final class App: @unchecked Sendable {
     var abschnitte: [Abschnitt] = [] {
         // Die Kerben am Zeitregler stehen an ihren Grenzen.
         didSet { if let k = spielerKerben { gtk_widget_queue_draw(k) } }
+    }
+    /// **Die Kapitel der laufenden Fassung**, schon bereinigt
+    /// (``Kapitelleiste/brauchbar(_:)``) — leer, wenn die Datei keine hat.
+    /// Mit Kapiteln malt die Ueberlagerung der Leiste die Stuecke selbst, und
+    /// die Spur des Reglers wird durchsichtig (`swiftly-regler-kapitel`).
+    var spielerKapitel: [Kapitel] = [] {
+        didSet {
+            if let r = spielerRegler {
+                if spielerKapitel.isEmpty { gtk_widget_remove_css_class(r, "swiftly-regler-kapitel") }
+                else { gtk_widget_add_css_class(r, "swiftly-regler-kapitel") }
+            }
+            if let k = spielerKerben { gtk_widget_queue_draw(k) }
+        }
     }
     var jetzigesAngebot: Knopfangebot = .keiner
     /// **„Intro überspringen" und „Nächste Folge" über dem Bild**, ohne dass
@@ -2053,6 +2079,8 @@ final class App: @unchecked Sendable {
     var spielerVorschau: Widget!
     var spielerVorschaubild: Widget!
     var spielerVorschauzeit: Widget!
+    /// Der Kapitelname vor der Zeit in der Vorschau; leer und verborgen ohne Kapitel.
+    var spielerVorschauname: Widget!
     var spielerVorschauhuelle: Widget!
     /// Das Technikschild ueber dem Film — `nil`, wenn es aus ist.
     var technikschild: Widget!
