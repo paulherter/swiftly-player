@@ -702,6 +702,7 @@ final class VLCPlayerView: Basisansicht {
         // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
         refreshPiPState()
         anzeigeschlafZulassen()
+        leerlaufsperreHalten()
 
         // Pausierter Start: jeder Wechsel ist ein Anlass, sofort statt beim
         // naechsten Takt — bei Paused ist das der Moment zum Fortsetzen.
@@ -842,6 +843,27 @@ final class VLCPlayerView: Basisansicht {
         }
         let wurzel: CALayer? = layer
         wurzel.map(freigeben)
+    }
+
+    /// **Den Leerlauf selbst sperren, solange gespielt wird — nicht nur VLC.**
+    ///
+    /// Gemeldet auf tvOS 1.0.5: die erste Folge läuft ohne Bildschirmschoner,
+    /// nach „Nächste Folge“ kommt er alle fünf Minuten über das Bild. VLC
+    /// sperrt den Leerlauf je Fenster (`vlc_window_UpdateInhibitionUnlocked`:
+    /// nur wenn das Fenster aktiv und im Vollbild ist, gesetzt beim Anlegen
+    /// des Fensters und bei `vout_ChangePause`). Beim Folgenwechsel baut VLC
+    /// den Bildausgang samt Fenster neu; ob die Sperre dort wieder ankommt,
+    /// hängt an dessen Anlauf. Wir verlassen uns nicht darauf: solange
+    /// tatsächlich gespielt wird, steht die Sperre auf `true`, bei Pause,
+    /// Ende und Schliessen sofort auf `false` — die Pause darf den Schoner
+    /// weiter zulassen (22.09.).
+    private func leerlaufsperreHalten() {
+        #if canImport(UIKit)
+        let soll = !absichtlichBeendet && !endgueltigGestoppt && player.media != nil && player.isPlaying
+        if UIApplication.shared.isIdleTimerDisabled != soll {
+            UIApplication.shared.isIdleTimerDisabled = soll
+        }
+        #endif
     }
 
     /// Zweite Absicherung fuer Abrisse, bei denen VLC im Zustand Playing
@@ -1399,6 +1421,7 @@ final class VLCPlayerView: Basisansicht {
             Task { @MainActor in
                 self?.stillstandPruefen()
                 self?.anzeigeschlafZulassen()
+                self?.leerlaufsperreHalten()
                 self?.verzoegerungNachziehen()
             }
         }
@@ -2005,6 +2028,7 @@ final class VLCPlayerView: Basisansicht {
         absichtlichBeendet = true
         endgueltigGestoppt = true
         tonZurueckhalten(false)
+        leerlaufsperreHalten()
         wachhund?.invalidate()
         wachhund = nil
         startwacht?.invalidate()

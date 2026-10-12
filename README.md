@@ -187,10 +187,10 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| iPhone | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
-| iPad | **1.0.5** on the App Store · ships with the iPhone app |
-| Apple TV | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
-| Mac | **1.0.5** on the App Store · 1.0.6 in review, on TestFlight |
+| iPhone | **1.0.6** on the App Store |
+| iPad | **1.0.6** on the App Store · ships with the iPhone app |
+| Apple TV | **1.0.6** on the App Store |
+| Mac | **1.0.5** on the App Store · 1.0.6 in review |
 | Android | **1.0.6** · submitted to Google Play, beta and [APK](#android) until it is listed |
 | Android TV | **1.0.6** · same app, [join the beta](#android) or [APK](#android) |
 | Linux | **1.0.6** · [install](#linux) |
