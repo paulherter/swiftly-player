@@ -1147,7 +1147,21 @@ public final class Kern: @unchecked Sendable {
                     ?? a.flatMap { Bildwahl.quer(f, adressen: $0, breite: 1920)?.url }
                 return Folgenkartenantwort(id: f.id, name: f.name, kuerzel: kuerzel, bild: bild?.absoluteString)
             },
-            kartenbild: a.flatMap { Self.kartenbild(item, adressen: $0) }))
+            kartenbild: a.flatMap { Self.kartenbild(item, adressen: $0) },
+            dolbyVision: Self.dolbyVision(plan)))
+    }
+
+    /// Das DV-Profil der Videospur, wenn der Strom die Datei unverwandelt bringt — sonst `nil`.
+    /// Ungueltige DV-Angaben zaehlen nicht: die spielt jeder Player als Basisschicht.
+    private static func dolbyVision(_ plan: PlaybackPlan) -> Int? {
+        guard plan.method != .transcode, let spur = plan.quelle.flatMap(Dateiangaben.videospur) else { return nil }
+        switch spur.videoRangeType {
+        case .dolbyVision, .dolbyVisionHDR10, .dolbyVisionHLG, .dolbyVisionSDR, .dolbyVisionEL,
+             .dolbyVisionHDR10Plus, .dolbyVisionELHDR10Plus:
+            return spur.dvProfile ?? 0
+        default:
+            return nil
+        }
     }
     /// „MKV · 1080p · H.264 · German · AAC · Stereo" — Vorlage: `dateizeile` in
     /// `Sources/tvOS/Wiedergabeblatt.swift`. Einmal hier, damit Kotlin sie nicht selbst aus
@@ -3671,6 +3685,9 @@ struct Spielplanantwort: Encodable {
     var naechsteFolge: Folgenkartenantwort? = nil
     /// Das Bild der Uebergabe-Karte, falls das Standbild schwarz ist (`Uebernahmemodell.kartenbildURL`).
     var kartenbild: String? = nil
+    /// **Dolby Vision in der Datei, unverwandelt** — das Profil (5, 7, 8 …), 0 wenn unbekannt; `nil`
+    /// ohne DV oder bei Umwandlung. Kotlin spielt solche Dateien mit Media3, libVLC 3 zeigt nur die Basisschicht.
+    var dolbyVision: Int? = nil
 }
 struct Folgenkartenantwort: Encodable { let id, name, kuerzel: String; let bild: String? }
 struct Kontowechselantwort: Encodable {

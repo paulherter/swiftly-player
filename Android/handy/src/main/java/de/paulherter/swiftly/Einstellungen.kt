@@ -180,6 +180,12 @@ class Einstellungen(ablage: Ablage) {
      */
     var mehrkanalTon by Merkwert(a, "mehrkanalTon", bool("mehrkanalTon", false), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
+    /**
+     * **Welcher Player spielt** (`Abspieler`): `dolbyVision` — VLC, nur Dolby Vision mit ExoPlayer (Vorgabe);
+     * `exoplayer` — alles mit ExoPlayer; `vlc` — alles mit VLC, Dolby Vision dann als Basisschicht.
+     * Wirkt ab dem naechsten Oeffnen. Scheitert ExoPlayer vor dem ersten Bild, springt VLC ein.
+     */
+    var abspielwerk by Merkwert(a, "abspielwerk", a.merkwert("abspielwerk") ?: "dolbyVision") { it }
     var zurueckSekunden by Merkwert(a, "zurueckSek", zahl("zurueckSek", 10)) { it.toString() }
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }
     /** Aus, bis ihn jemand sucht — er aendert nichts an der Wiedergabe, er zeigt nur, was sie tut. */

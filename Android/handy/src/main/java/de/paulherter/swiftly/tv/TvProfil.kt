@@ -98,6 +98,11 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val bitraten = remember { wahlenLesen(Kern.bitratenstufen()) }
     val puffer = remember { JSONArray(Kern.pufferstufen()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Wahl(o.getString("wert"), o.getString("text")) } } } }
     val sekunden = remember { JSONArray(Kern.spannen()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
+    // Dieselben drei Werte wie `Einstellungen.abspielwerk`.
+    val abspielwerke = remember { listOf(
+        Wahl("dolbyVision", uebersetzt("VLC, Dolby Vision mit ExoPlayer")),
+        Wahl("exoplayer", uebersetzt("Immer ExoPlayer")),
+        Wahl("vlc", uebersetzt("Immer VLC"))) }
     val tonwahl = remember { wahlenLesen(Kern.sprachen("")) }
     val untertitelwahl = remember { wahlenLesen(Kern.sprachen(uebersetzt("Aus"))) }
     fun blatt(titel: String, eintraege: List<Wahl>, gewaehlt: String, waehlen: (String) -> Unit) {
@@ -180,6 +185,10 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             Trennlinie()
                             TvHandlung(uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
                                 blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
+                            }
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Player"), wert = abspielwerke.firstOrNull { it.wert == e.abspielwerk }?.text) {
+                                blatt(uebersetzt("Player"), abspielwerke, e.abspielwerk) { e.abspielwerk = it }
                             }
                             Trennlinie()
                             TvSchalterzeile(uebersetzt("Mehrkanal-Ton (5.1)"), e.mehrkanalTon) { e.mehrkanalTon = !e.mehrkanalTon }

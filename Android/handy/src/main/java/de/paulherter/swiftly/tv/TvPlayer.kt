@@ -162,8 +162,8 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                 Protokoll.schreib("[Player] verlassen: anhalten")
                 werk.umschalten()
             }
-            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !werk.spieler.vlcVout.areViewsAttached()) {
-                flaeche[0]?.let { werk.spieler.attachViews(it, null, true, false) }
+            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !werk.spieler.haengtAn()) {
+                flaeche[0]?.let { werk.spieler.anhaengen(it) }
             }
         }
         lebenslauf.addObserver(beobachter)
@@ -433,7 +433,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     Box(Modifier.fillMaxSize().background(Color.Black).onPreviewKeyEvent { wiedergabetaste(it) }) {
     Box(Modifier.fillMaxSize()
             .focusRequester(fernbedienung).onFocusChanged { leisteFokus = it.isFocused }.focusable().onKeyEvent { taste(it) }) {
-        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.anhaengen(it) } },
                     modifier = Modifier.fillMaxSize())
 
         if (!werk.bildFrei && werk.kartenwechsel == null) {

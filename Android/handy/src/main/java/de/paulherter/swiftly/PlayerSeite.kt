@@ -184,7 +184,9 @@ data class Spielplan(val url: String, val lossless: Boolean, val methode: String
                      /** Die naechste Folge fuer die Karte (Folgenkarte C) — Name, Kuerzel, Standbild. */
                      val naechsteFolge: Kartenfolge? = null,
                      /** Das Bild der Uebergabe-Karte, wenn das Standbild schwarz ist (`Uebernahmemodell.kartenbildURL`). */
-                     val kartenbild: String? = null)
+                     val kartenbild: String? = null,
+                     /** DV-Profil einer unverwandelten Datei (0: unbekannt), sonst `null` — dann spielt Media3 (`Abspieler`). */
+                     val dolbyVision: Int? = null)
 
 /** Handwahl je Serie oder Film — dieselben Schluessel wie `Spurgedaechtnis` im Paket. */
 private const val TON_JE_TITEL = "tonJeTitel"
@@ -207,7 +209,8 @@ internal fun spielplanLesen(json: String) = JSONObject(json).let { o ->
               o.optJSONObject("naechsteFolge")?.let { n ->
                   Kartenfolge(n.getString("id"), n.optString("name"), n.optString("kuerzel"), n.feldText("bild"))
               },
-              if (o.has("kartenbild")) o.feldText("kartenbild") else null)
+              if (o.has("kartenbild")) o.feldText("kartenbild") else null,
+              if (o.has("dolbyVision") && !o.isNull("dolbyVision")) o.getInt("dolbyVision") else null)
 }
 
 /** Was die Verzoegerungszeile zeigt — Text und Anschlaege aus `Verzoegerung` im Paket (Telefon und Fernseher). */
@@ -313,7 +316,8 @@ class Spielwerk(
             "--sub-text-scale=" + (if (app.istFernseher) 88 else 82)) +
         listOfNotNull("--stereo-mode=1".takeUnless { app.einstellungen.mehrkanalTon }) +
         listOfNotNull(Zertifikate.ordner?.let { "--gnutls-dir-trust=$it" })))
-    val spieler = MediaPlayer(vlc)
+    /** VLC fuer alles, Media3 fuer Dolby Vision (`Abspieler`). */
+    val spieler = Abspieler(kontext, vlc, app.istFernseher)
     val sitzung = MediaSession(kontext, "Swiftly")
 
     var plan by mutableStateOf<Spielplan?>(null); private set
@@ -410,7 +414,8 @@ class Spielwerk(
      * sondern nachsetzen, sobald VLC etwas anderes liest: beim Aendern, bei „spielt" und im Takt.
      */
     private fun verzoegerungNachziehen() {
-        if (!spieler.hasMedia()) return
+        // Media3 kennt keine Verzoegerung — dort bleibt sie stehen, bis wieder VLC spielt.
+        if (!spieler.hasMedia() || spieler.mitMedia3) return
         val ut = untertitelVerzoegerung.toLong()
         if (Kern.verzoegerungWeichtAb(ut, spieler.spuDelay)) {
             spieler.setSpuDelay(Kern.verzoegerungMikrosekunden(ut))
@@ -519,30 +524,32 @@ class Spielwerk(
     fun installiereEreignisListener() {
         netzBeobachten()
         tonBeobachten()
-        spieler.setEventListener { e ->
-            when (e.type) {
+        spieler.ereignisseAn { e ->
+            when (e) {
                 // **Pause und Weiter melden, wenn VLC sie meldet** — nicht im Druck, da stand noch der
                 // Zustand von davor (Audit T1-N1, wie `VLCPlayerView.laeuftGemeldet`). Einmal je Wechsel
                 // und nur fuer einen gestarteten Titel entscheidet der Kern; `Stopped` meldet nichts,
                 // das Ende geht ueber `wiedergabeBeenden`.
                 // Wer von Hand weiterspielt, holt sich den Fokus zurueck (nach einem endgueltigen Verlust).
-                MediaPlayer.Event.Playing -> {
+                Abspieler.Ereignis.Laeuft -> {
                     laeuft = true; fokusHolen(); app.kern.laufzustandGemeldet(true, stelleJetzt()); verzoegerungNachziehen()
                     if (uebergabeAufblenden) spieler.volume = 0
                 }
-                MediaPlayer.Event.Paused -> { laeuft = false; app.kern.laufzustandGemeldet(false, stelleJetzt()) }
-                MediaPlayer.Event.Stopped -> laeuft = false
-                MediaPlayer.Event.Vout -> if (e.voutCount > 0) zeigtBild[0] = true
-                MediaPlayer.Event.Buffering -> puffert = e.buffering < 100f
+                Abspieler.Ereignis.Angehalten -> { laeuft = false; app.kern.laufzustandGemeldet(false, stelleJetzt()) }
+                Abspieler.Ereignis.Gestoppt -> laeuft = false
+                Abspieler.Ereignis.Bild -> zeigtBild[0] = true
+                is Abspieler.Ereignis.Puffer -> puffert = e.prozent < 100f
                 // **Ein Abriss sieht aus wie ein Filmende** (Vorlage `zustandGewechselt` auf iOS): liegt die
                 // letzte gute Stelle deutlich vor dem Schluss, war es kein Ende, sondern ein toter Strom.
-                MediaPlayer.Event.EndReached -> { laeuft = false; if (!abriss("Ende")) ende[0] = true }
-                MediaPlayer.Event.EncounteredError -> {
+                Abspieler.Ereignis.Ende -> { laeuft = false; if (!abriss("Ende")) ende[0] = true }
+                Abspieler.Ereignis.Fehler -> {
+                    // **Media3 scheitert vor dem ersten Bild: dieselbe Datei mit VLC** — dann eben die Basisschicht.
+                    if (spieler.mitMedia3 && !bildFrei) { lauf.launch { media3Aufgeben() }; return@ereignisseAn }
                     // Vor dem ersten Bild zeigt die Oberflaeche weiter „laedt" — wenigstens das Protokoll soll es sagen.
                     if (!bildFrei) Protokoll.schreib("[VLC] Fehler vor dem ersten Bild")
                     if (!abriss("Fehler")) hinweis = uebersetzt("Die Folge konnte nicht geladen werden.")
                 }
-                MediaPlayer.Event.ESAdded -> if (e.esChangedType == IMedia.Track.Type.Text) untertitelspurNeu(e.esChangedID)
+                is Abspieler.Ereignis.TextspurNeu -> untertitelspurNeu(e.id)
             }
         }
     }
@@ -565,7 +572,7 @@ class Spielwerk(
         // Der Player ging zu, bevor die Karte ihn freigab (`Uebergabebuehne.spielerWeg`).
         plan?.itemId?.let { Uebergabe.spielerWeg(app, it) }
         spieler.stop()
-        spieler.detachViews()
+        spieler.abhaengen()
         spieler.release()
         vlc.release()
     }
@@ -660,6 +667,7 @@ class Spielwerk(
         // XviD/DivX gleich in Software: libVLC 3 gibt MPEG-4 Part 2 sonst an MediaCodec
         // (im Protokoll „using c2.android.mpeg4.decoder"), wie VLC 4 auf Apple an VideoToolbox.
         softwareDekoder = neu.softwareDekoder
+        media3Gescheitert = false
         erstbildHinweis = null
         stelltWiederHer = false
         wartetAufNetz = false
@@ -695,6 +703,27 @@ class Spielwerk(
         if (vlcAdresse != url) Protokoll.schreib("[VLC] Strom ueber den Weiterleiter")
         // Nebenher, ohne darauf zu warten: wie das Geraet den Server erreicht. Nur fuers Protokoll (`Netzprobe`).
         Netzprobe.starten(kontext, url)
+        // **ExoPlayer (Media3)** (`Abspieler`) fuer Dolby Vision, wenn Datei und Geraet es koennen — oder fuer
+        // alles, wenn so eingestellt (`abspielwerk`). Nicht nach einer Rettung mit Software-Dekoder und nicht,
+        // nachdem Media3 fuer diesen Titel schon gescheitert ist.
+        val dv = plan?.dolbyVision
+        val wahl = app.einstellungen.abspielwerk
+        val media3 = !softwareDekoder && !media3Gescheitert && when (wahl) {
+            "exoplayer" -> true
+            "vlc" -> false
+            else -> dv != null && dolbyVisionHier
+        }
+        if (media3) {
+            Protokoll.schreib("[Media3] " + (dv?.let { "Dolby Vision (Profil $it)" } ?: "ohne Dolby Vision") + ", Einstellung $wahl → Media3")
+            val untertitel = dateien.map { it.index to Stromweiterleiter.gemeinsam.adresse(it.adresse) }
+            dateien.clear()
+            spieler.media3Oeffnen(vlcAdresse, ab, untertitel)
+            spieler.play()
+            return
+        }
+        if (dv != null || wahl == "exoplayer") Protokoll.schreib("[Media3] bleibt bei VLC: " + when {
+            softwareDekoder -> "Software-Dekoder"; media3Gescheitert -> "Media3 gescheitert"
+            wahl == "vlc" -> "Einstellung VLC"; else -> "Geraet ohne DV" })
         val media = Media(vlc, Uri.parse(vlcAdresse))
         // Faellt die Verbindung kurz aus, faengt VLC sie wieder auf, statt das Ende zu melden.
         media.addOption(":http-reconnect")
@@ -713,9 +742,9 @@ class Spielwerk(
         JSONArray(Kern.pufferstufen()).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
             .firstOrNull { it.getString("wert") == app.einstellungen.pufferstufe }
             ?.takeIf { !it.isNull("netz") }?.let { media.addOption(":network-caching=${it.getInt("netz")}") }
-        spieler.media = media
+        spieler.vlcOeffnen(media)
         media.release()
-        spieler.videoScale = if (bildfuellend) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
+        spieler.bildfuellendSetzen(bildfuellend)
         digitalenTonAnwenden()
         spieler.play()
     }
@@ -798,9 +827,7 @@ class Spielwerk(
      */
     private fun tonMelden() {
         val id = spieler.audioTrack
-        val spur = spieler.media?.let { m ->
-            try { (0 until m.trackCount).mapNotNull { m.getTrack(it) }.firstOrNull { it.id == id } } finally { m.release() }
-        } as? IMedia.AudioTrack ?: return
+        val spur = spieler.spurangaben()[id]?.takeIf { it.ton } ?: return
         // Die Kennung (`i_codec`), nicht `codec`: das ist je nach libVLC eine Beschreibung. libVLC 3 meldet
         // TrueHD als `trhd`, libVLC 4 als `mlpa` (gemessen 25.09.2026).
         val codec = (0..3).map { ((spur.fourcc shr (8 * it)) and 0xFF).toChar() }.joinToString("").trim().lowercase()
@@ -813,10 +840,11 @@ class Spielwerk(
             (format == AudioFormat.ENCODING_DTS && AudioFormat.ENCODING_DTS_HD in durchgereicht))
         val weg = when {
             roh -> "durchgereicht"
-            app.einstellungen.mehrkanalTon -> "dekodiert, bis ${spur.channels} Kanaele"
+            spieler.mitMedia3 -> "Media3"
+            app.einstellungen.mehrkanalTon -> "dekodiert, bis ${spur.kanaele} Kanaele"
             else -> "dekodiert, Stereo"
         }
-        Protokoll.schreib("[Audio] beim Oeffnen: $codec ${spur.channels}ch ${spur.rate} Hz · $weg")
+        Protokoll.schreib("[Audio] beim Oeffnen: $codec ${spur.kanaele}ch ${spur.rate} Hz · $weg")
     }
 
     /**
@@ -1049,6 +1077,21 @@ class Spielwerk(
     private var erstbildGesehen = false
     /** Nach der zweiten Rettung bleibt es fuer den Titel beim Software-Dekoder, auch ueber einen Netz-Neuaufbau. */
     private var softwareDekoder = false
+    /** Media3 ist fuer diesen Titel gescheitert — er laeuft weiter mit VLC (`media3Aufgeben`). */
+    private var media3Gescheitert = false
+    /** Ein DV-Dekoder und ein Bildschirm mit DV — einmal je Player gefragt. */
+    private val dolbyVisionHier: Boolean by lazy { Abspieler.dolbyVisionMoeglich(kontext).also { Protokoll.schreib("[Media3] Geraet kann Dolby Vision: $it") } }
+
+    /** Media3 brachte kein Bild — dieselbe Stelle mit VLC (dort die Basisschicht statt nichts). */
+    private fun media3Aufgeben() {
+        val p = plan ?: return
+        media3Gescheitert = true
+        val stelle = position
+        Protokoll.schreib("[Media3] gescheitert → VLC bei ${stelle.toInt()} s")
+        stromwachtZuruecksetzen()
+        ende[0] = false
+        medienOeffnen(p.url, stelle)
+    }
     /** Bild-im-Bild: dort ist ein fehlendes Bild nicht Sache der Regel. Setzt `PlayerSeite`. */
     var kleinesFenster = false
     /** Fuer das Technikschild; `null`, solange nicht eingegriffen wurde. */
@@ -1060,11 +1103,8 @@ class Spielwerk(
         val stelle = spieler.time / 1000.0
         erstbildLauf += Kern.erstbildZuwachs(erstbildVorher, stelle)
         erstbildVorher = stelle
-        val medium = spieler.media ?: return false
-        val werte = medium.stats
-        medium.release()
-        werte ?: return false
-        val gezeigt = werte.displayedPictures.toLong() and 0xFFFFFFFFL
+        val werte = spieler.zaehler() ?: return false
+        val gezeigt = werte.displayedPictures
         if (gezeigt > 0) {
             if (!erstbildGesehen && erstbildStufe != 0)
                 Protokoll.schreib("[Bild] erstes Bild nach Rettung (Stufe $erstbildStufe) bei ${stelle.toInt()} s · Dekoder ${if (softwareDekoder) "Software" else "frei"}")
@@ -1231,11 +1271,9 @@ class Spielwerk(
         if (beendet[0] || wechselt || vonDerPlatte() || !bildFrei || !spieler.isPlaying) { stromStehtSeit = null; return }
         val t = spieler.time
         val jetzt = SystemClock.elapsedRealtime()
-        val medium = spieler.media
-        val werte = medium?.stats
-        medium?.release()
-        // Waechst der Puffer, lebt der Strom. VLC zaehlt in `int`; vorzeichenlos gelesen.
-        val gelesen = werte?.let { it.readBytes.toLong() and 0xFFFFFFFFL } ?: 0L
+        val werte = spieler.zaehler()
+        // Waechst der Puffer, lebt der Strom. VLC zaehlt in `int`; vorzeichenlos gelesen (`Abspieler.zaehler`).
+        val gelesen = werte?.readBytes ?: 0L
         if (gelesen > stromGelesen) stromPufferWuchs = jetzt
         stromGelesen = gelesen
 
@@ -1258,7 +1296,7 @@ class Spielwerk(
         letzterRat = ""
         // **Die Uhr laeuft — aber kommt auch ein Bild?** (iOS `bildfluss`, am 05.09.2026 gemessen: 76 s
         // eingefrorenes Bild bei laufender Uhr.)
-        val bilder = werte?.let { it.displayedPictures.toLong() and 0xFFFFFFFFL } ?: -1L
+        val bilder = werte?.displayedPictures ?: -1L
         if (Kern.stromwachtBilderStehen(letzteBilder, bilder)) { if (bilderStehenSeit == null) bilderStehenSeit = jetzt } else bilderStehenSeit = null
         letzteBilder = bilder
         bilderStehenSeit?.let { seit ->
@@ -1383,12 +1421,12 @@ class Spielwerk(
 
     fun tempoSetzen(neu: Float) {
         tempo = neu
-        spieler.rate = neu
+        spieler.rateSetzen(neu)
     }
 
     fun bildfuellendSetzen(neu: Boolean) {
         bildfuellend = neu
-        spieler.videoScale = if (neu) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
+        spieler.bildfuellendSetzen(neu)
         app.ablage.merken("bildfuellend", if (neu) "1" else "0")
     }
 
@@ -1419,11 +1457,13 @@ class Spielwerk(
      * nicht vor die Spur; die Spur, die nach dem Anhaengen einer Datei neu auftaucht, ist ihre.
      */
     private val dateispuren = HashMap<Int, String>()
+    /** Jellyfin-Index → MD5 der Adresse — fuer Media3, das die Dateien gleich beim Oeffnen bekommt. */
+    private val dateiMerkmale = HashMap<Long, String>()
     private var spurenGewaehlt = false
 
     /** Je Folge neu: die Dateien aus dem Plan holen und ihr Merkmal an den Kern geben. Von der Platte keine. */
     private fun dateienVorbereiten() {
-        dateien.clear(); dateiLaedt = null; dateispuren.clear(); spurenGewaehlt = false
+        dateien.clear(); dateiLaedt = null; dateispuren.clear(); dateiMerkmale.clear(); spurenGewaehlt = false
         val liste = runCatching { JSONArray(app.kern.untertiteldateien()) }.getOrNull() ?: return
         for (i in 0 until liste.length()) {
             val o = liste.getJSONObject(i)
@@ -1432,6 +1472,7 @@ class Spielwerk(
                 .joinToString("") { "%02x".format(it) }
             app.kern.untertitelmerkmalSetzen(o.getLong("index"), merkmal)
             dateien.addLast(Untertiteldatei(o.getLong("index"), adresse, merkmal))
+            dateiMerkmale[o.getLong("index")] = merkmal
         }
     }
 
@@ -1475,20 +1516,19 @@ class Spielwerk(
     /** Die Spuren einer Art als JSON fuer den Kern — mit Sprache, Codec und Kanaelen aus dem Medium, wo bekannt. */
     private fun spurenJson(ton: Boolean): String {
         val liste = (if (ton) spieler.audioTracks else spieler.spuTracks)?.filter { it.id >= 0 }.orEmpty()
-        val angaben = spieler.media?.let { m ->
-            try { (0 until m.trackCount).mapNotNull { m.getTrack(it) }.associateBy { it.id } } finally { m.release() }
-        }.orEmpty()
+        val angaben = spieler.spurangaben()
         val a = JSONArray()
         for (t in liste) {
-            val datei = dateispuren[t.id]
+            // Bei Media3 traegt die Spur einer Datei deren Jellyfin-Index (`Abspieler.Spurangabe.datei`).
+            val datei = dateispuren[t.id] ?: angaben[t.id]?.datei?.let { i -> dateiMerkmale[i]?.let { "$it/spu/0" } }
             val m = if (datei == null) angaben[t.id] else null
             a.put(JSONObject().apply {
                 put("id", t.id)
                 put("kennung", datei ?: ((if (ton) "audio/" else "spu/") + t.id))
                 put("name", t.name.orEmpty())
-                m?.language?.takeIf { it.isNotEmpty() }?.let { put("sprache", it) }
+                m?.sprache?.takeIf { it.isNotEmpty() }?.let { put("sprache", it) }
                 m?.fourcc?.takeIf { it != 0 }?.let { put("fourcc", it) }
-                (m as? IMedia.AudioTrack)?.channels?.takeIf { it > 0 }?.let { put("kanaele", it) }
+                m?.takeIf { it.ton }?.kanaele?.takeIf { it > 0 }?.let { put("kanaele", it) }
             })
         }
         return a.toString()
@@ -1546,16 +1586,13 @@ class Spielwerk(
             } }
         }
         while (true) {
-            val medium = spieler.media
-            val werte = medium?.stats
-            medium?.release()
+            // VLC zaehlt in `int` — ueber 2 GB laeuft das ueber; `Abspieler.zaehler` liest vorzeichenlos.
+            val werte = spieler.zaehler()
             if (werte != null) {
-                // VLC zaehlt in `int` — ueber 2 GB laeuft das ueber; vorzeichenlos gelesen stimmt es wieder.
-                fun roh(x: Int) = x.toLong() and 0xFFFFFFFFL
                 technikLive = JSONObject(app.kern.technikTakt(
-                    roh(werte.readBytes), roh(werte.demuxReadBytes), roh(werte.displayedPictures), roh(werte.lostPictures),
-                    roh(werte.decodedVideo), roh(werte.decodedAudio), roh(werte.playedAbuffers), roh(werte.lostAbuffers),
-                    roh(werte.demuxCorrupted), roh(werte.demuxDiscontinuity), position, spieler.isPlaying))
+                    werte.readBytes, werte.demuxReadBytes, werte.displayedPictures, werte.lostPictures,
+                    werte.decodedVideo, werte.decodedAudio, werte.playedAbuffers, werte.lostAbuffers,
+                    werte.demuxCorrupted, werte.demuxDiscontinuity, position, spieler.isPlaying))
             }
             delay(2000)
         }
@@ -1748,8 +1785,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     DisposableEffect(lebenslauf) {
         val beobachter = androidx.lifecycle.LifecycleEventObserver { _, ereignis ->
             if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) werk.hintergrundMelden()
-            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !werk.spieler.vlcVout.areViewsAttached()) {
-                flaeche[0]?.let { werk.spieler.attachViews(it, null, true, false) }
+            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !werk.spieler.haengtAn()) {
+                flaeche[0]?.let { werk.spieler.anhaengen(it) }
             }
         }
         lebenslauf.addObserver(beobachter)
@@ -1872,7 +1909,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     val fussUnten = (rand.unten + Playermass.unten).coerceAtLeast(0.dp)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; werk.videoflaeche = it; werk.spieler.anhaengen(it) } },
                     modifier = Modifier.fillMaxSize())
 
         // **Tippflaechen** — ueber dem Bild, unter der Steuerung. Vorlage `tippflaechen` + `tippen(richtung:)`:

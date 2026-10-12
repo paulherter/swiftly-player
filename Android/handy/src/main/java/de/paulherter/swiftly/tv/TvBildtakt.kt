@@ -2,8 +2,7 @@ package de.paulherter.swiftly.tv
 
 import android.app.Activity
 import android.view.Display
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.interfaces.IMedia
+import de.paulherter.swiftly.Abspieler
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -37,13 +36,11 @@ object TvBildtakt {
     /** Die einmal gemessene Bildrate der laufenden Datei, aus VLCs Videotrack. Einmal reicht — die
      * Bildrate einer Datei aendert sich nicht, und `getCurrentVideoTrack()` baut bei jedem Aufruf ein
      * frisches Objekt auf. Bis zu 40 Versuche, dann wird aufgegeben (siehe `Bildtakt.rate(von:)`). */
-    fun rate(spur: IMedia.VideoTrack?): Double? {
+    fun rate(roh: Double?): Double? {
         gemessen?.let { return it }
         if (versuche >= 40) return null
         versuche++
-        val s = spur ?: return null
-        if (s.frameRateDen <= 0) return null
-        val rate = s.frameRateNum.toDouble() / s.frameRateDen.toDouble()
+        val rate = roh ?: return null
         if (rate <= 1 || rate >= 250) return null
         gemessen = rate
         return rate
@@ -58,9 +55,9 @@ object TvBildtakt {
      * kommt von aussen (Einstellung „Bildrate anpassen") — dieselbe Fallunterscheidung wie
      * `Bildtakt.vomNutzerErlaubt`.
      */
-    fun anpassen(activity: Activity, spieler: MediaPlayer, erlaubt: Boolean) {
+    fun anpassen(activity: Activity, spieler: Abspieler, erlaubt: Boolean) {
         if (!nochNachzumessen()) return
-        val rate = rate(spieler.currentVideoTrack) ?: return
+        val rate = rate(spieler.bildrate()) ?: return
         setzen(activity, rate, erlaubt)
     }
 
