@@ -12,7 +12,12 @@ import JellyfinKit
 // of that, so values are doubled, computed and halved again, so the float height and the way out
 // are right too.
 
-struct HandoffResponse: Encodable { let reason: String; let since: Double }
+struct HandoffResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case reason = "grund"
+        case since = "ab"
+    }
+ let reason: String; let since: Double }
 
 extension Kern {
     /// **The card's image** (`TakeoverModel.cardImageURL`): for episodes the episode's image (it shows
@@ -28,10 +33,37 @@ extension Kern {
 enum HandoffPath {
     typealias K = HandoffCard
 
-    struct MetricResponse: Encodable { let width, corner, title, small, spacing: Double }
+    struct MetricResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case width = "breite"
+        case corner = "ecke"
+        case title = "titel"
+        case small = "klein"
+        case spacing = "abstand"
+    }
+ let width, corner, title, small, spacing: Double }
 
     /// Timings from the package, so Kotlin keeps none of its own.
     struct Times: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case pageUntil = "seiteBis"
+        case cardsStart = "kartenStart"
+        case float = "schweben"
+        case loadingBarOut = "ladelinieAb"
+        case loadingBarShow = "ladelinieEinblenden"
+        case loadingBarTick = "ladelinieTakt"
+        case rowsOut = "zeilenAus"
+        case blackDuration = "schwarzDauer"
+        case cardsOutFrom = "kartenAusVon"
+        case end = "ende"
+        case atMostWait = "hoechstensWarten"
+        case fade = "blende"
+        case fadeOut = "blendeAus"
+        case exitStart = "abgangStart"
+        case exitReducedEnd = "abgangReduziertEnde"
+        case waitUntil = "wartenBis"
+    }
+
         let pageUntil = K.pageUntil
         let cardsStart = K.cardsStart
         let float = K.float
@@ -52,11 +84,12 @@ enum HandoffPath {
     }
 
     struct StatusResponse: Encodable {
-        enum CodingKeys: String, CodingKey {
-            case full = "voll"
-            case idle = "ruhe"
-            case metrics = "masse"
-        }
+    enum CodingKeys: String, CodingKey {
+        case full = "voll"
+        case idle = "ruhe"
+        case metrics = "masse"
+        case times = "zeiten"
+    }
         let full: [Double]
         let idle: [Double]
         let metrics: MetricResponse

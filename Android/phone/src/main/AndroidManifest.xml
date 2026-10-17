@@ -13,7 +13,7 @@
              (rationale there). From API 24 this file overrides `usesCleartextTraffic` anyway, so the
              flag is not repeated here. -->
     <application
-        android:name=".SwiftlyAnwendung"
+        android:name=".SwiftlyApplication"
         android:label="Swiftly"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -43,7 +43,7 @@
         <!-- Within the app's task: the player lies on top and fades out on close.
                      For the small window Android moves it into its own task by itself. -->
         <activity
-            android:name=".PlayerAktivitaet"
+            android:name=".PlayerActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:launchMode="singleTask"
@@ -55,7 +55,7 @@
                      the already running activity (onNewIntent), not open a second one beside it, or the
                      app would have two page stacks at once. -->
         <activity
-            android:name=".tv.TvAktivitaet"
+            android:name=".tv.TvActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|fontScale|density|locale|layoutDirection">
@@ -73,11 +73,11 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".WiedergabeDienst"
+            android:name=".PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
         <service
-            android:name=".DownloadDienst"
+            android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <!-- "Share log": hands exactly the one file to the share sheet (`Protokolldatei`). -->

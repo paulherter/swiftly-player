@@ -36,7 +36,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 23
+        versionCode = 24
         versionName = "1.0.7"
         // **Only the ABIs the Swift core is built for** (`core/build.gradle`); on any other the app
         // crashed at startup. libVLC shipped four ABIs, x86 never worked.

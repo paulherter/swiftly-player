@@ -137,6 +137,13 @@ echo "── Katalog ───────────────────�
 python3 "$(dirname "$0")/catalog-check.py" || error=1
 echo
 
+echo "── Gespeicherte Schluessel ────────────────────────────"
+# A renamed property renames its JSON key, a renamed enum case its raw value.
+# Nothing else notices: builds and tests stay green while devices lose their
+# stored data. See the script for what it compares.
+python3 "$(dirname "$0")/codable-keys-check.py" || error=1
+echo
+
 # **The license list has one source** (`LICENSES/components.json`); the readable
 # version is generated from it. If it goes stale, the file says something
 # different from the app.

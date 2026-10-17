@@ -36,7 +36,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "23"
+    CURRENT_PROJECT_VERSION: "24"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -401,6 +401,8 @@ targets:
           an address like 192.168.1.5.
     settings:
       base:
+        # tvOS ships 1.0.8 alone (Top Shelf fix); the other targets stay on 1.0.7.
+        MARKETING_VERSION: "1.0.8"
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS: without the access group the keychain refuses
         # writes (-34018) and the login would be lost on every launch.
@@ -457,10 +459,11 @@ targets:
           - arm64
         NSExtension:
           NSExtensionPointIdentifier: com.apple.tv-top-shelf
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).RegalAnbieter
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShelfProvider
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
+        MARKETING_VERSION: "1.0.8"
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
   # The Mac version.

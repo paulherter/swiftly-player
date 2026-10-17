@@ -2740,7 +2740,13 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Quality when downloading (all from `DownloadQuality`, so Kotlin computes nothing)
 
-    private struct QualityResponse: Encodable { let id, row, badge: String }
+    private struct QualityResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case row = "zeile"
+        case badge = "plakette"
+    }
+ let id, row, badge: String }
 
     /// The steps for a choice, original first. `dateien` is JSON `[[bytes, ticks], ...]`; the
     /// highest source bitrate decides which steps make it smaller.
@@ -3166,9 +3172,27 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Download selection and progress
 
-    private struct LoadSelectionEpisode: Encodable { let id, name: String; let watched: Bool; let bytes: Int64; let ticks: Int64 }
-    private struct FootSpaceResponse: Encodable { let suffices: Bool; let bytes: Int64 }
-    private struct NextEpisodeResponse: Encodable { let id, buttonText: String }
+    private struct LoadSelectionEpisode: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case watched = "gesehen"
+        case bytes
+        case ticks
+    }
+ let id, name: String; let watched: Bool; let bytes: Int64; let ticks: Int64 }
+    private struct FootSpaceResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case suffices = "reicht"
+        case bytes
+    }
+ let suffices: Bool; let bytes: Int64 }
+    private struct NextEpisodeResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case buttonText = "knopftext"
+    }
+ let id, buttonText: String }
 
     /// The episodes of a season for `Ladeauswahl`: name, watched, and the size of the first
     /// source (`mediaSources.first.size`), as the iOS sheet reads it. Throws on a failed call:
@@ -3254,7 +3278,13 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Section offer and collections
 
-    private struct OfferingEntry: Encodable { let value: String; let name: String?; let category: Bool }
+    private struct OfferingEntry: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case value = "wert"
+        case name
+        case category = "rubrik"
+    }
+ let value: String; let name: String?; let category: Bool }
     private struct OfferingResponse: Encodable {
         enum CodingKeys: String, CodingKey {
             case isMenu = "istMenue"
@@ -3268,13 +3298,30 @@ public final class Kern: @unchecked Sendable {
         let entries: [OfferingEntry]
     }
     private struct SectionPagesResponse: Encodable {
-        enum CodingKeys: String, CodingKey {
-            case title = "titel"
-        }
+    enum CodingKeys: String, CodingKey {
+        case title = "titel"
+        case total = "gesamt"
+        case filtered = "gesiebt"
+        case evenMore = "nochMehr"
+    }
         let title: [GridTileResponse]; let total: Int; let filtered, evenMore: Bool
     }
-    private struct CollectionEntry: Encodable { let id, name: String; let poster: String?; let count: Int }
-    private struct CollectionRailsResponse: Encodable { let id, name, art: String; let title: [GridTileResponse] }
+    private struct CollectionEntry: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case poster = "plakat"
+        case count = "anzahl"
+    }
+ let id, name: String; let poster: String?; let count: Int }
+    private struct CollectionRailsResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case art
+        case title = "titel"
+    }
+ let id, name, art: String; let title: [GridTileResponse] }
 
     /// The account's libraries (`AppModel.views`), per client, so nothing of the previous account
     /// is left after an account switch.
@@ -3551,8 +3598,19 @@ struct DelayResponse: Encodable {
     let atEnd: Bool
 }
 
-struct ServerResponse: Encodable { let name, version, address: String }
-struct HomeResponse: Encodable { let rails: [RailsResponse]; let disrupted: Bool }
+struct ServerResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case address = "adresse"
+    }
+ let name, version, address: String }
+struct HomeResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case rails = "reihen"
+        case disrupted = "gestoert"
+    }
+ let rails: [RailsResponse]; let disrupted: Bool }
 struct RailsResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case titleKey = "titelSchluessel"
@@ -3572,11 +3630,19 @@ struct RailsResponse: Encodable {
     var library: String? = nil
     var collection: Bool = false
 }
-struct GridPagesResponse: Encodable { let title: [GridTileResponse]; let total: Int }
+struct GridPagesResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case title = "titel"
+        case total = "gesamt"
+    }
+ let title: [GridTileResponse]; let total: Int }
 struct GridTileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case title = "titel"
+        case type = "typ"
         case subline = "unterzeile"
+        case poster = "plakat"
         case progress = "fortschritt"
         case mark = "marke"
         case markCount = "markenzahl"
@@ -3591,12 +3657,16 @@ struct GridTileResponse: Encodable {
 struct TitleResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case name
+        case type = "typ"
+        case secondaryLine = "nebenzeile"
         case yearRuntime = "jahrLaufzeit"
         case headerImage = "kopfbild"
         case logo
         case rating = "bewertung"
         case sharing = "freigabe"
         case planPresent = "planDa"
+        case lossless
         case method = "methode"
         case resumeFrom = "fortsetzenAb"
         case resumeText = "fortsetzenText"
@@ -3606,6 +3676,7 @@ struct TitleResponse: Encodable {
         case direction = "regie"
         case actors = "darsteller"
         case remembered = "gemerkt"
+        case watched = "gesehen"
         case trailer
         case file = "datei"
         case backdrop = "kulisse"
@@ -3637,15 +3708,21 @@ struct TitleResponse: Encodable {
 struct SeriesResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case name
         case year = "jahr"
+        case seasonRow = "staffelzeile"
         case seasonCount = "staffelzahl"
         case genres = "gattungen"
+        case headerImage = "kopfbild"
         case logo
         case rating = "bewertung"
         case sharing = "freigabe"
+        case description = "beschreibung"
         case remembered = "gemerkt"
+        case watched = "gesehen"
         case trailer
         case planPresent = "planDa"
+        case lossless
         case method = "methode"
         case state = "stand"
         case buttonText = "knopftext"
@@ -3695,7 +3772,9 @@ struct SeasonResponse: Encodable { let id, name: String }
 struct EpisodesResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case title = "titel"
         case subline = "unterzeile"
+        case image = "bild"
         case progress = "fortschritt"
         case watched = "gesehen"
         case since = "ab"
@@ -3715,16 +3794,45 @@ struct EpisodesResponse: Encodable {
     let runtimeMin: Int?
     let remainingTime: String?
 }
-struct ServerCardsResponse: Encodable { let address, host: String; let active: Bool; let accounts: [AccountResponse] }
-struct AccountResponse: Encodable { let identifier, name: String; let active: Bool; let image: String? }
-struct TechRow: Encodable { let text, art: String; var key: String? = nil; var header = false }
+struct ServerCardsResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case address = "adresse"
+        case host
+        case active = "aktiv"
+        case accounts = "konten"
+    }
+ let address, host: String; let active: Bool; let accounts: [AccountResponse] }
+struct AccountResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case identifier = "kennung"
+        case name
+        case active = "aktiv"
+        case image = "bild"
+    }
+ let identifier, name: String; let active: Bool; let image: String? }
+struct TechRow: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case text
+        case art
+        case key = "schluessel"
+        case header = "kopf"
+    }
+ let text, art: String; var key: String? = nil; var header = false }
 struct TechResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case input = "eingang"
+        case demuxer
         case shows = "zeigt"
         case shown = "gezeigt"
         case should = "soll"
+        case run = "lauf"
+        case decoded = "dekodiert"
+        case reserveSeconds = "vorratSekunden"
         case reserveKiB = "vorratKiB"
+        case discarded = "verworfen"
+        case audioLost = "tonVerloren"
+        case beschaedigt
+        case jumps = "spruenge"
     }
     let input, demuxer: String?
     let shows: Double?
@@ -3732,21 +3840,38 @@ struct TechResponse: Encodable {
     let should, run, decoded, reserveSeconds: Double?
     let reserveKiB, discarded, audioLost, beschaedigt, jumps: UInt64
 }
-struct SelectionResponse: Encodable { let value, text: String }
-struct BufferResponse: Encodable { let value, text: String; let network: Int? }
+struct SelectionResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case value = "wert"
+        case text
+    }
+ let value, text: String }
+struct BufferResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case value = "wert"
+        case text
+        case network = "netz"
+    }
+ let value, text: String; let network: Int? }
 struct PlayPlanResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case url
         case lossless
         case method = "methode"
+        case title = "titel"
+        case subtitle = "untertitel"
         case next = "naechste"
         case fileRow = "dateizeile"
         case series = "serie"
+        case abbreviation = "kuerzel"
+        case image = "bild"
         case itemId
         case episode
         case seriesIdentifier = "serieId"
+        case seasonIdentifier = "staffelId"
         case headerLine = "kopfzeile"
         case seasonNr = "staffelNr"
+        case episodeNr = "folgeNr"
         case secondaryLine = "nebenzeile"
         case marks = "marken"
         case softwareDecoder = "softwareDekoder"
@@ -3778,11 +3903,24 @@ struct PlayPlanResponse: Encodable {
     /// The handover card's image if the still is black (`TakeoverModel.cardImageURL`).
     var cardImage: String? = nil
 }
-struct EpisodesCardsResponse: Encodable { let id, name, abbreviation: String; let image: String? }
+struct EpisodesCardsResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case abbreviation = "kuerzel"
+        case image = "bild"
+    }
+ let id, name, abbreviation: String; let image: String? }
 struct AccountSwitchResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case swap = "tausch"
+        case landing = "landung"
+        case paintEnd = "ringEnde"
+        case change = "wechsel"
+        case grow = "wachsen"
+        case targetSize = "zielgroesse"
         case lane = "bahn"
+        case ring
     }
     let swap, landing, paintEnd, change, grow, targetSize: Double
     let lane, ring: [Double]
@@ -3806,7 +3944,7 @@ struct EpisodesCardsMetrics: Encodable {
         case startMetric = "startmass"
         case focusMetric = "fokusmass"
         case clickPress = "klickDruck"
-        case clickDuration
+        case clickDuration = "klickDauer"
         case bottomSpacing = "untenAbstand"
     }
     let width, corner, ring, spacing, small, title: Double
@@ -3817,6 +3955,8 @@ struct SwitchResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case result = "ergebnis"
         case playbackPlan = "spielplan"
+        case error = "fehler"
+        case pendingReport = "nachmeldung"
     }
     let result: String
     var playbackPlan, error, pendingReport: String?
@@ -3835,6 +3975,7 @@ final class SwitchStore: @unchecked Sendable {
 struct TickResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case loadingScreenGone = "ladeschirmWeg"
+        case tracksApply = "spurenAnwenden"
         case position
         case offering = "angebot"
         case to = "nach"
@@ -3895,7 +4036,14 @@ struct SeerrTileResponse: Encodable {
     let state: Int
     let requestable: Bool
 }
-struct SeerrSeasonResponse: Encodable { let number, episodes, state: Int; let requestable: Bool }
+struct SeerrSeasonResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case number = "nummer"
+        case episodes = "folgen"
+        case state = "stand"
+        case requestable = "anfragbar"
+    }
+ let number, episodes, state: Int; let requestable: Bool }
 struct SeerrDetailResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case description = "beschreibung"
@@ -3919,10 +4067,18 @@ struct SeerrDetailResponse: Encodable {
     let state: Int?
     let requestable: Bool?
 }
-struct PersonResponse: Encodable { let id, name: String; let role, image: String? }
+struct PersonResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case role = "rolle"
+        case image = "bild"
+    }
+ let id, name: String; let role, image: String? }
 struct FileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case container
+        case video
         case audio = "ton"
         case subtitle = "untertitel"
         case hasSubtitle = "hatUntertitel"
@@ -3932,19 +4088,38 @@ struct FileResponse: Encodable {
     let subtitle: String
     let hasSubtitle: Bool
 }
-struct FieldResponse: Encodable { let similar: [GridTileResponse]; let extras: [ExtraResponse] }
-struct ExtraResponse: Encodable { let id, name: String; let image, runtime: String? }
+struct FieldResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case similar = "aehnliche"
+        case extras
+    }
+ let similar: [GridTileResponse]; let extras: [ExtraResponse] }
+struct ExtraResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case image = "bild"
+        case runtime = "laufzeit"
+    }
+ let id, name: String; let image, runtime: String? }
 struct LabelResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case sorting = "sortierung"
         case filter
     }
-    struct Record: Encodable { let value, text: String }
+    struct Record: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case value = "wert"
+        case text
+    }
+ let value, text: String }
     let sorting, filter: [Record]
 }
 struct TileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case name
+        case type = "typ"
         case subline = "unterzeile"
         case poster = "plakat"
         case landscape = "quer"
@@ -3994,8 +4169,19 @@ struct TileResponse: Encodable {
     let backdrop: String?
 }
 
-struct DownloadResponse: Encodable { let entries: DownloadItem; let image, seriesImage: String? }
-struct StopResponse: Encodable { let store: String; let entries: [DownloadItem] }
+struct DownloadResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case entries = "posten"
+        case image = "bild"
+        case seriesImage = "serienbild"
+    }
+ let entries: DownloadItem; let image, seriesImage: String? }
+struct StopResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case store = "ablage"
+        case entries = "posten"
+    }
+ let store: String; let entries: [DownloadItem] }
 struct SpaceResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case suffices = "reicht"
@@ -4010,13 +4196,46 @@ struct SpaceResponse: Encodable {
     let dispensableBytes: Int64
     let sufficesToCleanUp: Bool
 }
-struct DownloadGroupsResponse: Encodable { let id, title: String; let bytes: Int64; let seriesIdentifier: String?; let episodes: [String] }
-struct PlanResponse: Encodable { let lossless: Bool; let method: String }
-struct ChapterBarsResponse: Encodable { let pieces: [[Double]]; let snap: [Double] }
-struct TrickplayReply: Encodable { let width, height, tilesWide, tilesUp, count, interval: Int }
+struct DownloadGroupsResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title = "titel"
+        case bytes
+        case seriesIdentifier = "serienId"
+        case episodes = "folgen"
+    }
+ let id, title: String; let bytes: Int64; let seriesIdentifier: String?; let episodes: [String] }
+struct PlanResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case lossless
+        case method = "methode"
+    }
+ let lossless: Bool; let method: String }
+struct ChapterBarsResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case pieces = "stuecke"
+        case snap = "fang"
+    }
+ let pieces: [[Double]]; let snap: [Double] }
+struct TrickplayReply: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case width = "breite"
+        case height = "hoehe"
+        case tilesWide = "kachelnBreit"
+        case tilesUp = "kachelnHoch"
+        case count = "anzahl"
+        case interval = "intervall"
+    }
+ let width, height, tilesWide, tilesUp, count, interval: Int }
 struct OfferingReply: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
+        case itemID
+        case device = "geraet"
+        case art
+        case titleLine = "titelzeile"
+        case spot = "stelle"
+        case pointText = "stelleText"
         case image = "bild"
         case name
         case series = "serie"
@@ -4033,8 +4252,18 @@ struct OfferingReply: Encodable {
     var episodeNr: Int? = nil
 }
 
-struct RemoteCommandResponse: Encodable { let art: String; let value: Double? }
-struct SharedRequest: Encodable { let title: String; let since: Double }
+struct RemoteCommandResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case art
+        case value = "wert"
+    }
+ let art: String; let value: Double? }
+struct SharedRequest: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case title = "titel"
+        case since = "ab"
+    }
+ let title: String; let since: Double }
 
 /// Receives commands from the socket until the player picks them up. Own lock, since the
 /// socket calls from its own thread.
@@ -4113,7 +4342,30 @@ struct TrackInput: Decodable {
         return inner.isEmpty ? nil : String(inner)
     }
 }
-struct SubtitleFileResponse: Encodable { let index: Int; let address: String }
-struct TrackSelectionResponse: Encodable { let audio: Int?; let subtitle: Int }
-struct TrackName: Encodable { let id: Int; let text: String; let forced: Bool; let file: Bool; var hearingImpaired = false }
-struct TrackNamesResponse: Encodable { let audio: [TrackName]; let subtitle: [TrackName] }
+struct SubtitleFileResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case index
+        case address = "adresse"
+    }
+ let index: Int; let address: String }
+struct TrackSelectionResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case audio = "ton"
+        case subtitle = "untertitel"
+    }
+ let audio: Int?; let subtitle: Int }
+struct TrackName: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case text
+        case forced = "erzwungen"
+        case file = "datei"
+        case hearingImpaired = "hoergeschaedigt"
+    }
+ let id: Int; let text: String; let forced: Bool; let file: Bool; var hearingImpaired = false }
+struct TrackNamesResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case audio = "ton"
+        case subtitle = "untertitel"
+    }
+ let audio: [TrackName]; let subtitle: [TrackName] }

@@ -30,7 +30,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.tv-top-shelf</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).RegalAnbieter</string>
+		<string>$(PRODUCT_MODULE_NAME).ShelfProvider</string>
 	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>

@@ -241,6 +241,7 @@ struct EventResponse: Encodable {
 struct SharedResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case mayCreate = "darfAnlegen"
+        case mayJoin = "darfBeitreten"
         case offerings = "angebote"
         case group = "gruppe"
         case other = "andere"

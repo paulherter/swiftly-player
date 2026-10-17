@@ -33,6 +33,9 @@ import { join } from "node:path";
 
 const PACKAGE_NAME = "de.paulherter.swiftly";
 const KEY_FILE = join(homedir(), ".swiftly-android", "play-dienstkonto.json");
+// Google refuses an automatic review submission while a rejected release is pending in the
+// Console. PLAY_NOT_SENT=1 commits anyway; the release is then sent for review from the Console.
+const COMMIT_QUERY = process.env.PLAY_NOT_SENT === "1" ? "?changesNotSentForReview=true" : "";
 const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}`;
 const UPLOAD_API = `https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/${PACKAGE_NAME}`;
 
@@ -116,7 +119,7 @@ async function upload(file, track, notesFile, draft) {
       ...(notes ? { releaseNotes: Object.entries(notes).map(([language, text]) => ({ language, text })) } : {}),
     };
     await aufruf(token, "PUT", `${API}/edits/${edit.id}/tracks/${encodeURIComponent(track)}`, { track, releases: [release] });
-    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit`);
+    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit${COMMIT_QUERY}`);
     done = true;
     console.log(`\n${draft ? "Als Entwurf" : "Veroeffentlicht"} in „${track}": Versionscode ${bundle.versionCode}.`);
   } finally {
@@ -137,7 +140,7 @@ async function promote(versionCode, track, notesFile) {
       ...(notes ? { releaseNotes: Object.entries(notes).map(([language, text]) => ({ language, text })) } : {}),
     };
     await aufruf(token, "PUT", `${API}/edits/${edit.id}/tracks/${encodeURIComponent(track)}`, { track, releases: [release] });
-    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit`);
+    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit${COMMIT_QUERY}`);
     done = true;
     console.log(`Veroeffentlicht in „${track}": Versionscode ${versionCode}.`);
   } finally {

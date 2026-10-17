@@ -278,16 +278,24 @@ struct Choices: Codable {
     /// now called `...Device` (device-wide; the real per-server choice is in `playbackPerServer`).
     /// A file from before this change must still read and write under the old keys.
     /// `activeServer` is deliberately not here: it comes from the session, not from disk.
+    /// The raw values are the keys existing files carry; the Swift names were translated
+    /// later and must not leak into the file (`Werkzeuge/codable-keys-check.py`).
     enum CodingKeys: String, CodingKey {
         case alwaysDirectPlayDevice = "immerDirectPlay"
         case bitratesLimitDevice = "bitratenGrenze"
         case playbackPerServer = "wiedergabeJeServer"
         case audioLanguage = "tonSprache", subtitleLanguage = "untertitelSprache", subtitleAutomatic = "untertitelAutomatisch", newArrivalsDisconnected = "neuzugaengeGetrennt",
-             nextAutomaticSelected, backSeconds, forwardSeconds, progressOnTiles, titleAsLogo,
-             fillFrame, remainingTimeAsEnd, volume, volumePrior, techBadge, downloadsAn, onlyOverWLAN, bufferLevel,
-             discordShow, searchHistory, searchHistoryPerAccount, doneWatch, discordHintShown, savedGenre, startRails, startOut, startGenres,
-             genreChips, startLibrariesPerServer, sortingPerPlace, filterPerPlace, libraryPerGenre,
-             windowWidth, windowHeight, windowMaximized, surface
+             nextAutomaticSelected = "naechsteAutomatischGewaehlt", backSeconds = "zurueckSekunden",
+             forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", titleAsLogo = "titelAlsLogo",
+             fillFrame = "bildfuellend", remainingTimeAsEnd = "restzeitAlsEnde", volume = "lautstaerke",
+             volumePrior = "lautstaerkeDavor", techBadge = "technikschild", downloadsAn, onlyOverWLAN = "nurUeberWLAN",
+             bufferLevel = "pufferstufe", discordShow = "discordAnzeigen", searchHistory = "suchverlauf",
+             searchHistoryPerAccount = "suchverlaufJeKonto", doneWatch = "fertigGeschaut",
+             discordHintShown = "discordHinweisGezeigt", savedGenre = "merkgattung", startRails = "startReihen",
+             startOut = "startAus", startGenres, genreChips, startLibrariesPerServer = "startBibliothekenJeServer",
+             sortingPerPlace = "sortierungJeOrt", filterPerPlace = "filterJeOrt", libraryPerGenre = "bibliothekJeGattung",
+             windowWidth = "fensterBreite", windowHeight = "fensterHoehe", windowMaximized = "fensterMaximiert",
+             surface = "oberflaeche"
     }
 
     func encode(to encoder: Encoder) throws {
