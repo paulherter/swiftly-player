@@ -6450,6 +6450,74 @@
         }
       }
     },
+    "Player": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Player"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Player"
+          }
+        }
+      }
+    },
+    "VLC, Dolby Vision mit ExoPlayer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VLC, Dolby Vision mit ExoPlayer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VLC, Dolby Vision with ExoPlayer"
+          }
+        }
+      }
+    },
+    "Immer ExoPlayer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Immer ExoPlayer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always ExoPlayer"
+          }
+        }
+      }
+    },
+    "Immer VLC": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Immer VLC"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always VLC"
+          }
+        }
+      }
+    },
     "Qualität": {
       "extractionState": "manual",
       "localizations": {

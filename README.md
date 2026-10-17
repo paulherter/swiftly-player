@@ -249,6 +249,11 @@ Android 9 or newer. It is the same build as on Google Play, signed with the
 same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
 install it with an app like Downloader or over `adb install`.
 
+**Two APKs per release.** `Swiftly-<version>.apk` is the Play-signed build and the one to use with
+[Obtainium](https://obtainium.imranr.dev) (its default filter works as is). If Obtainium or Android shows a Play Store window
+instead of installing, use `Swiftly-<version>-upload-signed.apk` instead (filter regex `^Swiftly-.*-upload-signed\.apk$`).
+The two are signed with different keys and cannot be installed over each other: uninstall one before installing the other.
+
 **Android TV** is part of the same app and was built from the Apple TV app,
 screen by screen: the row layout on the home screen, detail pages, the profile,
 Seerr, Resume on this Device and a player made for the remote. Once you have
@@ -453,6 +458,7 @@ work it out.
 Thank you to everyone who sends code, not only reports.
 
 - **[Jens de Rond](https://github.com/Jensderond)** built chapters on the player timeline: the bar is split per chapter, the scrub preview shows the chapter name, and scrubbing snaps to chapter cuts ([#11](https://github.com/paulherter/swiftly-player/pull/11)).
+- **[dzsayow](https://github.com/dzsayow)** made Dolby Vision files play in Dolby Vision on Android: they now go through the device's own Dolby Vision decoder instead of showing only the base layer ([#14](https://github.com/paulherter/swiftly-player/pull/14)).
 
 <br>
 

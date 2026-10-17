@@ -180,6 +180,13 @@ class Settings(store: Store) {
          */
     var multiChannelAudio by RememberValue(a, "mehrkanalTon", bool("mehrkanalTon", false), yesNo)
     var bufferLevel by RememberValue(a, "pufferstufe", a.rememberValue("pufferstufe") ?: "normal") { it }
+    /**
+     * **Which engine plays** (`PlayerEngine`): `dolbyVision` is VLC, with Dolby Vision files on ExoPlayer
+     * (default); `exoplayer` is everything on ExoPlayer; `vlc` is everything on VLC, Dolby Vision then as the
+     * base layer. Takes effect the next time something opens. Media3 is used only if it can play
+     * the picture and the default sound itself (`EngineChoice`); if it fails, VLC takes over.
+     */
+    var playerEngine by RememberValue(a, "playerEngine", a.rememberValue("playerEngine") ?: "dolbyVision") { it }
     var backSeconds by RememberValue(a, "zurueckSek", figure("zurueckSek", 10)) { it.toString() }
     var forwardSeconds by RememberValue(a, "vorSek", figure("vorSek", 30)) { it.toString() }
     /** Off until someone looks for it: it changes nothing about playback, it only shows what it does. */

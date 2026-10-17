@@ -49,6 +49,7 @@ Send the request, with the version and platform you have, to info@swiftlyplayer.
 | VLC 3.0.21 runtime and plugins (Windows) | 3.0.21 | LGPL-2.1-or-later AND GPL-2.0-or-later | VideoLAN and VLC authors | https://download.videolan.org/pub/videolan/vlc/3.0.21/ | Windows |
 | libVLC of the system | as installed by your distribution (package dependency vlc / libvlc5) | LGPL-2.1-or-later | VideoLAN and VLC authors | https://www.videolan.org/vlc/ | Linux |
 | Android: libVLC contents (libvlc-all) | libvlc-all 3.6.3 | LGPL-2.1-or-later | VideoLAN and VLC authors | https://code.videolan.org/videolan/vlc-android | Android, Android TV |
+| Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui; for Dolby Vision) | 1.9.4 | Apache-2.0 | The Android Open Source Project | https://github.com/androidx/media | Android, Android TV |
 
 Notes:
 
@@ -56,6 +57,7 @@ Notes:
 - **libVLC (VLC core, libvlccore and modules)** — On Apple platforms built with --disable-gpl, without VLC's GPL modules.
 - **VLC 3.0.21 runtime and plugins (Windows)** — The official VLC 3.0.21 runtime with its plugins folder, as distributed by VideoLAN. libVLC and libvlccore are LGPL-2.1-or-later; some of the bundled plugins are GPL-2.0-or-later. See COPYING in the source archive (vlc-3.0.21.tar.xz) for the modules.
 - **libVLC of the system** — Not bundled: the app uses the libVLC that your system provides. Its source code comes from your distribution.
+- **Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui; for Dolby Vision)** — Plays Dolby Vision files through the device's own decoders; libVLC plays everything else. Used without an FFmpeg decoder extension: the Jellyfin build of that extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included.
 
 ## Application and fonts
 

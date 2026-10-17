@@ -1141,7 +1141,32 @@ public final class Kern: @unchecked Sendable {
                     ?? a.flatMap { ImageSelection.landscape(f, addresses: $0, width: 1920)?.url }
                 return EpisodesCardsResponse(id: f.id, name: f.name, abbreviation: abbreviation, image: image?.absoluteString)
             },
-            cardImage: a.flatMap { Self.cardImage(item, addresses: $0) }))
+            cardImage: a.flatMap { Self.cardImage(item, addresses: $0) },
+            dolbyVision: Self.dolbyVision(plan),
+            audioCodec: Self.defaultAudioCodec(plan)))
+    }
+
+    /// The Dolby Vision profile of the video track when the stream brings the file untouched, otherwise `nil`.
+    /// Invalid Dolby Vision data does not count: every player shows that as the base layer.
+    private static func dolbyVision(_ plan: PlaybackPlan) -> Int? {
+        guard plan.method != .transcode, let track = plan.source.flatMap(FileDetails.videoTrack) else { return nil }
+        switch track.videoRangeType {
+        case .dolbyVision, .dolbyVisionHDR10, .dolbyVisionHLG, .dolbyVisionSDR, .dolbyVisionEL,
+             .dolbyVisionHDR10Plus, .dolbyVisionElHdr10Plus:
+            return track.dvProfile ?? 0
+        default:
+            return nil
+        }
+    }
+
+    /// The codec of the audio track the server marks as default (otherwise the first), lower case
+    /// (`eac3`, `truehd` …). `""` for a file without sound, `nil` if the file is not known (from disk).
+    /// The Kotlin side needs it to decide whether ExoPlayer can play the sound without a decoder extension.
+    private static func defaultAudioCodec(_ plan: PlaybackPlan) -> String? {
+        guard let source = plan.source else { return nil }
+        let tracks = FileDetails.audioTracks(source)
+        guard let track = tracks.first(where: { $0.isDefault == true }) ?? tracks.first else { return "" }
+        return track.codec?.lowercased() ?? ""
     }
     /// "MKV · 1080p · H.264 · German · AAC · Stereo"; mirrors `fileRow` in
     /// `Sources/tvOS/Wiedergabeblatt.swift`. Built once here so Kotlin does not need to assemble
@@ -3877,6 +3902,8 @@ struct PlayPlanResponse: Encodable {
         case softwareDecoder = "softwareDekoder"
         case nextEpisode = "naechsteFolge"
         case cardImage = "kartenbild"
+        case dolbyVision
+        case audioCodec
     }
     let url: String
     let lossless: Bool
@@ -3902,6 +3929,12 @@ struct PlayPlanResponse: Encodable {
     var nextEpisode: EpisodesCardsResponse? = nil
     /// The handover card's image if the still is black (`TakeoverModel.cardImageURL`).
     var cardImage: String? = nil
+    /// **Dolby Vision in the file, unchanged**: the profile (5, 7, 8 …), 0 if unknown; `nil` without
+    /// Dolby Vision or when the server converts. Kotlin plays such files with ExoPlayer (libVLC 3 only shows
+    /// the base layer), if the device can.
+    var dolbyVision: Int? = nil
+    /// Codec of the default audio track, see `defaultAudioCodec(_:)`: `""` without sound, `nil` if unknown.
+    var audioCodec: String? = nil
 }
 struct EpisodesCardsResponse: Encodable {
     enum CodingKeys: String, CodingKey {

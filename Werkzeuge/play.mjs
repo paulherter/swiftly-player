@@ -17,6 +17,10 @@
 //       from the name of the Play release, otherwise from --fassung. With
 //       --dry-run it only reads: nothing is downloaded or uploaded.
 //       The release must already exist; an APK of the same name is not replaced.
+//       This is the Play-signed APK and keeps the plain name (existing GitHub/Obtainium
+//       users update through it). The directly built APK signed with our upload key is
+//       attached by `Werkzeuge/sideload-apk.sh` as `Swiftly-<version>-upload-signed.apk`;
+//       the two signatures differ, so they cannot be installed over each other.
 //
 // **The key lives outside the repo** (`~/.swiftly-android/play-dienstkonto.json`)
 // and is only read here, never printed. Credentials do not belong in a file in

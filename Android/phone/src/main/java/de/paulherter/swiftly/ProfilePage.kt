@@ -174,6 +174,11 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
 fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
     val e = app.settings
     val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+    // The same three values as `Settings.playerEngine`.
+    val engines = remember { listOf(
+        Choice("dolbyVision", translated("VLC, Dolby Vision mit ExoPlayer")),
+        Choice("exoplayer", translated("Immer ExoPlayer")),
+        Choice("vlc", translated("Immer VLC"))) }
     val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
     val audioChoice = remember { selectionRead(Kern.languages("")) }
@@ -229,6 +234,10 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
             // Under behavior, not quality: the buffer changes endurance, not the picture.
             ValueRow(Glyph.WlanDisruption, translated("Puffer"), value = buffer.firstOrNull { it.value == e.bufferLevel }?.text) {
                 sheet(translated("Puffer"), buffer, e.bufferLevel) { e.bufferLevel = it }
+            }
+            SeparatorLine()
+            ValueRow(Glyph.Film, translated("Player"), value = engines.firstOrNull { it.value == e.playerEngine }?.text) {
+                sheet(translated("Player"), engines, e.playerEngine) { e.playerEngine = it }
             }
             SeparatorLine()
             ChoiceRow(Glyph.Speaker, translated("Mehrkanal-Ton (5.1)"),

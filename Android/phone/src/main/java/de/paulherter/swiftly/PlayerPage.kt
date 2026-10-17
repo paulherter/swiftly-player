@@ -140,7 +140,6 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
-import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.text.NumberFormat
@@ -184,7 +183,11 @@ data class PlayPlan(val url: String, val lossless: Boolean, val method: String, 
                      /** The next episode for the card: name, short code, still image. */
                      val nextEpisode: CardsEpisode? = null,
                      /** Image for the handover card when the still frame is black (`TakeoverModel.cardImageURL`). */
-                     val cardImage: String? = null)
+                     val cardImage: String? = null,
+                     /** Dolby Vision profile of an unchanged file (0: unknown), otherwise `null` (`PlayerEngine`). */
+                     val dolbyVision: Int? = null,
+                     /** Codec of the default audio track (`eac3`, `truehd` …); `""` without sound, `null` if unknown. */
+                     val audioCodec: String? = null)
 
 /** Manual track choice per series or movie; same keys as `TrackMemory` in the package. */
 private const val AUDIO_JE_TITLE = "tonJeTitel"
@@ -207,7 +210,9 @@ internal fun playPlanRead(json: String) = JSONObject(json).let { o ->
               o.optJSONObject("naechsteFolge")?.let { n ->
                   CardsEpisode(n.getString("id"), n.optString("name"), n.optString("kuerzel"), n.fieldText("bild"))
               },
-              if (o.has("kartenbild")) o.fieldText("kartenbild") else null)
+              if (o.has("kartenbild")) o.fieldText("kartenbild") else null,
+              if (o.has("dolbyVision") && !o.isNull("dolbyVision")) o.getInt("dolbyVision") else null,
+              if (o.has("audioCodec") && !o.isNull("audioCodec")) o.getString("audioCodec") else null)
 }
 
 /** What the delay row shows: text and limits from `Delay` in the package (phone and TV). */
@@ -307,7 +312,8 @@ class PlayItem(
             "--sub-text-scale=" + (if (app.isTv) 88 else 82)) +
         listOfNotNull("--stereo-mode=1".takeUnless { app.settings.multiChannelAudio }) +
         listOfNotNull(Certificates.folder?.let { "--gnutls-dir-trust=$it" })))
-    val player = MediaPlayer(vlc)
+    /** VLC for everything, Media3 for Dolby Vision (`PlayerEngine`). */
+    val player = PlayerEngine(context, vlc, app.isTv)
     val session = MediaSession(context, "Swiftly")
 
     // MARK: VLC thread: `stop`, `setMedia`, `play` and `release` do not run on the main thread.
@@ -323,8 +329,11 @@ class PlayItem(
     private val vlcThread = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "Swiftly-VLC") }
     private val vlcJobs = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var removed = false
-    /** Nothing is queued on the VLC thread and the player is not released. Ask only on the main thread. */
-    val vlcFree: Boolean get() = !removed && vlcJobs.get() == 0
+    /**
+     * Nothing is queued on the VLC thread and the player is not released. Ask only on the main thread.
+     * While Media3 plays, VLC's queue does not matter: Media3 has its own lock-free main thread.
+     */
+    val vlcFree: Boolean get() = !removed && (player.usesMedia3 || vlcJobs.get() == 0)
 
     /** Queue at the back of the VLC thread. `false` if the player is already torn down; then nothing runs. */
     private fun inVlcThread(was: String, block: () -> Unit): Boolean {
@@ -353,7 +362,10 @@ class PlayItem(
     }
 
     /** Stop the stream without waiting for libVLC. */
-    private fun stopNow(reason: String) { inVlcThread("Stopp ($reason)") { player.stop() } }
+    private fun stopNow(reason: String) {
+        player.stopMedia3()
+        inVlcThread("Stopp ($reason)") { player.stopVlc() }
+    }
 
     /** Stop from outside (TV: Home, sleep timer) without waiting for a running stop. */
     fun halt() = vlcNowOrAfter("Pause") { player.pause() }
@@ -452,15 +464,16 @@ class PlayItem(
      * VLC reads something else: on change, on "playing" and on the tick.
      */
     private fun delayCatchUp() {
-        if (!vlcFree || !player.hasMedia()) return
+        // Media3 has no delay: it stays put until VLC plays again.
+        if (!vlcFree || player.usesMedia3 || !player.hasMedia()) return
         val ut = subtitleDelay.toLong()
         if (Kern.delaySoftFrom(ut, player.spuDelay)) {
-            player.setSpuDelay(Kern.delayMicroseconds(ut))
+            player.spuDelaySet(Kern.delayMicroseconds(ut))
             AppLog.writeOut("[Verzögerung] Untertitel $ut ms gesetzt, VLC liest ${player.spuDelay} µs")
         }
         val audio = audioDelay.toLong()
         if (Kern.delaySoftFrom(audio, player.audioDelay)) {
-            player.setAudioDelay(Kern.delayMicroseconds(audio))
+            player.audioDelaySet(Kern.delayMicroseconds(audio))
             AppLog.writeOut("[Verzögerung] Ton $audio ms gesetzt, VLC liest ${player.audioDelay} µs")
         }
     }
@@ -563,29 +576,41 @@ class PlayItem(
     fun installEventListener() {
         networkObserve()
         audioObserve()
-        player.setEventListener { e ->
-            when (e.type) {
-                // **Report pause and resume when VLC reports them**, not on the press, where the previous state was
+        player.onEvents { e ->
+            when (e) {
+                // **Report pause and resume when the engine reports them**, not on the press, where the previous state was
                 // still current (like `VLCPlayerView.runsReported`). The core decides once per change and only for
                 // a started title; `Stopped` reports nothing, the end goes through `playbackEnd`.
                 // Whoever resumes by hand takes focus back (after a permanent loss).
-                MediaPlayer.Event.Playing -> {
+                PlayerEngine.Event.Playing -> {
                     running = true; focusFetch(); app.kern.runStateReported(true, pointNow()); delayCatchUp()
                     if (handoffFadeIn) vlcNowOrAfter("stumm") { player.volume = 0 }
                 }
-                MediaPlayer.Event.Paused -> { running = false; app.kern.runStateReported(false, pointNow()) }
-                MediaPlayer.Event.Stopped -> running = false
-                MediaPlayer.Event.Vout -> if (e.voutCount > 0) showsImage[0] = true
-                MediaPlayer.Event.Buffering -> buffers = e.buffering < 100f
+                PlayerEngine.Event.Paused -> { running = false; app.kern.runStateReported(false, pointNow()) }
+                PlayerEngine.Event.Stopped -> running = false
+                PlayerEngine.Event.Frame -> showsImage[0] = true
+                is PlayerEngine.Event.Buffering -> buffers = e.percent < 100f
                 // **A dropped connection looks like end of file** (mirrors `stateSwitched` on iOS): if the last
                 // good position is well before the end, it was a dead stream, not the end.
-                MediaPlayer.Event.EndReached -> { running = false; if (!teardown("Ende")) end[0] = true }
-                MediaPlayer.Event.EncounteredError -> {
+                PlayerEngine.Event.Ended -> { running = false; if (!teardown("Ende")) end[0] = true }
+                PlayerEngine.Event.Error -> {
+                    // **Media3 fails: the same file with VLC**, the base layer then. The flag is set whenever it
+                    // fails, before or after the first frame, so a title never goes back and forth between the engines.
+                    val wasMedia3 = player.usesMedia3
+                    if (wasMedia3) {
+                        media3Failed = true
+                        if (!imageFree) { run.launch { media3GiveUp() }; return@onEvents }
+                    }
                     // Before the first frame the UI keeps showing "loading"; at least the log should say so.
                     if (!imageFree) AppLog.writeOut("[VLC] Fehler vor dem ersten Bild")
-                    if (!teardown("Fehler")) hint = translated("Die Folge konnte nicht geladen werden.")
+                    // A dead stream is rebuilt (`teardown`), and `mediaOpen` then picks VLC. Otherwise there is
+                    // nothing to rebuild: with Media3 VLC takes over at once, with VLC the viewer is told.
+                    if (!teardown("Fehler")) {
+                        if (wasMedia3) run.launch { media3GiveUp() }
+                        else hint = translated("Die Folge konnte nicht geladen werden.")
+                    }
                 }
-                MediaPlayer.Event.ESAdded -> if (e.esChangedType == IMedia.Track.Type.Text) subtitleTrackNew(e.esChangedID)
+                is PlayerEngine.Event.TextTrackNew -> subtitleTrackNew(e.id)
             }
         }
     }
@@ -609,11 +634,12 @@ class PlayItem(
         plan?.itemId?.let { Handoff.playerDistance(app, it) }
         // The main thread detaches the surface (as on moving to the background, where VLC keeps playing);
         // stop and release run on the VLC thread behind everything queued there. Afterwards it accepts nothing.
-        player.setEventListener(null)
-        player.detachViews()
+        player.onEvents(null)
+        player.detach()
+        player.media3Down()
         inVlcThread("Abbau") {
-            player.stop()
-            player.release()
+            player.stopVlc()
+            player.releaseVlc()
             vlc.release()
         }
         removed = true
@@ -709,6 +735,7 @@ class PlayItem(
         // XviD/DivX straight to software: libVLC 3 otherwise hands MPEG-4 Part 2 to MediaCodec (log:
         // "using c2.android.mpeg4.decoder"), like VLC 4 on Apple with VideoToolbox.
         softwareDecoder = new.softwareDecoder
+        media3Failed = false
         firstFrameHint = null
         restoring = false
         waitsNetwork = false
@@ -744,6 +771,32 @@ class PlayItem(
         if (vlcAddress != url) AppLog.writeOut("[VLC] Strom ueber den Weiterleiter")
         // On the side, without waiting: how the device reaches the server. Log only (`NetworkProbe`).
         NetworkProbe.start(context, url)
+        // **Media3** (`PlayerEngine`) for Dolby Vision when file and device can, or for everything if set
+        // so (`playerEngine`). Not after a rescue with the software decoder, and not once Media3 has failed
+        // for this title.
+        val dv = plan?.dolbyVision
+        val choice = app.settings.playerEngine
+        // Without a decoder extension Media3 drops a sound it cannot play without an error: the title goes to
+        // Media3 only if it can play the default sound track (`EngineChoice`). An unknown file (from disk) counts as no.
+        val audioPlayable = plan?.audioCodec?.let { PlayerEngine.audioPlayable(context, it) } ?: false
+        val media3 = EngineChoice.decide(choice, softwareDecoder, media3Failed, dv, dolbyVisionHere, audioPlayable) == EngineChoice.Engine.MEDIA3
+        if (media3) {
+            AppLog.writeOut("[Media3] " + (dv?.let { "Dolby Vision (Profil $it)" } ?: "ohne Dolby Vision") + ", Einstellung $choice → Media3")
+            val subtitles = files.map { it.index to StreamForwarder.gemeinsam.address(it.address) }
+            files.clear()
+            openGeneration++
+            // VLC lets go of the previous media on its own thread; Media3 starts at once on this one.
+            inVlcThread("Stopp (Media3)") { player.stopVlc() }
+            player.openMedia3(vlcAddress, since, subtitles)
+            player.play()
+            return
+        }
+        if (dv != null || choice == "exoplayer") AppLog.writeOut("[Media3] bleibt bei VLC: " +
+            EngineChoice.reasonVlc(choice, softwareDecoder, media3Failed, audioPlayable) + " (Ton ${plan?.audioCodec ?: "unbekannt"})")
+        player.media3Down()
+        // Main thread, before the open is queued: VLC gets its views back here, not on the VLC thread.
+        player.vlcViewsAttach()
+        val generation = ++openGeneration
         val media = Media(vlc, Uri.parse(vlcAddress))
         // If the connection drops briefly, VLC recovers instead of reporting the end.
         media.addOption(":http-reconnect")
@@ -763,13 +816,15 @@ class PlayItem(
             .firstOrNull { it.getString("wert") == app.settings.bufferLevel }
             ?.takeIf { !it.isNull("netz") }?.let { media.addOption(":network-caching=${it.getInt("netz")}") }
         // `setMedia` closes a still-open stream like `stop`, so it runs on the VLC thread behind the stop.
-        val scale = if (fillFrame) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
         val placed = inVlcThread("Oeffnen") {
-            player.media = media
+            // A newer open (VLC or Media3) came after this one while it waited: it replaces this one anyway.
+            if (generation != openGeneration) { media.release(); return@inVlcThread }
+            player.openVlc(media)
             media.release()
-            player.videoScale = scale
             digitalAudioApply()
             player.play()
+            // A fallback from Media3 starts VLC at 1x; the speed the viewer set (shown in the UI) goes on now.
+            VlcHandover.rateAfterOpen(tempo)?.let { player.rateSet(it) }
         }
         if (!placed) media.release()
     }
@@ -813,8 +868,8 @@ class PlayItem(
         if (reported.isNotEmpty()) AppLog.writeOut("[VLC] Durchreichen: ${encoding.map(::encodingName)}" +
             (reported - encoding.toSet()).takeIf { it.isNotEmpty() }?.let { r -> ", abgelehnt ${r.map(::encodingName)}" }.orEmpty())
         if (encoding.isEmpty()) return
-        player.setAudioDigitalOutputEnabled(true)
-        player.forceAudioDigitalEncodings(encoding.toIntArray())
+        player.audioDigitalOutputSet(true)
+        player.audioDigitalEncodingsForce(encoding.toIntArray())
     }
 
     /** The encodings `digitalAudioApply` last gave to VLC; for `audioReport`. */
@@ -850,9 +905,7 @@ class PlayItem(
      */
     private fun audioReport() {
         val id = player.audioTrack
-        val track = player.media?.let { m ->
-            try { (0 until m.trackCount).mapNotNull { m.getTrack(it) }.firstOrNull { it.id == id } } finally { m.release() }
-        } as? IMedia.AudioTrack ?: return
+        val track = player.trackDetails()[id]?.takeIf { it.audio } ?: return
         // The identifier (`i_codec`), not `codec`, which is a description depending on the libVLC version.
         // libVLC 3 reports TrueHD as `trhd`, libVLC 4 as `mlpa`.
         val codec = (0..3).map { ((track.fourcc shr (8 * it)) and 0xFF).toChar() }.joinToString("").trim().lowercase()
@@ -865,6 +918,7 @@ class PlayItem(
             (format == AudioFormat.ENCODING_DTS && AudioFormat.ENCODING_DTS_HD in passedOn))
         val distance = when {
             raw -> "durchgereicht"
+            player.usesMedia3 -> "Media3"
             app.settings.multiChannelAudio -> "dekodiert, bis ${track.channels} Kanaele"
             else -> "dekodiert, Stereo"
         }
@@ -1101,6 +1155,29 @@ class PlayItem(
     private var firstFrameWatched = false
     /** After the second rescue the title stays on the software decoder, also across a network rebuild. */
     private var softwareDecoder = false
+    /** Media3 has failed for this title: it keeps playing with VLC (`media3GiveUp`). */
+    private var media3Failed = false
+    /** Incremented per open; a queued VLC open from before is dropped (read on the VLC thread). */
+    @Volatile private var openGeneration = 0
+    /** A Dolby Vision decoder and a display with Dolby Vision, asked once per player. */
+    private val dolbyVisionHere: Boolean by lazy {
+        PlayerEngine.dolbyVisionPossible(context).also { AppLog.writeOut("[Media3] Gerät kann Dolby Vision: $it") }
+    }
+
+    /**
+     * Media3 failed, before the first frame or later: the same spot with VLC (the base layer there instead of
+     * nothing). `media3Failed` stays set for the title, across every later rebuild (`mediaOpen`).
+     */
+    private fun media3GiveUp() {
+        val p = plan ?: return
+        if (ended[0] || !player.usesMedia3) return
+        media3Failed = true
+        val spot = if (imageFree) pointNow() else position
+        AppLog.writeOut("[Media3] gescheitert${if (imageFree) " nach dem ersten Bild" else ""} → VLC bei ${spot.toInt()} s")
+        powerGuardBackSet()
+        end[0] = false
+        mediaOpen(p.url, spot)
+    }
     /** Picture-in-picture: a missing frame is not the rule's business there. Set by `PlayerPage`. */
     var smallWindow = false
     /** For the tech overlay; `null` as long as no intervention happened. */
@@ -1112,11 +1189,8 @@ class PlayItem(
         val spot = player.time / 1000.0
         firstFrameRun += Kern.firstFrameGrowth(firstFrameBefore, spot)
         firstFrameBefore = spot
-        val medium = player.media ?: return false
-        val values = medium.stats
-        medium.release()
-        values ?: return false
-        val shown = values.displayedPictures.toLong() and 0xFFFFFFFFL
+        val values = player.counters() ?: return false
+        val shown = values.displayedPictures
         if (shown > 0) {
             if (!firstFrameWatched && firstFrameLevel != 0)
                 AppLog.writeOut("[Bild] erstes Bild nach Rettung (Stufe $firstFrameLevel) bei ${spot.toInt()} s · Dekoder ${if (softwareDecoder) "Software" else "frei"}")
@@ -1283,11 +1357,9 @@ class PlayItem(
         if (ended[0] || switches || fromSlab() || !imageFree || !player.isPlaying) { streamStandsSince = null; return }
         val t = player.time
         val now = SystemClock.elapsedRealtime()
-        val medium = player.media
-        val values = medium?.stats
-        medium?.release()
-        // If the buffer grows, the stream is alive. VLC counts in `int`; read as unsigned.
-        val hasRead = values?.let { it.readBytes.toLong() and 0xFFFFFFFFL } ?: 0L
+        val values = player.counters()
+        // If the buffer grows, the stream is alive. VLC counts in `int`; read as unsigned (`PlayerEngine.counters`).
+        val hasRead = values?.readBytes ?: 0L
         if (hasRead > streamRead) streamBufferGrew = now
         streamRead = hasRead
 
@@ -1310,7 +1382,7 @@ class PlayItem(
         lastRat = ""
         // **The clock runs, but does a frame arrive?** (iOS `imageFlow`: measured 76 s of frozen picture with
         // a running clock.)
-        val images = values?.let { it.displayedPictures.toLong() and 0xFFFFFFFFL } ?: -1L
+        val images = values?.displayedPictures ?: -1L
         if (Kern.streamWatchImagesState(lastImages, images)) { if (imagesStateSince == null) imagesStateSince = now } else imagesStateSince = null
         lastImages = images
         imagesStateSince?.let { since ->
@@ -1435,12 +1507,12 @@ class PlayItem(
 
     fun tempoSet(new: Float) {
         tempo = new
-        player.rate = new
+        player.rateSet(new)
     }
 
     fun imageFillingSet(new: Boolean) {
         fillFrame = new
-        player.videoScale = if (new) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
+        player.fillFrameSet(new)
         app.store.remember("bildfuellend", if (new) "1" else "0")
     }
 
@@ -1471,11 +1543,13 @@ class PlayItem(
      * MD5 before the track; the track that appears new after attaching a file is its own.
      */
     private val fileTracks = HashMap<Int, String>()
+    /** Jellyfin index -> MD5 of the address, for Media3, which gets the files right when opening. */
+    private val fileAttributes = HashMap<Long, String>()
     private var tracksSelected = false
 
     /** New per episode: fetch the files from the plan and give their signature to the core. None from disk. */
     private fun filesPrepare() {
-        files.clear(); fileLoads = null; fileTracks.clear(); tracksSelected = false
+        files.clear(); fileLoads = null; fileTracks.clear(); fileAttributes.clear(); tracksSelected = false
         val list = runCatching { JSONArray(app.kern.subtitleFiles()) }.getOrNull() ?: return
         for (i in 0 until list.length()) {
             val o = list.getJSONObject(i)
@@ -1484,6 +1558,7 @@ class PlayItem(
                 .joinToString("") { "%02x".format(it) }
             app.kern.subtitleAttributeSet(o.getLong("index"), attribute)
             files.addLast(SubtitleFile(o.getLong("index"), address, attribute))
+            fileAttributes[o.getLong("index")] = attribute
         }
     }
 
@@ -1498,7 +1573,7 @@ class PlayItem(
         if (d == null) return
         tracksPreFile = player.spuTracks?.map { it.id }?.toSet().orEmpty()
         fileSince = SystemClock.elapsedRealtime()
-        val attached = player.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(StreamForwarder.gemeinsam.address(d.address)), false)
+        val attached = player.slaveAdd(IMedia.Slave.Type.Subtitle, Uri.parse(StreamForwarder.gemeinsam.address(d.address)), false)
         AppLog.writeOut("[Spuren] Datei ${d.index} angehaengt $attached, Merkmal ${d.attribute}")
         if (!attached) nextFile()
     }
@@ -1527,12 +1602,11 @@ class PlayItem(
     /** The tracks of one kind as JSON for the core, with language, codec and channels from the media where known. */
     private fun tracksJson(audio: Boolean): String {
         val list = (if (audio) player.audioTracks else player.spuTracks)?.filter { it.id >= 0 }.orEmpty()
-        val details = player.media?.let { m ->
-            try { (0 until m.trackCount).mapNotNull { m.getTrack(it) }.associateBy { it.id } } finally { m.release() }
-        }.orEmpty()
+        val details = player.trackDetails()
         val a = JSONArray()
         for (t in list) {
-            val file = fileTracks[t.id]
+            // With Media3 the track of a file carries its Jellyfin index (`TrackDetail.file`).
+            val file = fileTracks[t.id] ?: details[t.id]?.file?.let { i -> fileAttributes[i]?.let { "$it/spu/0" } }
             val m = if (file == null) details[t.id] else null
             a.put(JSONObject().apply {
                 put("id", t.id)
@@ -1540,7 +1614,7 @@ class PlayItem(
                 put("name", t.name.orEmpty())
                 m?.language?.takeIf { it.isNotEmpty() }?.let { put("sprache", it) }
                 m?.fourcc?.takeIf { it != 0 }?.let { put("fourcc", it) }
-                (m as? IMedia.AudioTrack)?.channels?.takeIf { it > 0 }?.let { put("kanaele", it) }
+                m?.takeIf { it.audio }?.channels?.takeIf { it > 0 }?.let { put("kanaele", it) }
             })
         }
         return a.toString()
@@ -1598,16 +1672,13 @@ class PlayItem(
             } }
         }
         while (true) {
-            val medium = if (vlcFree) player.media else null
-            val values = medium?.stats
-            medium?.release()
+            // VLC counts in `int`, which overflows past 2 GB; `PlayerEngine.counters` reads it unsigned.
+            val values = if (vlcFree) player.counters() else null
             if (values != null) {
-                // VLC counts in `int`, which overflows past 2 GB; read as unsigned it is correct again.
-                fun raw(x: Int) = x.toLong() and 0xFFFFFFFFL
                 techLive = JSONObject(app.kern.techTick(
-                    raw(values.readBytes), raw(values.demuxReadBytes), raw(values.displayedPictures), raw(values.lostPictures),
-                    raw(values.decodedVideo), raw(values.decodedAudio), raw(values.playedAbuffers), raw(values.lostAbuffers),
-                    raw(values.demuxCorrupted), raw(values.demuxDiscontinuity), position, player.isPlaying))
+                    values.readBytes, values.demuxReadBytes, values.displayedPictures, values.lostPictures,
+                    values.decodedVideo, values.decodedAudio, values.playedAbuffers, values.lostAbuffers,
+                    values.demuxCorrupted, values.demuxDiscontinuity, position, player.isPlaying))
             }
             delay(2000)
         }
@@ -1802,8 +1873,8 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     DisposableEffect(lifeRun) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) mediaWork.backgroundReport()
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_START && !mediaWork.player.vlcVout.areViewsAttached()) {
-                area[0]?.let { mediaWork.player.attachViews(it, null, true, false) }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START && !mediaWork.player.isAttached()) {
+                area[0]?.let { mediaWork.player.attach(it) }
             }
         }
         lifeRun.addObserver(observer)
@@ -1927,7 +1998,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     val footBottom = (margin.bottom + PlayerMetric.bottom).coerceAtLeast(0.dp)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
                     modifier = Modifier.fillMaxSize())
 
         // **Tap areas**, above the picture, below the controls. Mirrors `tapAreas` + `tippen(bearing:)`:

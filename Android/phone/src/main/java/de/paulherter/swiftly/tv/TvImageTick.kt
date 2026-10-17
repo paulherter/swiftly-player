@@ -2,8 +2,7 @@ package de.paulherter.swiftly.tv
 
 import android.app.Activity
 import android.view.Display
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.interfaces.IMedia
+import de.paulherter.swiftly.PlayerEngine
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -34,16 +33,14 @@ object TvImageTick {
     var demanded: Double? = null
         private set
 
-    /** The frame rate of the running file, measured once from VLC's video track. Once is enough: a
+    /** The frame rate of the running file, measured once from the engine (VLC's video track, or Media3's video format). Once is enough: a
          * file's frame rate does not change, and `getCurrentVideoTrack()` builds a fresh object on
          * every call. Up to 40 attempts, then give up (see `FrameTick.rate(from:)`). */
-    fun rate(track: IMedia.VideoTrack?): Double? {
+    fun rate(raw: Double?): Double? {
         measured?.let { return it }
         if (attempts >= 40) return null
         attempts++
-        val s = track ?: return null
-        if (s.frameRateDen <= 0) return null
-        val rate = s.frameRateNum.toDouble() / s.frameRateDen.toDouble()
+        val rate = raw ?: return null
         if (rate <= 1 || rate >= 250) return null
         measured = rate
         return rate
@@ -58,9 +55,9 @@ object TvImageTick {
          * from outside (the "Bildrate anpassen" setting), same case split as
          * `FrameTick.userAllowed`.
          */
-    fun adapt(activity: Activity, player: MediaPlayer, allowed: Boolean) {
+    fun adapt(activity: Activity, player: PlayerEngine, allowed: Boolean) {
         if (!stillPostMeasure()) return
-        val rate = rate(player.currentVideoTrack) ?: return
+        val rate = rate(player.frameRate()) ?: return
         setDown(activity, rate, allowed)
     }
 

@@ -1311,6 +1311,23 @@
    "pruefen": "libvlc-all 3.6.3 brings libVLC 3.0.x with its own contrib libraries (FFmpeg and others); list them in part 2."
   },
   {
+   "id": "media3",
+   "name": "Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui; for Dolby Vision)",
+   "version": "1.9.4",
+   "spdx": "Apache-2.0",
+   "urheber": "The Android Open Source Project",
+   "quelle": "https://github.com/androidx/media",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "player",
+   "notiz": "Plays Dolby Vision files through the device's own decoders; libVLC plays everything else. Used without an FFmpeg decoder extension: the Jellyfin build of that extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included."
+  },
+  {
    "id": "gtk4",
    "name": "GTK 4 and its libraries (GLib, Pango, Cairo, GdkPixbuf, HarfBuzz, FreeType, libpng and others)",
    "version": "bundled GTK 4 runtime (gvsbuild) on Windows; system library on Linux",

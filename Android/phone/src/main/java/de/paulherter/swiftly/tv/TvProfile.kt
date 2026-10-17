@@ -94,6 +94,11 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
 
     var frameRateAdapt by remember { mutableStateOf(app.store.rememberValue("bildrateAnpassen") != "0") }
     val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+    // The same three values as `Settings.playerEngine`.
+    val engines = remember { listOf(
+        Choice("dolbyVision", translated("VLC, Dolby Vision mit ExoPlayer")),
+        Choice("exoplayer", translated("Immer ExoPlayer")),
+        Choice("vlc", translated("Immer VLC"))) }
     val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
     val audioChoice = remember { selectionRead(Kern.languages("")) }
@@ -178,6 +183,10 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             SeparatorLine()
                             TvAction(translated("Puffer"), value = buffer.firstOrNull { it.value == e.bufferLevel }?.text) {
                                 sheet(translated("Puffer"), buffer, e.bufferLevel) { e.bufferLevel = it }
+                            }
+                            SeparatorLine()
+                            TvAction(translated("Player"), value = engines.firstOrNull { it.value == e.playerEngine }?.text) {
+                                sheet(translated("Player"), engines, e.playerEngine) { e.playerEngine = it }
                             }
                             SeparatorLine()
                             TvToggleRow(translated("Mehrkanal-Ton (5.1)"), e.multiChannelAudio) { e.multiChannelAudio = !e.multiChannelAudio }

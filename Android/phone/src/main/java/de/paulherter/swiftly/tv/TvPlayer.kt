@@ -159,8 +159,8 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                 AppLog.writeOut("[Player] verlassen: anhalten")
                 mediaWork.toggle()
             }
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_START && !mediaWork.player.vlcVout.areViewsAttached()) {
-                area[0]?.let { mediaWork.player.attachViews(it, null, true, false) }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START && !mediaWork.player.isAttached()) {
+                area[0]?.let { mediaWork.player.attach(it) }
             }
         }
         lifeRun.addObserver(observer)
@@ -428,7 +428,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black).onPreviewKeyEvent { playbackKey(it) }) {
     Box(Modifier.fillMaxSize()
             .focusRequester(remoteHandset).onFocusChanged { barFocus = it.isFocused }.focusable().onKeyEvent { keyButton(it) }) {
-        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
                     modifier = Modifier.fillMaxSize())
 
         if (!mediaWork.imageFree && mediaWork.cardsSwitch == null) {

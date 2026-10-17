@@ -78,6 +78,8 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.libvlc.all)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.lottie.compose)
     implementation(libs.play.review.ktx)
     implementation(libs.androidx.tvprovider)
