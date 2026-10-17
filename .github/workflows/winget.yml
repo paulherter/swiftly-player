@@ -1,10 +1,8 @@
-# Schiebt jede veroeffentlichte Fassung als Aktualisierungs-PR in
-# microsoft/winget-pkgs.
+# Submits every published release as an update PR to microsoft/winget-pkgs.
 #
-# **Was hier NICHT passiert:** die allererste Einreichung. winget-releaser
-# braucht mindestens eine bereits vorhandene Fassung im Community-Repository
-# als Vorlage - die legt Paul einmal von Hand an (siehe Verteilung/EINRICHTEN.md).
-# Erst danach bauen spaetere Laeufe darauf auf.
+# Not handled here: the very first submission. winget-releaser needs at least
+# one existing version in the community repository as a template; that one is
+# submitted by hand once (see Distribution/SETUP.md). Later runs build on it.
 
 name: winget
 

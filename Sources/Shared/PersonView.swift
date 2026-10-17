@@ -1,271 +1,259 @@
 import JellyfinKit
 import SwiftUI
 
-/// **Eine Person: wer das ist, und was es mit ihr gibt.**
+/// **A person: who this is, and what exists for them.**
 ///
-/// Ein Tipp auf einen Darsteller führte bisher nirgends hin — von einem
-/// Tester gemeldet. Aufgebaut wie die Detailseite: oben ein Banner, unten
-/// links darin Bild und Name, darunter die Rolle, über die man kam, und die
-/// Biografie. Dann zwei Reihen: was es auf dem Server gibt, und — nur mit
-/// Seerr — was sich anfragen lässt. Alles Persönliche kommt vom eigenen
-/// Server; fehlt es dort, fällt der Teil weg.
+/// Tapping a cast member used to lead nowhere. Built like the detail page: a
+/// banner on top with image and name at the bottom left, below it the role you
+/// came through, and the biography. Then two rows: what the server has, and (only
+/// with Seerr) what can be requested. Everything personal comes from the own
+/// server; if it is missing there, that part is dropped.
 ///
-/// **Das Banner wechselt** zwischen den Hintergründen der Titel dieser
-/// Person, weich und langsam. Gibt es nur einen, bleibt es bei dem.
+/// **The banner cycles** through the backdrops of this person's titles, softly and
+/// slowly. With only one, it stays.
 ///
-/// **Nichts springt nach.** Bild und Name stehen sofort da — sie kommen mit
-/// dem Tipp. Alles andere blendet gemeinsam ein, sobald beide Abrufe da sind;
-/// bis dahin stehen die Reihen als Platzhalter in ihrer Form. Vorher kamen
-/// Geburtstag, Reihen und Anfragbares nacheinander, und die Seite ruckte.
+/// **Nothing jumps in afterwards.** Image and name appear immediately, as they
+/// come with the tap. Everything else fades in together once both requests are
+/// back; until then the rows stand as placeholders in their shape. Before, birthday,
+/// rows and requestable items arrived one after another and the page jerked.
 struct PersonView: View {
     let model: AppModel
     let route: PersonRoute
 
-    @Environment(\.dismiss) private var zurueck
-    @Environment(\.breit) private var breit
-    @State private var auskunft: Item?
-    @State private var titel: [Item] = []
-    /// Eintraege, die der Server insgesamt hat, und wie viele davon schon
-    /// abgerufen sind (nicht `titel.count`: Doppelte fallen je Seite weg).
-    @State private var gesamt = 0
-    @State private var abgerufen = 0
-    @State private var laedtNach = false
-    @State private var anfragbar: [Seerrtreffer] = []
-    @State private var geladen = false
-    /// **`nil` heisst gestoert.** Vorher stand bei einem stummen Server
-    /// „Auf deinem Server gibt es sonst nichts mit …" — eine Auskunft über
-    /// eine Sammlung, die die Seite nie gesehen hatte.
-    @State private var gestoert = false
-    /// Seerr hat geantwortet — erst dann gilt „es gibt sonst nichts".
-    @State private var seerrFertig = false
-    @State private var ganzeBiografie = false
-    @State private var versatz: CGFloat = 0
+    @Environment(\.dismiss) private var back
+    @Environment(\.wide) private var wide
+    @State private var inquiry: Item?
+    @State private var title: [Item] = []
+    /// Entries the server has in total, and how many are already fetched (not
+    /// `title.count`: duplicates drop out per page).
+    @State private var total = 0
+    @State private var retrieved = 0
+    @State private var loadsPost = false
+    @State private var requestable: [SeerrHit] = []
+    @State private var loaded = false
+    /// **`nil` means failed.** With a silent server it used to say "Nothing else on
+    /// your server with ...", a statement about a collection the page never saw.
+    @State private var disrupted = false
+    /// Seerr has answered; only then does "there is nothing else" hold.
+    @State private var seerrReady = false
+    @State private var wholeBiography = false
+    @State private var offset: CGFloat = 0
     @State private var banner: [URL] = []
-    @State private var bannerStelle = 0
+    @State private var bannerPoint = 0
 
     private var person: Person { route.person }
-    private var bannerJetzt: URL? { banner.isEmpty ? nil : banner[bannerStelle % banner.count] }
+    private var bannerNow: URL? { banner.isEmpty ? nil : banner[bannerPoint % banner.count] }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // **Ein Aufbau, nicht zwei.** Breit stand hier
-                    // `Heldkopf` — der Kopf der Detailseiten, mit dem
-                    // **eckigen Plakat** links. Bei einem Titel stimmt das,
-                    // bei einem Menschen nicht: iPhone und Mac zeigen einen
-                    // runden Kopf, wie die Kacheln der Besetzung, und das
-                    // iPad zeigte als einziges ein Rechteck. Jetzt tragen
-                    // alle drei denselben Kopf; verschieden ist nur, wie
-                    // gross er ist.
-                    held
-                    // Die Rolle kommt mit dem Tipp — sie wartet auf nichts.
-                    rollenzeile
-                        .padding(.horizontal, Stil.rand(breit: breit))
+                    // **One layout, not two.** On wide screens this used `HeroHeader`, the detail
+                    // page header with the **square-cornered poster** on the left. For a title that
+                    // is right, for a person it is not: iPhone and Mac show a round head, like the
+                    // cast tiles, and the iPad alone showed a rectangle. Now all three share the
+                    // same head; only its size differs.
+                    hero
+                    // The role comes with the tap; it waits for nothing.
+                    roleRow
+                        .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 14)
-                    biografie
-                        .frame(maxWidth: breit ? Stil.lesebreite : .infinity,
+                    biography
+                        .frame(maxWidth: wide ? Theme.readWidth : .infinity,
                                alignment: .leading)
-                        .padding(.horizontal, Stil.rand(breit: breit))
-                    reihen
+                        .padding(.horizontal, Theme.margin(wide: wide))
+                    rails
                 }
-                // **Nie breiter als der Schirm.** Ein Kind, das breiter ist —
-                // beim ersten Versuch eine Reihe Platzhalterkacheln —, machte
-                // sonst die ganze Spalte so breit, und die Scrollfläche setzte
-                // sie mittig: der Inhalt stand links aus dem Bild und rutschte
-                // beim Laden an seinen Platz.
+                // **Never wider than the screen.** A child that is wider (on the first attempt
+                // a row of placeholder tiles) made the whole column that wide, and the scroll
+                // view centered it: the content stood off the left edge and slid into place on
+                // loading.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
             .ignoresSafeArea(edges: .top)
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                versatz = neu
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+                offset = new
             }
 
-            Detailkopf(titel: person.name, versatz: versatz) { zurueck() }
+            DetailHeader(title: person.name, offset: offset) { back() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .background(WischZurueck())
+        .background(SwipeBack())
         #endif
-        .task(id: person.id) { await laden() }
-        // **Die Bilder wechseln nicht mehr von allein.**
+        .task(id: person.id) { await load() }
+        // **The images no longer change on their own.**
         //
-        // Hier lief eine Schleife: alle sechs Sekunden das naechste Banner, mit
-        // 1,2 Sekunden Ueberblendung, solange die Seite offen war. Das ist die
-        // einzige Stelle der App, die sich ohne Zutun geruehrt hat — und
-        // Abschnitt 6 der Vorlage schliesst dauernde Bewegung aus: „Nichts
-        // bewegt sich dekorativ." Sie hat ausserdem „Bewegung reduzieren"
-        // ignoriert, also genau die Einstellung uebergangen, die es dafuer gibt.
+        // A loop ran here: the next banner every six seconds with a 1.2 second
+        // crossfade while the page was open. That was the only place in the app that
+        // moved without input, and section 6 of the reference rules out continuous
+        // motion ("Nothing moves decoratively"). It also ignored Reduce Motion, the very
+        // setting meant for that.
         //
-        // Es bleibt beim ersten Bild. Wer mehr sehen will, sieht die
-        // Filmografie darunter — dafuer ist die Seite da.
+        // It stays on the first image. Whoever wants more sees the filmography below,
+        // which is what the page is for.
     }
 
-    // MARK: Kopf
+    // MARK: Header
 
-    /// Das Banner wie auf der Detailseite, unten links Bild und Name.
-    private var held: some View {
+    /// The banner as on the detail page, image and name at the bottom left.
+    private var hero: some View {
         ZStack {
-            Heldbild(url: bannerJetzt, hoehe: breit ? Stil.heldHoeheBreit : Stil.heldHoehe)
-                .id(bannerStelle)
+            HeroImage(url: bannerNow, height: wide ? Theme.heroHeightWide : Theme.heroHeightValue)
+                .id(bannerPoint)
                 .transition(.opacity)
         }
-        .overlay(alignment: .bottom) { Heldauslauf() }
+        .overlay(alignment: .bottom) { HeroRunOut() }
         .overlay(alignment: .bottomLeading) {
             HStack(alignment: .bottom, spacing: 14) {
-                // Rund, weil es ein Bild ist — wie die Kacheln der Besetzung.
-                Bild(url: model.personBild(person, maxHeight: 300),
-                     breite: kopfgroesse, hoehe: kopfgroesse, ecke: kopfgroesse / 2)
+                // Round because it is a picture of a person, like the cast tiles.
+                Picture(url: model.personImage(person, maxHeight: 300),
+                     width: headerSize, height: headerSize, corner: headerSize / 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: person.name)
-                        .font(Stil.titel)
-                        .tracking(Stil.sperrungTitel)
-                        .foregroundStyle(Stil.schrift)
+                        .font(Theme.title)
+                        .tracking(Theme.lockTitle)
+                        .foregroundStyle(Theme.font)
                         .lineLimit(2)
-                    // **Die zwei Zeilen haben ihren Platz von Anfang an** und
-                    // blenden nur ein. Kamen sie erst beim Laden dazu, schoben
-                    // sie den Namen nach oben — mitten im Hereinfahren.
+                    // **The two lines have their place from the start** and only fade in. If they
+                    // were added on load they pushed the name up mid-slide.
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(verbatim: geburtszeile ?? " ")
-                        Text(verbatim: ort ?? " ")
+                        Text(verbatim: birthRow ?? " ")
+                        Text(verbatim: place ?? " ")
                     }
-                    // Geburtstag und Ort sind eine Angabe, und die steht in
-                    // der Leiter auf 12 — so wie die Nebenzeile unter jedem
-                    // Heldbild. 13 Regular ist keine Stufe.
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftLeise)
+                    // Birthday and place are one detail, and that is 12 on the scale, like the
+                    // subline under every hero image. 13 Regular is not a level.
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontQuiet)
                     .lineLimit(1)
-                    .opacity(geladen ? 1 : 0)
+                    .opacity(loaded ? 1 : 0)
                 }
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
             .padding(.bottom, 16)
         }
     }
 
-    /// Breit ein grösserer Kopf — dieselbe Form, nur auf Armlänge statt in
-    /// der Hand.
-    private var kopfgroesse: CGFloat { breit ? 104 : 76 }
+    /// Wide screens get a larger head: the same shape, at arm's length instead of in
+    /// the hand.
+    private var headerSize: CGFloat { wide ? 104 : 76 }
 
-    private var geburtszeile: String? {
-        guard let tag = auskunft?.tagesdatum, let datum = Calendar.current.date(from: tag) else { return nil }
-        return String(localized: "Geboren \(datum.formatted(date: .long, time: .omitted))")
+    private var birthRow: String? {
+        guard let tag = inquiry?.daysDate, let date = Calendar.current.date(from: tag) else { return nil }
+        return String(localized: "Geboren \(date.formatted(date: .long, time: .omitted))")
     }
 
-    private var ort: String? {
-        guard let ort = auskunft?.productionLocations?.first, !ort.isEmpty else { return nil }
-        return ort
+    private var place: String? {
+        guard let place = inquiry?.productionLocations?.first, !place.isEmpty else { return nil }
+        return place
     }
 
     @ViewBuilder
-    private var rollenzeile: some View {
-        if let rolle = person.role, !rolle.isEmpty, let herkunft = route.herkunft {
-            Text("\(rolle) in \(herkunft)")
-                // 13 Medium ist `Stil.kachel` — hier stand die Zahl.
-                .font(Stil.kachel)
-                .foregroundStyle(Stil.akzent)
+    private var roleRow: some View {
+        if let role = person.role, !role.isEmpty, let origin = route.origin {
+            Text("\(role) in \(origin)")
+                // 13 Medium is `Theme.tile`; the number stood here.
+                .font(Theme.tile)
+                .foregroundStyle(Theme.accent)
                 .lineLimit(2)
         }
     }
 
-    /// Vier Zeilen, dann „Mehr". Eine Biografie ist hier Auskunft, nicht der
-    /// Grund, die Seite zu öffnen — sie soll die Titel nicht nach unten
-    /// schieben, bevor man sie will.
+    /// Four lines, then "More". A biography is information here, not the reason to
+    /// open the page; it should not push the titles down before you want it.
     @ViewBuilder
-    private var biografie: some View {
-        if let text = auskunft?.beschreibung {
+    private var biography: some View {
+        if let text = inquiry?.description {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: text)
-                    .font(Stil.koerper)
+                    .font(Theme.body)
                     .lineSpacing(3)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(ganzeBiografie ? nil : 4)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .lineLimit(wholeBiography ? nil : 4)
                 Button {
-                    withAnimation(Stil.sprung) { ganzeBiografie.toggle() }
+                    withAnimation(Theme.leap) { wholeBiography.toggle() }
                 } label: {
-                    Text(ganzeBiografie ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
+                    Text(wholeBiography ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
                 }
-                .buttonStyle(Stil.Druckknopf())
-                // Dasselbe „Mehr" wie in `Klapptext`, also derselbe Grad: 13
-                // Medium. Semibold auf 13 steht in keiner Stufe.
-                .font(Stil.kachel)
-                .foregroundStyle(Stil.schrift)
+                .buttonStyle(Theme.PressButton())
+                // The same "More" as in `CollapsibleText`, so the same level: 13 Medium. Semibold at
+                // 13 is on no scale.
+                .font(Theme.tile)
+                .foregroundStyle(Theme.font)
             }
             .padding(.top, 14)
             .transition(.opacity)
         }
     }
 
-    // MARK: Reihen
+    // MARK: Rows
 
     @ViewBuilder
-    private var reihen: some View {
-        // **Bis zum 21.09.2026 stand hier vor `geladen` nichts.** Wer eine
-        // Person öffnete, sah Name und Bild und darunter eine leere Fläche —
-        // beim Laden, bei einer Person ohne Titel und bei einem stummen
-        // Server dieselbe. Drei Lagen, ein Bild.
-        if !geladen {
-            // **In der Form der Reihe, die kommt: Ueberschrift und Kacheln.**
-            // Vorher standen nur drei Kacheln ohne Ueberschrift da; beim
-            // Eintreffen schob die Ueberschrift alles um ihre Hoehe nach
-            // unten. Die Kacheln liegen in einer Flaeche, die nicht breiter
-            // wird als der Schirm — siehe die Spalte oben.
+    private var rails: some View {
+        // **Nothing stood in front of `loaded`.** Opening a person showed name and
+        // image and below an empty area, the same whether loading, for a person without
+        // titles, or for a silent server. Three states, one picture.
+        if !loaded {
+            // **In the shape of the row that is coming: heading and tiles.** Before, only
+            // three tiles stood there without a heading; on arrival the heading pushed
+            // everything down by its height. The tiles sit in an area no wider than the
+            // screen; see the column above.
             Color.clear
-                .frame(height: Stil.reihenHoehe(breit: breit) + 30)
-                .overlay(alignment: .topLeading) { Reihenplatzhalter() }
+                .frame(height: Theme.railsHeight(wide: wide) + 30)
+                .overlay(alignment: .topLeading) { RailsPlaceholder() }
                 .clipped()
-                .padding(.top, Stil.reihenAbstand)
+                .padding(.top, Theme.railsSpacing)
                 .transition(.opacity)
         } else {
-            if !titel.isEmpty {
-                Abschnitt(titel: "Auf deinem Server") {
-                    LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                        ForEach(titel) { item in
+            if !title.isEmpty {
+                Segment(title: "Auf deinem Server") {
+                    LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
+                        ForEach(title) { item in
                             NavigationLink(value: item) {
                                 PosterTile(model: model, item: item)
                             }
-                            .buttonStyle(Stil.Druckknopf())
-                            .kachelmenue(item, model: model)
+                            .buttonStyle(Theme.PressButton())
+                            .tileMenu(item, model: model)
                             .onAppear {
-                                guard Listenregeln.imNachladebereich(item.id, in: titel, spalten: 1)
+                                guard ListRules.postLoadSection(item.id, in: title, columns: 1)
                                 else { return }
-                                Task { await nachladen() }
+                                Task { await loadMore() }
                             }
                         }
                     }
-                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .padding(.horizontal, Theme.margin(wide: wide))
                 }
                 .transition(.opacity)
             }
-            if !anfragbar.isEmpty {
-                Abschnitt(titel: "Kann angefragt werden") {
-                    LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                        ForEach(anfragbar) { t in
+            if !requestable.isEmpty {
+                Segment(title: "Kann angefragt werden") {
+                    LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
+                        ForEach(requestable) { t in
                             NavigationLink(value: t) {
-                                Seerrkachel(treffer: t, breite: Stil.kachelBreite)
+                                SeerrTile(hit: t, width: Theme.tileWidth)
                             }
-                            .buttonStyle(Stil.Druckknopf())
+                            .buttonStyle(Theme.PressButton())
                         }
                     }
-                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .padding(.horizontal, Theme.margin(wide: wide))
                 }
                 .transition(.opacity)
             }
-            if gestoert, titel.isEmpty {
-                // Auf Seerr wird nicht gewartet: was der eigene Server sagt,
-                // ist die Hauptauskunft dieser Seite.
-                Stoerhinweis(model: model, erneut: { Task { await laden() } },
-                             abstandOben: 26)
-            } else if titel.isEmpty, anfragbar.isEmpty, seerrFertig {
+            if disrupted, title.isEmpty {
+                // Seerr is not waited for: what the own server says is this page's main
+                // answer.
+                DisturbHint(model: model, retry: { Task { await load() } },
+                             spacingTop: 26)
+            } else if title.isEmpty, requestable.isEmpty, seerrReady {
                 Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 26)
             }
         }
@@ -273,69 +261,66 @@ struct PersonView: View {
 
     // MARK: Laden
 
-    private func laden() async {
-        // **Der eigene Server zuerst, Seerr daneben.** Seerr fragt für eine
-        // Filmografie erst bei TMDB nach und braucht dafür manchmal Sekunden;
-        // auf die wartete die ganze Seite. Jetzt steht sie, sobald der Server
-        // geantwortet hat, und „Kann angefragt werden" kommt unten dazu —
-        // unten, damit sich darüber nichts verschiebt.
-        async let eigene = model.titelMitZahl(person: person.id)
+    private func load() async {
+        // **The own server first, Seerr beside it.** For a filmography Seerr asks TMDB
+        // first and sometimes needs seconds; the whole page used to wait for that. Now
+        // the page appears once the server has answered, and "Can be requested" is added
+        // below, below so nothing above shifts.
+        async let ownOnes = model.titleWithNumber(person: person.id)
         let a = await model.item(id: person.id)
-        async let fremde = filmografie(tmdb: a?.tmdbKennung)
-        let geholt = await eigene
-        // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
-        let b = geholt?.items ?? titel
+        async let foreignOnes = filmography(tmdb: a?.tmdbId)
+        let fetched = await ownOnes
+        // Failed: the page keeps what it had and says so.
+        let b = fetched?.items ?? title
 
-        // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
-        // Banner, was der erste als Ersatz hergibt.
-        var bilder = b.compactMap { model.querbildEcht(for: $0) }
-        if bilder.isEmpty, let erster = b.first, let ersatz = model.kopfbildURL(for: erster) {
-            bilder = [ersatz]
+        // Only real landscape images cycle; if none of the titles has one, the banner
+        // takes what the first offers as a substitute.
+        var images = b.compactMap { model.landscapeImageReal(for: $0) }
+        if images.isEmpty, let firstOne = b.first, let substitute = model.headerImageURL(for: firstOne) {
+            images = [substitute]
         }
 
-        // Alles vom Server in einem Zug, und weich. Nur Deckkraft: die Spalte
-        // hält ihre Breite, was neu ist, blendet an seinem Platz ein.
-        withAnimation(Stil.einblenden) {
-            auskunft = a
-            gestoert = geholt == nil
-            titel = b
-            if let geholt {
-                gesamt = geholt.gesamt
-                abgerufen = AppModel.seitengroesse
+        // Everything from the server in one go, and softly. Opacity only: the column
+        // keeps its width, and what is new fades in at its place.
+        withAnimation(Theme.reveal) {
+            inquiry = a
+            disrupted = fetched == nil
+            title = b
+            if let fetched {
+                total = fetched.total
+                retrieved = AppModel.pagesSize
             }
-            banner = bilder
-            geladen = true
+            banner = images
+            loaded = true
         }
 
-        // **Nur, was nicht schon da ist.** Seerr kennt, was es selbst
-        // verwaltet; was anders auf den Server kam, steht dort als offen —
-        // der Name fängt es ab.
-        let eigeneNamen = Set(b.map { $0.name.lowercased() })
-        let neu = await fremde.filter { !$0.stand.schonDa && !eigeneNamen.contains($0.titel.lowercased()) }
-        withAnimation(Stil.einblenden) {
-            anfragbar = neu
-            seerrFertig = true
+        // **Only what is not already there.** Seerr knows what it manages itself; what
+        // reached the server another way shows as open there. The name catches it.
+        let ownNames = Set(b.map { $0.name.lowercased() })
+        let new = await foreignOnes.filter { !$0.state.alreadyPresent && !ownNames.contains($0.title.lowercased()) }
+        withAnimation(Theme.reveal) {
+            requestable = new
+            seerrReady = true
         }
     }
 
-    /// Die naechste Seite der Filmografie — Personen in grossen Serien haben
-    /// mehr als eine.
-    private func nachladen() async {
-        guard abgerufen < gesamt, !laedtNach, geladen else { return }
-        laedtNach = true
-        defer { laedtNach = false }
-        let ab = abgerufen
-        guard let seite = await model.titelMitZahl(person: person.id, startIndex: ab),
-              ab == abgerufen else { return }
-        // Die Seite fasst nur ihre eigenen Doppelten zusammen — seitenuebergreifend
-        // faengt das Anhaengen sie nach Kennung ab.
-        titel = Listenregeln.anhaengen(seite.items, an: titel)
-        gesamt = seite.gesamt
-        abgerufen = ab + AppModel.seitengroesse
+    /// The next page of the filmography; people in big series have more than one.
+    private func loadMore() async {
+        guard retrieved < total, !loadsPost, loaded else { return }
+        loadsPost = true
+        defer { loadsPost = false }
+        let since = retrieved
+        guard let page = await model.titleWithNumber(person: person.id, startIndex: since),
+              since == retrieved else { return }
+        // The page only merges its own duplicates; across pages, appending catches them
+        // by id.
+        title = ListRules.append(page.items, an: title)
+        total = page.total
+        retrieved = since + AppModel.pagesSize
     }
 
-    private func filmografie(tmdb: Int?) async -> [Seerrtreffer] {
-        guard model.seerr.verbunden, let tmdb else { return [] }
-        return await model.seerr.filmografie(person: tmdb)
+    private func filmography(tmdb: Int?) async -> [SeerrHit] {
+        guard model.seerr.connected, let tmdb else { return [] }
+        return await model.seerr.filmography(person: tmdb)
     }
 }

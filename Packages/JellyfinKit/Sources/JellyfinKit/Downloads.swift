@@ -1,277 +1,298 @@
 import Foundation
 
-// **Was hier liegt und was nicht.**
+// **What lives here and what does not.**
 //
-// Hier stehen die Entscheidungen, die man ohne Simulator nachrechnen kann:
-// wer als Nächstes lädt, ob der Platz reicht, was entbehrlich ist, wie eine
-// Liste gruppiert wird. Der eigentliche Ladevorgang — `URLSession` im
-// Hintergrund, Wiederaufnahme, Ablage auf der Platte — steht in
-// `Sources/Shared/Downloadverwaltung.swift`, weil er ein Dateisystem und
-// einen laufenden Prozess braucht.
+// This file holds the decisions that can be checked without a simulator: who
+// loads next, whether space is enough, what is expendable, how a list is
+// grouped. The actual download (background `URLSession`, resuming, storage on
+// disk) lives in `Sources/Shared/DownloadManager.swift`, because it needs a
+// file system and a running process.
 //
-// Die Trennung ist nicht Geschmack. `Zeitannahme`, `Folgenende` und
-// `Anzeigeregeln` liegen aus demselben Grund im Paket: es sind Regeln, die
-// zwischen den Plattformen auseinanderlaufen, sobald sie niemand nachmisst.
+// The split is not a matter of taste. `TimeAssumption`, `EpisodeEnd` and
+// `DisplayRules` are in the package for the same reason: they are rules that
+// drift apart between platforms as soon as nobody checks them.
 
-/// Was ein Download gerade tut.
+/// What a download is doing right now.
 ///
-/// **Der Fortschritt steht bewusst nicht hier drin.** Ein `laedt(0.37)`
-/// waere bequem, aber der Stand wird auf die Platte geschrieben, und der
-/// Fortschritt aendert sich mehrmals je Sekunde — jede Aenderung waere ein
-/// Schreibvorgang. Wie weit es ist, sagt `Downloadposten.geladen` gegen
-/// `.bytes`; das steht daneben und wird nur beim Anhalten festgehalten.
-public enum Downloadstand: String, Codable, Sendable, Equatable, CaseIterable {
-    /// In der Schlange. H4: es laedt immer nur einer.
-    case wartet
-    /// Dieser hier ist dran.
-    case laedt
-    /// Von Hand angehalten, oder vom fehlenden WLAN angehalten.
-    case angehalten
-    case fertig
-    case fehler
+/// **Progress is deliberately not in here.** A `loads(0.37)` would be
+/// convenient, but the state is written to disk and progress changes several
+/// times a second; every change would be a write. How far along it is comes
+/// from `DownloadItem.loaded` against `.bytes`, which sits alongside and is
+/// only persisted on pause.
+public enum DownloadState: String, Codable, Sendable, Equatable, CaseIterable {
+    /// In the queue. Only one loads at a time.
+    case waits = "wartet"
+    /// This one is up.
+    case loads = "laedt"
+    /// Paused by hand, or paused by missing Wi-Fi.
+    case halted = "angehalten"
+    case done = "fertig"
+    case error = "fehler"
 }
 
-/// Ein Titel auf dem Geraet — geladen, ladend oder wartend.
+/// A title on the device: downloaded, downloading or waiting.
 ///
-/// **`konto` ist kein Beiwerk.** H11: die Ablage haengt an der `userID`, nicht
-/// an der Artikelkennung allein. Zwei Konten auf einem Server tragen dieselben
-/// Kennungen, und mit ihnen kaeme der Fortschritt des einen an den Titel des
-/// anderen — genau der Schaden, den der `Serienspeicher` einmal hatte, und
-/// dort steckte er nicht in den Titeln, sondern in `userData`.
-public struct Downloadposten: Codable, Sendable, Equatable, Identifiable {
+/// **`account` is not optional decoration.** Storage hangs on the `userID`, not on
+/// the item ID alone. Two accounts on one server carry the same IDs, and with
+/// them one account's progress would land on the other's title, exactly the
+/// damage `SeriesCache` once had, there in `userData` rather than in the
+/// titles.
+public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case account = "konto"
+        case art
+        case title = "titel"
+        case series = "serie"
+        case seriesIdentifier = "serienId"
+        case season = "staffel"
+        case episode = "folge"
+        case runtimeTicks = "laufzeitTicks"
+        case container
+        case source = "quelle"
+        case bytes
+        case quality = "qualitaet"
+        case loaded = "geladen"
+        case state = "stand"
+        case reason = "grund"
+        case watched = "gesehen"
+        case created = "angelegt"
+        case stillOnTheServer = "nochAufDemServer"
+        case sections = "abschnitte"
+        case pointTicks = "stelleTicks"
+        case recent = "zuletzt"
+        case videoCodec = "bildcodec"
+    }
 
     public enum Art: String, Codable, Sendable, Equatable {
-        case film, folge
+        case film, episode = "folge"
     }
 
-    /// Die Artikelkennung des Servers.
+    /// The server's item ID.
     public let id: String
-    /// Die `userID`, der dieser Download gehoert. H11.
-    public let konto: String
+    /// The `userID` this download belongs to.
+    public let account: String
     public let art: Art
-    public let titel: String
-    /// Bei einer Folge der Name der Serie, sonst `nil`.
-    public let serie: String?
-    public let serienId: String?
-    public let staffel: Int?
-    public let folge: Int?
-    public let laufzeitTicks: Int64?
+    public let title: String
+    /// For an episode the series name, otherwise `nil`.
+    public let series: String?
+    public let seriesIdentifier: String?
+    public let season: Int?
+    public let episode: Int?
+    public let runtimeTicks: Int64?
     public let container: String?
-    /// `mediaSourceId` — dieselbe Quelle, die der Player genommen haette.
-    public let quelle: String?
-    /// Was der Server als Groesse nennt. 0, wenn er keine nennt.
+    /// `mediaSourceId`: the same source the player would have taken.
+    public let source: String?
+    /// What the server states as size. 0 if it states none.
     ///
-    /// **Bei einer umgewandelten Datei eine Schaetzung** — bis sie fertig
-    /// ist; dann steht hier, was auf der Platte liegt. Deshalb `var`.
+    /// **An estimate for a converted file** until it is finished; then this holds
+    /// what is on disk. Hence `var`.
     public var bytes: Int64
-    /// In welcher Qualitaet geladen wird. `nil` heisst Original — so steht
-    /// es in jeder Liste von vor 1.0.5, und so bleibt es lesbar.
-    public let qualitaet: Downloadqualitaet?
+    /// The quality it loads in. `nil` means original, as in every list from before
+    /// 1.0.5, so those stay readable.
+    public let quality: DownloadQuality?
 
-    /// Wie viel davon schon auf der Platte liegt.
-    public var geladen: Int64
-    public var stand: Downloadstand
-    /// Nur gesetzt, wenn `stand == .fehler`.
-    public var grund: String?
-    /// Fuer H6: nur Gesehenes gilt als entbehrlich.
-    public var gesehen: Bool
-    public var angelegt: Date
-    /// H9. Faellt auf `false`, wenn der Server den Titel nicht mehr kennt —
-    /// die Datei bleibt, spielbar, mit einem leisen Hinweis daneben.
-    public var nochAufDemServer: Bool
+    /// How much of it is already on disk.
+    public var loaded: Int64
+    public var state: DownloadState
+    /// Only set when `state == .error`.
+    public var reason: String?
+    /// Only watched items count as expendable.
+    public var watched: Bool
+    public var created: Date
+    /// Falls to `false` when the server no longer knows the title; the file stays,
+    /// playable, with a quiet note next to it.
+    public var stillOnTheServer: Bool
 
-    // MARK: Offline (1.0.5)
+    // MARK: Offline
     //
-    // Alle drei optional und am Ende: eine Liste von vor 1.0.5 liest sich
-    // weiter, und was fehlt, holt ``Downloadregeln`` beim naechsten Kontakt
-    // mit dem Server nach.
+    // All three optional and at the end: a list from before this still reads, and
+    // whatever is missing is fetched by ``DownloadRules`` on the next contact with
+    // the server.
 
-    /// Vorspann, Rueckblick, Abspann — beim Laden mitgenommen, damit
-    /// „Intro ueberspringen" und die Karte „Naechste Folge" auch ohne Server
-    /// kommen. `nil`: nie gefragt; leer: der Server kennt keine.
-    public var abschnitte: [Abschnitt]?
-    /// Wo zuletzt aufgehoert wurde, in Ticks. `nil` heisst von vorn.
-    public var stelleTicks: Int64?
-    /// Wann zuletzt gespielt — hier auf dem Geraet oder laut Server.
-    public var zuletzt: Date?
-    /// Codec der Bildspur der geladenen Datei (``MediaSource/bildcodec``).
-    /// Offline gibt es keine Quelle, an der der Player XviD erkennt
-    /// (``Erstbild/softwareVonAnfang(bildcodec:methode:)``). `nil`: vor
-    /// dieser Angabe geladen oder umgewandelt — dann gilt die freie Wahl.
-    public var bildcodec: String?
+    /// Intro, recap, credits, taken along when downloading so "Skip intro" and the
+    /// "Next episode" card also work without a server. `nil`: never asked; empty:
+    /// the server knows none.
+    public var sections: [Segment]?
+    /// Where playback last stopped, in ticks. `nil` means from the start.
+    public var pointTicks: Int64?
+    /// When last played, on this device or per the server.
+    public var recent: Date?
+    /// Codec of the video track of the downloaded file (``MediaSource/bildcodec``).
+    /// Offline there is no source from which the player recognizes XviD
+    /// (``Erstbild/softwareFromStart(bildcodec:methode:)``). `nil`: downloaded or
+    /// converted before this field existed; free choice applies then.
+    public var videoCodec: String?
 
-    public init(id: String, konto: String, art: Art, titel: String,
-                serie: String? = nil, serienId: String? = nil,
-                staffel: Int? = nil, folge: Int? = nil,
-                laufzeitTicks: Int64? = nil, container: String? = nil,
-                quelle: String? = nil, bytes: Int64,
-                qualitaet: Downloadqualitaet? = nil,
-                geladen: Int64 = 0, stand: Downloadstand = .wartet,
-                grund: String? = nil, gesehen: Bool = false,
-                angelegt: Date = Date(), nochAufDemServer: Bool = true,
-                abschnitte: [Abschnitt]? = nil, stelleTicks: Int64? = nil,
-                zuletzt: Date? = nil, bildcodec: String? = nil) {
-        self.id = id; self.konto = konto; self.art = art; self.titel = titel
-        self.serie = serie; self.serienId = serienId
-        self.staffel = staffel; self.folge = folge
-        self.laufzeitTicks = laufzeitTicks; self.container = container
-        self.quelle = quelle; self.bytes = bytes
-        self.qualitaet = qualitaet == .original ? nil : qualitaet
-        self.geladen = geladen; self.stand = stand; self.grund = grund
-        self.gesehen = gesehen; self.angelegt = angelegt
-        self.nochAufDemServer = nochAufDemServer
-        self.abschnitte = abschnitte; self.stelleTicks = stelleTicks
-        self.zuletzt = zuletzt
-        // Eine umgewandelte Datei hat den Bildcodec des Servers, nicht den des Originals.
-        self.bildcodec = self.qualitaet == nil ? bildcodec : nil
+    public init(id: String, account: String, art: Art, title: String,
+                series: String? = nil, seriesIdentifier: String? = nil,
+                season: Int? = nil, episode: Int? = nil,
+                runtimeTicks: Int64? = nil, container: String? = nil,
+                source: String? = nil, bytes: Int64,
+                quality: DownloadQuality? = nil,
+                loaded: Int64 = 0, state: DownloadState = .waits,
+                reason: String? = nil, watched: Bool = false,
+                created: Date = Date(), stillOnTheServer: Bool = true,
+                sections: [Segment]? = nil, pointTicks: Int64? = nil,
+                recent: Date? = nil, videoCodec: String? = nil) {
+        self.id = id; self.account = account; self.art = art; self.title = title
+        self.series = series; self.seriesIdentifier = seriesIdentifier
+        self.season = season; self.episode = episode
+        self.runtimeTicks = runtimeTicks; self.container = container
+        self.source = source; self.bytes = bytes
+        self.quality = quality == .original ? nil : quality
+        self.loaded = loaded; self.state = state; self.reason = reason
+        self.watched = watched; self.created = created
+        self.stillOnTheServer = stillOnTheServer
+        self.sections = sections; self.pointTicks = pointTicks
+        self.recent = recent
+        // A converted file has the server's video codec, not the original's.
+        self.videoCodec = self.quality == nil ? videoCodec : nil
     }
 
-    /// **Der Sehstand eines Titels, wie der Server ihn kennt** — beim Anlegen
-    /// eines Downloads mitgeben, damit die Liste ihn ohne Netz zeigt.
-    public init(id: String, konto: String, art: Art, titel: String,
-                serie: String? = nil, serienId: String? = nil,
-                staffel: Int? = nil, folge: Int? = nil,
-                laufzeitTicks: Int64? = nil, container: String? = nil,
-                quelle: String? = nil, bytes: Int64,
-                sehstand: UserItemData?, bildcodec: String? = nil) {
-        self.init(id: id, konto: konto, art: art, titel: titel, serie: serie,
-                  serienId: serienId, staffel: staffel, folge: folge,
-                  laufzeitTicks: laufzeitTicks, container: container, quelle: quelle,
-                  bytes: bytes, gesehen: sehstand?.played ?? false,
-                  stelleTicks: sehstand?.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil },
-                  zuletzt: sehstand?.zuletztGespielt, bildcodec: bildcodec)
+    /// **A title's watch state as the server knows it**, passed along when creating
+    /// a download so the list shows it without network.
+    public init(id: String, account: String, art: Art, title: String,
+                series: String? = nil, seriesIdentifier: String? = nil,
+                season: Int? = nil, episode: Int? = nil,
+                runtimeTicks: Int64? = nil, container: String? = nil,
+                source: String? = nil, bytes: Int64,
+                watchState: UserItemData?, videoCodec: String? = nil) {
+        self.init(id: id, account: account, art: art, title: title, series: series,
+                  seriesIdentifier: seriesIdentifier, season: season, episode: episode,
+                  runtimeTicks: runtimeTicks, container: container, source: source,
+                  bytes: bytes, watched: watchState?.played ?? false,
+                  pointTicks: watchState?.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil },
+                  recent: watchState?.lastPlay, videoCodec: videoCodec)
     }
 
-    /// Zwischen 0 und 1. `nil`, wenn der Server keine Groesse genannt hat —
-    /// dann gibt es keinen Balken, und der Ring zeigt nur, dass es laeuft.
-    public var anteil: Double? {
+    /// Between 0 and 1. `nil` if the server stated no size; then there is no bar
+    /// and the ring only shows that it is running.
+    public var share: Double? {
         guard bytes > 0 else { return nil }
-        let wert = min(1, max(0, Double(geladen) / Double(bytes)))
-        // **Eine Schaetzung erreicht nie ganz das Ende.** Laeuft die
-        // umgewandelte Datei groesser aus als gerechnet, stuende der Ring
-        // sonst lange voll da, obwohl noch geladen wird.
-        return umgewandelt && stand != .fertig ? min(wert, 0.99) : wert
+        let value = min(1, max(0, Double(loaded) / Double(bytes)))
+        // **An estimate never quite reaches the end.** If the converted file ends up
+        // larger than calculated, the ring would otherwise sit full for a long time
+        // while still loading.
+        return converted && state != .done ? min(value, 0.99) : value
     }
 
-    /// Wird die Datei vom Server umgewandelt? Dann ist ``bytes`` bis zum
-    /// Ende geschaetzt.
-    public var umgewandelt: Bool { qualitaet.map { !$0.istOriginal } ?? false }
+    /// Is the file converted by the server? Then ``bytes`` is estimated until the
+    /// end.
+    public var converted: Bool { quality.map { !$0.isOriginal } ?? false }
 
-    /// Die gewaehlte Qualitaet, `nil` gilt als Original.
-    public var guete: Downloadqualitaet { qualitaet ?? .original }
+    /// The chosen quality; `nil` counts as original.
+    public var guete: DownloadQuality { quality ?? .original }
 
-    /// **Derselbe Posten in einer anderen Qualitaet.** Container und Groesse
-    /// aendern sich mit: eine umgewandelte Datei ist Matroska, und ihre
-    /// Groesse ist geschaetzt (``Downloadqualitaet/geschaetzteBytes(original:laufzeitTicks:)``).
-    /// Beim Original bleibt alles, wie es der Server nennt.
+    /// **The same item in another quality.** Container and size change with it: a
+    /// converted file is Matroska, and its size is estimated
+    /// (``Downloadqualitaet/estimatedBytes(original:laufzeitTicks:)``). For the
+    /// original everything stays as the server names it.
     ///
-    /// Gerufen wird es auf dem Posten, wie ihn der Katalog beschreibt — also
-    /// mit Originalgroesse und -container; die Schaetzung rechnet von dort.
-    public func inQualitaet(_ q: Downloadqualitaet) -> Downloadposten {
-        Downloadposten(
-            id: id, konto: konto, art: art, titel: titel, serie: serie, serienId: serienId,
-            staffel: staffel, folge: folge, laufzeitTicks: laufzeitTicks,
-            container: q.istOriginal ? container : Downloadqualitaet.container,
-            quelle: quelle,
-            bytes: q.geschaetzteBytes(original: bytes, laufzeitTicks: laufzeitTicks),
-            qualitaet: q, geladen: geladen, stand: stand, grund: grund, gesehen: gesehen,
-            angelegt: angelegt, nochAufDemServer: nochAufDemServer,
-            abschnitte: abschnitte, stelleTicks: stelleTicks, zuletzt: zuletzt,
-            bildcodec: bildcodec)
+    /// It is called on the item as the catalog describes it, i.e. with original
+    /// size and container; the estimate is computed from there.
+    public func inQuality(_ q: DownloadQuality) -> DownloadItem {
+        DownloadItem(
+            id: id, account: account, art: art, title: title, series: series, seriesIdentifier: seriesIdentifier,
+            season: season, episode: episode, runtimeTicks: runtimeTicks,
+            container: q.isOriginal ? container : DownloadQuality.container,
+            source: source,
+            bytes: q.estimatedBytes(original: bytes, runtimeTicks: runtimeTicks),
+            quality: q, loaded: loaded, state: state, reason: reason, watched: watched,
+            created: created, stillOnTheServer: stillOnTheServer,
+            sections: sections, pointTicks: pointTicks, recent: recent,
+            videoCodec: videoCodec)
     }
 
-    /// Ein `Item` aus dem, was hier steht — **fuer die Wiedergabe ohne Netz.**
+    /// An `Item` from what is stored here, **for playback without network.**
     ///
-    /// Der Player braucht ein `Item`, und offline gibt es keinen Server, der
-    /// eines liefert. Alles Noetige steht ohnehin im Posten: Kennung, Titel,
-    /// Laufzeit, und bei einer Folge Serie, Staffel und Nummer.
+    /// The player needs an `Item`, and offline there is no server to deliver one.
+    /// Everything needed is in the entry anyway: ID, title, runtime, and for an
+    /// episode series, season and number.
     ///
-    /// **Ausdruecklich kein Ersatz fuer den Server**, sobald einer da ist:
-    /// Handlung, Besetzung und Fortschritt fehlen. Fuer das Abspielen aus der
-    /// Downloadliste heraus braucht es sie nicht.
-    public var alsItem: Item {
-        Item(id: id, name: titel,
-             type: art == .folge ? "Episode" : "Movie",
-             runTimeTicks: laufzeitTicks,
-             seriesName: serie, indexNumber: folge,
-             parentIndexNumber: staffel, seriesId: serienId)
+    /// **Explicitly no substitute for the server** once one is there: plot, cast
+    /// and progress are missing. Playing from the download list does not need them.
+    public var asItem: Item {
+        Item(id: id, name: title,
+             type: art == .episode ? "Episode" : "Movie",
+             runTimeTicks: runtimeTicks,
+             seriesName: series, indexNumber: episode,
+             parentIndexNumber: season, seriesId: seriesIdentifier)
     }
 
-    /// Ab wo die Downloadliste abspielt: die gemerkte Stelle, sonst von vorn.
-    /// Gesehenes faengt von vorn an — wie „Nochmal ansehen" online.
-    public var fortsetzenAb: Double {
-        guard !gesehen, let t = stelleTicks, t > 0 else { return 0 }
+    /// Where the download list starts playback: the remembered position, otherwise
+    /// from the start. Watched items start over, like "Watch again" online.
+    public var resumeFrom: Double {
+        guard !watched, let t = pointTicks, t > 0 else { return 0 }
         return Double(t) / 10_000_000
     }
 
-    /// **Eine Wiedergabe auf diesem Geraet vermerken** — mit oder ohne Netz.
+    /// **Record a playback on this device**, with or without network.
     ///
-    /// Dieselben Schwellen wie der Server (`MinResumePct` 5, `MaxResumePct`
-    /// 90, Jellyfins Vorgaben): unter 5 % zaehlt nichts als Stelle, ueber 90 %
-    /// gilt der Titel als gesehen und die Stelle faellt weg. Dazwischen bleibt
-    /// „gesehen", wie es war — auch das haelt der Server so. So zeigt die
-    /// Liste offline, was sie nach dem Wiederverbinden vom Server hoeren wird.
-    public func nachWiedergabe(ticks: Int64, wann: Date) -> Downloadposten {
+    /// Same thresholds as the server (`MinResumePct` 5, `MaxResumePct` 90, Jellyfin's
+    /// defaults): below 5% nothing counts as a position, above 90% the title counts
+    /// as watched and the position is dropped. In between "watched" stays as it
+    /// was, which the server also does. So the list shows offline what it will hear
+    /// from the server after reconnecting.
+    public func postPlayback(ticks: Int64, moment: Date) -> DownloadItem {
         var p = self
-        p.zuletzt = wann
-        guard let laufzeit = laufzeitTicks, laufzeit > 0 else {
-            p.stelleTicks = ticks > 0 ? ticks : nil
+        p.recent = moment
+        guard let runtime = runtimeTicks, runtime > 0 else {
+            p.pointTicks = ticks > 0 ? ticks : nil
             return p
         }
-        let anteil = Double(ticks) / Double(laufzeit)
-        if anteil >= Downloadregeln.gesehenAb {
-            p.gesehen = true
-            p.stelleTicks = nil
-        } else if anteil < Downloadregeln.stelleAb {
-            p.stelleTicks = nil
+        let share = Double(ticks) / Double(runtime)
+        if share >= DownloadRules.watchedOff {
+            p.watched = true
+            p.pointTicks = nil
+        } else if share < DownloadRules.pointOff {
+            p.pointTicks = nil
         } else {
-            p.stelleTicks = ticks
+            p.pointTicks = ticks
         }
         return p
     }
 
-    /// Der Dateiname auf der Platte. Konto und Kennung, damit zwei Konten
-    /// sich nicht ins Gehege kommen (H11), und die Endung des Containers,
-    /// damit VLC den Demuxer erraet — bei Matroska haengt daran
-    /// `:demux=mkv_trusted`, siehe `VLCPlayer.play`.
+    /// The file name on disk. Account and ID so two accounts do not collide, and
+    /// the container's extension so VLC guesses the demuxer; for Matroska
+    /// `:demux=mkv_trusted` hangs on that, see `VLCPlayer.play`.
     ///
-    /// Alle drei Teile kommen vom Server und gehen durch ``Pfadteil`` —
-    /// ein boeswilliger Server bekommt so keinen Pfad aus dem Ordner heraus.
-    public var dateiname: String {
-        let endung = Pfadteil.endung(container).map { "." + $0 } ?? ""
-        return "\(Pfadteil.sicher(konto))-\(Pfadteil.sicher(id))\(endung)"
+    /// All three parts come from the server and pass through ``PathPart``, so a
+    /// malicious server cannot get a path out of the folder.
+    public var fileName: String {
+        let suffix = PathPart.suffix(container).map { "." + $0 } ?? ""
+        return "\(PathPart.safe(account))-\(PathPart.safe(id))\(suffix)"
     }
 
-    /// Der Name des Bildes auf der Platte, neben der Datei.
-    public static func bildname(konto: String, kennung: String) -> String {
-        "\(Pfadteil.sicher(konto))-\(Pfadteil.sicher(kennung)).jpg"
+    /// The name of the image on disk, next to the file.
+    public static func imageName(account: String, identifier: String) -> String {
+        "\(PathPart.safe(account))-\(PathPart.safe(identifier)).jpg"
     }
 }
 
-/// **Ein Stueck Dateiname aus Serverdaten** — nie ein Weg aus dem Ordner.
+/// **A piece of a file name from server data**, never a way out of the folder.
 ///
-/// Kennungen (Jellyfin-GUIDs) und Endungen bleiben, wie sie sind; alles
-/// andere wird so entschaerft, dass kein `/`, `\`, `..` oder
-/// Steuerzeichen im Dateinamen landet. Echte Werte aendern sich dadurch
-/// nicht — bestehende Downloads werden weiter gefunden.
-public enum Pfadteil {
-    /// Buchstaben, Ziffern, `-` und `_` bleiben; jedes andere Zeichen wird
-    /// `_`. Leer wird `_`.
-    public static func sicher(_ teil: String) -> String {
-        let erlaubt = teil.unicodeScalars.map { z -> Character in
+/// IDs (Jellyfin GUIDs) and extensions stay as they are; everything else is
+/// defused so no `/`, `\`, `..` or control character lands in the file name.
+/// Real values do not change, so existing downloads are still found.
+public enum PathPart {
+    /// Letters, digits, `-` and `_` stay; every other character becomes `_`. Empty
+    /// becomes `_`.
+    public static func safe(_ part: String) -> String {
+        let allowed = part.unicodeScalars.map { z -> Character in
             switch z {
             case "a"..."z", "A"..."Z", "0"..."9", "-", "_": Character(z)
             default: "_"
             }
         }
-        return erlaubt.isEmpty ? "_" : String(erlaubt)
+        return allowed.isEmpty ? "_" : String(allowed)
     }
 
-    /// Sieht das aus wie eine Jellyfin-Kennung (GUID, mit oder ohne
-    /// Bindestriche)? Fuer Kennungen, die von aussen kommen — ein
-    /// `swiftly://titel/<id>`-Link —, bevor sie in eine Serveradresse gehen:
-    /// ein `..%2F..` darin wuerde sonst einen anderen Endpunkt treffen.
-    public static func istKennung(_ text: String) -> Bool {
+    /// Does this look like a Jellyfin ID (GUID, with or without hyphens)? For IDs
+    /// that come from outside, such as a `swiftly://titel/<id>` link, before they
+    /// go into a server address: a `..%2F..` in it would otherwise hit another
+    /// endpoint.
+    public static func isId(_ text: String) -> Bool {
         (1...64).contains(text.count)
             && text.unicodeScalars.allSatisfy {
                 ("a"..."z").contains($0) || ("A"..."Z").contains($0)
@@ -279,428 +300,416 @@ public enum Pfadteil {
             }
     }
 
-    /// Die Endung aus dem Container des Servers: `[a-z0-9]{1,8}`, sonst
-    /// `nil` (dann ohne Endung, wie bei fehlendem Container). Eine Liste wie
-    /// `mov,mp4,m4a` bleibt erlaubt, solange jedes Glied passt — so heissen
-    /// schon geladene Dateien, und ein Komma fuehrt nirgendwohin.
-    public static func endung(_ container: String?) -> String? {
+    /// The extension from the server's container: `[a-z0-9]{1,8}`, otherwise `nil`
+    /// (then no extension, as with a missing container). A list like `mov,mp4,m4a`
+    /// stays allowed as long as every member fits: that is how already downloaded
+    /// files are named, and a comma leads nowhere.
+    public static func suffix(_ container: String?) -> String? {
         guard let c = container?.lowercased(), !c.isEmpty else { return nil }
-        let glieder = c.split(separator: ",", omittingEmptySubsequences: false)
-        let passt = glieder.allSatisfy { g in
+        let elements = c.split(separator: ",", omittingEmptySubsequences: false)
+        let fits = elements.allSatisfy { g in
             (1...8).contains(g.count)
                 && g.unicodeScalars.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) }
         }
-        return passt ? c : nil
+        return fits ? c : nil
     }
 }
 
-/// Eine Zeile in der Downloadliste. H12: eine Serie ist **eine** Zeile.
-public enum Downloadgruppe: Sendable, Equatable, Identifiable {
-    case einzeln(Downloadposten)
-    case serie(id: String, titel: String, folgen: [Downloadposten])
+/// A row in the download list. A series is **one** row.
+public enum DownloadGroup: Sendable, Equatable, Identifiable {
+    case single(DownloadItem)
+    case series(id: String, title: String, episodes: [DownloadItem])
 
     public var id: String {
         switch self {
-        case let .einzeln(p): p.id
-        case let .serie(id, _, _): "serie-" + id
+        case let .single(p): p.id
+        case let .series(id, _, _): "serie-" + id
         }
     }
 
-    public var titel: String {
+    public var title: String {
         switch self {
-        case let .einzeln(p): p.titel
-        case let .serie(_, titel, _): titel
+        case let .single(p): p.title
+        case let .series(_, title, _): title
         }
     }
 
     public var bytes: Int64 {
         switch self {
-        case let .einzeln(p): p.bytes
-        case let .serie(_, _, f): f.reduce(0) { $0 + $1.bytes }
+        case let .single(p): p.bytes
+        case let .series(_, _, f): f.reduce(0) { $0 + $1.bytes }
         }
     }
 
-    /// Der jüngste Zugang der Gruppe — danach wird sortiert.
-    public var angelegt: Date {
+    /// The group's most recent addition, which sorting uses.
+    public var created: Date {
         switch self {
-        case let .einzeln(p): p.angelegt
-        case let .serie(_, _, f): f.map(\.angelegt).max() ?? .distantPast
+        case let .single(p): p.created
+        case let .series(_, _, f): f.map(\.created).max() ?? .distantPast
         }
     }
 }
 
-/// Die Entscheidungen rund um Downloads, alle nachrechenbar.
-public enum Downloadregeln {
+/// The decisions around downloads, all verifiable.
+public enum DownloadRules {
 
-    /// Wie viel Platz auf dem Geraet unangetastet bleibt: **ein Gigabyte.**
+    /// How much space on the device stays untouched: **one gigabyte.**
     ///
-    /// Eine volle Platte ist kein Schoenheitsfehler — iOS kann dann keine
-    /// Aktualisierung mehr auspacken, und die Kamera nimmt nichts mehr auf.
-    /// Wer 40 GB laedt, soll nicht das Telefon damit anhalten.
-    public static let luft: Int64 = 1_073_741_824
+    /// A full disk is not cosmetic: iOS can then no longer unpack an update and the
+    /// camera records nothing. Someone loading 40 GB should not stall the phone
+    /// with it.
+    public static let padding: Int64 = 1_073_741_824
 
-    // MARK: H4 — eins nach dem anderen
+    // MARK: One after the other
 
-    /// Welcher Posten als Naechstes laufen soll — oder `nil`.
+    /// Which item should run next, or `nil`.
     ///
-    /// `nil` heisst eines von dreien: es laeuft schon einer, es wartet
-    /// keiner, oder es fehlt das WLAN und `nurUeberWLAN` gilt. Die drei
-    /// werden absichtlich nicht unterschieden: der Aufrufer tut in allen
-    /// dreien dasselbe, naemlich nichts.
-    public static func naechster(aus posten: [Downloadposten],
-                                 imWLAN: Bool, nurUeberWLAN: Bool) -> Downloadposten? {
-        guard !posten.contains(where: { $0.stand == .laedt }) else { return nil }
-        guard darfLaden(imWLAN: imWLAN, nurUeberWLAN: nurUeberWLAN) else { return nil }
-        // Aelteste zuerst: wer den Download zuerst angestossen hat, bekommt
-        // ihn zuerst. Bei gleichem Zeitpunkt entscheidet die Kennung, damit
-        // die Reihenfolge nicht von der Sortierung des Aufrufers abhaengt.
-        return posten
-            .filter { $0.stand == .wartet }
-            .min { ($0.angelegt, $0.id) < ($1.angelegt, $1.id) }
+    /// `nil` means one of three: one is already running, none is waiting, or Wi-Fi
+    /// is missing and `onlyOverWLAN` applies. The three are deliberately not
+    /// distinguished: the caller does the same in all three, namely nothing.
+    public static func nextOne(from entries: [DownloadItem],
+                                 wLAN: Bool, onlyOverWLAN: Bool) -> DownloadItem? {
+        guard !entries.contains(where: { $0.state == .loads }) else { return nil }
+        guard mayLoad(wLAN: wLAN, onlyOverWLAN: onlyOverWLAN) else { return nil }
+        // Oldest first: whoever started the download first gets it first. On equal
+        // times the ID decides so the order does not depend on the caller's sorting.
+        return entries
+            .filter { $0.state == .waits }
+            .min { ($0.created, $0.id) < ($1.created, $1.id) }
     }
 
-    // MARK: H5 — Mobilfunk
+    // MARK: Cellular
 
-    /// Darf ueberhaupt geladen werden?
+    /// May anything be loaded at all?
     ///
-    /// Ausdruecklich eine eigene Funktion und kein `&&` an der Aufrufstelle:
-    /// die Frage wird an drei Stellen gestellt — beim Anstossen, beim
-    /// Netzwechsel und beim Start der App —, und sie soll dreimal dieselbe
-    /// Antwort geben.
-    public static func darfLaden(imWLAN: Bool, nurUeberWLAN: Bool) -> Bool {
-        imWLAN || !nurUeberWLAN
+    /// Deliberately its own function and not a `&&` at the call site: the question
+    /// is asked in three places (on start, on network change and on app launch)
+    /// and should give the same answer all three times.
+    public static func mayLoad(wLAN: Bool, onlyOverWLAN: Bool) -> Bool {
+        wLAN || !onlyOverWLAN
     }
 
-    /// Was der Takt mit dem Netz anfaengt.
-    public enum Netzentscheid: Sendable, Equatable {
-        /// Laden darf beginnen oder weiterlaufen.
-        case laden
-        /// Was laeuft, geht zurueck in die Reihe — es wartet auf WLAN.
-        case zurueckstellen
-        /// Noch nichts tun: das Netz ist nicht bekannt.
-        case abwarten
+    /// What the tick does with the network.
+    public enum NetworkVerdict: Sendable, Equatable {
+        /// Loading may begin or continue.
+        case load
+        /// What is running goes back into the queue; it waits for Wi-Fi.
+        case putBack
+        /// Do nothing yet: the network is not known.
+        case waitFor
     }
 
-    /// **Solange das Netz unbekannt ist, faengt nichts an.**
+    /// **While the network is unknown, nothing starts.**
     ///
-    /// Die erste Meldung des Pfadbeobachters kommt erst nach dem ersten
-    /// Takt. Bis dahin WLAN anzunehmen hiess: beim Start im Mobilnetz lief
-    /// ein wartender Download los und wurde Millisekunden spaeter wieder
-    /// gestoppt — auf Android brach das die App ab (Issue #3). Ohne
-    /// „Nur ueber WLAN" spielt das Netz keine Rolle, dann gilt `laden`.
+    /// The path observer's first report only arrives after the first tick. Assuming
+    /// Wi-Fi until then meant: on a cellular start a waiting download began and was
+    /// stopped again milliseconds later, which crashed the app on Android. Without
+    /// "Wi-Fi only" the network does not matter, and `load` applies.
     ///
-    /// `zurueckstellen` ist kein Anhalten: der Titel wartet danach, damit
-    /// ihn der naechste Takt im WLAN von selbst wieder aufnimmt.
-    public static func netzentscheid(imWLAN: Bool?, nurUeberWLAN: Bool) -> Netzentscheid {
-        guard nurUeberWLAN else { return .laden }
-        guard let imWLAN else { return .abwarten }
-        return imWLAN ? .laden : .zurueckstellen
+    /// `putBack` is not a pause: the title waits afterwards so the next tick
+    /// on Wi-Fi resumes it by itself.
+    public static func networkVerdict(wLAN: Bool?, onlyOverWLAN: Bool) -> NetworkVerdict {
+        guard onlyOverWLAN else { return .load }
+        guard let wLAN else { return .waitFor }
+        return wLAN ? .load : .putBack
     }
 
-    // MARK: H3 und H6 — Platz
+    // MARK: Space
 
-    /// Was ein Download kosten wuerde und was es an Auswegen gibt.
-    public struct Platzauskunft: Sendable, Equatable {
-        /// Passt es ohne Aufraeumen — mit ``luft`` als Reserve?
-        public let reicht: Bool
-        /// Was nach dem Download frei waere. Kann negativ sein.
-        public let freiDanach: Int64
-        /// Gesehene Downloads, groesste zuerst. Leer, wenn es keine gibt.
-        public let entbehrlich: [Downloadposten]
-        /// Wie viel die zusammen belegen.
-        public let entbehrlichBytes: Int64
+    /// What a download would cost and what options there are.
+    public struct SpaceInfo: Sendable, Equatable {
+        /// Does it fit without clearing, with ``luft`` as reserve?
+        public let suffices: Bool
+        /// What would be free after the download. Can be negative.
+        public let freeAfter: Int64
+        /// Watched downloads, largest first. Empty if there are none.
+        public let dispensable: [DownloadItem]
+        /// How much they take up together.
+        public let dispensableBytes: Int64
 
-        /// Reicht es, wenn alles Entbehrliche weg ist?
-        public var reichtNachAufraeumen: Bool {
-            reicht || freiDanach + entbehrlichBytes >= 0
+        /// Is it enough once everything expendable is gone?
+        public var sufficesToCleanUp: Bool {
+            suffices || freeAfter + dispensableBytes >= 0
         }
     }
 
-    public static func platz(fuer bytes: Int64, frei: Int64,
-                             vorhanden: [Downloadposten]) -> Platzauskunft {
-        let uebrig = frei - bytes - luft
-        let weg = entbehrlich(aus: vorhanden)
-        return Platzauskunft(reicht: uebrig >= 0,
-                             freiDanach: uebrig,
-                             entbehrlich: weg,
-                             entbehrlichBytes: weg.reduce(0) { $0 + $1.bytes })
+    public static func slot(for bytes: Int64, free: Int64,
+                             available: [DownloadItem]) -> SpaceInfo {
+        let leftover = free - bytes - padding
+        let distance = dispensable(from: available)
+        return SpaceInfo(suffices: leftover >= 0,
+                             freeAfter: leftover,
+                             dispensable: distance,
+                             dispensableBytes: distance.reduce(0) { $0 + $1.bytes })
     }
 
-    /// Was der Fuss einer Ladeauswahl rechts sagt — **bevor** man drueckt.
-    public enum Fussplatz: Sendable, Equatable {
-        /// So viel bleibt nach dem Laden frei.
-        case frei(Int64)
-        /// So viel fehlt, damit es reicht — die Reserve eingerechnet.
-        case zuWenig(Int64)
+    /// What the footer of a download picker says on the right, **before** pressing.
+    public enum FootSpace: Sendable, Equatable {
+        /// This much stays free after loading.
+        case free(Int64)
+        /// This much is missing for it to fit, reserve included.
+        case few(Int64)
     }
 
-    /// **Der Fuss sagt dasselbe wie das Blatt danach.**
+    /// **The footer says the same as the sheet after it.**
     ///
-    /// Ob es reicht, entscheidet ``platz(fuer:frei:vorhanden:)`` mit ``luft``
-    /// als Reserve. Rechnete der Fuss ohne sie, stuende dort „Danach 0,4 GB
-    /// frei", und der Knopf fuehrte trotzdem ins Blatt „Nicht genug Platz".
-    /// Also zaehlt die Reserve beim Fehlbetrag mit; reicht es, steht die
-    /// schlichte Differenz da, denn das ist, was das Geraet danach zeigt.
+    /// Whether it fits is decided by ``platz(fuer:free:available:)`` with ``luft``
+    /// as reserve. If the footer computed without it, it would say "0.4 GB free
+    /// afterwards" and the button would still lead to the "Not enough space" sheet.
+    /// So the reserve counts in the shortfall; if it fits, the plain difference
+    /// is shown, since that is what the device shows afterwards.
     ///
-    /// Ohne Auswahl fehlt nichts: dann steht da, was jetzt frei ist — auch
-    /// wenn das weniger als die Reserve ist.
-    public static func fussplatz(fuer bytes: Int64, frei: Int64) -> Fussplatz {
-        guard bytes > 0 else { return .frei(max(frei, 0)) }
-        let uebrig = frei - bytes - luft
-        return uebrig >= 0 ? .frei(frei - bytes) : .zuWenig(-uebrig)
+    /// Without a selection nothing is missing: it shows what is free now, even if
+    public static func footSpace(for bytes: Int64, free: Int64) -> FootSpace {
+        guard bytes > 0 else { return .free(max(free, 0)) }
+        let leftover = free - bytes - padding
+        return leftover >= 0 ? .free(free - bytes) : .few(-leftover)
     }
 
-    /// Was die App zum Entfernen vorschlagen darf: **fertig geladen und
-    /// gesehen**, groesste zuerst.
+    /// What the app may suggest removing: **fully downloaded and watched**, largest
+    /// first.
     ///
-    /// Angefangene Downloads stehen ausdruecklich nicht dabei, auch wenn sie
-    /// Platz belegen: sie wegzuraeumen, um Platz fuer einen anderen zu
-    /// schaffen, waere ein Tausch, den niemand verlangt hat.
-    public static func entbehrlich(aus posten: [Downloadposten]) -> [Downloadposten] {
-        posten
-            .filter { $0.stand == .fertig && $0.gesehen }
+    /// Partial downloads are deliberately not included even though they take space:
+    /// clearing them to make room for another would be a trade nobody asked for.
+    public static func dispensable(from entries: [DownloadItem]) -> [DownloadItem] {
+        entries
+            .filter { $0.state == .done && $0.watched }
             .sorted { ($0.bytes, $0.id) > ($1.bytes, $1.id) }
     }
 
-    // MARK: H12 — eine Serie ist eine Zeile
+    // MARK: One series is one row
 
-    /// Filme bleiben einzeln, Folgen derselben Serie werden zu einer Gruppe.
-    /// Neueste zuerst; innerhalb einer Serie nach Staffel und Folge.
-    public static func gruppiert(_ posten: [Downloadposten]) -> [Downloadgruppe] {
-        var gruppen: [Downloadgruppe] = []
-        var serien: [String: [Downloadposten]] = [:]
-        var reihenfolge: [String] = []
+    /// Movies stay single, episodes of the same series become a group. Newest
+    /// first; within a series by season and episode.
+    public static func grouped(_ entries: [DownloadItem]) -> [DownloadGroup] {
+        var groups: [DownloadGroup] = []
+        var seriesList: [String: [DownloadItem]] = [:]
+        var railsEpisode: [String] = []
 
-        for p in posten {
-            // Eine Folge ohne `serienId` kann nicht gruppiert werden und
-            // steht deshalb einzeln — besser eine Zeile zu viel als eine
-            // Gruppe unter dem Namen `nil`.
-            guard p.art == .folge, let sid = p.serienId else {
-                gruppen.append(.einzeln(p))
+        for p in entries {
+            // An episode without `seriesIdentifier` cannot be grouped and so stands alone: better
+            // one row too many than a group under the name `nil`.
+            guard p.art == .episode, let sid = p.seriesIdentifier else {
+                groups.append(.single(p))
                 continue
             }
-            if serien[sid] == nil { reihenfolge.append(sid) }
-            serien[sid, default: []].append(p)
+            if seriesList[sid] == nil { railsEpisode.append(sid) }
+            seriesList[sid, default: []].append(p)
         }
 
-        for sid in reihenfolge {
-            let folgen = (serien[sid] ?? []).sorted {
-                ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id)
+        for sid in railsEpisode {
+            let episodes = (seriesList[sid] ?? []).sorted {
+                ($0.season ?? 0, $0.episode ?? 0, $0.id) < ($1.season ?? 0, $1.episode ?? 0, $1.id)
             }
-            let titel = folgen.first?.serie ?? folgen.first?.titel ?? ""
-            gruppen.append(.serie(id: sid, titel: titel, folgen: folgen))
+            let title = episodes.first?.series ?? episodes.first?.title ?? ""
+            groups.append(.series(id: sid, title: title, episodes: episodes))
         }
 
-        return gruppen.sorted { ($0.angelegt, $0.id) > ($1.angelegt, $1.id) }
+        return groups.sorted { ($0.created, $0.id) > ($1.created, $1.id) }
     }
 
-    // MARK: Zahlen in Worte
+    // MARK: Numbers in words
 
-    /// „18,6 GB" auf Deutsch, „18.6 GB" auf Englisch.
+    /// "18,6 GB" in German, "18.6 GB" in English.
     ///
-    /// **Tausenderstufen, nicht Zweierpotenzen** (`.file`): so rechnet der
-    /// Finder, so rechnen die iOS-Einstellungen, und daneben steht unsere
-    /// Zahl. Eine App, die 17,3 GiB sagt, wo die Einstellungen 18,6 GB
-    /// zeigen, sieht falsch aus, auch wenn sie recht hat.
+    /// **Thousands steps, not powers of two** (`.file`): that is how Finder and the
+    /// iOS settings compute, and our number sits next to theirs. An app that says
+    /// 17.3 GiB where Settings shows 18.6 GB looks wrong even when it is right.
     ///
-    /// ``Dateiangaben/groesse(_:)`` im Dateiauszug rechnet hierüber — eine
-    /// Datei darf in der Downloadliste nicht anders gemessen sein als auf
-    /// der Detailseite.
-    public static func groesse(_ bytes: Int64) -> String {
+    /// ``Dateiangaben/groesse(_:)`` in the file summary computes via this; a file
+    /// must not be measured differently in the download list than on the detail
+    /// page.
+    public static func size(_ bytes: Int64) -> String {
         bytes.formatted(.byteCount(style: .file))
     }
 
-    /// **Wann ein Fortschritt gezeigt wird: hoechstens einmal je Sekunde.**
+    /// **When progress is shown: at most once per second.**
     ///
-    /// `URLSession` meldet im Takt der Pakete. Die Grenze von einem halben
-    /// Prozent allein liess bei einer schnellen Leitung fuenf und mehr neue
-    /// Zahlen je Sekunde durch — die Unterzeile zitterte, statt zu zaehlen.
-    /// Durch kommen immer: die erste Meldung, ein Neuanfang (weniger als
-    /// vorher) und das Ende.
-    public static func fortschrittZeigen(geladen: Int64, gesamt: Int64,
-                                         vorher: Int64?, vergangen: TimeInterval?) -> Bool {
-        guard let vorher, let vergangen else { return true }
-        if geladen < vorher { return true }
-        if gesamt > 0, geladen >= gesamt { return geladen != vorher }
-        let schritt = max(Int64(1), gesamt / 200)
-        return geladen - vorher >= schritt && vergangen >= 1
+    /// `URLSession` reports at the rhythm of packets. The half-percent limit alone
+    /// let five or more new numbers per second through on a fast line, so the
+    /// subline trembled instead of counting. Always let through: the first report,
+    /// a restart (less than before) and the end.
+    public static func progressShow(loaded: Int64, total: Int64,
+                                         before: Int64?, elapsed: TimeInterval?) -> Bool {
+        guard let before, let elapsed else { return true }
+        if loaded < before { return true }
+        if total > 0, loaded >= total { return loaded != before }
+        let step = max(Int64(1), total / 200)
+        return loaded - before >= step && elapsed >= 1
     }
 
-    /// „0,84 von 2,31 GB" — **beide Zahlen in derselben Einheit, mit fester
-    /// Stellenzahl.**
+    /// "0,84 von 2,31 GB": **both numbers in the same unit, with fixed decimals.**
     ///
-    /// ``groesse(_:)`` passt Einheit und Nachkommastellen dem Wert an: aus
-    /// „845 MB" wird „1 GB", dann „1,01 GB", dann „1,1 GB". Fuer eine
-    /// Angabe, die stillsteht, ist das richtig; fuer eine, die zaehlt, heisst
-    /// es, dass Komma und Breite staendig wechseln. Hier gibt die Gesamtgroesse
-    /// die Einheit vor, und die Stellenzahl bleibt: GB mit zwei, MB ohne.
-    public static func fortschritt(geladen: Int64, von gesamt: Int64,
-                                   locale: Locale = .current) -> (geladen: String, gesamt: String) {
-        let (teiler, einheit, stellen): (Double, String, Int) =
-            gesamt >= 1_000_000_000 ? (1e9, "GB", 2)
-            : gesamt >= 1_000_000 ? (1e6, "MB", 0) : (1e3, "KB", 0)
-        func zahl(_ b: Int64) -> String {
-            (Double(max(b, 0)) / teiler).formatted(
-                .number.precision(.fractionLength(stellen)).locale(locale))
+    /// ``size(_:)`` adapts unit and decimals to the value: "845 MB" becomes
+    /// "1 GB", then "1,01 GB", then "1,1 GB". For a figure that stands still that
+    /// is right; for one that counts it means comma and width keep changing. Here
+    /// the total size sets the unit and the decimals stay: GB with two, MB with
+    /// none.
+    public static func progress(loaded: Int64, from total: Int64,
+                                   locale: Locale = .current) -> (loaded: String, total: String) {
+        let (divider, unit, set): (Double, String, Int) =
+            total >= 1_000_000_000 ? (1e9, "GB", 2)
+            : total >= 1_000_000 ? (1e6, "MB", 0) : (1e3, "KB", 0)
+        func figure(_ b: Int64) -> String {
+            (Double(max(b, 0)) / divider).formatted(
+                .number.precision(.fractionLength(set)).locale(locale))
         }
-        return (zahl(min(geladen, max(gesamt, geladen))), zahl(gesamt) + " " + einheit)
+        return (figure(min(loaded, max(total, loaded))), figure(total) + " " + unit)
     }
 
-    /// **Welche geladene Folge der Abspielknopf nimmt.** Die erste
-    /// fertige, die noch nicht gesehen ist, nach Staffel und Folge; ist
-    /// alles gesehen, die erste — wie „von vorn". Laufende und wartende
-    /// zaehlen nicht: sie lassen sich noch nicht abspielen.
-    public static func naechsteFolge(aus posten: [Downloadposten]) -> Downloadposten? {
-        let fertig = posten.filter { $0.stand == .fertig }.sorted {
-            ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id)
+    /// **Which downloaded episode the play button takes.** The first finished one
+    /// not yet watched, by season and episode; if all are watched, the first, like
+    /// "from the start". Running and waiting ones do not count: they cannot be
+    /// played yet.
+    public static func nextEpisode(from entries: [DownloadItem]) -> DownloadItem? {
+        let done = entries.filter { $0.state == .done }.sorted {
+            ($0.season ?? 0, $0.episode ?? 0, $0.id) < ($1.season ?? 0, $1.episode ?? 0, $1.id)
         }
-        return fertig.first { !$0.gesehen } ?? fertig.first
+        return done.first { !$0.watched } ?? done.first
     }
 
-    // MARK: Offline (1.0.5)
+    // MARK: Offline
 
-    /// Ab diesem Anteil gilt ein Titel als gesehen — Jellyfins `MaxResumePct`.
-    public static let gesehenAb = 0.9
-    /// Darunter wird keine Stelle gemerkt — Jellyfins `MinResumePct`.
-    public static let stelleAb = 0.05
+    /// From this fraction a title counts as watched: Jellyfin's `MaxResumePct`.
+    public static let watchedOff = 0.9
+    /// Below this no position is remembered: Jellyfin's `MinResumePct`.
+    public static let pointOff = 0.05
 
-    /// **Die naechste geladene Folge nach dieser** — fuer „Naechste Folge",
-    /// wenn kein Server antwortet.
+    /// **The next downloaded episode after this one**, for "Next episode" when no
+    /// server answers.
     ///
-    /// Nach Staffel und Folge, nur fertige Downloads desselben Kontos und
-    /// derselben Serie. Specials (Staffel 0) liegen vorn und kommen damit
-    /// nach einer regulaeren Folge nie dran. **Eine Luecke wird
-    /// uebersprungen**: fehlt Folge 4, ist 5 die naechste geladene — offline
-    /// gibt es keine andere, und „keine" hiesse, dass der Abend endet.
-    /// Ohne Folgennummer laesst sich nichts ordnen; dann gibt es keine.
-    public static func folgeNach(_ id: String, aus posten: [Downloadposten]) -> Downloadposten? {
-        guard let jetzt = posten.first(where: { $0.id == id }), jetzt.art == .folge,
-              let serie = jetzt.serienId, let nummer = jetzt.folge else { return nil }
-        let hier = (jetzt.staffel ?? 0, nummer)
-        return posten
+    /// By season and episode, only finished downloads of the same account and the
+    /// same series. Specials (season 0) come first and so never come up after a
+    /// regular episode. **A gap is skipped**: if episode 4 is missing, 5 is the next
+    /// downloaded; offline there is no other, and "none" would end the evening.
+    /// Without an episode number nothing can be ordered; then there is none.
+    public static func episodePost(_ id: String, from entries: [DownloadItem]) -> DownloadItem? {
+        guard let now = entries.first(where: { $0.id == id }), now.art == .episode,
+              let series = now.seriesIdentifier, let number = now.episode else { return nil }
+        let here = (now.season ?? 0, number)
+        return entries
             .filter {
-                $0.stand == .fertig && $0.konto == jetzt.konto && $0.serienId == serie
-                    && $0.id != id && $0.folge != nil
-                    && ($0.staffel ?? 0, $0.folge ?? 0) > hier
+                $0.state == .done && $0.account == now.account && $0.seriesIdentifier == series
+                    && $0.id != id && $0.episode != nil
+                    && ($0.season ?? 0, $0.episode ?? 0) > here
             }
-            .min { ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id) }
+            .min { ($0.season ?? 0, $0.episode ?? 0, $0.id) < ($1.season ?? 0, $1.episode ?? 0, $1.id) }
     }
 
-    /// **Die Abschnitte eines Titels — die abgelegten zuerst.**
+    /// **The segments of a title, stored ones first.**
     ///
-    /// Liegen beim Download welche ab, gelten sie sofort, ohne Anfrage: sie
-    /// kamen vom selben Server, und ohne Netz — oder unterwegs, wo der Server
-    /// daheim nicht antwortet — waere eine Anfrage erst nach ihrer Frist
-    /// beantwortet, und der Knopf „Intro ueberspringen" kaeme zu spaet.
-    /// Sonst fragt ``server``; leer heisst dort „keine" oder „nicht
-    /// erreichbar", und beides heisst: kein Knopf.
-    public static func abschnitte(abgelegt: [Abschnitt]?,
-                                  server: @Sendable () async -> [Abschnitt]) async -> [Abschnitt] {
-        if let abgelegt, !abgelegt.isEmpty { return abgelegt }
+    /// If some were stored at download, they apply immediately without a request:
+    /// they came from the same server, and without network (or on the road, where
+    /// the home server does not answer) a request would only be answered after its
+    /// timeout and the "Skip intro" button would come too late. Otherwise
+    /// ``server`` is asked; empty there means "none" or "unreachable", and both mean
+    /// no button.
+    public static func sections(stored: [Segment]?,
+                                  server: @Sendable () async -> [Segment]) async -> [Segment] {
+        if let stored, !stored.isEmpty { return stored }
         return await server()
     }
 
-    /// **„Naechste Folge" — online wie bisher, ohne Server die naechste
-    /// geladene** (``folgeNach(_:aus:)``).
+    /// **"Next episode": online as before, without a server the next downloaded
+    /// one** (``episodePost(_:aus:)``).
     ///
-    /// Ohne Netz wird gar nicht erst gefragt. Mit Netz fragt ``server``;
-    /// scheitert die Anfrage (Server daheim nicht erreichbar), gilt die
-    /// geladene. Antwortet der Server „keine", bleibt es dabei — er weiss es
-    /// besser als die Liste auf dem Geraet.
-    public static func folgeNach(_ item: Item, aus posten: [Downloadposten], ohneNetz: Bool,
+    /// Without network it is not even asked. With network ``server`` is asked; if
+    /// the request fails (home server unreachable), the downloaded one applies. If
+    /// the server answers "none", that stands; it knows better than the list on the
+    /// device.
+    public static func episodePost(_ item: Item, from entries: [DownloadItem], withoutNetwork: Bool,
                                  server: @Sendable () async throws -> Item?) async -> Item? {
-        let geladen = folgeNach(item.id, aus: posten)?.alsItem
-        if ohneNetz { return geladen }
-        do { return try await server() } catch { return geladen }
+        let loaded = episodePost(item.id, from: entries)?.asItem
+        if withoutNetwork { return loaded }
+        do { return try await server() } catch { return loaded }
     }
 
-    /// **Was der Server ueber einen geladenen Titel sagt, in den Posten.**
+    /// **What the server says about a downloaded title, into the entry.**
     ///
-    /// Gesehen, Stelle und Zeitpunkt kommen vom Server — **ausser** der
-    /// Posten traegt einen neueren Stand von hier, der noch nicht gemeldet
-    /// ist (`zuletzt` juenger als die Angabe des Servers). Dann bleibt er;
-    /// die Nachmeldung bringt ihn hin, und die naechste Abfrage bestaetigt ihn.
-    public static func nachziehen(_ p: Downloadposten, sehstand: UserItemData?) -> Downloadposten {
-        guard let sehstand else { return p }
-        // Eine Sekunde Spiel: die Nachmeldung schreibt genau diesen Zeitpunkt
-        // an den Server, und was zurueckkommt, darf gerundet sein.
-        if let hier = p.zuletzt,
-           hier.timeIntervalSince(sehstand.zuletztGespielt ?? .distantPast) > 1 { return p }
+    /// Watched, position and time come from the server, **unless** the entry carries
+    /// a newer state from here that is not yet reported (`recent` newer than the
+    /// server's value). Then it stays; the late report brings it over and the next
+    /// query confirms it.
+    public static func follow(_ p: DownloadItem, watchState: UserItemData?) -> DownloadItem {
+        guard let watchState else { return p }
+        // One second of slack: the late report writes exactly this time to the server,
+        // and what comes back may be rounded.
+        if let here = p.recent,
+           here.timeIntervalSince(watchState.lastPlay ?? .distantPast) > 1 { return p }
         var q = p
-        q.gesehen = sehstand.played ?? false
-        q.stelleTicks = sehstand.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil }
-        q.zuletzt = sehstand.zuletztGespielt ?? p.zuletzt
+        q.watched = watchState.played ?? false
+        q.pointTicks = watchState.playbackPositionTicks.flatMap { $0 > 0 ? $0 : nil }
+        q.recent = watchState.lastPlay ?? p.recent
         return q
     }
 
-    /// „3 von 12 Titeln" braucht niemand — aber „12 Titel · 42,8 GB" schon.
-    public static func belegung(_ posten: [Downloadposten]) -> (anzahl: Int, bytes: Int64) {
-        let fertig = posten.filter { $0.stand == .fertig }
-        return (fertig.count, fertig.reduce(0) { $0 + $1.bytes })
+    /// "3 of 12 titles" nobody needs, but "12 titles · 42.8 GB" yes.
+    public static func allocation(_ entries: [DownloadItem]) -> (count: Int, bytes: Int64) {
+        let done = entries.filter { $0.state == .done }
+        return (done.count, done.reduce(0) { $0 + $1.bytes })
     }
 }
 
-/// **Zwischen zwei Meldungen weiterzaehlen — nie rueckwaerts.**
+/// **Keep counting between two reports, never backwards.**
 ///
-/// Gemeldet wird hoechstens einmal je Sekunde (``Downloadregeln/fortschrittZeigen(geladen:gesamt:vorher:vergangen:)``).
-/// Zeigt man nur die Meldungen, springt die Zahl stueckweise; so machen es
-/// die Laeden nicht: App Store und Musik zaehlen dazwischen im Tempo der
-/// letzten Sekunden weiter. Genau das rechnet dieser Schaetzer — und Balken,
-/// Ring und Zahl lesen alle denselben Wert, damit keiner dem anderen
-/// vorauslaeuft.
+/// Reports come at most once per second
+/// (``Downloadregeln/progressShow(geladen:gesamt:vorher:vergangen:)``).
+/// Showing only the reports makes the number jump in steps; stores do not do
+/// that: App Store and Music keep counting in between at the pace of the last
+/// seconds. This estimator computes exactly that, and bar, ring and number all
+/// read the same value so none runs ahead of another.
 ///
-/// Vier Regeln: (1) das Tempo ist geglaettet, ein einzelnes schnelles Paket
-/// reisst es nicht hoch; (2) hoechstens anderthalb Sekunden ueber die letzte
-/// Meldung hinaus, dann steht die Zahl, bis wieder etwas kommt; (3) nie
-/// weniger als zuletzt gezeigt — nur ein Neuanfang (weniger als die vorige
-/// Meldung) setzt zurueck; (4) **angehalten heisst stehen.** Pause, Warten,
-/// Fehler, kein Netz: ``anhalten()`` friert die Zahl ein, und beim
-/// Fortsetzen misst er das Tempo neu, statt ueber die Pause zu rechnen —
-/// die Zahl steht, bis die echte sie einholt, und springt nicht.
-public struct Fortschrittsschaetzer: Sendable {
-    private var gemeldet: Int64?
-    private var meldeZeit: Date?
-    private var gesamt: Int64 = 0
-    private var laeuft = false
-    /// Byte je Sekunde, geglaettet.
+/// Four rules: (1) the pace is smoothed, a single fast packet does not push it
+/// up; (2) at most one and a half seconds past the last report, then the
+/// number stands until something comes again; (3) never less than last shown;
+/// only a restart (less than the previous report) resets; (4) **paused means
+/// standing.** Pause, waiting, error, no network: ``halt()`` freezes the
+/// number, and on resume it measures the pace anew instead of calculating
+/// across the pause; the number stands until the real one catches up and does
+public struct ProgressEstimator: Sendable {
+    private var reported: Int64?
+    private var reportTime: Date?
+    private var total: Int64 = 0
+    private var running = false
+    /// Bytes per second, smoothed.
     public private(set) var tempo: Double = 0
-    private var gezeigt: Int64 = 0
+    private var shown: Int64 = 0
 
     public init() {}
 
-    public mutating func melden(_ geladen: Int64, gesamt: Int64, um zeit: Date) {
-        self.gesamt = gesamt
-        if let g = gemeldet, geladen < g {
-            // Neuanfang: was vorher stand, gilt nicht mehr.
+    public mutating func report(_ loaded: Int64, total: Int64, um time: Date) {
+        self.total = total
+        if let g = reported, loaded < g {
+            // Restart: what stood before no longer applies.
             tempo = 0
-            gezeigt = geladen
-        } else if laeuft, let g = gemeldet, let mz = meldeZeit {
-            let dt = zeit.timeIntervalSince(mz)
+            shown = loaded
+        } else if running, let g = reported, let mz = reportTime {
+            let dt = time.timeIntervalSince(mz)
             if dt > 0.05 {
-                let neu = Double(geladen - g) / dt
-                tempo = tempo == 0 ? neu : tempo * 0.7 + neu * 0.3
+                let new = Double(loaded - g) / dt
+                tempo = tempo == 0 ? new : tempo * 0.7 + new * 0.3
             }
         }
-        gemeldet = geladen
-        meldeZeit = zeit
-        laeuft = true
+        reported = loaded
+        reportTime = time
+        running = true
     }
 
-    /// Es kommen keine Byte mehr — die Zahl bleibt, wo sie steht.
-    public mutating func anhalten() {
-        laeuft = false
+    /// No bytes come anymore: the number stays where it is.
+    public mutating func halt() {
+        running = false
         tempo = 0
     }
 
-    public mutating func wert(um zeit: Date) -> Int64 {
-        guard let g = gemeldet, let mz = meldeZeit else { return gezeigt }
+    public mutating func value(um time: Date) -> Int64 {
+        guard let g = reported, let mz = reportTime else { return shown }
         var schaetzung = g
-        if laeuft {
-            let dt = min(max(zeit.timeIntervalSince(mz), 0), 1.5)
+        if running {
+            let dt = min(max(time.timeIntervalSince(mz), 0), 1.5)
             schaetzung += Int64(tempo * dt)
         }
-        if gesamt > 0 { schaetzung = min(schaetzung, gesamt) }
-        gezeigt = max(gezeigt, schaetzung)
-        return gezeigt
+        if total > 0 { schaetzung = min(schaetzung, total) }
+        shown = max(shown, schaetzung)
+        return shown
     }
 }

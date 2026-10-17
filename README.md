@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/bilder/wortmarke.svg" alt="Swiftly Player" width="300">
+<img src=".github/images/wordmark.svg" alt="Swiftly Player" width="300">
 
 # Swiftly Player
 
@@ -9,9 +9,9 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 
-[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Android_TV_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#platforms)
+[![Platforms](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Android_TV_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#platforms)
 &nbsp;
-[![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
+[![License](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
 [![Jellyfin](https://img.shields.io/badge/Jellyfin_10.8+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
 &nbsp;
@@ -25,7 +25,7 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=50D5DA)](#android)
 &nbsp;
-[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6.apk)
+[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.7/Swiftly-1.0.7.apk)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=50D5DA)](#windows)
 &nbsp;
@@ -65,10 +65,10 @@ But three things it does that no other Jellyfin client does at all.
 
 <table>
 <tr>
-<td width="25%"><img src=".github/bilder/startseite.png" alt="Home"></td>
-<td width="25%"><img src=".github/bilder/detail.png" alt="Detail"></td>
-<td width="25%"><img src=".github/bilder/seerr.png" alt="Requests through Seerr"></td>
-<td width="25%"><img src=".github/bilder/bild-im-bild.png" alt="Picture in Picture"></td>
+<td width="25%"><img src=".github/images/home.png" alt="Home"></td>
+<td width="25%"><img src=".github/images/detail.png" alt="Detail"></td>
+<td width="25%"><img src=".github/images/seerr.png" alt="Requests through Seerr"></td>
+<td width="25%"><img src=".github/images/picture-in-picture.png" alt="Picture in Picture"></td>
 </tr>
 <tr>
 <td align="center"><sub>Home</sub></td>
@@ -78,7 +78,7 @@ But three things it does that no other Jellyfin client does at all.
 </tr>
 </table>
 
-<img src=".github/bilder/player-quer.png" alt="Player">
+<img src=".github/images/player-landscape.png" alt="Player">
 
 <sub>The player, landscape.</sub>
 
@@ -187,12 +187,12 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| iPhone | **1.0.6** on the App Store |
-| iPad | **1.0.6** on the App Store · ships with the iPhone app |
-| Apple TV | **1.0.6** on the App Store |
-| Mac | **1.0.5** on the App Store · 1.0.6 in review |
-| Android | **1.0.6** · submitted to Google Play, beta and [APK](#android) until it is listed |
-| Android TV | **1.0.6** · same app, [join the beta](#android) or [APK](#android) |
+| iPhone | **1.0.6** on the App Store · 1.0.7 in review |
+| iPad | **1.0.6** on the App Store · 1.0.7 in review · ships with the iPhone app |
+| Apple TV | **1.0.6** on the App Store · 1.0.7 in review |
+| Mac | **1.0.6** on the App Store · 1.0.7 in review |
+| Android | **1.0.7** · submitted to Google Play, beta and [APK](#android) until it is listed |
+| Android TV | **1.0.7** · same app, [join the beta](#android) or [APK](#android) |
 | Linux | **1.0.6** · [install](#linux) |
 | Windows | **1.0.6** · [download](#windows) |
 
@@ -244,7 +244,7 @@ through the Play Store like for any other app; bugs and feedback go to the
 [Discord](https://discord.gg/MeGwfv3UwN).
 
 **Rather install it yourself?**
-**[Download Swiftly-1.0.6.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6.apk)** — one APK for phones and Android TV,
+**[Download Swiftly-1.0.7.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.7/Swiftly-1.0.7.apk)** — one APK for phones and Android TV,
 Android 9 or newer. It is the same build as on Google Play, signed with the
 same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
 install it with an app like Downloader or over `adb install`.
@@ -344,7 +344,7 @@ against Ubuntu's library names, and the compiler will not start until
 `libncurses.so.6` and `libxml2.so.2` are there. The installer creates those
 two links under `~/.swift-compat` by itself, without a password and without
 touching `/usr/lib`. If you skip the installer and run `swift build` by hand,
-source `Linux/umgebung.sh` first — it does the same and says what is missing
+source `Linux/environment.sh` first — it does the same and says what is missing
 before the build runs instead of after.
 
 </details>

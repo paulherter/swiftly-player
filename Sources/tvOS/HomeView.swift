@@ -1,960 +1,838 @@
 import JellyfinKit
 import SwiftUI
 
-/// Die Startseite: waagerechte Reihen, wie auf dem iPhone — nur größer und
-/// mit Fokus statt Berührung.
+/// The home page: horizontal rows like on iPhone, only larger and driven by focus.
 struct HomeView: View {
     let model: AppModel
-    /// Der Player liegt im Rahmen, nicht hier — siehe `HauptView`.
-    @Environment(\.abspielwunsch) private var abspielen
+    /// The player lives in the frame, not here; see `MainView`.
+    @Environment(\.playRequest) private var play
 
-    /// Laden und Reihenfolge stehen in `Startseitenmodell` — geteilt mit
-    /// der iPhone-Fassung, damit beide Seiten dasselbe Verhalten haben.
-    @State private var stand = Startseitenmodell()
-    /// Doppelte Ausloesung sperren, waehrend der Plan geholt wird.
-    @State private var bereitet = false
-    @FocusState private var amTitel: Kachelmarke?
-    /// Die letzte Kachel, auf der der Fokus wirklich stand. Ueberdauert den
-    /// Ausflug auf eine Detailseite — siehe `aktuell`.
-    @State private var zuletztAmTitel: Kachelmarke?
-    /// Der Titel, dessen Bild gerade steht — nachgezogen, nicht sofort.
-    @State private var imBild: Item?
-    @State private var bildwechsel: Task<Void, Never>?
-    /// Ob der Startfokus schon einmal gesetzt wurde. **Nicht** `amTitel == nil`
-    /// abfragen: tvOS setzt den Fokus selbst, bevor irgendein `onAppear`
-    /// laeuft, und dann liesse genau die Pruefung los, die greifen soll.
-    @State private var startfokusGesetzt = false
-    /// Was in jeder Reihe gerade **vorne** steht, also unter ihrem Titel.
-    /// Darauf faellt der Fokus, wenn er von oben oder unten hereinkommt.
-    ///
-    /// **Ein Kasten, kein Zustand.** Als `@State`-Woerterbuch zeichnete jeder
-    /// Fokusschritt in einer Reihe die ganze Seite neu — die Reihe schiebt
-    /// dabei, meldet ihre Vorderkante, und das Woerterbuch aendert sich.
-    /// Gelesen wird es nur im Moment des Reihenwechsels; zeichnen muss
-    /// deshalb niemand, wenn es sich aendert.
-    @State private var vorderste = Vorderkanten()
-    /// Das letzte Schreiben fuers Top Shelf — siehe `regalSchreiben`.
-    @State private var regalAufgabe: Task<Void, Never>?
+    /// Loading and ordering live in `HomeModel`, shared with the iPhone version.
+    @State private var state = HomeModel()
+    /// Blocks double triggers while the plan is being fetched.
+    @State private var prepares = false
+    @FocusState private var atTitle: TileMark?
+    /// The last tile that really had focus. Survives a trip to a detail page; see `current`.
+    @State private var lastAtTitle: TileMark?
+    /// The title whose image is currently shown; follows the focus with a delay.
+    @State private var inImage: Item?
+    @State private var imageSwitch: Task<Void, Never>?
+    /// Whether the initial focus has been set once. Do not test `atTitle == nil` instead:
+    /// tvOS sets focus itself before any `onAppear` runs, so that check would skip exactly
+    /// the case it should catch.
+    @State private var startFocusSet = false
+    /// What is at the front of each row, i.e. under its title. Focus lands on it when it
+    /// enters a row from above or below.
+    /// A box, not state: as an `@State` dictionary every focus step inside a row redrew the
+    /// whole page (the row scrolls, reports its leading edge, the dictionary changes). It is
+    /// only read when focus changes rows, so nobody needs to redraw when it changes.
+    @State private var frontmost = PreEdges()
+    /// The last write for the Top Shelf; see `shelfWrite`.
+    @State private var shelfTask: Task<Void, Never>?
 
     @Environment(\.scenePhase) private var phase
 
-    /// **Ein Kontowechsel läuft** (Entwurf D, wie am iPhone): die Reihen
-    /// sind aus und kommen erst, wenn Inhalt da ist und der Flug gelandet
-    /// ist — dann gestaffelt (``Reihenauftritt``). Der alte Inhalt ist mit
-    /// dem Druck weg, nicht erst mit dem neuen.
-    @State private var wechsel = false
-    /// Die Reihen stehen — kein Wechsel unterwegs.
-    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
-    /// Die Reihen stehen im Baum — außer zwischen Druck und Freigabe. Dann
-    /// gibt es auch nichts Unsichtbares, in das der Fokus fallen könnte:
-    /// er steht auf dem Profilbild oben.
-    private var gebaut: Bool { zeigen || aufbau }
-    @State private var aufbau = false
-    /// Es gibt etwas zu zeigen, und nichts liegt mehr davor.
-    private var freigegeben: Bool {
-        (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
+    /// An account switch is running: the rows are off and return once content has arrived
+    /// and the transition has landed, staggered (``Reihenauftritt``). The old content is gone
+    /// when the switch starts, not when the new content arrives.
+    @State private var change = false
+    /// The rows are showing; no switch in progress.
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits }
+    /// The rows are in the tree except between the switch and its release. Then nothing
+    /// invisible can take focus; it stays on the profile image at the top.
+    private var built: Bool { showItem || structure }
+    @State private var structure = false
+    /// There is something to show and nothing is in front of it.
+    private var released: Bool {
+        (!state.allEmpty || state.loaded) && !AccountSwitchTransition.shared.waits
     }
 
     var body: some View {
         ZStack {
-            if !stand.geladen, Kontowechselflug.geteilt.wartet {
-                // Zwischen Druck und Landung steht nichts — auch kein
-                // Platzhalter, der aussähe wie das alte Konto.
+            if !state.loaded, AccountSwitchTransition.shared.waits {
+                // Nothing between the switch and the landing, not even a placeholder that would look
+                // like the old account.
                 Color.clear
-            } else if !stand.geladen {
-                // **Kein Ladering.** Statt eines Punktes auf drei Meter
-                // Entfernung stehen zwei Reihen in ihrer Form da und werden
-                // ueberblendet, sobald die Titel kommen.
-                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
-                    Reihenplatzhalter(quer: true)
-                    Reihenplatzhalter()
+            } else if !state.loaded {
+                // No spinner: two rows in their final shape are shown and cross-fade once the titles arrive.
+                VStack(alignment: .leading, spacing: Theme.railsSpacing) {
+                    RailsPlaceholder(landscape: true)
+                    RailsPlaceholder()
                 }
-                .padding(.horizontal, Stil.randSeite)
+                .padding(.horizontal, Theme.edgePage)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.top, Stil.leisteUnten + 40)
+                .padding(.top, Theme.barBottom + 40)
                 .transition(.opacity)
-            } else if stand.gestoert {
-                // **Dieselbe Formel wie auf jedem anderen Geraet.** Sie nennt
-                // die Serveradresse und stellt die Frage, die weiterhilft —
-                // „Prueef die Verbindung" sagt nicht, welche.
-                Leerzustand(symbol: "externaldrive.badge.xmark",
-                            titel: "Server ist abgetaucht",
-                            hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                            knopf: ("Erneut versuchen", { Task { await laden() } }))
-            } else if stand.alleLeer {
-                Leerzustand(symbol: "play.rectangle",
-                            titel: "Hier ist noch nichts",
-                            hinweis: "Sobald auf dem Server etwas liegt, taucht es hier auf.")
+            } else if state.disrupted {
+                // Same wording as on every other device: names the server address and asks the
+                // question that helps, which "check the connection" does not.
+                EmptyState(symbol: "externaldrive.badge.xmark",
+                            title: "Server ist abgetaucht",
+                            hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                            button: ("Erneut versuchen", { Task { await load() } }))
+            } else if state.allEmpty {
+                EmptyState(symbol: "play.rectangle",
+                            title: "Hier ist noch nichts",
+                            hint: "Sobald auf dem Server etwas liegt, taucht es hier auf.")
             } else {
-                inhalt
+                content
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // **Auch beim Zurueckkommen, nicht nur beim Erscheinen.**
+        // Also on return, not only on appear. `.task` does not cover the player closing: the
+        // player is a layer over the home page, which stays in place and does not reappear.
+        // That is covered by `AppModel.playbackEnded`. Foregrounding does not cover it
+        // either: someone who finishes an episode on the phone and then turns on the TV would
+        // still see it under "Continue Watching".
         //
-        // `.task` deckt „Player geht zu" **nicht** ab: der Player liegt als
-        // Ebene über der stehenbleibenden Startseite, sie erscheint nicht neu.
-        // Das haengt an `AppModel.wiedergabeBeendet` (D8). Den Wechsel in den
-        // Vordergrund deckt es auch nicht: wer am Telefon zu
-        // Ende schaut und danach den Fernseher einschaltet, sieht die Folge
-        // hier weiter unter „Weiterschauen" stehen.
+        // On tvOS `scenePhase` is the right trigger, unlike on the Mac, where it also flips when
+        // a second window of the app comes forward (macOS uses `didBecomeActiveNotification`).
+        // A TV has no second window; `.active` means the viewer is back. The player uses the
+        // same trigger to pause on leaving.
         //
-        // Auf tvOS ist `scenePhase` der richtige Auslöser, anders als auf dem
-        // Mac. Dort schlägt er auch um, wenn nur ein zweites Fenster derselben
-        // App nach vorn kommt — deshalb nimmt macOS
-        // `didBecomeActiveNotification`. Auf dem Fernseher gibt es kein
-        // zweites Fenster; `.active` heißt dort genau „der Zuschauer ist
-        // zurück". Derselbe Auslöser trägt im Player die Pause beim
-        // Verlassen.
-        //
-        // Die Frist von 30 Sekunden steht in `Auffrischung` und ist dort
-        // geprüft — ohne sie würde jedes kurze Wegschalten neu laden.
-        // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
-        // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
-        .onChange(of: model.kontowechsel) { _, _ in
-            // Erst aus, dann laden, dann gestaffelt ein. Bild und Fokus
-            // gehören dem alten Konto: vergessen, damit oben weder dessen
-            // Kulisse steht noch der Fokus nach unten auf eine Kachel
-            // zurückwill, die es nicht mehr gibt.
-            Kontowechselflug.notiz("wechsel: startseite blendet aus")
-            wechsel = true
-            imBild = nil
-            zuletztAmTitel = nil
+        // The 30 second grace period lives in `Refresh` and is tested there; without it
+        // every brief switch away would reload.
+        // During an account switch the phase stays `ready`; without this guard the previous
+        // account's content would remain on screen.
+        .onChange(of: model.accountSwitch) { _, _ in
+            // Off first, then load, then staggered in. Image and focus belong to the old account:
+            // drop them so neither its backdrop stays up top nor focus wants to return to a tile
+            // that no longer exists.
+            AccountSwitchTransition.note("wechsel: startseite blendet aus")
+            change = true
+            inImage = nil
+            lastAtTitle = nil
             Task {
-                await laden()
-                if wechsel, freigegeben { einblenden() }
+                await load()
+                if change, released { reveal() }
             }
         }
-        .onChange(of: freigegeben) { _, jetzt in
-            if jetzt, wechsel { einblenden() }
+        .onChange(of: released) { _, now in
+            if now, change { reveal() }
         }
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
-        // **Die Einstellung greift sofort, nicht beim naechsten Oeffnen.**
-        // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
-        // stehen erst nach einer neuen Abfrage fest.
-        // **Ein `task`, nicht zwei.** Es traegt beides: den Lauf beim
-        // Erscheinen und den, der faellig wird, wenn jemand die Reihen
-        // umstellt — Umschalten aendert, welche Reihen es ueberhaupt gibt,
-        // und die stehen erst nach einer neuen Abfrage fest. Mit einem
-        // zweiten, schlichten `task` daneben lief beim Oeffnen alles doppelt.
-        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startBibliotheken.map(\.id).joined(separator: "|"))") {
-            // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
-            // Seite, die mit ihm zusammenfällt.
-            if Kontowechselflug.geteilt.wartet { return }
-            await laden()
+        .onChange(of: model.pagesRefresh) { _, _ in Task { await load() } }
+        // The setting applies immediately: toggling changes which rows exist, which is only
+        // known after a new query.
+        // One `task`, not two. It carries both the run on appear and the one due when rows are
+        // rearranged (toggling changes which rows exist, known only after a new query). A second,
+        // plain `task` next to it made everything run twice on open.
+        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
+            // While an account switch runs it does the loading, not the return to the page that
+            // coincides with it.
+            if AccountSwitchTransition.shared.waits { return }
+            await load()
         }
-        .onChange(of: phase) { _, neu in
-            guard neu == .active, stand.brauchtAuffrischung else { return }
-            Task { await laden() }
+        .onChange(of: phase) { _, new in
+            guard new == .active, state.needsRefresh else { return }
+            Task { await load() }
         }
     }
 
-    /// Was die Auskunft beschreibt — **abgeleitet, nicht gesetzt.**
+    /// What the readout describes: derived, not set.
     ///
-    /// Vorher war das ein Zustand, den `erstenZeigen` beim Erscheinen
-    /// beschrieb. Landete der Fokus woanders als erwartet — und tvOS setzt
-    /// ihn selbst, bevor irgendein `onAppear` laeuft —, blieb die Auskunft
-    /// auf dem alten Titel stehen: oben „Folge 4", markiert war „The
-    /// Mentalist". Abgeleitet kann sie das nicht.
-    /// **Der Rueckfall ist die zuletzt fokussierte Kachel, nicht die erste.**
+    /// It used to be state written by `firstShow` on appear. When focus landed elsewhere
+    /// than expected (tvOS sets it before any `onAppear` runs), the readout stayed on the
+    /// old title: the header said "Episode 4" while another title was highlighted. Derived,
+    /// it cannot do that.
     ///
-    /// `amTitel` wird `nil`, sobald der Fokus die Seite verlaesst — und das
-    /// tut er bei jedem Oeffnen einer Detailseite. Bis hierher stand dann
-    /// wieder `ersterTitel` da: wer vom vierten Film zurueckkam, sah kurz
-    /// den ersten und erst nach dem Zurueckgeben des Fokus wieder seinen.
+    /// The fallback is the last focused tile, not the first. `atTitle` becomes `nil` when
+    /// focus leaves the page, which happens whenever a detail page opens. Returning from the
+    /// fourth movie used to flash the first title until focus came back.
     ///
-    /// Der Rueckfall muss zwischen zwei Faellen unterscheiden, die beide
-    /// `nil` sind: **noch nie fokussiert** — dann ist der erste Titel
-    /// richtig — und **gerade woanders**, dann gilt der letzte Stand weiter.
+    /// The fallback must tell two `nil` cases apart: never focused (the first title is
+    /// right) and focus currently elsewhere (the last state still holds).
     ///
-    /// **In der einen Reihe nachsehen, nicht in allen.** Die Marke nennt
-    /// ihre Reihe; hier stand eine Liste aus allen Reihen, die bei jedem
-    /// Zeichnen — also bei jedem Fokusschritt — neu zusammengesetzt wurde.
-    private var aktuell: Item? {
-        if let amTitel, let t = titel(zu: amTitel) { return t }
-        if let zuletztAmTitel, let t = titel(zu: zuletztAmTitel) { return t }
-        return ersterTitel
+    /// Look in the one row, not all: the marker names its row. A list over all rows was
+    /// rebuilt on every draw, i.e. every focus step.
+    private var current: Item? {
+        if let atTitle, let t = title(toward: atTitle) { return t }
+        if let lastAtTitle, let t = title(toward: lastAtTitle) { return t }
+        return firstTitle
     }
 
-    private func titel(zu marke: Kachelmarke) -> Item? {
-        liste(marke.reihe).first { $0.id == marke.titel }
+    private func title(toward mark: TileMark) -> Item? {
+        list(mark.rail).first { $0.id == mark.title }
     }
 
-    /// Die Kulisse, die gerade steht — dieselbe Adresse wie auf der
-    /// Detailseite (`breite: 1600`), damit Bild und Ton dort schon im
-    /// Zwischenspeicher liegen.
-    private var kulissenURL: URL? {
-        guard let t = imBild else { return nil }
-        return model.querbildURL(for: t, breite: 1600) ?? model.kopfbildURL(for: t)
+    /// The backdrop currently shown. Same URL as on the detail page (`width: 1600`) so the
+    /// image is already cached there.
+    private var backdropsURL: URL? {
+        guard let t = inImage else { return nil }
+        return model.landscapeImageURL(for: t, width: 1600) ?? model.headerImageURL(for: t)
     }
 
-    /// Worauf die Seite beim Oeffnen steht: der erste Eintrag aus
-    /// „Weiterschauen", sonst der erste ueberhaupt.
-    private var ersterTitel: Item? {
-        stand.weiterschauen.first ?? stand.naechsteFolge.first ?? stand.zuletzt.first
-            ?? stand.neueFilme.first ?? stand.neueSerien.first
-            ?? stand.gattungsreihen.lazy.compactMap(\.items.first).first
+    /// What the page opens on: the first "Continue Watching" entry, else the first at all.
+    private var firstTitle: Item? {
+        state.continueWatching.first ?? state.nextEpisode.first ?? state.recent.first
+            ?? state.newMovies.first ?? state.newSeries.first
+            ?? state.genreRails.lazy.compactMap(\.items.first).first
     }
 
-    private func liste(_ reihe: Reihenkennung) -> [Item] {
-        switch reihe {
-        case .weiterschauen: stand.weiterschauen
-        case .naechsteFolge: stand.naechsteFolge
-        case .zuletzt:       stand.zuletzt
-        case .neueFilme:     stand.neueFilme
-        case .neueSerien:    stand.neueSerien
-        case let .gattung(name):
-            stand.gattungsreihen.first { $0.name == name }?.items ?? []
-        case let .bibliothek(id):
-            bibliotheken.first { $0.id == id }?.items ?? []
+    private func list(_ rail: RailsId) -> [Item] {
+        switch rail {
+        case .continueWatching: state.continueWatching
+        case .nextEpisode: state.nextEpisode
+        case .recent:       state.recent
+        case .newMovies:     state.newMovies
+        case .newSeries:    state.newSeries
+        case let .genre(name):
+            state.genreRails.first { $0.name == name }?.items ?? []
+        case let .library(id):
+            libraries.first { $0.id == id }?.items ?? []
         }
     }
 
-    /// Welche festen Reihen es gerade gibt — Reihenfolge und Auswahl kommen
-    /// aus den Einstellungen (Profil → Darstellung).
-    private var festeReihen: [Startreihe] {
-        model.startReihen.filter {
-            !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+    /// Which fixed rows exist right now; order and selection come from settings
+    /// (Profile, Appearance).
+    private var fixedRails: [StartRail] {
+        model.startRails.filter {
+            !model.startOut.contains($0) && $0.fits(disconnected: model.newAccessDisconnected)
         }
     }
 
-    /// Die gewählten Bibliotheken und Sammlungen, die gerade Titel haben.
-    private var bibliotheken: [Startseite.Bibliotheksreihe] {
-        stand.bibliotheksreihen(fuer: model.startBibliotheken)
+    /// The chosen libraries and collections that currently have titles.
+    private var libraries: [Home.LibraryRail] {
+        state.libraryRails(for: model.startLibraries)
     }
 
-    /// Die Fokuskennung zu einer eingestellten Reihe.
-    private func kennung(_ reihe: Startreihe) -> Reihenkennung {
-        switch reihe {
-        case .weiterschauen: .weiterschauen
-        case .naechsteFolge: .naechsteFolge
-        case .neueFilme:     .neueFilme
-        case .neueSerien:    .neueSerien
-        case .neuzugaenge:   .zuletzt
+    /// The focus identifier for a configured row.
+    private func identifier(_ rail: StartRail) -> RailsId {
+        switch rail {
+        case .continueWatching: .continueWatching
+        case .nextEpisode: .nextEpisode
+        case .newMovies:     .newMovies
+        case .newSeries:    .newSeries
+        case .newArrivals:   .recent
         }
     }
 
-    /// Die vorderste Kachel einer Reihe: die, die gerade unter ihrem Titel
-    /// steht. Meldet die Reihe noch nichts, ist es die erste ueberhaupt.
-    private func vordersteMarke(_ reihe: Reihenkennung) -> Kachelmarke? {
-        let eintraege = liste(reihe)
-        guard !eintraege.isEmpty else { return nil }
-        let vorn = vorderste.je[reihe]
-        let titel = eintraege.contains { $0.id == vorn } ? vorn! : eintraege[0].id
-        return Kachelmarke(reihe: reihe, titel: titel)
+    /// The front tile of a row: the one currently under its title. If the row has reported
+    /// nothing yet, the first one.
+    private func frontmostMark(_ rail: RailsId) -> TileMark? {
+        let entries = list(rail)
+        guard !entries.isEmpty else { return nil }
+        let front = frontmost.je[rail]
+        let title = entries.contains { $0.id == front } ? front! : entries[0].id
+        return TileMark(rail: rail, title: title)
     }
 
-    /// Dieselbe Kachel als Fokusmarke — samt Reihe, sonst ist sie zweideutig.
-    private var startMarke: Kachelmarke? {
-        // **Die erste Reihe, die es gibt — nicht „Weiterschauen".** Wer die
-        // Reihenfolge umstellt oder eine Reihe abschaltet, erwartet den Fokus
-        // oben, und oben steht dann etwas anderes.
-        for reihe in festeReihen {
-            let k = kennung(reihe)
-            if let t = liste(k).first { return .init(reihe: k, titel: t.id) }
+    /// The same tile as a focus marker, including its row; otherwise it is ambiguous.
+    private var startMark: TileMark? {
+        // The first row that exists, not "Continue Watching": whoever reorders or hides a row
+        // expects focus at the top, and something else is there then.
+        for rail in fixedRails {
+            let k = identifier(rail)
+            if let t = list(k).first { return .init(rail: k, title: t.id) }
         }
-        for g in stand.gattungsreihen where !g.items.isEmpty {
-            return .init(reihe: .gattung(g.name), titel: g.items[0].id)
+        for g in state.genreRails where !g.items.isEmpty {
+            return .init(rail: .genre(g.name), title: g.items[0].id)
         }
         return nil
     }
 
-    /// **Apples Aufbau, mit fester Kopfzone davor.**
+    /// Apple's structure, with a fixed header zone in front.
     ///
-    /// Neun Runden lang stand hier ein selbstgebauter Reihenkopf: ein
-    /// `VStack` aus `Reihentitel` und Streifen. Genau daran lag es. tvOS
-    /// kennt einen Reihentitel nur, wenn er als **`Section`-Kopf** deklariert
-    /// ist — WWDC24, „Migrate your TVML app to SwiftUI":
+    /// A hand-built row header (a `VStack` of row title and strip) was the problem here.
+    /// tvOS only knows a row title when it is declared as a `Section` header (WWDC24,
+    /// "Migrate your TVML app to SwiftUI"): the title moves out of the way as lockups gain
+    /// focus so it is not occluded.
     ///
-    /// > „A section view will provide each shelf with a title, and that title
-    /// > will automatically move out of the way as your lockups gain focus to
-    /// > avoid being occluded."
+    /// The focus engine frees up the tile. A title in an ordinary stack counts as decoration
+    /// for that calculation and slides under the window edge whenever focus jumps into a row.
+    /// No margin, inset or clip could compensate, because the title was never counted.
     ///
-    /// Der Fokusmotor stellt die **Kachel** frei. Steht der Titel in einem
-    /// gewoehnlichen Stapel, ist er fuer diese Rechnung Beiwerk und wandert
-    /// unter die Fensterkante — jedes Mal, wenn der Fokus in eine Reihe
-    /// springt. Kein Rand, kein Inset und kein Beschnitt konnte das je
-    /// ausgleichen, weil der Titel gar nicht mitgezaehlt wurde.
+    /// No `viewAligned`, deliberately. Apple's session adds it, but it only stops where a
+    /// section sits flush at the top. For the last section that position lies beyond the
+    /// scroll limit and is reachable only with a large empty area below the last row, which
+    /// we do not want. With `viewAligned` the bottom row was not reachable at all.
     ///
-    /// **Ohne `viewAligned`, und das ist keine Nachlaessigkeit.** Apples
-    /// Sitzung setzt es dazu („just to help make that transition more
-    /// definite"), aber es haelt nur dort an, wo ein Abschnitt **buendig
-    /// oben** steht. Fuer den letzten Abschnitt liegt diese Stelle hinter dem
-    /// Scroll-Anschlag — erreichbar waere sie nur mit einem grossen leeren
-    /// Bereich unter der letzten Reihe. Genau der soll nicht sein. Mit
-    /// `viewAligned` fuhr die unterste Reihe deshalb gar nicht mehr an: sie
-    /// fehlte einfach.
+    /// The header zone is a sibling, not an inset. It shows what is highlighted below, so it
+    /// must not scroll. As a sibling in the `VStack`, the scroll view below has its own
+    /// correct geometry: its window is the space under the header zone, and nothing covers
+    /// it or takes space from it unannounced.
     ///
-    /// **Die Kopfzone ist ein Geschwister, kein Inset.** Sie zeigt, was unten
-    /// markiert ist, also darf sie nicht mitscrollen. Als Geschwister im
-    /// `VStack` hat die Scrollflaeche darunter eine eigene, richtige
-    /// Geometrie: ihr Fenster **ist** der Platz unter der Kopfzone. Es gibt
-    /// nichts, was sie ueberdecken koennte, und nichts, was ihr Platz
-    /// wegnimmt, ohne es ihr zu sagen.
+    ///     window = 1080 - heroHeight = 570
+    ///     poster row = 24 + 45 + 16 + (20 + 390 + 20) + 28 = 543
     ///
-    ///     Fenster = 1080 − heldenHoehe = 570
-    ///     Plakatreihe = 24 + 45 + 16 + (20 + 390 + 20) + 28 = 543
-    ///
-    /// Ein Abschnitt passt also ins Fenster. Das ist die Bedingung, unter der
-    /// der Fokusmotor Kopf und Kacheln gemeinsam freistellen kann.
-    private var inhalt: some View {
+    /// So one section fits in the window, which is the condition for the focus engine to
+    /// free header and tiles together.
+    private var content: some View {
         VStack(spacing: 0) {
-            heldenzone
-                .reihenauftritt(0, da: zeigen)
-            if gebaut {
-                reihen
+            heroZone
+                .railEntrance(0, present: showItem)
+            if built {
+                rails
             } else {
                 Spacer(minLength: 0)
             }
         }
-        // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
+        // The side margin is applied once, not twice. tvOS already keeps 80 pt free on the left
+        // and right, and the page adds `Theme.edgePage` (also 80): 160 together, twice the
+        // design, which measures from 80. So the system margin is dropped here and `edgePage`
+        // measures from the screen edge.
         //
-        // tvOS haelt links und rechts von sich aus 80 Punkt frei, und die
-        // Seite legt `Stil.randSeite` (auch 80) darauf. Zusammen waren es
-        // 160 — doppelt so viel wie im Entwurf, der immer ab 80 misst.
-        // Deshalb faellt der Systemrand hier weg; `randSeite` misst danach
-        // ab der Bildkante.
-        //
-        // **An jeder Seite einzeln, nicht am Rahmen.** Im Rahmen versucht
-        // steht es wirkungslos da: der `NavigationStack` in `stapel(b)`
-        // setzt den sicheren Bereich fuer seinen Inhalt neu. Gemessen, nicht
-        // vermutet — die Wortmarke rueckte, der Inhalt darunter nicht.
+        // On each side individually, not on the frame: set on the frame it has no effect, because
+        // the `NavigationStack` in `stack(b)` resets the safe area for its content (measured:
+        // the wordmark moved, the content below did not).
         .ignoresSafeArea()
-        // **Derselbe gefaerbte Grund wie auf den Detailseiten.**
+        // The same tinted background as on the detail pages, so opening one changes nothing
+        // about the background and there is nothing to cross-fade or twitch.
         //
-        // Genau das ist der Gewinn — beim Oeffnen einer Seite aendert sich der
-        // Hintergrund nicht mehr, weil er schon derselbe war. Es gibt nichts
-        // mehr zu ueberblenden, also auch nichts, was dabei zucken koennte.
-        //
-        // Er haengt am **entprellten** Bild, nicht am Fokus: sonst rechnete
-        // beim Durchhalten der Fernbedienung jeder Zwischenschritt einen
-        // eigenen Ton.
-        .bildgrund(url: kulissenURL)
-        // Nur das Bild braucht noch einen Zustand — es wird entprellt.
-        .onChange(of: aktuell?.id) { _, _ in
-            if let t = aktuell { bildwechseln(zu: t) }
+        // It hangs on the debounced image, not on focus; otherwise every intermediate step
+        // while holding the remote would compute its own tint.
+        .imageReason(url: backdropsURL)
+        // Only the image needs state, because it is debounced.
+        .onChange(of: current?.id) { _, _ in
+            if let t = current { switchImage(toward: t) }
         }
-        .onAppear { erstenZeigen() }
-        .onChange(of: stand.weiterschauen.first?.id) { _, _ in erstenZeigen() }
-        // **Den Fokus aus der Kopfleiste in die erste Reihe holen.**
+        .onAppear { firstShow() }
+        .onChange(of: state.continueWatching.first?.id) { _, _ in firstShow() }
+        // Pull focus from the top bar into the first row.
         //
-        // `defaultFocus` sagt nur, was **innerhalb** der Scrollflaeche
-        // vorgewaehlt ist. Ob beim Oeffnen ueberhaupt die Startseite oder die
-        // Kopfleiste den Fokus bekommt, entscheidet tvOS eine Ebene hoeher —
-        // und es hat den Reiter „Start" genommen.
+        // `defaultFocus` only says what is preselected inside the scroll view. Whether the home
+        // page or the top bar gets focus on open is decided one level up by tvOS, and it took
+        // the "Start" tab.
         //
-        // `initial: true` laeuft beim Erscheinen mit; ist da noch nichts
-        // geladen, ist `ersterTitel` nil und es laeuft nochmal, sobald der
-        // erste Titel steht. Kein Warten auf Verdacht.
+        // `initial: true` also runs on appear; if nothing is loaded yet `firstTitle` is nil and
+        // it runs again once the first title exists.
         //
-        // **Senkrecht faellt der Fokus auf die vorderste Kachel der Reihe.**
+        // Vertically, focus falls on the front tile of the row. Not the same column and not the
+        // first overall: the row keeps its scroll position and focus takes whatever is under the
+        // row title. Someone who scrolled far in "Recently Added" finds the row as they left it.
         //
-        // Nicht auf dieselbe Spalte und nicht auf die erste ueberhaupt: die
-        // Reihe behaelt ihren Scrollstand, und der Fokus nimmt, was dort
-        // gerade unter dem Reihentitel steht. Wer in „Zuletzt hinzugefuegt"
-        // weit gescrollt hat, findet die Reihe beim naechsten Besuch so
-        // wieder vor, wie er sie verlassen hat.
-        //
-        // Warum nachtraeglich korrigiert und nicht vorgewaehlt: tvOS fragt
-        // eine Vorwahl (`prefersDefaultFocus`) nur, wenn es einen Bereich
-        // **ohne Richtung** betritt. Bei einem Druck nach unten entscheidet
-        // allein die Geometrie — und die kann hier nicht stimmen.
-        // „Weiterschauen" ist 448 breit, die Plakatreihen 208; Querkachel 1
-        // ueberlappt Plakat 1 **und** 2. Eine gemeinsame Spalte gibt es gar
-        // nicht. Also den Systemzug laufen lassen und danach zurechtruecken.
-        // Merken, solange der Fokus da ist. `nil` wird bewusst **nicht**
-        // uebernommen — das ist der ganze Zweck.
-        .onChange(of: amTitel) { _, jetzt in
-            if let jetzt { zuletztAmTitel = jetzt }
+        // Corrected afterwards rather than preselected: tvOS only asks for a preference
+        // (`prefersDefaultFocus`) when entering a region without direction. On a press down,
+        // geometry alone decides, and it cannot be right here: "Continue Watching" tiles are
+        // 448 wide, posters 208, and landscape tile 1 overlaps posters 1 and 2, so there is no
+        // shared column. So the system move runs and is then adjusted.
+        // Remember while focus is here. `nil` is deliberately not taken over; that is the point.
+        .onChange(of: atTitle) { _, now in
+            if let now { lastAtTitle = now }
         }
         #if DEBUG
-        .onChange(of: amTitel) { _, jetzt in
-            if Kontowechsellauf.an { Kontowechselflug.notiz("fokus: startseite \(jetzt.map { "\($0.reihe)" } ?? "-")") }
+        .onChange(of: atTitle) { _, now in
+            if AccountSwitchRun.an { AccountSwitchTransition.note("fokus: startseite \(now.map { "\($0.rail)" } ?? "-")") }
         }
         #endif
-        .onChange(of: amTitel) { vorher, jetzt in
-            guard let jetzt, let vorher, vorher.reihe != jetzt.reihe else { return }
-            if let ziel = vordersteMarke(jetzt.reihe), ziel != jetzt { amTitel = ziel }
+        .onChange(of: atTitle) { before, now in
+            guard let now, let before, before.rail != now.rail else { return }
+            if let target = frontmostMark(now.rail), target != now { atTitle = target }
         }
-        .onChange(of: startMarke, initial: true) { _, marke in
-            guard !startfokusGesetzt, let marke else { return }
-            startfokusGesetzt = true
-            amTitel = marke
+        .onChange(of: startMark, initial: true) { _, mark in
+            guard !startFocusSet, let mark else { return }
+            startFocusSet = true
+            atTitle = mark
         }
-        // **Der Fokus kehrt aus dem Player nicht von selbst zurueck.**
+        // Focus does not return from the player by itself.
         //
-        // `abspielen` liegt im Rahmen als Geschwister, nicht als Kind — die
-        // Startseite bleibt beim Abspielen durchgehend eingehaengt, nur
-        // `disabled`. `disabled` setzt `amTitel` dabei auf `nil` zurueck (die
-        // Kachel kann waehrenddessen keinen Fokus halten), und beim Entfernen
-        // des Players fragt tvOS nicht erneut nach `defaultFocus` — das tut es
-        // nur bei der **ersten** Auswertung eines Fokusbereichs, und dieser
-        // besteht seit dem Start der Seite ununterbrochen. Ohne diese Zeile
-        // sucht der Fokusmotor deshalb neu und landet geometrisch ganz oben,
-        // am ersten Reiter der Kopfleiste.
+        // `play` is a sibling in the frame, not a child; the home page stays mounted while
+        // playing, only `disabled`. `disabled` resets `atTitle` to `nil` (the tile cannot hold
+        // focus meanwhile), and when the player is removed tvOS does not ask for `defaultFocus`
+        // again: it does so only on the first evaluation of a focus region, which has existed
+        // uninterrupted since the page started. Without this line the focus engine searches
+        // anew and lands geometrically at the top, on the first top-bar tab.
         //
-        // Die Zuweisung wirkt genau wie ein Tastendruck: `amTitel` gesetzt,
-        // solange die Kachel wieder fokussierbar ist, holt sich der Fokus
-        // dorthin zurueck — das ist derselbe Weg, den `.focused(_:equals:)`
-        // auch sonst nimmt.
-        .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
-            guard geschlossen, vorher == false, amTitel == nil, let ziel = zuletztAmTitel
+        // The assignment acts like a key press: with `atTitle` set while the tile is focusable
+        // again, focus moves there, the same path `.focused(_:equals:)` takes otherwise.
+        .onChange(of: play.wrappedValue == nil) { before, closed in
+            guard closed, before == false, atTitle == nil, let target = lastAtTitle
             else { return }
-            amTitel = ziel
+            atTitle = target
         }
     }
 
-    /// Die Reihen — jede ein `Section`, nichts selbstgebautes.
+    /// The rows: each a `Section`, nothing hand-built.
     ///
-    /// **`VStack`, nicht `LazyVStack`** — auch wenn Apples Beispiel den faulen
-    /// Stapel nimmt. Der ist fuer Kataloge mit hundert Reihen gedacht; hier
-    /// sind es drei, und er kostet nur.
+    /// `VStack`, not `LazyVStack`, although Apple's example uses the lazy stack. That is for
+    /// catalogs with hundreds of rows; here there are three and it only costs.
     ///
-    /// Nachgerechnet, warum es genau hier weh tut: ein Abschnitt ist 543 hoch,
-    /// das Fenster 570. Steht der Fokus auf Reihe 2, beginnt Reihe 3 **auf der
-    /// Fensterkante**. Der faule Stapel erzeugt, was den sichtbaren Bereich
-    /// schneidet — mal ist sie einen Punkt drin, mal einen Punkt draussen.
-    /// Existiert sie nicht, findet der Fokusmotor nichts, und „nach unten"
-    /// tut schlicht nichts. Danach ist sie erzeugt und bleibt es, also ging es
-    /// beim zweiten Versuch.
+    /// Why it hurts here: a section is 543 high, the window 570. With focus on row 2, row 3
+    /// begins exactly on the window edge. The lazy stack creates what intersects the visible
+    /// area, so the row is sometimes one point in, sometimes one point out. If it does not
+    /// exist, the focus engine finds nothing and "down" does nothing. Afterwards it exists
+    /// and stays, so the second attempt worked.
     ///
-    /// Reihenfolgeabhaengig, also **beweist ein gelungener Durchgang nichts**
-    /// — dieselbe Falle wie bei den vier „gesetzt heisst nicht angewandt"-
-    /// Fehlern in CLAUDE.md. Und derselbe faule Stapel stand dort schon
-    /// einmal: er hat die Reihenhoehen geschaetzt und den Fokusversatz
-    /// wachsend verrechnet.
-    private var reihen: some View {
+    /// Order dependent, so a successful pass proves nothing. The lazy stack also estimated
+    /// row heights and accumulated a focus offset.
+    private var rails: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
-                // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
-                // Einstieg, kein Inhalt: ein Druck öffnet das Genre.
+                // Genres as chips at the very top, when enabled. An entry point, not content: a press
+                // opens the genre.
                 if model.genreChips, !model.startGenres.isEmpty {
-                    gattungschips.reihenauftritt(1, da: zeigen)
+                    genreChips.railEntrance(1, present: showItem)
                 }
 
-                // **Die festen Reihen in der eingestellten Reihenfolge**,
-                // ohne die ausgeblendeten — Profil → Darstellung → Startseite.
-                // Nach einem Kontowechsel gestaffelt (``Reihenauftritt``).
-                ForEach(Array(festeReihen.enumerated()), id: \.element) { i, reihe in
-                    feste(reihe).reihenauftritt(i + 2, da: zeigen)
+                // The fixed rows in the configured order, without hidden ones (Profile, Appearance,
+                // Home). Staggered after an account switch (``Reihenauftritt``).
+                ForEach(Array(fixedRails.enumerated()), id: \.element) { i, rail in
+                    pinned(rail).railEntrance(i + 2, present: showItem)
                 }
 
-                // Die gewählten Bibliotheken und Sammlungen (Profil → Darstellung →
-                // Startseite), danach die Genres.
-                ForEach(Array(bibliotheken.enumerated()), id: \.element.id) { j, bib in
-                    reihenabschnitt {
-                        Reihentitel(name: bib.name)
-                    } inhalt: {
-                        Streifen(model: model, items: bib.items,
-                                 reihe: .bibliothek(bib.id),
-                                 amTitel: $amTitel, vorderste: vorderste)
+                // The chosen libraries and collections, then the genres.
+                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, bib in
+                    railsSection {
+                        RailTitle(name: bib.name)
+                    } content: {
+                        Strip(model: model, items: bib.items,
+                                 rail: .library(bib.id),
+                                 atTitle: $atTitle, frontmost: frontmost)
                     }
-                    .reihenauftritt(festeReihen.count + 2 + j, da: zeigen)
+                    .railEntrance(fixedRails.count + 2 + j, present: showItem)
                 }
-                ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, gattung in
-                    if !gattung.items.isEmpty {
-                        reihenabschnitt {
-                            Reihentitel(name: gattung.name)
-                        } inhalt: {
-                            Streifen(model: model, items: gattung.items,
-                                     reihe: .gattung(gattung.name),
-                                     amTitel: $amTitel, vorderste: vorderste)
+                ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, genre in
+                    if !genre.items.isEmpty {
+                        railsSection {
+                            RailTitle(name: genre.name)
+                        } content: {
+                            Strip(model: model, items: genre.items,
+                                     rail: .genre(genre.name),
+                                     atTitle: $atTitle, frontmost: frontmost)
                         }
-                        .reihenauftritt(festeReihen.count + bibliotheken.count + 2 + j, da: zeigen)
+                        .railEntrance(fixedRails.count + libraries.count + 2 + j, present: showItem)
                     }
                 }
             }
-            // Damit die unterste Reihe am Anschlag denselben Abstand zur
-            // Bildkante hat wie zwei Reihen zueinander. Siehe `abschlussLuft`.
-            .padding(.bottom, Stil.abschlussLuft)
+            // So the bottom row at the scroll limit has the same distance to the screen edge as two
+            // rows have to each other. See `completionPadding`.
+            .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        // **Wo der Fokus beim Oeffnen steht, wird gesagt, nicht gehofft.**
+        // Where focus stands on open is stated, not hoped for.
         //
-        // Solange der faule Stapel nur die erste Reihe erzeugt hatte, landete
-        // er dort — mangels Alternative, nicht weil es so gemeint war. Mit
-        // allen drei Reihen sucht tvOS sich selbst eine aus, und das war
-        // zuletzt „Zuletzt hinzugefuegt".
+        // While the lazy stack had created only the first row, focus landed there by default.
+        // With all three rows tvOS picks one itself, and it picked "Recently Added".
         //
-        // Nachgereicht ging es nicht: `erstenZeigen` setzte nur, solange der
-        // Fokus nirgends stand, und tvOS ist schneller als jedes `onAppear`.
-        // Genau die Form, vor der CLAUDE.md warnt — gesetzt, aber die
-        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei die
-        // Wahl des Systems; `automatic` waere nur ein Vorschlag.
+        // Setting it afterwards did not work: `firstShow` only set while focus was nowhere,
+        // and tvOS is faster than any `onAppear`. `userInitiated` beats the system's choice;
+        // `automatic` would only be a suggestion.
         //
-        // **Zurueck heisst dorthin, wo man war — nicht nach oben.**
+        // Going back means returning to where one was, not to the top.
         //
-        // Der Vorgabefokus zeigte auf `startMarke`, also auf die erste Kachel
-        // der ersten Reihe. tvOS wendet ihn nicht nur beim ersten Mal an,
-        // sondern jedes Mal, wenn die Seite wieder erscheint: nach dem
-        // Zurueckgehen sprang der Fokus damit nach oben, und die Scrollflaeche
-        // fuhr hinterher.
+        // The default focus pointed at `startMark`, the first tile of the first row. tvOS applies
+        // it every time the page reappears, not just the first: after going back focus jumped to
+        // the top and the scroll view followed.
         //
-        // `zuletztAmTitel` haelt fest, wo der Fokus wirklich stand — es gibt
-        // ihn schon, weil die Auskunft oben denselben Rueckfall braucht. Beim
-        // ersten Oeffnen ist es leer, dann gilt weiter `startMarke`.
-        .defaultFocus($amTitel, zuletztAmTitel ?? startMarke, priority: .userInitiated)
-        // **Hier wird beschnitten, und das ist Absicht.** Die Vergroesserung
-        // der Kachel faengt der Streifen mit `reihenLuft` in seinen eigenen
-        // Grenzen ab; die senkrechte Flaeche darf deshalb schneiden — und nur
-        // so kann keine Kachel je in die Kopfzone hineinragen.
+        // `lastAtTitle` records where focus really was (it exists already because the readout
+        // above needs the same fallback). On first open it is empty and `startMark` applies.
+        .defaultFocus($atTitle, lastAtTitle ?? startMark, priority: .userInitiated)
+        // Clipping here is intended. The tile's zoom is absorbed by the strip with `railsPadding`
+        // inside its own bounds, so the vertical scroll view may clip, and only so can no tile
+        // ever reach into the header zone.
     }
 
-    /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
-    /// damit die Reihenfolge aus den Einstellungen gilt.
+    /// A fixed row: same structure as before, individually callable so the order from
+    /// settings applies.
     @ViewBuilder
-    private func feste(_ reihe: Startreihe) -> some View {
-        switch reihe {
-        case .weiterschauen:
-            if !stand.weiterschauen.isEmpty {
-                // **Weiterschauen startet sofort, ohne Zwischenseite.** Die
-                // anderen fuehren auf die Uebersicht. `VERHALTEN.md` A1 bis A3.
-                abschnitt("Weiterschauen") {
-                    Streifen(model: model, items: stand.weiterschauen,
-                             reihe: .weiterschauen, quer: true,
-                             direkt: starte, amTitel: $amTitel,
-                             vorderste: vorderste)
+    private func pinned(_ rail: StartRail) -> some View {
+        switch rail {
+        case .continueWatching:
+            if !state.continueWatching.isEmpty {
+                // "Continue Watching" starts immediately, without an intermediate page. The others lead
+                // to the overview.
+                segment("Weiterschauen") {
+                    Strip(model: model, items: state.continueWatching,
+                             rail: .continueWatching, landscape: true,
+                             direct: launch, atTitle: $atTitle,
+                             frontmost: frontmost)
                 }
             }
-        case .naechsteFolge:
-            if !stand.naechsteFolge.isEmpty {
-                abschnitt("Nächste Folge") {
-                    Streifen(model: model, items: stand.naechsteFolge,
-                             reihe: .naechsteFolge, amTitel: $amTitel,
-                             vorderste: vorderste)
+        case .nextEpisode:
+            if !state.nextEpisode.isEmpty {
+                segment("Nächste Folge") {
+                    Strip(model: model, items: state.nextEpisode,
+                             rail: .nextEpisode, atTitle: $atTitle,
+                             frontmost: frontmost)
                 }
             }
-        case .neueFilme:
-            neuzugangsreihe("Zuletzt hinzugefügte Filme", stand.neueFilme, .neueFilme)
-        case .neueSerien:
-            neuzugangsreihe("Zuletzt hinzugefügte Serien", stand.neueSerien, .neueSerien)
-        case .neuzugaenge:
-            neuzugangsreihe("Zuletzt hinzugefügt", stand.zuletzt, .zuletzt)
+        case .newMovies:
+            newAccessRail("Zuletzt hinzugefügte Filme", state.newMovies, .newMovies)
+        case .newSeries:
+            newAccessRail("Zuletzt hinzugefügte Serien", state.newSeries, .newSeries)
+        case .newArrivals:
+            newAccessRail("Zuletzt hinzugefügt", state.recent, .recent)
         }
     }
 
     @ViewBuilder
-    private func neuzugangsreihe(_ titel: LocalizedStringKey, _ items: [Item],
-                                 _ reihe: Reihenkennung) -> some View {
+    private func newAccessRail(_ title: LocalizedStringKey, _ items: [Item],
+                                 _ rail: RailsId) -> some View {
         if !items.isEmpty {
-            abschnitt(titel) {
-                Streifen(model: model, items: items, reihe: reihe,
-                         neuzugang: true, amTitel: $amTitel, vorderste: vorderste)
+            segment(title) {
+                Strip(model: model, items: items, rail: rail,
+                         newAccess: true, atTitle: $atTitle, frontmost: frontmost)
             }
         }
     }
 
-    /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
-    private var gattungschips: some View {
-        streifen {
+    /// Your genres as chips, the same ones that would otherwise appear as rows.
+    private var genreChips: some View {
+        strip {
             ForEach(model.startGenres, id: \.self) { name in
                 NavigationLink(value: GenreRoute(name: name)) {
-                    // Vom Server, also nicht übersetzt.
+                    // From the server, so not translated.
                     //
-                    // **Eine Zeile.** Die Pille hat eine feste Hoehe; ein
-                    // langer Gattungsname brach um und lief oben und unten
-                    // aus ihr heraus.
+                    // One line. The pill has a fixed height; a long genre name wrapped and ran out of it
+                    // at top and bottom.
                     Text(verbatim: name)
                         .lineLimit(1)
                 }
-                .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
+                .buttonStyle(ThemedButtonStyle(height: Theme.chipHeight))
             }
         }
-        .padding(.bottom, Stil.reihenAbstand - Stil.reihenLuft)
+        .padding(.bottom, Theme.railsSpacing - Theme.railsPadding)
     }
 
-    /// Ein Reihenabschnitt. Die Abstaende stehen in `reihenabschnitt`, das
-    /// sich Start-, Film- und Serienseite teilen — hier nur die Beschriftung.
-    private func abschnitt<Inhalt: View>(_ titel: LocalizedStringKey,
-                                         @ViewBuilder _ inhalt: () -> Inhalt) -> some View {
-        reihenabschnitt { Reihentitel(text: titel) } inhalt: { inhalt() }
+    /// A row section. The spacing lives in `railsSection`, shared by the home, movie and
+    /// series pages; only the label is here.
+    private func segment<ContentBody: View>(_ title: LocalizedStringKey,
+                                         @ViewBuilder _ content: () -> ContentBody) -> some View {
+        railsSection { RailTitle(text: title) } content: { content() }
     }
 
     // MARK: Kopfzone
 
-    /// Querbild und Auskunft — das erste Kind der Scrollflaeche.
+    /// Landscape image and readout; the first child of the scroll view.
     ///
-    /// **Nicht beschnitten.** Das Querbild darf die 560 nach unten
-    /// ueberragen; sein eigener Verlauf beendet es. Beschnitten entstand die
-    /// harte Kante, die als heller Streifen quer ueber den Schirm stand. Die
-    /// erste Reihe zeichnet ohnehin darueber, sie ist das naechste Geschwister.
-    private var heldenzone: some View {
+    /// Not clipped. The landscape image may extend below the 560 mark; its own gradient ends
+    /// it. Clipped, it produced a hard edge that showed as a light stripe across the screen.
+    /// The first row draws over it anyway, being the next sibling.
+    private var heroZone: some View {
         ZStack(alignment: .topLeading) {
-            // Kein `Stil.grund` mehr: der Grund der Seite ist der gefaerbte
-            // Verlauf (siehe `bildgrund`), und eine undurchsichtige Flaeche
-            // davor haette ihn genau in der Kopfzone verdeckt.
-            querbild
+            // No `Theme.reason`: the page background is the tinted gradient (see `imageReason`), and an
+            // opaque surface in front would hide it exactly in the header zone.
+            landscapeImage
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            // Nur noch ein leiser Schatten unter der Leiste, kein langer
-            // Kopfverlauf mehr: die Leiste soll lesbar bleiben, ohne dass
-            // die Seite dadurch anders aussieht als eine Detailseite. Er
-            // liegt **unter** der Schrift — darueber faerbte er den Titel
-            // grau, das war der alte Fehler an dieser Stelle.
-            Kopfschatten()
-            auskunft
-                .padding(.leading, Stil.randSeite)
-                .padding(.top, Stil.inhaltOben)
+            // Only a soft shadow under the bar, no long header gradient: the bar stays legible
+            // without making the page look different from a detail page. It sits under the text;
+            // above it, it tinted the title grey.
+            HeaderShadow()
+            inquiry
+                .padding(.leading, Theme.edgePage)
+                .padding(.top, Theme.contentTop)
         }
-        // **Volle 510, von der Bildkante gemessen.**
+        // Full 510, measured from the screen edge.
         //
-        // Der aeussere Stapel laesst den oberen Rand aussen vor, also faengt
-        // die Zone bei null an und die Masse aus `Start-A.dc.html` gelten
-        // unveraendert — auch die 196, mit denen die Auskunft ansetzt.
+        // The outer stack leaves out the top margin, so the zone starts at zero and the
+        // design dimensions apply unchanged, including the 196 where the
+        // readout starts.
         //
-        // Nicht beschnitten: das Querbild ist 700 hoch und beendet sich mit
-        // seinem eigenen Verlauf. Bei 510 abgeschnitten stuende dort die
-        // harte Kante, die einmal als heller Streifen quer im Bild lag. Die
-        // Reihen zeichnen darueber, sie sind das naechste Geschwister.
-        .frame(height: Stil.heldenHoehe, alignment: .topLeading)
+        // Not clipped: the landscape image is 700 high and ends with its own gradient. Cut at
+        // 510 it would show the hard edge that once lay across the image as a light stripe. The
+        // rows draw over it, being the next sibling.
+        .frame(height: Theme.heroHeight, alignment: .topLeading)
     }
 
-    /// Das Bild wechselt **entprellt und ueberblendet**.
+    /// The image changes debounced and cross-faded.
     ///
-    /// Beim Durchhalten der Fernbedienung wandert der Fokus im
-    /// Zehntelsekundentakt. Jeder Wechsel ein neues Bild mit neuer Kennung
-    /// heisst: leerer Kasten, Netzabruf, Bild — es blitzt bei jedem
-    /// Tastendruck. Swiftfin entprellt eine halbe Sekunde
-    /// (`CinematicBackgroundView.ViewModel`) und blendet ueber, wobei das
-    /// alte Bild stehenbleibt, bis das neue da ist.
-    private func bildwechseln(zu titel: Item) {
-        bildwechsel?.cancel()
-        bildwechsel = Task { @MainActor in
+    /// Holding the remote moves focus every tenth of a second. A new image with a new
+    /// identity per step means empty box, network fetch, image: it flashes on every key
+    /// press. Debouncing by half a second and cross-fading, with the old image staying until
+    /// the new one is there, avoids that.
+    private func switchImage(toward title: Item) {
+        imageSwitch?.cancel()
+        imageSwitch = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
-            imBild = titel
+            inImage = title
         }
     }
 
-    /// Aus „Weiterschauen" direkt in die Folge, ohne Zwischenseite.
-    /// Vor dem ersten Fokus steht oben, was der Zuschauer ohnehin am
-    /// ehesten will — der erste Eintrag aus „Weiterschauen".
-    private func erstenZeigen() {
-        // **Nur das Bild.** Den Fokus setzt `defaultFocus`, und zwar
-        // deklariert. Hier stand einmal eine Zuweisung nach 120 ms, die nur
-        // griff, solange der Fokus noch nirgends stand — tvOS war schneller,
-        // also griff sie nie, wenn es darauf ankam.
-        guard imBild == nil else { return }
-        imBild = ersterTitel
+    /// From "Continue Watching" straight into the episode, without an intermediate page.
+    /// Before the first focus, the top shows what the viewer most likely wants: the first
+    /// "Continue Watching" entry.
+    private func firstShow() {
+        // Only the image. Focus is set declaratively by `defaultFocus`. An assignment after
+        // 120 ms used to be here; it only took effect while focus was still nowhere, and tvOS
+        // was faster, so it never worked when it mattered.
+        guard inImage == nil else { return }
+        inImage = firstTitle
     }
 
-    /// Das Querbild rechts, 1180 breit.
+    /// The landscape image on the right, 1180 wide.
     ///
-    /// Die Blende ist dieselbe wie auf der Detailseite (`Kulissenblende`) —
-    /// das ist Bedingung dafuer, dass beim Oeffnen nichts sichtbar wechselt.
+    /// The fade is the same as on the detail page (`BackdropsFade`), a precondition for
+    /// nothing visibly changing on open.
     @ViewBuilder
-    private var querbild: some View {
-        // **Derselbe Baustein wie auf der Detailseite, nicht nur dieselben
-        // Masse.**
+    private var landscapeImage: some View {
+        // The same building block as on the detail page, not just the same dimensions.
         //
-        // Hier stand eine zweite Fassung: eigenes `AsyncImage`, eigener
-        // Rahmen, eigene Blende, eigenes `padding`. Sie sah gleich aus — und
-        // war es nicht. Beim Oeffnen einer Detailseite blendete SwiftUI die
-        // eine in die andere, und was dabei nicht deckungsgleich war, sah man
-        // als Zucken.
+        // A second version used to be here with its own `AsyncImage`, frame, fade and padding.
+        // It looked the same and was not. When a detail page opened, SwiftUI cross-faded one
+        // into the other, and whatever did not match showed as a twitch.
         //
-        // Dass es **beim Hingehen stark und beim Zurueckgehen kaum** auffiel,
-        // war der Hinweis: zurueck steht die Startseite laengst da und baut
-        // nichts neu auf. Der Unterschied entsteht auf der Seite, die
-        // entsteht.
+        // It was strong going in and barely visible going back; that was the hint: on return the
+        // home page is long since built and rebuilds nothing. The difference arises on the page
+        // that is created.
         //
-        // `id` und Ueberblendung bleiben aussen — die gehoeren der
-        // Startseite, wo der Fokus von Titel zu Titel wandert. Die
-        // Detailseite hat das nicht, und braucht es nicht.
+        // `id` and cross-fade stay outside; they belong to the home page, where focus moves
+        // from title to title. The detail page does not need them.
         ZStack {
-            if let t = imBild {
-                Kulisse(url: model.querbildURL(for: t, breite: 1600)
-                             ?? model.kopfbildURL(for: t))
+            if let t = inImage {
+                Backdrop(url: model.landscapeImageURL(for: t, width: 1600)
+                             ?? model.headerImageURL(for: t))
                     .id(t.id)
                     .transition(.opacity)
             }
         }
-        .animation(Stil.bewegung(.easeInOut(duration: 0.3)), value: imBild?.id)
+        .animation(Theme.motion(.easeInOut(duration: 0.3)), value: inImage?.id)
     }
 
-    /// Titel, Angaben und Beschreibung zum Titel unter dem Fokus.
+    /// Title, details and description for the title under focus.
     @ViewBuilder
-    private var auskunft: some View {
+    private var inquiry: some View {
         Group {
-            if let t = aktuell {
-                // **Derselbe Baustein wie auf der Detailseite.** Vorher stand
-                // der Aufbau hier ein zweites Mal, und die beiden waren schon
-                // auseinander: dort Genres, hier die Restzeit. Siehe
-                // `Kopfauskunft`.
-                Kopfauskunft(item: t,
-                             zweitzeile: t.type == "Episode" ? t.name : nil,
-                             serie: serie(zu: t)) {
-                    // Auch die Restzeit springt beim Titelwechsel, statt zu
-                    // gleiten — siehe `Angabenreihe`.
-                    Restzeitmarke(item: t)
+            if let t = current {
+                // The same building block as on the detail page. The structure used to be here a
+                // second time and the two had already drifted apart: genres there, remaining time here.
+                // See `HeaderInfo`.
+                HeaderInfo(item: t,
+                             secondLine: t.type == "Episode" ? t.name : nil,
+                             series: series(toward: t)) {
+                    // The remaining time also jumps on title change instead of gliding; see `DetailsRail`.
+                    RemainingTimeMark(item: t)
                         .id(t.id)
                         .transaction { $0.animation = nil }
                 }
-                // Die Serie kommt aus dem Speicher, den die Startseite je
-                // Reihe gebuendelt fuellt (`vorholenGebuendelt`) — kein Abruf
-                // unter dem Fokus, der Wechsel ist sofort vollstaendig.
+                // The series comes from the cache the home page fills per row in a batch
+                // (`prefetchBundle`): no fetch under the focus, the change is complete at once.
             }
         }
     }
 
-    /// Die Serie einer Folge, sofern schon bekannt — aus dem Vorrat oder
-    /// aus dem Stand einer schon besuchten Serienseite.
-    private func serie(zu t: Item) -> Item? {
+    /// The series of an episode if already known, from the cache or from the state of an
+    /// already visited series page.
+    private func series(toward t: Item) -> Item? {
         guard t.type == "Episode" else { return nil }
-        return Serienspeicher.geteilt.serie(fuer: t, mit: model)
-            ?? t.seriesId.flatMap { Serienspeicher.geteilt.stand($0, mit: model)?.serie }
+        return SeriesCache.shared.series(for: t, with: model)
+            ?? t.seriesId.flatMap { SeriesCache.shared.state($0, with: model)?.series }
     }
 
 
-    private func starte(_ item: Item) {
-        // Frisch holen: die Stelle im Listeneintrag ist oft veraltet.
-        Abspielwunsch.starten(item, frisch: true, model: model, bereitet: $bereitet,
-                              abspielen: { abspielen.wrappedValue = $0 })
+    private func launch(_ item: Item) {
+        // Fetch fresh: the entry in the list item is often stale.
+        PlayRequest.start(item, freshValue: true, model: model, prepares: $prepares,
+                              play: { play.wrappedValue = $0 })
     }
 
-    private func laden() async {
-        Kontowechselflug.notiz("startseite: laden (konto \(model.kontowechsel))")
+    private func load() async {
+        AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let a = Date()
-        await stand.laden(model)
-        Kontowechselflug.notiz("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
-        // Gestörte Abfrage und nichts da: keine leere Vorschau über eine gute
-        // schreiben.
-        if !(stand.gestoert && stand.alleLeer) { regalSchreiben() }
+        await state.load(model)
+        AccountSwitchTransition.note("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
+        // Failed query and nothing there: do not overwrite a good preview with an empty one.
+        if !(state.disrupted && state.allEmpty) { shelfWrite() }
     }
 
-    /// Erst bauen (unsichtbar), im nächsten Durchgang zeigen — sonst
-    /// stünden neu eingefügte Reihen sofort an ihrem Ziel, ohne Staffel.
-    private func einblenden() {
-        guard !aufbau else { return }
-        Kontowechselflug.notiz("wechsel 6: reihen werden gebaut")
-        aufbau = true
+    /// Build first (invisible), show in the next pass; otherwise newly inserted rows would
+    /// appear at their destination at once, without the stagger.
+    private func reveal() {
+        guard !structure else { return }
+        AccountSwitchTransition.note("wechsel 6: reihen werden gebaut")
+        structure = true
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(20))
-            Kontowechselflug.notiz("wechsel 7: reihen kommen gestaffelt")
-            wechsel = false
-            aufbau = false
+            AccountSwitchTransition.note("wechsel 7: reihen kommen gestaffelt")
+            change = false
+            structure = false
         }
     }
 
-    /// Legt fürs Top Shelf ab, was die Startseite gerade zeigt.
+    /// Stores for the Top Shelf what the home page currently shows.
     ///
-    /// Genau dieselben drei Rubriken in derselben Reihenfolge — leere fallen
-    /// weg. Damit steht auf dem Startbildschirm dasselbe wie in der App, und
-    /// wer nur „Weiterschauen" hat, sieht auch nur das.
+    /// The same three categories in the same order; empty ones are omitted. So the home
+    /// screen shows the same as the app, and someone with only "Continue Watching" sees only
+    /// that.
     ///
-    /// Acht Einträge je Rubrik: mehr zeigt der Top Shelf ohnehin nicht auf
-    /// einen Blick, und die Datei bleibt klein.
-    private func regalSchreiben() {
-        func eintraege(_ items: [Item], quer: Bool) -> [Regaleintrag] {
+    /// Eight entries per category: the Top Shelf shows no more at a glance, and the file
+    /// stays small.
+    private func shelfWrite() {
+        func entries(_ items: [Item], landscape: Bool) -> [ShelfEntry] {
             items.prefix(8).map { item in
-                Regaleintrag(
+                ShelfEntry(
                     id: item.id,
-                    titel: item.seriesName ?? item.name,
-                    unterzeile: item.folgenkuerzel,
-                    bild: quer ? (model.querbildURL(for: item, breite: 900)
-                                  ?? model.imageURL(for: item, maxHeight: 600, hochkant: true))
-                               : model.imageURL(for: item, maxHeight: 600, hochkant: true),
-                    fortschritt: item.gesehenerAnteil)
+                    title: item.seriesName ?? item.name,
+                    subline: item.episodeCode,
+                    image: landscape ? (model.landscapeImageURL(for: item, width: 900)
+                                  ?? model.imageURL(for: item, maxHeight: 600, portrait: true))
+                               : model.imageURL(for: item, maxHeight: 600, portrait: true),
+                    progress: item.watchedShare)
             }
         }
 
-        var rubriken: [Regalrubrik] = []
-        if !stand.weiterschauen.isEmpty {
-            rubriken.append(.init(titel: String(localized: "Weiterschauen"), quer: true,
-                                  eintraege: eintraege(stand.weiterschauen, quer: true)))
+        var categories: [ShelfCategory] = []
+        if !state.continueWatching.isEmpty {
+            categories.append(.init(title: String(localized: "Weiterschauen"), landscape: true,
+                                  entries: entries(state.continueWatching, landscape: true)))
         }
-        if !stand.naechsteFolge.isEmpty {
-            rubriken.append(.init(titel: String(localized: "Nächste Folge"), quer: false,
-                                  eintraege: eintraege(stand.naechsteFolge, quer: false)))
+        if !state.nextEpisode.isEmpty {
+            categories.append(.init(title: String(localized: "Nächste Folge"), landscape: false,
+                                  entries: entries(state.nextEpisode, landscape: false)))
         }
-        if !stand.zuletzt.isEmpty {
-            rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügt"), quer: false,
-                                  eintraege: eintraege(stand.zuletzt, quer: false)))
+        if !state.recent.isEmpty {
+            categories.append(.init(title: String(localized: "Zuletzt hinzugefügt"), landscape: false,
+                                  entries: entries(state.recent, landscape: false)))
         }
-        // Getrennte Neuzugänge: `zuletzt` ist dann leer, die Startseite zeigt
-        // Filme und Serien einzeln — das Regal auch.
-        if !stand.neueFilme.isEmpty {
-            rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügte Filme"), quer: false,
-                                  eintraege: eintraege(stand.neueFilme, quer: false)))
+        // Separate new additions: `recent` is then empty, the home page shows movies and series
+        // individually, and so does the shelf.
+        if !state.newMovies.isEmpty {
+            categories.append(.init(title: String(localized: "Zuletzt hinzugefügte Filme"), landscape: false,
+                                  entries: entries(state.newMovies, landscape: false)))
         }
-        if !stand.neueSerien.isEmpty {
-            rubriken.append(.init(titel: String(localized: "Zuletzt hinzugefügte Serien"), quer: false,
-                                  eintraege: eintraege(stand.neueSerien, quer: false)))
+        if !state.newSeries.isEmpty {
+            categories.append(.init(title: String(localized: "Zuletzt hinzugefügte Serien"), landscape: false,
+                                  entries: entries(state.newSeries, landscape: false)))
         }
-        // **Abseits des Hauptakteurs.** Lesen, Vergleichen und Schreiben der
-        // Datei lagen nach jedem Laden der Startseite auf dem Hauptakteur —
-        // genau dann, wenn die Reihen gerade einblenden.
-        let vorschau = Regalvorschau(rubriken: rubriken)
-        let zahlen = rubriken.map(\.eintraege.count)
-        // Hintereinander, nie zwei zugleich: jede Runde wartet auf die
-        // vorige, sonst schrieben zwei schnelle Ladelaeufe dieselbe Datei.
-        let vorige = regalAufgabe
-        regalAufgabe = Task.detached(priority: .utility) {
-            await vorige?.value
-            Regal.schreiben(vorschau)
-            Protokoll.schreib("[Regal] \(zahlen.count) Rubriken, \(zahlen) Eintraege · \(Regal.befund())")
+        // Off the main actor. Reading, comparing and writing the file used to sit on the main
+        // actor after every home page load, exactly while the rows fade in.
+        let preview = ShelfPreview(categories: categories)
+        let numbers = categories.map(\.entries.count)
+        // One after another, never two at once: each round waits for the previous one;
+        // otherwise two fast loads wrote the same file.
+        let previous = shelfTask
+        shelfTask = Task.detached(priority: .utility) {
+            await previous?.value
+            Shelf.write(preview)
+            AppLog.writeOut("[Regal] \(numbers.count) Rubriken, \(numbers) Eintraege · \(Shelf.finding())")
         }
     }
 }
 
-// MARK: - Fokusmarke
+// MARK: - Focus marker
 
-/// Die Vorderkante jeder Reihe — bewusst **nicht** beobachtbar, siehe
-/// `HomeView.vorderste`.
+/// The leading edge of each row; deliberately not observable, see `HomeView.frontmost`.
 @MainActor
-private final class Vorderkanten {
-    var je: [Reihenkennung: String] = [:]
+private final class PreEdges {
+    var je: [RailsId: String] = [:]
 }
 
-/// Welche Reihe. Nur zur Unterscheidung, nicht fuer die Anzeige.
-private enum Reihenkennung: Hashable {
-    case weiterschauen, naechsteFolge, zuletzt
-    /// Neue Filme und neue Serien einzeln — wenn „Neuzugänge getrennt" an ist.
-    case neueFilme, neueSerien
-    /// Ein gewähltes Genre. Der Name ist die Kennung; zwei Reihen desselben
-    /// Genres gibt es nicht.
-    case gattung(String)
-    /// Eine gewählte Bibliothek oder Sammlung; die Kennung des Servers.
-    case bibliothek(String)
+/// Which row; only for telling markers apart, not for display.
+private enum RailsId: Hashable {
+    case continueWatching, nextEpisode, recent
+    /// New movies and new series separately, when "separate new additions" is on.
+    case newMovies, newSeries
+    /// A chosen genre. The name is the identifier; two rows of the same genre do not exist.
+    case genre(String)
+    /// A chosen library or collection; the server's identifier.
+    case library(String)
 }
 
-/// Was der Fokus auf der Startseite bezeichnet: **Reihe und Titel**.
+/// What focus refers to on the home page: row and title.
 ///
-/// Die Titelkennung allein reicht nicht, und das ist keine Vorsicht, sondern
-/// nachgemessen: derselbe Film steht regelmaessig in „Weiterschauen" **und**
-/// in „Zuletzt hinzugefuegt" — R.E.D. tat es. Beide Kacheln trugen dann
-/// dieselbe Marke. Wird sie gesetzt, hat tvOS zwei Kandidaten und nimmt einen;
-/// genommen hat es die untere, und die Seite oeffnete mitten in der letzten
-/// Reihe.
+/// The title identifier alone is not enough, as measured: the same movie regularly
+/// appears in "Continue Watching" and in "Recently Added". Both tiles then carried the
+/// same marker. When it is set, tvOS has two candidates and picks one; it picked the
+/// lower, and the page opened in the middle of the last row.
 ///
-/// Mit der Reihe darin ist die Marke eindeutig, und zwar ohne dass die
-/// Rubriken sich absprechen muessten. (Dass `Startseitenmodell` dieselben
-/// Titel doppelt liefert, ist geteilte Logik und gehoert zuerst auf iOS
-/// geprueft — die Anzeige darf davon aber nicht abhaengen.)
-private struct Kachelmarke: Hashable {
-    let reihe: Reihenkennung
-    let titel: String
+/// With the row in it the marker is unique, without the categories having to coordinate.
+/// (That `HomeModel` delivers the same titles twice is shared logic and belongs
+/// to be checked on iOS first; the display must not depend on it.)
+private struct TileMark: Hashable {
+    let rail: RailsId
+    let title: String
 }
 
-// MARK: - Reihe
+// MARK: - Row
 
-/// Eine waagerecht scrollende Reihe.
+/// A horizontally scrolling row.
 ///
-/// `scrollClipDisabled` ist hier kein Feinschliff, sondern Voraussetzung:
-/// der Fokusring liegt 10 Punkt **außerhalb** der Kachel, und die
-/// Scrollfläche würde ihn an ihrer Kante abschneiden. Oben und unten wäre er
-/// dann weg.
-private struct Streifen: View {
+/// `scrollClipDisabled` is a precondition, not polish: the focus ring sits 10 pt outside
+/// the tile and the scroll view would cut it at its edge, top and bottom.
+private struct Strip: View {
     let model: AppModel
     let items: [Item]
-    /// Macht die Fokusmarken dieser Reihe von denen der anderen unterscheidbar.
-    let reihe: Reihenkennung
-    var quer = false
-    var neuzugang = false
-    /// Gesetzt heisst: Klicken startet sofort, statt auf die Seite zu fuehren.
-    var direkt: ((Item) -> Void)?
-    /// Meldet nach oben, welcher Titel gerade unter dem Fokus steht.
-    @FocusState.Binding var amTitel: Kachelmarke?
-    /// Traegt hier ein, was in dieser Reihe gerade vorne steht.
-    let vorderste: Vorderkanten
+    /// Distinguishes this row's focus markers from those of other rows.
+    let rail: RailsId
+    var landscape = false
+    var newAccess = false
+    /// If set, clicking starts playback immediately instead of leading to the page.
+    var direct: ((Item) -> Void)?
+    /// Reports upward which title is under focus.
+    @FocusState.Binding var atTitle: TileMark?
+    /// Registers here what is at the front of this row.
+    let frontmost: PreEdges
 
-    /// Die Kachel an der Vorderkante — von der Scrollflaeche gemeldet.
-    @State private var vorne: String?
+    /// The tile at the leading edge, reported by the scroll view.
+    @State private var ahead: String?
 
-    /// **Nur die Kacheln.** Der Titel steht als `Section`-Kopf darueber —
-    /// nicht aus Ordnungsliebe, sondern weil tvOS ihn nur so kennt und beim
-    /// Fokussieren freihaelt. Selbstgebaut wandert er unter die Fensterkante.
+    /// Only the tiles. The title is the `Section` header above: tvOS only knows it that way
+    /// and frees it on focus. Hand-built, it slides under the window edge.
     var body: some View {
         ScrollView(.horizontal) {
-            // **`HStack`, nicht `LazyHStack`** — aus demselben Grund wie
-            // senkrecht, und er ist hier sogar zwingend.
+            // `HStack`, not `LazyHStack`, for the same reason as vertically, and here it is required.
             //
-            // Der Reihenwechsel wird nachtraeglich korrigiert (siehe
-            // `inhalt`), und eine Zuweisung an `@FocusState` bewegt den Fokus
-            // nur, wenn die Zielkachel **existiert**. Der faule Stapel erzeugt
-            // aber nur das gerade Sichtbare. Steht die Reihe um zwei Kacheln
-            // verschoben da, gibt es Kachel 1 nicht, die Zuweisung verpufft
-            // still, und der Fokus bleibt auf der dritten — jedes Mal auf
-            // derselben, weil der Versatz feststeht.
+            // The row change is corrected afterwards (see `content`), and an assignment to
+            // `@FocusState` only moves focus if the target tile exists. The lazy stack creates only
+            // what is visible. If the row is shifted by two tiles, tile 1 does not exist, the
+            // assignment fizzles, and focus stays on the third, every time, because the offset is
+            // fixed.
             //
-            // Das kostet: die Reihen laden ihre Bilder auf einen Schlag,
-            // hoechstens 24 je Reihe (`AppModel.zuletztHinzugefuegt`). Kleine
-            // Plakate, und dafuer ist der Fokus vorhersagbar statt manchmal.
-            HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+            // The cost: rows load their images at once, at most 24 per row
+            // (`AppModel.lastAdded`). Small posters, in exchange for predictable focus.
+            HStack(alignment: .top, spacing: Theme.tileSpacing) {
                 ForEach(items) { item in
                     Group {
-                        if let direkt {
-                            Button { direkt(item) } label: { kachel(item) }
-                                // Langes Druecken auf der Fernbedienung, wie
-                                // in der TV-App von Apple — kein Nachbau,
-                                // `contextMenu` kann das auf tvOS selbst.
-                                // Dasselbe Menü wie am iPhone (`Kachelmenue`),
-                                // hier mit „Zur Übersicht" und „Aus
-                                // Weiterschauen entfernen".
-                                .kachelmenue(item, model: model,
-                                             weiterschauen: reihe == .weiterschauen, quer: quer)
+                        if let direct {
+                            Button { direct(item) } label: { tile(item) }
+                                // Long press on the remote, as in Apple's TV app; `contextMenu` does that on tvOS
+                                // itself. The same menu as on iPhone (`TileMenu`), here with "To overview" and
+                                // "Remove from Continue Watching".
+                                .tileMenu(item, model: model,
+                                             continueWatching: rail == .continueWatching, landscape: landscape)
                         } else {
-                            // **Seit 1.0.5 an jeder Kachel**, nicht nur an
-                            // „Weiterschauen" — wie am iPhone.
-                            NavigationLink(value: item) { kachel(item) }
-                                .kachelmenue(item, model: model, quer: quer)
+                            // On every tile since 1.0.5, not only on "Continue Watching", as on iPhone.
+                            NavigationLink(value: item) { tile(item) }
+                                .tileMenu(item, model: model, landscape: landscape)
                         }
                     }
-                    .buttonStyle(KachelStil())
-                    .focused($amTitel, equals: .init(reihe: reihe, titel: item.id))
+                    .buttonStyle(TileStyle())
+                    .focused($atTitle, equals: .init(rail: rail, title: item.id))
                 }
             }
-            .padding(.horizontal, Stil.randSeite)
-            // **Luft fuer die Vergroesserung.**
-            //
-            // Die fokussierte Kachel waechst um 1,08 ueber ihre Layoutgroesse
-            // hinaus. Diese Luft faengt das **innerhalb** der Reihe ab —
-            // deshalb darf die senkrechte Flaeche darueber beschneiden, ohne
-            // je eine Kachel anzuschneiden.
-            .padding(.vertical, Stil.reihenLuft)
-            // Markiert die Kacheln als Bezugspunkte — nur damit
-            // `scrollPosition` sagen kann, welche vorne liegt. Ein
-            // `scrollTargetBehavior` steht bewusst nicht dabei: es soll
-            // nichts einrasten, nur gemeldet werden.
+            .padding(.horizontal, Theme.edgePage)
+            // Room for the zoom. The focused tile grows by 1.08 beyond its layout size. This
+            // padding absorbs that inside the row, so the vertical scroll view above may clip
+            // without cutting a tile.
+            .padding(.vertical, Theme.railsPadding)
+            // Marks the tiles as reference points so `scrollPosition` can say which is at the
+            // front. No `scrollTargetBehavior` on purpose: nothing should snap, only be reported.
             .scrollTargetLayout()
         }
-        .scrollPosition(id: $vorne, anchor: .leading)
-        .onChange(of: vorne, initial: true) { _, id in vorderste.je[reihe] = id }
+        .scrollPosition(id: $ahead, anchor: .leading)
+        .onChange(of: ahead, initial: true) { _, id in frontmost.je[rail] = id }
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
-        // Jede Reihe ist ein eigener Abschnitt.
+        // Each row is its own section.
         //
-        // Ohne das sucht tvOS senkrecht nach einer Kachel, die **in
-        // derselben Spalte** liegt. „Nächste Folge" hat oft weniger
-        // Einträge als „Weiterschauen" — stand man auf der dritten Kachel,
-        // fand der Fokus dort nichts und sprang gleich zwei Reihen tiefer.
-        // Als Abschnitt gilt die Reihe als Ganzes und wird angesteuert, egal
-        // wie breit sie ist.
+        // Without it tvOS looks vertically for a tile in the same column. "Next Up" often has
+        // fewer entries than "Continue Watching"; from the third tile focus found nothing there
+        // and jumped two rows down. As a section the row counts as a whole and is targeted
+        // regardless of its width.
         .focusSection()
     }
 
-    private func kachel(_ item: Item) -> some View {
-        Kachelinhalt(bild: bildURL(item),
-                     titel: item.seriesName ?? item.name,
-                     unterzeile: unterzeile(item),
-                     quer: quer,
-                     fortschritt: fortschritt(item),
-                     zeichen: item.kachelzeichen)
+    private func tile(_ item: Item) -> some View {
+        TileContent(image: imageUrl(item),
+                     title: item.seriesName ?? item.name,
+                     subline: subline(item),
+                     landscape: landscape,
+                     progress: progress(item),
+                     symbolText: item.tileCharacter)
     }
 
-    private func bildURL(_ item: Item) -> URL? {
-        quer ? (model.querbildURL(for: item, breite: 900)
-                ?? model.imageURL(for: item, maxHeight: 600, hochkant: true))
-             : model.imageURL(for: item, maxHeight: 600, hochkant: true)
+    private func imageUrl(_ item: Item) -> URL? {
+        landscape ? (model.landscapeImageURL(for: item, width: 900)
+                ?? model.imageURL(for: item, maxHeight: 600, portrait: true))
+             : model.imageURL(for: item, maxHeight: 600, portrait: true)
     }
 
-    /// Die leise Zeile unter dem Namen. Bei „Weiterschauen" mit der Restzeit
-    /// — „S2 · F5 · noch 12 Min." (Entwurf D, wie am iPhone): das Bild bleibt
-    /// frei, die Angabe steht, wo das Kürzel ohnehin stand. Die Zeile kommt
-    /// aus dem Paket (`weiterschauenzeile`).
-    private func unterzeile(_ item: Item) -> String? {
-        if reihe == .weiterschauen, let zeile = item.weiterschauenzeile { return zeile }
-        return neuzugang ? item.neuzugangszeile : item.folgenkuerzel
+    /// The quiet line under the name. For "Continue Watching" it carries the remaining time,
+    /// "S2 · E5 · 12 min left": the image stays clear and the detail sits where the
+    /// abbreviation was anyway. The line comes from the package (`continueWatchingRow`).
+    private func subline(_ item: Item) -> String? {
+        if rail == .continueWatching, let row = item.continueWatchingRow { return row }
+        return newAccess ? item.newArrivalsRow : item.episodeCode
     }
 
-    private func fortschritt(_ item: Item) -> Double? { item.gesehenerAnteil }
+    private func progress(_ item: Item) -> Double? { item.watchedShare }
 }

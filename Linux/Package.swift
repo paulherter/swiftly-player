@@ -1,29 +1,27 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// **Kein fremdes Swift-Paket fuer die Oberflaeche, und das ist eine
-// Entscheidung, keine Verlegenheit.**
+// **No third-party Swift package for the UI; this is a deliberate decision.**
 //
-// Der naheliegende Weg waere „Adwaita for Swift" gewesen — deklarativ, nah an
-// SwiftUI. Am 04.09.2026 hat sich das als Sackgasse erwiesen: das Projekt ist
-// auf GitHub archiviert, nach Codeberg umgezogen, dort antwortet der Server
-// unregelmaessig mit 504, und SwiftPM findet den Hauptzweig nicht, obwohl
-// `git ls-remote` ihn daneben anzeigt. Sechs Anlaeufe, kein Bau.
+// "Adwaita for Swift" (declarative, close to SwiftUI) was the obvious
+// choice but proved a dead end: the project is archived on GitHub and moved
+// to Codeberg, where the server intermittently answers 504, and SwiftPM
+// fails to find the main branch although `git ls-remote` lists it. Six
+// attempts, no build.
 //
-// GTK4 selbst liegt als C-Bibliothek auf jedem Linux-Rechner, der die App
-// ausfuehren soll. Ueber eine Modulzuordnung ist sie direkt ansprechbar, ohne
-// Netz, ohne Fassungsaufloesung, ohne fremde Wartung. Der Preis ist
-// imperativer Code statt eines deklarativen Baums — fuer eine Oberflaeche,
-// die ohnehin plattformeigen sein soll, ein guter Tausch.
+// GTK4 is a C library present on every Linux machine that runs the app. A
+// module map makes it directly usable, with no network, no version
+// resolution and no third-party maintenance. The price is imperative code
+// instead of a declarative tree, a fair trade for a UI that is meant to be
+// platform-native anyway.
 let package = Package(
     name: "SwiftlyLinux",
-    // **Deutsch ist die Ausgangssprache** — und zugleich der Schluessel jedes
-    // Textes. Ohne diese Zeile weigert sich SwiftPM, sobald ein Ziel
-    // uebersetzte Mittel mitbringt: es muss wissen, was gilt, wenn die
-    // Sprache des Rechners in keinem Katalog steht.
+    // **German is the source language** and also the key of every text. Without
+    // this line SwiftPM refuses as soon as a target ships localized resources: it
+    // needs to know what applies when the machine's language is in no catalog.
     defaultLocalization: "de",
     dependencies: [
-        // Dieselben Dateien, die iOS, tvOS und macOS benutzen. Keine Kopie.
+        // The same files that iOS, tvOS and macOS use. No copy.
         .package(path: "../Packages/JellyfinKit")
     ],
     targets: [
@@ -32,38 +30,34 @@ let package = Package(
             pkgConfig: "gtk4",
             providers: [.apt(["libgtk-4-dev"])]
         ),
-        // **libVLC des Systems, nicht VLCKit.** Auf Apple liegt VLCKit als
-        // XCFramework bei; auf Linux ist libVLC eine Systembibliothek. Was
-        // entscheidet, ob transkodiert wird, ist ohnehin das DeviceProfile im
-        // Paket — das ist auf allen Plattformen dasselbe.
+        // **System libVLC, not VLCKit.** On Apple, VLCKit ships as an XCFramework;
+        // on Linux libVLC is a system library. Whether to transcode is decided by the
+        // DeviceProfile in the package, which is the same on all platforms.
         .systemLibrary(
             name: "CVLC",
             pkgConfig: "libvlc",
             providers: [.apt(["libvlc-dev"])]
         ),
-        // Der fadenkritische Teil in C: VLCs Rueckrufe laufen auf dem
-        // Dekoderfaden und teilen sich einen Puffer mit GTKs Hauptfaden.
-        // Begruendung in bildbruecke.h.
-        // libepoxy fuer den HDR-Shader (`hdrbild.c`) - GTK bringt es ohnehin mit.
-        .target(name: "CBildbruecke", dependencies: ["CVLC"],
+        // The thread-critical part in C: VLC's callbacks run on the decoder thread
+        // and share a buffer with GTK's main thread. Rationale in imagebridge.h.
+        // libepoxy for the HDR shader (`hdrimage.c`); GTK ships it anyway.
+        .target(name: "CImageBridge", dependencies: ["CVLC"],
                 linkerSettings: [.linkedLibrary("epoxy")]),
-        // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
-        // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
-        .target(name: "CMedientasten"),
-        // Meldet die mitgelieferte Schrift bei fontconfig an. Sie liegt bei,
-        // weil SF Pro es nur auf dem Mac gibt und alle Plattformen gleich
-        // aussehen sollen.
-        .target(name: "CSchriften",
+        // Keyboard media keys. Empty on Linux (MPRIS handles them there); on Windows
+        // a custom window procedure is needed.
+        .target(name: "CMediaKeys"),
+        // Registers the bundled font with fontconfig. It is shipped because SF Pro
+        // only exists on the Mac and all platforms should look the same.
+        .target(name: "CFonts",
                 linkerSettings: [.linkedLibrary("fontconfig")]),
-        // **rlottie fuer die Startanimation.** Die Vorlage kommt als Lottie
-        // aus After Effects und liegt in `Sources/Shared/Mittel` — dieselbe
-        // Datei, die iOS, tvOS und macOS abspielen. Nachbauen kaeme nicht in
-        // Frage: jeder Keyframe traegt eigene Bezier-Anlaeufe, von Hand wird
-        // die Bewegung *fast* richtig, und das faellt mehr auf als keine.
+        // **rlottie for the startup animation.** The source is a Lottie file from
+        // After Effects in `Sources/Shared/Medium`, the same file iOS, tvOS and macOS
+        // play. Rebuilding it by hand is not an option: every keyframe has its own
+        // Bezier easing, and hand-made motion ends up *almost* right, which is more
+        // noticeable than none.
         //
-        // Auf Arch ist rlottie nicht paketiert. `Werkzeuge/rlottie-bauen.sh`
-        // uebersetzt die Quellen ohne cmake nach `~/.local` und legt die
-        // pkg-config-Datei dazu.
+        // rlottie is not packaged on Arch. `Werkzeuge/rlottie-build.sh` compiles the
+        // sources without cmake into `~/.local` and adds the pkg-config file.
         .systemLibrary(
             name: "CRlottie",
             pkgConfig: "rlottie",
@@ -74,17 +68,16 @@ let package = Package(
             dependencies: [
                 "CGtk",
                 "CVLC",
-                "CBildbruecke",
-                "CMedientasten",
-                "CSchriften",
+                "CImageBridge",
+                "CMediaKeys",
+                "CFonts",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],
-            // **Die Oberflaeche bringt ihre Texte selbst mit.** Das Paket hat
-            // seinen eigenen Katalog; ein Buendel findet nur, was in ihm
-            // liegt. Ohne diese Zeile stuende die Oberflaeche auf Deutsch da,
-            // waehrend Laufzeiten und Fehlermeldungen uebersetzt sind — das
-            // Gemisch ist schlimmer als eine Sprache.
+            // **The UI ships its own texts.** The package has its own catalog, and a
+            // bundle only finds what is inside it. Without this line the UI would be in
+            // German while runtimes and error messages are translated, and a mix is
+            // worse than one language.
             resources: [.process("Resources")]
         )
     ]

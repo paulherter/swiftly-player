@@ -54,44 +54,43 @@ public struct ItemsResponse: Codable, Sendable {
         self.totalRecordCount = totalRecordCount
     }
 
-    /// Liest nachsichtig ein.
+    /// Decodes leniently.
     ///
-    /// Zwei Härten, die vorher eine ganze Antwort kippen konnten:
-    /// ein einzelner Eintrag ohne `Name` liess die **gesamte** Liste
-    /// scheitern — der Bildschirm blieb leer, ohne dass etwas gesagt wurde —,
-    /// und `TotalRecordCount` fehlt bei einigen Endpunkten ganz.
+    /// Two hardenings against failures that used to topple a whole response:
+    /// a single entry without `Name` made the **entire** list fail, leaving the
+    /// screen empty without a word, and `TotalRecordCount` is missing entirely
+    /// on some endpoints.
     public init(from decoder: any Decoder) throws {
-        let behaelter = try decoder.container(keyedBy: CodingKeys.self)
-        items = try behaelter.decodeIfPresent(Nachsichtig<Item>.self, forKey: .items)?
-            .werte ?? []
-        totalRecordCount = try behaelter.decodeIfPresent(Int.self, forKey: .totalRecordCount)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        items = try container.decodeIfPresent(Lenient<Item>.self, forKey: .items)?
+            .values ?? []
+        totalRecordCount = try container.decodeIfPresent(Int.self, forKey: .totalRecordCount)
             ?? items.count
     }
 }
 
-/// Liest ein Feld ein und überspringt, was sich nicht lesen lässt.
+/// Decodes a field and skips what cannot be read.
 ///
-/// Ein Server, der einen kaputten Eintrag liefert, soll eine Liste nicht
-/// unbrauchbar machen. Der Rest kommt durch.
-struct Nachsichtig<Wert: Decodable>: Decodable {
-    let werte: [Wert]
+/// A server that returns one broken entry should not make a list unusable.
+/// The rest comes through.
+struct Lenient<Amount: Decodable>: Decodable {
+    let values: [Amount]
 
     init(from decoder: any Decoder) throws {
-        var behaelter = try decoder.unkeyedContainer()
-        var gesammelt: [Wert] = []
-        while !behaelter.isAtEnd {
-            if let wert = try? behaelter.decode(Wert.self) {
-                gesammelt.append(wert)
+        var container = try decoder.unkeyedContainer()
+        var collected: [Amount] = []
+        while !container.isAtEnd {
+            if let value = try? container.decode(Amount.self) {
+                collected.append(value)
             } else {
-                // Verbrauchen, sonst steht der Zeiger fest und die Schleife
-                // läuft ewig.
-                _ = try? behaelter.decode(Uebersprungen.self)
+                // Consume it, otherwise the pointer stays put and the loop runs forever.
+                _ = try? container.decode(Skipped.self)
             }
         }
-        werte = gesammelt
+        values = collected
     }
 
-    private struct Uebersprungen: Decodable {
+    private struct Skipped: Decodable {
         init(from decoder: any Decoder) throws {}
     }
 }
@@ -104,23 +103,23 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let productionYear: Int?
     public let overview: String?
     public let runTimeTicks: Int64?
-    /// Serienkontext — für die Zeile unter dem Titel im Player.
+    /// Series context, for the line under the title in the player.
     public let seriesName: String?
-    public let indexNumber: Int?          // Folge
-    public let parentIndexNumber: Int?    // Staffel
+    public let indexNumber: Int?          // episode
+    public let parentIndexNumber: Int?    // season
     public let seriesId: String?
-    /// Staffel, zu der eine Folge gehört — damit die Serienseite gleich die
-    /// richtige Staffel aufschlägt.
+    /// Season an episode belongs to, so the series page opens the right season
+    /// right away.
     public let seasonId: String?
     public let genres: [String]?
     public let officialRating: String?
     public let communityRating: Double?
     public let childCount: Int?
-    /// Trailer, die als Datei auf dem Server liegen.
+    /// Trailers stored as a file on the server.
     public let localTrailerCount: Int?
     public let backdropImageTags: [String]?
-    /// Poster der Serie — Folgen tragen als eigenes Bild nur ein
-    /// Vorschaubild im 16:9-Format, das in einer Hochkantkachel nichts taugt.
+    /// Poster of the series. Episodes carry only a 16:9 thumbnail of their own,
+    /// which is useless in a portrait tile.
     public let seriesPrimaryImageTag: String?
     public let people: [Person]?
     public let studios: [NameID]?
@@ -130,28 +129,28 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let imageTags: [String: String]?
     public let userData: UserItemData?
     public let mediaSources: [MediaSource]?
-    /// Der Hintergrund der **Serie**, mitgeliefert an jeder Folge.
+    /// The backdrop of the **series**, delivered with every episode.
     ///
-    /// Eine Folge hat nie einen eigenen — `BackdropImageTags` ist bei ihr
-    /// immer leer, am Server nachgemessen. Wer den Hintergrund einer Folge
-    /// will, muss hierher sehen. Wurde bisher gar nicht gelesen.
+    /// An episode never has its own: `BackdropImageTags` is always empty for it,
+    /// as verified against the server. Whoever wants an episode's backdrop must
+    /// look here. It was not read at all before.
     public let parentBackdropImageTags: [String]?
-    /// Zu welchem Titel der obige Hintergrund gehört.
+    /// Which title the backdrop above belongs to.
     public let parentBackdropItemId: String?
-    /// Das quer liegende Vorschaubild eines Titels, falls eines hinterlegt
-    /// ist. Bei Serien häufig gepflegt, bei Folgen selten.
+    /// The landscape thumbnail of a title, if one is stored. Often maintained for
+    /// series, rarely for episodes.
     public let parentThumbImageTag: String?
-    /// Das Logo der Serie, mitgeliefert an jeder Folge.
+    /// The logo of the series, delivered with every episode.
     public let parentLogoImageTag: String?
     public let parentThumbItemId: String?
-    /// Bei einer Person der Geburtstag, sonst die Erstausstrahlung.
+    /// For a person the birthday, otherwise the premiere date.
     public let premiereDate: String?
-    /// Bei einer Person der Geburtsort.
+    /// For a person the birthplace.
     public let productionLocations: [String]?
-    /// `Tmdb`, `Imdb` … — über die TMDB-Kennung findet Seerr eine Person.
+    /// `Tmdb`, `Imdb` … Seerr finds a person via the TMDB id.
     public let providerIds: [String: String]?
-    /// Art eines Extras (`Clip`, `BehindTheScenes`, `Interview`, `Trailer` …);
-    /// nur an Einträgen aus `SpecialFeatures` gesetzt.
+    /// Kind of an extra (`Clip`, `BehindTheScenes`, `Interview`, `Trailer` …);
+    /// set only on entries from `SpecialFeatures`.
     public let extraType: String?
 
     enum CodingKeys: String, CodingKey {
@@ -193,127 +192,120 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case extraType = "ExtraType"
     }
 
-    /// Namen der Regie, für die Zeile unter der Beschreibung.
-    public var regie: [String] {
+    /// Names of the directors, for the line under the description.
+    public var direction: [String] {
         (people ?? []).filter { $0.type == "Director" }.map(\.name)
     }
 
-    /// Darsteller in Reihenfolge, ohne Stab.
-    public var darsteller: [Person] {
-        (people ?? []).filter(\.istDarsteller)
+    /// Cast in order, without crew.
+    public var actors: [Person] {
+        (people ?? []).filter(\.isCast)
     }
 
-    /// Serie, Staffel oder Sammlung — hat keine eigene Mediendatei.
-    public var istBehaelter: Bool {
+    /// Series, season or collection; has no media file of its own.
+    public var isContainer: Bool {
         ["Series", "Season", "BoxSet", "Folder", "CollectionFolder"].contains(type ?? "")
     }
 
-    /// „S1 • F3" auf Deutsch, „S1 • E3" auf Englisch — kurz, für
-    /// Knopfbeschriftungen.
+    /// "S1 • F3" in German, "S1 • E3" in English; short, for button labels.
     ///
-    /// **Der Buchstabe ist übersetzt, nicht fest verdrahtet.** Stand hier
-    /// einmal immer als „E" — auf Deutsch stimmt das nicht: Netflix DE und
-    /// die Apple-TV-App zeigen „F" wie „Folge", „E" gehört nur zu
-    /// „Episode". An den Kacheln stand deshalb „F6, F7", am Abspielknopf
-    /// „E7" — derselbe Wert, zwei Sprachen an einer Stelle (gemeldet
-    /// 27.09.2026).
-    public var folgenkuerzel: String? {
-        guard let staffel = parentIndexNumber, let folge = indexNumber else { return nil }
-        return uebersetzt("S\(staffel) • F\(folge)")
+    /// **The letter is translated, not hard-wired.** It used to be a fixed "E",
+    /// which is wrong in German: Netflix DE and the Apple TV app show "F" for
+    /// "Folge"; "E" belongs only to "Episode". The tiles showed "F6, F7" while the
+    /// play button showed "E7": the same value, two languages in one place.
+    public var episodeCode: String? {
+        guard let season = parentIndexNumber, let episode = indexNumber else { return nil }
+        return translated("S\(season) • F\(episode)")
     }
 
-    /// Anteil des schon Gesehenen, 0 bis 1 — für die Fortschrittsbalken.
+    /// Fraction already watched, 0 to 1, for the progress bars.
     ///
-    /// **Aus `Sources/Shared/Titelangaben.swift` hierher gehoben.** Dort war
-    /// sie für Linux unerreichbar, obwohl an ihr nichts hängt, was mit
-    /// Oberfläche oder Übersetzung zu tun hätte.
-    public var gesehenerAnteil: Double? {
-        guard let prozent = userData?.playedPercentage, prozent > 0 else { return nil }
-        return prozent / 100
+    /// **Lifted here from `Sources/Shared/TitleDetails.swift`.** There it was
+    /// unreachable for Linux, although nothing about it depends on UI or
+    /// translation.
+    public var watchedShare: Double? {
+        guard let percent = userData?.playedPercentage, percent > 0 else { return nil }
+        return percent / 100
     }
 
-    public var istGesehen: Bool { userData?.played ?? false }
+    public var isWatched: Bool { userData?.played ?? false }
 
-    /// Zweitzeile für „Zuletzt hinzugefügt": *was* dazugekommen ist.
+    /// Second line for "Recently added": *what* was added.
     ///
-    /// Jellyfin fasst neue Folgen zusammen — kam eine ganze Staffel dazu,
-    /// liefert der Server eine Staffel, bei einzelnen Folgen die Folge. Die
-    /// Zeile muss das also unterscheiden, sonst steht überall nur der Titel.
-    public var neuzugangszeile: String? {
+    /// Jellyfin groups new episodes: if a whole season was added, the server
+    /// returns a season, for single episodes the episode. The line must tell them
+    /// apart, otherwise only the title shows everywhere.
+    public var newArrivalsRow: String? {
         switch type {
         case "Episode":
-            // Die Staffel, nicht die Folge: In der Reihe steht eine Serie für
-            // alles, was zuletzt dazukam. „Staffel 3" beantwortet die Frage
-            // „wo geht es weiter", eine einzelne Folgennummer nicht.
-            if let staffel = parentIndexNumber { return uebersetzt("Staffel \(staffel)") }
-            if let folge = indexNumber { return uebersetzt("Folge \(folge)") }
+            // The season, not the episode: in the row, a series stands for everything
+            // that was added lately. "Season 3" answers "where does it continue"; a
+            // single episode number does not.
+            if let season = parentIndexNumber { return translated("Staffel \(season)") }
+            if let episode = indexNumber { return translated("Folge \(episode)") }
             return nil
         case "Season":
-            // Ohne Nummer trägt der Name die Aussage, etwa „Specials".
-            if let nummer = indexNumber { return uebersetzt("Staffel \(nummer)") }
+            // Without a number the name carries the meaning, e.g. "Specials".
+            if let number = indexNumber { return translated("Staffel \(number)") }
             return name
         case "Series":
-            // `ChildCount` ist hier **nicht** die Zahl der Staffeln.
+            // `ChildCount` here is **not** the number of seasons.
             //
-            // `Items/Latest` fasst neue Folgen unter ihrer Serie zusammen, und
-            // die Zahl gehört zu dieser Gruppe: so viele Folgen sind neu. Als
-            // Staffeln beschriftet stand bei einer Serie mit zwei Staffeln
-            // „8 Staffeln“, weil acht Folgen dazugekommen waren.
+            // `Items/Latest` groups new episodes under their series, and the number
+            // belongs to that group: this many episodes are new. Labeled as seasons, a
+            // series with two seasons read "8 Staffeln" because eight episodes had
+            // been added.
             //
-            // Welche Staffel es war, sagt der Server in dieser Antwort nicht.
-            guard let anzahl = childCount, anzahl > 0 else {
+            // The server does not say in this response which season it was.
+            guard let count = childCount, count > 0 else {
                 return productionYear.map(String.init)
             }
-            return uebersetzt("\(anzahl) neue Folgen")
+            return translated("\(count) neue Folgen")
         default:
             return productionYear.map(String.init)
         }
     }
 
-    /// „S1 • F3 • 21 Jump Street" auf Deutsch, „S1 • E3 • 21 Jump Street"
-    /// auf Englisch — beim Film das Jahr.
+    /// "S1 • F3 • 21 Jump Street" in German, "S1 • E3 • 21 Jump Street" in
+    /// English; for a film the year.
     ///
-    /// **Das Jahr beim Film stand hier einmal nicht.** Unter „Weiterschauen"
-    /// stand bei Filmen dann nur die Restzeit, obwohl überall sonst das Jahr
-    /// steht (Liste 23.09.). Eine Stelle für alle Plattformen.
-    public var kontextzeile: String? {
-        var teile: [String] = []
-        if let staffel = parentIndexNumber { teile.append(uebersetzt("S\(staffel)")) }
-        if let folge = indexNumber { teile.append(uebersetzt("F\(folge)")) }
-        if let serie = seriesName { teile.append(serie) }
-        if teile.isEmpty, type == "Movie", let jahr = productionYear { teile.append(String(jahr)) }
-        return teile.isEmpty ? nil : teile.joined(separator: " • ")
+    /// **The year for films.** Under "Continue watching", films showed only the
+    /// remaining time although the year is shown everywhere else. One place for
+    /// all platforms.
+    public var contextLine: String? {
+        var parts: [String] = []
+        if let season = parentIndexNumber { parts.append(translated("S\(season)")) }
+        if let episode = indexNumber { parts.append(translated("F\(episode)")) }
+        if let series = seriesName { parts.append(series) }
+        if parts.isEmpty, type == "Movie", let year = productionYear { parts.append(String(year)) }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
-    /// Laufzeit in Sekunden. Jellyfin zählt in 100-Nanosekunden-Ticks.
+    /// Runtime in seconds. Jellyfin counts in 100-nanosecond ticks.
     public var runtimeSeconds: Double? {
         runTimeTicks.map { Double($0) / 10_000_000 }
     }
-    /// Eine **vorläufige Serie** aus dem, was eine Folge ohnehin trägt.
+    /// A **provisional series** built from what an episode carries anyway.
     ///
-    /// Ein Listeneintrag einer Folge kennt `seriesId` und `seriesName` —
-    /// mehr braucht eine Serienseite nicht, um aufzumachen: die Kennung für
-    /// alle weiteren Abrufe, den Namen für die Überschrift, die Gattung für
-    /// die Weichen. Das Kulissenbild ist ohnehin dasselbe, `querbildURL`
-    /// baut es aus `seriesId ?? id`. Alles Weitere — Beschreibung,
-    /// Bewertung, Staffelzahl — holt die Seite sich selbst nach und schreibt
-    /// es darüber.
+    /// A list entry of an episode knows `seriesId` and `seriesName`, which is all a
+    /// series page needs to open: the id for all further calls, the name for the
+    /// heading, the genre for the branches. The backdrop is the same anyway;
+    /// `landscapeImageURL` builds it from `seriesId ?? id`. Everything else (description,
+    /// rating, season count) the page fetches itself and writes over it.
     ///
-    /// **Warum das hier steht und nicht in einer Ansicht.** Die tvOS-Fassung
-    /// hat sich dasselbe Ding über einen Umweg durch JSON gebaut, weil `Item`
-    /// keinen öffentlichen Erzeuger hat, und im Kommentar daneben vermerkt:
-    /// „gehört ins Paket". Genau so ist es — es ist eine Aussage über unser
-    /// Datenmodell, keine über eine Oberfläche, und hier ist sie ohne
-    /// Simulator prüfbar.
+    /// **Why this is here and not in a view.** It is a statement about our data
+    /// model, not about a UI, and here it can be tested without a simulator. `Item`
+    /// has no public initializer, which is why other code had to build the same
+    /// thing through a JSON detour.
     ///
-    /// Gibt `nil` zurück, wenn die Folge keine Serie nennt: dann gibt es
-    /// nichts vorwegzunehmen.
-    public static func vorlaeufigeSerie(zu folge: Item) -> Item? {
-        guard let id = folge.seriesId, let name = folge.seriesName else { return nil }
+    /// Returns `nil` if the episode names no series: then there is nothing to
+    /// anticipate.
+    public static func preCommonSeries(toward episode: Item) -> Item? {
+        guard let id = episode.seriesId, let name = episode.seriesName else { return nil }
         return Item(id: id, name: name, type: "Series")
     }
 
-    /// Ein Eintrag aus dem Nötigsten. Alles Weitere kommt vom Server.
+    /// An entry made of the bare minimum. Everything else comes from the server.
     public init(id: String, name: String, type: String? = nil,
                 collectionType: String? = nil, productionYear: Int? = nil,
                 overview: String? = nil, runTimeTicks: Int64? = nil,
@@ -364,8 +356,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
 
 }
 
-// Für NavigationLink(value:). Die id genügt — sie ist serverweit eindeutig,
-// und die übrigen Felder sind teils nicht hashbar.
+// For NavigationLink(value:). The id is enough: it is unique across the
+// server, and the other fields are partly not hashable.
 extension Item: Hashable {
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -375,18 +367,18 @@ public struct UserItemData: Codable, Sendable, Equatable {
     public let played: Bool?
     public let isFavorite: Bool?
     public let playedPercentage: Double?
-    /// Wie viele Folgen einer Serie noch offen sind.
+    /// How many episodes of a series are still unwatched.
     ///
-    /// **Der Server schickt es seit jeher mit, wir haben es nie gelesen.**
-    /// Deshalb konnte eine Serienkachel nichts sagen: der Fortschrittsbalken
-    /// zeigt den Stand der angefangenen *Folge*, nicht den der Serie.
+    /// **The server has always sent it; we never read it.** That is why a series
+    /// tile could say nothing: the progress bar shows the state of the started
+    /// *episode*, not of the series.
     public let unplayedItemCount: Int?
-    /// `LastPlayedDate`, **so wie der Server es schickt** — als Text.
+    /// `LastPlayedDate` **as the server sends it**, as text.
     ///
-    /// Nicht als `Date`: `Item` wird an zwei Stellen mit dem gewoehnlichen
-    /// `JSONDecoder` gelesen (tvOS-Oberregal, Kern auf Android), und der
-    /// liest ein Datum als Zahl. Ein `Date`-Feld haette dort den ganzen Titel
-    /// unlesbar gemacht. Gelesen wird es ueber ``zuletztGespielt``.
+    /// Not as `Date`: `Item` is decoded in two places with the plain `JSONDecoder`
+    /// (the tvOS top shelf, the Android core), which reads a date as a number. A
+    /// `Date` field would have made the whole title unreadable there. It is read
+    /// through ``lastPlay``.
     public let lastPlayedDate: String?
 
     public init(playbackPositionTicks: Int64? = nil, played: Bool? = nil,
@@ -400,10 +392,10 @@ public struct UserItemData: Codable, Sendable, Equatable {
         self.lastPlayedDate = lastPlayedDate
     }
 
-    /// Wann zuletzt gespielt — fuer „neuerer Stand gewinnt" (Nachmeldung).
-    public var zuletztGespielt: Date? {
+    /// When last played, for "newer state wins" (late report).
+    public var lastPlay: Date? {
         guard let text = lastPlayedDate else { return nil }
-        return Zeitstempel.lesen(text)
+        return TimestampFormat.read(text)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -417,14 +409,13 @@ public struct UserItemData: Codable, Sendable, Equatable {
 }
 
 extension UserItemData {
-    /// **Der Anteil wird beim Lesen auf 0 bis 100 begrenzt.**
+    /// **The fraction is limited to 0 to 100 on decoding.**
     ///
-    /// Die Kacheln schreiben ihn als ganze Zahl in die Bedienhilfe
-    /// (`Int(anteil * 100)`), und `Int` bricht die App ab, sobald der Wert
-    /// nicht hineinpasst. Ein Server mit kaputter Laufzeit — ein Tick lang,
-    /// Stand bei einer Stunde — liefert genau so einen. Nachgestellt im
-    /// tvOS-Simulator: die Bibliothek stuerzte beim ersten Zeichnen der
-    /// Kachel ab. Hier einmal begrenzt, gilt es fuer jede Stelle.
+    /// The tiles write it as an integer into the accessibility text
+    /// (`Int(share * 100)`), and `Int` traps as soon as the value does not fit. A
+    /// server with a broken runtime (one tick long, with a position at one hour)
+    /// delivers exactly such a value. Reproduced in the tvOS simulator: the library
+    /// crashed on the first draw of the tile. Limiting once here covers every place.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         playbackPositionTicks = try c.decodeIfPresent(Int64.self, forKey: .playbackPositionTicks)
@@ -437,7 +428,7 @@ extension UserItemData {
     }
 }
 
-/// Ein Mitwirkender. `role` ist die Rolle im Film, `type` die Funktion
+/// A contributor. `role` is the role in the film, `type` the function
 /// (Actor, Director, Writer …).
 public struct Person: Codable, Sendable, Identifiable, Hashable {
     public let id: String
@@ -454,7 +445,7 @@ public struct Person: Codable, Sendable, Identifiable, Hashable {
         case primaryImageTag = "PrimaryImageTag"
     }
 
-    public var istDarsteller: Bool { type == "Actor" }
+    public var isCast: Bool { type == "Actor" }
 }
 
 public struct NameID: Codable, Sendable, Identifiable, Hashable {
@@ -469,14 +460,14 @@ public struct MediaURL: Codable, Sendable, Hashable {
     enum CodingKeys: String, CodingKey { case url = "Url", name = "Name" }
 }
 
-// MARK: - Wiedergabe
+// MARK: - Playback
 
 public struct PlaybackInfoResponse: Codable, Sendable {
     public let mediaSources: [MediaSource]
     public let playSessionId: String?
-    /// Warum der Server keine Fassung nennt: `NotAllowed`,
-    /// `NoCompatibleStream`, `RateLimitExceeded`. Kommt nur zusammen mit einer
-    /// leeren Quellenliste — siehe ``JellyfinError/wiedergabeAbgelehnt(_:)``.
+    /// Why the server names no version: `NotAllowed`, `NoCompatibleStream`,
+    /// `RateLimitExceeded`. Comes only together with an empty source list; see
+    /// ``JellyfinError/wiedergabeAbgelehnt(_:)``.
     public let errorCode: String?
 
     public init(mediaSources: [MediaSource], playSessionId: String?, errorCode: String? = nil) {
@@ -489,9 +480,9 @@ public struct PlaybackInfoResponse: Codable, Sendable {
         case errorCode = "ErrorCode"
     }
 
-    /// Eine Ablehnung trägt oft gar keine Quellenliste; ohne `decodeIfPresent`
-    /// wurde daraus „Die Antwort des Servers war unverständlich" statt des
-    /// Grundes.
+    /// A refusal often carries no source list at all; without `decodeIfPresent`
+    /// this became "Die Antwort des Servers war unverständlich" instead of the
+    /// reason.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         mediaSources = try c.decodeIfPresent([MediaSource].self, forKey: .mediaSources) ?? []
@@ -510,27 +501,26 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
     public let supportsTranscoding: Bool?
     public let transcodingUrl: String?
     public let mediaStreams: [MediaStream]?
-    /// Welche Ton- und Untertitelspur der Server nach dem Nutzerprofil wählen
-    /// würde (Tonsprache, Untertitelmodus, Untertitelsprache). Untertitel
-    /// `-1` heißt „keine". Siehe ``Spurregel``.
+    /// Which audio and subtitle track the server would choose according to the
+    /// user profile (audio language, subtitle mode, subtitle language). Subtitle
+    /// `-1` means "none". See ``Spurregel``.
     public var defaultAudioStreamIndex: Int?
     public var defaultSubtitleStreamIndex: Int?
-    /// Die Laufzeit der Datei in Ticks (Hundertnanosekunden).
+    /// The runtime of the file in ticks (hundred nanoseconds).
     public var runTimeTicks: Int64?
 
-    /// Die Laufzeit in Sekunden, wenn der Server sie kennt.
+    /// The runtime in seconds, if the server knows it.
     ///
-    /// **Wofür.** libVLC 4 nennt bei MPEG-TS über HTTP keine Länge — gemessen
-    /// 25.09.2026: `media.length` bleibt 0, lokal dieselbe Datei hat 60,6 s.
-    /// Ohne Länge gab es keinen Fortschrittsbalken und keine
-    /// Fortschrittsmeldung an den Server. TV-Aufnahmen sind TS.
-    public var laufzeitSekunden: Double? {
+    /// **Why.** libVLC 4 reports no length for MPEG-TS over HTTP: `media.length`
+    /// stays 0, while the same file locally has 60.6 s. Without a length there was
+    /// no progress bar and no progress report to the server. TV recordings are TS.
+    public var runtimeSeconds: Double? {
         guard let runTimeTicks, runTimeTicks > 0 else { return nil }
         return Double(runTimeTicks) / 10_000_000
     }
 
-    /// Bildhöhe der Videospur — für „2160p".
-    public var hoehe: Int? {
+    /// Picture height of the video track, for "2160p".
+    public var height: Int? {
         mediaStreams?.first { $0.type == "Video" }?.height
     }
 
@@ -549,8 +539,8 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
         case runTimeTicks = "RunTimeTicks"
     }
 
-    /// Wie der Server diese Quelle ausliefern würde. Das ist die Zahl, auf die
-    /// es Swiftly ankommt: alles außer `.transcode` ist ein Erfolg.
+    /// How the server would deliver this source. This is the number Swiftly cares
+    /// about: everything except `.transcode` is a success.
     public var deliveryMethod: DeliveryMethod {
         if supportsDirectPlay == true { return .directPlay }
         if supportsDirectStream == true { return .directStream }
@@ -565,8 +555,8 @@ public enum DeliveryMethod: String, Sendable, Equatable {
 
     public var isLossless: Bool { self != .transcode }
 
-    /// Die Schreibweise, die Jellyfin bei Wiedergabemeldungen erwartet.
-    /// Nicht identisch mit `rawValue` — der ist für die Oberfläche.
+    /// The spelling Jellyfin expects in playback reports.
+    /// Not identical to `rawValue`, which is for the UI.
     public var wireName: String {
         switch self {
         case .directPlay:   "DirectPlay"
@@ -576,33 +566,32 @@ public enum DeliveryMethod: String, Sendable, Equatable {
     }
 }
 
-/// **Eine Zahl, die die Antwort nicht umwerfen kann.**
+/// **A number that cannot topple the response.**
 ///
-/// Ein `Double?` mit erzeugtem Decoder wirft, sobald an der Stelle etwas
-/// anderes steht als eine Zahl — und ein Wurf beim Auspacken nimmt nicht das
-/// Feld mit, sondern **die ganze Antwort**. Eine Angabe, die nur zur Zierde
-/// gebraucht wird, darf niemals ueber die Wiedergabe entscheiden.
+/// A `Double?` with a synthesized decoder throws as soon as something other
+/// than a number is there, and a throw during unwrapping takes not just the
+/// field but **the whole response**. A detail that is only decoration must
+/// never decide over playback.
 ///
-/// Genau das steht hier auf dem Spiel: `RealFrameRate` ist im Datenblatt eine
-/// Fliesskommazahl, aber Jellyfin schreibt Zahlenfelder je nach Quelle auch
-/// als Zeichenkette oder gar nicht. Ein Titel, dessen Angabe abweicht, waere
-/// sonst gar nicht abspielbar — und niemand kaeme darauf, dass es an der
-/// Bildrate liegt.
-public struct Zahlwert: Codable, Sendable, Equatable {
-    public let wert: Double?
+/// That is exactly what is at stake: `RealFrameRate` is a floating-point number
+/// in the data sheet, but depending on the source Jellyfin also writes numeric
+/// fields as a string or not at all. A title whose value deviates would not be
+/// playable at all, and nobody would guess the frame rate is the cause.
+public struct NumberValue: Codable, Sendable, Equatable {
+    public let value: Double?
 
-    public init(_ wert: Double?) { self.wert = wert }
+    public init(_ value: Double?) { self.value = value }
 
     public init(from decoder: Decoder) throws {
-        let raum = try decoder.singleValueContainer()
-        if let zahl = try? raum.decode(Double.self) { wert = zahl }
-        else if let text = try? raum.decode(String.self) { wert = Double(text) }
-        else { wert = nil }
+        let space = try decoder.singleValueContainer()
+        if let figure = try? space.decode(Double.self) { value = figure }
+        else if let text = try? space.decode(String.self) { value = Double(text) }
+        else { value = nil }
     }
 
     public func encode(to encoder: Encoder) throws {
-        var raum = encoder.singleValueContainer()
-        if let wert { try raum.encode(wert) } else { try raum.encodeNil() }
+        var space = encoder.singleValueContainer()
+        if let value { try space.encode(value) } else { try space.encodeNil() }
     }
 }
 
@@ -610,7 +599,7 @@ public struct MediaStream: Codable, Sendable, Equatable {
     public init(codec: String?, type: String?, language: String?, displayTitle: String?,
                 channels: Int?, isDefault: Bool?, index: Int?, height: Int?, width: Int?,
                 realFrameRate: Double? = nil, averageFrameRate: Double? = nil,
-                videoRangeType: Farbumfang? = nil,
+                videoRangeType: ColorRange? = nil,
                 colorTransfer: String? = nil, colorPrimaries: String? = nil,
                 dvProfile: Int? = nil, dvBlSignalCompatibilityId: Int? = nil,
                 isForced: Bool? = nil, isExternal: Bool? = nil,
@@ -623,13 +612,13 @@ public struct MediaStream: Codable, Sendable, Equatable {
         self.isDefault = isDefault; self.index = index
         self.isForced = isForced; self.isExternal = isExternal
         self.height = height; self.width = width
-        self.videoRangeTypeRoh = videoRangeType?.rawValue
+        self.videoRankTypeRaw = videoRangeType?.rawValue
         self.colorTransfer = colorTransfer
         self.colorPrimaries = colorPrimaries
-        self.dvProfileRoh = dvProfile.map { Zahlwert(Double($0)) }
-        self.dvKompatibelRoh = dvBlSignalCompatibilityId.map { Zahlwert(Double($0)) }
-        self.realFrameRateRoh = Zahlwert(realFrameRate)
-        self.averageFrameRateRoh = Zahlwert(averageFrameRate)
+        self.dvProfileRaw = dvProfile.map { NumberValue(Double($0)) }
+        self.dvCompatibleRaw = dvBlSignalCompatibilityId.map { NumberValue(Double($0)) }
+        self.realFrameRateRaw = NumberValue(realFrameRate)
+        self.averageFrameRateRaw = NumberValue(averageFrameRate)
     }
 
     public let codec: String?
@@ -638,109 +627,104 @@ public struct MediaStream: Codable, Sendable, Equatable {
     public let displayTitle: String?
     public let channels: Int?
     public let isDefault: Bool?
-    /// Erzwungene Untertitel — nur die Stellen, die im Ton fremdsprachig
-    /// sind. Nur der Server weiß das: VLC kennt kein solches Merkmal an der
-    /// Spur. Siehe ``Untertitelwahl``.
+    /// Forced subtitles: only the parts that are in a foreign language in the
+    /// audio. Only the server knows this: VLC has no such attribute on the track.
+    /// See ``Untertitelwahl``.
     public let isForced: Bool?
-    /// Eine Untertiteldatei neben dem Film statt einer Spur darin. Die sieht
-    /// der Abspieler bei Direct Play nicht, sie darf also beim Abzählen nicht
-    /// mitzählen.
+    /// A subtitle file next to the film instead of a track inside it. The player
+    /// does not see it with Direct Play, so it must not count when enumerating.
     public let isExternal: Bool?
-    /// Untertitel für Hörgeschädigte (SDH/CC): mit Geräuschen und Sprechernamen.
-    /// Die Datei trägt dafür ein eigenes Merkmal, VLC zeigt es nicht an —
-    /// ohne diese Angabe stehen „Deutsch" und „Deutsch" nebeneinander, und
-    /// die automatische Wahl nahm, was zuerst kam.
+    /// Subtitles for the hearing impaired (SDH/CC): with sounds and speaker names.
+    /// The file carries its own flag for this, which VLC does not show; without
+    /// this field "Deutsch" and "Deutsch" stand side by side, and automatic
+    /// selection took whichever came first.
     public let isHearingImpaired: Bool?
-    /// Das Seitenverhältnis, in dem das Bild **gezeigt** wird („16:9") —
-    /// bei anamorphem Material nicht Breite zu Höhe der Pixel.
+    /// The aspect ratio in which the picture is **displayed** ("16:9"); for
+    /// anamorphic material not width to height of the pixels.
     public let aspectRatio: String?
-    /// Der Spurtitel aus der Datei („Forced", „SDH", „Kommentar") — anders
-    /// als `DisplayTitle` ohne vom Server angehängte Wörter.
+    /// The track title from the file ("Forced", "SDH", "Kommentar"), unlike
+    /// `DisplayTitle` without words added by the server.
     public let title: String?
-    /// Wo der Server eine externe Untertiteldatei ausliefert, serverrelativ.
-    /// Kommt nur, wenn das Geräteprofil `External` für das Format meldet.
+    /// Where the server delivers an external subtitle file, relative to the server.
+    /// Comes only if the device profile reports `External` for the format.
     public let deliveryUrl: String?
     public let index: Int?
     public let height: Int?
     public let width: Int?
-    /// Dynamikumfang, Kennlinie und Primärvalenzen — siehe ``Farbumfang``.
+    /// Dynamic range, transfer curve and primaries, see ``ColorRange``.
     ///
-    /// Wurden bis zum 03.09.2026 nicht eingelesen, obwohl der Server sie
-    /// immer mitschickt. Genau daran hing, dass der Apple TV nie in den
-    /// HDR-Modus geschaltet hat.
+    /// They were not decoded at first, although the server always sends them. That
+    /// is why Apple TV never switched into HDR mode.
     ///
-    /// **Als Zeichenkette gespeichert, nicht als Aufzählung — mit Grund.**
-    /// Ein unbekannter Wert lässt eine `String`-Aufzählung werfen, und weil
-    /// das Werfen die **ganze** Spur unlesbar macht, hätte eine neue
-    /// Jellyfin-Fassung mit einem neuen Umfangstyp jede Datei ohne Codec,
-    /// Kanäle und Sprache dastehen lassen. Im Test war das zuerst nicht zu
-    /// sehen: `try?` liess ihn auch dann gruen werden, wenn gar nichts
-    /// ankam.
-    private let videoRangeTypeRoh: String?
+    /// **Stored as a string, not as an enumeration, for a reason.**
+    /// An unknown value makes a `String` enumeration throw, and because throwing
+    /// makes the **whole** track unreadable, a new Jellyfin version with a new range
+    /// type would have left every file without codec, channels and language. In the
+    /// test this was not visible at first: `try?` let it pass even when nothing
+    /// arrived.
+    private let videoRankTypeRaw: String?
 
-    public var videoRangeType: Farbumfang? {
-        videoRangeTypeRoh.flatMap(Farbumfang.init(rawValue:))
+    public var videoRangeType: ColorRange? {
+        videoRankTypeRaw.flatMap(ColorRange.init(rawValue:))
     }
     public let colorTransfer: String?
     public let colorPrimaries: String?
 
-    /// Das Dolby-Vision-Profil (5, 7, 8 …) und die Kompatibilität der
-    /// Basisschicht (bei Profil 8: 1 = HDR10, 2 = SDR, 4 = HLG) — zusammen
-    /// „8.1". Nur für das Technikschild; ``Technikangaben/dynamik(_:)``.
+    /// The Dolby Vision profile (5, 7, 8 …) and the compatibility of the base
+    /// layer (for profile 8: 1 = HDR10, 2 = SDR, 4 = HLG), together "8.1". Only
+    /// for the tech badge; ``Technikangaben/dynamik(_:)``.
     ///
-    /// Als ``Zahlwert`` gelesen wie die Bildraten: eine Angabe, die einmal als
-    /// Zeichenkette käme, soll nicht die ganze Spur unlesbar machen.
-    private let dvProfileRoh: Zahlwert?
-    private let dvKompatibelRoh: Zahlwert?
+    /// Decoded as ``Zahlwert`` like the frame rates: a value that arrives as a
+    /// string once should not make the whole track unreadable.
+    private let dvProfileRaw: NumberValue?
+    private let dvCompatibleRaw: NumberValue?
 
-    public var dvProfile: Int? { dvProfileRoh?.wert.flatMap { Int(exactly: $0) } }
-    public var dvBlSignalCompatibilityId: Int? { dvKompatibelRoh?.wert.flatMap { Int(exactly: $0) } }
+    public var dvProfile: Int? { dvProfileRaw?.value.flatMap { Int(exactly: $0) } }
+    public var dvBlSignalCompatibilityId: Int? { dvCompatibleRaw?.value.flatMap { Int(exactly: $0) } }
 
-    /// Die Bildrate der Spur.
+    /// The frame rate of the track.
     ///
-    /// **Wofuer.** Der Apple TV kann seinen Ausgang auf die Bildrate des
-    /// Films stellen; ohne das wird 23,976 in 60 Hz ungleichmaessig verteilt
-    /// und die Bewegung ruckelt, obwohl kein Bild fehlt. Gemessen: butterweich
-    /// mit Anpassung, ruckelig ohne — bei 4 zu spaeten Bildern auf 4888.
+    /// **Why.** Apple TV can set its output to the frame rate of the film; without
+    /// that, 23.976 is distributed unevenly over 60 Hz and the motion judders even
+    /// though no frame is missing. Measured: butter smooth with matching, juddery
+    /// without, at 4 late frames out of 4888.
     ///
-    /// **Warum sie hier steht und nicht beim Abspieler.** VLC kennt sie erst,
-    /// wenn der Strom offen ist. Der Umschaltvorgang kostet den Fernseher
-    /// aber ein paar Sekunden Schwarzbild, und die soll hinter dem Ladeschirm
-    /// liegen, nicht dahinter herausragen. Der Server weiss es vorher.
+    /// **Why it is here and not in the player.** VLC knows it only once the stream
+    /// is open. The switch costs the TV a few seconds of black picture, and those
+    /// should lie behind the loading screen, not stick out behind it. The server
+    /// knows beforehand.
     ///
-    /// `RealFrameRate` ist der genaue Wert, `AverageFrameRate` der gemittelte
-    /// — bei variabler Bildrate weichen sie voneinander ab.
-    private let realFrameRateRoh: Zahlwert?
-    private let averageFrameRateRoh: Zahlwert?
+    /// `RealFrameRate` is the exact value, `AverageFrameRate` the averaged one;
+    /// with a variable frame rate they differ.
+    private let realFrameRateRaw: NumberValue?
+    private let averageFrameRateRaw: NumberValue?
 
-    public var realFrameRate: Double? { realFrameRateRoh?.wert }
-    public var averageFrameRate: Double? { averageFrameRateRoh?.wert }
+    public var realFrameRate: Double? { realFrameRateRaw?.value }
+    public var averageFrameRate: Double? { averageFrameRateRaw?.value }
 
-    /// Die verlaesslichere der beiden — oder `nil`, wenn ihr nicht zu trauen
-    /// ist.
+    /// The more reliable of the two, or `nil` if it cannot be trusted.
     ///
-    /// **Weichen die beiden deutlich voneinander ab, ist die Bildrate
-    /// schwankend.** Dann gibt es keine Rate, auf die sich ein Ausgang stellen
-    /// liesse: welche man auch nimmt, es passt nur zeitweise. Umzuschalten
-    /// waere dann ein Schwarzbild fuer nichts, und deshalb sagt diese
-    /// Auskunft in dem Fall lieber gar nichts.
-    public var bildrate: Double? {
-        let plausibel = { (wert: Double?) -> Double? in
-            guard let wert, wert > 1, wert < 250 else { return nil }
-            return wert
+    /// **If the two differ clearly, the frame rate fluctuates.** Then there is no
+    /// rate an output could be set to: whichever is taken, it fits only some of the
+    /// time. Switching would be a black picture for nothing, so in that case this
+    /// answer prefers to say nothing.
+    public var frameRate: Double? {
+        let plausibel = { (value: Double?) -> Double? in
+            guard let value, value > 1, value < 250 else { return nil }
+            return value
         }
-        guard let echt = plausibel(realFrameRate) else { return plausibel(averageFrameRate) }
-        if let mittel = plausibel(averageFrameRate), abs(echt - mittel) > 0.5 { return nil }
-        return echt
+        guard let real = plausibel(realFrameRate) else { return plausibel(averageFrameRate) }
+        if let medium = plausibel(averageFrameRate), abs(real - medium) > 0.5 { return nil }
+        return real
     }
 
     enum CodingKeys: String, CodingKey {
         case height = "Height"
-        case videoRangeTypeRoh = "VideoRangeType"
+        case videoRankTypeRaw = "VideoRangeType"
         case colorTransfer = "ColorTransfer"
         case colorPrimaries = "ColorPrimaries"
-        case dvProfileRoh = "DvProfile"
-        case dvKompatibelRoh = "DvBlSignalCompatibilityId"
+        case dvProfileRaw = "DvProfile"
+        case dvCompatibleRaw = "DvBlSignalCompatibilityId"
         case width = "Width"
         case codec = "Codec"
         case type = "Type"
@@ -755,39 +739,38 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case title = "Title"
         case deliveryUrl = "DeliveryUrl"
         case index = "Index"
-        case realFrameRateRoh = "RealFrameRate"
-        case averageFrameRateRoh = "AverageFrameRate"
+        case realFrameRateRaw = "RealFrameRate"
+        case averageFrameRateRaw = "AverageFrameRate"
     }
 
-    /// Kurze, lesbare Bezeichnung — „Deutsch · DTS-HD MA 5.1".
+    /// Short, readable label, "Deutsch · DTS-HD MA 5.1".
     ///
-    /// Jellyfins `DisplayTitle` ist für eine Zeile unbrauchbar; dort steht
-    /// etwa „German Forced - Hörgeschädigt - Standard - Erzwungen - ASS".
-    /// Hier wird aus Sprache, Codec und Kanälen selbst zusammengesetzt.
-    public var kurz: String {
-        var teile: [String] = []
-        if let sprache = sprachname { teile.append(sprache) }
-        if let codec { teile.append(codecName(codec)) }
-        // Unter einem Kanal ist die Angabe kaputt und wird weggelassen —
-        // vorher stand bei null Kanälen „-1.1" in der Zeile.
-        if let kanaele = channels, kanaele > 0, type == "Audio" {
-            teile.append(kanaele == 2 ? uebersetzt("Stereo")
-                       : kanaele == 1 ? uebersetzt("Mono")
-                                      : "\(kanaele - 1).1")
+    /// Jellyfin's `DisplayTitle` is unusable for one line; it contains things like
+    /// "German Forced - Hörgeschädigt - Standard - Erzwungen - ASS".
+    /// Here it is composed from language, codec and channels.
+    public var short: String {
+        var parts: [String] = []
+        if let language = languageName { parts.append(language) }
+        if let codec { parts.append(codecName(codec)) }
+        // Below one channel the value is broken and is omitted.
+        if let channels = channels, channels > 0, type == "Audio" {
+            parts.append(channels == 2 ? translated("Stereo")
+                       : channels == 1 ? translated("Mono")
+                                      : "\(channels - 1).1")
         }
-        return teile.isEmpty ? (displayTitle ?? "—") : teile.joined(separator: " · ")
+        return parts.isEmpty ? (displayTitle ?? "—") : parts.joined(separator: " · ")
     }
 
-    /// Sprache in der Sprache des Geräts, aus dem Dreibuchstaben-Kürzel.
-    public var sprachname: String? {
+    /// Language in the device's language, from the three-letter code.
+    public var languageName: String? {
         guard let language, !language.isEmpty else { return nil }
         let locale = Locale.current
         return locale.localizedString(forLanguageCode: language)?.capitalized
             ?? language.uppercased()
     }
 
-    /// Auch von außen nutzbar.
-    public static func lesbar(_ codec: String) -> String {
+    /// Also usable from outside.
+    public static func readable(_ codec: String) -> String {
         MediaStream(codec: nil, type: nil, language: nil, displayTitle: nil,
                     channels: nil, isDefault: nil, index: nil, height: nil, width: nil)
             .codecName(codec)

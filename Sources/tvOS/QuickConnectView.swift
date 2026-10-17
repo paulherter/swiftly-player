@@ -1,117 +1,101 @@
 import JellyfinKit
 import SwiftUI
 
-/// Anmelden, ohne ein Kennwort zu tippen.
-///
-/// Auf dem iPhone ist das eine Bequemlichkeit. Auf dem Fernseher ist es der
-/// bessere Weg: ein Kennwort mit der Fernbedienung einzutippen heißt, sich
-/// Buchstabe für Buchstabe durch ein Raster zu wischen. Der Code steht
-/// deshalb groß und in einzelnen Feldern, damit man ihn quer durchs Zimmer
-/// ablesen kann.
-///
-/// Der Ablauf — Code holen, im Zweisekundentakt nachfragen, fünf Minuten
-/// Gültigkeit — steht in `QuickConnectModell` und ist mit dem iPhone geteilt.
+/// Sign in without typing a password. On iPhone this is a convenience; on TV it is the better way: typing a password with the remote means swiping letter by letter through a grid. The code is large and in separate fields so it can be read across the room. The flow (fetch code, poll every two seconds, valid five minutes) is in `QuickConnectModel`, shared with iPhone.
 struct QuickConnectView: View {
     let model: AppModel
-    let schliessen: () -> Void
+    let close: () -> Void
 
-    @State private var stand = QuickConnectModell()
+    @State private var state = QuickConnectModel()
 
     var body: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Text("Quick Connect")
-                    .font(Stil.titelGross)
-                    .foregroundStyle(Stil.schrift)
+                    .font(Theme.titleLarge)
+                    .foregroundStyle(Theme.font)
 
                 Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.fontQuiet)
                     .multilineTextAlignment(.center)
                     .frame(width: 1100)
                     .padding(.top, 16)
 
-                if let vorgang = stand.vorgang {
-                    Codefelder(code: vorgang.code)
+                if let preGait = state.preGait {
+                    CodeFields(code: preGait.code)
                         .padding(.top, 56)
-                    wartezeile
+                    waitRow
                         .padding(.top, 28)
-                } else if let fehler = stand.fehler {
-                    Text(fehler)
-                        .font(Stil.koerper)
-                        // `fehler`, nicht `warnung`: etwas ist schiefgegangen,
-                        // es wartet nicht. Dieselbe Trennung wie am iPhone.
-                        .foregroundStyle(Stil.fehler)
+                } else if let error = state.error {
+                    Text(error)
+                        .font(Theme.body)
+                        // `error`, not `warning`: something went wrong, it is not waiting. Same split as on iPhone.
+                        .foregroundStyle(Theme.error)
                         .multilineTextAlignment(.center)
                         .frame(width: 1100)
                         .padding(.top, 56)
                 } else {
-                    // Der Code kommt gleich; solange steht seine Form da.
-                    Ladefeld(ecke: Stil.ecke)
+                    // The code arrives shortly; until then its shape stands.
+                    LoadField(corner: Theme.corner)
                         .frame(width: 560, height: 120)
                         .padding(.top, 72)
                 }
 
-                anleitung.padding(.top, 56)
+                guide.padding(.top, 56)
 
                 HStack(spacing: 24) {
-                    Button("Neuer Code") { Task { await stand.neuStarten(model) } }
-                        .buttonStyle(KnopfStil())
-                    Button("Zurück", action: schliessen)
-                        .buttonStyle(KnopfStil())
+                    Button("Neuer Code") { Task { await state.newStart(model) } }
+                        .buttonStyle(ThemedButtonStyle())
+                    Button("Zurück", action: close)
+                        .buttonStyle(ThemedButtonStyle())
                 }
                 .padding(.top, 52)
             }
         }
-        .task { await stand.neuStarten(model) }
-        .onDisappear { stand.anhalten() }
-        .onExitCommand(perform: schliessen)
-        .onChange(of: stand.freigegeben) { _, neu in
-            guard let neu else { return }
+        .task { await state.newStart(model) }
+        .onDisappear { state.halt() }
+        .onExitCommand(perform: close)
+        .onChange(of: state.released) { _, new in
+            guard let new else { return }
             Task {
-                await model.anmeldenMitQuickConnect(neu)
-                // **Das Blatt schließt sich selbst.** Beim ersten Anmelden
-                // verschwand es nur nebenbei: `RootView` tauscht bei
-                // `phase == .ready` den ganzen Bildschirm. Über einer bereits
-                // angemeldeten App passiert das nicht — der Code wurde
-                // freigegeben, das Konto kam dazu, und die Seite blieb
-                // trotzdem stehen, als sei nichts geschehen.
-                if model.errorMessage == nil { schliessen() }
+                await model.signInWithQuickConnect(new)
+                // The sheet closes itself. On first sign-in it vanished incidentally because `RootView` swaps the whole screen at `phase == .ready`. Over an already signed-in app that does not happen: the code was approved, the account added, and the page stayed anyway.
+                if model.errorMessage == nil { close() }
             }
         }
     }
 
-    private var wartezeile: some View {
+    private var waitRow: some View {
         HStack(spacing: 14) {
-            // Kein Ring: die Zeile daneben zaehlt schon herunter.
-            Text("Läuft ab in \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
-                .font(Stil.klein)
-                .foregroundStyle(Stil.schriftSehrLeise)
+            // No ring: the row beside it already counts down.
+            Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
+                .font(Theme.small)
+                .foregroundStyle(Theme.fontVeryQuiet)
         }
     }
 
-    /// Wortlaut aus der iPhone-Fassung übernommen, damit dieselbe Anleitung
-    /// nicht an zwei Stellen anders klingt.
-    private var anleitung: some View {
+    /// Wording taken from the iPhone version so the same instructions do not read differently in two places.
+    private var guide: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Gruppentitel(text: "So gehts")
-            schritt(1, "Jellyfin im Browser öffnen und anmelden")
-            schritt(2, "Oben rechts aufs Profil, dann Quick Connect")
-            schritt(3, "Code eingeben, dann geht es hier von selbst weiter")
+            GroupsTitle(text: "So gehts")
+            step(1, "Jellyfin im Browser öffnen und anmelden")
+            step(2, "Oben rechts aufs Profil, dann Quick Connect")
+            step(3, "Code eingeben, dann geht es hier von selbst weiter")
         }
         .frame(width: 900, alignment: .leading)
     }
 
-    private func schritt(_ zahl: Int, _ text: LocalizedStringKey) -> some View {
+    private func step(_ figure: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 20) {
-            Text("\(zahl)")
-                .foregroundStyle(Stil.schriftSehrLeise)
+            Text("\(figure)")
+                .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 32, alignment: .leading)
             Text(text)
-                .foregroundStyle(Stil.schriftLeise)
+                .foregroundStyle(Theme.fontQuiet)
         }
-        .font(Stil.kachel)
+        .font(Theme.tile)
     }
 }

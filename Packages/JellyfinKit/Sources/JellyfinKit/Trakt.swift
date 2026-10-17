@@ -3,36 +3,35 @@ import Foundation
 import FoundationNetworking
 #endif
 
-// MARK: - Zugangsdaten der Anwendung
+// MARK: - Application credentials
 
-/// **Die Kennung der Trakt-Anwendung — nicht die eines Nutzers.**
+/// **The id of the Trakt application, not of a user.**
 ///
-/// Trakt verlangt, dass jede App bei trakt.tv/oauth/applications angelegt
-/// ist; von dort kommen `client_id` und `client_secret`. Beide stehen
-/// **nicht im Repo**: das ist öffentlich, und wer sie hat, spricht im Namen
-/// von Swiftly mit Trakt.
+/// Trakt requires every app to be registered at trakt.tv/oauth/applications;
+/// `client_id` and `client_secret` come from there. Both are **not in the
+/// repo**: it is public, and whoever has them speaks to Trakt in the name of
+/// Swiftly.
 ///
-/// Sie liegen deshalb in einer Datei, die `.gitignore` sperrt:
+/// They therefore live in a file that `.gitignore` excludes:
 ///
 ///     Packages/JellyfinKit/Sources/JellyfinKit/Resources/Trakt.json
 ///     {"client_id": "…", "client_secret": "…"}
 ///
-/// **Eine Datei für alle Fassungen, die das Paket bauen.** Apple, Linux und
-/// Windows nehmen sie über das Ressourcenbündel des Pakets mit; ein
-/// `.xcconfig` hätte nur die Apple-Ziele erreicht, und für Linux und Windows
-/// hätte es einen zweiten Weg gebraucht, der auseinanderläuft. Android hat
-/// kein `Bundle.module` (siehe `Uebersetzung.swift`) und reicht die Werte
-/// über ``init(clientID:secret:)`` herein.
+/// **One file for all versions that build the package.** Apple, Linux and
+/// Windows take it along through the package's resource bundle; an `.xcconfig`
+/// would have reached only the Apple targets, and Linux and Windows would have
+/// needed a second path that drifts apart. Android has no `Bundle.module` (see
+/// `Translation.swift`) and passes the values in through
+/// ``init(clientID:secret:)``.
 ///
-/// **Fehlt die Datei, gibt es kein Trakt** — ``ausPaket`` ist dann `nil`,
-/// und die Einstellung dazu steht gar nicht erst da. Ein Bau ohne Zugang ist
-/// also kein kaputter Bau, sondern einer ohne diese Zugabe.
+/// **If the file is missing, there is no Trakt**: ``outPackage`` is then `nil`,
+/// and the setting for it is not shown at all. A build without credentials is
+/// not a broken build, just one without this extra.
 ///
-/// Dass ein Geheimnis in einer ausgelieferten App herauszulösen ist, gilt
-/// für jede native Trakt-App (Plezy trägt es sogar im Quelltext). Es schützt
-/// nicht das Konto eines Nutzers — dafür gibt es dessen eigenen Token —,
-/// sondern nur den Namen der Anwendung.
-public struct TraktZugang: Sendable, Equatable {
+/// That a secret can be extracted from a shipped app holds for every native
+/// Trakt app (Plezy even keeps it in the source). It does not protect a user's
+/// account, which has its own token, only the name of the application.
+public struct TraktAccess: Sendable, Equatable {
     public let clientID: String
     public let secret: String
 
@@ -41,180 +40,183 @@ public struct TraktZugang: Sendable, Equatable {
         self.secret = secret
     }
 
-    /// Liest die Konfigurationsdatei. `nil`, wenn ein Wert fehlt oder leer
-    /// ist — ein halber Zugang wäre ein Knopf, der garantiert scheitert.
-    public static func lesen(_ daten: Data) -> TraktZugang? {
-        struct Datei: Decodable {
+    /// Reads the configuration file. `nil` if a value is missing or empty: half a
+    /// set of credentials would be a button that is guaranteed to fail.
+    public static func read(_ data: Data) -> TraktAccess? {
+        struct FileInfo: Decodable {
             let client_id: String?
             let client_secret: String?
         }
-        guard let datei = try? JSONDecoder().decode(Datei.self, from: daten) else { return nil }
-        let id = (datei.client_id ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let geheim = (datei.client_secret ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty, !geheim.isEmpty else { return nil }
-        return TraktZugang(clientID: id, secret: geheim)
+        guard let file = try? JSONDecoder().decode(FileInfo.self, from: data) else { return nil }
+        let id = (file.client_id ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = (file.client_secret ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !secret.isEmpty else { return nil }
+        return TraktAccess(clientID: id, secret: secret)
     }
 
     #if os(Android)
-    /// Auf Android gibt es kein Ressourcenbündel — die App reicht die Werte
-    /// selbst herein.
-    public static let ausPaket: TraktZugang? = nil
+    /// Android has no resource bundle; the app passes the values in itself.
+    public static let outPackage: TraktAccess? = nil
     #else
-    /// Der Zugang aus `Resources/Trakt.json`, einmal gelesen.
-    public static let ausPaket: TraktZugang? = {
+    /// The credentials from `Resources/Trakt.json`, read once.
+    public static let outPackage: TraktAccess? = {
         guard let url = Bundle.module.url(forResource: "Trakt", withExtension: "json"),
-              let daten = try? Data(contentsOf: url) else { return nil }
-        return lesen(daten)
+              let data = try? Data(contentsOf: url) else { return nil }
+        return read(data)
     }()
     #endif
 }
 
-// MARK: - Token eines Nutzers
+// MARK: - A user's token
 
-/// Was nach dem Verbinden gespeichert wird. Auf Apple im Schlüsselbund, auf
-/// Linux und Windows in einer Datei mit denselben Rechten wie die
-/// Jellyfin-Sitzung.
+/// What is stored after connecting. On Apple in the keychain, on Linux and
+/// Windows in a file with the same permissions as the Jellyfin session.
 public struct TraktToken: Codable, Sendable, Equatable {
-    public var zugriff: String
-    public var erneuerung: String
-    public var ablauf: Date
-    /// Der Name bei Trakt — nur für die Anzeige „Verbunden als …".
-    public var benutzer: String?
+    enum CodingKeys: String, CodingKey {
+        case access = "zugriff"
+        case renewal = "erneuerung"
+        case flow = "ablauf"
+        case user = "benutzer"
+    }
+    public var access: String
+    public var renewal: String
+    public var flow: Date
+    /// The name at Trakt, only for the display "Verbunden als …".
+    public var user: String?
 
-    public init(zugriff: String, erneuerung: String, ablauf: Date, benutzer: String? = nil) {
-        self.zugriff = zugriff
-        self.erneuerung = erneuerung
-        self.ablauf = ablauf
-        self.benutzer = benutzer
+    public init(access: String, renewal: String, flow: Date, user: String? = nil) {
+        self.access = access
+        self.renewal = renewal
+        self.flow = flow
+        self.user = user
     }
 
-    /// **Eine Stunde vor Ablauf erneuern, nicht erst danach.** Wie lange ein
-    /// Token gilt, sagt Trakt in `expires_in`, und das kann nur ein Tag sein.
-    /// Wer bis zum 401 wartet, schickt jede erste Meldung des Tages zweimal.
-    public func erneuernFaellig(jetzt: Date = Date()) -> Bool {
-        ablauf.timeIntervalSince(jetzt) < 3600
+    /// **Renew an hour before expiry, not after.** How long a token is valid,
+    /// Trakt says in `expires_in`, and it can be as little as a day. Whoever waits
+    /// for the 401 sends the first report of every day twice.
+    public func renewDue(now: Date = Date()) -> Bool {
+        flow.timeIntervalSince(now) < 3600
     }
 
-    /// Aus der Antwort von `/oauth/device/token` oder `/oauth/token`.
-    static func aus(_ daten: Data, jetzt: Date = Date()) -> TraktToken? {
-        struct Antwort: Decodable {
+    /// From the response of `/oauth/device/token` or `/oauth/token`.
+    static func from(_ data: Data, now: Date = Date()) -> TraktToken? {
+        struct Reply: Decodable {
             let access_token: String
             let refresh_token: String
             let expires_in: Double?
             let created_at: Double?
         }
-        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten) else { return nil }
-        let beginn = a.created_at.map { Date(timeIntervalSince1970: $0) } ?? jetzt
-        return TraktToken(zugriff: a.access_token, erneuerung: a.refresh_token,
-                          ablauf: beginn.addingTimeInterval(a.expires_in ?? 86_400))
+        guard let a = try? JSONDecoder().decode(Reply.self, from: data) else { return nil }
+        let beginning = a.created_at.map { Date(timeIntervalSince1970: $0) } ?? now
+        return TraktToken(access: a.access_token, renewal: a.refresh_token,
+                          flow: beginning.addingTimeInterval(a.expires_in ?? 86_400))
     }
 }
 
-// MARK: - Gerätecode
+// MARK: - Device code
 
-/// **Anmelden ohne Browser in der App** — der Weg, den Trakt für Fernseher
-/// vorsieht, und der auf jedem Gerät gleich geht: die App zeigt einen Code
-/// und eine Adresse, der Nutzer gibt den Code auf einem beliebigen Gerät
-/// bei Trakt ein, und die App fragt im Takt nach, ob er freigegeben ist.
-public struct TraktGeraetecode: Sendable, Equatable {
-    /// Geht nur an Trakt zurück, nie auf den Schirm.
-    public let geraetecode: String
-    /// Das, was der Nutzer abtippt.
-    public let nutzercode: String
-    /// Meist `https://trakt.tv/activate`.
-    public let adresse: URL
-    /// Wie lange der Code gilt, in Sekunden (bei Trakt zehn Minuten).
-    public let gueltig: TimeInterval
-    /// Wie oft nachgefragt werden darf, in Sekunden.
-    public let abstand: TimeInterval
+/// **Signing in without a browser in the app**: the way Trakt provides for TVs,
+/// and it works the same on every device. The app shows a code and an address,
+/// the user enters the code at Trakt on any device, and the app polls to see
+/// whether it has been approved.
+public struct TraktDevicesCode: Sendable, Equatable {
+    /// Goes only back to Trakt, never on screen.
+    public let devicesCode: String
+    /// What the user types in.
+    public let userCode: String
+    /// Usually `https://trakt.tv/activate`.
+    public let address: URL
+    /// How long the code is valid, in seconds (ten minutes at Trakt).
+    public let valid: TimeInterval
+    /// How often to poll, in seconds.
+    public let spacing: TimeInterval
 
-    public init(geraetecode: String, nutzercode: String, adresse: URL,
-                gueltig: TimeInterval, abstand: TimeInterval) {
-        self.geraetecode = geraetecode
-        self.nutzercode = nutzercode
-        self.adresse = adresse
-        self.gueltig = gueltig
-        self.abstand = abstand
+    public init(devicesCode: String, userCode: String, address: URL,
+                valid: TimeInterval, spacing: TimeInterval) {
+        self.devicesCode = devicesCode
+        self.userCode = userCode
+        self.address = address
+        self.valid = valid
+        self.spacing = spacing
     }
 
-    /// Die Adresse mit dem Code darin — dann muss auf dem Telefon nichts
-    /// getippt werden. Für den QR-Code auf dem Fernseher und den Knopf auf
-    /// iPhone und Mac.
-    public var direktadresse: URL { adresse.appendingPathComponent(nutzercode) }
+    /// The address with the code in it, so nothing has to be typed on the phone.
+    /// For the QR code on the TV and the button on iPhone and Mac.
+    public var directAddress: URL { address.appendingPathComponent(userCode) }
 
-    /// Die Adresse ohne `https://`, zum Abtippen.
-    public var adresseKurz: String {
-        var text = adresse.absoluteString
-        for vorsatz in ["https://", "http://"] where text.hasPrefix(vorsatz) {
-            text.removeFirst(vorsatz.count)
+    /// The address without `https://`, for typing.
+    public var addressShort: String {
+        var text = address.absoluteString
+        for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
+            text.removeFirst(prefix.count)
         }
         return text
     }
 
-    static func aus(_ daten: Data) -> TraktGeraetecode? {
-        struct Antwort: Decodable {
+    static func from(_ data: Data) -> TraktDevicesCode? {
+        struct Reply: Decodable {
             let device_code: String
             let user_code: String
             let verification_url: String
             let expires_in: Double
             let interval: Double
         }
-        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten),
+        guard let a = try? JSONDecoder().decode(Reply.self, from: data),
               let url = URL(string: a.verification_url) else { return nil }
-        return TraktGeraetecode(geraetecode: a.device_code, nutzercode: a.user_code,
-                                adresse: url, gueltig: a.expires_in,
-                                abstand: max(1, a.interval))
+        return TraktDevicesCode(devicesCode: a.device_code, userCode: a.user_code,
+                                address: url, valid: a.expires_in,
+                                spacing: max(1, a.interval))
     }
 }
 
-/// Was eine Nachfrage bei `/oauth/device/token` ergibt.
-public enum TraktFreigabe: Sendable, Equatable {
-    case erteilt(TraktToken)
-    /// 400 — der Nutzer hat den Code noch nicht eingegeben.
-    case ausstehend
-    /// 429 — zu oft gefragt; der Abstand wird größer.
-    case langsamer
-    /// 404 oder 410 — Code unbekannt oder abgelaufen.
-    case abgelaufen
-    /// 409 oder 418 — schon benutzt oder abgelehnt.
-    case abgelehnt
+/// What a poll of `/oauth/device/token` results in.
+public enum TraktSharing: Sendable, Equatable {
+    case granted(TraktToken)
+    /// 400: the user has not entered the code yet.
+    case pending
+    /// 429: asked too often; the interval grows.
+    case slower
+    /// 404 or 410: code unknown or expired.
+    case expired
+    /// 409 or 418: already used or denied.
+    case rejected
 
-    static func aus(status: Int, daten: Data) -> TraktFreigabe {
+    static func from(status: Int, data: Data) -> TraktSharing {
         switch status {
         case 200:
-            guard let token = TraktToken.aus(daten) else { return .ausstehend }
-            return .erteilt(token)
-        case 404, 410: return .abgelaufen
-        case 409, 418: return .abgelehnt
-        case 429:      return .langsamer
-        // 400 heisst „noch nicht"; alles andere ist ein Schluckauf, und der
-        // nächste Takt fragt ohnehin wieder.
-        default:       return .ausstehend
+            guard let token = TraktToken.from(data) else { return .pending }
+            return .granted(token)
+        case 404, 410: return .expired
+        case 409, 418: return .rejected
+        case 429:      return .slower
+        // 400 means "not yet"; anything else is a hiccup, and the next tick asks
+        // again anyway.
+        default:       return .pending
         }
     }
 }
 
-public enum TraktFehler: Error, Equatable, Sendable {
-    /// Unerwartete Antwort, mit dem HTTP-Status.
+public enum TraktError: Error, Equatable, Sendable {
+    /// Unexpected response, with the HTTP status.
     case status(Int)
-    /// 429. Trakt nennt in `Retry-After`, wie lange zu warten ist.
-    case ratenlimit(nachSekunden: TimeInterval?)
-    /// Der Erneuerungstoken gilt nicht mehr — der Nutzer muss neu verbinden.
-    case abgemeldet
-    case codeAbgelaufen
-    case abgelehnt
-    case unlesbar
+    /// 429. Trakt names in `Retry-After` how long to wait.
+    case rateLimit(toSeconds: TimeInterval?)
+    /// The refresh token is no longer valid; the user must connect again.
+    case signedOut
+    case codeExpired
+    case rejected
+    case unreadable
 }
 
-// MARK: - Welcher Titel
+// MARK: - Which title
 
-/// Die Kennungen, über die Trakt einen Titel findet.
+/// The ids through which Trakt finds a title.
 ///
-/// **Kein eigener Abgleich über den Namen.** Jellyfin kennt IMDb, TMDB und
-/// TVDB aus seinen Metadaten (`ProviderIds`), und Trakt nimmt genau die an.
-/// Ein Titel ohne eine davon wird nicht gemeldet — lieber nichts als die
-/// falsche Folge im Verlauf.
-public struct TraktKennungen: Sendable, Equatable, Encodable {
+/// **No matching of our own by name.** Jellyfin knows IMDb, TMDB and TVDB from
+/// its metadata (`ProviderIds`), and Trakt accepts exactly those. A title
+/// without any of them is not reported: better nothing than the wrong episode
+/// in the history.
+public struct TraktIds: Sendable, Equatable, Encodable {
     public var imdb: String?
     public var tmdb: Int?
     public var tvdb: Int?
@@ -225,16 +227,15 @@ public struct TraktKennungen: Sendable, Equatable, Encodable {
         self.tvdb = tvdb
     }
 
-    /// Aus Jellyfins `ProviderIds`. Die Schlüssel heißen dort `Imdb`,
-    /// `Tmdb`, `Tvdb`; die Groß- und Kleinschreibung schwankt zwischen
-    /// Plugins, also wird sie nicht beachtet.
-    public init(anbieter: [String: String]?) {
+    /// From Jellyfin's `ProviderIds`. The keys there are `Imdb`, `Tmdb`, `Tvdb`;
+    /// capitalization varies between plugins, so it is ignored.
+    public init(provider: [String: String]?) {
         var imdb: String?, tmdb: Int?, tvdb: Int?
-        for (schluessel, wert) in anbieter ?? [:] {
-            let w = wert.trimmingCharacters(in: .whitespaces)
-            switch schluessel.lowercased() {
-            // Eine IMDb-Kennung beginnt mit „tt"; alles andere ist ein
-            // Plugin, das dort etwas Eigenes ablegt.
+        for (key, value) in provider ?? [:] {
+            let w = value.trimmingCharacters(in: .whitespaces)
+            switch key.lowercased() {
+            // An IMDb id begins with "tt"; anything else is a plugin storing something of
+            // its own there.
             case "imdb" where w.hasPrefix("tt"): imdb = w
             case "tmdb": tmdb = Int(w).flatMap { $0 > 0 ? $0 : nil }
             case "tvdb": tvdb = Int(w).flatMap { $0 > 0 ? $0 : nil }
@@ -244,290 +245,284 @@ public struct TraktKennungen: Sendable, Equatable, Encodable {
         self.init(imdb: imdb, tmdb: tmdb, tvdb: tvdb)
     }
 
-    public var leer: Bool { imdb == nil && tmdb == nil && tvdb == nil }
+    public var empty: Bool { imdb == nil && tmdb == nil && tvdb == nil }
 }
 
-/// Was an Trakt gemeldet wird: ein Film oder eine Folge.
-public enum TraktZiel: Sendable, Equatable {
-    case film(TraktKennungen)
-    /// **Die Serie plus Staffel und Nummer** — so, wie Plezy es macht, und
-    /// aus demselben Grund: das trägt auch dann, wenn Trakt die einzelne
-    /// Folge (noch) nicht unter ihrer eigenen Kennung führt.
-    case folge(serie: TraktKennungen, staffel: Int, nummer: Int)
-    /// Nur, wenn die Serie keine Kennung trägt, die Folge aber schon.
-    case folgeSelbst(TraktKennungen)
+/// What is reported to Trakt: a film or an episode.
+public enum TraktTarget: Sendable, Equatable {
+    case film(TraktIds)
+    /// **The series plus season and number**, the way Plezy does it, and for the
+    /// same reason: it works even when Trakt does not (yet) list the individual
+    /// episode under its own id.
+    case episode(series: TraktIds, season: Int, number: Int)
+    /// Only if the series carries no id but the episode does.
+    case episodeSelf(TraktIds)
 
     /// - Parameters:
-    ///   - titel: der laufende Titel, frisch vom Server (`Items/{id}`
-    ///     liefert `ProviderIds` immer mit, Listeneinträge nicht).
-    ///   - serie: bei einer Folge deren Serie, sonst `nil`.
-    public static func aus(titel: Item, serie: Item?) -> TraktZiel? {
-        switch titel.type {
+    ///   - titel: the running title, fresh from the server (`Items/{id}` always
+    ///     returns `ProviderIds`, list entries do not).
+    ///   - serie: for an episode its series, otherwise `nil`.
+    public static func from(title: Item, series: Item?) -> TraktTarget? {
+        switch title.type {
         case "Movie":
-            let k = TraktKennungen(anbieter: titel.providerIds)
-            return k.leer ? nil : .film(k)
+            let k = TraktIds(provider: title.providerIds)
+            return k.empty ? nil : .film(k)
         case "Episode":
-            let s = TraktKennungen(anbieter: serie?.providerIds)
-            if !s.leer, let staffel = titel.parentIndexNumber, let nummer = titel.indexNumber {
-                return .folge(serie: s, staffel: staffel, nummer: nummer)
+            let s = TraktIds(provider: series?.providerIds)
+            if !s.empty, let season = title.parentIndexNumber, let number = title.indexNumber {
+                return .episode(series: s, season: season, number: number)
             }
-            let eigen = TraktKennungen(anbieter: titel.providerIds)
-            return eigen.leer ? nil : .folgeSelbst(eigen)
+            let own = TraktIds(provider: title.providerIds)
+            return own.empty ? nil : .episodeSelf(own)
         default:
-            // Musikvideos, Fernsehen, Heimvideos: kennt Trakt nicht.
+            // Music videos, live TV, home videos: Trakt does not know them.
             return nil
         }
     }
 
-    /// Der Rumpf für `/scrobble/*`. Fortschritt in Prozent, 0 bis 100.
-    func rumpf(fortschritt: Double) -> Data {
-        struct Kennungshuelle: Encodable { let ids: TraktKennungen }
-        struct Folgenangabe: Encodable { let season: Int; let number: Int }
-        struct Rumpf: Encodable {
-            var movie: Kennungshuelle?
-            var show: Kennungshuelle?
-            var episode: FolgenOderKennung?
+    /// The body for `/scrobble/*`. Progress in percent, 0 to 100.
+    func shell(progress: Double) -> Data {
+        struct IdWrapper: Encodable { let ids: TraktIds }
+        struct EpisodeDetail: Encodable { let season: Int; let number: Int }
+        struct BodyShell: Encodable {
+            var movie: IdWrapper?
+            var show: IdWrapper?
+            var episode: EpisodesOrId?
             let progress: Double
         }
-        enum FolgenOderKennung: Encodable {
-            case angabe(Folgenangabe)
-            case kennung(Kennungshuelle)
+        enum EpisodesOrId: Encodable {
+            case detail(EpisodeDetail)
+            case identifier(IdWrapper)
             func encode(to encoder: any Encoder) throws {
                 switch self {
-                case let .angabe(a): try a.encode(to: encoder)
-                case let .kennung(k): try k.encode(to: encoder)
+                case let .detail(a): try a.encode(to: encoder)
+                case let .identifier(k): try k.encode(to: encoder)
                 }
             }
         }
-        let p = (min(100, max(0, fortschritt)) * 100).rounded() / 100
-        var r = Rumpf(progress: p)
+        let p = (min(100, max(0, progress)) * 100).rounded() / 100
+        var r = BodyShell(progress: p)
         switch self {
         case let .film(k):
-            r.movie = Kennungshuelle(ids: k)
-        case let .folge(serie, staffel, nummer):
-            r.show = Kennungshuelle(ids: serie)
-            r.episode = .angabe(Folgenangabe(season: staffel, number: nummer))
-        case let .folgeSelbst(k):
-            r.episode = .kennung(Kennungshuelle(ids: k))
+            r.movie = IdWrapper(ids: k)
+        case let .episode(series, season, number):
+            r.show = IdWrapper(ids: series)
+            r.episode = .detail(EpisodeDetail(season: season, number: number))
+        case let .episodeSelf(k):
+            r.episode = .identifier(IdWrapper(ids: k))
         }
-        let kodierer = JSONEncoder()
-        kodierer.outputFormatting = .sortedKeys
-        return (try? kodierer.encode(r)) ?? Data()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(r)) ?? Data()
     }
 }
 
-public extension TraktZiel {
-    /// **Holt, was für die Zuordnung fehlt** — den Titel frisch (mit
-    /// `ProviderIds`) und bei einer Folge die Serie dazu.
+public extension TraktTarget {
+    /// **Fetches what is missing for the matching**: the title fresh (with
+    /// `ProviderIds`) and, for an episode, its series.
     ///
-    /// Zwei Anfragen an den eigenen Server beim Start einer Wiedergabe, nicht
-    /// mehr. Scheitert eine, gibt es eben keine Trakt-Meldung; die Wiedergabe
-    /// merkt davon nichts.
-    static func aufloesen(_ titel: Item, client: JellyfinClient) async -> TraktZiel? {
-        let frisch = (titel.providerIds == nil ? try? await client.item(id: titel.id) : nil) ?? titel
-        var serie: Item?
-        if frisch.type == "Episode", let id = frisch.seriesId {
-            serie = try? await client.item(id: id)
+    /// Two requests to the own server when playback starts, no more. If one fails,
+    /// there is simply no Trakt report; playback notices nothing.
+    static func resolve(_ title: Item, client: JellyfinClient) async -> TraktTarget? {
+        let freshValue = (title.providerIds == nil ? try? await client.item(id: title.id) : nil) ?? title
+        var series: Item?
+        if freshValue.type == "Episode", let id = freshValue.seriesId {
+            series = try? await client.item(id: id)
         }
-        return aus(titel: frisch, serie: serie)
+        return from(title: freshValue, series: series)
     }
 }
 
-// MARK: - Die Verbindung zu Trakt
+// MARK: - The connection to Trakt
 
-/// Was eine Leitung zurückgibt — Status, Rumpf und die eine Kopfzeile, die
-/// hier gebraucht wird.
-public struct TraktAntwort: Sendable {
+/// What a line returns: status, body and the one header line needed here.
+public struct TraktResponse: Sendable {
     public let status: Int
-    public let daten: Data
-    public let wiederholenNach: TimeInterval?
+    public let data: Data
+    public let repeatTo: TimeInterval?
 
-    public init(status: Int, daten: Data = Data(), wiederholenNach: TimeInterval? = nil) {
+    public init(status: Int, data: Data = Data(), repeatTo: TimeInterval? = nil) {
         self.status = status
-        self.daten = daten
-        self.wiederholenNach = wiederholenNach
+        self.data = data
+        self.repeatTo = repeatTo
     }
 }
 
-/// Der Weg ins Netz, austauschbar — die Tests setzen eine Attrappe ein und
-/// schicken keine einzige echte Anfrage an Trakt.
-public typealias TraktLeitung = @Sendable (URLRequest) async throws -> TraktAntwort
+/// The way to the network, replaceable: the tests plug in a stand-in and send
+/// not a single real request to Trakt.
+public typealias TraktConnection = @Sendable (URLRequest) async throws -> TraktResponse
 
 public struct TraktClient: Sendable {
-    public static let basis = URL(string: "https://api.trakt.tv")!
+    public static let base = URL(string: "https://api.trakt.tv")!
 
-    public let zugang: TraktZugang
-    private let leitung: TraktLeitung
+    public let access: TraktAccess
+    private let conduit: TraktConnection
 
-    public init(zugang: TraktZugang, leitung: @escaping TraktLeitung = TraktClient.netz) {
-        self.zugang = zugang
-        self.leitung = leitung
+    public init(access: TraktAccess, conduit: @escaping TraktConnection = TraktClient.network) {
+        self.access = access
+        self.conduit = conduit
     }
 
-    /// **Eine eigene, kurze Sitzung, nicht `ortsnetzfaehig`.** Trakt steht
-    /// im Internet; auf eine Ortsnetz-Erlaubnis zu warten hätte keinen Sinn,
-    /// und eine Meldung, die nach zehn Sekunden nicht durch ist, ist ohnehin
-    /// überholt.
-    public static let netz: TraktLeitung = { anfrage in
-        let (daten, antwort) = try await sitzung.data(for: anfrage)
-        let http = antwort as? HTTPURLResponse
-        let nach = (http?.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
-        return TraktAntwort(status: http?.statusCode ?? 0, daten: daten, wiederholenNach: nach)
+    /// **A short session of its own, not `localNetworkCapable`.** Trakt is on the
+    /// internet; waiting for a local-network permission would make no sense, and a
+    /// report that is not through after ten seconds is outdated anyway.
+    public static let network: TraktConnection = { petition in
+        let (data, answer) = try await session.data(for: petition)
+        let http = answer as? HTTPURLResponse
+        let to = (http?.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
+        return TraktResponse(status: http?.statusCode ?? 0, data: data, repeatTo: to)
     }
 
-    private static let sitzung: URLSession = {
+    private static let session: URLSession = {
         let k = URLSessionConfiguration.ephemeral
         k.timeoutIntervalForRequest = 10
         k.timeoutIntervalForResource = 15
         return URLSession(configuration: k)
     }()
 
-    // MARK: Anmelden
+    // MARK: Signing in
 
     /// `POST /oauth/device/code`.
-    public func geraetecode() async throws -> TraktGeraetecode {
-        let a = try await senden("oauth/device/code", rumpf: ["client_id": zugang.clientID])
-        guard a.status == 200 else { throw Self.fehler(a) }
-        guard let code = TraktGeraetecode.aus(a.daten) else { throw TraktFehler.unlesbar }
+    public func devicesCode() async throws -> TraktDevicesCode {
+        let a = try await dispatch("oauth/device/code", shell: ["client_id": access.clientID])
+        guard a.status == 200 else { throw Self.error(a) }
+        guard let code = TraktDevicesCode.from(a.data) else { throw TraktError.unreadable }
         return code
     }
 
-    /// Eine einzelne Nachfrage bei `POST /oauth/device/token`.
-    public func freigabe(_ code: TraktGeraetecode) async -> TraktFreigabe {
-        guard let a = try? await senden("oauth/device/token", rumpf: [
-            "code": code.geraetecode,
-            "client_id": zugang.clientID,
-            "client_secret": zugang.secret,
-        ]) else { return .ausstehend }
-        return TraktFreigabe.aus(status: a.status, daten: a.daten)
+    /// A single poll of `POST /oauth/device/token`.
+    public func sharing(_ code: TraktDevicesCode) async -> TraktSharing {
+        guard let a = try? await dispatch("oauth/device/token", shell: [
+            "code": code.devicesCode,
+            "client_id": access.clientID,
+            "client_secret": access.secret,
+        ]) else { return .pending }
+        return TraktSharing.from(status: a.status, data: a.data)
     }
 
-    /// **Fragt im Takt, bis der Code freigegeben ist.**
+    /// **Polls until the code is approved.**
     ///
-    /// Endet mit dem Token, mit ``TraktFehler/codeAbgelaufen`` oder
-    /// ``TraktFehler/abgelehnt`` — oder mit `CancellationError`, wenn die
-    /// Seite geschlossen wird. `schlafen` ist nur für die Tests austauschbar;
-    /// die Frist zählt die geschlafene Zeit, nicht die Uhr, damit ein Test
-    /// nicht zehn Minuten wartet.
-    public func freigabeAbwarten(
-        _ code: TraktGeraetecode,
-        schlafen: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
+    /// Ends with the token, with ``TraktError/codeExpired`` or
+    /// ``TraktError/abgelehnt``, or with `CancellationError` when the page is
+    /// closed. `sleep` is replaceable only for the tests; the deadline counts the
+    /// time slept, not the clock, so a test does not wait ten minutes.
+    public func sharingWaitFor(
+        _ code: TraktDevicesCode,
+        sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
     ) async throws -> TraktToken {
-        var abstand = code.abstand
-        var verstrichen: TimeInterval = 0
-        while verstrichen < code.gueltig {
-            try await schlafen(abstand)
-            verstrichen += abstand
+        var spacing = code.spacing
+        var lapsed: TimeInterval = 0
+        while lapsed < code.valid {
+            try await sleep(spacing)
+            lapsed += spacing
             try Task.checkCancellation()
-            switch await freigabe(code) {
-            case let .erteilt(token): return token
-            case .ausstehend:         continue
-            // RFC 8628: bei „slow down" fünf Sekunden drauf, und zwar
-            // dauerhaft — nicht nur für den nächsten Versuch.
-            case .langsamer:          abstand += 5
-            case .abgelaufen:         throw TraktFehler.codeAbgelaufen
-            case .abgelehnt:          throw TraktFehler.abgelehnt
+            switch await sharing(code) {
+            case let .granted(token): return token
+            case .pending:         continue
+            // RFC 8628: on "slow down" add five seconds, and permanently, not only for
+            // the next attempt.
+            case .slower:          spacing += 5
+            case .expired:         throw TraktError.codeExpired
+            case .rejected:          throw TraktError.rejected
             }
         }
-        throw TraktFehler.codeAbgelaufen
+        throw TraktError.codeExpired
     }
 
-    /// `POST /oauth/token` mit dem Erneuerungstoken.
+    /// `POST /oauth/token` with the refresh token.
     ///
-    /// **400 und 401 heißen: dieser Zugang ist tot.** Trakt gibt beim
-    /// Erneuern einen *neuen* Erneuerungstoken aus; wer den alten ein zweites
-    /// Mal schickt oder dessen App getrennt wurde, bekommt `invalid_grant`.
-    /// Dann hilft nur neu verbinden — alles andere (5xx, keine Verbindung)
-    /// ist vorübergehend, und der alte Token bleibt.
-    public func erneuern(_ token: TraktToken) async throws -> TraktToken {
-        let a = try await senden("oauth/token", rumpf: [
-            "refresh_token": token.erneuerung,
-            "client_id": zugang.clientID,
-            "client_secret": zugang.secret,
+    /// **400 and 401 mean: this access is dead.** On renewal Trakt issues a *new*
+    /// refresh token; whoever sends the old one a second time, or whose app was
+    /// disconnected, gets `invalid_grant`. Then only reconnecting helps; anything
+    /// else (5xx, no connection) is temporary, and the old token stays.
+    public func renew(_ token: TraktToken) async throws -> TraktToken {
+        let a = try await dispatch("oauth/token", shell: [
+            "refresh_token": token.renewal,
+            "client_id": access.clientID,
+            "client_secret": access.secret,
             "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
             "grant_type": "refresh_token",
         ])
         switch a.status {
         case 200:
-            guard var neu = TraktToken.aus(a.daten) else { throw TraktFehler.unlesbar }
-            neu.benutzer = token.benutzer
-            return neu
-        case 400, 401, 403: throw TraktFehler.abgemeldet
-        default: throw Self.fehler(a)
+            guard var new = TraktToken.from(a.data) else { throw TraktError.unreadable }
+            new.user = token.user
+            return new
+        case 400, 401, 403: throw TraktError.signedOut
+        default: throw Self.error(a)
         }
     }
 
-    /// `POST /oauth/revoke` — beim Trennen. Gelingt es nicht, ist der Token
-    /// hier trotzdem weg; bei Trakt läuft er dann nach einem Tag ab.
-    public func widerrufen(_ token: TraktToken) async {
-        _ = try? await senden("oauth/revoke", rumpf: [
-            "token": token.zugriff,
-            "client_id": zugang.clientID,
-            "client_secret": zugang.secret,
+    /// `POST /oauth/revoke` on disconnecting. If it fails, the token is gone here
+    /// anyway; at Trakt it then expires after a day.
+    public func revoked(_ token: TraktToken) async {
+        _ = try? await dispatch("oauth/revoke", shell: [
+            "token": token.access,
+            "client_id": access.clientID,
+            "client_secret": access.secret,
         ])
     }
 
-    /// Der Name bei Trakt, für „Verbunden als …". `GET /users/settings`.
-    public func benutzername(_ token: TraktToken) async -> String? {
-        struct Antwort: Decodable {
-            struct Nutzer: Decodable { let username: String?; let name: String? }
-            let user: Nutzer?
+    /// The name at Trakt, for "Verbunden als …". `GET /users/settings`.
+    public func username(_ token: TraktToken) async -> String? {
+        struct Reply: Decodable {
+            struct AccountUser: Decodable { let username: String?; let name: String? }
+            let user: AccountUser?
         }
-        guard let a = try? await senden("users/settings", methode: "GET", token: token.zugriff),
+        guard let a = try? await dispatch("users/settings", method: "GET", token: token.access),
               a.status == 200,
-              let antwort = try? JSONDecoder().decode(Antwort.self, from: a.daten) else { return nil }
-        return antwort.user?.username ?? antwort.user?.name
+              let answer = try? JSONDecoder().decode(Reply.self, from: a.data) else { return nil }
+        return answer.user?.username ?? answer.user?.name
     }
 
-    // MARK: Melden
+    // MARK: Reporting
 
-    public enum Schritt: String, Sendable {
+    public enum Step: String, Sendable {
         case start, pause, stop
     }
 
     /// `POST /scrobble/{start|pause|stop}`.
     ///
-    /// **409 ist kein Fehler.** Trakt antwortet so, wenn derselbe Titel
-    /// gerade erst gemeldet wurde — beim zweiten Stopp, beim Neustart kurz
-    /// nach dem Ende. Gemeint ist „schon erledigt", und genau so wird es
-    /// behandelt.
+    /// **409 is not an error.** Trakt answers that way when the same title was just
+    /// reported, on the second stop or on a restart shortly after the end. It means
+    /// "already done", and it is treated exactly that way.
     ///
-    /// Den Rest der Regel macht Trakt selbst: ein Stopp ab 80 % trägt den
-    /// Titel als gesehen ein, darunter gilt er als angehalten.
-    public func melden(_ schritt: Schritt, ziel: TraktZiel, fortschritt: Double,
+    /// Trakt applies the rest of the rule itself: a stop at 80% or more marks the
+    /// title as watched, below that it counts as paused.
+    public func report(_ step: Step, target: TraktTarget, progress: Double,
                        token: String) async throws {
-        let a = try await senden("scrobble/\(schritt.rawValue)", daten: ziel.rumpf(fortschritt: fortschritt),
+        let a = try await dispatch("scrobble/\(step.rawValue)", data: target.shell(progress: progress),
                                  token: token)
         switch a.status {
         case 200, 201, 409: return
-        default: throw Self.fehler(a)
+        default: throw Self.error(a)
         }
     }
 
-    // MARK: Unterbau
+    // MARK: Internals
 
-    private func senden(_ pfad: String, methode: String = "POST", rumpf: [String: String]? = nil,
-                        token: String? = nil) async throws -> TraktAntwort {
-        let daten = try rumpf.map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
-        return try await senden(pfad, methode: methode, daten: daten, token: token)
+    private func dispatch(_ path: String, method: String = "POST", shell: [String: String]? = nil,
+                        token: String? = nil) async throws -> TraktResponse {
+        let data = try shell.map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+        return try await dispatch(path, method: method, data: data, token: token)
     }
 
-    private func senden(_ pfad: String, methode: String = "POST", daten: Data?,
-                        token: String? = nil) async throws -> TraktAntwort {
-        var anfrage = URLRequest(url: Self.basis.appendingPathComponent(pfad))
-        anfrage.httpMethod = methode
-        anfrage.httpBody = daten
-        anfrage.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        anfrage.setValue("2", forHTTPHeaderField: "trakt-api-version")
-        anfrage.setValue(zugang.clientID, forHTTPHeaderField: "trakt-api-key")
-        // Trakt sitzt hinter Cloudflare, und das weist Anfragen ohne
-        // Absender gelegentlich ab.
-        anfrage.setValue("Swiftly", forHTTPHeaderField: "User-Agent")
-        if let token { anfrage.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        return try await leitung(anfrage)
+    private func dispatch(_ path: String, method: String = "POST", data: Data?,
+                        token: String? = nil) async throws -> TraktResponse {
+        var petition = URLRequest(url: Self.base.appendingPathComponent(path))
+        petition.httpMethod = method
+        petition.httpBody = data
+        petition.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        petition.setValue("2", forHTTPHeaderField: "trakt-api-version")
+        petition.setValue(access.clientID, forHTTPHeaderField: "trakt-api-key")
+        // Trakt sits behind Cloudflare, which occasionally rejects requests without
+        // a sender.
+        petition.setValue("Swiftly", forHTTPHeaderField: "User-Agent")
+        if let token { petition.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        return try await conduit(petition)
     }
 
-    static func fehler(_ a: TraktAntwort) -> TraktFehler {
-        a.status == 429 ? .ratenlimit(nachSekunden: a.wiederholenNach) : .status(a.status)
+    static func error(_ a: TraktResponse) -> TraktError {
+        a.status == 429 ? .rateLimit(toSeconds: a.repeatTo) : .status(a.status)
     }
 }

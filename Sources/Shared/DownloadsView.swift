@@ -1,769 +1,716 @@
 import JellyfinKit
 import SwiftUI
 
-// MARK: - Der Ring
+// MARK: - The ring
 
-/// Ein Zeichen, sechs Lagen — überall dasselbe.
+/// One glyph, six positions - the same everywhere.
 ///
-/// In der Zeile rechts, auf der Detailseite in einem Feld, in der Folgenliste
-/// am Rand. **Zustand und Handlung in einer Form**, wie die Kachelplakette.
+/// In the row on the right, on the detail page in a field, in the episode list
+/// at the edge. **State and action in one shape**, like the tile badge.
 ///
-/// Der Akzent trägt hier ausnahmsweise eine Fläche, aber nur bei *fertig*:
-/// das ist die einzige Lage, die keine Handlung mehr anbietet, sondern eine
-/// Aussage macht. E2 verbietet dem Akzent Knopfflächen, nicht Marken.
+/// The accent exceptionally carries a surface here, but only for *finished*:
+/// that is the one position that no longer offers an action but makes a
+/// statement. The accent rule forbids the accent button surfaces, not marks.
 ///
-/// **Und er dreht sich nicht.** Der Ladering ist im Rest der App verschwunden,
-/// ersetzt durch Platzhalter in der Form des Inhalts. Hier bleibt ein Ring,
-/// aber er füllt sich und trägt eine echte Zahl — der Unterschied zwischen
-/// „ich weiss nicht, wie lange" und „noch sechs Minuten".
-struct Downloadring: View {
-    /// `nil` heisst: dieser Titel liegt nicht auf dem Gerät.
-    let posten: Downloadposten?
-    /// Der geschaetzte Stand zwischen zwei Meldungen — derselbe Wert wie
-    /// Zahl und Balken daneben. Ohne ihn der gemeldete.
-    var anteilJetzt: Double? = nil
-    /// **28 in einer Zeile, 22 in einem Feld** — und das sind nicht zwei Masse
-    /// fuer dieselbe Sache, sondern dieselbe Regel: das Zeichen waechst mit dem
-    /// Ding, in dem es sitzt. Die Zeile ist 65 hoch, das Feld der Aktionsreihe
-    /// 48; 28 zu 65 und 22 zu 48 sind dasselbe Verhaeltnis.
+/// **And it does not spin.** The loading ring has disappeared from the rest of
+/// the app, replaced by placeholders in the shape of the content. Here a ring
+/// stays, but it fills and carries a real number - the difference between
+/// "I don't know how long" and "six minutes left".
+struct DownloadRing: View {
+    /// `nil` means: this title is not on the device.
+    let entries: DownloadItem?
+    /// The estimated state between two reports - the same value as the number and
+    /// bar beside it. Without it, the reported one.
+    var shareNow: Double? = nil
+    /// **28 in a row, 22 in a field** - not two measures for the same thing but the
+    /// same rule: the glyph grows with the thing it sits in. The row is 65 high,
+    /// the action row's field 48; 28 to 65 and 22 to 48 are the same ratio.
     var mass: CGFloat = 28
-    let tippen: () -> Void
+    let onTap: () -> Void
 
     var body: some View {
-        // **Die Trefferflaeche gehoert in den Knopf, nicht um ihn herum.**
+        // **The hit area belongs inside the button, not around it.**
         //
-        // `frame` und `contentShape` standen **hinter** dem `Button` — also
-        // an der Huelle, nicht an seiner Beschriftung. Ein Knopf nimmt seine
-        // Flaeche aber von dem, was er zeichnet, und gezeichnet werden hier
-        // **Linien**: `Circle().strokeBorder` trifft nur auf dem Strich, der
-        // Bogen ebenso. Zwischen ihnen war nichts.
+        // `frame` and `contentShape` were **behind** the `Button` - on the shell, not on
+        // its label. A button takes its area from what it draws, and what is drawn
+        // here is **lines**: `Circle().strokeBorder` only hits on the stroke, the arc
+        // likewise. Between them was nothing.
         //
-        // Beim Zustand ohne Download fiel es nicht auf — dort liegt ein
-        // Pfeil in der Mitte, und der ist eine Flaeche. Beim Laden liegt dort
-        // ein Quadrat von acht Punkt, und alles daneben ging ins Leere: der
-        // Ring liess sich starten, aber nicht anhalten.
-        Button(action: tippen) {
-            zeichen
+        // In the no-download state it went unnoticed - an arrow sits in the middle,
+        // and that is a surface. While loading there is an eight-point square, and
+        // everything beside it hit nothing: the ring could be started but not stopped.
+        Button(action: onTap) {
+            symbolText
                 .frame(width: max(mass, 44), height: max(mass, 44))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(Stil.Druckknopf())
-        .accessibilityLabel(Text(ansage))
+        .buttonStyle(Theme.PressButton())
+        .accessibilityLabel(Text(announcement))
     }
 
-    @ViewBuilder private var zeichen: some View {
+    @ViewBuilder private var symbolText: some View {
         ZStack {
-            switch posten?.stand {
+            switch entries?.state {
             case nil:
-                Circle().strokeBorder(Stil.schriftLeise, lineWidth: 1.5)
-                bild("arrow.down", 13, Stil.schrift)
-            case .wartet:
-                Circle().strokeBorder(Stil.schriftSehrLeise,
+                Circle().strokeBorder(Theme.fontQuiet, lineWidth: 1.5)
+                image("arrow.down", 13, Theme.font)
+            case .waits:
+                Circle().strokeBorder(Theme.fontVeryQuiet,
                                       style: StrokeStyle(lineWidth: 2, dash: [3, 4]))
-                bild("pause.fill", 11, Stil.schriftSehrLeise)
-            case .laedt:
-                bogen(anteil: anteilJetzt ?? posten?.anteil ?? 0, farbe: Stil.akzent)
-                // Das Quadrat ist Halt, nicht Abbruch — ein Kreuz hiesse
-                // wegwerfen, und weggeworfen wird hier nichts.
+                image("pause.fill", 11, Theme.fontVeryQuiet)
+            case .loads:
+                arc(share: shareNow ?? entries?.share ?? 0, color: Theme.accent)
+                // The square is a pause, not a cancel - a cross would mean discard, and
+                // nothing is discarded here.
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(Stil.akzent)
+                    .fill(Theme.accent)
                     .frame(width: mass * 0.32, height: mass * 0.32)
-            case .angehalten:
-                bogen(anteil: posten?.anteil ?? 0, farbe: Stil.schriftLeise)
-                bild("play.fill", 11, Stil.schrift)
-            case .fertig:
-                // **Ein Pfeil, kein Haken.**
+            case .halted:
+                arc(share: entries?.share ?? 0, color: Theme.fontQuiet)
+                image("play.fill", 11, Theme.font)
+            case .done:
+                // **An arrow, not a check mark.**
                 //
-                // Der Haken gehoert der Frage „hab ich das gesehen" — und in
-                // der Folgenliste steht er zwei Zentimeter weiter links. Zwei
-                // Haken nebeneinander, die Verschiedenes meinen, sind keine
-                // Auskunft, sondern ein Suchbild.
+                // The check mark belongs to the question "have I seen this" - and in the episode
+                // list it sits two centimetres further left. Two check marks next to each other
+                // meaning different things are no information but a puzzle.
                 //
-                // Gefuellt heisst hier fertig, wie ueberall sonst: dieselbe
-                // Form wie beim Laden, nur voll statt hohl. Man liest sie als
-                // „der Download ist ganz", nicht als „erledigt".
-                Circle().fill(Stil.akzent)
-                bild("arrow.down", 13, Stil.grund)
-            case .fehler:
-                // `fehler`, nicht `warnung`: ein abgebrochener Download ist
-                // schiefgegangen. Das Zeichen bleibt, damit es nicht allein an
-                // der Farbe haengt.
-                Circle().strokeBorder(Stil.fehler, lineWidth: 2)
-                bild("exclamationmark", 13, Stil.fehler)
+                // Filled means finished here, as everywhere: the same shape as loading, just
+                // full instead of hollow. It reads as "the download is complete", not "done".
+                Circle().fill(Theme.accent)
+                image("arrow.down", 13, Theme.reason)
+            case .error:
+                // `error`, not `warning`: an aborted download went wrong. The glyph stays so
+                // it does not hang on colour alone.
+                Circle().strokeBorder(Theme.error, lineWidth: 2)
+                image("exclamationmark", 13, Theme.error)
             }
         }
         .frame(width: mass, height: mass)
-        .animation(Stil.einblenden, value: posten?.stand)
+        .animation(Theme.reveal, value: entries?.state)
     }
 
-    private func bogen(anteil: Double, farbe: Color) -> some View {
+    private func arc(share: Double, color: Color) -> some View {
         ZStack {
-            // **Dieselbe Spur wie im `Fortschrittsbalken`** — und das war sie
-            // einen Tag lang nicht.
+            // **The same track as in `ProgressBar`** - and for a day it was not.
             //
-            // Hier stand `grund` mit 0,78, mit dem Vermerk „derselbe Ton wie
-            // im Fortschrittsbalken, damit Ring und Balken dasselbe sagen".
-            // Genau der wurde am 22.09. hell (weiss 30 %), und diese Stelle
-            // ist stehen geblieben: zwei Fortschrittsanzeiger derselben App,
-            // auf **demselben Bildschirm** — der Ring in der Zeile, der
-            // Balken darunter —, einer dunkel und einer hell. Der Vermerk
-            // behauptete dabei weiter Gleichheit.
+            // This used `reason` at 0.78, with a note "same tone as in the progress bar so
+            // ring and bar say the same". That very bar became light (white 30%) and this
+            // spot was left behind: two progress indicators of the same app on **the same
+            // screen** - the ring in the row, the bar below - one dark and one light. The
+            // note kept claiming equality.
             //
-            // Der Grund fuers Helle steht beim `Fortschrittsbalken`: die Spur
-            // ist die Laenge des Ganzen, nicht der fehlende Rest.
+            // The reason for the light track is at `ProgressBar`: the track is the
+            // length of the whole, not the missing remainder.
             Circle().strokeBorder(Color.white.opacity(0.30), lineWidth: 2)
             Circle()
-                .trim(from: 0, to: max(0.02, anteil))
-                .stroke(farbe, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .trim(from: 0, to: max(0.02, share))
+                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(1)
-                // **Der Bogen waechst, er springt nicht.**
+                // **The arc grows, it does not jump.**
                 //
-                // Ohne eigene Kurve setzt jede Meldung den Bogen hart auf den
-                // neuen Wert. Bei einer schnellen Leitung sind das viele
-                // kleine Spruenge in Folge, und mit runden Enden sieht das
-                // aus, als zittere der Ring. Linear und ueber eine knappe
-                // halbe Sekunde laeuft er ruhig — und bleibt trotzdem ehrlich,
-                // weil er nie zurueckfaellt.
-                .animation(Stil.fortschrittsfahrt, value: anteil)
+                // Without its own curve every report sets the arc hard to the new value. On a
+                // fast connection that is many small jumps in a row, and with round ends it
+                // looks as if the ring trembles. Linear over a short half second it runs calmly
+                // - and stays honest, since it never falls back.
+                .animation(Theme.progressTravel, value: share)
         }
     }
 
-    private func bild(_ name: String, _ groesse: CGFloat, _ farbe: Color) -> some View {
+    private func image(_ name: String, _ size: CGFloat, _ color: Color) -> some View {
         Image(systemName: name)
-            .font(.system(size: groesse, weight: .semibold))
-            .foregroundStyle(farbe)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(color)
     }
 
-    private var ansage: LocalizedStringKey {
-        switch posten?.stand {
+    private var announcement: LocalizedStringKey {
+        switch entries?.state {
         case nil:          "Laden"
-        case .wartet:      "Wartet"
-        case .laedt:       "Lädt, anhalten"
-        case .angehalten:  "Angehalten, fortsetzen"
-        case .fertig:      "Geladen, entfernen"
-        case .fehler:      "Fehlgeschlagen, erneut versuchen"
+        case .waits:      "Wartet"
+        case .loads:       "Lädt, anhalten"
+        case .halted:  "Angehalten, fortsetzen"
+        case .done:      "Geladen, entfernen"
+        case .error:      "Fehlgeschlagen, erneut versuchen"
         }
     }
 }
 
-/// Was ein Tipp auf den Ring tut — an allen drei Stellen dasselbe.
+/// What a tap on the ring does - the same in all three places.
 ///
-/// Steht hier und nicht dreimal in den Ansichten: die Seite, die Folgenliste
-/// und die Aktionsreihe stellen dieselbe Frage, also gibt es eine Antwort.
+/// Lives here and not three times in the views: the page, the episode list and
+/// the action row ask the same question, so there is one answer.
 @MainActor
-func ringGetippt(_ posten: Downloadposten?, _ verwaltung: Downloadverwaltung,
-                 anlegen: () -> Void) {
-    switch posten?.stand {
-    case nil:          anlegen()
-    case .laedt:       verwaltung.anhalten(posten!.id)
-    case .angehalten,
-         .fehler,
-         .wartet:      verwaltung.fortsetzen(posten!.id)
-    case .fertig:      break   // Entfernen läuft über das Blatt, nicht über einen Tipp.
+func ringTap(_ entries: DownloadItem?, _ management: DownloadManager,
+                 create: () -> Void) {
+    switch entries?.state {
+    case nil:          create()
+    case .loads:       management.halt(entries!.id)
+    case .halted,
+         .error,
+         .waits:      management.resume(entries!.id)
+    case .done:      break   // Removing goes through the sheet, not a tap.
     }
 }
 
-/// Das fünfte Feld der Aktionsreihe.
+/// The fifth field of the action row.
 ///
-/// Heisst **`Downloadfeld`** und nicht `Ladefeld`: das ist seit dem
-/// Gestaltungsdurchgang der Platzhalter in der Form des Inhalts, und zwei
-/// Bausteine gleichen Namens in einer App sind der Anfang davon, dass jemand
-/// den falschen nimmt.
+/// Called **`DownloadField`** and not `Ladefeld`: the latter has meant the
+/// placeholder in the shape of content since the design pass, and two components
+/// with the same name in one app are the start of someone picking the wrong one.
 ///
-/// **Ein eigener Baustein statt eines `Aktionsknopf` mit Auflage.** Zuerst
-/// stand hier der Ring als `.overlay` über dem Knopf, mit einem eigenen
-/// Grund darunter, damit das Zeichen darunter verschwindet — und dieser
-/// Grund war ein Rechteck über einer Fläche mit 10 Punkt Ecke. Die vier
-/// Ecken wären quadratisch übermalt gewesen, und zwar nur an diesem einen
-/// Feld der Reihe. Ein Feld, das zwei Sachen zeigen kann, zeigt sie im
-/// selben Baum, statt eine über die andere zu legen.
+/// **Its own component instead of an `Aktionsknopf` with an overlay.** At first
+/// the ring was an `.overlay` over the button with its own background beneath so
+/// the glyph vanished - and that background was a rectangle over a surface with
+/// 10 pt corners. The four corners would have been painted over square, and only
+/// on this one field of the row. A field that can show two things shows them in
+/// the same tree instead of laying one over the other.
 ///
-/// Masse und Fläche sind wörtlich die von ``Aktionsknopf`` — es steht in
-/// derselben Reihe, und das darf man nicht sehen.
-struct Downloadfeld: View {
-    @Environment(\.aufBildfarbe) private var aufBild
-    let posten: Downloadposten?
-    var dehnt = true
-    let tippen: () -> Void
+/// Metrics and surface are literally those of ``Aktionsknopf`` - it sits in the
+/// same row, and you must not see it.
+struct DownloadField: View {
+    @Environment(\.onImageTint) private var onImage
+    let entries: DownloadItem?
+    var stretches = true
+    let onTap: () -> Void
 
     var body: some View {
-        Button(action: tippen) {
+        Button(action: onTap) {
             Group {
-                if let p = posten, p.stand != .fertig {
-                    Downloadring(posten: p, mass: 22) {}
+                if let p = entries, p.state != .done {
+                    DownloadRing(entries: p, mass: 22) {}
                         .allowsHitTesting(false)
                 } else {
-                    // Dieselbe Unterscheidung wie am Ring: gefuellt heisst
-                    // geladen, und es bleibt ein Pfeil. Der Haken daneben in
-                    // derselben Reihe heisst „gesehen".
-                    // 19 Medium stand in keiner Leiter; 17 Semibold ist die
-                    // Stufe darunter und die, die es wirklich gibt.
-                    Image(systemName: posten == nil ? "arrow.down" : "arrow.down.circle.fill")
+                    // The same distinction as at the ring: filled means loaded, and it stays an
+                    // arrow. The check mark beside it in the same row means "seen".
+                    // 19 medium is in no scale; 17 semibold is the level below and the one that exists.
+                    Image(systemName: entries == nil ? "arrow.down" : "arrow.down.circle.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(posten == nil ? Stil.schrift : Stil.akzent)
+                        .foregroundStyle(entries == nil ? Theme.font : Theme.accent)
                 }
             }
-            .frame(maxWidth: dehnt ? .infinity : nil)
-            // **48 und 48, wie der Nachbar.**
+            .frame(maxWidth: stretches ? .infinity : nil)
+            // **48 and 48, like the neighbour.**
             //
-            // Es stand auf 56 breit und 44 hoch, mit Rand, waehrend
-            // `Aktionsknopf` unmittelbar daneben 48 im Quadrat ohne Rand
-            // traegt. Drei Unterschiede in einer Reihe, in der alle Felder
-            // dasselbe tun sollen. Der Vermerk, der hier stand, hat die
-            // Kopplung sogar benannt — „bis er nachzieht, sieht man den
-            // Unterschied" —, nur ist der Nachbar laengst nachgezogen und
-            // dieses Feld stehen geblieben. Rückmeldung vom 21.09.: „der Download-
-            // Button auf der Filmseite ist noch falsch."
-            .frame(width: dehnt ? nil : 48, height: 48)
-            .background(Stil.knopfflaeche(aufBild: aufBild),
-                        in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+            // It was 56 wide and 44 high, with a border, while `Aktionsknopf` right next to
+            // it is 48 square without one. Three differences in a row in which all fields
+            // should do the same. The note here even named the coupling - "until it catches
+            // up you see the difference" - but the neighbour caught up long ago and this
+            // field stayed.
+            .frame(width: stretches ? nil : 48, height: 48)
+            .background(Theme.buttonArea(onImage: onImage),
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(Stil.Druckknopf())
+        .buttonStyle(Theme.PressButton())
         .accessibilityLabel(Text("Laden"))
-        .accessibilityAddTraits(posten == nil ? .isButton : [.isButton, .isSelected])
+        .accessibilityAddTraits(entries == nil ? .isButton : [.isButton, .isSelected])
     }
 }
 
-// MARK: - Eine Zeile
+// MARK: - One row
 
-/// **Zeilen, keine Kacheln.**
+/// **Rows, not tiles.**
 ///
-/// Ein Download muss vier Dinge gleichzeitig zeigen: was, wie weit, wie gross
-/// und was man drücken kann. Auf ein Plakat von 104 × 156 passt davon eins.
-struct Downloadzeile: View {
+/// A download must show four things at once: what, how far, how big and what
+/// you can press. A 104 x 156 poster fits one of them.
+struct DownloadRow: View {
     let model: AppModel
-    let posten: Downloadposten
-    /// Gesetzt, wenn die Zeile für eine ganze Serie steht (H12).
-    var gruppe: (titel: String, folgen: [Downloadposten])?
-    var bearbeiten = false
-    @Binding var gewaehlt: Bool
-    /// Was ein Tipp auf eine fertige Zeile tut. `nil` bei einer Gruppe — die
-    /// fuehrt weiter, statt zu starten.
-    var starten: (() -> Void)?
+    let entries: DownloadItem
+    /// Set when the row stands for a whole series.
+    var group: (title: String, episodes: [DownloadItem])?
+    var edit = false
+    @Binding var selected: Bool
+    /// What a tap on a finished row does. `nil` for a group - it navigates on
+    /// instead of starting.
+    var start: (() -> Void)?
 
-    private var verwaltung: Downloadverwaltung { model.downloads }
-    /// Der Posten mit dem laufenden Stand. **Nur hier gelesen**, damit eine
-    /// Fortschrittsmeldung diese eine Zeile neu zeichnet und nicht die Liste.
-    private var jetzt: Downloadposten { verwaltung.aktuell(posten) }
-    /// Haelt den Schaetzer ueber die Neuzeichnungen; beobachtet wird er nicht,
-    /// die Zeitleiste fragt ihn je Bild.
-    @State private var schaetzer = Schaetzerhalter()
+    private var management: DownloadManager { model.downloads }
+    /// The entry with the running state. **Read only here**, so a progress report
+    /// redraws this one row and not the list.
+    private var now: DownloadItem { management.current(entries) }
+    /// Keeps the estimator across redraws; it is not observed, the timeline asks
+    /// it per frame.
+    @State private var estimator = EstimatorHolder()
 
-    /// **Waehrend geladen wird, zaehlt die Zeile je Bild weiter.**
+    /// **While loading, the row keeps counting per frame.**
     ///
-    /// Die Verwaltung meldet hoechstens einmal je Sekunde; dazwischen rechnet
-    /// `Fortschrittsschaetzer` im Tempo der letzten Sekunden weiter, wie es
-    /// App Store und Musik tun. Zahl, Balken und Ring lesen **denselben**
-    /// Wert — vorher sprang die Zahl stueckweise, und Balken und Ring
-    /// liefen ihr je nach Animation voraus oder hinterher. 30 Bilder je
-    /// Sekunde reichen fuer einen Balken; mehr kostet nur Akku.
+    /// The manager reports at most once a second; in between
+    /// `ProgressEstimator` extrapolates at the pace of the last seconds, as App
+    /// Store and Music do. Number, bar and ring read **the same** value - before,
+    /// the number jumped in steps and bar and ring ran ahead or behind depending on
+    /// animation. 30 frames a second suffice for a bar; more only costs battery.
     ///
-    /// **Geschaetzt wird nur, solange wirklich Byte kommen.** Angehalten,
-    /// wartend, fehlgeschlagen oder ohne Netz steht die Zahl sofort — und
-    /// zwar dort, wo sie stand, nicht auf der letzten Meldung, die dahinter
-    /// liegen kann.
+    /// **Only estimated while bytes really arrive.** Paused, waiting, failed or
+    /// offline, the number is set at once - where it stood, not on the last report,
+    /// which may lie beyond.
     var body: some View {
         Group {
-            if kommtWas {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { takt in
-                    zeile(geladen: schaetzer.s.wert(um: takt.date))
+            if comesWas {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { tick in
+                    row(loaded: estimator.s.value(um: tick.date))
                 }
-            } else if posten.stand == .angehalten || posten.stand == .laedt {
-                zeile(geladen: max(schaetzer.s.wert(um: Date()), jetzt.geladen))
+            } else if entries.state == .halted || entries.state == .loads {
+                row(loaded: max(estimator.s.value(um: Date()), now.loaded))
             } else {
-                zeile(geladen: jetzt.geladen)
+                row(loaded: now.loaded)
             }
         }
-        .onChange(of: jetzt.geladen, initial: true) { _, neu in
-            schaetzer.s.melden(neu, gesamt: jetzt.bytes, um: Date())
-            if !kommtWas { schaetzer.s.anhalten() }
+        .onChange(of: now.loaded, initial: true) { _, new in
+            estimator.s.report(new, total: now.bytes, um: Date())
+            if !comesWas { estimator.s.halt() }
         }
-        .onChange(of: kommtWas) { _, an in
-            if !an { schaetzer.s.anhalten() }
+        .onChange(of: comesWas) { _, an in
+            if !an { estimator.s.halt() }
         }
     }
 
-    private var kommtWas: Bool {
-        gruppe == nil && posten.stand == .laedt && !verwaltung.keinNetz
+    private var comesWas: Bool {
+        group == nil && entries.state == .loads && !management.noNetwork
     }
 
-    private func anteil(_ geladen: Int64) -> Double? {
-        jetzt.bytes > 0 ? Double(geladen) / Double(jetzt.bytes) : jetzt.anteil
+    private func share(_ loaded: Int64) -> Double? {
+        now.bytes > 0 ? Double(loaded) / Double(now.bytes) : now.share
     }
 
-    private func zeile(geladen: Int64) -> some View {
+    private func row(loaded: Int64) -> some View {
         HStack(spacing: 12) {
-            if bearbeiten {
-                // 21 war ein Einzelfall zwischen den Stufen; 20 Semibold ist
-                // die Reihenueberschrift und damit die naechste echte.
-                Image(systemName: gewaehlt ? "checkmark.circle.fill" : "circle")
+            if edit {
+                // 21 was a one-off between the levels; 20 semibold is the row heading and
+                // thus the next real one.
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(gewaehlt ? Stil.akzent : Stil.schriftSehrLeise)
-                    // **Der Kreis kommt von links herein und schiebt die
-                    // Zeile vor sich her.** Mit `.opacity` stand er sofort
-                    // in voller Breite da, und die Zeile rueckte nur um das,
-                    // was die Blende noch uebrig liess. Bei reduzierter
-                    // Bewegung bleibt es eine Blende.
-                    .transition(Stil.bewegungReduziert
+                    .foregroundStyle(selected ? Theme.accent : Theme.fontVeryQuiet)
+                    // **The circle comes in from the left and pushes the row ahead of it.** With
+                    // `.opacity` it stood at full width at once, and the row only moved by what
+                    // the fade left over. With reduced motion it stays a fade.
+                    .transition(Theme.motionReduced
                                 ? .opacity
                                 : .move(edge: .leading).combined(with: .opacity))
             }
 
-            Netzbild(url: bildadresse, zeichen: quer ? "tv" : "film")
-                // 116 x 65 statt 104 x 59: dasselbe Standbild wie in der
-                // Folgenliste der Serienseite. Zwei Maße fuer dieselbe Rolle
-                // waren der Fehler.
-                .frame(width: quer ? 116 : 64, height: quer ? 65 : 96)
-                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
-                // **Gesehen wie in der Folgenliste** — auch ohne Netz: der
-                // Stand liegt im Posten (1.0.5). Nur an der einzelnen Zeile;
-                // eine Serienzeile steht fuer viele Folgen.
-                .gesehenHaken(gruppe == nil && posten.gesehen)
+            NetworkImage(url: imageAddressValue, symbolText: landscape ? "tv" : "film")
+                // 116 x 65 instead of 104 x 59: the same still as in the series page's
+                // episode list. Two measures for the same role were the bug.
+                .frame(width: landscape ? 116 : 64, height: landscape ? 65 : 96)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
+                // **Watched as in the episode list** - also offline: the state is in the
+                // entry. Only on the individual row; a series row stands for many episodes.
+                .watchedCheckmark(group == nil && entries.watched)
 
             VStack(alignment: .leading, spacing: 3) {
-                // Eine Zeile traegt Semibold, nicht Medium — Medium gehoert
-                // dem Titel unter einem Plakat. Der Token haelt beides
-                // zusammen, damit es nicht wieder auseinanderlaeuft.
-                Text(verbatim: gruppe?.titel ?? posten.titel)
-                    .mitwachsend(15, .semibold)
+                // A row carries semibold, not medium - medium belongs to the title under a
+                // poster. The token keeps both together so they do not drift apart again.
+                Text(verbatim: group?.title ?? entries.title)
+                    .growing(15, .semibold)
                     .lineLimit(1)
-                // 12,5 war eine halbe Stufe zwischen zwei ganzen; die Angabe
-                // unter einem Titel ist 12 Regular.
-                Text(verbatim: unterzeile(geladen))
-                    // **Tabellarisch.** „1,4 GB · 42 Min." steht in einer
-                    // Liste untereinander, und BRAND 2 nennt Laufzeiten und
-                    // Groessen ausdruecklich: gleich breite Ziffern, sonst
-                    // wandern die Komma- und Punktstellen von Zeile zu Zeile.
-                    .mitwachsend(12).monospacedDigit()
-                    .foregroundStyle(unterfarbe)
+                // 12.5 was a half step between two whole ones; the line under a title is
+                // 12 regular.
+                Text(verbatim: subline(loaded))
+                    // **Tabular.** "1.4 GB - 42 min." stands in a list one under another, and the
+                    // brand rules name runtimes and sizes explicitly: equal-width digits, otherwise
+                    // the decimal separators wander from row to row.
+                    .growing(12).monospacedDigit()
+                    .foregroundStyle(underColor)
                     .lineLimit(1)
-                if let anteil = anteil(geladen), posten.stand == .laedt || posten.stand == .angehalten {
-                    Fortschrittsbalken(anteil: anteil, rund: true)
+                if let share = share(loaded), entries.state == .loads || entries.state == .halted {
+                    ProgressBar(share: share, round: true)
                         .padding(.top, 5)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if gruppe != nil {
-                // 14 steht in keiner Leiter — ein Winkel ist 13 Semibold.
+            if group != nil {
+                // 14 is in no scale - a chevron is 13 semibold.
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Stil.schriftSehrLeise)
-            } else if !bearbeiten {
-                Downloadring(posten: jetzt, anteilJetzt: anteil(geladen)) {
-                    ringGetippt(posten, verwaltung) {}
+                    .foregroundStyle(Theme.fontVeryQuiet)
+            } else if !edit {
+                DownloadRing(entries: now, shareNow: share(loaded)) {
+                    ringTap(entries, management) {}
                 }
             }
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .animation(Stil.blattbewegung, value: bearbeiten)
-        // **Die Geste darf es nur im Auswahlmodus geben.**
+        .animation(Theme.sheetMotion, value: edit)
+        // **The gesture may only exist in selection mode.**
         //
-        // Hier stand sie fest, mit einem `if bearbeiten` im Rumpf — und ein
-        // `onTapGesture` schluckt den Tipp auch dann, wenn sein Rumpf nichts
-        // tut. Die Serienzeile liegt in einem `NavigationLink`, und der kam
-        // dadurch nie an: ein Tipp auf „Breaking Bad" passierte einfach
-        // nichts. Am Geraet gesehen, nicht im Bau.
-        // **Ein Tipp spielt ab.** Das fehlte ganz: die Zeile trug nur die
-        // Auswahl im Bearbeitenmodus. Abspielen und nicht die Detailseite —
-        // die braucht den Server, und wer hier steht, hat womoeglich keinen.
-        .modifier(Auswahltipp(an: bearbeiten || starten != nil) {
-            if bearbeiten { gewaehlt.toggle() } else { starten?() }
+        // It was fixed here with an `if edit` in the body - and an
+        // `onTapGesture` swallows the tap even when its body does nothing. The series
+        // row sits in a `NavigationLink`, which therefore never received it: a tap on a
+        // series simply did nothing. Seen on the device, not in the build.
+        // **A tap plays.** That was missing entirely: the row only carried selection in
+        // edit mode. Play and not the detail page - that needs the server, and whoever
+        // is here may have none.
+        .modifier(SelectionTap(an: edit || start != nil) {
+            if edit { selected.toggle() } else { start?() }
         })
     }
 
-    /// **Erst die Platte, dann der Server.** Ohne Netz gibt es nur die
-    /// Platte, und genau dann wird diese Seite gebraucht.
+    /// **Disk first, then the server.** Offline there is only the disk, and that is
+    /// exactly when this page is needed.
     ///
-    /// Eine Gruppenzeile trägt das Plakat der Serie, eine Folgenzeile ihr
-    /// eigenes Querbild — sonst stünde in der Folgenliste dreimal dasselbe.
-    private var bildadresse: URL? {
-        let gruppig = gruppe != nil
-        return verwaltung.bild(fuer: posten, alsGruppe: gruppig)
-            ?? model.plakatURL(itemID: gruppig ? (posten.serienId ?? posten.id) : posten.id)
+    /// A group row carries the series poster, an episode row its own landscape image
+    /// - otherwise the episode list would show the same image three times.
+    private var imageAddressValue: URL? {
+        let hasGroup = group != nil
+        return management.image(for: entries, asGroup: hasGroup)
+            ?? model.posterURL(itemID: hasGroup ? (entries.seriesIdentifier ?? entries.id) : entries.id)
     }
 
-    /// Hochkant für Filme und Serien, quer für eine einzelne Folge — dieselbe
-    /// Unterscheidung wie in der Folgenliste der Serienseite.
-    private var quer: Bool { gruppe == nil && posten.art == .folge }
+    /// Portrait for movies and series, landscape for a single episode - the same
+    /// distinction as in the series page's episode list.
+    private var landscape: Bool { group == nil && entries.art == .episode }
 
-    private func unterzeile(_ geladen: Int64) -> String {
-        if let g = gruppe {
-            let bytes = g.folgen.reduce(Int64(0)) { $0 + $1.bytes }
-            return String(localized: "\(g.folgen.count) Folgen") + " · "
-                + Downloadregeln.groesse(bytes)
-                + (Downloadqualitaet.gemeinsam(g.folgen).map { " · " + $0.name } ?? "")
+    private func subline(_ loaded: Int64) -> String {
+        if let g = group {
+            let bytes = g.episodes.reduce(Int64(0)) { $0 + $1.bytes }
+            return String(localized: "\(g.episodes.count) Folgen") + " · "
+                + DownloadRules.size(bytes)
+                + (DownloadQuality.gemeinsam(g.episodes).map { " · " + $0.name } ?? "")
         }
-        var teile: [String] = []
-        // Übersetzt: Deutsch „F" wie Folge, Englisch „E" wie Episode — stand
-        // hier fest als „F", auch auf Englisch (gemeldet 27.09.2026).
-        if let s = posten.staffel, let f = posten.folge {
-            teile.append(String(localized: "S\(s) F\(f)"))
-        } else if let ticks = posten.laufzeitTicks, ticks > 0 {
-            teile.append(laufzeit(Double(ticks) / 10_000_000))
+        var parts: [String] = []
+        // Translated: German "F" for Folge, English "E" for Episode - it was fixed
+        // as "F" here, also in English.
+        if let s = entries.season, let f = entries.episode {
+            parts.append(String(localized: "S\(s) F\(f)"))
+        } else if let ticks = entries.runtimeTicks, ticks > 0 {
+            parts.append(runtime(Double(ticks) / 10_000_000))
         }
-        switch posten.stand {
-        case .laedt:
-            // **Feste Einheit, feste Stellen.** `groesse` wechselte mitten
-            // im Laden von „845 MB" auf „1 GB" und „1,01 GB" — Komma rein,
-            // Komma raus, und die Zeile wurde bei jedem Schritt anders breit.
-            // Am schlimmsten bei der ersten Folge, die unter einem Gigabyte
-            // anfaengt. Die Gesamtgroesse gibt die Einheit vor.
-            let f = Downloadregeln.fortschritt(geladen: geladen, von: jetzt.bytes)
-            // Umgewandelt ist das Ende geschätzt — dann steht „≈" davor.
-            teile = [String(localized: "\(f.geladen) von \((posten.umgewandelt ? "≈ " : "") + f.gesamt)")]
-        case .wartet:
-            teile.append(String(localized: "wartet"))
-            if posten.umgewandelt { teile.append(posten.guete.name) }
-        case .angehalten:
-            teile.append(String(localized: "angehalten"))
-            if posten.umgewandelt { teile.append(posten.guete.name) }
-        case .fehler:
-            teile = [posten.grund ?? String(localized: "Fehlgeschlagen")]
-        case .fertig:
-            teile.append(Downloadregeln.groesse(jetzt.bytes))
-            // **Die gewählte Qualität steht da, wo sonst der Container
-            // steht** — „720p" erklärt die kleine Zahl davor, „MKV" nicht.
-            if posten.umgewandelt {
-                teile.append(posten.guete.name)
-            } else if let c = posten.container {
-                teile.append(c.uppercased())
+        switch entries.state {
+        case .loads:
+            // **Fixed unit, fixed positions.** `size` switched mid-load from "845 MB"
+            // to "1 GB" and "1.01 GB" - decimal separator in, decimal separator out, and
+            // the row changed width at every step. Worst for the first episode starting
+            // under a gigabyte. The total size dictates the unit.
+            let f = DownloadRules.progress(loaded: loaded, from: now.bytes)
+            // When converted the end is estimated - then "~" precedes it.
+            parts = [String(localized: "\(f.loaded) von \((entries.converted ? "≈ " : "") + f.total)")]
+        case .waits:
+            parts.append(String(localized: "wartet"))
+            if entries.converted { parts.append(entries.guete.name) }
+        case .halted:
+            parts.append(String(localized: "angehalten"))
+            if entries.converted { parts.append(entries.guete.name) }
+        case .error:
+            parts = [entries.reason ?? String(localized: "Fehlgeschlagen")]
+        case .done:
+            parts.append(DownloadRules.size(now.bytes))
+            // **The chosen quality stands where the container otherwise stands** -
+            // "720p" explains the small number before it, "MKV" does not.
+            if entries.converted {
+                parts.append(entries.guete.name)
+            } else if let c = entries.container {
+                parts.append(c.uppercased())
             }
-            // **H9.** Die Datei bleibt und bleibt spielbar; der Hinweis steht
-            // leise daneben, nicht als Fehler.
-            if !posten.nochAufDemServer {
-                teile.append(String(localized: "nicht mehr auf dem Server"))
+            // **H9.** The file stays and stays playable; the hint sits quietly beside it,
+            // not as an error.
+            if !entries.stillOnTheServer {
+                parts.append(String(localized: "nicht mehr auf dem Server"))
             }
         }
-        return teile.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 
-    private var unterfarbe: Color {
-        switch posten.stand {
-        case .laedt:  Stil.akzent
-        case .fehler: Stil.fehler
-        // Ruhend ist die Unterzeile eine Angabe, keine Beschreibung: vorher
-        // `schriftLeise`, und damit stand sie fast so laut da wie der Titel
-        // darueber.
-        default:      Stil.schriftSehrLeise
+    private var underColor: Color {
+        switch entries.state {
+        case .loads:  Theme.accent
+        case .error: Theme.error
+        // At rest the sub-line is a specification, not a description: previously
+        // `schriftLeise`, which made it nearly as loud as the title above.
+        default:      Theme.fontVeryQuiet
         }
     }
 }
 
-/// Eine Tippgeste, die es nur gibt, wenn sie gebraucht wird.
+/// A tap gesture that only exists when needed.
 ///
-/// Ohne diesen Umweg müsste die Geste fest hängen und im Rumpf prüfen — und
-/// dann verschluckt sie den Tipp trotzdem, weil SwiftUI beim Verteilen nicht
-/// in den Rumpf sieht.
-private struct Auswahltipp: ViewModifier {
+/// Without this detour the gesture would have to be attached permanently and
+/// check in the body - and then it swallows the tap anyway, since SwiftUI does
+/// not look into the body when dispatching.
+private struct SelectionTap: ViewModifier {
     let an: Bool
-    let tun: () -> Void
+    let perform: () -> Void
 
     func body(content: Content) -> some View {
-        // **Immer ein Knopf, nur ohne Handlung, wenn keiner gebraucht
-        // wird.** Hier stand ein `if an` um den Knopf: schaltete Bearbeiten
-        // eine ladende Zeile von „ohne" auf „mit", war sie fuer SwiftUI eine
-        // andere Ansicht — sie blendete ueber und rutschte verspaetet nach,
-        // waehrend die uebrigen glitten. Ein innerer Knopf (der Ring) bekommt
-        // seinen Tipp weiter selbst.
+        // **Always a button, just without action when none is needed.** There was an
+        // `if an` around the button: if Edit switched a loading row from "without" to
+        // "with", it was a different view to SwiftUI - it cross-faded and slid in late
+        // while the rest glided. An inner button (the ring) still gets its tap itself.
         //
-        // **Ohne graue Flaeche.** `Druckzeile` legte Grau hinter die Zeile;
-        // hier tippt man nur, um zu waehlen oder abzuspielen. Der Inhalt
-        // dunkelt kurz ab — das reicht als Antwort.
-        Button { if an { tun() } } label: { content }
-            .buttonStyle(Abdunkeln(an: an))
+        // **No grey surface.** `PressRow` put grey behind the row; here you only tap
+        // to select or play. The content dims briefly - that suffices as the answer.
+        Button { if an { perform() } } label: { content }
+            .buttonStyle(Dim(an: an))
             .accessibilityRemoveTraits(an ? [] : .isButton)
     }
 
 }
 
-private struct Abdunkeln: ButtonStyle {
+private struct Dim: ButtonStyle {
     var an = true
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(an && configuration.isPressed ? 0.6 : 1)
-            .animation(Stil.druckkurve(configuration.isPressed),
+            .animation(Theme.pressCurve(configuration.isPressed),
                        value: configuration.isPressed)
     }
 }
 
-/// Eine Huelle, damit der Schaetzer die Neuzeichnungen ueberlebt, ohne dass
-/// jede Schaetzung eine neue auslöst.
-private final class Schaetzerhalter {
-    var s = Fortschrittsschaetzer()
+/// A shell so the estimator survives redraws without each estimate triggering
+/// a new one.
+private final class EstimatorHolder {
+    var s = ProgressEstimator()
 }
 
-// MARK: - Die Seite
+// MARK: - The page
 
 struct DownloadsView: View {
     let model: AppModel
 
-    @Environment(\.breit) private var breit
-    @Environment(\.bereichAktiv) private var bereichAktiv
-    @Environment(\.reiterNochmal) private var nochmal
-    @State private var versatz: CGFloat = 0
-    @State private var bearbeiten = false
-    @State private var gewaehlt: Set<String> = []
-    @State private var loeschblatt = false
-    @State private var offeneSerie: DownloadserieRoute?
+    @Environment(\.wide) private var wide
+    @Environment(\.sectionActive) private var sectionActive
+    @Environment(\.tabStillTimes) private var anotherTime
+    @State private var offset: CGFloat = 0
+    @State private var edit = false
+    @State private var selected: Set<String> = []
+    @State private var deleteSheet = false
+    @State private var openSeries: DownloadSeriesRoute?
 
-    private var verwaltung: Downloadverwaltung { model.downloads }
+    private var management: DownloadManager { model.downloads }
 
-    private var laufend: [Downloadposten] {
-        verwaltung.posten.filter { $0.stand != .fertig }
+    private var ongoing: [DownloadItem] {
+        management.entries.filter { $0.state != .done }
     }
-    private var fertige: [Downloadgruppe] {
-        Downloadregeln.gruppiert(verwaltung.posten.filter { $0.stand == .fertig })
+    private var finished: [DownloadGroup] {
+        DownloadRules.grouped(management.entries.filter { $0.state == .done })
     }
 
     var body: some View {
         ZStack(alignment: .top) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             ScrollView {
-                // **Lazy, wie jede andere Liste.** Jede Zeile traegt ein Bild
-                // von der Platte; mit einer grossen Offline-Bibliothek baute
-                // das Oeffnen der Seite alle auf einmal statt beim Sichtbarwerden.
+                // **Lazy, like every other list.** Every row carries an image from disk; with a
+                // large offline library opening the page built them all at once instead of
+                // when becoming visible.
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if !laufend.isEmpty {
-                        // **Der Rand wird zurueckgerechnet, nicht addiert.**
+                    if !ongoing.isEmpty {
+                        // **The margin is subtracted back, not added.**
                         //
-                        // `Gruppentitel` bringt `randAbstand` selbst mit, und
-                        // der `VStack` unten legt noch einmal `rand(breit:)`
-                        // darum: die Ueberschrift stand sichtbar 18 Punkt
-                        // weiter innen als ihre eigene Liste. So macht es
-                        // `Einstellungsgruppe` schon, Zeichen fuer Zeichen.
-                        Gruppentitel(text: verwaltung.keinNetz ? "Wartet auf Netz" : "Lädt gerade")
-                            .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
+                        // `Gruppentitel` brings `edgeSpacing` itself, and the `VStack` below puts
+                        // `rand(wide:)` around it once more: the heading sat visibly 18 pt further in
+                        // than its own list. `Einstellungsgruppe` already does it this way, character
+                        // for character.
+                        GroupsTitle(text: management.noNetwork ? "Wartet auf Netz" : "Lädt gerade")
+                            .padding(.horizontal, Theme.margin(wide: wide) - Theme.edgeSpacing)
                             .padding(.top, 4)
-                        // **Auch was laeuft, laesst sich entfernen.**
+                        // **What is running can be removed too.**
                         //
-                        // Diese Zeilen bekamen `gewaehlt: .constant(false)`
-                        // und kein `bearbeiten` — sie liessen sich also gar
-                        // nicht ankreuzen. Wer einen Download versehentlich
-                        // angestossen hat, musste warten, bis er fertig war,
-                        // um ihn wieder loszuwerden. `entfernen` bricht die
-                        // Aufgabe ohnehin ab; es fehlte nur der Weg dorthin.
-                        ForEach(laufend) { p in
-                            Downloadzeile(model: model, posten: p,
-                                          bearbeiten: bearbeiten,
-                                          gewaehlt: bindung(fuer: [p.id]))
-                            // Keine Trennlinie: die Zeile traegt ein Bild,
-                            // und das trennt schon. Steht in BRAND.md,
-                            // Abschnitt 7, „Die Zeile mit Bild".
+                        // These rows got `selected: .constant(false)` and no `edit` - so they
+                        // could not be ticked at all. Someone who started a download by accident had
+                        // to wait until it finished to get rid of it. `remove` cancels the task
+                        // anyway; only the path there was missing.
+                        ForEach(ongoing) { p in
+                            DownloadRow(model: model, entries: p,
+                                          edit: edit,
+                                          selected: binding(for: [p.id]))
+                            // No separator line: the row carries an image, and that separates already.
+                            // See the brand rules, "The row with image".
                         }
                     }
 
-                    if !fertige.isEmpty {
-                        // **Keine Ueberschrift ueber dem Geladenen.** Hier
-                        // stand „Auf dem Gerät" — auf der Downloadseite ist
-                        // alles auf dem Geraet, der Satz sagte nichts. Der
-                        // Abstand zu „Lädt gerade" darueber bleibt.
-                        Color.clear.frame(height: laufend.isEmpty ? 4 : 26)
-                        ForEach(fertige) { g in
-                            zeileFuer(g)
+                    if !finished.isEmpty {
+                        // **No heading above the downloaded items.** It used to say "On device" - on
+                        // the downloads page everything is on the device, so the sentence said nothing.
+                        // The spacing to "Loading now" above stays.
+                        Color.clear.frame(height: ongoing.isEmpty ? 4 : 26)
+                        ForEach(finished) { g in
+                            rowFor(g)
 
                         }
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
                 .padding(.bottom, 24)
-                // **Volle Breite, wie jede andere Seite.**
+                // **Full width, like every other page.**
                 //
-                // Hier stand eine Grenze bei 900 Punkt, mit der Begruendung,
-                // eine Zeile aus Bild, Titel und Ring habe in der Mitte nichts
-                // zu sagen. Das stimmt fuer sich — nur endeten damit
-                // Trennlinien und Ringe rund dreihundert Punkt vor dem Rand,
-                // waehrend Titel und Balken im Kopf darueber bis nach rechts
-                // liefen. Zwei Kanten auf einer Seite, und die Seite sah
-                // abgeschnitten aus.
+                // A limit of 900 pt stood here, reasoning that a row of image, title and ring
+                // has nothing to say in the middle. True in itself - but separators and rings
+                // then ended about three hundred points before the edge while title and bar in
+                // the header above ran to the right. Two edges on one page, and the page looked
+                // cut off.
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
-            .nachOben(nochmal: nochmal, aktiv: bereichAktiv)
-            .contentMargins(.bottom, bearbeiten ? 84 : 24, for: .scrollContent)
+            .toTop(anotherTime: anotherTime, active: sectionActive)
+            .contentMargins(.bottom, edit ? 84 : 24, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
-            } action: { _, neu in versatz = neu }
-            .animation(Stil.einblenden, value: verwaltung.posten.count)
-            // **Nur die Scrollflaeche zieht sich beim Wechsel heran.**
-            .bereichsinhalt()
-            // **Und der Kopf danach, nicht davor.**
+            } action: { _, new in offset = new }
+            .animation(Theme.reveal, value: management.entries.count)
+            // **Only the scroll area draws in on the switch.**
+            .areaContent()
+            // **And the header after it, not before.**
             //
-            // Modifikatoren wickeln sich von innen nach aussen: was vor
-            // `bereichsinhalt` steht, steckt darin und wird mitbewegt. Der
-            // Kopf stand davor, also schob er sich beim Oeffnen der
-            // Downloadseite mit herein. Auf Filme und Serien steht er seit der
-            // Umstellung dahinter, und genau deshalb liegt er dort fest.
+            // Modifiers wrap from inside out: what comes before `areaContent` is inside
+            // it and moves along. The header came before, so it pushed in when the
+            // downloads page opened. On Movies and Series it has been behind since the
+            // change, which is why it is fixed there.
             //
-            // Er sitzt als Sicherheitsrand statt als Auflage; die Begruendung
-            // dafuer steht ausfuehrlich in `HauptView`.
-            .safeAreaInset(edge: .top, spacing: 0) { kopf }
+            // It sits as a safe-area inset instead of an overlay; the reasoning is in
+            // `MainView`.
+            .safeAreaInset(edge: .top, spacing: 0) { header }
 
 
-            if verwaltung.posten.isEmpty {
-                // **Kein Knopf „Was kann ich laden".** Netflix hat einen, weil
-                // dort nicht alles ladbar ist. Bei uns schon — der Knopf
-                // führte nur in die Bibliothek zurück. Der Satz sagt
-                // stattdessen, **wo** der Anfang ist.
-                Leerzustand(symbol: "arrow.down.circle",
-                            kopfzeile: "Noch nichts geladen",
+            if management.entries.isEmpty {
+                // **No "What can I download" button.** Netflix has one because not everything
+                // is downloadable there. Here everything is - the button only led back to the
+                // library. The sentence says **where** to start instead.
+                EmptyState(symbol: "arrow.down.circle",
+                            headerLine: "Noch nichts geladen",
                             text: "Lad was runter, bevor der Zug ins Funkloch fährt.")
-                    // **Die Navileiste abrechnen**, wie auf der
-                    // Bibliotheksseite: der Block sitzt mittig im ganzen
-                    // Fenster, und schmal liegen die unteren 54 Punkt davon
-                    // unter der Leiste.
-                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
-                    // Das Wann zum Wie aus `Leerzustand`.
-                    .animation(Stil.einblenden, value: verwaltung.posten.isEmpty)
-                    // Zieht beim Bereichswechsel mit heran, wie die
-                    // Scrollflaeche darunter — ohne eigenen Grund, sonst
-                    // deckte er den Kopf zu.
-                    .bereichsmitzug()
+                    // **Account for the nav bar**, as on the library page: the block sits in the
+                    // middle of the whole window, and narrow the lower 54 points of it lie under
+                    // the bar.
+                    .padding(.bottom, wide ? 0 : Theme.stripHeight)
+                    // The when to the how from `Leerzustand`.
+                    .animation(Theme.reveal, value: management.entries.isEmpty)
+                    // Draws in with the area change, like the scroll area below - without its own
+                    // background, otherwise it would cover the header.
+                    .sectionWithPull()
             }
         }
-        .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
-        .navigationDestination(item: $offeneSerie) { route in
-            DownloadserieView(model: model, route: route)
+        .safeAreaInset(edge: .bottom) { if edit { deleteBar } }
+        .navigationDestination(item: $openSeries) { route in
+            DownloadSeriesView(model: model, route: route)
         }
         #if os(iOS)
-        .playerCover(item: $abspielen) { wunsch in
-            PlayerScreen(model: model, item: wunsch.item,
-                         plan: wunsch.plan, startAt: wunsch.startAt)
+        .playerCover(item: $play) { wish in
+            PlayerScreen(model: model, item: wish.item,
+                         plan: wish.plan, startAt: wish.startAt)
         }
         #endif
-        .bereichsleiste()
-        // **Nach der Leiste, nicht davor.** Auflagen liegen in der
-        // Reihenfolge, in der sie angehängt werden; davor angehängt schnitt
-        // die Bereichsleiste dem Blatt den unteren Rand ab. Dieselbe
-        // Reihenfolge steht seit `e916847` in den anderen Wurzelansichten.
+        .sectionBar()
+        // **After the bar, not before.** Overlays lie in the order they are attached;
+        // attached before, the area bar cut the sheet's lower edge off. The same order
+        // is used in the other root views.
         .overlay(alignment: .topTrailing) {
-            Handlungsblatt(offen: $loeschblatt, titel: loeschtitel, handlungen: [
-                Titelhandlung(symbol: "trash", text: "Entfernen", warnend: true) {
-                    verwaltung.entfernen(Array(gewaehlt))
-                    gewaehlt = []
-                    withAnimation(Stil.einblenden) { bearbeiten = false }
+            ActionSheet(opened: $deleteSheet, title: deleteTitle, actions: [
+                TitleAction(symbol: "trash", text: "Entfernen", cautionary: true) {
+                    management.remove(Array(selected))
+                    selected = []
+                    withAnimation(Theme.reveal) { edit = false }
                 }
             ])
         }
     }
 
     @ViewBuilder
-    private func zeileFuer(_ g: Downloadgruppe) -> some View {
+    private func rowFor(_ g: DownloadGroup) -> some View {
         switch g {
-        case let .einzeln(p):
-            Downloadzeile(model: model, posten: p, bearbeiten: bearbeiten,
-                          gewaehlt: bindung(fuer: [p.id]),
-                          starten: p.stand == .fertig ? { spiele(p) } : nil)
-        case let .serie(id, titel, folgen):
-            // **Eine Zeile in beiden Lagen, kein Tausch.** Hier stand ein
-            // `NavigationLink` ausserhalb und eine zweite Zeile im
-            // Bearbeiten — fuer SwiftUI zwei verschiedene Ansichten, also
-            // blendete die Serienzeile beim Umschalten ueber, statt zu
-            // gleiten. Jetzt dieselbe Zeile; der Weg zur Serie geht ueber
-            // `offeneSerie`.
-            Downloadzeile(model: model, posten: folgen[0],
-                          gruppe: (titel, folgen), bearbeiten: bearbeiten,
-                          gewaehlt: bindung(fuer: folgen.map(\.id)),
-                          starten: { offeneSerie = DownloadserieRoute(serienId: id, titel: titel) })
+        case let .single(p):
+            DownloadRow(model: model, entries: p, edit: edit,
+                          selected: binding(for: [p.id]),
+                          start: p.state == .done ? { playItem(p) } : nil)
+        case let .series(id, title, episodes):
+            // **One row in both modes, no swap.** There used to be a `NavigationLink`
+            // outside and a second row in edit mode - two different views to SwiftUI, so
+            // the series row cross-faded on switching instead of gliding. Now the same row;
+            // the way to the series goes via `openSeries`.
+            DownloadRow(model: model, entries: episodes[0],
+                          group: (title, episodes), edit: edit,
+                          selected: binding(for: episodes.map(\.id)),
+                          start: { openSeries = DownloadSeriesRoute(seriesIdentifier: id, title: title) })
         }
     }
 
-    /// Eine Serie wird als Ganzes gewählt — halb ausgewählte Gruppen gäbe es
-    /// sonst nur, um sie danach doch wieder zu erklären.
-    private func bindung(fuer ids: [String]) -> Binding<Bool> {
+    /// A series is selected as a whole - half-selected groups would only exist to
+    /// be explained away again.
+    private func binding(for ids: [String]) -> Binding<Bool> {
         Binding(
-            get: { !ids.isEmpty && ids.allSatisfy { gewaehlt.contains($0) } },
+            get: { !ids.isEmpty && ids.allSatisfy { selected.contains($0) } },
             set: { an in
-                if an { gewaehlt.formUnion(ids) } else { gewaehlt.subtract(ids) }
+                if an { selected.formUnion(ids) } else { selected.subtract(ids) }
             })
     }
 
-    @State private var abspielen: Abspielwunsch?
+    @State private var play: PlayRequest?
 
-    /// **Ohne Server.** `model.plan` nimmt die Datei von der Platte, wenn eine
-    /// da ist (H8), und das `Item` dafuer baut sich der Posten selbst — im
-    /// Flugzeug gibt es keinen, der eines liefern koennte.
-    private func spiele(_ p: Downloadposten) {
+    /// **Without server.** `model.plan` takes the file from disk if there is one
+    ///, and the entry builds the `Item` for it itself - on a plane there is no
+    /// one who could supply one.
+    private func playItem(_ p: DownloadItem) {
         Task {
             guard let plan = await model.plan(for: p.id) else { return }
-            // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
-            abspielen = Abspielwunsch(item: p.alsItem, plan: plan,
-                                      startAt: model.downloads.posten(fuer: p.id)?.fortsetzenAb ?? 0)
+            // At the remembered position - the same with and without network.
+            play = PlayRequest(item: p.asItem, plan: plan,
+                                      startAt: model.downloads.entries(for: p.id)?.resumeFrom ?? 0)
         }
     }
 
-    private var loeschtitel: String { Loeschleiste.titel(gewaehlt, in: verwaltung) }
+    private var deleteTitle: String { DeleteBar.title(selected, in: management) }
 
-    // MARK: Kopf
+    // MARK: Header
 
-    private var kopf: some View {
-        Unschaerfekopf(versatz: versatz) {
+    private var header: some View {
+        BlurHeader(offset: offset) {
             VStack(alignment: .leading, spacing: 12) {
-                // Mittig, nicht oben — siehe HauptView: ohne die Zeile unter
-                // dem Titel liegt `.top` daneben.
+                // Centered, not top - see MainView: without the line under the title `.top`
+                // is off.
                 HStack(alignment: .center, spacing: 0) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Downloads").font(Stil.titelGross).tracking(Stil.sperrungTitel)
-                        // **Keine Zeile unter dem Titel.**
+                        Text("Downloads").font(Theme.titleLarge).tracking(Theme.lockTitle)
+                        // **No line under the title.**
                         //
-                        // Hier stand die Belegung — Titelzahl, Groesse, freier
-                        // Platz. Dieselbe Auskunft steht am Speicherbalken
-                        // weiter unten, und ein Seitentitel mit Unterbau sieht
-                        // anders aus als jede andere Wurzelseite. Ohne Netz
-                        // sagt das der Leerzustand beziehungsweise die
-                        // Zustandszeile an der Zeile selbst. Rückmeldung vom 21.09.
+                        // It used to show usage - title count, size, free space. The same information
+                        // is at the storage bar further down, and a page title with a sub-line looks
+                        // different from every other root page. Offline, the empty state or the status
+                        // line on the row itself says so.
                     }
                     Spacer(minLength: 0)
-                    // **Bearbeiten gibt es breit wie schmal.**
+                    // **Edit exists wide and narrow.**
                     //
-                    // Schmal steht es in der Zeichengruppe oben rechts — an
-                    // der Stelle, an der auf der Startseite das Angebot
-                    // „hier weiterschauen" steht, links vom Paar aus
-                    // Merkliste und Profil. Breit gibt es diese Gruppe nicht,
-                    // die wohnt in der Seitenleiste; dann steht es allein.
-                    // Es nur schmal zu zeigen hiesse, dass man auf dem iPad
-                    // nichts entfernen kann.
-                    if breit {
-                        bearbeitenknopf
+                    // Narrow it sits in the glyph group at the top right - where the home page has
+                    // the "continue watching here" offer, left of the Watchlist/Profile pair. Wide,
+                    // that group does not exist, it lives in the sidebar; then it stands alone.
+                    // Showing it only narrow would mean nothing can be removed on iPad.
+                    if wide {
+                        editButton
                     } else {
-                        Kopfziele(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL()) { bearbeitenknopf }
+                        HeaderTargets(name: model.session?.userName ?? "?",
+                                  image: model.userImageURL()) { editButton }
                     }
                 }
-                .foregroundStyle(Stil.schrift)
+                .foregroundStyle(Theme.font)
 
-                if !verwaltung.posten.isEmpty { speicherbalken }
+                if !management.entries.isEmpty { cacheBar }
             }
         }
     }
 
     @ViewBuilder
-    private var bearbeitenknopf: some View {
-        if !verwaltung.posten.isEmpty {
-            Bearbeitenknopf(bearbeiten: $bearbeiten, gewaehlt: $gewaehlt)
+    private var editButton: some View {
+        if !management.entries.isEmpty {
+            EditButton(edit: $edit, selected: $selected)
         }
     }
 
 
-    /// **Statt einer Obergrenze.** H7: eine Grenze, die man nicht selbst
-    /// gesetzt hat, ärgert genau dann, wenn man sie braucht. Ein Balken sagt
-    /// dasselbe, ohne etwas zu verbieten.
-    private var speicherbalken: some View {
-        let unser = Double(Downloadregeln.belegung(verwaltung.posten).bytes)
-        let frei = Double(max(verwaltung.frei, 0))
-        let ganz = max(unser + frei, 1)
+    /// **Instead of an upper limit.** The no-limit rule: a limit you did not set yourself annoys
+    /// exactly when you need it. A bar says the same without forbidding anything.
+    private var cacheBar: some View {
+        let our = Double(DownloadRules.allocation(management.entries).bytes)
+        let free = Double(max(management.free, 0))
+        let whole = max(our + free, 1)
         return GeometryReader { r in
             HStack(spacing: 0) {
-                Stil.akzent.frame(width: r.size.width * unser / ganz)
-                // Das freie Stueck war weiss 0,22 — ein roher Wert und ein
-                // zweiter Farbton neben dem Akzent. `erhoeht` ist die Flaeche,
-                // die es dafuer gibt, und sie liegt richtig herum: heller als
-                // der Grund, leiser als der eigene Anteil.
-                Stil.erhoeht.frame(width: r.size.width * frei / ganz)
+                Theme.accent.frame(width: r.size.width * our / whole)
+                // The free part was white 0.22 - a raw value and a second tone next to the
+                // accent. `erhoeht` is the surface that exists for this, and it lies the right
+                // way round: lighter than the background, quieter than the own share.
+                Theme.raised.frame(width: r.size.width * free / whole)
                 Color.clear
             }
         }
@@ -772,191 +719,189 @@ struct DownloadsView: View {
         .accessibilityHidden(true)
     }
 
-    /// **Über der Bereichsleiste, nicht darunter.**
+    /// **Above the area bar, not below.**
     ///
-    /// `bereichsleiste()` legt die Leiste als Auflage über die Seite; ein
-    /// `safeAreaInset` steckt dagegen im Inhalt und liegt damit darunter.
-    /// Ohne den Abstand ragte vom Knopf nur ein weisser Streifen über der
-    /// Leiste hervor — am Gerät gesehen, im Bau nicht zu bemerken.
+    /// `sectionBar()` lays the bar over the page as an overlay; a `safeAreaInset`
+    /// sits in the content and thus below it. Without the spacing only a white strip
+    /// of the button stuck out above the bar - seen on the device, not noticeable in
+    /// the build.
     ///
-    /// Die Leiste bleibt stehen und wird nicht ausgeblendet: wer beim
-    /// Aufräumen den Bereich wechseln will, soll das können, ohne erst den
-    /// Auswahlmodus zu verlassen.
-    private var loeschleiste: some View {
-        Loeschleiste(titel: loeschtitel, aktiv: !gewaehlt.isEmpty) { loeschblatt = true }
+    /// The bar stays and is not hidden: someone cleaning up who wants to switch area
+    /// should be able to without leaving selection mode first.
+    private var deleteBar: some View {
+        DeleteBar(title: deleteTitle, active: !selected.isEmpty) { deleteSheet = true }
     }
 }
 
-/// Stift und Kreuz oben rechts — auf der Downloadliste und auf der Seite
-/// einer geladenen Serie derselbe Knopf.
-struct Bearbeitenknopf: View {
-    @Binding var bearbeiten: Bool
-    @Binding var gewaehlt: Set<String>
+/// Pencil and cross at the top right - the same button on the download list
+/// and on the page of a downloaded series.
+struct EditButton: View {
+    @Binding var edit: Bool
+    @Binding var selected: Set<String>
 
     var body: some View {
         Button {
-            // Dieselbe Kurve wie die Blaetter: die Zeilen gleiten.
-            withAnimation(Stil.blattbewegung) {
-                bearbeiten.toggle()
-                if !bearbeiten { gewaehlt = [] }
+            // The same curve as the sheets: the rows glide.
+            withAnimation(Theme.sheetMotion) {
+                edit.toggle()
+                if !edit { selected = [] }
             }
         } label: {
-            // 18 Medium war die dritte Groesse fuer dasselbe Zeichen auf
-            // dieser Seite; 17 Semibold ist die Stufe der Leiter.
-            Image(systemName: bearbeiten ? "xmark" : "pencil")
+            // 18 medium was the third size for the same glyph on this page; 17 semibold
+            // is the scale's level.
+            Image(systemName: edit ? "xmark" : "pencil")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(bearbeiten ? Stil.akzent : Stil.schrift)
+                .foregroundStyle(edit ? Theme.accent : Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(Stil.Druckknopf())
-        // Im Bearbeiten zeigt der Knopf ein Kreuz und beendet es — dann heißt
-        // er auch so.
-        .accessibilityLabel(bearbeiten ? Text("Fertig") : Text("Bearbeiten"))
+        .buttonStyle(Theme.PressButton())
+        // In edit mode the button shows a cross and ends it - then it should be called
+        // that.
+        .accessibilityLabel(edit ? Text("Fertig") : Text("Bearbeiten"))
     }
 }
 
-/// **Über der Bereichsleiste, nicht darunter** — siehe `DownloadsView`.
-struct Loeschleiste: View {
-    @Environment(\.breit) private var breit
-    let titel: String
-    let aktiv: Bool
-    let tun: () -> Void
+/// **Above the area bar, not below** - see `DownloadsView`.
+struct DeleteBar: View {
+    @Environment(\.wide) private var wide
+    let title: String
+    let active: Bool
+    let perform: () -> Void
 
     var body: some View {
-        Button(action: tun) { Text(verbatim: titel) }
-            .buttonStyle(HauptknopfStil(dehnt: true))
-            .disabled(!aktiv)
-            .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.bottom, breit ? 8 : Stil.leisteHoehe + 8)
-            .background(Stil.grund.ignoresSafeArea())
+        Button(action: perform) { Text(verbatim: title) }
+            .buttonStyle(PrimaryButtonStyle(stretches: true))
+            .disabled(!active)
+            .padding(.horizontal, Theme.margin(wide: wide))
+            .padding(.bottom, wide ? 8 : Theme.stripHeight + 8)
+            .background(Theme.reason.ignoresSafeArea())
     }
 
     /// „3 entfernen · 7,42 GB".
-    static func titel(_ gewaehlt: Set<String>, in verwaltung: Downloadverwaltung) -> String {
-        let bytes = verwaltung.posten.filter { gewaehlt.contains($0.id) }
+    static func title(_ selected: Set<String>, in management: DownloadManager) -> String {
+        let bytes = management.entries.filter { selected.contains($0.id) }
             .reduce(Int64(0)) { $0 + $1.bytes }
-        return String(localized: "\(gewaehlt.count) entfernen")
-            + " · " + Downloadregeln.groesse(bytes)
+        return String(localized: "\(selected.count) entfernen")
+            + " · " + DownloadRules.size(bytes)
     }
 }
 
-// MARK: - Die Folgen einer geladenen Serie
+// MARK: - The episodes of a downloaded series
 
-struct DownloadserieRoute: Hashable {
-    let serienId: String
-    let titel: String
+struct DownloadSeriesRoute: Hashable {
+    let seriesIdentifier: String
+    let title: String
 }
 
-/// **Die Serie auf dem Geraet, als Detailseite.**
+/// **The series on the device, as a detail page.**
 ///
-/// Hier stand eine blosse Liste unter Serienname und „N Folgen · X GB".
-/// Gewünscht: was der Rest der App hat: oben das grosse Bild, der Name,
-/// ein Abspielknopf, darunter die Folgen nach Staffel. Gebaut aus den
-/// Bausteinen der Serienseite (`Heldbild`, `Heldauslauf`, `HauptknopfStil`,
-/// `Detailkopfleser`) — keine eigene Gestaltung.
+/// This was a bare list under series name and "N episodes - X GB". Wanted:
+/// what the rest of the app has: the large image on top, the name, a play
+/// button, below the episodes by season. Built from the series page's
+/// components (`Heldbild`, `HeroRunOut`, `PrimaryButtonStyle`, `DetailHeaderReader`)
+/// - no own design.
 ///
-/// **Alles von der Platte.** Wer hier steht, hat womoeglich kein Netz: das
-/// Bild ist das gesicherte Querbild der naechsten Folge, sonst das Plakat
-/// der Serie, und erst danach eine Serveradresse. Der Knopf spielt die
-/// Datei ueber `model.plan`, das die Platte zuerst nimmt (H8).
-struct DownloadserieView: View {
+/// **Everything from disk.** Whoever is here may have no network: the image is
+/// the saved landscape image of the next episode, otherwise the series poster,
+/// and only then a server URL. The button plays the file via `model.plan`, which
+/// takes disk first.
+struct DownloadSeriesView: View {
     let model: AppModel
-    let route: DownloadserieRoute
+    let route: DownloadSeriesRoute
 
-    @Environment(\.dismiss) private var schliessen
-    @Environment(\.breit) private var breit
-    /// Siehe `SeriesDetailView.weg` — als `@State`-Zahl baute jeder
-    /// Scrollschritt die Seite neu.
-    @State private var weg = Scrollweg()
-    @State private var abspielen: Abspielwunsch?
-    @State private var bearbeiten = false
-    @State private var gewaehlt: Set<String> = []
-    @State private var loeschblatt = false
-    @Environment(\.displayScale) private var pixelmass
-    @State private var seitenbreite: CGFloat = 0
-    /// Das nachgeholte Kopfbild, sobald es liegt.
-    @State private var nachgeholt: URL?
+    @Environment(\.dismiss) private var close
+    @Environment(\.wide) private var wide
+    /// See `SeriesDetailView.distance` - as an `@State` number every scroll step
+    /// rebuilt the page.
+    @State private var distance = ScrollDistance()
+    @State private var play: PlayRequest?
+    @State private var edit = false
+    @State private var selected: Set<String> = []
+    @State private var deleteSheet = false
+    @Environment(\.displayScale) private var pixelMetric
+    @State private var pagesWidth: CGFloat = 0
+    /// The header image fetched later, once it is available.
+    @State private var caughtUp: URL?
 
-    private func spiele(_ p: Downloadposten) {
+    private func playItem(_ p: DownloadItem) {
         Task {
             guard let plan = await model.plan(for: p.id) else { return }
-            // An der gemerkten Stelle — mit und ohne Netz dieselbe (1.0.5).
-            abspielen = Abspielwunsch(item: p.alsItem, plan: plan,
-                                      startAt: model.downloads.posten(fuer: p.id)?.fortsetzenAb ?? 0)
+            // At the remembered position - the same with and without network.
+            play = PlayRequest(item: p.asItem, plan: plan,
+                                      startAt: model.downloads.entries(for: p.id)?.resumeFrom ?? 0)
         }
     }
 
-    private var folgen: [Downloadposten] {
-        model.downloads.posten
-            .filter { $0.serienId == route.serienId }
-            // Folgen ohne Staffelnummer ans Ende: sie bilden eine eigene Gruppe
-            // und sortierten sonst zwischen Staffel 0 und 1.
-            .sorted { ($0.staffel ?? .max, $0.folge ?? .max) < ($1.staffel ?? .max, $1.folge ?? .max) }
+    private var episodes: [DownloadItem] {
+        model.downloads.entries
+            .filter { $0.seriesIdentifier == route.seriesIdentifier }
+            // Episodes without a season number at the end: they form their own group and
+            // would otherwise sort between season 0 and 1.
+            .sorted { ($0.season ?? .max, $0.episode ?? .max) < ($1.season ?? .max, $1.episode ?? .max) }
     }
 
-    /// Nach Staffel, in der Reihenfolge der Staffeln.
-    private var staffeln: [(nummer: Int?, folgen: [Downloadposten])] {
-        var reihe: [Int?] = []
-        var je: [Int?: [Downloadposten]] = [:]
-        for p in folgen {
-            if je[p.staffel] == nil { reihe.append(p.staffel) }
-            je[p.staffel, default: []].append(p)
+    /// By season, in the order of the seasons.
+    private var seasons: [(number: Int?, episodes: [DownloadItem])] {
+        var rail: [Int?] = []
+        var je: [Int?: [DownloadItem]] = [:]
+        for p in episodes {
+            if je[p.season] == nil { rail.append(p.season) }
+            je[p.season, default: []].append(p)
         }
-        return reihe.map { ($0, je[$0] ?? []) }
+        return rail.map { ($0, je[$0] ?? []) }
     }
 
-    private var naechste: Downloadposten? { Downloadregeln.naechsteFolge(aus: folgen) }
+    private var next: DownloadItem? { DownloadRules.nextEpisode(from: episodes) }
 
-    /// **Zuerst das grosse Kopfbild der Serie** — seit dem 22.09. laedt es
-    /// mit dem ersten Download in Bildschirmaufloesung mit. Davor stand hier
-    /// das Querbild der Folge (220 hoch) oder das Plakat (300 hoch), beide
-    /// fuer Zeilen gemessen und im Kopf sichtbar weich.
-    private var kopfbild: URL? {
-        guard let p = naechste ?? folgen.first else { return nil }
-        if let gross = nachgeholt ?? model.downloads.kopfbild(serie: route.serienId, konto: p.konto) {
-            return gross
+    /// **First the series' large header image** - it loads with the first download
+    /// at screen resolution. Before, this showed the episode's landscape image (220
+    /// high) or the poster (300 high), both measured for rows and visibly soft in
+    /// the header.
+    private var headerImage: URL? {
+        guard let p = next ?? episodes.first else { return nil }
+        if let large = caughtUp ?? model.downloads.headerImage(series: route.seriesIdentifier, account: p.account) {
+            return large
         }
-        return model.downloads.bild(fuer: p)
-            ?? model.downloads.bild(fuer: p, alsGruppe: true)
-            ?? model.plakatURL(itemID: p.serienId ?? p.id)
+        return model.downloads.image(for: p)
+            ?? model.downloads.image(for: p, asGroup: true)
+            ?? model.posterURL(itemID: p.seriesIdentifier ?? p.id)
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // **Breit derselbe Kopf wie auf der Serienseite** —
-                    // `Heldkopf` mit Plakat neben Name und Knopf. Ein 300
-                    // Punkt hoher Streifen über die ganze iPad-Breite ist
-                    // kein Heldbild mehr; die Begründung steht dort.
-                    if breit {
-                        Heldkopf(bild: kopfbild, poster: plakat,
-                                 titel: route.titel, nebenzeile: angabe) {
-                            hauptknopf
+                    // **Wide, the same header as on the series page** - `HeroHeader` with poster next
+                    // to name and button. A 300 pt strip across the whole iPad width is no hero
+                    // image anymore; the reasoning is there.
+                    if wide {
+                        HeroHeader(image: headerImage, poster: poster,
+                                 title: route.title, secondaryLine: detail) {
+                            primaryButton
                         }
                         Color.clear.frame(height: 22)
                     } else {
-                    Heldbild(url: kopfbild)
-                        .overlay(alignment: .bottom) { Heldauslauf() }
-                        .overlay(alignment: .bottomLeading) { titelblock }
+                    HeroImage(url: headerImage)
+                        .overlay(alignment: .bottom) { HeroRunOut() }
+                        .overlay(alignment: .bottomLeading) { titleBlock }
 
-                    hauptknopf
-                        .padding(.horizontal, Stil.rand(breit: breit))
+                    primaryButton
+                        .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 14)
                         .padding(.bottom, 22)
                     }
 
-                    ForEach(staffeln, id: \.nummer) { staffel in
-                        if let n = staffel.nummer {
-                            Gruppentitel(text: "Staffel \(n)")
-                                .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
+                    ForEach(seasons, id: \.number) { season in
+                        if let n = season.number {
+                            GroupsTitle(text: "Staffel \(n)")
+                                .padding(.horizontal, Theme.margin(wide: wide) - Theme.edgeSpacing)
                                 .padding(.top, 6)
                         }
                         VStack(alignment: .leading, spacing: 0) {
-                            ForEach(staffel.folgen) { p in folgenzeile(p) }
+                            ForEach(season.episodes) { p in episodeRow(p) }
                         }
                         .padding(.bottom, 16)
                     }
@@ -966,137 +911,135 @@ struct DownloadserieView: View {
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                weg.setzen(neu)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+                distance.setDown(new)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { seitenbreite = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pagesWidth = $0 }
             .ignoresSafeArea(edges: .top)
 
-            Detailkopfleser(titel: route.titel, weg: weg, zurueck: { schliessen() }) {
-                Bearbeitenknopf(bearbeiten: $bearbeiten, gewaehlt: $gewaehlt)
+            DetailHeaderReader(title: route.title, distance: distance, back: { close() }) {
+                EditButton(edit: $edit, selected: $selected)
             }
         }
-        .task(id: seitenbreite > 0) { await kopfbildNachholen() }
+        .task(id: pagesWidth > 0) { await headerImageCatchUp() }
         .safeAreaInset(edge: .bottom) {
-            if bearbeiten {
-                Loeschleiste(titel: Loeschleiste.titel(gewaehlt, in: model.downloads),
-                             aktiv: !gewaehlt.isEmpty) { loeschblatt = true }
+            if edit {
+                DeleteBar(title: DeleteBar.title(selected, in: model.downloads),
+                             active: !selected.isEmpty) { deleteSheet = true }
             }
         }
         .overlay(alignment: .topTrailing) {
-            Handlungsblatt(offen: $loeschblatt,
-                           titel: Loeschleiste.titel(gewaehlt, in: model.downloads),
-                           handlungen: [
-                Titelhandlung(symbol: "trash", text: "Entfernen", warnend: true) {
-                    entfernen(Array(gewaehlt))
-                    gewaehlt = []
-                    withAnimation(Stil.blattbewegung) { bearbeiten = false }
+            ActionSheet(opened: $deleteSheet,
+                           title: DeleteBar.title(selected, in: model.downloads),
+                           actions: [
+                TitleAction(symbol: "trash", text: "Entfernen", cautionary: true) {
+                    remove(Array(selected))
+                    selected = []
+                    withAnimation(Theme.sheetMotion) { edit = false }
                 }
             ])
         }
-        // **Die letzte Folge weg, die Seite weg.** Eine Serienseite ohne
-        // Folgen hat nichts mehr zu zeigen; zurueck in die Liste.
-        .onChange(of: folgen.isEmpty) { _, leer in if leer { schliessen() } }
+        // **Last episode gone, page gone.** A series page without episodes has nothing
+        // left to show; back to the list.
+        .onChange(of: episodes.isEmpty) { _, empty in if empty { close() } }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .background(WischZurueck())
-        .playerCover(item: $abspielen) { wunsch in
-            PlayerScreen(model: model, item: wunsch.item,
-                         plan: wunsch.plan, startAt: wunsch.startAt)
+        .background(SwipeBack())
+        .playerCover(item: $play) { wish in
+            PlayerScreen(model: model, item: wish.item,
+                         plan: wish.plan, startAt: wish.startAt)
         }
         #endif
     }
 
-    /// **Drei Wege zum Entfernen, wie in iOS ueblich.** Der Ring an jeder
-    /// Folge taugte nicht als Loeschweg — er ist keiner, er haelt an und
-    /// setzt fort. Jetzt: nach links wischen, lange druecken, oder oben
-    /// Bearbeiten mit Auswahlkreisen und dem Knopf unten, wie in der Liste.
+    /// **Three ways to remove, as usual in iOS.** The ring on each episode did not
+    /// work as a delete path - it is none, it pauses and resumes. Now: swipe left,
+    /// long press, or Edit at the top with selection circles and the button below,
+    /// like in the list.
     ///
-    /// Die Wischzeile laeuft ueber die volle Breite, damit das Rot bis an
-    /// den Rand geht; den Seitenrand traegt die Zeile selbst. Getippt wird
-    /// in der Zeile (`starten`, im Bearbeiten die Auswahl) — die Wischzeile
-    /// selbst tut beim Tippen nichts.
-    private func folgenzeile(_ p: Downloadposten) -> some View {
-        Wischzeile(symbol: "trash", beschriftung: "Entfernen", farbe: Stil.fehler,
-                   aktion: { entfernen([p.id]) }, tippen: {}) {
-            Downloadzeile(model: model, posten: p, bearbeiten: bearbeiten,
-                          gewaehlt: Binding(
-                            get: { gewaehlt.contains(p.id) },
-                            set: { an in if an { gewaehlt.insert(p.id) } else { gewaehlt.remove(p.id) } }),
-                          starten: p.stand == .fertig ? { spiele(p) } : nil)
-                .padding(.horizontal, Stil.rand(breit: breit))
+    /// The swipe row runs the full width so the red goes to the edge; the row itself
+    /// carries the side margin. Tapping happens in the row (`start`, in edit mode
+    /// the selection) - the swipe row itself does nothing on tap.
+    private func episodeRow(_ p: DownloadItem) -> some View {
+        SwipeRow(symbol: "trash", label: "Entfernen", color: Theme.error,
+                   action: { remove([p.id]) }, onTap: {}) {
+            DownloadRow(model: model, entries: p, edit: edit,
+                          selected: Binding(
+                            get: { selected.contains(p.id) },
+                            set: { an in if an { selected.insert(p.id) } else { selected.remove(p.id) } }),
+                          start: p.state == .done ? { playItem(p) } : nil)
+                .padding(.horizontal, Theme.margin(wide: wide))
         }
         .contextMenu {
-            Button(role: .destructive) { Stil.ruck(.mittel); entfernen([p.id]) } label: {
+            Button(role: .destructive) { Theme.jerk(.medium); remove([p.id]) } label: {
                 Label("Download entfernen", systemImage: "trash")
             }
         }
     }
 
-    private func entfernen(_ ids: [String]) {
-        withAnimation(Stil.einblenden) { model.downloads.entfernen(ids) }
+    private func remove(_ ids: [String]) {
+        withAnimation(Theme.reveal) { model.downloads.remove(ids) }
     }
 
-    /// **Downloads von vorher haben kein grosses Kopfbild** — mit Netz wird
-    /// es hier einmal nachgeholt. Ohne Netz scheitert die Abfrage still, und
-    /// es bleibt beim Bild von der Platte.
-    private func kopfbildNachholen() async {
-        guard seitenbreite > 0, let p = folgen.first,
-              model.downloads.kopfbild(serie: route.serienId, konto: p.konto) == nil,
-              let serie = await model.item(id: route.serienId) else { return }
-        // Breit ist der Kopf mindestens `heldHoeheBreit` hoch.
-        let punkte = max(seitenbreite, (breit ? Stil.heldHoeheBreit : Stil.heldHoehe) * 16 / 9)
-        guard let adresse = model.kopfbildURL(for: serie,
-                                              breite: Int((punkte * pixelmass).rounded(.up)))
+    /// **Earlier downloads have no large header image** - with network it is
+    /// fetched once here. Offline the request fails silently, and the image from
+    /// disk stays.
+    private func headerImageCatchUp() async {
+        guard pagesWidth > 0, let p = episodes.first,
+              model.downloads.headerImage(series: route.seriesIdentifier, account: p.account) == nil,
+              let series = await model.item(id: route.seriesIdentifier) else { return }
+        // Wide, the header is at least `heroHeightWide` high.
+        let points = max(pagesWidth, (wide ? Theme.heroHeightWide : Theme.heroHeightValue) * 16 / 9)
+        guard let address = model.headerImageURL(for: series,
+                                              width: Int((points * pixelMetric).rounded(.up)))
         else { return }
-        nachgeholt = await model.downloads.kopfbildNachholen(serie: route.serienId,
-                                                             konto: p.konto, von: adresse)
+        caughtUp = await model.downloads.headerImageCatchUp(series: route.seriesIdentifier,
+                                                             account: p.account, from: address)
     }
 
     /// „12 Folgen · 18,4 GB".
-    private var angabe: String {
-        String(localized: "\(folgen.count) Folgen") + " · "
-            + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes })
+    private var detail: String {
+        String(localized: "\(episodes.count) Folgen") + " · "
+            + DownloadRules.size(episodes.reduce(0) { $0 + $1.bytes })
     }
 
-    /// Das Plakat der Serie von der Platte — für den breiten Kopf.
-    private var plakat: URL? {
-        guard let p = folgen.first else { return nil }
-        return model.downloads.bild(fuer: p, alsGruppe: true)
-            ?? model.plakatURL(itemID: p.serienId ?? p.id)
+    /// The series poster from disk - for the wide header.
+    private var poster: URL? {
+        guard let p = episodes.first else { return nil }
+        return model.downloads.image(for: p, asGroup: true)
+            ?? model.posterURL(itemID: p.seriesIdentifier ?? p.id)
     }
 
-    /// Name und Angabe unten auf dem Bild — wie auf der Serienseite.
-    private var titelblock: some View {
+    /// Name and details at the bottom of the image - like on the series page.
+    private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: route.titel)
-                .font(Stil.titel)
-                .tracking(Stil.sperrungTitel)
-                .foregroundStyle(Stil.schrift)
-            Text(verbatim: angabe)
-                .mitwachsend(12)
+            Text(verbatim: route.title)
+                .font(Theme.title)
+                .tracking(Theme.lockTitle)
+                .foregroundStyle(Theme.font)
+            Text(verbatim: detail)
+                .growing(12)
                 .monospacedDigit()
-                .foregroundStyle(Stil.schriftLeise)
+                .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
         }
-        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.horizontal, Theme.margin(wide: wide))
         .padding(.bottom, 16)
     }
 
-    /// **Die naechste ungesehene Folge**, sonst von vorn — die Regel steht
-    /// in `Downloadregeln.naechsteFolge`. Beschriftet wie auf der
-    /// Serienseite („Abspielen S2 F6").
-    private var hauptknopf: some View {
+    /// **The next unwatched episode**, otherwise from the start - the rule is in
+    /// `DownloadRules.nextEpisode`. Labeled as on the series page ("Play S2 the one-main-button rule").
+    private var primaryButton: some View {
         Button {
-            if let naechste { spiele(naechste) }
+            if let next { playItem(next) }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "play.fill").font(.system(size: 15))
                     .accessibilityHidden(true)
-                Text(verbatim: Item.serienknopf(folge: naechste?.alsItem, laedt: false))
+                Text(verbatim: Item.seriesButton(episode: next?.asItem, loads: false))
             }
         }
-        .buttonStyle(HauptknopfStil(dehnt: !breit))
-        .disabled(naechste == nil)
+        .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+        .disabled(next == nil)
     }
 }

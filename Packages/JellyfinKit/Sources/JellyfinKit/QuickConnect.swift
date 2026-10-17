@@ -1,68 +1,64 @@
 import Foundation
-// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
-// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
-// Import ist deshalb bedingt und dort wirkungslos.
+// On Linux, URLSession is in a separate module, not in Foundation. Apple
+// platforms have no such module, so the import is conditional and does nothing there.
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
-/// Quick Connect: einen Code freigeben, der auf einem anderen Gerät steht.
+/// Quick Connect: authorize a code shown on another device.
 ///
-/// Der Ablauf ist umgekehrt zu dem, was der Name nahelegt. Nicht dieses Gerät
-/// meldet sich an — der Fernseher zeigt einen sechsstelligen Code, und dieses
-/// bereits angemeldete Gerät gibt ihn frei. Deshalb sitzt es im Profilmenü und
-/// nicht auf der Anmeldeseite.
+/// The flow is the reverse of what the name suggests. This device does not sign in;
+/// the TV shows a six-digit code and this already signed-in device authorizes it.
+/// That is why it sits in the profile menu and not on the sign-in page.
 extension JellyfinClient {
 
-    /// Ob der Server Quick Connect überhaupt anbietet. Er kann es abschalten,
-    /// dann antwortet er mit 503 statt mit `false`.
-    public func quickConnectVerfuegbar() async -> Bool {
-        guard let req = try? rohAnfrage("QuickConnect/Enabled", method: "GET"),
-              let (daten, antwort) = try? await rohSitzung.data(for: req),
-              let http = antwort as? HTTPURLResponse, http.statusCode == 200 else {
+    /// Whether the server offers Quick Connect at all. It can be turned off,
+    /// then it answers 503 instead of `false`.
+    public func quickConnectAddBar() async -> Bool {
+        guard let req = try? rawRequest("QuickConnect/Enabled", method: "GET"),
+              let (data, answer) = try? await rawSession.data(for: req),
+              let http = answer as? HTTPURLResponse, http.statusCode == 200 else {
             return false
         }
-        return String(data: daten, encoding: .utf8)?.lowercased().contains("true") ?? false
+        return String(data: data, encoding: .utf8)?.lowercased().contains("true") ?? false
     }
 
-    /// Gibt den Code frei. Wirft mit lesbarem Grund, damit die Oberfläche
-    /// nicht „Fehler" anzeigen muss.
-    public func quickConnectFreigeben(code: String) async throws {
-        let sitzung = try requireSessionForReporting()
-        let sauber = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard sauber.count >= 4 else { throw JellyfinError.transport("Der Code ist zu kurz.") }
+    /// Authorizes the code. Throws with a readable reason so the UI does not have to
+    /// show a generic “Error”.
+    public func quickConnectShare(code: String) async throws {
+        let session = try requireSessionForReporting()
+        let clean = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count >= 4 else { throw JellyfinError.transport("Der Code ist zu kurz.") }
 
-        // **Kein `userId`.** Der Parameter ist wahlfrei, und wer ihn setzt,
-        // verlangt vom Server Zugriff auf *diesen* Benutzer — die Spec von
-        // 10.11.11 sagt zum 403 wörtlich „Unknown user id". Genau das kam bei
+        // **No `userId`.** The parameter is optional, and setting it asks the server for access
+        // to *that* user; for the 403 the 10.11.11 spec literally says “Unknown user id”.
         //
-        // Ohne den Parameter gilt der angemeldete Benutzer, und der ist immer
-        // der richtige — freigeben kann ohnehin nur, wer hier angemeldet ist.
-        // Die Sitzung wird trotzdem verlangt: ohne Merkmal hat der Aufruf
-        // keinen Absender.
-        _ = sitzung
-        let req = try rohAnfrage(
+        // Without the parameter the signed-in user applies, which is always the right one:
+        // only someone signed in here can authorize anyway.
+        // The session is still required: without a token the call has no sender.
+        _ = session
+        let req = try rawRequest(
             "QuickConnect/Authorize", method: "POST",
-            query: [URLQueryItem(name: "code", value: sauber)])
+            query: [URLQueryItem(name: "code", value: clean)])
 
-        let (daten, antwort) = try await rohSitzung.data(for: req)
-        guard let http = antwort as? HTTPURLResponse else {
+        let (data, answer) = try await rawSession.data(for: req)
+        guard let http = answer as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine Antwort vom Server.")
         }
         switch http.statusCode {
         case 200:
-            // Der Server antwortet mit true oder false, nicht mit einem Fehler.
-            let text = String(data: daten, encoding: .utf8)?.lowercased() ?? ""
+            // The server answers with true or false, not with an error.
+            let text = String(data: data, encoding: .utf8)?.lowercased() ?? ""
             if text.contains("false") {
-                throw JellyfinError.transport(uebersetzt("Der Code ist abgelaufen oder falsch."))
+                throw JellyfinError.transport(translated("Der Code ist abgelaufen oder falsch."))
             }
         case 403:
             throw JellyfinError.transport("Der Server hat die Freigabe abgelehnt.")
         case 503:
-            throw JellyfinError.transport(uebersetzt("Der Server hat Quick Connect abgeschaltet."))
+            throw JellyfinError.transport(translated("Der Server hat Quick Connect abgeschaltet."))
         default:
             throw JellyfinError.http(status: http.statusCode,
-                                     body: String(data: daten.prefix(200), encoding: .utf8))
+                                     body: String(data: data.prefix(200), encoding: .utf8))
         }
     }
 }

@@ -1,301 +1,255 @@
 import JellyfinKit
 import SwiftUI
 
-/// Der Einstieg: Server eintragen, anmelden, dann die App.
-///
-/// Derselbe Ablauf wie auf dem iPhone und derselbe Zustandshalter — nur mit
-/// einer Oberfläche für drei Meter Entfernung, und mit demselben
-/// Startvorhang: die Marke fährt auf wie auf dem iPhone, nur größer.
+/// Entry point: enter server, sign in, then the app. Same flow and state holder as
+/// on iPhone, with an interface for three metres and the same launch curtain: the
+/// mark rises as on iPhone, only larger.
 struct RootView: View {
-    @State private var model = AppModel.einziges
-    /// Der Vorhang liegt über allem, bis die Animation durch ist.
-    @State private var gestartet = false
-    /// Der einmalige Hinweis auf den Discord, nach dem fünften Titel.
-    @State private var discordHinweis = false
+    @State private var model = AppModel.only
+    /// The curtain covers everything until the animation is done.
+    @State private var started = false
+    /// The one-time Discord hint, after the fifth title.
+    @State private var discordHint = false
 
     var body: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             switch model.phase {
             case .disconnected, .connecting:
                 ServerView(model: model)
             case let .needsLogin(serverName, version):
-                AnmeldeView(model: model, serverName: serverName, version: version)
+                SignInView(model: model, serverName: serverName, version: version)
             case .ready:
-                HauptView(model: model)
+                MainView(model: model)
             }
         }
         .overlay {
-            if !gestartet {
-                Startvorhang {
-                    withAnimation(Stil.bewegung(.easeOut(duration: 0.45))) { gestartet = true }
+            if !started {
+                StartCurtain {
+                    withAnimation(Theme.motion(.easeOut(duration: 0.45))) { started = true }
                 }
             }
         }
         .animation(.default, value: model.phase)
-        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
-        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
-        // die Aufrufstellen, die `fortschritt:` weiterreichen, sollen nichts
-        // davon wissen muessen. Gelesen wird sie dort, wo der Balken
-        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
-        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
-        // Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
-        // gebaut. Auf tvOS ohnehin die Regel.
+        // Once at the root, not on every tile. A setting decides which tile shows its progress bar, and call sites that pass `progress:` should not need to know. It is read where the bar is made; see `EnvironmentValues.progressOnTiles`.
+        .environment(\.progressOnTiles, model.progressOnTiles)
+        // No light theme: the design is built for dark, which is the rule on tvOS anyway.
         .preferredColorScheme(.dark)
-        .tint(Stil.akzent)
-        // **Erst wenn der Player zu ist.** Eine Bewertungsabfrage gibt es auf
-        // tvOS nicht; der Hinweis auf den Discord kommt einmal, als Code zum
-        // Abfotografieren — Zurück nimmt ihn weg, für immer.
-        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
-            guard jetzt else { return }
-            model.discordHinweisFaellig = false
+        .tint(Theme.accent)
+        // Only once the player is closed. tvOS has no rating prompt; the Discord hint comes once, as a code to scan. Back dismisses it for good.
+        .onChange(of: model.discordHintDue && !model.playerOpen) { _, now in
+            guard now else { return }
+            model.discordHintDue = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
-                discordHinweis = true
+                guard !model.playerOpen else { model.discordHintDue = true; return }
+                discordHint = true
             }
         }
-        .fullScreenCover(isPresented: $discordHinweis) {
-            Codeblatt(ziel: .discord) { discordHinweis = false }
+        .fullScreenCover(isPresented: $discordHint) {
+            CodeSheet(target: .discord) { discordHint = false }
         }
     }
 }
 
-// MARK: - Eingabefeld
+// MARK: - Input field
 
-/// Eigenes Feld — und zwar wörtlich eigenes.
-///
-/// Auf tvOS ist ein `TextField` keine Fläche, die man einfärben kann: das
-/// System zeichnet eine weiße Kapsel mit Schein und Schatten, und weder
-/// `.textFieldStyle(.plain)` noch `.focusEffectDisabled()` nehmen sie weg.
-/// Im Simulator stand sie als zweite weiße Kapsel mitten in unserer eigenen
-/// Fläche.
-///
-/// Deshalb liegt das echte Feld unsichtbar darüber: es fängt den Fokus, holt
-/// die Systemtastatur und trägt den Text — zu sehen ist nur, was wir selbst
-/// zeichnen. Ganz auf null darf es dabei nicht, sonst nimmt SwiftUI es aus
-/// der Fokuskette.
-///
-/// `keyboardType` gibt es hier nicht (iOS und Catalyst only), die Art der
-/// Eingabe steht deshalb über `textContentType`.
-struct Eingabefeld: View {
-    let platzhalter: LocalizedStringKey
+/// A custom field, literally.
+/// On tvOS a `TextField` cannot be tinted: the system draws a white capsule with glow
+/// and shadow, and neither `.textFieldStyle(.plain)` nor `.focusEffectDisabled()` removes it.
+/// So the real field sits invisibly on top: it takes focus, brings up the system keyboard
+/// and holds the text, while only what we draw is visible. It must not go fully to zero
+/// opacity, or SwiftUI drops it from the focus chain.
+/// `keyboardType` does not exist here (iOS and Catalyst only), so the kind of input is
+/// given via `textContentType`.
+struct InputField: View {
+    let placeholder: LocalizedStringKey
     @Binding var text: String
-    var sicher = false
-    var inhalt: UITextContentType?
-    /// Von aussen gesetzter Fokus. Die Suche braucht ihn: dort soll die
-    /// Tastatur aufgehen, sobald der Bereich offen ist, ohne dass man das
-    /// Feld erst noch ansteuern muss.
-    var aussen: FocusState<Bool>.Binding?
-    var abschluss: () -> Void = {}
+    var safe = false
+    var content: UITextContentType?
+    /// Focus set from outside. Search needs it: the keyboard should open as soon as the area is open, without first focusing the field.
+    var outer: FocusState<Bool>.Binding?
+    var completion: () -> Void = {}
 
-    @FocusState private var innen: Bool
+    @FocusState private var inner: Bool
 
-    private var gebunden: FocusState<Bool>.Binding { aussen ?? $innen }
-    private var fokus: Bool { gebunden.wrappedValue }
+    private var bound: FocusState<Bool>.Binding { outer ?? $inner }
+    private var focus: Bool { bound.wrappedValue }
 
     var body: some View {
         ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
-                .fill(fokus ? Color.white : Stil.erhoeht)
+            RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                .fill(focus ? Color.white : Theme.raised)
 
 
-            beschriftung
-                .font(Stil.koerper)
+            label
+                .font(Theme.body)
                 .lineLimit(1)
                 .padding(.horizontal, 30)
 
-            // **Unsichtbare Schrift, sichtbare Ansicht.**
-            //
-            // Das echte Feld liegt hinter der gestylten Beschriftung und war
-            // mit 2 Prozent Deckkraft „versteckt". Auf einem Fernseher sieht
-            // man das: weisse Schrift in Systemgroesse, blass unter dem
-            // eigenen Text
-            //
-            // Ganz auf null wollte es niemand setzen, vermutlich aus Sorge um
-            // den Fokus. Das ist auch nicht noetig: die Ansicht bleibt voll da
-            // und fokussierbar, nur ihre Schrift ist durchsichtig. Der
-            // sichtbare Text kommt ohnehin aus `beschriftung`.
-            //
-            // **Beides zusammen, nicht eins von beidem.**
-            //
-            // Das echte Feld liegt hinter der gestylten Beschriftung. Es war
-            // mit 2 Prozent Deckkraft versteckt — dabei blieb seine weisse
-            // Schrift in Systemgroesse als Schimmern sichtbar. Nur die Schrift
-            // durchsichtig zu machen und die Ebene voll zu lassen war die
-            // andere Haelfte des Fehlers: dann sieht man den Hintergrund, den
-            // tvOS dem Feld selbst gibt, als Pille im Feld.
-            //
-            // Also beides: die Ebene fast unsichtbar **und** die Schrift
-            // durchsichtig. Fokussierbar bleibt sie, und der sichtbare Text
-            // kommt ohnehin aus `beschriftung`.
-            feld
+            // Invisible text, visible view. The real field sits behind the styled label. At 2 % opacity
+            // its white system-size text still shimmered through; making only the text transparent
+            // and keeping the layer opaque showed the background tvOS gives the field as a pill.
+            // So both: the layer nearly invisible and the text transparent. It stays focusable, and
+            // the visible text comes from `label`.
+            inputField
                 .foregroundStyle(.clear)
                 .tint(.clear)
                 .opacity(0.02)
                 .padding(.horizontal, 30)
         }
-        .frame(height: Stil.knopfHoehe)
-        .animation(Stil.fokusAnimation, value: fokus)
+        .frame(height: Theme.buttonHeight)
+        .animation(Theme.focusAnimation, value: focus)
     }
 
     @ViewBuilder
-    private var beschriftung: some View {
+    private var label: some View {
         if text.isEmpty {
-            Text(platzhalter)
-                .foregroundStyle(fokus ? Stil.grund.opacity(0.45) : Stil.schriftSehrLeise)
+            Text(placeholder)
+                .foregroundStyle(focus ? Theme.reason.opacity(0.45) : Theme.fontVeryQuiet)
         } else {
-            Text(sicher ? String(repeating: "\u{2022}", count: text.count) : text)
-                .foregroundStyle(fokus ? Stil.grund : Stil.schrift)
+            Text(safe ? String(repeating: "\u{2022}", count: text.count) : text)
+                .foregroundStyle(focus ? Theme.reason : Theme.font)
         }
     }
 
     @ViewBuilder
-    private var feld: some View {
-        if sicher {
-            SecureField("", text: $text, onCommit: abschluss)
-                .textContentType(inhalt)
-                .focused(gebunden)
+    private var inputField: some View {
+        if safe {
+            SecureField("", text: $text, onCommit: completion)
+                .textContentType(content)
+                .focused(bound)
         } else {
-            TextField("", text: $text, onCommit: abschluss)
-                .textContentType(inhalt)
+            TextField("", text: $text, onCommit: completion)
+                .textContentType(content)
                 .autocorrectionDisabled()
-                .focused(gebunden)
+                .focused(bound)
         }
     }
 }
 
 // MARK: - Server
 
-/// Erster Schritt: wo steht der Server.
-///
-/// Wie auf dem iPhone bewusst nur die Wortmarke, kein Signet daneben — zwei
-/// Zeichen übereinander sind eines zu viel. Und ein Satz statt Überschrift
-/// plus Beschriftung plus Platzhalter.
+/// First step: where the server is. As on iPhone only the wordmark, no emblem beside it (two marks stacked are one too many), and one sentence instead of heading plus label plus placeholder.
 struct ServerView: View {
     let model: AppModel
-    @State private var adresse = ""
-    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
-    @State private var koepfe: [Kopfzeile] = []
+    @State private var address = ""
+    /// "Advanced": custom headers for a service in front of the server.
+    @State private var headers: [HeaderRow] = []
 
     var body: some View {
         VStack(spacing: 0) {
-            Wortmarke(hoehe: 72)
+            Wordmark(height: 72)
 
             Text("Wo steht dein Jellyfin-Server?")
-                .font(Stil.koerper)
-                .foregroundStyle(Stil.schriftLeise)
+                .font(Theme.body)
+                .foregroundStyle(Theme.fontQuiet)
                 .padding(.top, 56)
 
-            Eingabefeld(platzhalter: "tv.beispiel.de", text: $adresse,
-                        inhalt: .URL, abschluss: verbinden)
+            InputField(placeholder: "tv.beispiel.de", text: $address,
+                        content: .URL, completion: linkUp)
                 .frame(width: 760)
                 .padding(.top, 28)
 
             Text("https:// kannst du weglassen.")
-                .font(Stil.klein)
-                .foregroundStyle(Stil.schriftSehrLeise)
+                .font(Theme.small)
+                .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 760, alignment: .leading)
                 .padding(.top, 12)
 
-            TVErweitert(zeilen: $koepfe)
+            TVAdvanced(rows: $headers)
                 .frame(width: 760, alignment: .leading)
                 .padding(.top, 24)
 
             Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
-                   action: verbinden)
-                .buttonStyle(KnopfStil())
-                .disabled(adresse.isEmpty || model.phase == .connecting)
+                   action: linkUp)
+                .buttonStyle(ThemedButtonStyle())
+                .disabled(address.isEmpty || model.phase == .connecting)
                 .padding(.top, 36)
 
-            // **Kein Ring, der den Knopf ersetzt.** Er behaelt seinen Platz
-            // und sagt es in der Beschriftung — sonst springt die Seite, und
-            // wohin man gedrueckt hatte, ist weg. GESTALTUNG, Abschnitt G.
-            if let fehler = model.errorMessage, model.phase != .connecting {
-                Text(fehler)
-                    .font(Stil.koerper)
-                    // `fehler`, nicht `warnung` — siehe `Farben.swift`.
-                    .foregroundStyle(Stil.fehler)
+            // No ring replacing the button. It keeps its place and says so in the label; otherwise the page jumps and where you pressed is lost.
+            if let error = model.errorMessage, model.phase != .connecting {
+                Text(error)
+                    .font(Theme.body)
+                    // `error`, not `warning`; see `Colors.swift`.
+                    .foregroundStyle(Theme.error)
                     .multilineTextAlignment(.center)
                     .frame(width: 900)
                     .padding(.top, 32)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
-        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
+        // Changing the address during the check cancels it.
+        .onChange(of: address) { _, new in model.addressChanged(new) }
     }
 
-    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
-    /// Senden während der Prüfung verwirft das Modell.
-    private func verbinden() {
-        guard !adresse.isEmpty else { return }
-        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
+    /// Button and the keyboard's send key meet here; a second send during the check is discarded by the model.
+    private func linkUp() {
+        guard !address.isEmpty else { return }
+        model.connectStart(address, headers: headers.headers)
     }
 }
 
-// MARK: - Anmeldung
+// MARK: - Sign-in
 
-/// Zweiter Schritt: Benutzer und Kennwort.
-struct AnmeldeView: View {
+/// Second step: user and password.
+struct SignInView: View {
     let model: AppModel
     let serverName: String
     let version: String?
 
-    @State private var benutzer = ""
-    @State private var kennwort = ""
+    @State private var user = ""
+    @State private var passphrase = ""
     @State private var quickConnect = false
 
     var body: some View {
         VStack(spacing: 0) {
-            Wortmarke(hoehe: 60)
+            Wordmark(height: 60)
 
             Text(serverName)
-                .font(Stil.reihe)
-                .foregroundStyle(Stil.schrift)
+                .font(Theme.rail)
+                .foregroundStyle(Theme.font)
                 .padding(.top, 44)
 
             if let version {
                 Text("Jellyfin \(version)")
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
                     .padding(.top, 6)
             }
 
             VStack(spacing: 20) {
-                Eingabefeld(platzhalter: "Benutzername", text: $benutzer,
-                            inhalt: .username)
-                Eingabefeld(platzhalter: "Kennwort", text: $kennwort,
-                            sicher: true, inhalt: .password,
-                            abschluss: anmelden)
+                InputField(placeholder: "Benutzername", text: $user,
+                            content: .username)
+                InputField(placeholder: "Kennwort", text: $passphrase,
+                            safe: true, content: .password,
+                            completion: signIn)
             }
             .frame(width: 760)
             .padding(.top, 44)
 
-            Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
-                .buttonStyle(KnopfStil())
-                .disabled(benutzer.isEmpty || model.isWorking)
+            Button(model.isWorking ? "Anmelden…" : "Anmelden", action: signIn)
+                .buttonStyle(ThemedButtonStyle())
+                .disabled(user.isEmpty || model.isWorking)
                 .padding(.top, 36)
 
-            if let fehler = model.errorMessage, !model.isWorking {
-                Text(fehler)
-                    .font(Stil.koerper)
-                    // `fehler`, nicht `warnung` — siehe `Farben.swift`.
-                    .foregroundStyle(Stil.fehler)
+            if let error = model.errorMessage, !model.isWorking {
+                Text(error)
+                    .font(Theme.body)
+                    // `error`, not `warning`; see `Colors.swift`.
+                    .foregroundStyle(Theme.error)
                     .multilineTextAlignment(.center)
                     .frame(width: 900)
                     .padding(.top, 32)
             }
 
             HStack(spacing: 24) {
-                // Auf dem Fernseher der bessere Weg als das Kennwortfeld
-                // darüber — deshalb steht er gleichberechtigt daneben und
-                // nicht in einem Untermenü wie auf dem iPhone.
+                // On TV the better way than the password field above, so it sits beside it as an equal, not in a submenu as on iPhone.
                 Button("Quick Connect") { quickConnect = true }
-                    .buttonStyle(KnopfStil())
+                    .buttonStyle(ThemedButtonStyle())
                 Button("Anderer Server") { model.signOut() }
-                    .buttonStyle(KnopfStil())
+                    .buttonStyle(ThemedButtonStyle())
             }
             .padding(.top, 52)
         }
@@ -306,11 +260,11 @@ struct AnmeldeView: View {
                     .transition(.opacity)
             }
         }
-        .animation(Stil.bewegung(.easeInOut(duration: 0.2)), value: quickConnect)
+        .animation(Theme.motion(.easeInOut(duration: 0.2)), value: quickConnect)
     }
 
-    private func anmelden() {
-        guard !benutzer.isEmpty else { return }
-        Task { await model.login(username: benutzer, password: kennwort) }
+    private func signIn() {
+        guard !user.isEmpty else { return }
+        Task { await model.login(username: user, password: passphrase) }
     }
 }

@@ -16,7 +16,7 @@
 	     127.0.0.1 an und holt den Strom mit den Headern — nur wenn welche
 	     eingetragen sind. Ohne dieses Recht verweigert die Sandbox das bind.
 	     Am 03.09.2026 wurde ein Bau abgewiesen, weil das Recht ohne Code
-	     dastand, der es braucht; jetzt gibt es ihn (Stromweiterleiter.swift). -->
+	     dastand, der es braucht; jetzt gibt es ihn (StreamForwarder.swift). -->
 	<key>com.apple.security.network.server</key>
 	<true/>
 	<!-- Dieselbe Begruendung wie auf iOS: ohne die Zugriffsgruppe verweigert

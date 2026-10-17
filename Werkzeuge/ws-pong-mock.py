@@ -1,5 +1,5 @@
 import socket, threading, struct, hashlib, base64, sys, time, os
-PORT=int(sys.argv[1]); PONG=float(sys.argv[2])  # Sekunden; 0 = nie
+PORT=int(sys.argv[1]); PONG=float(sys.argv[2])  # seconds; 0 = never
 T0=time.time()
 def log(*a): print("[%6.1fs]"%(time.time()-T0),*a,flush=True)
 def frame(op,payload=b""):

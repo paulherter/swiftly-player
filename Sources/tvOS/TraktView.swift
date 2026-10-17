@@ -1,136 +1,126 @@
 import JellyfinKit
 import SwiftUI
 
-/// Trakt verbinden — die Fernseherfassung.
-///
-/// **Hier ist der Gerätecode zu Hause.** Ein Passwort mit der Fernbedienung
-/// zu tippen ist eine Zumutung; Trakt sieht für Fernseher genau diesen Weg
-/// vor. Der Code steht groß in Feldern wie bei Quick Connect, daneben die
-/// Adresse zum Abtippen und ein QR-Code, der sie samt Code aufs Telefon
-/// bringt.
-///
-/// Als eigene Seite über allem, wie `SeerrAnbindenView`. Sie holt den Code
-/// beim Öffnen selbst — wer hier ist, will verbinden.
-struct TraktAnbindenView: View {
-    let trakt: Traktkonto
-    let schliessen: () -> Void
+/// Connect Trakt, the TV version. The device code is at home here: typing a password with the remote is a burden, and Trakt provides exactly this path for TVs. The code is large in fields as in Quick Connect, with the address to type beside it and a QR code that carries both to a phone. It is its own page over everything, like `SeerrConnectView`, and fetches the code itself on open since whoever is here wants to connect.
+struct TraktConnectView: View {
+    let trakt: TraktAccount
+    let close: () -> Void
 
     var body: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Text(verbatim: "Trakt")
-                    .font(Stil.titelGross)
-                    .foregroundStyle(Stil.schrift)
+                    .font(Theme.titleLarge)
+                    .foregroundStyle(Theme.font)
 
                 Text("Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen.")
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.fontQuiet)
                     .multilineTextAlignment(.center)
                     .frame(width: 1100)
                     .padding(.top, 16)
 
-                if trakt.verbunden { verbunden } else { anmeldung }
+                if trakt.connected { connected } else { login }
 
                 Text("Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt.")
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
                     .multilineTextAlignment(.center)
                     .frame(width: 1100)
                     .padding(.top, 40)
             }
         }
-        .task { if !trakt.verbunden, trakt.anmeldung == .keine { trakt.verbinden() } }
-        .onDisappear { trakt.abbrechen() }
-        .onExitCommand(perform: schliessen)
+        .task { if !trakt.connected, trakt.login == .no { trakt.linkUp() } }
+        .onDisappear { trakt.cancel() }
+        .onExitCommand(perform: close)
     }
 
-    // MARK: Verbunden
+    // MARK: Connected
 
-    private var verbunden: some View {
+    private var connected: some View {
         VStack(spacing: 18) {
-            Text(verbatim: trakt.benutzer ?? "Trakt")
-                .font(Stil.koerper).foregroundStyle(Stil.schrift)
+            Text(verbatim: trakt.user ?? "Trakt")
+                .font(Theme.body).foregroundStyle(Theme.font)
             Text("Aktiv")
-                .font(Stil.klein).foregroundStyle(Stil.schriftLeise)
+                .font(Theme.small).foregroundStyle(Theme.fontQuiet)
             HStack(spacing: 24) {
-                // **„Trennen", nicht „Abmelden"** — wie bei Seerr.
-                Button("Verbindung trennen") { trakt.trennen() }
-                    .buttonStyle(KnopfStil())
-                Button("Fertig", action: schliessen)
-                    .buttonStyle(KnopfStil())
+                // "Disconnect", not "sign out", as with Seerr.
+                Button("Verbindung trennen") { trakt.disconnect() }
+                    .buttonStyle(ThemedButtonStyle())
+                Button("Fertig", action: close)
+                    .buttonStyle(ThemedButtonStyle())
             }
             .padding(.top, 26)
         }
         .padding(.top, 56)
     }
 
-    // MARK: Anmelden
+    // MARK: Sign-in
 
     @ViewBuilder
-    private var anmeldung: some View {
-        switch trakt.anmeldung {
-        case let .code(code, bis):
-            codeteil(code, bis: bis)
-        case let .fehler(text):
+    private var login: some View {
+        switch trakt.login {
+        case let .code(code, until):
+            codePart(code, until: until)
+        case let .error(text):
             Text(verbatim: text)
-                .font(Stil.koerper)
-                .foregroundStyle(Stil.fehler)
+                .font(Theme.body)
+                .foregroundStyle(Theme.error)
                 .multilineTextAlignment(.center)
                 .frame(width: 1100)
                 .padding(.top, 56)
-            knoepfe
-        case .keine, .holtCode:
-            // Der Code kommt gleich; solange steht seine Form da.
-            Ladefeld(ecke: Stil.ecke)
+            buttons
+        case .no, .fetchesCode:
+            // The code arrives shortly; until then its shape stands.
+            LoadField(corner: Theme.corner)
                 .frame(width: 560, height: 120)
                 .padding(.top, 72)
-            knoepfe
+            buttons
         }
     }
 
-    private func codeteil(_ code: TraktGeraetecode, bis: Date) -> some View {
+    private func codePart(_ code: TraktDevicesCode, until: Date) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 56) {
-                if let bild = Codeblatt.code(code.direktadresse) {
-                    Image(decorative: bild, scale: 1)
+                if let image = CodeSheet.code(code.directAddress) {
+                    Image(decorative: image, scale: 1)
                         .interpolation(.none)
                         .resizable()
                         .frame(width: 240, height: 240)
-                        // Weisser Rand gehört zum Code, siehe `Codeblatt`.
+                        // The white border belongs to the code; see `CodeSheet`.
                         .padding(18)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                         .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Geh auf \(code.adresseKurz) und gib diesen Code ein.")
-                        .font(Stil.koerper)
-                        .foregroundStyle(Stil.schrift)
-                    Codefelder(code: code.nutzercode)
-                        // Acht Zeichen statt sechs: eine Stufe kleiner, damit
-                        // die Felder neben dem QR-Code Platz haben.
+                    Text("Geh auf \(code.addressShort) und gib diesen Code ein.")
+                        .font(Theme.body)
+                        .foregroundStyle(Theme.font)
+                    CodeFields(code: code.userCode)
+                        // Eight characters instead of six: one step smaller so the fields fit beside the QR code.
                         .scaleEffect(0.8, anchor: .leading)
                         .frame(height: 128, alignment: .leading)
-                    TimelineView(.periodic(from: .now, by: 1)) { kontext in
-                        let rest = max(0, Int(bis.timeIntervalSince(kontext.date)))
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let rest = max(0, Int(until.timeIntervalSince(context.date)))
                         Text("Läuft ab in \(rest / 60):\(String(format: "%02d", rest % 60))")
-                            .font(Stil.klein)
-                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .font(Theme.small)
+                            .foregroundStyle(Theme.fontVeryQuiet)
                     }
                 }
             }
             .padding(.top, 56)
-            knoepfe
+            buttons
         }
     }
 
-    private var knoepfe: some View {
+    private var buttons: some View {
         HStack(spacing: 24) {
-            Button("Neuer Code") { trakt.verbinden() }
-                .buttonStyle(KnopfStil())
-            Button("Zurück", action: schliessen)
-                .buttonStyle(KnopfStil())
+            Button("Neuer Code") { trakt.linkUp() }
+                .buttonStyle(ThemedButtonStyle())
+            Button("Zurück", action: close)
+                .buttonStyle(ThemedButtonStyle())
         }
         .padding(.top, 52)
     }

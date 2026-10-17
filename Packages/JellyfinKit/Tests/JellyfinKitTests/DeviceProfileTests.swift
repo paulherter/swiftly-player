@@ -9,14 +9,14 @@ struct DeviceProfileTests {
     func containersCovered() throws {
         let profile = DeviceProfile.vlc()
         let containers = Set(profile.directPlayProfiles.map(\.container))
-        // Die Formate, an denen AVPlayer-basierte Clients scheitern.
+        // The formats AVPlayer-based clients fail on.
         for critical in ["mkv", "avi", "ts", "m2ts", "webm", "vob"] {
             #expect(containers.contains(critical), "Container \(critical) fehlt")
         }
     }
 
     @Test("Enthält die Audiocodecs, die AVPlayer nicht kann")
-    func lossessAudioCodecs() throws {
+    func losslessAudioCodecs() throws {
         let codecs = DeviceProfile.vlcAudioCodecs
         for critical in ["dts", "truehd", "mlp", "flac", "opus"] {
             #expect(codecs.contains(critical), "Audiocodec \(critical) fehlt")
@@ -24,10 +24,10 @@ struct DeviceProfileTests {
     }
 
     @Test("Bitmap-Untertitel werden eingebettet, nicht eingebrannt")
-    func bitmapSubtitlesAreEmbedded() throws {
+    func bitMapSubtitlesAreEmbedded() throws {
         let profile = DeviceProfile.vlc()
-        // PGS und VOBSUB sind der häufigste Auslöser für ungewollte
-        // Transkodierung: fehlen sie im Profil, brennt der Server sie ins Bild.
+        // PGS and VOBSUB are the most common cause of unwanted
+        // transcoding: if the profile lacks them, the server burns them into the picture.
         for format in ["pgssub", "dvdsub", "vobsub", "dvbsub"] {
             let entry = profile.subtitleProfiles.first { $0.format == format }
             #expect(entry != nil, "Untertitelformat \(format) fehlt")
@@ -37,11 +37,11 @@ struct DeviceProfileTests {
     }
 
     @Test("Externe PGS-Datei wird roh geholt, externes VobSub nicht zugesagt")
-    func externeBitmapUntertitel() {
+    func externalBitMapSubtitle() {
         let extern = DeviceProfile.vlc().subtitleProfiles.filter { $0.method == "External" }.map(\.format)
-        // Ohne diesen Eintrag antwortet Jellyfin fuer eine .sup-Datei mit `Encode`.
+        // Without this entry Jellyfin answers `Encode` for a .sup file.
         #expect(extern.contains("pgssub"))
-        // Das koennte der Server nicht ausliefern, nur umwandeln — und daran scheitern.
+        // The server could not deliver it as is, only convert it, and would fail on that.
         #expect(!extern.contains("dvdsub"))
     }
 
@@ -57,7 +57,7 @@ struct DeviceProfileTests {
 
     @Test("Bitrate ist standardmäßig praktisch unbegrenzt")
     func bitrateIsUnbounded() throws {
-        // 1 Gbit/s liegt weit über jedem Remux — löst also nie Transcode aus.
+        // 1 Gbit/s is far above any remux, so it never triggers a transcode.
         #expect(DeviceProfile.vlc().maxStreamingBitrate >= 1_000_000_000)
     }
 
@@ -102,32 +102,32 @@ struct MediaSourceTests {
     }
 }
 
-// MARK: - Regel 1 bis 3 aus CLAUDE.md, nachgezählt
+// MARK: - Rules 1 to 3, recounted
 
 @Suite("Profil laesst nichts umwandeln")
-struct ProfilLueckenTests {
+struct ProfileGapsTests {
 
-    /// Regel: eine Positivliste kann nur zu kurz sein. libVLC dekodiert
-    /// praktisch alles; jeder Codec, der nicht in der Liste steht, laesst den
-    /// Server umwandeln — auch wenn Container und Fassung passen.
+    /// Rule: an allow list can only be too short. libVLC decodes
+    /// practically everything; every codec missing from the list makes the
+    /// server convert, even when container and version fit.
     @Test("Direktwiedergabe schraenkt Codecs nicht ein")
-    func keineCodecliste() {
-        let profil = DeviceProfile.vlc()
-        let video = profil.directPlayProfiles.filter { $0.type == "Video" }
+    func noCodecList() {
+        let profile = DeviceProfile.vlc()
+        let video = profile.directPlayProfiles.filter { $0.type == "Video" }
         #expect(!video.isEmpty)
-        for eintrag in video {
-            #expect(eintrag.videoCodec == nil,
-                    "Container \(eintrag.container) schraenkt den Videocodec ein")
-            #expect(eintrag.audioCodec == nil,
-                    "Container \(eintrag.container) schraenkt den Toncodec ein")
+        for entryRecord in video {
+            #expect(entryRecord.videoCodec == nil,
+                    "Container \(entryRecord.container) schraenkt den Videocodec ein")
+            #expect(entryRecord.audioCodec == nil,
+                    "Container \(entryRecord.container) schraenkt den Toncodec ein")
         }
     }
 
-    /// Regel 1: fehlt ein Untertitelformat, brennt der Server es ins Bild —
-    /// und muss dafuer das **Video** neu rechnen. `stpp` ist Timed Text in
-    /// MP4 und kam in der Liste nicht vor.
+    /// Rule 1: if a subtitle format is missing, the server burns it into the picture
+    /// and has to re-encode the **video** for that. `stpp` is Timed Text in
+    /// MP4 and was not in the list.
     @Test("Jedes gaengige Untertitelformat ist deklariert")
-    func untertitelVollstaendig() {
+    func subtitleComplete() {
         let formate = Set(DeviceProfile.vlcSubtitleProfiles.map(\.format))
         for format in ["srt", "subrip", "ass", "ssa", "vtt", "webvtt", "mov_text",
                        "stpp", "ttml", "pgssub", "dvdsub", "vobsub", "dvbsub"] {
@@ -135,11 +135,11 @@ struct ProfilLueckenTests {
         }
     }
 
-    /// Regel 3: DTS, TrueHD und MLP sind der haeufigste Umwandlungsgrund bei
-    /// Film-Rips. Die PCM-Spielarten kommen bei Blu-ray- und Kamera-Material
-    /// vor, RealAudio gehoert zu den deklarierten Containern rm und rmvb.
+    /// Rule 3: DTS, TrueHD and MLP are the most common reason for conversion in
+    /// movie rips. The PCM variants occur in Blu-ray and camera material,
+    /// RealAudio belongs to the declared containers rm and rmvb.
     @Test("Tonliste deckt ab, was in den Containern vorkommt")
-    func tonVollstaendig() {
+    func audioComplete() {
         let codecs = Set(DeviceProfile.vlcAudioCodecs)
         for codec in ["dts", "dca", "dtshd", "truehd", "mlp",
                       "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le",
@@ -149,29 +149,29 @@ struct ProfilLueckenTests {
         }
     }
 
-    /// Regel 2: ein Limit loest Umwandlung aus, obwohl Container und Codec
-    /// passen.
+    /// Rule 2: a limit triggers conversion even though container and codec
+    /// fit.
     @Test("Bitrate ist praktisch unbegrenzt")
-    func bitrateOffen() {
-        let profil = DeviceProfile.vlc()
-        #expect(profil.maxStreamingBitrate >= 1_000_000_000)
-        #expect(profil.maxStaticBitrate >= 1_000_000_000)
+    func bitrateOpen() {
+        let profile = DeviceProfile.vlc()
+        #expect(profile.maxStreamingBitrate >= 1_000_000_000)
+        #expect(profile.maxStaticBitrate >= 1_000_000_000)
     }
 
     @Test("AirPlay: HEVC nur als hvc1/dvh1 direkt, sonst umpacken")
-    func airplayHevcKennung() throws {
-        let profil = DeviceProfile.airplay()
-        let hevc = try #require(profil.codecProfiles.first { $0.codec == "hevc" })
-        let bedingung = try #require(hevc.conditions.first)
-        #expect(bedingung.property == "VideoCodecTag")
-        #expect(bedingung.condition == "EqualsAny")
-        #expect(bedingung.value == "hvc1|dvh1")
-        // Matroska traegt keine Kennung; Pflicht wuerde es mitsperren.
-        #expect(bedingung.isRequired == false)
-        // Und es muss so beim Server ankommen.
-        let json = String(decoding: try JSONEncoder().encode(profil), as: UTF8.self)
+    func airplayHevcId() throws {
+        let profile = DeviceProfile.airplay()
+        let hevc = try #require(profile.codecProfiles.first { $0.codec == "hevc" })
+        let requirement = try #require(hevc.conditions.first)
+        #expect(requirement.property == "VideoCodecTag")
+        #expect(requirement.condition == "EqualsAny")
+        #expect(requirement.value == "hvc1|dvh1")
+        // Matroska carries no tag; making it mandatory would block it too.
+        #expect(requirement.isRequired == false)
+        // And it must reach the server that way.
+        let json = String(decoding: try JSONEncoder().encode(profile), as: UTF8.self)
         #expect(json.contains(#""Property":"VideoCodecTag""#))
-        // Das Umpacken darf HEVC weiter kopieren.
-        #expect(profil.transcodingProfiles.first?.videoCodec.contains("hevc") == true)
+        // Remuxing may keep copying HEVC.
+        #expect(profile.transcodingProfiles.first?.videoCodec.contains("hevc") == true)
     }
 }

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **Nothing in the backup and nothing on device transfer** (Android 12+; below that
+  `allowBackup="false"` in the manifest).
+
+  What the app stores is useless on another device:
+  - Session and accounts are encrypted with a Keystore key that never leaves the device, so
+    restored they cannot be read.
+  - The device ID must be unique per device. Jellyfin keeps sessions under it; two devices with
+    the same ID sign each other out.
+  - Downloads (often gigabytes) exceed the 25 MB backup limit, and then Android backs up nothing
+    at all; their list without the files would only confuse.
+  What remains is server address and sort order, which is not worth a copy.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

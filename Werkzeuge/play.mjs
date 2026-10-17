@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 //
-// Google Play Developer API fuer Swiftly Android — ohne Abhaengigkeiten.
+// Google Play Developer API for Swiftly Android -- no dependencies.
 //
 //   node Werkzeuge/play.mjs pruefen
-//       liest nur: Tracks und Releases. Oeffnet eine Bearbeitung und verwirft sie wieder.
-//   node Werkzeuge/play.mjs hochladen <datei.aab> <track> [hinweise.json] [--entwurf]
-//       laedt das Bundle, legt ein Release im Track an und veroeffentlicht es
-//       (mit --entwurf bleibt es ein Entwurf in der Play Console).
-//       hinweise.json: { "de-DE": "…", "en-US": "…" } — je hoechstens 500 Zeichen.
-//   node Werkzeuge/play.mjs apk-anhaengen <versionscode> [--fassung 1.0.4] [--dry-run]
-//       holt die von Google signierte Universal-APK zu diesem Versionscode (`generatedApks`)
-//       und haengt sie als `Swiftly-<Fassung>.apk` an das GitHub-Release `v<Fassung>`
-//       (`gh release upload`). Die Fassung kommt aus dem Namen des Play-Releases, sonst aus
-//       --fassung. Mit --dry-run wird nur gelesen: nichts geladen, nichts hochgeladen.
-//       Das Release muss es schon geben; eine gleichnamige APK wird nicht ersetzt. Ob und wann
-//       eine APK an ein Release kommt, entscheidet Paul (Android ist noch nicht in Produktion).
+//       read-only: tracks and releases. Opens an edit and discards it again.
+//   node Werkzeuge/play.mjs hochladen <file.aab> <track> [notes.json] [--entwurf]
+//       uploads the bundle, creates a release in the track and publishes it
+//       (with --entwurf it stays a draft in the Play Console).
+//       notes.json: { "de-DE": "...", "en-US": "..." } -- at most 500 characters each.
+//   node Werkzeuge/play.mjs freigeben <versionCode> <track> [notes.json]
+//       releases an already uploaded version code in another track.
+//   node Werkzeuge/play.mjs apk-anhaengen <versionCode> [--fassung 1.0.4] [--dry-run]
+//       fetches the universal APK signed by Google for this version code
+//       (`generatedApks`) and attaches it as `Swiftly-<version>.apk` to the
+//       GitHub release `v<version>` (`gh release upload`). The version comes
+//       from the name of the Play release, otherwise from --fassung. With
+//       --dry-run it only reads: nothing is downloaded or uploaded.
+//       The release must already exist; an APK of the same name is not replaced.
 //
-// **Der Schluessel liegt ausserhalb des Repos** (`~/.swiftly-android/play-dienstkonto.json`)
-// und wird nur hier gelesen, nie ausgegeben. Dieselbe Regel wie beim Signatur-Passwort im
-// Schluesselbund: Zugangsdaten gehoeren nicht in eine Datei im Repo und nicht in ein Protokoll.
+// **The key lives outside the repo** (`~/.swiftly-android/play-dienstkonto.json`)
+// and is only read here, never printed. Credentials do not belong in a file in
+// the repo or in a log.
 
 import { readFileSync, statSync, writeFileSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -29,58 +31,58 @@ import { createSign } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const PAKET = "de.paulherter.swiftly";
-const SCHLUESSEL = join(homedir(), ".swiftly-android", "play-dienstkonto.json");
-const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PAKET}`;
-const HOCHLADEN = `https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/${PAKET}`;
+const PACKAGE_NAME = "de.paulherter.swiftly";
+const KEY_FILE = join(homedir(), ".swiftly-android", "play-dienstkonto.json");
+const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}`;
+const UPLOAD_API = `https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/${PACKAGE_NAME}`;
 
-function b64url(daten) {
-  return Buffer.from(daten).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+function b64url(bytes) {
+  return Buffer.from(bytes).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 export async function zugang() {
-  let konto;
-  try { konto = JSON.parse(readFileSync(SCHLUESSEL, "utf8")); }
-  catch { throw new Error(`Kein Dienstkonto unter ${SCHLUESSEL}.`); }
-  const jetzt = Math.floor(Date.now() / 1000);
-  const kopf = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const inhalt = b64url(JSON.stringify({
-    iss: konto.client_email, scope: "https://www.googleapis.com/auth/androidpublisher",
-    aud: konto.token_uri || "https://oauth2.googleapis.com/token", iat: jetzt, exp: jetzt + 3600,
+  let account;
+  try { account = JSON.parse(readFileSync(KEY_FILE, "utf8")); }
+  catch { throw new Error(`Kein Dienstkonto unter ${KEY_FILE}.`); }
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = b64url(JSON.stringify({
+    iss: account.client_email, scope: "https://www.googleapis.com/auth/androidpublisher",
+    aud: account.token_uri || "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
   }));
-  const signierer = createSign("RSA-SHA256");
-  signierer.update(`${kopf}.${inhalt}`);
-  const jwt = `${kopf}.${inhalt}.${b64url(signierer.sign(konto.private_key))}`;
-  const antwort = await fetch(konto.token_uri || "https://oauth2.googleapis.com/token", {
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${header}.${payload}`);
+  const jwt = `${header}.${payload}.${b64url(signer.sign(account.private_key))}`;
+  const response = await fetch(account.token_uri || "https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
   });
-  const json = await antwort.json();
-  if (!json.access_token) throw new Error(`Anmeldung abgelehnt: ${json.error_description || json.error || antwort.status}`);
-  console.log(`Angemeldet als ${konto.client_email}`);
+  const json = await response.json();
+  if (!json.access_token) throw new Error(`Anmeldung abgelehnt: ${json.error_description || json.error || response.status}`);
+  console.log(`Angemeldet als ${account.client_email}`);
   return json.access_token;
 }
 
-export async function aufruf(token, methode, url, body, typ = "application/json") {
-  const antwort = await fetch(url, {
-    method: methode,
+export async function aufruf(token, method, url, body, typ = "application/json") {
+  const response = await fetch(url, {
+    method: method,
     headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": typ } : {}) },
     body: body === undefined ? undefined : (typ === "application/json" ? JSON.stringify(body) : body),
   });
-  const text = await antwort.text();
-  if (!antwort.ok) {
-    let meldung = text;
-    try { meldung = JSON.parse(text).error?.message ?? text; } catch {}
-    throw new Error(`${methode} ${url.replace(API, "").replace(HOCHLADEN, "")} → ${antwort.status}: ${meldung}`);
+  const text = await response.text();
+  if (!response.ok) {
+    let message = text;
+    try { message = JSON.parse(text).error?.message ?? text; } catch {}
+    throw new Error(`${method} ${url.replace(API, "").replace(UPLOAD_API, "")} → ${response.status}: ${message}`);
   }
   return text ? JSON.parse(text) : {};
 }
 
-async function pruefen() {
+async function verify() {
   const token = await zugang();
-  const bearbeitung = await aufruf(token, "POST", `${API}/edits`, {});
+  const edit = await aufruf(token, "POST", `${API}/edits`, {});
   try {
-    const { tracks = [] } = await aufruf(token, "GET", `${API}/edits/${bearbeitung.id}/tracks`);
+    const { tracks = [] } = await aufruf(token, "GET", `${API}/edits/${edit.id}/tracks`);
     for (const t of tracks) {
       console.log(`\nTrack „${t.track}"`);
       for (const r of t.releases ?? []) {
@@ -88,133 +90,157 @@ async function pruefen() {
       }
     }
   } finally {
-    await aufruf(token, "DELETE", `${API}/edits/${bearbeitung.id}`);
+    await aufruf(token, "DELETE", `${API}/edits/${edit.id}`);
   }
   console.log("\nNur gelesen, nichts geaendert.");
 }
 
-async function hochladen(datei, track, hinweiseDatei, entwurf) {
-  if (!datei || !track) throw new Error("Aufruf: play.mjs hochladen <datei.aab> <track> [hinweise.json] [--entwurf]");
-  const groesse = statSync(datei).size;
-  const hinweise = hinweiseDatei ? JSON.parse(readFileSync(hinweiseDatei, "utf8")) : null;
-  for (const [sprache, text] of Object.entries(hinweise ?? {})) {
-    if (text.length > 500) throw new Error(`Versionshinweise ${sprache}: ${text.length} Zeichen, Google erlaubt 500.`);
+async function upload(file, track, notesFile, draft) {
+  if (!file || !track) throw new Error("Aufruf: play.mjs hochladen <datei.aab> <track> [hinweise.json] [--entwurf]");
+  const size = statSync(file).size;
+  const notes = notesFile ? JSON.parse(readFileSync(notesFile, "utf8")) : null;
+  for (const [language, text] of Object.entries(notes ?? {})) {
+    if (text.length > 500) throw new Error(`Versionshinweise ${language}: ${text.length} Zeichen, Google erlaubt 500.`);
   }
   const token = await zugang();
-  const bearbeitung = await aufruf(token, "POST", `${API}/edits`, {});
-  let fertig = false;
+  const edit = await aufruf(token, "POST", `${API}/edits`, {});
+  let done = false;
   try {
-    console.log(`Lade ${datei} (${(groesse / 1e6).toFixed(1)} MB) …`);
-    const bundle = await aufruf(token, "POST", `${HOCHLADEN}/edits/${bearbeitung.id}/bundles?uploadType=media`,
-      readFileSync(datei), "application/octet-stream");
+    console.log(`Lade ${file} (${(size / 1e6).toFixed(1)} MB) …`);
+    const bundle = await aufruf(token, "POST", `${UPLOAD_API}/edits/${edit.id}/bundles?uploadType=media`,
+      readFileSync(file), "application/octet-stream");
     console.log(`Bundle angenommen: Versionscode ${bundle.versionCode}`);
     const release = {
       versionCodes: [String(bundle.versionCode)],
-      status: entwurf ? "draft" : "completed",
-      ...(hinweise ? { releaseNotes: Object.entries(hinweise).map(([language, text]) => ({ language, text })) } : {}),
+      status: draft ? "draft" : "completed",
+      ...(notes ? { releaseNotes: Object.entries(notes).map(([language, text]) => ({ language, text })) } : {}),
     };
-    await aufruf(token, "PUT", `${API}/edits/${bearbeitung.id}/tracks/${encodeURIComponent(track)}`, { track, releases: [release] });
-    await aufruf(token, "POST", `${API}/edits/${bearbeitung.id}:commit`);
-    fertig = true;
-    console.log(`\n${entwurf ? "Als Entwurf" : "Veroeffentlicht"} in „${track}": Versionscode ${bundle.versionCode}.`);
+    await aufruf(token, "PUT", `${API}/edits/${edit.id}/tracks/${encodeURIComponent(track)}`, { track, releases: [release] });
+    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit`);
+    done = true;
+    console.log(`\n${draft ? "Als Entwurf" : "Veroeffentlicht"} in „${track}": Versionscode ${bundle.versionCode}.`);
   } finally {
-    if (!fertig) await aufruf(token, "DELETE", `${API}/edits/${bearbeitung.id}`).catch(() => {});
+    if (!done) await aufruf(token, "DELETE", `${API}/edits/${edit.id}`).catch(() => {});
+  }
+}
+
+/** Releases a version code that is already uploaded (e.g. in another track) in `track`. */
+async function promote(versionCode, track, notesFile) {
+  if (!/^\d+$/.test(versionCode ?? "") || !track) throw new Error("Aufruf: play.mjs freigeben <versionscode> <track> [hinweise.json]");
+  const notes = notesFile ? JSON.parse(readFileSync(notesFile, "utf8")) : null;
+  const token = await zugang();
+  const edit = await aufruf(token, "POST", `${API}/edits`, {});
+  let done = false;
+  try {
+    const release = {
+      versionCodes: [versionCode], status: "completed",
+      ...(notes ? { releaseNotes: Object.entries(notes).map(([language, text]) => ({ language, text })) } : {}),
+    };
+    await aufruf(token, "PUT", `${API}/edits/${edit.id}/tracks/${encodeURIComponent(track)}`, { track, releases: [release] });
+    await aufruf(token, "POST", `${API}/edits/${edit.id}:commit`);
+    done = true;
+    console.log(`Veroeffentlicht in „${track}": Versionscode ${versionCode}.`);
+  } finally {
+    if (!done) await aufruf(token, "DELETE", `${API}/edits/${edit.id}`).catch(() => {});
   }
 }
 
 /**
- * **Die APK fuer GitHub** — Nutzer ohne Play Store (oder mit einem Fernseher ohne) sollen Swiftly
- * auch von den Releases laden koennen. Genommen wird die Universal-APK, die Google aus dem Bundle
- * erzeugt und **mit dem App-Signaturschluessel von Play** signiert: so passt sie zu jeder
- * Play-Installation, und ein Update ueber Play laeuft danach weiter. Eine selbst gebaute Release-APK
- * traegt den Upload-Schluessel und passt nicht (Signatur), das hiesse deinstallieren.
+ * **The APK for GitHub** -- users without the Play Store (or with a TV that
+ * lacks it) should be able to download Swiftly from the releases too. The
+ * universal APK that Google generates from the bundle is used, **signed with
+ * the Play app signing key**: it matches every Play installation, and an
+ * update through Play keeps working afterwards. A self-built release APK
+ * carries the upload key and does not match (signature), which would mean
+ * uninstalling first.
  */
-async function apkAnhaengen(versionscode, fassungVorgabe, probe) {
-  if (!/^\d+$/.test(versionscode ?? "")) {
+async function appendApk(versionCode, versionDefault, dryRun) {
+  if (!/^\d+$/.test(versionCode ?? "")) {
     throw new Error("Aufruf: play.mjs apk-anhaengen <versionscode> [--fassung 1.0.4] [--dry-run]");
   }
   const token = await zugang();
 
-  // Die Fassung: aus dem Namen des Play-Releases, der diesen Versionscode traegt („1.0.4 (8)").
-  let fassung = fassungVorgabe;
-  if (!fassung) {
-    const bearbeitung = await aufruf(token, "POST", `${API}/edits`, {});
+  // The version: from the name of the Play release carrying this version code ("1.0.4 (8)").
+  let version = versionDefault;
+  if (!version) {
+    const edit = await aufruf(token, "POST", `${API}/edits`, {});
     try {
-      const { tracks = [] } = await aufruf(token, "GET", `${API}/edits/${bearbeitung.id}/tracks`);
+      const { tracks = [] } = await aufruf(token, "GET", `${API}/edits/${edit.id}/tracks`);
       for (const t of tracks) for (const r of t.releases ?? []) {
-        if ((r.versionCodes ?? []).includes(String(versionscode))) {
-          fassung ??= (r.name ?? "").match(/\d+\.\d+(?:\.\d+)?/)?.[0];
+        if ((r.versionCodes ?? []).includes(String(versionCode))) {
+          version ??= (r.name ?? "").match(/\d+\.\d+(?:\.\d+)?/)?.[0];
           console.log(`Play: „${t.track}" · ${r.name ?? "(ohne Namen)"} · ${r.status}`);
         }
       }
     } finally {
-      await aufruf(token, "DELETE", `${API}/edits/${bearbeitung.id}`);
+      await aufruf(token, "DELETE", `${API}/edits/${edit.id}`);
     }
   }
-  if (!fassung) throw new Error(`Keine Fassung zu Versionscode ${versionscode} gefunden — mit --fassung angeben.`);
-  const tag = `v${fassung}`;
-  const name = `Swiftly-${fassung}.apk`;
+  if (!version) throw new Error(`Keine Fassung zu Versionscode ${versionCode} gefunden — mit --fassung angeben.`);
+  const tag = `v${version}`;
+  const name = `Swiftly-${version}.apk`;
 
-  // Welche APKs Google erzeugt hat — je Signaturschluessel eine Gruppe, darin die Universal-APK.
-  const { generatedApks = [] } = await aufruf(token, "GET", `${API}/generatedApks/${versionscode}`);
+  // Which APKs Google generated -- one group per signing key, containing the universal APK.
+  const { generatedApks = [] } = await aufruf(token, "GET", `${API}/generatedApks/${versionCode}`);
   const universal = generatedApks.map((g) => g.generatedUniversalApk?.downloadId).filter(Boolean);
-  if (universal.length === 0) throw new Error(`Google hat zu Versionscode ${versionscode} keine Universal-APK erzeugt.`);
+  if (universal.length === 0) throw new Error(`Google hat zu Versionscode ${versionCode} keine Universal-APK erzeugt.`);
   if (universal.length > 1) throw new Error(`${universal.length} Signaturschluessel mit Universal-APK — nicht eindeutig.`);
-  console.log(`Universal-APK zu Versionscode ${versionscode}: vorhanden (von Play signiert).`);
+  console.log(`Universal-APK zu Versionscode ${versionCode}: vorhanden (von Play signiert).`);
 
-  // Das Release muss es schon geben — angelegt wird hier keins.
-  const wurzel = join(dirname(fileURLToPath(import.meta.url)), "..");
-  let vorhanden = [];
+  // The release must already exist -- none is created here.
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  let present = [];
   try {
     const release = JSON.parse(execFileSync("gh", ["release", "view", tag, "--json", "assets"],
-                                            { cwd: wurzel, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
-    vorhanden = (release.assets ?? []).map((a) => a.name);
+                                            { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+    present = (release.assets ?? []).map((a) => a.name);
   } catch {
     throw new Error(`Kein GitHub-Release „${tag}". Erst das Release anlegen, dann die APK anhaengen.`);
   }
-  console.log(`GitHub-Release „${tag}": ${vorhanden.length} Anhaenge${vorhanden.includes(name) ? `, ${name} schon dabei` : ""}.`);
-  if (vorhanden.includes(name)) throw new Error(`${name} haengt schon an „${tag}" — nichts ersetzt.`);
+  console.log(`GitHub-Release „${tag}": ${present.length} Anhaenge${present.includes(name) ? `, ${name} schon dabei` : ""}.`);
+  if (present.includes(name)) throw new Error(`${name} haengt schon an „${tag}" — nichts ersetzt.`);
 
-  if (probe) {
+  if (dryRun) {
     console.log(`\n--dry-run: wuerde die APK laden und als ${name} an „${tag}" haengen. Nichts geladen, nichts geaendert.`);
     return;
   }
 
-  const url = `${API}/generatedApks/${versionscode}/downloads/${encodeURIComponent(universal[0])}:download?alt=media`;
-  const antwort = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!antwort.ok) throw new Error(`Laden der APK → ${antwort.status}: ${(await antwort.text()).slice(0, 300)}`);
-  const daten = Buffer.from(await antwort.arrayBuffer());
-  // Eine APK ist ein ZIP — faengt die Antwort nicht mit „PK" an, ist es eine Fehlerseite.
-  if (daten.length < 1e6 || daten[0] !== 0x50 || daten[1] !== 0x4b) throw new Error(`Die Antwort ist keine APK (${daten.length} Bytes).`);
-  const datei = join(mkdtempSync(join(tmpdir(), "swiftly-apk-")), name);
-  writeFileSync(datei, daten);
-  console.log(`Geladen: ${datei} (${(daten.length / 1e6).toFixed(1)} MB)`);
-  execFileSync("gh", ["release", "upload", tag, datei], { cwd: wurzel, stdio: "inherit" });
+  const url = `${API}/generatedApks/${versionCode}/downloads/${encodeURIComponent(universal[0])}:download?alt=media`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error(`Laden der APK → ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  // An APK is a ZIP -- if the response does not start with "PK", it is an error page.
+  if (bytes.length < 1e6 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error(`Die Antwort ist keine APK (${bytes.length} Bytes).`);
+  const file = join(mkdtempSync(join(tmpdir(), "swiftly-apk-")), name);
+  writeFileSync(file, bytes);
+  console.log(`Geladen: ${file} (${(bytes.length / 1e6).toFixed(1)} MB)`);
+  execFileSync("gh", ["release", "upload", tag, file], { cwd: root, stdio: "inherit" });
   console.log(`\nAngehaengt: ${name} an „${tag}".`);
 }
 
 export { API };
 
-// Nur als Befehl ausfuehren, nicht wenn der Waechter die Anmeldung importiert.
+// Run only as a command, not when another script imports the sign-in code.
 if (import.meta.url === `file://${process.argv[1]}`) {
-const [befehl, ...rest] = process.argv.slice(2);
-const entwurf = rest.includes("--entwurf");
-const probe = rest.includes("--dry-run");
-const fassungStelle = rest.indexOf("--fassung");
-const fassung = fassungStelle >= 0 ? rest[fassungStelle + 1] : undefined;
-const argumente = rest.filter((a, i) => a !== "--entwurf" && a !== "--dry-run" && a !== "--fassung"
-                                        && (fassungStelle < 0 || i !== fassungStelle + 1));
+const [command, ...rest] = process.argv.slice(2);
+const draft = rest.includes("--entwurf");
+const dryRun = rest.includes("--dry-run");
+const versionIndex = rest.indexOf("--fassung");
+const version = versionIndex >= 0 ? rest[versionIndex + 1] : undefined;
+const args = rest.filter((a, i) => a !== "--entwurf" && a !== "--dry-run" && a !== "--fassung"
+                                        && (versionIndex < 0 || i !== versionIndex + 1));
 try {
-  if (befehl === "pruefen") await pruefen();
-  else if (befehl === "hochladen") await hochladen(argumente[0], argumente[1], argumente[2], entwurf);
-  else if (befehl === "apk-anhaengen") await apkAnhaengen(argumente[0], fassung, probe);
+  if (command === "pruefen") await verify();
+  else if (command === "hochladen") await upload(args[0], args[1], args[2], draft);
+  else if (command === "freigeben") await promote(args[0], args[1], args[2]);
+  else if (command === "apk-anhaengen") await appendApk(args[0], version, dryRun);
   else {
     console.error("Befehle: pruefen · hochladen <datei.aab> <track> [hinweise.json] [--entwurf]"
                   + " · apk-anhaengen <versionscode> [--fassung 1.0.4] [--dry-run]");
     process.exitCode = 2;
   }
-} catch (fehler) {
-  console.error(`\nFehlgeschlagen: ${fehler.message}`);
+} catch (failure) {
+  console.error(`\nFehlgeschlagen: ${failure.message}`);
   process.exitCode = 1;
 }
 }

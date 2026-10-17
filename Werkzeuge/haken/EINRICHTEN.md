@@ -1,24 +1,14 @@
-# Die Haken scharfschalten
+# Enabling the hooks
 
-Die drei Skripte in diesem Ordner tun von sich aus nichts. Claude Code ruft
-sie erst, wenn sie in einer `settings.json` stehen.
+The three scripts in this folder do nothing on their own. Claude Code only calls them once they are listed in a `settings.json`.
 
-**Nach `~/.claude/settings.json`, nicht ins Projekt.** `.claude/` steht in
-`.gitignore`, jeder Arbeitsbaum haette also seine eigene Fassung — und
-angelegt werden koennte sie dort nur von der Sitzung, der dieser Baum
-gehoert. Einmal auf Benutzerebene deckt alle sieben ab.
+**Put them in `~/.claude/settings.json`, not in the project.** `.claude/` is in `.gitignore`, so every working tree would have its own copy, and only the session that owns that tree could create it. Setting them once at user level covers all trees.
 
-Die Skripte selbst sind eingecheckt und liegen damit in jedem Baum; der
-Pfad unten loest sich je Sitzung auf ihren eigenen auf. Ausserhalb von
-Swiftly finden die Wrapper nichts und schweigen.
+The scripts themselves are checked in and so exist in every tree; the path below resolves per session to its own tree. Outside this project the wrappers find nothing and stay silent.
 
-**Der `hooks`-Block gehoert *in* die aeussere Klammer**, nicht dahinter — mit
-Komma nach dem letzten vorhandenen Eintrag. Zwei JSON-Objekte hintereinander
-sind kein gueltiges JSON, und Claude Code laedt die Datei dann gar nicht.
+**The `hooks` block goes *inside* the outer braces**, not after them, with a comma after the last existing entry. Two JSON objects in a row are not valid JSON, and Claude Code then loads nothing from the file.
 
-Die fertige Fassung liegt daneben als `settings-fertig.json`; falls
-`~/.claude/settings.json` inzwischen andere Eintraege hat, statt Kopieren
-lieber zusammenfuehren:
+The finished version sits next to this file as `settings-fertig.json`. If `~/.claude/settings.json` has other entries by now, merge instead of copying:
 
 ```
 jq -s '.[0] * .[1]' ~/.claude/settings.json \
@@ -26,7 +16,7 @@ jq -s '.[0] * .[1]' ~/.claude/settings.json \
    mv /tmp/s.json ~/.claude/settings.json
 ```
 
-So sieht der Teil aus, der dazukommt:
+The part that gets added:
 
 ```json
   "theme": "dark",
@@ -47,25 +37,21 @@ So sieht der Teil aus, der dazukommt:
   }
 ```
 
-**Danach die Sitzung neu starten.** Haken werden beim Start gelesen; eine
-laufende Sitzung merkt von der Aenderung nichts.
+**Restart the session afterwards.** Hooks are read at startup; a running session does not notice the change.
 
-## Was die drei tun
+## What the three do
 
-| Skript | Wann | Was |
+| Script | When | What |
 |---|---|---|
-| `fremder-baum.sh` | vor Write/Edit | sperrt Schreibzugriffe in einen anderen Auscheck desselben Git-Verzeichnisses |
-| `fremder-baum-bash.sh` | vor Bash | dasselbe fuer `sed -i`, `>`, `git reset/checkout/clean`. Lesen bleibt frei |
-| `xcodegen-noetig.sh` | nach Write | meldet eine neue Datei unter `Sources/`, die das `.xcodeproj` noch nicht kennt |
+| `fremder-baum.sh` | before Write/Edit | blocks writes into another checkout of the same Git directory |
+| `fremder-baum-bash.sh` | before Bash | same for `sed -i`, `>`, `git reset/checkout/clean`; reading stays free |
+| `xcodegen-noetig.sh` | after Write | reports a new file under `Sources/` that the `.xcodeproj` does not know yet |
 
-Nicht gesperrt wird `Notizen` — eigenes Repo, dort schreibt `main`
-die Aenderungsliste.
-
-## Nachpruefen, dass sie greifen
+## Checking that they work
 
 ```
 printf '%s' '{"tool_input":{"file_path":"../Swiftly-tvOS/x.swift"}}' \
-  | Werkzeuge/haken/fremder-baum.sh; echo "Rueckgabe $?"
+  | Werkzeuge/haken/fremder-baum.sh; echo "exit $?"
 ```
 
-Rueckgabe 2 und ein Hinweistext heisst: der Haken tut, was er soll.
+Exit code 2 and a message mean the hook does its job.

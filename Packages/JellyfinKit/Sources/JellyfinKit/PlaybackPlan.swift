@@ -1,10 +1,10 @@
 import Foundation
 
-/// Was der Player tun soll — und warum.
+/// What the player should do, and why.
 ///
-/// Der zweite Teil ist der eigentliche Mehrwert: wenn Jellyfin doch
-/// transkodieren will, sagt Swiftly, welcher Strom schuld ist. Andere Clients
-/// zeigen nur, *dass* transkodiert wird, nicht *woran* es lag.
+/// The second part is the real value: when Jellyfin does want to transcode,
+/// Swiftly says which stream is to blame. Other clients only show *that*
+/// transcoding happens, not *why*.
 public struct PlaybackPlan: Sendable, Equatable {
 
     public let url: URL
@@ -13,67 +13,66 @@ public struct PlaybackPlan: Sendable, Equatable {
     public let playSessionID: String?
     public let container: String?
     public let reasons: [TranscodeReason]
-    /// Die gewählte Quelle — für den Datei-Auszug auf der Detailseite.
-    public let quelle: MediaSource?
-    /// Bildcodec einer Datei auf dem Gerät, wie er beim Laden gemerkt wurde
-    /// (``Downloadposten/bildcodec``) — dort gibt es keine ``quelle``.
-    var plattenBildcodec: String? = nil
+    /// The chosen source, for the file excerpt on the detail page.
+    public let source: MediaSource?
+    /// Video codec of a file on the device, as remembered at download time
+    /// (``Downloadposten/bildcodec``); there is no ``source`` for it.
+    var plattenImageCodec: String? = nil
 
     public var isLossless: Bool { method.isLossless }
 
-    /// Ob der Abspieler gleich mit Software-Dekoder öffnen soll — siehe
-    /// ``Erstbild/softwareVonAnfang(bildcodec:methode:)``.
-    public var softwareDekoder: Bool {
-        Erstbild.softwareVonAnfang(bildcodec: quelle?.bildcodec ?? plattenBildcodec,
-                                   methode: method)
+    /// Whether the player should open with the software decoder right away, see
+    /// ``Erstbild/softwareFromStart(bildcodec:methode:)``.
+    public var softwareDecoder: Bool {
+        FirstFrame.softwareFromStart(videoCodec: source?.videoCodec ?? plattenImageCodec,
+                                   method: method)
     }
 
 
-    /// Kurzer Satz für die Oberfläche.
+    /// Short sentence for the UI.
     public var summary: String {
         switch method {
         case .directPlay:
-            return uebersetzt("Direct Play — die Datei läuft unverändert.")
+            return translated("Direct Play — die Datei läuft unverändert.")
         case .directStream:
-            return uebersetzt("Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet.")
+            return translated("Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet.")
         case .transcode:
             guard let first = reasons.first else {
-                return uebersetzt("Der Server transkodiert. Grund unbekannt.")
+                return translated("Der Server transkodiert. Grund unbekannt.")
             }
-            return uebersetzt("Der Server transkodiert: \(first.text)")
+            return translated("Der Server transkodiert: \(first.text)")
         }
     }
 }
 
 public extension PlaybackPlan {
 
-    /// Ein Plan für eine Datei, die schon auf dem Gerät liegt — **H8.**
+    /// A plan for a file that is already on the device.
     ///
-    /// **Ohne den Server.** Das ist der Punkt: liegt die Datei hier, darf die
-    /// Wiedergabe nicht an einem `PlaybackInfo`-Abruf hängen, den es im
-    /// Flugzeug nicht gibt. Genau dafür wurde heruntergeladen.
+    /// **Without the server.** That is the point: if the file is here, playback
+    /// must not depend on a `PlaybackInfo` request that does not exist on a plane.
+    /// That is what the download was for.
     ///
-    /// Die Art ist `directPlay`, und das ist keine Beschönigung: es *ist* die
-    /// unveränderte Originaldatei — dieselbe, die der Server geliefert hätte,
-    /// Bit für Bit. Es gibt keinen Grund, der eine Umrechnung nennen könnte,
-    /// also ist `reasons` leer.
+    /// The method is `directPlay`, and that is no euphemism: it *is* the unchanged
+    /// original file, the same one the server would have delivered, bit for bit.
+    /// There is no reason that could name a conversion, so `reasons` is empty.
     ///
-    /// `playSessionID` ist `nil`: ohne Server gibt es keine Sitzung. Was
-    /// gesehen wurde, meldet die App nach, sobald wieder Netz da ist.
+    /// `playSessionID` is `nil`: without a server there is no session. What was
+    /// watched is reported once the network is back.
     ///
-    /// `bildcodec` ist ``Downloadposten/bildcodec`` — ohne Quelle die einzige
-    /// Angabe, an der ``softwareDekoder`` hängt (XviD auch offline).
-    public static func vonDerPlatte(_ datei: URL, container: String?,
+    /// `videoCodec` is ``Downloadposten/bildcodec``; without a source it is the only
+    /// information ``softwareDecoder`` depends on (XviD, also offline).
+    public static func fromSlab(_ file: URL, container: String?,
                              mediaSourceID: String? = nil,
-                             bildcodec: String? = nil) -> PlaybackPlan {
-        PlaybackPlan(url: datei, method: .directPlay,
+                             videoCodec: String? = nil) -> PlaybackPlan {
+        PlaybackPlan(url: file, method: .directPlay,
                      mediaSourceID: mediaSourceID, playSessionID: nil,
-                     container: container, reasons: [], quelle: nil,
-                     plattenBildcodec: bildcodec)
+                     container: container, reasons: [], source: nil,
+                     plattenImageCodec: videoCodec)
     }
 }
 
-/// Der Strom, an dem die Direktwiedergabe scheitert.
+/// The stream that stops direct playback.
 public struct TranscodeReason: Sendable, Equatable {
     public enum Kind: String, Sendable {
         case video    = "Video"
@@ -81,13 +80,13 @@ public struct TranscodeReason: Sendable, Equatable {
         case subtitle = "Untertitel"
         case container = "Container"
 
-        /// `rawValue` bleibt die Kennung, das hier ist die Beschriftung.
-        var beschriftung: String {
+        /// `rawValue` stays the identifier, this is the label.
+        var label: String {
             switch self {
-            case .video:     uebersetzt("Video")
-            case .audio:     uebersetzt("Audio")
-            case .subtitle:  uebersetzt("Untertitel")
-            case .container: uebersetzt("Container")
+            case .video:     translated("Video")
+            case .audio:     translated("Audio")
+            case .subtitle:  translated("Untertitel")
+            case .container: translated("Container")
             }
         }
     }
@@ -98,18 +97,18 @@ public struct TranscodeReason: Sendable, Equatable {
 
     public var text: String {
         if let detail {
-            return uebersetzt("\(kind.beschriftung) „\(codec)“ wird nicht direkt unterstützt (\(detail)).")
+            return translated("\(kind.label) „\(codec)“ wird nicht direkt unterstützt (\(detail)).")
         }
-        return uebersetzt("\(kind.beschriftung) „\(codec)“ steht nicht im Geräteprofil.")
+        return translated("\(kind.label) „\(codec)“ steht nicht im Geräteprofil.")
     }
 }
 
 public extension PlaybackPlan {
 
-    /// Baut aus der Serverantwort den Plan für den Player.
+    /// Builds the plan for the player from the server response.
     ///
-    /// Bei Direct Play und Direct Stream zeigt die URL auf die Originaldatei.
-    /// Nur beim Transcode benutzen wir die vom Server gelieferte `TranscodingUrl`.
+    /// For Direct Play and Direct Stream the URL points to the original file.
+    /// Only for Transcode is the server's `TranscodingUrl` used.
     static func make(
         from response: PlaybackInfoResponse,
         itemID: String,
@@ -118,32 +117,32 @@ public extension PlaybackPlan {
         serverBase: URL
     ) throws -> PlaybackPlan? {
 
-        guard let source = besteQuelle(response.mediaSources) else {
-            // Mit Grund ist es eine Ablehnung, kein „nichts da" — und die
-            // soll der Nutzer lesen können.
-            if let grund = response.errorCode, !grund.isEmpty {
-                throw JellyfinError.wiedergabeAbgelehnt(grund)
+        guard let source = bestSource(response.mediaSources) else {
+            // With a reason it is a rejection, not "nothing there", and the user should
+            // be able to read it.
+            if let reason = response.errorCode, !reason.isEmpty {
+                throw JellyfinError.playbackRejected(reason)
             }
             return nil
         }
-        // **Ohne Adresse zum Umwandeln läuft die Originaldatei — dann heißt es
-        // auch so.** Verlangt eine Bitratengrenze Umwandeln, hat der Server
-        // das Transcoding aber aus, nennt er keine `TranscodingUrl`; gespielt
-        // wird unten die Rohdatei. Stand hier trotzdem `.transcode`, zeigte
-        // die App „transkodiert", während Jellyfin richtig „Direct Play" sah.
+        // **Without an address to convert, the original file plays, and it is called
+        // that.** If a bitrate limit demands conversion but the server has transcoding
+        // off, it names no `TranscodingUrl`; the raw file is played below. If it still
+        // said `.transcode`, the app would show "transcoding" while Jellyfin correctly
+        // saw "Direct Play".
         let method: DeliveryMethod = source.transcodingUrl == nil ? .directPlay : source.deliveryMethod
 
-        // **Die Adresse des Servers gilt, sobald es eine gibt.**
+        // **The server's address applies as soon as there is one.**
         //
-        // Bisher nur beim Transcode. Beim Umpacken liefert Jellyfin ebenfalls
-        // eine `TranscodingUrl` — und nur die trägt den Startpunkt. Wer
-        // stattdessen die Rohdatei nimmt, bekommt sie wieder von vorn.
+        // Not only for Transcode: when remuxing, Jellyfin also delivers a
+        // `TranscodingUrl`, and only that one carries the start position. Taking the
+        // raw file instead starts from the beginning again.
         //
         let url: URL
         if method != .directPlay, let path = source.transcodingUrl {
-            // TranscodingUrl kommt als serverrelativer Pfad zurück — und muss
-            // den Unterpfad eines Reverse-Proxys behalten, siehe dort.
-            guard let composed = AppModelURLNormalizer.serverrelativ(path, basis: serverBase) else {
+            // TranscodingUrl comes back as a server-relative path, and must keep the
+            // subpath of a reverse proxy, see there.
+            guard let composed = AppModelURLNormalizer.serverRelative(path, base: serverBase) else {
                 throw JellyfinError.invalidServerURL
             }
             url = composed
@@ -159,34 +158,32 @@ public extension PlaybackPlan {
             container: source.container,
             reasons: method == .transcode ? diagnose(source: source, profile: profile) : [],
 
-            quelle: source
+            source: source
         )
     }
 
-    /// Die Quelle, die am wenigsten Arbeit macht.
+    /// The source that takes the least work.
     ///
-    /// Jellyfin liefert mehrere, wenn ein Titel in mehreren Fassungen vorliegt
-    /// — 4K neben 1080p, Kino- neben Langfassung. Vorher wurde blind die erste
-    /// genommen. Stand dort ausgerechnet die Fassung, die umgewandelt werden
-    /// müsste, wandelte die App um, obwohl daneben eine lag, die unverändert
-    /// läuft. Das ist genau der Fall, den es diese App zu vermeiden gibt.
+    /// Jellyfin delivers several when a title exists in several versions: 4K next
+    /// to 1080p, theatrical next to extended cut. Taking the first blindly would
+    /// convert if that happened to be the version that needs converting, although
+    /// another one plays unchanged, exactly the case this app exists to avoid.
     ///
-    /// Bei Gleichstand bleibt es bei der Reihenfolge des Servers — der sortiert
-    /// selbst schon sinnvoll, und `min(by:)` ist stabil, solange der Vergleich
-    /// echt kleiner verlangt.
-    static func besteQuelle(_ quellen: [MediaSource]) -> MediaSource? {
-        quellen.min { links, rechts in rang(links) < rang(rechts) }
+    /// On a tie the server's order stays; it already sorts sensibly, and `min(by:)`
+    /// is stable as long as the comparison requires strictly smaller.
+    static func bestSource(_ sources: [MediaSource]) -> MediaSource? {
+        sources.min { left, right in rank(left) < rank(right) }
     }
 
-    private static func rang(_ quelle: MediaSource) -> Int {
-        switch quelle.deliveryMethod {
+    private static func rank(_ source: MediaSource) -> Int {
+        switch source.deliveryMethod {
         case .directPlay:   0
         case .directStream: 1
         case .transcode:    2
         }
     }
 
-    /// Vergleicht die Ströme der Datei mit dem, was das Profil zulässt.
+    /// Compares the file's streams with what the profile allows.
     static func diagnose(source: MediaSource, profile: DeviceProfile) -> [TranscodeReason] {
         var found: [TranscodeReason] = []
 
@@ -194,7 +191,7 @@ public extension PlaybackPlan {
         if let container = source.container,
            !container.split(separator: ",").contains(where: { declaredContainers.contains(String($0)) }) {
             found.append(TranscodeReason(kind: .container, codec: container,
-                                         detail: uebersetzt("nicht im Profil deklariert")))
+                                         detail: translated("nicht im Profil deklariert")))
         }
 
         let video = Set(DeviceProfile.vlcVideoCodecs)
@@ -208,12 +205,12 @@ public extension PlaybackPlan {
                 found.append(TranscodeReason(kind: .video, codec: codec, detail: nil))
             case "Audio" where !audio.contains(codec):
                 found.append(TranscodeReason(kind: .audio, codec: codec,
-                                             detail: stream.channels.map { uebersetzt("\($0) Kanäle") }))
+                                             detail: stream.channels.map { translated("\($0) Kanäle") }))
             case "Subtitle" where !subs.contains(codec):
-                // Der häufigste Fall: ein Untertitelformat fehlt im Profil,
-                // der Server brennt es ein und muss dafür das Video neu rechnen.
+                // The most common case: a subtitle format is missing from the profile, the
+                // server burns it in and has to re-encode the video for it.
                 found.append(TranscodeReason(kind: .subtitle, codec: codec,
-                                             detail: uebersetzt("würde eingebrannt")))
+                                             detail: translated("würde eingebrannt")))
             default:
                 continue
             }

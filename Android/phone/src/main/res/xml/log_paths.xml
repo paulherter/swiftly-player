@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the folder with the shared log file (`Protokolldatei`). -->
+<paths>
+    <cache-path name="protokoll" path="protokoll/" />
+</paths>

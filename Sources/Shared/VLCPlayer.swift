@@ -14,34 +14,34 @@ import AppKit
 #endif
 import VLCKit
 
-/// **Wie Textuntertitel aussehen** (SRT, WebVTT, ASS ohne eigenen Stil).
+/// **How text subtitles look** (SRT, WebVTT, ASS without its own style).
 ///
-/// VLCs Vorgabe war Helvetica Neue, 6,25 % der Bildhoehe, dicke schwarze
-/// Kontur (4 % der Schrifthoehe) und ein harter halbdunkler Versatz — laut
-/// und billig. Vorbild ist Netflix: halbfett, weiss, feine Kontur, leichter
-/// Schatten, etwas hoeher ueber dem Rand. Linux, Windows und Android setzen
-/// dieselben Werte (`Abspieler.swift`, `PlayerSeite.kt`).
+/// VLC's default was Helvetica Neue, 6.25 % of the picture height, a thick
+/// black outline (4 % of the font height) and a hard semi-dark offset: loud
+/// and cheap. The model is Netflix: semibold, white, thin outline, light
+/// shadow, a bit higher above the edge. Linux, Windows and Android use the
+/// same values (`Player.swift`, `PlayerPage.kt`).
 ///
-/// - **Schrift:** Inter SemiBold liegt der App bei (`Mittel/`, OFL). Die
-///   Systemschrift erreicht VLC nicht: `fonts/darwin.c` sucht ueber CoreText
-///   nach Familiennamen, SF Pro ist dort unsichtbar. Angemeldet fuer den
-///   Prozess findet CoreText Inter und liefert VLC den Dateipfad.
-/// - **Groesse:** Faktor auf VLCs Vorgabe (6,25 % der
-///   Bildhoehe). Am Fernseher etwas groesser, weil man weiter weg sitzt.
-/// - **Kontur/Schatten:** `outline-thickness` ist Prozent der Schrifthoehe;
-///   3 statt VLCs 4. VLC kann keinen weichen Schatten, deshalb nur ein
-///   kurzer, halbdurchsichtiger Versatz nach unten. Auf hellem Bild gegen
-///   2 % Kontur verglichen: die wirkte dort hohl und schlecht lesbar.
-/// - **Rand:** `sub-margin` in Bildpunkten des Videos; VLC 4 setzt den Text
-///   sonst dichter an die Unterkante als VLC 3.
+/// - **Font:** Inter SemiBold ships with the app (`Medium/`, OFL). The system
+/// font does not reach VLC: `fonts/darwin.c` looks up family names via
+/// CoreText, where SF Pro is invisible. Registered for the process, CoreText
+/// finds Inter and hands VLC the file path.
+/// - **Size:** factor on VLC's default (6.25 % of the picture height), a bit
+/// larger on TV because viewers sit farther away.
+/// - **Outline/shadow:** `outline-thickness` is a percentage of the font
+/// height; 3 instead of VLC's 4. VLC cannot do a soft shadow, so only a short,
+/// semi-transparent downward offset. Compared against a 2 % outline on a
+/// bright picture: that looked hollow and was hard to read.
+/// - **Margin:** `sub-margin` in video pixels; VLC 4 otherwise places the
+/// text closer to the bottom edge than VLC 3.
 ///
-/// ASS mit eigenem Stil zeichnet libass, Bilduntertitel (PGS, VobSub, DVB)
-/// sind fertige Bilder — beide bleiben, wie sie sind.
-enum Untertitelstil {
-    static let schriftname = "Inter18pt-SemiBold"
+/// ASS with its own style is drawn by libass, and picture subtitles (PGS,
+/// VobSub, DVB) are finished images; both stay as they are.
+enum SubtitleStyle {
+    static let fontName = "Inter18pt-SemiBold"
 
-    static let vlcOptionen = [
-        "--freetype-font=\(schriftname)",
+    static let vlcOptions = [
+        "--freetype-font=\(fontName)",
         "--freetype-color=16777215",
         "--freetype-outline-thickness=3",
         "--freetype-outline-opacity=230",
@@ -51,8 +51,8 @@ enum Untertitelstil {
         "--sub-margin=30",
     ]
 
-    /// Faktor auf VLCs Vorgabe (1 = 6,25 % der Bildhoehe).
-    @MainActor static var groesse: Float {
+    /// Factor on VLC's default (1 = 6.25 % of the picture height).
+    @MainActor static var size: Float {
         #if os(tvOS)
         0.88
         #elseif os(iOS)
@@ -62,105 +62,101 @@ enum Untertitelstil {
         #endif
     }
 
-    static func schriftAnmelden() {
-        guard let adresse = Bundle.main.url(forResource: "Inter-SemiBold", withExtension: "ttf") else {
-            Protokoll.schreib("[Untertitel] Inter-SemiBold.ttf fehlt im Paket")
+    static func fontSignIn() {
+        guard let address = Bundle.main.url(forResource: "Inter-SemiBold", withExtension: "ttf") else {
+            AppLog.writeOut("[Untertitel] Inter-SemiBold.ttf fehlt im Paket")
             return
         }
-        var fehler: Unmanaged<CFError>?
-        if !CTFontManagerRegisterFontsForURL(adresse as CFURL, .process, &fehler) {
-            Protokoll.schreib("[Untertitel] Schrift nicht angemeldet: \(fehler?.takeRetainedValue().localizedDescription ?? "?")")
+        var error: Unmanaged<CFError>?
+        if !CTFontManagerRegisterFontsForURL(address as CFURL, .process, &error) {
+            AppLog.writeOut("[Untertitel] Schrift nicht angemeldet: \(error?.takeRetainedValue().localizedDescription ?? "?")")
         }
     }
 }
 
-/// Schreibt Meldungen zusaetzlich in eine Datei im App-Container.
+/// Additionally writes messages to a file in the app container.
 ///
-/// Beim Test mit ausgeschaltetem WLAN reisst die Protokollverbindung zum Mac
-/// mit ab — ohne Datei bleibt ausgerechnet der interessante Teil unsichtbar.
-/// Abholen mit Werkzeuge/protokoll-holen.sh
-enum Protokoll {
-    nonisolated(unsafe) private static var griff: FileHandle?
-    private static let sperre = NSLock()
+/// When testing with Wi-Fi off, the log connection to the Mac drops too; without
+/// a file the interesting part stays invisible.
+enum AppLog {
+    nonisolated(unsafe) private static var grip: FileHandle?
+    private static let barrier = NSLock()
 
-    /// **Auf dem Fernseher nicht `Documents`.**
+    /// **Not `Documents` on TV.**
     ///
-    /// tvOS gibt Apps kein beschreibbares Dokumentenverzeichnis — `createFile`
-    /// schlaegt dort fehl, und zwar lautlos, weil der Rueckgabewert niemanden
-    /// interessiert. Das Protokoll hat auf tvOS also **nie** geschrieben, und
-    /// niemandem ist es aufgefallen: ein Werkzeug, das stumm nichts tut, sieht
-    /// aus wie ein Werkzeug, an dem es nichts zu sehen gibt. Gemerkt haben wir
-    /// es erst, als der Ordner beim Abholen leer war.
+    /// tvOS gives apps no writable documents directory; `createFile` fails there,
+    /// silently, because nobody checks the return value. The log therefore
+    /// **never** wrote on tvOS and nobody noticed: a tool that silently does
+    /// nothing looks like one with nothing to show.
     ///
-    /// `Caches` ist dort das, was geht. Fuer eine Datei, die ohnehin bei
-    /// 256 KB gekappt wird und nur der Fehlersuche dient, ist das richtig —
-    /// sie soll gar nicht ueberdauern.
-    static let pfad: URL = {
+    /// `Caches` is what works there. For a file that is capped at 256 KB anyway
+    /// and serves debugging only, that is right; it should not persist.
+    static let path: URL = {
         #if os(tvOS)
-        let ordner: FileManager.SearchPathDirectory = .cachesDirectory
+        let folder: FileManager.SearchPathDirectory = .cachesDirectory
         #else
-        let ordner: FileManager.SearchPathDirectory = .documentDirectory
+        let folder: FileManager.SearchPathDirectory = .documentDirectory
         #endif
         return FileManager.default
-            .urls(for: ordner, in: .userDomainMask)[0]
+            .urls(for: folder, in: .userDomainMask)[0]
             .appendingPathComponent("swiftly.log")
     }()
 
-    static func schreib(_ text: String) {
-        // **Der Speicher gilt in jedem Bau** — daraus teilt der Nutzer sein
-        // Protokoll (`Protokollring`, Profil → „Protokoll teilen"). Geschwärzt wird
-        // dort beim Eintragen.
-        Protokollring.geteilt.anhaengen(text)
+    static func writeOut(_ text: String) {
+        // **The buffer applies in every build.** The user shares their log from it
+        // (`LogRing`, Profile -> "Share log"). Redaction happens there on
+        // entry.
+        LogRing.shared.append(text)
 
-        // Ein Fehlersuch-Werkzeug gehört nicht in die ausgelieferte Fassung:
-        // die Datei liegt in `Documents`, wird in iCloud gesichert und wächst
-        // im Betrieb bis 256 KB. `Logger` bleibt, der ist dafür gemacht.
+        // A debugging tool does not belong in the shipped version: the file lives in
+        // `Documents`, is backed up to iCloud and grows to 256 KB at runtime.
+        // `Logger` stays, it is made for this.
         #if !DEBUG
         return
         #else
         print(text)
-        let stempel = String(format: "%.3f", Date().timeIntervalSince1970)
-        let zeile = "\(stempel) \(text)\n"
-        sperre.lock(); defer { sperre.unlock() }
-        if griff == nil {
+        let stamp = String(format: "%.3f", Date().timeIntervalSince1970)
+        let row = "\(stamp) \(text)\n"
+        barrier.lock(); defer { barrier.unlock() }
+        if grip == nil {
             let fm = FileManager.default
-            if !fm.fileExists(atPath: pfad.path) {
-                fm.createFile(atPath: pfad.path, contents: nil)
+            if !fm.fileExists(atPath: path.path) {
+                fm.createFile(atPath: path.path, contents: nil)
             }
-            // Beim Start kappen, wenn sie gross geworden ist. Sie dient der
-            // Fehlersuche, nicht der Archivierung.
-            if let groesse = try? fm.attributesOfItem(atPath: pfad.path)[.size] as? Int,
-               groesse > 256 * 1024 {
-                try? Data().write(to: pfad)
+            // Truncate at launch if it has grown large. It is for debugging, not
+            // archiving.
+            if let size = try? fm.attributesOfItem(atPath: path.path)[.size] as? Int,
+               size > 256 * 1024 {
+                try? Data().write(to: path)
             }
-            griff = try? FileHandle(forWritingTo: pfad)
-            // `_ =`, weil `seekToEnd()` den neuen Versatz zurueckgibt und
-            // `try?` daraus ein `UInt64?` macht, das niemand liest.
-            _ = try? griff?.seekToEnd()
+            grip = try? FileHandle(forWritingTo: path)
+            // `_ =` because `seekToEnd()` returns the new offset and `try?` turns it
+            // into a `UInt64?` that nobody reads.
+            _ = try? grip?.seekToEnd()
         }
-        try? griff?.write(contentsOf: Data(zeile.utf8))
+        try? grip?.write(contentsOf: Data(row.utf8))
         #endif
     }
 }
 
-/// **Die ersten Sekunden nach dem Öffnen, auf die Millisekunde.**
+/// **The first seconds after opening, to the millisecond.**
 ///
-/// Gemeldet am 27.09.2026: auf allen Geräten hängt das Bild etwa eine
-/// Sekunde nach jedem Start einmal kurz, danach läuft es. Das Technikschild
-/// sieht davon nichts — es mittelt über eine Sekunde. Welcher der Kandidaten
-/// es ist (Tonausgang und Uhr, Spurwahl, Ladeschirm, erste Meldung an den
-/// Server, blockierter Hauptlauf), sagt nur eine Zeitachse. Jede Zeile trägt
-/// deshalb `[Start] +ms` ab dem Öffnen und landet im geteilten Protokoll.
+/// Reported: on all devices the picture stalls briefly about a second after
+/// every start, then runs fine. The tech badge sees nothing of it because it
+/// averages over a second. Which candidate it is (audio output and clock,
+/// track selection, loading screen, first report to the server, blocked main
+/// thread) only a timeline can tell. Every line therefore carries
+/// `[Start] +ms` from opening and lands in the shared log.
 ///
-/// Läuft nur die ersten ``dauer`` Sekunden nach einem Öffnen. Im Debug-Bau
-/// an, sonst aus — der 10-ms-Takt soll nicht bei den Testern laufen.
-/// Einschalten: Schlüssel `startmessung` auf `true` in den Standardwerten.
-/// Gehört wieder entfernt, sobald die Ursache feststeht.
-final class Startmessung: @unchecked Sendable {
-    static let geteilt = Startmessung()
+/// Runs only for the first ``dauer`` seconds after opening. On in debug
+/// builds, off otherwise: the 10 ms tick should not run for testers.
+/// Enable: key `startmessung` set to `true` in the user defaults.
+/// Remove once the cause is known.
+final class StartMeasurement: @unchecked Sendable {
+    static let shared = StartMeasurement()
 
-    /// So lange nach dem Öffnen wird gemessen.
-    static let dauer: TimeInterval = 4
+    /// Measured for this long after opening.
+    static let duration: TimeInterval = 4
 
     static var an: Bool {
         #if DEBUG
@@ -170,41 +166,41 @@ final class Startmessung: @unchecked Sendable {
         #endif
     }
 
-    private let sperre = NSLock()
-    private var beginn: Date?
+    private let barrier = NSLock()
+    private var beginning: Date?
 
-    /// Neuer Start: die Uhr beginnt bei null.
-    func beginnen() {
+    /// New start: the clock begins at zero.
+    func begin() {
         guard Self.an else { return }
-        sperre.lock(); beginn = Date(); sperre.unlock()
+        barrier.lock(); beginning = Date(); barrier.unlock()
     }
 
-    /// Millisekunden seit dem Öffnen, oder `nil` außerhalb des Fensters.
-    var millisekunden: Int? {
-        sperre.lock(); defer { sperre.unlock() }
-        guard let beginn else { return nil }
-        let seit = Date().timeIntervalSince(beginn)
-        return seit <= Self.dauer ? Int(seit * 1000) : nil
+    /// Milliseconds since opening, or `nil` outside the window.
+    var milliseconds: Int? {
+        barrier.lock(); defer { barrier.unlock() }
+        guard let beginning else { return nil }
+        let since = Date().timeIntervalSince(beginning)
+        return since <= Self.duration ? Int(since * 1000) : nil
     }
 
-    /// Eine Zeile mit Zeitstempel — nur im Fenster, aus jedem Thread.
-    func marke(_ text: String) {
-        guard let ms = millisekunden else { return }
-        Protokoll.schreib("[Start] +\(ms) ms \(text)")
+    /// A timestamped line, only inside the window, from any thread.
+    func mark(_ text: String) {
+        guard let ms = milliseconds else { return }
+        AppLog.writeOut("[Start] +\(ms) ms \(text)")
     }
 
-    /// VLC-Meldungen, die im Fenster zusätzlich durchgelassen werden: alles,
-    /// was von Uhr, Tonausgang und verspäteten Bildern handelt.
-    static let vlcStichworte = ["late", "early", "sampl", "discontinu", "flush",
+    /// VLC messages additionally let through inside the window: everything
+    /// about clock, audio output and late pictures.
+    static let vlcStitchWords = ["late", "early", "sampl", "discontinu", "flush",
                                 "jitter", "drift", "screwed", "clock", "restart",
                                 "buffering done", "decoder wait", "first picture",
                                 "aout", "vout"]
 
-    /// Von den `debug`-Zeilen nur die, die sagen, wann der Ton wirklich
-    /// anläuft und ob die Uhr danach umspringt. Eng gefasst: auf `debug`
-    /// meldet VLC hunderte Zeilen je Sekunde, und wer alle schreibt, misst
-    /// das Schreiben mit.
-    static let vlcDebugStichworte = ["deferring start", "starting late", "outputlatency",
+    /// Of the `debug` lines only those saying when audio really starts and
+    /// whether the clock jumps afterwards. Narrow on purpose: at `debug` VLC
+    /// emits hundreds of lines per second, and writing them all measures the
+    /// writing.
+    static let vlcDebugKeywords = ["deferring start", "starting late", "outputlatency",
                                      "iobufferduration", "displayed late", "clock context",
                                      "resetting master clock", "discontinuity", "too late",
                                      "audio output", "output on", "underrun",
@@ -212,10 +208,10 @@ final class Startmessung: @unchecked Sendable {
 }
 
 #if os(iOS)
-/// Was VLC über die Wiedergabe wissen muss. Alle Zeiten in Millisekunden.
+/// What VLC needs to know about playback. All times in milliseconds.
 ///
-/// Diese Methoden ruft VLC aus seinem eigenen Thread — deshalb keine
-/// Main-Actor-Isolation und kein Zugriff auf die Oberfläche.
+/// VLC calls these methods from its own thread, hence no main-actor
+/// isolation and no access to the UI.
 final class MediaController: NSObject, VLCPictureInPictureMediaControlling {
     private let player: VLCMediaPlayer
     init(player: VLCMediaPlayer) { self.player = player }
@@ -234,87 +230,87 @@ final class MediaController: NSObject, VLCPictureInPictureMediaControlling {
 }
 #endif
 
-/// Die View, in der das Bild landet — und zugleich VLCs Zeichenfläche.
+/// The view the picture lands in, and also VLC's drawing surface.
 ///
-/// `drawable` nimmt laut Header eine UIView direkt an. Genau das wird hier
-/// genutzt, statt ein eigenes Objekt dazwischenzuschalten: VLC hängt seine
-/// Bildfläche ein und erwartet, dass sie **sofort** hängt. Ein Umweg über
-/// `Task { @MainActor in … }` kommt zu spät — bei jedem Sprung baut VLC den
-/// Videoausgang neu auf, und die Fläche wurde nie angehängt. Genau daran lag
-/// das Standbild nach dem Spulen, samt festgefahrenem Player.
+/// According to the header, `drawable` accepts a UIView directly. That is
+/// used here instead of an intermediate object: VLC attaches its video surface
+/// and expects it to be attached **immediately**. A detour through
+/// `Task { @MainActor in ... }` is too late: on every seek VLC rebuilds the
+/// video output and the surface was never attached. That caused the frozen
+/// picture after seeking, along with a stuck player.
 ///
-/// Für Bild-im-Bild genügt `VLCPictureInPictureDrawable`; dessen beide
-/// Rückgaben kollidieren nicht mit UIView. Die Konformität steht weiter
-/// unten in einer eigenen Erweiterung — auf tvOS gibt es kein Bild-im-Bild,
-/// und eine bedingte Vererbungsliste ginge nur mit unbalanciertem Rumpf.
+/// For picture-in-picture, `VLCPictureInPictureDrawable` suffices; its two
+/// return values do not collide with UIView. The conformance is further down
+/// in its own extension: tvOS has no picture-in-picture, and a conditional
+/// inheritance list would need an unbalanced body.
 ///
-/// **Diese Datei liegt bewusst in `Shared`.** Alles hier — der
-/// `mkv_trusted`-Kniff, die Startposition als Medienoption, die
-/// Stillstandserkennung, das Neuverbinden nach Netzwechsel — gilt auf beiden
-/// Plattformen wörtlich gleich. Zweimal gepflegt liefe es auseinander, und
-/// ausgerechnet der Sprungfehler käme auf einer Seite zurück.
+/// **This file deliberately lives in `Shared`.** Everything here (the
+/// `mkv_trusted` trick, the start position as a media option, stall
+/// detection, reconnecting after a network change) applies verbatim on both
+/// platforms. Maintained twice it would drift apart, and the seek bug would
+/// return on one side.
 @MainActor
-final class VLCPlayerView: Basisansicht {
+final class VLCPlayerView: BaseView {
 
     static let log = Logger(subsystem: "de.paulherter.swiftly", category: "player")
 
-    /// Nur für die Fehlersuche: legt Bild-im-Bild vollständig still, damit
-    /// sich messen lässt, ob VLCs Videoausgang dadurch anders aufgebaut wird.
-    /// Swiftfin hat kein PiP — und Swiftfin springt schnell.
-    static var pipAbgeschaltet = false
+    /// Debugging only: disables picture-in-picture entirely to measure whether
+    /// VLC's video output is built differently as a result.
+    /// Swiftfin has no PiP, and Swiftfin seeks quickly.
+    static var pipDisabled = false
 
-    /// **Eine eigene Bibliothek, damit VLC keine Bilder vorab wegwirft.**
+    /// **A custom library so VLC does not drop pictures up front.**
     ///
-    /// DVD-Rips ruckelten auf Apple TV und iPhone, 4K-HEVC nicht; beim
-    /// Kollegen alle DVD-Rips, also auch progressive. Rückmeldung am Gerät:
-    /// dekodiert Ø 22,6–25,4, gezeigt Ø 22,6–23,7, verworfen bis 298.
+    /// DVD rips stuttered on Apple TV and iPhone, 4K HEVC did not; a tester saw
+    /// all DVD rips stutter, progressive ones too. Device feedback: decoded
+    /// avg 22.6-25.4, shown avg 22.6-23.7, dropped up to 298.
     ///
-    /// **Der Ausgabeweg, im tvOS-Simulator protokolliert** (dessen VLCKit ist
-    /// wie am Geraet mit TARGET_OS_IPHONE gebaut): `samplebufferdisplay`
-    /// nimmt nur `CVPX_BGRA` (VLCSampleBufferDisplay.m, CreateCVPXConverter).
-    /// Software-Bilder laufen deshalb `I420 -> swscale -> BGRA -> cvpx`, jedes
-    /// Bild auf der CPU. HEVC kommt von VideoToolbox schon als CVPixelBuffer.
-    /// Der Mac nimmt einen anderen Weg (`vout_macosx`, OpenGL) und zeigt
-    /// davon nichts.
+    /// **The output path, logged in the tvOS simulator** (its VLCKit is built
+    /// with TARGET_OS_IPHONE like the device): `samplebufferdisplay` only
+    /// accepts `CVPX_BGRA` (VLCSampleBufferDisplay.m, CreateCVPXConverter).
+    /// Software pictures therefore go `I420 -> swscale -> BGRA -> cvpx`, every
+    /// picture on the CPU. HEVC arrives from VideoToolbox as a CVPixelBuffer
+    /// already. The Mac takes a different path (`vout_macosx`, OpenGL) and shows
+    /// none of this.
     ///
-    /// **Verworfen wird vor dem Zeichnen, nach einer Schaetzung.** Der vout
-    /// nimmt den *Hoechstwert* von Filter- und Renderdauer
-    /// (video_output.c, IsPictureLateToStaticFilter) und wirft ein Bild weg,
-    /// wenn es danach zu spaet kaeme. Eine einzige Zeitspitze im Wandler
-    /// kostet so ganze Bilder, obwohl die CPU nicht ausgelastet ist.
+    /// **Dropping happens before drawing, based on an estimate.** The vout takes
+    /// the *maximum* of filter and render duration (video_output.c,
+    /// IsPictureLateToStaticFilter) and discards a picture if it would then be
+    /// too late. A single time spike in the converter costs whole pictures even
+    /// though the CPU is not saturated.
     ///
-    /// Gemessen am 15.09.2026 gegen 33e3c0e, tvOS-Simulator, Prozess auf
-    /// Hintergrund gedrosselt, nachgebaute Dateien (MPEG-2 720×576 5 Mbit/s,
-    /// AC-3 5.1, VobSub, MKV), je 25 s, Deinterlace `bob`:
+    /// Measured on the tvOS simulator, process throttled to background priority,
+    /// rebuilt files (MPEG-2 720x576 5 Mbit/s, AC-3 5.1, VobSub, MKV), 25 s each,
+    /// deinterlace `bob`:
     ///
-    ///     Einstellung                          gezeigt/s   verloren
-    ///     Vorgabe, interlaced (2 Laeufe)       12,4–12,8   311
-    ///     Vorgabe, progressiv (2 Laeufe)       14,0–16,4   211–284
-    ///     --no-drop-late-frames, interlaced    24,9–25,3   0
-    ///     --no-drop-late-frames, progressiv    24,0–24,9   0
-    ///     :no-drop-late-frames (Medium)        11,2        344
-    ///     --no-skip-frames allein              15,5        230
-    ///     --swscale-mode=0                     15,2        246
+    /// Setting                              shown/s     lost
+    /// default, interlaced (2 runs)         12.4-12.8   311
+    /// default, progressive (2 runs)        14.0-16.4   211-284
+    /// --no-drop-late-frames, interlaced    24.9-25.3   0
+    /// --no-drop-late-frames, progressive   24.0-24.9   0
+    /// :no-drop-late-frames (media)         11.2        344
+    /// --no-skip-frames alone               15.5        230
+    /// --swscale-mode=0                     15.2        246
     ///
-    /// Ungedrosselt laeuft alles mit 25/s. **Als Medienoption wirkt es
-    /// nicht:** der vout haengt am Player und erbt von der Bibliothek, nicht
-    /// vom Eingang. `initWithOptions:` haengt an VLCKits Vorgaben an
-    /// (VLCLibrary.m:169), es geht also nichts verloren. Android setzt die
-    /// Option in `Spielwerk` seit jeher.
+    /// Unthrottled, everything runs at 25/s. **As a media option it has no
+    /// effect:** the vout hangs off the player and inherits from the library, not
+    /// from the input. `initWithOptions:` appends to VLCKit's defaults
+    /// (VLCLibrary.m:169), so nothing is lost. Android has always set the option
+    /// in `PlayItem`.
     ///
-    /// Was es kostet: ein wirklich zu spaetes Bild wird kurz spaet gezeigt
-    /// statt weggelassen. Bei VideoToolbox-Material tritt das kaum ein.
-    /// Quellen: code.videolan.org/videolan/vlc/-/merge_requests/3436
-    /// (samplebufferdisplay), VLC-Quelltext im Baubaum.
-    static let bibliothek: VLCLibrary = {
-        Untertitelstil.schriftAnmelden()
-        // `--deinterlace-mode=bob` aus demselben Grund hier und nicht am
-        // Medium — siehe `oeffnen`, Abschnitt „Entflechten".
+    /// Cost: a really late picture is shown late instead of skipped. With
+    /// VideoToolbox material this hardly occurs.
+    /// Sources: code.videolan.org/videolan/vlc/-/merge_requests/3436
+    /// (samplebufferdisplay), VLC source in the build tree.
+    static let library: VLCLibrary = {
+        SubtitleStyle.fontSignIn()
+        // `--deinterlace-mode=bob` here and not on the media for the same reason;
+        // see `open`, section "Entflechten".
         return VLCLibrary(options: ["--no-drop-late-frames", "--deinterlace-mode=bob"]
-                          + Untertitelstil.vlcOptionen)
+                          + SubtitleStyle.vlcOptions)
     }()
 
-    let player = VLCMediaPlayer(library: VLCPlayerView.bibliothek)
+    let player = VLCMediaPlayer(library: VLCPlayerView.library)
 
     #if os(iOS)
     fileprivate lazy var controller = MediaController(player: player)
@@ -329,955 +325,927 @@ final class VLCPlayerView: Basisansicht {
         #if canImport(UIKit)
         backgroundColor = .black
         #else
-        // AppKit kennt keine Hintergrundfarbe auf der Ansicht; sie sitzt auf
-        // der Ebene, und die muss dafuer erst angefordert werden.
+        // AppKit has no background color on the view; it sits on the layer, which
+        // must be requested first.
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         #endif
 
-        // **VLCs eigenes Protokoll — und zwar dorthin, wo es lesbar ist.**
+        // **VLC's own log, sent where it can be read.**
         //
-        // Es lief auf `VLCConsoleLogger`, also auf die Systemkonsole. Am
-        // Fernseher kommt da niemand heran; die Zeilen, die sagen, woran der
-        // Demuxer haengt, waren geschrieben und trotzdem unerreichbar.
-        // Derselbe Fehler wie beim eigenen Protokoll, das in `Documents`
-        // schrieb, wo tvOS nichts schreiben laesst: ein Werkzeug, das lautlos
-        // ins Leere laeuft, sieht aus wie eines, das nichts zu melden hat.
-        VLCPlayerView.bibliothek.loggers = [Dateiprotokoll()]
-        player.currentSubTitleFontScale = Untertitelstil.groesse
+        // It used to go to `VLCConsoleLogger`, i.e. the system console. Nobody can
+        // reach that on a TV; the lines that say what the demuxer is stuck on were
+        // written and still unreachable. Same mistake as the own log writing to
+        // `Documents`, where tvOS permits no writes: a tool that silently runs into
+        // nothing looks like one with nothing to report.
+        VLCPlayerView.library.loggers = [FileLog()]
+        player.currentSubTitleFontScale = SubtitleStyle.size
 
-        // Muss die View selbst sein: VLC prüft die Zeichenfläche auf
-        // VLCPictureInPictureDrawable, und die Schnittstelle sitzt hier.
-        // Auf die Innenansicht gelegt, wird PiP nie bereit — und gebracht
-        // hat die Innenansicht ohnehin nichts.
+        // Must be the view itself: VLC checks the drawable for
+        // VLCPictureInPictureDrawable, and the interface lives here. Placed on an
+        // inner view, PiP never becomes ready, and the inner view brings nothing
+        // anyway.
         player.drawable = self
-        player.delegate = melder
-        melder.beginntZuSpielen = { [weak self] in
-            Task { @MainActor in self?.startpositionSetzen() }
+        player.delegate = reporter
+        reporter.startPlay = { [weak self] in
+            Task { @MainActor in self?.startPositionSet() }
         }
 
-        // VLC 4 verbindet eine abgerissene HTTP-Verbindung nicht neu. In
-        // modules/access/http/resource.c gibt es zwar ein 'retry:', das gilt
-        // aber nur fuer Anmeldung und Weiterleitung, nicht fuer einen Abriss
-        // mitten im Strom. Der prefetch-Puffer (16 MiB, gut zehn Sekunden)
-        // laeuft dann leer und danach steht das Bild. Genau deshalb haengen
-        // sich Plex und Streamyfin an derselben Stelle auf.
-        netzwache.pathUpdateHandler = { [weak self] pfad in
-            let strecke = pfad.availableInterfaces.map(\.name).joined(separator: ",")
-            let erreichbar = pfad.status == .satisfied
-            Task { @MainActor in self?.streckeGewechselt(strecke, erreichbar: erreichbar) }
+        // VLC 4 does not reconnect a dropped HTTP connection. In
+        // modules/access/http/resource.c there is a 'retry:', but it applies only to
+        // authentication and redirects, not to a drop mid-stream. The prefetch
+        // buffer (16 MiB, a good ten seconds) then runs dry and the picture freezes.
+        // That is exactly why Plex and Streamyfin hang at the same spot.
+        networkGuard.pathUpdateHandler = { [weak self] path in
+            let leg = path.availableInterfaces.map(\.name).joined(separator: ",")
+            let reachable = path.status == .satisfied
+            Task { @MainActor in self?.legSwitched(leg, reachable: reachable) }
         }
-        melder.zustandWechsel = { [weak self] zustand in
-            Task { @MainActor in self?.zustandGewechselt(zustand) }
+        reporter.stateSwitch = { [weak self] condition in
+            Task { @MainActor in self?.stateSwitched(condition) }
         }
-        melder.untertitelHinzu = { [weak self] in
-            Task { @MainActor in self?.offenenUntertitelSetzen() }
+        reporter.subtitleTo = { [weak self] in
+            Task { @MainActor in self?.openSubtitleSet() }
         }
-        netzwache.start(queue: DispatchQueue(label: "de.paulherter.swiftly.netz"))
+        networkGuard.start(queue: DispatchQueue(label: "de.paulherter.swiftly.netz"))
     }
 
-    // MARK: - Netzwechsel und Haenger
+    // MARK: - Network change and stalls
 
-    private let netzwache = NWPathMonitor()
-    private var letzteStrecke: String?
-    private var letzteAdresse: URL?
-    private var letzterContainer: String?
-    private var letzterNeuaufbau = Date.distantPast
-    private var wachhund: Timer?
-    private var letzteBekannteZeit: Int32 = -1
+    private let networkGuard = NWPathMonitor()
+    private var lastLeg: String?
+    private var lastAddress: URL?
+    private var lastContainer: String?
+    private var lastNewLayout = Date.distantPast
+    private var watchdog: Timer?
+    private var lastKnownTime: Int32 = -1
 
-    /// Letzter Stand der beiden VLC-Zaehler, fuer ``bildfluss(jetzt:)``.
-    /// `nil` heisst: noch kein Vergleichswert, also noch kein Urteil.
-    private var letzteBilder: UInt64?
-    private var letzteBytes: UInt64?
-    private var stehtSeit: Date?
-    private var netzErreichbar = true
-    private var wartetAufNetz = false
-    private var netzwechselSeit: Date?
-    private var einsteuernSeit: Date?
-    /// Vom Benutzer beendet. Ohne das wuerde das Schliessen des Players
-    /// selbst als Abriss gelten und den Strom wieder aufmachen.
-    private var absichtlichBeendet = false
-    /// `stop()` ist endgueltig: die Flaeche wird danach abgeraeumt. Getrennt
-    /// von `absichtlichBeendet`, weil `play` jenes zuruecksetzt. Ein spaeter
-    /// Folgenwechsel spielte sonst auf der abgeraeumten Flaeche weiter —
-    /// Ton ohne Bild (Audit 16.09.2026, T1-H3).
-    private var endgueltigGestoppt = false
-    /// Solange gesetzt, hat der frisch aufgebaute Strom seine Stelle noch
-    /// nicht erreicht. Bis dahin darf seine Zeit die gute Stelle nicht
-    /// ueberschreiben — sonst merkt sich der Wachhund die Sekunden, die der
-    /// neue Strom von vorn abspielt, und die Rettung landet beim naechsten
-    /// Mal am Filmanfang.
-    private var erstStelle: Double?
+    /// Last state of the two VLC counters, for ``bildfluss(now:)``.
+    /// `nil` means no comparison value yet, hence no verdict.
+    private var lastImages: UInt64?
+    private var lastBytes: UInt64?
+    private var standsSince: Date?
+    private var networkReachable = true
+    private var waitsNetwork = false
+    private var networkSwitchSince: Date?
+    private var settleSince: Date?
+    /// Ended by the user. Without it, closing the player would itself count as
+    /// a drop and reopen the stream.
+    private var intentionalEnded = false
+    /// `stop()` is final: the surface is torn down afterwards. Separate from
+    /// `intentionalEnded` because `play` resets that one. Otherwise a later
+    /// episode change would keep playing on the torn-down surface: audio without
+    /// picture.
+    private var finallyStopped = false
+    /// While set, the freshly built stream has not reached its position yet.
+    /// Until then its time must not overwrite the good position, or the watchdog
+    /// remembers the seconds the new stream plays from the start, and the next
+    /// recovery lands at the beginning of the movie.
+    private var firstPoint: Double?
 
-    /// **Stumm, solange die Startstelle angesteuert wird.**
+    /// **Muted while the start position is being sought.**
     ///
-    /// Der Sprung auf die gemerkte Stelle geht bewusst *nach* dem Öffnen los
-    /// und nicht als `:start-time` — siehe `startpositionSetzen()`. Er braucht
-    /// dafür ein laufendes Bild (`player.time > 0`). Das Bild ist in dieser
-    /// Zeit ausgeblendet, der **Ton war es nicht**: man hörte rund eine
-    /// Sekunde vom Anfang der Folge, dann sprang es an die richtige Stelle.
+    /// The jump to the remembered position deliberately happens *after* opening,
+    /// not as `:start-time`; see `startPositionSet()`. It needs a running
+    /// picture (`player.time > 0`). The picture is hidden meanwhile, **the audio
+    /// was not**: you heard about a second from the start of the episode, then it
+    /// jumped to the right place.
     ///
-    /// Gemeldet auf dem Mac, betrifft aber jede Plattform — es ist derselbe
-    /// Weg.
+    /// Reported on the Mac, but it affects every platform since it is the same
+    /// path.
     ///
-    /// Geregelt über die Lautstärke, **nicht** über `isMuted`: für
-    /// `setMuted:` ist bei VLCKit eine Verklemmung gemeldet (Fehler 111).
-    private var lautstaerkeVorher: Int32?
+    /// Controlled via the volume, **not** `isMuted`: a deadlock is reported for
+    /// VLCKit's `setMuted:` (bug 111).
+    private var volumePrior: Int32?
 
-    /// Die vom Zuschauer gestellte Lautstärke (0 bis 100), `nil` = nie gestellt.
-    /// Wird beim Freigeben des Rückhalts eingesetzt und sonst sofort.
-    private var wunschLautstaerke: Int32?
+    /// The volume set by the viewer (0 to 100), `nil` = never set.
+    /// Applied when the hold is released, otherwise immediately.
+    private var requestVolume: Int32?
 
-    func lautstaerkeSetzen(_ prozent: Int) {
-        let wert = Int32(min(max(prozent, 0), 100))
-        wunschLautstaerke = wert
-        // Solange der Ton zurückgehalten wird, gehört ihm die Lautstärke.
-        guard lautstaerkeVorher == nil, let ton = player.audio else { return }
-        ton.volume = wert
+    func volumeSet(_ percent: Int) {
+        let value = Int32(min(max(percent, 0), 100))
+        requestVolume = value
+        // While audio is held back, the hold owns the volume.
+        guard volumePrior == nil, let audio = player.audio else { return }
+        audio.volume = value
     }
 
-    private func tonZurueckhalten(_ zurueck: Bool) {
-        // **Der stille Ausgang.** Gibt es den Tonausgang beim Oeffnen noch
-        // nicht, faellt der Rueckhalt hier lautlos aus — und der Zuschauer
-        // hoert genau die Sekunde vom Anfang, die er nicht hoeren soll.
-        // 09.2026 wieder gemeldet, obwohl der Rueckhalt gebaut ist; ob es
-        // dieser Ausgang ist, sagt nur eine Messung.
-        guard let ton = player.audio else {
-            Protokoll.schreib("[Ton] Rueckhalt(\(zurueck)) ohne Tonausgang — wirkungslos")
+    private func holdBackAudio(_ back: Bool) {
+        // **The silent exit.** If the audio output does not exist yet at opening,
+        // the hold silently fails here, and the viewer hears exactly the second from
+        // the start that they should not hear. Reported again although the hold is
+        // in place; only a measurement can say whether this exit is the cause.
+        guard let audio = player.audio else {
+            AppLog.writeOut("[Ton] Rueckhalt(\(back)) ohne Tonausgang — wirkungslos")
             return
         }
-        if zurueck {
-            guard lautstaerkeVorher == nil else { return }
-            // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
+        if back {
+            guard volumePrior == nil else { return }
+            // **What VLC reports before the first sound is not a measurement.**
             //
-            // `tonZurueckhalten(true)` laeuft in `oeffnen(…)`, also bevor
-            // `player.media` gesetzt ist — der Tonausgang existiert da noch
-            // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
-            // „wiederhergestellt" hiess damit: dauerhaft stumm.
+            // `holdBackAudio(true)` runs in `open(...)`, before `player.media` is
+            // set: the audio output does not exist yet and `volume` is 0 or -1. Storing
+            // that and later "restoring" it meant permanently silent.
             //
-            // Genau das.
-            let jetzt = ton.volume
-            lautstaerkeVorher = jetzt > 0 ? jetzt : 100
-            ton.volume = 0
-            Protokoll.schreib("[Ton] stumm ab jetzt (war \(jetzt), gemerkt \(lautstaerkeVorher!))")
-        } else if let vorher = lautstaerkeVorher {
-            lautstaerkeVorher = nil
-            Startmessung.geteilt.marke("Ton freigegeben")
-            // Der Wunsch des Zuschauers (Lautstärkeregler), sonst der Stand
-            // von vor dem Rückhalt. 0 ist nur dann Ziel, wenn er es gestellt hat.
-            let ziel = wunschLautstaerke ?? (vorher > 0 ? vorher : 100)
-            if Self.uebergabeAufblenden {
-                Self.uebergabeAufblenden = false
-                tonAufblenden(ton, auf: ziel)
+            // That is exactly what happened.
+            let now = audio.volume
+            volumePrior = now > 0 ? now : 100
+            audio.volume = 0
+            AppLog.writeOut("[Ton] stumm ab jetzt (war \(now), gemerkt \(volumePrior!))")
+        } else if let before = volumePrior {
+            volumePrior = nil
+            StartMeasurement.shared.mark("Ton freigegeben")
+            // The viewer's wish (volume slider), otherwise the state from before the
+            // hold. 0 is a target only if the viewer set it.
+            let target = requestVolume ?? (before > 0 ? before : 100)
+            if Self.handoffFadeIn {
+                Self.handoffFadeIn = false
+                audioFadeIn(audio, on: target)
             } else {
-                ton.volume = ziel
-                Protokoll.schreib("[Ton] wieder laut (\(vorher))")
+                audio.volume = target
+                AppLog.writeOut("[Ton] wieder laut (\(before))")
             }
-            tonstandMelden()
+            audioStateReport()
         }
     }
 
-    /// **Wo der Ton nach dem Freigeben steht** — Teil der ``Startmessung``.
-    /// Lautstärke und Stummschaltung, wie VLC sie liest, ob Tonpuffer
-    /// wirklich gespielt werden, und wie die Tonsitzung dasteht — für den
-    /// Fall, dass nach einem Start Bild ohne Ton kommt.
-    private func tonstandMelden() {
-        guard Startmessung.an else { return }
-        for verzoegerung in [1.0, 2.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + verzoegerung) { [weak self] in
-                guard let self, let ton = self.player.audio else { return }
-                let stat = self.player.media?.statistics
-                var zeile = "Tonstand · Lautstärke \(ton.volume) · stumm \(ton.isMuted)"
-                    + " · Ton dekodiert \(stat?.decodedAudio ?? 0), gespielt \(stat?.playedAudioBuffers ?? 0),"
-                    + " verloren \(stat?.lostAudioBuffers ?? 0)"
+    /// **Where the audio stands after release**, part of ``Startmessung``.
+    /// Volume and mute as VLC reads them, whether audio buffers are really
+    /// played, and the state of the audio session, for the case that a start
+    /// yields picture without sound.
+    private func audioStateReport() {
+        guard StartMeasurement.an else { return }
+        for delay in [1.0, 2.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, let audio = self.player.audio else { return }
+                let stats = self.player.media?.statistics
+                var row = "Tonstand · Lautstärke \(audio.volume) · stumm \(audio.isMuted)"
+                    + " · Ton dekodiert \(stats?.decodedAudio ?? 0), gespielt \(stats?.playedAudioBuffers ?? 0),"
+                    + " verloren \(stats?.lostAudioBuffers ?? 0)"
                 #if !os(macOS)
-                let sitzung = AVAudioSession.sharedInstance()
-                let ausgaenge = sitzung.currentRoute.outputs.map { "\($0.portType.rawValue)/\($0.channels?.count ?? 0)" }
-                zeile += " · Sitzung \(sitzung.category.rawValue)/\(sitzung.mode.rawValue)"
-                    + " Politik \(sitzung.routeSharingPolicy.rawValue) Optionen \(sitzung.categoryOptions.rawValue)"
-                    + " · Ausgang \(ausgaenge.joined(separator: ",")) · Systemlautstärke \(sitzung.outputVolume)"
-                    + " · andere spielen \(sitzung.isOtherAudioPlaying)"
+                let session = AVAudioSession.sharedInstance()
+                let outputs = session.currentRoute.outputs.map { "\($0.portType.rawValue)/\($0.channels?.count ?? 0)" }
+                row += " · Sitzung \(session.category.rawValue)/\(session.mode.rawValue)"
+                    + " Politik \(session.routeSharingPolicy.rawValue) Optionen \(session.categoryOptions.rawValue)"
+                    + " · Ausgang \(outputs.joined(separator: ",")) · Systemlautstärke \(session.outputVolume)"
+                    + " · andere spielen \(session.isOtherAudioPlaying)"
                 #endif
-                Startmessung.geteilt.marke(zeile)
+                StartMeasurement.shared.mark(row)
             }
         }
     }
 
-    /// **Die nächste Wiedergabe kommt aus einer Übergabe** („Hier
-    /// weiterschauen"): sie startet stumm und blendet den Ton auf, sobald
-    /// ihr erstes Bild steht — statt mit voller Lautstärke unter der Karte
-    /// loszulegen. Gilt für genau einen Start.
-    static var uebergabeAufblenden = false
+    /// **The next playback comes from a handoff** ("continue watching here"):
+    /// it starts muted and fades the audio in as soon as its first picture is
+    /// up, instead of starting at full volume beneath the card. Applies to
+    /// exactly one start.
+    static var handoffFadeIn = false
 
-    /// **Das stehende Bild als Bild** — für die Karte des Abgebers, die in
-    /// einer eigenen Ebene über allem liegt. VLC schreibt es als PNG; hier
-    /// wird bis 0,6 s darauf gewartet. `breite` in Pixeln, Seitenverhältnis
-    /// bleibt. `nil`, wenn nichts kam.
-    func standbild(breite: Int) async -> CGImage? {
+    /// **The frozen frame as an image**, for the handing-off card, which lies in
+    /// its own layer above everything. VLC writes it as PNG; this waits up to
+    /// 0.6 s for it. `width` in pixels, aspect ratio preserved. `nil` if
+    /// nothing arrived.
+    func stillImage(width: Int) async -> CGImage? {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("uebergabe-\(UUID().uuidString).png")
-        player.saveVideoSnapshot(at: url.path, withWidth: Int32(breite), andHeight: 0)
+        player.saveVideoSnapshot(at: url.path, withWidth: Int32(width), andHeight: 0)
         defer { try? FileManager.default.removeItem(at: url) }
         for _ in 0 ..< 40 {
             try? await Task.sleep(for: .milliseconds(15))
-            guard let quelle = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  CGImageSourceGetStatus(quelle) == .statusComplete,
-                  let bild = CGImageSourceCreateImageAtIndex(quelle, 0, nil) else { continue }
-            return bild
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  CGImageSourceGetStatus(source) == .statusComplete,
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { continue }
+            return image
         }
         return nil
     }
 
-    /// Linear auf `ziel` in 0,6 s, in Schritten von 40 ms — VLC hat keine
-    /// eigene Rampe. Über die Lautstärke, nicht `isMuted` (siehe oben).
-    private func tonAufblenden(_ ton: VLCAudio, auf ziel: Int32) {
-        Protokoll.schreib("[Ton] Übergabe: blendet auf (\(ziel))")
-        let schritte = 15
+    /// Linear to `target` over 0.6 s in 40 ms steps; VLC has no ramp of its own.
+    /// Via the volume, not `isMuted` (see above).
+    private func audioFadeIn(_ audio: VLCAudio, on target: Int32) {
+        AppLog.writeOut("[Ton] Übergabe: blendet auf (\(target))")
+        let steps = 15
         Task { @MainActor [weak self] in
-            for i in 1 ... schritte {
+            for i in 1 ... steps {
                 try? await Task.sleep(for: .milliseconds(40))
-                guard let self, !self.absichtlichBeendet, self.lautstaerkeVorher == nil else { return }
-                ton.volume = Int32(Double(ziel) * Double(i) / Double(schritte))
+                guard let self, !self.intentionalEnded, self.volumePrior == nil else { return }
+                audio.volume = Int32(Double(target) * Double(i) / Double(steps))
             }
         }
     }
 
 
-    /// **Sicherheitsnetz gegen dauerhafte Stille.**
+    /// **Safety net against permanent silence.**
     ///
-    /// Der Ton wird an genau einer Stelle zurueckgehalten und an vier wieder
-    /// freigegeben. Wird eine davon je uebersehen — oder kommt ein Weg dazu,
-    /// den heute niemand kennt —, bleibt der Film stumm, und das ist der
-    /// schlimmste stille Fehler, den dieser Player haben kann. Deshalb prueft
-    /// der Takt es zusaetzlich: wird nicht mehr eingesteuert, darf nichts
-    /// mehr zurueckgehalten werden.
-    private func tonFreigebenFallsFaellig() {
-        guard lautstaerkeVorher != nil, !stelltEin else { return }
-        Protokoll.schreib("[Ton] Rueckhalt hing noch — freigegeben")
-        tonZurueckhalten(false)
+    /// Audio is held back in exactly one place and released in four. If one of
+    /// them is ever missed, or a path appears that nobody knows today, the movie
+    /// stays silent, the worst silent failure this player can have. The tick
+    /// therefore checks as well: if fading in is no longer in progress, nothing
+    /// may remain held back.
+    private func releaseAudioIfDue() {
+        guard volumePrior != nil, !seeksToStart else { return }
+        AppLog.writeOut("[Ton] Rueckhalt hing noch — freigegeben")
+        holdBackAudio(false)
     }
 
-    /// Der Strom wird gerade neu aufgebaut.
+    /// The stream is currently being rebuilt.
     ///
-    /// Die Oberflaeche braucht das: beim Abriss liest VLC ein Dateiende,
-    /// setzt die Zeit auf die Laenge und wirft das Bild weg. Ohne dieses
-    /// Wissen zeigt der Schieber das Filmende und der Schirm bleibt schwarz —
-    /// als waere der Film zu Ende, statt dass nur die Leitung fehlt.
-    private(set) var stelltWiederHer = false {
+    /// The UI needs this: on a drop VLC reads an end of file, sets the time to the
+    /// length and discards the picture. Without this knowledge the slider shows
+    /// the end of the movie and the screen stays black, as if the movie were over
+    /// rather than just the connection missing.
+    private(set) var restoring = false {
         didSet {
-            guard oldValue != stelltWiederHer else { return }
-            onWiederherstellung?(stelltWiederHer)
+            guard oldValue != restoring else { return }
+            onRestoration?(restoring)
         }
     }
-    var onWiederherstellung: ((Bool) -> Void)?
+    var onRestoration: ((Bool) -> Void)?
 
-    /// Die Stelle, die der Oberflaeche waehrend des Wiederaufbaus angezeigt
-    /// werden soll — statt des Filmendes, auf das VLC gesprungen ist.
-    var guteStelle: Double { letzteGutePosition }
+    /// The position the UI should show during the rebuild, instead of the movie
+    /// end VLC jumped to.
+    var goodPoint: Double { lastGoodPosition }
 
-    /// Der Strom steuert seine Startstelle noch an.
+    /// The stream is still seeking its start position.
     ///
-    /// Solange das laeuft, meldet VLC die Zeit des noch nicht gesprungenen
-    /// Stroms — also fast null. Wer die anzeigt, laesst den Schieber erst auf
-    /// Anfang stehen und dann sichtbar nach vorn springen.
-    var stelltEin: Bool { startposition != nil || erstStelle != nil }
+    /// While that runs, VLC reports the time of the not-yet-seeked stream, i.e.
+    /// nearly zero. Showing it makes the slider sit at the start first and then
+    /// visibly jump forward.
+    var seeksToStart: Bool { startPosition != nil || firstPoint != nil }
 
-    /// **Ist der Start ganz abgeschlossen?** Auch der pausierte Start
-    /// (`startsprung`) — der setzt am Ziel von selbst fort. Wer vorher
-    /// anhält (gemeinsam schauen: „bereit" melden), dem liefe der Film
-    /// sonst unter der Hand wieder los.
-    var startFertig: Bool { startsprung == nil && !stelltEin }
+    /// **Is the start fully complete?** Including the paused start
+    /// (`startJump`), which resumes by itself at the target. Pausing earlier
+    /// (watch together: reporting "ready") would let the movie start running again
+    /// unnoticed.
+    var startReady: Bool { startJump == nil && !seeksToStart }
 
-    /// Ob fuer diesen Strom `mkv_trusted` gesetzt wurde — siehe `oeffnen`.
-    private(set) var matroskaVertraut = false
+    /// Whether `mkv_trusted` was set for this stream; see `open`.
+    private(set) var matroskaTrusted = false
 
-    // MARK: Sprung ueber die Byte-Stelle
+    // MARK: Seek by byte position
 
-    /// **Ob Spruenge ueber die Zeit bei dieser Datei etwas taugen.**
+    /// **Whether time-based seeks work for this file.**
     ///
-    /// Gemessen, nicht angenommen. Bei einer Folge las VLC den Index der Datei
-    /// und brach beim Auswerten ab — „MKV/Ebml Parser: m_el[mi_level] == NULL",
-    /// danach „loading cues done" mit null Eintraegen. Fuer den naechsten
-    /// Sprung waehlte es dann `fpos 3154, pts 0`, also den Dateianfang, und
-    /// las sich 125 MB vorwaerts. Bei 11 Mbit/s ist das anderthalb Minuten
-    /// fuer einen Sprung, und beim naechsten faengt es von vorn an.
+    /// Measured, not assumed. For one episode VLC read the file's index and
+    /// aborted while parsing ("MKV/Ebml Parser: m_el[mi_level] == NULL"), then
+    /// "loading cues done" with zero entries. For the next seek it then chose
+    /// `fpos 3154, pts 0`, the start of the file, and read 125 MB forward. At
+    /// 11 Mbit/s that is a minute and a half per seek, and the next one starts
+    /// over.
     ///
-    /// Beide VLCKit-Fassungen im Haus verhalten sich gleich; dieselbe Datei
-    /// laeuft in Swiftfin auf VLCKit 3 sofort. Es ist also kein Fehler der
-    /// Alpha, sondern eine Datei, deren Index VLC 4 nicht lesen kann.
-    /// **Nur zur Messung, nicht als Weiche.**
+    /// Both VLCKit versions in use behave the same; the same file plays instantly
+    /// in Swiftfin on VLCKit 3. So this is not an alpha bug but a file whose
+    /// index VLC 4 cannot read.
+    /// **Measurement only, not a switch.**
     ///
-    /// Erster Anlauf sprang bei unbrauchbarem Index ueber den Byte-Anteil
-    /// statt ueber die Zeit. Gemessen: das landet **genauso** am Dateianfang.
-    /// VLC 4 schickt beide durch denselben Sucher, und der hat ohne
-    /// Sprungpunkte nur die schon gelesenen Cluster. Der Rueckfall war also
-    /// derselbe Weg unter anderem Namen — und weil er zusaetzliche Spruenge
-    /// ausloest, von denen jeder neu vorwaerts liest, machte er es schlimmer.
+    /// A first attempt seeked by byte fraction instead of time when the index was
+    /// unusable. Measured: that lands **just as** at the start of the file. VLC 4
+    /// sends both through the same seeker, which without seek points has only the
+    /// clusters already read. The fallback was the same path under another name,
+    /// and because it triggers extra seeks that each read forward anew, it made
+    /// things worse.
     ///
-    /// Was bleibt, ist die Frage: kam der Sprung an? Sie steht im Protokoll
-    /// und haelt die Notbremse zurueck, solange noch einer unterwegs ist.
-    private var offenesZiel: Double?
-    private var offenSeit: Date?
-    /// Wie oft fuer dieses Ziel schon ein anderer Weg probiert wurde.
-    private var sprungStufe = 0
-    /// Wann zuletzt ein Sprung angestossen wurde — egal ob er ankam.
-    private var letzterSprungbefehl = Date.distantPast
-    /// Ob fuer diese Datei der zweite Weg der bessere ist — einmal gemessen,
-    /// dann fuer alle weiteren Spruenge gemerkt.
-    private var zeitsetzenBesser = false
+    /// What remains is the question: did the seek arrive? It goes to the log and
+    /// holds back the emergency brake while one is in flight.
+    private var openTarget: Double?
+    private var openSince: Date?
+    /// How often another path has already been tried for this target.
+    private var jumpLevel = 0
+    /// When a seek was last triggered, whether or not it arrived.
+    private var lastJumpCommand = Date.distantPast
+    /// Whether the second path is the better one for this file; measured once,
+    /// then remembered for all later seeks.
+    private var timeSetBetter = false
 
 
 
-    /// Ob VLC schon ein Bild ausgibt. Davor ist die Flaeche schwarz.
+    /// Whether VLC is already outputting a picture. Before that the surface is
+    /// black.
     ///
-    /// Nach einem Folgenwechsel erst, wenn das **neue** Medium ein Bild
-    /// gezeigt hat — bis dahin gehoeren Bildausgabe und Uhr noch der alten
-    /// Folge (`Zeitannahme.bildGehoertDemMedium`).
-    var zeigtBild: Bool {
-        let bilder = mediumGewechselt ? (player.media?.statistics.displayedPictures ?? 0) : 0
-        let gilt = Zeitannahme.bildGehoertDemMedium(bildausgabe: player.hasVideoOut,
-                                                    gezeigteBilder: bilder,
-                                                    nachWechsel: mediumGewechselt)
-        if gilt, mediumGewechselt { mediumGewechselt = false }
-        return gilt
+    /// After an episode change only once the **new** media has shown a picture;
+    /// until then the video output and clock still belong to the old episode
+    /// (`TimeAssumption.imageBelongsMedium`).
+    var showsImage: Bool {
+        let images = mediumSwitched ? (player.media?.statistics.displayedPictures ?? 0) : 0
+        let applies = TimeAssumption.imageBelongsMedium(videoOutput: player.hasVideoOut,
+                                                    shownImages: images,
+                                                    afterChange: mediumSwitched)
+        if applies, mediumSwitched { mediumSwitched = false }
+        return applies
     }
-    /// `play` auf eine Flaeche, die schon ein Medium hatte.
-    private var mediumGewechselt = false
+    /// `play` on a surface that already had media.
+    private var mediumSwitched = false
 
-    /// Die letzte Stelle, an der die Wiedergabe nachweislich lief.
+    /// The last position at which playback demonstrably ran.
     ///
-    /// Der Wert ist der Kern der Rettung. Beim Abriss liest VLC ein
-    /// Dateiende, setzt die Zeit auf die Laenge des Films und geht auf
-    /// Stopped — wer die Position erst dann abfragt, bekommt das Filmende
-    /// zurueck und baut dort wieder auf. Genau das ist passiert: schwarzes
-    /// Bild in der letzten Sekunde. Deshalb wird die Stelle laufend
-    /// mitgeschrieben, solange das Bild wirklich vorwaerts geht.
-    private var letzteGutePosition: Double = 0
+    /// This value is the core of the recovery. On a drop VLC reads an end of
+    /// file, sets the time to the movie length and goes to Stopped; querying the
+    /// position only then returns the movie end, and rebuilding there gives a
+    /// black picture in the last second. So the position is recorded continuously
+    /// while the picture really moves forward.
+    private var lastGoodPosition: Double = 0
 
-    private var laengeSekunden: Double { durationSeconds }
+    private var lengthSeconds: Double { durationSeconds }
 
-    /// Beim Wechsel WLAN <-> Mobilfunk bekommt das Geraet eine andere
-    /// Quelladresse — die bestehende TCP-Verbindung ist damit tot, ohne dass
-    /// jemand sie schliesst.
+    /// When switching Wi-Fi <-> cellular the device gets a different source
+    /// address; the existing TCP connection is dead without anyone closing it.
     ///
-    /// Ohne Netz hat ein Aufbau keinen Zweck; der Versuch wuerde nur die
-    /// Sperrfrist verbrauchen und den echten Versuch beim Wiederkommen
-    /// blockieren. Stattdessen wird vorgemerkt, dass noch etwas offen ist.
-    private func streckeGewechselt(_ strecke: String, erreichbar: Bool) {
-        guard !endgueltigGestoppt else { return }
-        let vorher = letzteStrecke
-        letzteStrecke = strecke
-        netzErreichbar = erreichbar
+    /// Without a network a rebuild is pointless; the attempt would only use up
+    /// the cooldown and block the real attempt when the network returns. Instead
+    /// it is noted that something is still pending.
+    private func legSwitched(_ leg: String, reachable: Bool) {
+        guard !finallyStopped else { return }
+        let before = lastLeg
+        lastLeg = leg
+        networkReachable = reachable
 
-        guard erreichbar else {
-            if letzteGutePosition > 1 { wartetAufNetz = true }
-            Protokoll.schreib("[Netz] kein Weg mehr — vorgemerkt bei \(Int(letzteGutePosition)) s")
+        guard reachable else {
+            if lastGoodPosition > 1 { waitsNetwork = true }
+            AppLog.writeOut("[Netz] kein Weg mehr — vorgemerkt bei \(Int(lastGoodPosition)) s")
             return
         }
-        // Lief die Wiedergabe schon nicht mehr, sofort ran.
-        if wartetAufNetz {
-            Protokoll.schreib("[Netz] wieder da (\(strecke)) → nachholen")
-            wartetAufNetz = false
-            neuVerbinden(grund: "Netz zurueck")
+        // If playback had already stopped, act right away.
+        if waitsNetwork {
+            AppLog.writeOut("[Netz] wieder da (\(leg)) → nachholen")
+            waitsNetwork = false
+            newConnect(reason: "Netz zurueck")
             return
         }
-        guard let vorher, vorher != strecke else { return }
+        guard let before, before != leg else { return }
 
-        // Hier wurde frueher sofort neu aufgebaut — und damit ein voller
-        // Puffer weggeworfen, aus dem VLC noch minutenlang haette spielen
-        // koennen. Der Wechsel wird nur vermerkt; eingegriffen wird erst,
-        // wenn das Bild wirklich steht. Ist die Unterbrechung kuerzer als der
-        // Vorlauf, merkt niemand etwas.
-        netzwechselSeit = Date()
-        Protokoll.schreib("[Netz] Wechsel: \(vorher) → \(strecke) — Puffer laeuft weiter")
+        // Rebuilding immediately here used to throw away a full buffer from which
+        // VLC could have kept playing for minutes. The change is only noted; action
+        // is taken only when the picture really stops. If the interruption is shorter
+        // than the buffer, nobody notices.
+        networkSwitchSince = Date()
+        AppLog.writeOut("[Netz] Wechsel: \(before) → \(leg) — Puffer laeuft weiter")
     }
 
-    /// Ein Abriss sieht aus wie ein Filmende. Unterschieden wird an der
-    /// letzten guten Stelle: liegt die deutlich vor dem Schluss, war es kein
-    /// Ende, sondern ein toter Strom.
-    private func zustandGewechselt(_ zustand: VLCMediaPlayerState) {
-        Startmessung.geteilt.marke("Zustand \(VLCMediaPlayerStateToString(zustand))")
-        // Bei jedem Wechsel nachziehen: sonst zeigt der Knopf im
-        // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
+    /// A drop looks like an end of movie. They are told apart by the last good
+    /// position: if it is well before the end, it was a dead stream, not an end.
+    private func stateSwitched(_ condition: VLCMediaPlayerState) {
+        StartMeasurement.shared.mark("Zustand \(VLCMediaPlayerStateToString(condition))")
+        // Update on every change, otherwise the picture-in-picture window's button
+        // keeps showing playback although it is paused.
         refreshPiPState()
-        anzeigeschlafZulassen()
-        leerlaufsperreHalten()
+        displaySleepLet()
+        holdIdleLock()
 
-        // Pausierter Start: jeder Wechsel ist ein Anlass, sofort statt beim
-        // naechsten Takt — bei Paused ist das der Moment zum Fortsetzen.
-        if startsprung != nil { startsprungPruefen(anlass: VLCMediaPlayerStateToString(zustand)) }
+        // Paused start: every change is a reason to act immediately rather than at
+        // the next tick; for Paused this is the moment to resume.
+        if startJump != nil { startJumpCheck(occasion: VLCMediaPlayerStateToString(condition)) }
 
-        // **Der Knopf folgt der Maschine, nicht der Uhr.**
+        // **The button follows the machine, not the clock.**
         //
-        // Der Zustand des Abspielknopfes hing bisher am Takt, und der schlägt
-        // alle 500 ms (`Wiedergabetakt.taktlaenge`). Der Knopf sprang also bis
-        // zu einer halben Sekunde nach dem Druck um.
+        // The play button's state used to depend on the tick, which fires every
+        // 500 ms (`PlaybackTick.tickLength`), so the button flipped up to half a
+        // second after the press.
         //
-        // Setzt man ihn stattdessen sofort im Klick, ist er zu **früh**: das
-        // Bild braucht noch seine Zeit. Am Mac gemessen, dreimal:
+        // Setting it instantly in the click instead is too **early**: the picture
+        // still needs its time. Measured on the Mac, three times:
         //
-        // Klick → VLC meldet „angehalten"   17–25 ms Klick → Filmzeit steht
-        // wirklich   26–36 ms
+        // click -> VLC reports "paused"        17-25 ms
+        // click -> movie time really stops    26-36 ms
         //
-        // Alle Geräte hier laufen mit **120 Hz**, ein Bild ist also 8,3 ms —
-        // das sind drei bis vier Bilder, nicht ein bis zwei. (Hier stand
-        // zuerst die Rechnung für 60 Hz; sie hat den Abstand halbiert und
-        // damit kleiner aussehen lassen, als er ist.) Das ist der Abstand, den
+        // All devices here run at **120 Hz**, so a frame is 8.3 ms: that gap is three
+        // to four frames, not one to two.
         //
-        // Also weder das eine noch das andere: der Knopf hängt an genau der
-        // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf und
-        // Bild im selben Moment still, und der Abstand verschwindet — nicht,
-        // weil er kleiner wird, sondern weil es keine zwei Zeitpunkte mehr
-        // gibt.
+        // So neither: the button hangs on exactly the event with which the machine
+        // itself switches. Button and picture then stop at the same moment and the
+        // gap disappears, not because it shrinks but because there are no longer two
+        // points in time.
         //
-        // Warum nicht schneller: Jellyfin Media Player und Jellium haben das
-        // Problem nicht, aber beide setzen auf **libmpv**, nicht auf libvlc —
-        // andere Ausgabewarteschlange. Das ist kein Kniff zum Übernehmen, das
-        // ist ein anderer Motor.
-        switch zustand {
-        case .playing:  pausiertSeit = nil; laeuftGemeldet?(true); verzoegerungNachziehen()
-        case .paused:   if pausiertSeit == nil { pausiertSeit = Date() }; laeuftGemeldet?(false)
+        // Why not faster: Jellyfin Media Player and Jellium do not have the problem,
+        // but both build on **libmpv**, not libvlc, which has a different output
+        // queue. That is not a trick to copy, that is a different engine.
+        switch condition {
+        case .playing:  pausedSince = nil; runsReported?(true); delayCatchUp()
+        case .paused:   if pausedSince == nil { pausedSince = Date() }; runsReported?(false)
         default:        break
         }
-        guard !absichtlichBeendet else { return }
-        guard zustand == .stopped || zustand == .stopping || zustand == .error else { return }
-        // Ein Fehler vor dem ersten Bild: das Protokoll sagt es, den Grund
-        // nennen die vlc-Zeilen davor. Die Oberfläche erfährt es auch und
-        // zeigt „Das startet nicht" statt endlos Schwarz.
-        if zustand == .error, letzteGutePosition <= 1 {
-            Protokoll.schreib("[VLC] Fehler vor dem ersten Bild")
-            startFehlerGemeldet?("VLC-Fehler vor dem ersten Bild")
+        guard !intentionalEnded else { return }
+        guard condition == .stopped || condition == .stopping || condition == .error else { return }
+        // An error before the first picture: the log says so, the vlc lines before
+        // it give the reason. The UI learns of it too and shows "This will not
+        // start" instead of endless black.
+        if condition == .error, lastGoodPosition <= 1 {
+            AppLog.writeOut("[VLC] Fehler vor dem ersten Bild")
+            startErrorReported?("VLC-Fehler vor dem ersten Bild")
         }
-        let laenge = laengeSekunden
-        guard letzteGutePosition > 1 else { return }
-        // Kennt VLC die Laenge nicht, laesst sich Abriss und gewolltes Ende
-        // nicht unterscheiden. Dann nur eingreifen, wenn kurz zuvor die
-        // Strecke gewechselt hat — sonst baut jeder Stopp den Strom in
-        // Schleife wieder auf.
-        let frisch = netzwechselSeit.map { Date().timeIntervalSince($0) < 90 } ?? false
-        guard laenge > 0 ? letzteGutePosition < laenge - 10 : frisch else { return }
-        Protokoll.schreib("[Netz] Zustand \(zustand.rawValue): Strom tot bei \(Int(letzteGutePosition)) s von \(Int(laenge)) s")
-        neuVerbinden(grund: "Strom abgerissen")
+        let length = lengthSeconds
+        guard lastGoodPosition > 1 else { return }
+        // If VLC does not know the length, a drop and an intended end cannot be
+        // told apart. Then only act if the route changed shortly before; otherwise
+        // every stop would rebuild the stream in a loop.
+        let freshValue = networkSwitchSince.map { Date().timeIntervalSince($0) < 90 } ?? false
+        guard length > 0 ? lastGoodPosition < length - 10 : freshValue else { return }
+        AppLog.writeOut("[Netz] Zustand \(condition.rawValue): Strom tot bei \(Int(lastGoodPosition)) s von \(Int(length)) s")
+        newConnect(reason: "Strom abgerissen")
     }
 
-    /// **Ist der Sprung angekommen, wo er hinsollte?**
+    /// **Did the seek arrive where it should?**
     ///
-    /// Ohne diese Frage bleibt „gesprungen" eine Absicht. Kommt VLC nicht an,
-    /// wird der andere der beiden Sprungwege versucht — welcher taugt, haengt
-    /// an der Datei, siehe `seek(toSeconds:)`.
+    /// Without this question "seeked" remains an intention. If VLC does not
+    /// arrive, the other of the two seek paths is tried; which one works depends
+    /// on the file, see `seek(toSeconds:)`.
     ///
-    /// Zweieinhalb Sekunden Frist: ein Sprung ueber einen brauchbaren Index
-    /// sitzt in unter einer Sekunde — eine Bereichsanfrage, ein Cluster,
-    /// fertig. Laenger zu warten verzoegert nur den Weg, der ankommt.
-    private func sprungNachmessen() {
-        guard let ziel = offenesZiel, let seit = offenSeit else { return }
-        guard Date().timeIntervalSince(seit) > 2.5 else { return }
+    /// Two and a half seconds grace: a seek over a usable index lands in under a
+    /// second (one range request, one cluster). Waiting longer only delays the
+    /// path that arrives.
+    private func jumpPostMeasure() {
+        guard let target = openTarget, let since = openSince else { return }
+        guard Date().timeIntervalSince(since) > 2.5 else { return }
 
-        let ist = positionSeconds
-        let daneben = abs(ist - ziel)
-        if daneben <= 5 {
-            offenesZiel = nil
-            offenSeit = nil
+        let actualValue = positionSeconds
+        let beside = abs(actualValue - target)
+        if beside <= 5 {
+            openTarget = nil
+            openSince = nil
             return
         }
 
-        // **Erst den anderen Weg, dann erst den Server.**
+        // **First the other path, only then the server.**
         //
-        // Der zweite Versuch kostet nichts als einen weiteren Sprungbefehl —
-        // und wenn er ankommt, bleibt die Datei bei Direct Play, ohne dass
-        // der Server etwas tun muss. Erst wenn auch er nicht ankommt, ist es
-        // wirklich die Datei und nicht der Weg.
-        if sprungStufe == 0 {
-            sprungStufe = 1
-            zeitsetzenBesser.toggle()
-            Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam nicht an (steht bei \(Int(ist)) s) → anderer Weg")
-            sprungAusloesen(auf: ziel, ueberZeit: zeitsetzenBesser)
-            offenSeit = Date()
+        // The second attempt costs nothing but another seek command, and if it
+        // arrives, the file stays on direct play without the server doing anything.
+        // Only when it fails too is it really the file and not the path.
+        if jumpLevel == 0 {
+            jumpLevel = 1
+            timeSetBetter.toggle()
+            AppLog.writeOut("[VLC] Sprung auf \(Int(target)) s kam nicht an (steht bei \(Int(actualValue)) s) → anderer Weg")
+            jumpTrigger(on: target, overTime: timeSetBetter)
+            openSince = Date()
             return
         }
 
-        // **Hier endet es.** Frueher bat an dieser Stelle der Server, ab der
-        // Zielstelle zu liefern — er packte den Strom dafuer um. Das war der
-        // Notausgang, solange VLC 4 in manchen Matroska-Dateien nicht springen
-        // konnte. Seit dem Patch am mkv-Sucher springt der Abspieler selbst;
-        // kommt ein Sprung trotzdem auf beiden Wegen nicht an, ist das ein
-        // Befund und keine Gelegenheit, die Grundregel der App zu brechen.
-        zeitsetzenBesser.toggle()
-        Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam auf beiden Wegen nicht an")
-        offenesZiel = nil
-        offenSeit = nil
+        // **It ends here.** This used to ask the server to deliver from the target
+        // position, which remuxed the stream. That was the emergency exit while VLC 4
+        // could not seek in some Matroska files. Since the patch to the mkv seeker
+        // the player seeks by itself; if a seek still fails on both paths, that is a
+        // finding and not an opportunity to break the app's basic rule.
+        timeSetBetter.toggle()
+        AppLog.writeOut("[VLC] Sprung auf \(Int(target)) s kam auf beiden Wegen nicht an")
+        openTarget = nil
+        openSince = nil
     }
 
-    /// **Wach halten darf nur VLCs Leerlaufsperre, nicht die Bildebene.**
+    /// **Only VLC's idle lock may keep the screen awake, not the picture layer.**
     ///
-    /// Bei angehaltenem Film ging das Apple TV nie in den Bildschirmschoner
-    /// und nie in den Ruhezustand (gemeldet 22.09.2026). Die Leerlaufsperre war es
-    /// nicht: `isIdleTimerDisabled` steht im Simulator gemessen nur beim
-    /// Abspielen auf `true` und wird bei Pause und Schliessen sofort `false`,
-    /// auch nach 75 s Pause noch — VLCs `uikit_inhibit` haengt an
-    /// `vout_ChangePause` und macht das richtig.
+    /// With the movie paused, Apple TV never went to the screensaver or to
+    /// sleep. It was not the idle lock: measured in the simulator,
+    /// `isIdleTimerDisabled` is `true` only while playing and becomes `false`
+    /// immediately on pause and close, even after 75 s of pause. VLC's
+    /// `uikit_inhibit` hangs on `vout_ChangePause` and does this correctly.
     ///
-    /// Wach hielt die `AVSampleBufferDisplayLayer`, in die VLC das Bild legt.
-    /// `preventsDisplaySleepDuringVideoPlayback` steht auf iOS und tvOS von
-    /// Haus aus auf `true`, und die Ebene hat keine eigene Zeitbasis (Rate
-    /// immer 1,0). Fuer sie laeuft also jedes Bild, das ankommt — und VLC
-    /// legt auch angehalten weiter Bilder nach: das letzte wird alle 80 ms
-    /// neu gezeigt (`VOUT_REDISPLAY_DELAY`), gemessen gut 11 je Sekunde, 330
-    /// in 30 s Pause. Auf dem Mac nachgestellt: dieselbe Ebene mit dem
-    /// Schalter an haelt `PreventUserIdleDisplaySleep`, solange Bilder kommen,
-    /// mit dem Schalter aus nichts.
+    /// What kept it awake was the `AVSampleBufferDisplayLayer` VLC puts the
+    /// picture in. `preventsDisplaySleepDuringVideoPlayback` is `true` by default
+    /// on iOS and tvOS, and the layer has no timebase of its own (rate always
+    /// 1.0). So every picture that arrives counts as playback for it, and VLC
+    /// keeps feeding pictures while paused: the last one is redisplayed every
+    /// 80 ms (`VOUT_REDISPLAY_DELAY`), measured a good 11 per second, 330 in 30 s
+    /// of pause. Reproduced on the Mac: the same layer with the switch on holds
+    /// `PreventUserIdleDisplaySleep` as long as pictures arrive, with the switch
+    /// off it does not.
     ///
-    /// VLC baut die Ebene bei jedem neuen Bildausgang neu (Folgenwechsel,
-    /// Neuaufbau nach Netzabriss), und sie sitzt eine Ebene tiefer in VLCs
-    /// eigener Fensteransicht. Deshalb bei jedem Zustandswechsel und jede
-    /// Sekunde nachsehen; der Gang durch eine Handvoll Ebenen kostet nichts.
-    /// Auf dem Mac steht der Schalter von Haus aus auf `false`, dort ist das
-    /// eine Absicherung.
-    private func anzeigeschlafZulassen() {
-        func freigeben(_ ebene: CALayer) {
-            if let bild = ebene as? AVSampleBufferDisplayLayer, bild.preventsDisplaySleepDuringVideoPlayback {
-                bild.preventsDisplaySleepDuringVideoPlayback = false
+    /// VLC rebuilds the layer with every new video output (episode change,
+    /// rebuild after a network drop), and it sits one level deeper inside VLC's
+    /// own window view. So check on every state change and every second; walking
+    /// a handful of layers costs nothing. On the Mac the switch defaults to
+    /// `false`, where this is a safeguard.
+    private func displaySleepLet() {
+        func share(_ layer: CALayer) {
+            if let image = layer as? AVSampleBufferDisplayLayer, image.preventsDisplaySleepDuringVideoPlayback {
+                image.preventsDisplaySleepDuringVideoPlayback = false
             }
-            ebene.sublayers?.forEach(freigeben)
+            layer.sublayers?.forEach(share)
         }
-        let wurzel: CALayer? = layer
-        wurzel.map(freigeben)
+        let root: CALayer? = layer
+        root.map(share)
     }
 
-    /// **Den Leerlauf selbst sperren, solange gespielt wird — nicht nur VLC.**
+    /// **Hold the idle lock ourselves while playing, not just VLC.**
     ///
-    /// Gemeldet auf tvOS 1.0.5: die erste Folge läuft ohne Bildschirmschoner,
-    /// nach „Nächste Folge“ kommt er alle fünf Minuten über das Bild. VLC
-    /// sperrt den Leerlauf je Fenster (`vlc_window_UpdateInhibitionUnlocked`:
-    /// nur wenn das Fenster aktiv und im Vollbild ist, gesetzt beim Anlegen
-    /// des Fensters und bei `vout_ChangePause`). Beim Folgenwechsel baut VLC
-    /// den Bildausgang samt Fenster neu; ob die Sperre dort wieder ankommt,
-    /// hängt an dessen Anlauf. Wir verlassen uns nicht darauf: solange
-    /// tatsächlich gespielt wird, steht die Sperre auf `true`, bei Pause,
-    /// Ende und Schliessen sofort auf `false` — die Pause darf den Schoner
-    /// weiter zulassen (22.09.).
-    private func leerlaufsperreHalten() {
+    /// Reported on tvOS: the first episode plays without the screensaver, but
+    /// after "Next episode" it appears every five minutes over the picture. VLC
+    /// locks idle per window (`vlc_window_UpdateInhibitionUnlocked`: only if the
+    /// window is active and fullscreen, set when creating the window and in
+    /// `vout_ChangePause`). On an episode change VLC rebuilds the video output
+    /// with its window; whether the lock arrives again depends on its startup.
+    /// We do not rely on that: while actually playing, the lock is `true`, and on
+    /// pause, end and close immediately `false`; pause may keep allowing the
+    /// screensaver.
+    private func holdIdleLock() {
         #if canImport(UIKit)
-        let soll = !absichtlichBeendet && !endgueltigGestoppt && player.media != nil && player.isPlaying
-        if UIApplication.shared.isIdleTimerDisabled != soll {
-            UIApplication.shared.isIdleTimerDisabled = soll
+        let should = !intentionalEnded && !finallyStopped && player.media != nil && player.isPlaying
+        if UIApplication.shared.isIdleTimerDisabled != should {
+            UIApplication.shared.isIdleTimerDisabled = should
         }
         #endif
     }
 
-    /// Zweite Absicherung fuer Abrisse, bei denen VLC im Zustand Playing
-    /// bleibt und nur die Zeit stehen bleibt — Funkloch, Serveraussetzer.
-    private func stillstandPruefen() {
-        // Zweiter Weg fuer den Startsprung, falls kein Zustandswechsel kommt.
-        if startposition != nil { startpositionSetzen() }
+    /// Second safeguard for drops where VLC stays in Playing and only the time
+    /// stops: dead zone, server hiccup.
+    private func checkStandstill() {
+        // Second path for the start seek, in case no state change comes.
+        if startPosition != nil { startPositionSet() }
 
-        guard !absichtlichBeendet, player.media != nil, player.isPlaying else { return }
+        guard !intentionalEnded, player.media != nil, player.isPlaying else { return }
 
-        sprungNachmessen()
-        tonFreigebenFallsFaellig()
+        jumpPostMeasure()
+        releaseAudioIfDue()
 
-        let jetzt = player.time.intValue
-        let stelle = Double(jetzt) / 1000
+        let now = player.time.intValue
+        let spot = Double(now) / 1000
 
-        // Steuert der Strom noch seine Startstelle an? Dann steht die Zeit
-        // naturgemaess — das ist kein Haenger, und gemerkt wird auch nichts.
+        // Is the stream still seeking its start position? Then the time naturally
+        // stands still; that is no stall, and nothing is recorded.
         //
-        // Diese Pruefung muss *hier* stehen und nicht als Riegel davor: sie
-        // ist zugleich die einzige Stelle, die erstStelle wieder loescht. Als
-        // vorgezogener guard hat sie sich selbst blockiert, der Ladeschirm
-        // blieb ewig stehen und nur der Ton lief.
-        if let ziel = erstStelle {
-            stehtSeit = nil
-            letzteBekannteZeit = jetzt
-            if stelle >= ziel - 10 {
-                erstStelle = nil
-                tonZurueckhalten(false)
+        // This check must live *here* and not as a guard in front: it is also the
+        // only place that clears firstPoint again. As an early guard it blocked
+        // itself, the loading screen stayed forever and only the audio played.
+        if let target = firstPoint {
+            standsSince = nil
+            lastKnownTime = now
+            if spot >= target - 10 {
+                firstPoint = nil
+                holdBackAudio(false)
             } else {
-                einsteuernSeit = einsteuernSeit ?? Date()
-                // Notbremse: kommt der Sprung nie an, darf die Oberflaeche
-                // trotzdem nicht fuer immer im Ladeschirm haengen.
-                if Date().timeIntervalSince(einsteuernSeit!) > 20 {
-                    Protokoll.schreib("[VLC] Einsteuern auf \(Int(ziel)) s aufgegeben, weiter bei \(Int(stelle)) s")
-                    erstStelle = nil
-                    tonZurueckhalten(false)
-                    einsteuernSeit = nil
+                settleSince = settleSince ?? Date()
+                // Emergency brake: if the seek never arrives, the UI must still not hang on
+                // the loading screen forever.
+                if Date().timeIntervalSince(settleSince!) > 20 {
+                    AppLog.writeOut("[VLC] Einsteuern auf \(Int(target)) s aufgegeben, weiter bei \(Int(spot)) s")
+                    firstPoint = nil
+                    holdBackAudio(false)
+                    settleSince = nil
                 }
             }
             return
         }
-        einsteuernSeit = nil
-        guard startposition == nil else { stehtSeit = nil; return }
+        settleSince = nil
+        guard startPosition == nil else { standsSince = nil; return }
 
-        if stelltWiederHer, jetzt > 0 {
-            stelltWiederHer = false
-            Protokoll.schreib("[Netz] wiederhergestellt bei \(Int(stelle)) s")
-            spurenWiederSetzen()
+        if restoring, now > 0 {
+            restoring = false
+            AppLog.writeOut("[Netz] wiederhergestellt bei \(Int(spot)) s")
+            tracksAgainSet()
         }
 
-        if jetzt != letzteBekannteZeit {
-            if erstbildPruefen(jetzt: jetzt) { return }
-            bildfluss(jetzt: jetzt)
-            letzteBekannteZeit = jetzt
-            stehtSeit = nil
-            // **Die Uhr laeuft — aber kommt auch ein Bild?** Ohne diese
-            // Zeilen endete die Pruefung hier, und ein Strom, dessen Uhr
-            // weiterlaeuft, galt fuer immer als gesund. Dieselben Schwellen
-            // wie unten: `Stromwacht` haelt sie an einer Stelle, und eine
-            // falsche davon kostet den Zuschauer zehn Sekunden Film.
-            if let seit = bilderStehenSeit {
-                let dauer = Date().timeIntervalSince(seit)
-                if case .neuVerbinden = Stromwacht.rat(
-                    stillstandSeit: dauer,
-                    netzwechselVor: netzwechselSeit.map { Date().timeIntervalSince($0) },
-                    sprungOffen: offenesZiel != nil,
-                    letzterSprungVor: Date().timeIntervalSince(letzterSprungbefehl),
-                    pufferWuchsVor: melder.pufferWuchsVor) {
-                    bilderStehenSeit = nil
-                    neuVerbinden(grund: "kein neues Bild seit \(Int(dauer)) s, Uhr laeuft weiter")
+        if now != lastKnownTime {
+            if firstFrameCheck(now: now) { return }
+            imageFlow(now: now)
+            lastKnownTime = now
+            standsSince = nil
+            // **The clock runs, but does a picture come?** Without these lines the
+            // check ended here, and a stream whose clock keeps running counted as
+            // healthy forever. Same thresholds as below: `StreamWatch` keeps them in one
+            // place, and a wrong one costs the viewer ten seconds of movie.
+            if let since = imagesStateSince {
+                let duration = Date().timeIntervalSince(since)
+                if case .newConnect = StreamWatch.rat(
+                    standstillSince: duration,
+                    networkChangeForward: networkSwitchSince.map { Date().timeIntervalSince($0) },
+                    jumpOpen: openTarget != nil,
+                    lastJumpForward: Date().timeIntervalSince(lastJumpCommand),
+                    bufferGrewPre: reporter.bufferGrewPre) {
+                    imagesStateSince = nil
+                    newConnect(reason: "kein neues Bild seit \(Int(duration)) s, Uhr laeuft weiter")
                     return
                 }
             }
-            let laenge = laengeSekunden
-            // Nur mitschreiben, was plausibel ist: nach einem Abriss stuende
-            // hier sonst das Filmende drin.
-            if stelle > 0, laenge <= 0 || stelle < laenge - 1 {
-                letzteGutePosition = stelle
+            let length = lengthSeconds
+            // Only record what is plausible: after a drop, the movie end would
+            // otherwise be stored here.
+            if spot > 0, length <= 0 || spot < length - 1 {
+                lastGoodPosition = spot
             }
             return
         }
 
-        let seit = stehtSeit ?? Date()
-        stehtSeit = seit
-        let dauer = Date().timeIntervalSince(seit)
+        let since = standsSince ?? Date()
+        standsSince = since
+        let duration = Date().timeIntervalSince(since)
 
-        // **Die Entscheidung steht in `Stromwacht`, nicht mehr hier.**
+        // **The decision lives in `StreamWatch`, no longer here.**
         //
-        // Fuenf Schwellen, alle gemessen, und eine falsche davon kostet den
-        // Zuschauer zehn Sekunden Film — die Bremse hat einmal genau den
-        // Haenger erzeugt, den sie beheben sollte. Im Paket ist sie ohne
-        // Abspieler pruefbar; die Begruendungen stehen dort je Konstante.
-        switch Stromwacht.rat(
-            stillstandSeit: dauer,
-            netzwechselVor: netzwechselSeit.map { Date().timeIntervalSince($0) },
-            sprungOffen: offenesZiel != nil,
-            letzterSprungVor: Date().timeIntervalSince(letzterSprungbefehl),
-            pufferWuchsVor: melder.pufferWuchsVor
+        // Five thresholds, all measured, and a wrong one costs the viewer ten
+        // seconds of movie; the brake once created exactly the stall it was meant
+        // to fix. In the package it is testable without a player; the reasons are
+        // given there per constant.
+        switch StreamWatch.rat(
+            standstillSince: duration,
+            networkChangeForward: networkSwitchSince.map { Date().timeIntervalSince($0) },
+            jumpOpen: openTarget != nil,
+            lastJumpForward: Date().timeIntervalSince(lastJumpCommand),
+            bufferGrewPre: reporter.bufferGrewPre
         ) {
-        case .nochNicht:
+        case .notYet:
             return
-        case .sprungLaeuft:
-            Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Sprung noch unterwegs → abwarten")
+        case .jumpRunning:
+            AppLog.writeOut("[Netz] Bild steht seit \(Int(duration)) s, Sprung noch unterwegs → abwarten")
             return
-        case .pufferWaechst:
-            Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Puffer waechst noch → abwarten")
+        case .bufferGrows:
+            AppLog.writeOut("[Netz] Bild steht seit \(Int(duration)) s, Puffer waechst noch → abwarten")
             return
-        case .neuVerbinden:
+        case .newConnect:
             break
         }
 
-        neuVerbinden(grund: "Bild steht seit \(Int(dauer)) s")
+        newConnect(reason: "Bild steht seit \(Int(duration)) s")
     }
 
-    /// **Die Uhr laeuft, das Bild steht — davon weiss `stillstandPruefen`
-    /// nichts.**
+    /// **The clock runs, the picture is frozen: `checkStandstill` knows
+    /// nothing about that.**
     ///
-    /// Die Absicherung darueber schlaegt an, wenn die *Zeit* stehen bleibt.
-    /// 09.2026 den umgekehrten Fall gemeldet: App lag lange im Hintergrund,
-    /// Player auf Pause; zurueck in der App lief es eine halbe Minute, dann
-    /// Standbild — und die Zeit lief weiter. Fuer `Stromwacht` ist das ein
-    /// gesunder Strom, denn `jetzt` aendert sich jede Sekunde. Sie ist fuer
-    /// genau diesen Fehler blind, und zwar bauartbedingt.
+    /// The safeguard above triggers when the *time* stops. The reverse case was
+    /// reported: the app sat in the background for a long time with the player
+    /// paused; back in the app it ran for half a minute, then froze, while the
+    /// time kept running. For `StreamWatch` that is a healthy stream, since `now`
+    /// changes every second. It is blind to exactly this error, by design.
     ///
-    /// Deshalb hier die zweite Groesse. VLC fuehrt sie selbst mit:
-    /// `displayedPictures` sind die gezeigten Bilder, `demuxReadBytes` das,
-    /// was ueberhaupt vom Server ankommt. Die beiden zusammen trennen die zwei
-    /// Erklaerungen, die sich sonst nicht unterscheiden lassen:
+    /// Hence the second quantity here, which VLC keeps itself: `displayedPictures`
+    /// are the pictures shown, `demuxReadBytes` what arrives from the server at
+    /// all. Together they separate the two explanations that otherwise look the
+    /// same:
     ///
-    /// - Bytes wachsen, Bilder nicht → die Daten kommen, die Ausgabe ist tot.
-    /// - Beide stehen → es kommt nichts mehr, die Verbindung ist weg.
+    /// - Bytes grow, pictures do not: data arrives, the output is dead.
+    /// - Both stand: nothing arrives, the connection is gone.
     ///
-    /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der beiden
-    /// es ist, weiss niemand, und eine Bremse auf Verdacht hat in dieser Datei
-    /// schon einmal den Haenger erzeugt, den sie beheben sollte — siehe
-    /// `Stromwacht`. Erst messen. Seit wann kein neues Bild mehr ausgegeben
-    /// wurde.
+    /// **For now it only records, it does not intervene.** Nobody knows which of
+    /// the two it is, and a brake on suspicion once created the stall it was meant
+    /// to fix in this file; see `StreamWatch`. Measure first. Since when no new
+    /// picture was output.
     ///
-    /// **Der zweite Fuehler, und der bessere.** Die Wacht darueber vergleicht
-    /// `player.time`; laeuft die Uhr, gilt der Strom als lebendig. Am
-    /// 05.09.2026 lief sie bei Auf dem Geraet gemessen: `displayedPictures`
-    /// **76 Sekunden lang** eingefroren auf 15925, Zuwachs von
-    /// `demuxReadBytes` durchgehend 0, die Uhr lief in derselben Zeit von 6388
-    /// auf 6464 s im Gleichtakt mit der Wanduhr.
+    /// **The second sensor, and the better one.** The watchdog above compares
+    /// `player.time`; if the clock runs, the stream counts as alive. Measured on
+    /// a device: `displayedPictures` **frozen for 76 seconds** at 15925, the
+    /// increase of `demuxReadBytes` constantly 0, while the clock ran in the same
+    /// time from 6388 to 6464 s in step with the wall clock.
     ///
-    /// Der Fuehler war die ganze Zeit da — `bildfluss` hat ihn gelesen und
-    /// **nur ins Protokoll geschrieben**. Jetzt wirkt er.
-    private var bilderStehenSeit: Date?
+    /// The sensor was there all along: `imageFlow` read it and **only wrote it to
+    /// the log**. Now it acts.
+    private var imagesStateSince: Date?
 
-    private func bildfluss(jetzt: Int32) {
-        guard let stat = player.media?.statistics else { return }
+    private func imageFlow(now: Int32) {
+        guard let stats = player.media?.statistics else { return }
         defer {
-            letzteBilder = stat.displayedPictures
-            letzteBytes = stat.demuxReadBytes
+            lastImages = stats.displayedPictures
+            lastBytes = stats.demuxReadBytes
         }
-        guard let vorherBytes = letzteBytes,
-              Stromwacht.bilderStehen(vorher: letzteBilder, jetzt: stat.displayedPictures) == true
+        guard let beforeBytes = lastBytes,
+              StreamWatch.imagesState(before: lastImages, now: stats.displayedPictures) == true
         else {
-            bilderStehenSeit = nil
+            imagesStateSince = nil
             return
         }
-        bilderStehenSeit = bilderStehenSeit ?? Date()
+        imagesStateSince = imagesStateSince ?? Date()
 
-        // Nur der auffaellige Fall kommt ins Protokoll. Jede Sekunde eine
-        // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
-        // den Moment, um den es geht.
+        // Only the conspicuous case goes to the log. Writing a line every second
+        // makes the file unreadable and hides exactly the moment that matters.
 
-        let bytes = Stromwacht.zuwachs(stat.demuxReadBytes, seit: vorherBytes)
-        Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
-            + " (gezeigt \(stat.displayedPictures), verloren \(stat.lostPictures),"
+        let bytes = StreamWatch.growth(stats.demuxReadBytes, since: beforeBytes)
+        AppLog.writeOut("[Bild] Uhr bei \(now / 1000) s laeuft, aber kein neues Bild"
+            + " (gezeigt \(stats.displayedPictures), verloren \(stats.lostPictures),"
             + " neue Bytes \(bytes)) → \(bytes > 0 ? "Daten kommen an, Ausgabe steht" : "es kommt nichts mehr")")
     }
 
-    // MARK: Erstes Bild
+    // MARK: First frame
 
-    /// Was fuer diesen Titel schon versucht wurde — siehe ``Erstbild``.
-    /// Gilt je Titel (`play`), nicht je Aufbau: sonst finge jeder Neuaufbau
-    /// wieder bei der ersten Rettung an, und es gaebe nie Ruhe.
-    private var erstbildStufe: Erstbild.Stufe = .keine
-    /// Filmzeit seit dem letzten Aufbau, in der die Uhr lief. Je Aufbau.
-    private var erstbildLauf: TimeInterval = 0
-    private var erstbildVorher: TimeInterval?
-    /// Nach der zweiten Rettung, oder von Anfang an bei MPEG-4 Part 2, bleibt
-    /// es fuer den Titel beim Software-Dekoder — auch ueber einen spaeteren
-    /// Netz-Neuaufbau.
-    private var softwareDekoder = false
-    private var erstbildGesehen = false
-    /// Laeuft Bild-im-Bild? Dort zeichnet das System, nicht diese Regel.
-    private var bildImBildLaeuft = false
+    /// What has already been tried for this title; see ``FirstFrame``.
+    /// Applies per title (`play`), not per rebuild: otherwise every rebuild would
+    /// start over at the first rescue and there would be no rest.
+    private var firstFrameLevel: FirstFrame.Level = .no
+    /// Movie time since the last rebuild in which the clock ran. Per rebuild.
+    private var firstFrameRun: TimeInterval = 0
+    private var firstFrameBefore: TimeInterval?
+    /// After the second rescue, or from the start for MPEG-4 Part 2, the title
+    /// stays on the software decoder, also across a later network rebuild.
+    private var softwareDecoder = false
+    private var firstFrameWatched = false
+    /// Is picture-in-picture running? There the system draws, not this rule.
+    private var imageImageRuns = false
     #if DEBUG
-    /// Nur fuer ``Erstbildlauf``: Bildspur behaupten, ohne Serverquelle.
-    var testVideospur = false
-    /// Nur fuer ``Erstbildlauf``: diese `codec`-Option erzwingen (kein Bild),
-    /// solange kein Software-Dekoder angefordert ist — oder immer.
-    static var testZwang: (option: String, auchSoftware: Bool)?
-    /// Nur fuer Messlaeufe: weitere Optionen am Medium (`Tempolauf`).
-    static var testZusatz: [String] = []
+    /// Only for ``Erstbildlauf``: claim a video track, without a server source.
+    var testVideoTrack = false
+    /// Only for ``Erstbildlauf``: force this `codec` option (no picture) as long
+    /// as no software decoder is requested, or always.
+    static var testForce: (option: String, alsoSoftware: Bool)?
+    /// Only for measurement runs: further options on the media (`Tempolauf`).
+    static var testAddition: [String] = []
     #endif
 
-    /// Fuer das Technikschild: `nil`, solange nicht eingegriffen wurde.
-    var erstbildHinweis: String? { Erstbild.hinweis(erstbildStufe) }
+    /// For the tech badge: `nil` as long as nothing was intervened.
+    var firstFrameHint: String? { FirstFrame.hint(firstFrameLevel) }
 
-    private var hatVideospur: Bool {
+    private var hasVideoTrack: Bool {
         #if DEBUG
-        if testVideospur { return true }
+        if testVideoTrack { return true }
         #endif
-        return spurQuelle.flatMap(Dateiangaben.videospur) != nil
+        return trackSource.flatMap(FileDetails.videoTrack) != nil
     }
 
-    /// **Die Uhr laeuft, der Ton spielt — und es kam nie ein Bild.**
+    /// **The clock runs, the audio plays, and a picture never came.**
     ///
-    /// `bildfluss` schweigt dazu: ``Stromwacht/bilderStehen(vorher:jetzt:)``
-    /// gibt bei null gezeigten Bildern `nil` zurueck. Die Entscheidung steht
-    /// in ``Erstbild`` im Paket; hier nur die Zaehler und die Ausfuehrung.
-    /// Laeuft nur, wenn die Uhr weiterging (`stillstandPruefen`), also nie in
-    /// Pause, beim Puffern oder waehrend AirPlay (VLC steht dann).
+    /// `imageFlow` is silent here: ``Stromwacht/imagesStand(vorher:jetzt:)``
+    /// returns `nil` for zero pictures shown. The decision lives in ``FirstFrame``
+    /// in the package; here only the counters and the execution.
+    /// Runs only if the clock advanced (`checkStandstill`), so never while
+    /// paused, buffering or during AirPlay (VLC stands still then).
     ///
-    /// - Returns: `true`, wenn neu aufgebaut wurde.
-    private func erstbildPruefen(jetzt: Int32) -> Bool {
-        let stelle = Double(jetzt) / 1000
-        erstbildLauf += Erstbild.zuwachs(vorher: erstbildVorher, jetzt: stelle)
-        erstbildVorher = stelle
-        guard let stat = player.media?.statistics else { return false }
-        if stat.displayedPictures > 0 {
-            if !erstbildGesehen, erstbildStufe != .keine {
-                Protokoll.schreib("[Bild] erstes Bild nach Rettung (\(erstbildStufe)) bei \(Int(stelle)) s"
-                    + " · Dekoder \(softwareDekoder ? "Software" : "frei")")
+    /// - Returns: `true` if the stream was rebuilt.
+    private func firstFrameCheck(now: Int32) -> Bool {
+        let spot = Double(now) / 1000
+        firstFrameRun += FirstFrame.growth(before: firstFrameBefore, now: spot)
+        firstFrameBefore = spot
+        guard let stats = player.media?.statistics else { return false }
+        if stats.displayedPictures > 0 {
+            if !firstFrameWatched, firstFrameLevel != .no {
+                AppLog.writeOut("[Bild] erstes Bild nach Rettung (\(firstFrameLevel)) bei \(Int(spot)) s"
+                    + " · Dekoder \(softwareDecoder ? "Software" : "frei")")
             }
-            erstbildGesehen = true
+            firstFrameWatched = true
             return false
         }
-        let rat = Erstbild.rat(hatVideospur: hatVideospur, ausgenommen: bildImBildLaeuft,
-                               gezeigt: stat.displayedPictures, laufzeit: erstbildLauf,
-                               bisher: erstbildStufe)
+        let rat = FirstFrame.rat(hasVideoTrack: hasVideoTrack, excluded: imageImageRuns,
+                               shown: stats.displayedPictures, runtime: firstFrameRun,
+                               untilFrom: firstFrameLevel)
         switch rat {
-        case .nichts, .warten: return false
-        case .ausgabeNeu, .softwareDekoder, .aufgeben: break
+        case .nothing, .wait: return false
+        case .outputNew, .softwareDecoder, .giveUp: break
         }
-        let spur = player.videoTracks.first
-        let server = spurQuelle.flatMap(Dateiangaben.videospur)?.codec ?? "—"
-        Protokoll.schreib("[Bild] kein erstes Bild nach \(Int(erstbildLauf)) s Laufzeit bei \(Int(stelle)) s"
-            + " · Server \(server) · VLC-Spur \(spur.map { Technikangaben.codecname(vlcKennung: $0.codec) ?? $0.codecName() } ?? "keine")"
-            + " · dekodiert \(stat.decodedVideo), gezeigt \(stat.displayedPictures), verloren \(stat.lostPictures)"
-            + " · Ton gespielt \(stat.playedAudioBuffers) · Dekoder \(softwareDekoder ? "Software" : "frei") → \(rat)")
-        erstbildStufe = Erstbild.naechste(nach: rat, bisher: erstbildStufe)
-        guard !endgueltigGestoppt, let adresse = letzteAdresse else { return false }
+        let track = player.videoTracks.first
+        let server = trackSource.flatMap(FileDetails.videoTrack)?.codec ?? "—"
+        AppLog.writeOut("[Bild] kein erstes Bild nach \(Int(firstFrameRun)) s Laufzeit bei \(Int(spot)) s"
+            + " · Server \(server) · VLC-Spur \(track.map { TechDetails.codecNameValue(vlcId: $0.codec) ?? $0.codecName() } ?? "keine")"
+            + " · dekodiert \(stats.decodedVideo), gezeigt \(stats.displayedPictures), verloren \(stats.lostPictures)"
+            + " · Ton gespielt \(stats.playedAudioBuffers) · Dekoder \(softwareDecoder ? "Software" : "frei") → \(rat)")
+        firstFrameLevel = FirstFrame.next(to: rat, untilFrom: firstFrameLevel)
+        guard !finallyStopped, let address = lastAddress else { return false }
         switch rat {
-        case .ausgabeNeu:
-            aufbauen(grund: "kein erstes Bild", ab: stelle, adresse: adresse)
+        case .outputNew:
+            buildUp(reason: "kein erstes Bild", since: spot, address: address)
             return true
-        case .softwareDekoder:
-            softwareDekoder = true
-            aufbauen(grund: "kein erstes Bild, jetzt mit Software-Dekoder", ab: stelle, adresse: adresse)
+        case .softwareDecoder:
+            softwareDecoder = true
+            buildUp(reason: "kein erstes Bild, jetzt mit Software-Dekoder", since: spot, address: address)
             return true
         default:
             return false
         }
     }
 
-    /// Strom neu aufmachen und an die letzte gute Stelle springen.
+    /// Reopen the stream and jump to the last good position.
     ///
-    /// Das ist erst seit 'mkv_trusted' eine gute Idee: vorher hat der Sprung
-    /// zurueck zwanzig Sekunden gekostet und die Rettung waere schlimmer
-    /// gewesen als der Schaden. Jetzt sind es rund fuenfzig Millisekunden.
-    private func neuVerbinden(grund: String) {
-        // Nach `stop()` gibt es nichts mehr aufzubauen — sonst spielt eine
-        // abgeraeumte Ansicht wieder los, nur zu hoeren, nicht zu sehen.
-        guard !endgueltigGestoppt else { return }
-        guard let adresse = letzteAdresse, letzteGutePosition > 1 else { return }
+    /// This is a good idea only since 'mkv_trusted': before, the seek back cost
+    /// twenty seconds and the rescue would have been worse than the damage. Now
+    /// it is about fifty milliseconds.
+    private func newConnect(reason: String) {
+        // After `stop()` there is nothing to rebuild; otherwise a torn-down view
+        // starts playing again, audible but not visible.
+        guard !finallyStopped else { return }
+        guard let address = lastAddress, lastGoodPosition > 1 else { return }
 
-        guard netzErreichbar else {
-            wartetAufNetz = true
-            Protokoll.schreib("[Netz] \(grund), aber kein Netz — vorgemerkt bei \(Int(letzteGutePosition)) s")
+        guard networkReachable else {
+            waitsNetwork = true
+            AppLog.writeOut("[Netz] \(reason), aber kein Netz — vorgemerkt bei \(Int(lastGoodPosition)) s")
             return
         }
-        // Nach einem Wechsel meldet der Monitor mehrfach. Ohne Sperrfrist
-        // wuerde der Strom in Schleife neu aufgebaut und nie fertig.
-        guard Date().timeIntervalSince(letzterNeuaufbau) > 5 else { return }
-        aufbauen(grund: grund, ab: letzteGutePosition, adresse: adresse)
+        // After a change the monitor reports several times. Without a cooldown the
+        // stream would be rebuilt in a loop and never finish.
+        guard Date().timeIntervalSince(lastNewLayout) > 5 else { return }
+        buildUp(reason: reason, since: lastGoodPosition, address: address)
     }
 
-    /// Der gemeinsame Teil von ``neuVerbinden(grund:)`` und der
-    /// Erstbild-Rettung: Strom an `ab` neu oeffnen, Spurwahl mitnehmen.
-    private func aufbauen(grund: String, ab: Double, adresse: URL) {
-        letzterNeuaufbau = Date()
-        stehtSeit = nil
-        letzteBekannteZeit = -1
-        stelltWiederHer = true
-        // **Die laufende Spurwahl mitnehmen.** Ein neu geoeffneter Strom
-        // bringt VLCs eigene Voreinstellung mit - meist die Untertitelspur mit
-        // „Standard"-Markierung aus der MKV. Ohne das gingen abgeschaltete
-        // Untertitel nach einem kurzen Abriss von selbst wieder an
-        // (18.09.2026: Caddy neu gestartet, Apple TV).
-        spurenNachAufbau = gemeldeteSpuren
-        Protokoll.schreib("[Netz] \(grund) → Strom neu aufbauen bei \(Int(ab)) s")
-        // Der Versatz bleibt: dieselbe Adresse liefert wieder ab derselben
-        // Stelle, gesprungen wird nur der Rest.
-        oeffnen(url: adresse, abSekunden: max(ab, 0), container: letzterContainer)
+    /// The shared part of ``newConnect(reason:)`` and the first-picture
+    /// rescue: reopen the stream at `since`, keeping the track selection.
+    private func buildUp(reason: String, since: Double, address: URL) {
+        lastNewLayout = Date()
+        standsSince = nil
+        lastKnownTime = -1
+        restoring = true
+        // **Carry over the current track selection.** A newly opened stream brings
+        // VLC's own default, mostly the subtitle track flagged "default" in the
+        // MKV. Without this, subtitles the viewer had turned off would come back on
+        // by themselves after a short drop.
+        tracksPostLayout = reportedTracks
+        AppLog.writeOut("[Netz] \(reason) → Strom neu aufbauen bei \(Int(since)) s")
+        // The offset stays: the same address delivers from the same position again,
+        // only the rest is seeked.
+        open(url: address, offSeconds: max(since, 0), container: lastContainer)
     }
 
 
-    /// Startposition setzen, sobald VLC springen kann.
+    /// Set the start position as soon as VLC can seek.
     ///
-    /// **Nicht als ':start-time'-Option — und der urspruengliche Grund dafuer
-    /// ist nicht mehr der richtige.**
+    /// **Not as a ':start-time' option, and the original reason for that is no
+    /// longer the right one.**
     ///
-    /// Hier stand: die Option zwinge VLC, schon beim Oeffnen zu springen, und
-    /// das koste ein Vielfaches. Das galt vor `mkv_trusted`, als ein Sprung
-    /// ohne Index zwanzig Sekunden dauerte. Heute sind es Millisekunden, also
-    /// habe ich es am 04.09.2026 umgebaut — und binnen Minuten am Geraet
-    /// wieder ausgebaut.
+    /// The option forces VLC to seek while opening, and that used to cost many
+    /// times more. That held before `mkv_trusted`, when a seek without an index
+    /// took twenty seconds. Today it is milliseconds, so it was rebuilt to use
+    /// the option, and reverted on the device within minutes.
     ///
-    /// **Der neue Grund ist ein anderer und ein besserer.** Die gemerkte
-    /// Stelle kann am Dateiende liegen: eine Folge laeuft durch, die App merkt
-    /// sich 3707 s, und beim naechsten Oeffnen steht genau dort die
-    /// Startposition. Mit ':start-time' meldet VLC dann sofort `end of stream`
-    /// — gemessen, 141 ms nach dem Oeffnen, die Folgenende- Erkennung greift
-    /// und die App springt in die naechste Folge.
+    /// **The new reason is a different and better one.** The remembered position
+    /// can lie at the end of the file: an episode plays through, the app stores
+    /// 3707 s, and the next time it opens the start position is exactly there.
+    /// With ':start-time', VLC then reports `end of stream` immediately (measured,
+    /// 141 ms after opening), end-of-episode detection fires and the app jumps to
+    /// the next episode.
     ///
-    /// Der Weg ueber den nachtraeglichen Sprung hat den Fehler nicht: dort
-    /// laeuft der Strom erst an, und ein Sprung ans eigene Ende ist harmlos.
+    /// Seeking afterwards does not have this error: there the stream is already
+    /// running, and a seek to its own end is harmless.
     ///
-    /// Wer es erneut versucht, braucht **vorher** die Laufzeit und einen
-    /// Abstand zum Ende — und die Laufzeit steht beim Oeffnen noch nicht fest.
-    /// Das ist der eigentliche Aufwand, nicht die Option.
+    /// Anyone retrying the option needs the duration and a distance from the end
+    /// **beforehand**, and the duration is not known at opening. That is the real
+    /// effort, not the option.
     ///
-    /// Haengt bewusst **nicht** allein am Zustandswechsel nach Playing. Baut
-    /// man den Strom neu auf, waehrend VLC schon spielt, bleibt es intern bei
-    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der neue
-    /// Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
-    /// Netzwechsel gescheitert. Der Wachhund ruft deshalb ebenfalls hier an.
-    private func startpositionSetzen() {
-        // Der pausierte Start hat Vorrang; dieser Weg ist nur noch der
-        // Rueckfall fuer Startstellen unter einer Sekunde.
-        guard startsprung == nil else { return }
-        guard let ziel = startposition else { return }
-        guard ziel > 1 else {
-            startposition = nil
-            erstStelle = nil
-            tonZurueckhalten(false)
+    /// Deliberately **not** hung only on the state change to Playing. If the
+    /// stream is rebuilt while VLC is already playing, it stays at Playing
+    /// internally: no transition, the callback never fires and the new stream
+    /// plays from second 0. That is exactly why the rescue after the network
+    /// change failed. The watchdog therefore calls here as well.
+    private func startPositionSet() {
+        // The paused start takes precedence; this path is only the fallback for
+        // start positions under one second.
+        guard startJump == nil else { return }
+        guard let target = startPosition else { return }
+        guard target > 1 else {
+            startPosition = nil
+            firstPoint = nil
+            holdBackAudio(false)
             return
         }
-        // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
+        // Before the first picture a seek has no effect.
         guard player.isSeekable, player.time.intValue > 0 else { return }
 
-        // Hat `:start-time` getroffen, waere ein Nachsprung ein Sprung fuer
-        // nichts — und der Ladeschirm bliebe dafuer laenger stehen.
-        if positionSeconds >= ziel - 10 {
-            Protokoll.schreib("[VLC] Strom steht schon bei \(Int(positionSeconds)) s — kein Nachsprung")
-            startposition = nil
-            erstStelle = nil
-            tonZurueckhalten(false)
+        // If `:start-time` hit, a follow-up seek would be a seek for nothing, and
+        // the loading screen would stay up longer for it.
+        if positionSeconds >= target - 10 {
+            AppLog.writeOut("[VLC] Strom steht schon bei \(Int(positionSeconds)) s — kein Nachsprung")
+            startPosition = nil
+            firstPoint = nil
+            holdBackAudio(false)
             return
         }
 
-        startposition = nil
-        Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (von \(Int(positionSeconds)) s)")
-        // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
-        // Die Startstelle ist der Sprung, der am meisten weh tut, wenn der
-        // Index nichts hergibt: er kommt vor dem ersten Bild.
-        seek(toSeconds: ziel)
+        startPosition = nil
+        AppLog.writeOut("[VLC] Startposition gesetzt: \(Int(target)) s (von \(Int(positionSeconds)) s)")
+        // Via the same path as every other seek, including the check afterwards.
+        // The start position is the seek that hurts most when the index yields
+        // nothing: it comes before the first picture.
+        seek(toSeconds: target)
     }
 
-    private var startposition: Double?
+    private var startPosition: Double?
 
-    /// Meldet VLCs Zustand. Eigenes Objekt, weil VLCKit aus seinem eigenen
-    /// Thread meldet — eine Main-Actor-isolierte View dort aufzurufen ist
-    /// unter Swift 6 ein sofortiger Absturz.
-    private lazy var melder = Zustandsmelder(player: player)
+    /// Reports VLC's state. Its own object because VLCKit reports from its own
+    /// thread; calling a main-actor-isolated view there is an immediate crash
+    /// under Swift 6.
+    private lazy var reporter = StateReporter(player: player)
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("nicht aus Storyboards") }
 
-    /// VLC hängt seine Renderfläche ohne Rahmen ein und baut sie nach einem
-    /// Sprung neu auf. Ohne das hier bleibt sie 0 × 0 oder klebt in der Ecke.
-    override func didAddSubview(_ subview: Basisansicht) {
+    /// VLC attaches its render surface without a frame and rebuilds it after a
+    /// seek. Without this it stays 0 x 0 or sticks in the corner.
+    override func didAddSubview(_ subview: BaseView) {
         super.didAddSubview(subview)
         subview.frame = bounds
-        subview.autoresizingMask = Basisansicht.mitwachsend
+        subview.autoresizingMask = BaseView.growing
     }
 
-    /// Sonst zieht die Fläche nach Bild-im-Bild die Größe des kleinen
-    /// Fensters als Wunschmaß hinter sich her.
+    /// Otherwise after picture-in-picture the surface drags the small window's
+    /// size along as its preferred size.
     override var intrinsicContentSize: CGSize {
-        CGSize(width: Basisansicht.ohneWunschmass, height: Basisansicht.ohneWunschmass)
+        CGSize(width: BaseView.withoutRequestMetric, height: BaseView.withoutRequestMetric)
     }
 
-    /// Der Layout-Haken heisst in beiden Bausaetzen anders. Der Rumpf ist
-    /// derselbe und steht deshalb nur einmal da.
+    /// The layout hook has a different name in the two build sets. The body is
+    /// the same and therefore appears only once.
     #if canImport(UIKit)
     override func layoutSubviews() {
         super.layoutSubviews()
-        flaechenNachziehen()
+        areasCatchUp()
     }
     #else
     override func layout() {
         super.layout()
-        flaechenNachziehen()
+        areasCatchUp()
     }
     #endif
 
-    private func flaechenNachziehen() {
+    private func areasCatchUp() {
         for sub in subviews { sub.frame = bounds }
     }
 
     #if os(iOS)
     var isPiPPossible: Bool { pipWindow != nil }
 
-    /// Warum PiP gerade nicht geht — für die Oberfläche.
+    /// Why PiP does not work right now, for the UI.
     var pipUnavailableReason: String? {
         if !AVPictureInPictureController.isPictureInPictureSupported() {
-            // Trifft im Simulator immer zu: AVKit meldet dort
-            // isPictureInPictureSupported = NO. Nur echte Geräte können PiP.
+            // Always true in the simulator: AVKit reports
+            // isPictureInPictureSupported = NO there. Only real devices support PiP.
             return String(localized: "Dieses Gerät kann kein Bild-im-Bild. Im Simulator geht es nie, auf dem iPhone schon.")
         }
         if pipWindow == nil { return String(localized: "Bild-im-Bild wird vorbereitet…") }
@@ -1287,1512 +1255,1468 @@ final class VLCPlayerView: Basisansicht {
     func stopPiP()  { pipWindow?.stopPictureInPicture() }
     #endif
 
-    /// Nach jeder Zustandsänderung nötig, sonst laufen PiP-Fenster und
-    /// Player auseinander.
+    /// Needed after every state change, otherwise the PiP window and player
+    /// drift apart.
     ///
-    /// Auf tvOS ein Nichtstuer — bewusst nicht wegoperiert, damit die
-    /// Aufrufstellen in `pause`, `resume` und `stop` auf beiden Plattformen
-    /// dieselben bleiben.
+    /// A no-op on tvOS, deliberately not compiled out so the call sites in
+    /// `pause`, `resume` and `stop` stay the same on both platforms.
     func refreshPiPState() {
         #if os(iOS)
-        guard !Self.pipAbgeschaltet else { return }
+        guard !Self.pipDisabled else { return }
         pipWindow?.invalidatePlaybackState()
         #endif
     }
 
-    /// Öffnet die Datei und beginnt bei `abSekunden`.
+    /// Opens the file and starts at `offSeconds`.
     ///
-    /// Die Startposition geht als Medienoption mit, statt nach dem Öffnen
-    /// gesprungen zu werden. Das Springen war die Ursache dafür, dass
-    /// fortgesetzte Titel nur ein Standbild zeigten: bei großen Dateien über
-    /// HTTPS dauert ein Sprung länger als die Wartezeit, die Position las sich
-    /// noch als alt, es wurde erneut gesprungen — und der Demuxer kam nie zur
-    /// Ruhe. Von vorn gestartete Titel liefen deshalb, fortgesetzte nicht.
-    /// Wieviel Vorrat der naechste Start haelt. Vor `play(url:)` setzen —
-    /// die Optionen haengen am Medium, und das entsteht erst dort.
-    var puffer: Pufferstufe = .normal
+    /// The start position goes along as a media option instead of being seeked
+    /// to after opening. Seeking was why resumed titles showed only a still
+    /// frame: for large files over HTTPS a seek takes longer than the wait, the
+    /// position still read as old, another seek followed, and the demuxer never
+    /// settled. Titles started from the beginning therefore played, resumed ones
+    /// did not.
+    /// How much buffer the next start keeps. Set before `play(url:)`, since the
+    /// options hang on the media, which is only created there.
+    var buffer: BufferLevel = .normal
 
-    /// Welche Spuren der nächste Start will — vor `play(url:)` setzen, wie
-    /// ``puffer``. Daraus werden `:audio-track`/`:sub-track` am Medium, damit
-    /// VLC gleich mit der richtigen Spur anläuft statt nach dem ersten Bild
-    /// umzuschalten (siehe ``Spurzuordnung/startpositionen(stroeme:ton:untertitel:)``).
-    /// `nil`: VLC wählt selbst, wie vorher.
-    var spurwunsch: Spurwunsch?
+    /// Which tracks the next start wants; set before `play(url:)`, like
+    /// ``buffer``. These become `:audio-track`/`:sub-track` on the media so VLC
+    /// starts with the right track instead of switching after the first picture
+    /// (see ``Spurzuordnung/startpositionen(stroeme:ton:untertitel:)``).
+    /// `nil`: VLC chooses itself, as before.
+    var trackRequest: TrackRequest?
 
-    /// Die Eingaben von ``wendeSprachenAn(ton:untertitel:automatisch:quelle:titel:)``.
-    struct Spurwunsch {
-        let ton: String
-        let untertitel: String
-        let automatisch: Bool
-        let quelle: MediaSource?
-        let titel: String?
+    /// The inputs of ``wendeLanguagesAn(audio:subtitle:automatic:source:title:)``.
+    struct TrackRequest {
+        let audio: String
+        let subtitle: String
+        let automatic: Bool
+        let source: MediaSource?
+        let title: String?
     }
 
-    /// - Parameter softwareDekoder: gleich mit Software-Dekoder öffnen —
-    ///   ``PlaybackPlan/softwareDekoder`` (MPEG-4 Part 2).
-    func play(url: URL, abSekunden: Double = 0, container: String? = nil,
-              untertitel: [Untertiteldatei] = [], softwareDekoder anfangsSoftware: Bool = false) {
-        guard !endgueltigGestoppt else {
-            Protokoll.schreib("[Player] play nach stop verworfen")
+    /// - Parameter softwareDekoder: open with the software decoder right away:
+    /// ``PlaybackPlan/softwareDekoder`` (MPEG-4 Part 2).
+    func play(url: URL, offSeconds: Double = 0, container: String? = nil,
+              subtitle: [SubtitleFile] = [], softwareDecoder initialSoftware: Bool = false) {
+        guard !finallyStopped else {
+            AppLog.writeOut("[Player] play nach stop verworfen")
             return
         }
-        // Wie beim Sprung: eine Startstelle ohne Zahl beginnt vorn, statt
-        // spaeter in `Int(…)` abzustuerzen.
-        let abSekunden = Sprungziel.sekunden(abSekunden) ?? 0
-        // Ein neuer Titel erbt die Pause des alten nicht.
-        pausiertSeit = nil
-        // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
-        // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
+        // As with seeking: a start position that is not a number begins at the
+        // start, instead of crashing later in `Int(...)`.
+        let offSeconds = JumpTarget.seconds(offSeconds) ?? 0
+        // A new title does not inherit the old one's pause.
+        pausedSince = nil
+        // The session is set up at app launch. Here only verify and, if needed,
+        // correct, with a visible error instead of a silent try?.
         //
-        // Den ganzen Abschnitt gibt es auf dem Mac nicht: `AVAudioSession`
-        // ist dort nicht verfügbar. macOS mischt und leitet den Ton selbst,
-        // eine Sitzung muss keine App anmelden. Das ist kein fehlendes
-        // Stück, sondern eine Aufgabe, die dort entfällt.
+        // This whole section does not exist on the Mac: `AVAudioSession` is not
+        // available there. macOS mixes and routes audio itself, and no app has to
+        // register a session. That is not a missing piece but a task that does not
+        // apply.
         #if !os(macOS)
-        let sitzung = AVAudioSession.sharedInstance()
-        if sitzung.sampleRate < 1 {
+        let session = AVAudioSession.sharedInstance()
+        if session.sampleRate < 1 {
             do {
-                try sitzung.setCategory(.playback, mode: .moviePlayback)
-            // **Systemhinweise duerfen den Film nicht anhalten.**
+                try session.setCategory(.playback, mode: .moviePlayback)
+            // **System alerts must not pause the movie.**
             //
-            // Die Mitteilungszentrale herunterzuziehen loeste eine
-            // Tonunterbrechung aus, und die hielt die Wiedergabe an --
-            // dreimal derselbe Handgriff, dreimal `pausing` von VLC. Anhalten
-            // soll aber nur, wer die App wirklich verlaesst: ohne
-            // Bild-im-Bild in den Hintergrund, geschlossen, oder Geraet aus.
+            // Pulling down the notification center caused an audio interruption, which
+            // paused playback (VLC reported `pausing` each time). Only leaving the app
+            // for real should pause: backgrounded without picture-in-picture, closed,
+            // or device off.
             //
-            // `setPrefersNoInterruptionsFromSystemAlerts` ist genau dafuer
-            // da. Apples Dokumentation sagt nicht ausdruecklich, dass die
-            // Mitteilungszentrale darunter faellt -- deshalb wird der Grund
-            // der Unterbrechung zusaetzlich mitgeschrieben, statt es
-            // anzunehmen.
+            // `setPrefersNoInterruptionsFromSystemAlerts` exists for this. Apple's
+            // documentation does not explicitly say the notification center is covered,
+            // so the interruption reason is also logged instead of assumed.
             if #available(iOS 14.5, tvOS 14.5, *) {
-                try? sitzung.setPrefersNoInterruptionsFromSystemAlerts(true)
+                try? session.setPrefersNoInterruptionsFromSystemAlerts(true)
             }
-                try sitzung.setActive(true)
-                Protokoll.schreib("[Audio] nachgezogen · \(Int(sitzung.sampleRate)) Hz")
+                try session.setActive(true)
+                AppLog.writeOut("[Audio] nachgezogen · \(Int(session.sampleRate)) Hz")
             } catch {
-                Protokoll.schreib("[Audio] FEHLER: \(error.localizedDescription)")
+                AppLog.writeOut("[Audio] FEHLER: \(error.localizedDescription)")
             }
         }
-        // **Wie viele Kanäle nimmt der Ausgang überhaupt an?**
+        // **How many channels does the output accept?**
         //
-        // Swiftfin meldet, dass sein VLCKit-Player bei 5.1-Dateien nur Stereo
-        // ausgibt, während der native Player alle Kanäle liefert
-        // (jellyfin/Swiftfin#2199, offen); Streamyfin hatte bei 7.1 gar keinen
-        // Ton (#1515). Für eine App, die niemals transkodieren will, wäre ein
-        // stiller Downmix im Client der peinlichste Fehler überhaupt: der
-        // Server liefert brav Direct Play, und wir werfen die Kanäle weg.
+        // Swiftfin reports that its VLCKit player outputs only stereo for 5.1 files
+        // while the native player delivers all channels (jellyfin/Swiftfin#2199,
+        // open); Streamyfin had no sound at all with 7.1 (#1515). For an app that
+        // never wants to transcode, a silent downmix in the client would be the
+        // most embarrassing bug: the server delivers direct play and we throw the
+        // channels away.
         //
-        // Ob das bei uns passiert, sagt kein Quelltext, sondern nur diese
-        // Zeile am Gerät. `maximumOutputNumberOfChannels` ist, was die Route
-        // könnte; `currentRoute.outputs.channels` ist, was sie gerade führt.
-        // Am iPhone-Lautsprecher sind zwei Kanäle richtig — interessant wird
-        // es an HDMI, AirPlay und am Apple TV.
-        let ausgang = sitzung.currentRoute.outputs.first
-        Protokoll.schreib("[Audio] beim Öffnen: \(Int(sitzung.sampleRate)) Hz"
-            + " · Ausgang \(ausgang?.portType.rawValue ?? "—")"
-            + " führt \(ausgang?.channels?.count ?? 0) Kanäle"
-            + ", könnte \(sitzung.maximumOutputNumberOfChannels)")
+        // Whether that happens here cannot be read from source, only from this line
+        // on a device. `maximumOutputNumberOfChannels` is what the route could do;
+        // `currentRoute.outputs.channels` is what it currently carries. Two channels
+        // are right on the iPhone speaker; it gets interesting on HDMI, AirPlay and
+        // Apple TV.
+        let output = session.currentRoute.outputs.first
+        AppLog.writeOut("[Audio] beim Öffnen: \(Int(session.sampleRate)) Hz"
+            + " · Ausgang \(output?.portType.rawValue ?? "—")"
+            + " führt \(output?.channels?.count ?? 0) Kanäle"
+            + ", könnte \(session.maximumOutputNumberOfChannels)")
         #endif
 
         #if DEBUG
-        Self.zuletzt = self
+        Self.recent = self
         #endif
-        mediumGewechselt = player.media != nil
-        letzteAdresse = url
-        letzterContainer = container
-        untertiteldateien = untertitel
-        spurQuelle = nil
-        erstbildStufe = .keine
-        softwareDekoder = anfangsSoftware
+        mediumSwitched = player.media != nil
+        lastAddress = url
+        lastContainer = container
+        subtitleFiles = subtitle
+        trackSource = nil
+        firstFrameLevel = .no
+        softwareDecoder = initialSoftware
         player.videoAspectRatio = nil
-        offenerUntertitel = nil
-        spurindizesMelden(Spurindizes())
-        letzteGutePosition = abSekunden
-        absichtlichBeendet = false
-        offenesZiel = nil
-        offenSeit = nil
-        sprungStufe = 0
-        zeitsetzenBesser = false
+        currentSubtitle = nil
+        trackIndicesReport(TrackIndices())
+        lastGoodPosition = offSeconds
+        intentionalEnded = false
+        openTarget = nil
+        openSince = nil
+        jumpLevel = 0
+        timeSetBetter = false
 
-        wachhund?.invalidate()
-        wachhund = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.stillstandPruefen()
-                self?.anzeigeschlafZulassen()
-                self?.leerlaufsperreHalten()
-                self?.verzoegerungNachziehen()
+                self?.checkStandstill()
+                self?.displaySleepLet()
+                self?.holdIdleLock()
+                self?.delayCatchUp()
             }
         }
 
-        oeffnen(url: url, abSekunden: abSekunden, container: container)
+        open(url: url, offSeconds: offSeconds, container: container)
     }
 
-    /// Der eigentliche Aufbau — auch der Weg zurueck nach einem Netzwechsel.
-    private func oeffnen(url: URL, abSekunden: Double, container: String?) {
-        // **Die Bildzaehlung gehoert dem Medium.** Ueberlebte sie den Aufbau,
-        // verglich `bildfluss` die neue Zaehlung mit der alten (T1-M5).
-        letzteBilder = nil
-        letzteBytes = nil
-        bilderStehenSeit = nil
-        erstbildLauf = 0
-        erstbildVorher = nil
-        erstbildGesehen = false
-        // Nebenher, ohne auf sie zu warten: wie VLCs Sockets den Server
-        // erreichen. Nur fürs Protokoll, siehe `Netzprobe`.
-        Netzprobe.starten(url)
-        // **Hinter einem Vorposten holt die App den Strom selbst** (Issue #4):
-        // VLC kann keine eigenen Header senden. Ohne eingetragene Header
-        // kommt die Adresse unverändert zurück. AirPlay spricht weiter direkt
-        // mit dem Server und bleibt hinter einem Vorposten deshalb stumm.
-        let vlcAdresse = Stromweiterleiter.gemeinsam.adresse(fuer: url)
-        if vlcAdresse != url {
-            Protokoll.schreib("[VLC] Strom über den Weiterleiter (Header: \(Eigenkoepfe.namen(Eigenkoepfe.fuer(url))))")
+    /// The actual setup, also the way back after a network change.
+    private func open(url: URL, offSeconds: Double, container: String?) {
+        // **The picture count belongs to the media.** If it survived the setup,
+        // `imageFlow` compared the new count with the old one.
+        lastImages = nil
+        lastBytes = nil
+        imagesStateSince = nil
+        firstFrameRun = 0
+        firstFrameBefore = nil
+        firstFrameWatched = false
+        // In the side, without waiting for it: how VLC's sockets reach the server.
+        // Log only, see `NetworkProbe`.
+        NetworkProbe.start(url)
+        // **Behind a proxy the app fetches the stream itself** (issue #4):
+        // VLC cannot send custom headers. Without configured headers the address
+        // comes back unchanged. AirPlay still talks to the server directly and so
+        // stays silent behind a proxy.
+        let vlcAddress = StreamForwarder.gemeinsam.address(for: url)
+        if vlcAddress != url {
+            AppLog.writeOut("[VLC] Strom über den Weiterleiter (Header: \(OwnHeaders.names(OwnHeaders.of(url))))")
         }
-        guard let medium = VLCMedia(url: vlcAdresse) else {
-            Self.log.error("Medium ließ sich nicht öffnen: \(url.ohneGeheimnis, privacy: .public)")
-            Protokoll.schreib("[VLC] Medium ließ sich nicht öffnen")
-            startFehlerGemeldet?("Medium ließ sich nicht öffnen")
+        guard let medium = VLCMedia(url: vlcAddress) else {
+            Self.log.error("Medium ließ sich nicht öffnen: \(url.withoutSecret, privacy: .public)")
+            AppLog.writeOut("[VLC] Medium ließ sich nicht öffnen")
+            startErrorReported?("Medium ließ sich nicht öffnen")
             return
         }
 
-        // Diese eine Option steht hier nach dem Lesen von VLCs MKV-Demuxer,
-        // nicht auf Verdacht. Sie ist der Grund, warum Sprünge jetzt sitzen.
+        // This one option is set after reading VLC's MKV demuxer, not on a hunch.
+        // It is why seeks now land correctly.
         //
-        // VLC 4 registriert den Matroska-Demuxer zweimal (mkv.cpp:85–93):
+        // VLC 4 registers the Matroska demuxer twice (mkv.cpp:85-93):
         //
-        //     Open        → OpenInternal(…, trust_cues: false)   Rang 50
-        //     OpenTrusted → OpenInternal(…, trust_cues: true )   Rang  0
+        // Open        -> OpenInternal(..., trust_cues: false)   rank 50
+        // OpenTrusted -> OpenInternal(..., trust_cues: true )   rank  0
         //
-        // Der reguläre Weg misstraut also dem Index der Datei. Jeder Cue-Punkt
-        // wird nur als QUESTIONABLE eingetragen (matroska_segment.cpp:213),
-        // und beim Sprung siebt find_greatest_seekpoints_in_range über
-        // get_first_seekpoint_around(…, TrustLevel = TRUSTED) genau die wieder
-        // aus. Übrig bleiben die Cluster, die ohnehin schon gelesen wurden —
-        // also der Dateianfang.
+        // So the regular path distrusts the file's index. Every cue point is entered
+        // only as QUESTIONABLE (matroska_segment.cpp:213), and on a seek
+        // find_greatest_seekpoints_in_range filters exactly those out again via
+        // get_first_seekpoint_around(..., TrustLevel = TRUSTED). What remains are the
+        // clusters that were read anyway, i.e. the start of the file.
         //
-        // Zum Gegenprüfen scannt VLC den Bereich mit index_range(). Das aber
-        // hängt an b_fastseekable (matroska_segment_seeker.cpp:321), und das
-        // ist über HTTP immer false: der prefetch-Filter meldet
-        // STREAM_CAN_FASTSEEK grundsätzlich nicht (prefetch.c:355), also setzt
-        // mkv.cpp:130 das Flag auf false. Der Index ist damit gelesen,
-        // vorhanden — und wird verworfen.
+        // To cross-check, VLC scans the range with index_range(). That depends on
+        // b_fastseekable (matroska_segment_seeker.cpp:321), which over HTTP is always
+        // false: the prefetch filter never reports STREAM_CAN_FASTSEEK
+        // (prefetch.c:355), so mkv.cpp:130 sets the flag to false. The index is read,
+        // present, and discarded.
         //
-        // Gemessen: Sprung auf 1546 s in einer 10,3-GB-Datei ging auf Byte
-        // 16 601 095, das sind rund 12 Sekunden Film. Von dort spulte VLC
-        // still vor, daher die 20+ Sekunden.
+        // Measured: a seek to 1546 s in a 10.3 GB file went to byte 16,601,095, about
+        // 12 seconds of movie. From there VLC silently fast-forwarded, hence the
+        // 20+ seconds.
         //
-        // VLC 3 kennt keine Vertrauensstufen und nimmt die Cues immer. Genau
-        // deshalb springt Swiftfin, das auf MobileVLCKit (Fassung 3) sitzt, in
-        // einer halben Sekunde. Das Untermodul 'mkv_trusted' stellt dieses
-        // Verhalten in Fassung 4 wieder her — es hat Rang 0 und wird nie von
-        // allein gewählt, nur über seinen Namen.
+        // VLC 3 has no trust levels and always takes the cues. That is why Swiftfin,
+        // which sits on MobileVLCKit (version 3), seeks in half a second. The
+        // submodule 'mkv_trusted' restores this behavior in version 4; it has rank 0
+        // and is never chosen by itself, only by name.
         //
-        // Nur für Matroska setzen: die Option erzwingt den Demuxer, und für
-        // MP4 oder TS wäre sie schlicht falsch.
-        // Vorlauf vergroessern: 'prefetch-buffer-size' zaehlt in KiB, die
-        // Vorgabe von 1<<14 sind 16 MiB — bei rund 11 Mbit/s knapp elf
-        // Sekunden. 64 MiB geben etwa dreiviertel Minute.
+        // Set only for Matroska: the option forces the demuxer, and for MP4 or TS it
+        // would simply be wrong.
+        // Enlarging the lookahead: 'prefetch-buffer-size' counts in KiB, the default
+        // of 1<<14 is 16 MiB, just under eleven seconds at about 11 Mbit/s. 64 MiB
+        // gives about three quarters of a minute.
         //
-        // Der Puffer traegt ueber einen Netzwechsel, weil prefetch.c in Read()
-        // den Fehler erst prueft, wenn nichts mehr drin ist:
+        // The buffer bridges a network change because prefetch.c in Read() checks
+        // the error only when nothing is left in it:
         //
-        //     while ((copy = BufferLevel(stream, &eof)) == 0 && !eof)
-        //         if (sys->error) { … return 0; }
+        // while ((copy = BufferLevel(stream, &eof)) == 0 && !eof)
+        // if (sys->error) { ... return 0; }
         //
-        // Erst ist der Puffer leer, dann faellt der Strom auf. Genau deshalb
-        // wird beim Streckenwechsel nichts abgerissen, sondern abgewartet.
+        // First the buffer empties, then the stream fails. That is why nothing is
+        // torn down on a route change but waited out.
         //
-        // **Und genau das kostete beim Springen.**
+        // **And exactly that cost seeking.**
         //
-        // 65536 KiB waren 64 MiB, das Vierfache der Vorgabe. Ein Vorlauf
-        // traegt aber nur, solange er steht — bei jedem Sprung wirft VLC ihn
-        // weg und fuellt neu, und bis dahin bewegt sich kein Bild. Gemessen an
-        // einer Folge, bei der Springen dreissig bis fuenfzig Sekunden
-        // brauchte: der Puffer stieg in vier Sekunden auf 96 %, die Leitung
-        // war also nie das Problem — er war nur zu gross, um schnell wieder
-        // voll zu sein. Dieselbe Datei laeuft in Swiftfin sofort, und
-        // Swiftfin setzt diese Option nicht.
+        // 65536 KiB was 64 MiB, four times the default. A lookahead only helps while
+        // it is full; on every seek VLC discards it and refills, and no picture moves
+        // until then. Measured on an episode where seeking took thirty to fifty
+        // seconds: the buffer rose to 96 % in four seconds, so the line was never the
+        // problem; it was just too big to refill quickly. The same file plays
+        // instantly in Swiftfin, which does not set this option.
         //
-        // 16384 KiB sind VLCs Vorgabe, rund elf Sekunden bei 11 Mbit/s. Der
-        // Netzwechsel bleibt damit ueberbrueckt, nur nicht mehr eine
-        // dreiviertel Minute lang — und das ist der bessere Tausch: ein
-        // Wechsel kommt selten, ein Sprung bei jeder Folge.
-        // **Gemessen: der Filter laesst sich so nicht abwaehlen.** Mit
-        // Groesse null laedt er trotzdem, nur eben ohne Puffer — schlechter
-        // als vorher. `STREAM_CAN_FASTSEEK` bleibt aus, und damit bleibt der
-        // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
-        // **Die Stufe kommt aus den Einstellungen, die Zahlen aus dem Paket.**
-        // 16 MiB bleibt die Vorgabe; wer eine wackelige Leitung hat, stellt
-        // hoeher und bezahlt es mit laengerem Anlaufen nach jedem Sprung.
-        medium.addOption(":prefetch-buffer-size=\(puffer.prefetchKiB)")
-        if let vorlauf = puffer.netzvorlaufMillisekunden, url.isFileURL == false {
-            // Nur bei erhoehter Stufe gesetzt — siehe die Messung weiter unten,
-            // warum das im Normalfall nichts bringt und Spruenge verteuert.
-            medium.addOption(":network-caching=\(vorlauf)")
+        // 16384 KiB is VLC's default, about eleven seconds at 11 Mbit/s. A network
+        // change is still bridged, only not for three quarters of a minute, and that
+        // is the better trade: a change is rare, a seek happens in every episode.
+        // **Measured: the filter cannot be deselected this way.** With size zero it
+        // still loads, just without a buffer, which is worse than before.
+        // `STREAM_CAN_FASTSEEK` stays off, and so Matroska's range scan stays
+        // unreachable. Back to 16 MiB.
+        // **The level comes from settings, the numbers from the package.**
+        // 16 MiB stays the default; with a shaky connection, set it higher and pay
+        // with a longer start-up after every seek.
+        medium.addOption(":prefetch-buffer-size=\(buffer.prefetchKiB)")
+        if let preRun = buffer.networkLeadMilliseconds, url.isFileURL == false {
+            // Set only at an increased level; see the measurement below for why this
+            // brings nothing in the normal case and makes seeks more expensive.
+            medium.addOption(":network-caching=\(preRun)")
         }
 
-        // **Nach einer laengeren Pause ist die Verbindung weg.**
+        // **After a longer pause the connection is gone.**
         //
-        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
-        // beim Fortsetzen steht `local stream N error: Cancellation (0x8)`
-        // im Protokoll -- der Server hat den untaetigen Strom abgeraeumt.
-        // VLC baut daraufhin alles neu auf (PCR zuruecksetzen, neu suchen,
-        // puffern), und weil iOS im Hintergrund zusaetzlich die
-        // Dekodersitzung entwertet hatte (`kVTInvalidSessionErr`), dauert
-        // das rund zwei Sekunden.
+        // Logged twice: paused for 25 seconds, and on resume `local stream N error:
+        // Cancellation (0x8)` appears in the log, because the server cleaned up the
+        // idle stream. VLC then rebuilds everything (reset PCR, seek again, buffer),
+        // and because iOS had also invalidated the decoder session in the background
+        // (`kVTInvalidSessionErr`), this takes about two seconds.
         //
-        // `http-reconnect` laesst VLC den Abriss selbst auffangen, statt ihn
-        // als Stromende zu behandeln. Es aendert nichts, solange die
-        // Verbindung haelt.
+        // `http-reconnect` lets VLC absorb the drop itself instead of treating it as
+        // end of stream. It changes nothing as long as the connection holds.
         if url.isFileURL == false {
             medium.addOption(":http-reconnect")
         }
 
-        // **Entflechten: `bob` statt `x` — und nur, wo VLC Halbbilder erkennt.**
+        // **Deinterlacing: `bob` instead of `x`, and only where VLC detects fields.**
         //
-        // DVD-Rips (MPEG-2, 720×576, interlaced) ruckelten auf Apple TV und
-        // iPhone, 4K-HEVC nicht. VLC 4 entflechtet von selbst (`deinterlace`
-        // -1), sobald ein Bild als interlaced markiert ist, und `auto` heisst
-        // im Filter **`x`** (deinterlace.c, SetFilterMethod), nicht yadif2x.
-        // Das laeuft auf der CPU nach dem Dekoder. MPEG-2 selbst geht in
-        // unserem VLCKit immer ueber avcodec: `libmpeg2` ist nicht gebaut,
-        // VideoToolbox hat MPEG-2 abgeschaltet (decoder.c, `#if 0`).
+        // DVD rips (MPEG-2, 720x576, interlaced) stuttered on Apple TV and iPhone,
+        // 4K HEVC did not. VLC 4 deinterlaces by itself (`deinterlace` -1) once a
+        // picture is flagged interlaced, and `auto` means **`x`** in the filter
+        // (deinterlace.c, SetFilterMethod), not yadif2x. That runs on the CPU after
+        // the decoder. MPEG-2 itself always goes through avcodec in our VLCKit:
+        // `libmpeg2` is not built, and VideoToolbox has MPEG-2 disabled (decoder.c,
+        // `#if 0`).
         //
-        // Gemessen am 15.09.2026 gegen 61784e2 auf dem Mac (M1 Max, derselbe Bau,
-        // nachgebaute Datei: MPEG-2 TFF 5 Mbit/s, AC-3 5.1, VobSub, MKV), je
-        // 30 s, auf die Effizienzkerne gedrosselt (`taskpolicy -c background`):
+        // Measured on the Mac (M1 Max, same build, rebuilt file: MPEG-2 TFF
+        // 5 Mbit/s, AC-3 5.1, VobSub, MKV), 30 s each, throttled to the efficiency
+        // cores (`taskpolicy -c background`):
         //
-        //     Modus          dekodiert  gezeigt  verloren
-        //     x (Vorgabe)    24,7/s     12,9–13,2   346–352
-        //     bob            24,8/s     15,0        295
-        //     linear         24,7/s     14,7        301
-        //     aus            24,8–25,0  13,9–16,8   243–335
-        //     x ohne VobSub  25,1/s     12,7        371
+        // Mode           decoded    shown       lost
+        // x (default)    24.7/s     12.9-13.2   346-352
+        // bob            24.8/s     15.0        295
+        // linear         24.7/s     14.7        301
+        // off            24.8-25.0  13.9-16.8   243-335
+        // x without VobSub 25.1/s   12.7        371
         //
-        // Der Dekoder haelt immer Schritt; verloren geht es dahinter. Der
-        // Untertitel kostet nichts Messbares. `x` ist das teuerste der
-        // Verfahren, `bob` holt etwa den Abstand zu „aus" zurueck, ohne
-        // Kammbilder stehen zu lassen. Ungedrosselt liegen alle Varianten bei
-        // 25/s und 8–15 % eines Kerns — der Mac zeigt den Unterschied nur mit
-        // Bremse, und ein Teil des Verlusts liegt auch mit „aus" noch in der
-        // Ausgabe.
+        // The decoder always keeps up; the loss happens behind it. The subtitle costs
+        // nothing measurable. `x` is the most expensive method, `bob` wins back about
+        // the gap to "off" without leaving combing artifacts. Unthrottled, all
+        // variants sit at 25/s and 8-15 % of a core; the Mac shows the difference only
+        // with the brake, and part of the loss remains in the output even with "off".
         //
-        // **Warum pauschal gesetzt:** der Modus greift nur, wenn VLC ein Bild
-        // als interlaced erkennt. HEVC/4K ist progressiv und nimmt den Filter
-        // nie — dort aendert sich nichts.
+        // **Why set globally:** the mode only applies when VLC detects a picture as
+        // interlaced. HEVC/4K is progressive and never takes the filter, so nothing
+        // changes there.
         //
-        // **Gesetzt wird er an der Bibliothek (`bibliothek`), nicht hier.**
-        // Hier stand `medium.addOption(":deinterlace-mode=bob")`, und das
-        // griff nie: der Filter haengt am vout, und der erbt vom Player, nicht
-        // vom Eingang — dieselbe Falle wie bei `--no-drop-late-frames`.
-        // Nachgemessen 25.09.2026 an MPEG-2 und H.264 1080i50 (TS): mit der
-        // Medienoption meldet VLC 4 wie VLC 3 „using x deinterlace method",
-        // mit der Bibliotheksoption „using bob" und doppelt so viele
-        // gezeigte Bilder (Halbbild je Bild). Die Tabelle oben lag also im
-        // Rauschen: gemessen wurde zweimal `x`.
+        // **It is set on the library (`library`), not here.** Here was
+        // `medium.addOption(":deinterlace-mode=bob")`, which never took effect: the
+        // filter hangs off the vout, which inherits from the player, not from the
+        // input; same trap as `--no-drop-late-frames`. Re-measured on MPEG-2 and
+        // H.264 1080i50 (TS): with the media option VLC 4 reports "using x
+        // deinterlace method" like VLC 3, with the library option "using bob" and
+        // twice as many shown pictures (one field per picture). The table above was
+        // therefore noise: `x` was measured twice.
 
-        // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
+        // **The buffer was not the cause; re-measured, not guessed.**
         //
-        // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
-        // von 1000 ms duenn aussah und ein anderer Client elf Sekunden Vorrat
-        // anzeigt. Die Messung am Geraet hat das erledigt: gelesen minus
-        // entpackt ergab **211 Sekunden**. Der `prefetch`-Filter oben haelt
-        // 16 MiB, und das sind bei dieser Bitrate dreieinhalb Minuten Inhalt.
-        // Der Zeitvorlauf haette daran nichts geaendert, aber jeden Sprung
-        // teurer gemacht.
+        // `:network-caching=10000` briefly stood here, because VLC's default of
+        // 1000 ms looked thin and another client shows eleven seconds of buffer.
+        // The measurement on the device settled it: read minus unpacked gave **211
+        // seconds**. The `prefetch` filter above holds 16 MiB, which at this bitrate
+        // is three and a half minutes of content. A time-based buffer would have
+        // changed nothing but made every seek more expensive.
         //
-        // Was „Eingang 0 kbit/s" beim stehenden Bild wirklich hiess: nicht
-        // „es kommt nichts", sondern „es muss gerade nichts kommen". Der
-        // Engpass liegt hinter dem Demuxer, nicht davor.
+        // What "input 0 kbit/s" on a frozen picture really meant: not "nothing is
+        // arriving" but "nothing needs to arrive right now". The bottleneck is
+        // behind the demuxer, not in front of it.
 
 
-        // **Die Entscheidung muss ablesbar sein.**
+        // **The decision must be readable.**
         //
-        // Sie ist der Unterschied zwischen „Sprung sitzt" und „Sprung landet
-        // am Dateianfang und braucht zwanzig Sekunden". Fällt sie falsch,
-        // sieht man ihr das nicht an — man sieht nur einen Player, der beim
-        // Spulen an den Anfang springt, und sucht überall sonst.
-        matroskaVertraut = istMatroska(container: container, url: url)
-        if matroskaVertraut {
+        // It is the difference between "seek lands" and "seek lands at the start of
+        // the file and takes twenty seconds". When it goes wrong you cannot see it;
+        // you only see a player that jumps to the beginning when scrubbing, and look
+        // everywhere else.
+        matroskaTrusted = isMatroska(container: container, url: url)
+        if matroskaTrusted {
             medium.addOption(":demux=mkv_trusted")
-            Protokoll.schreib("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
+            AppLog.writeOut("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
         }
 
-        // **Pausiert oeffnen, im Stillstand springen, dann fortsetzen.**
+        // **Open paused, seek while stopped, then resume.**
         //
-        // Das ist der Weg, der den Anfang der Folge nie zeigt und nie hoeren
-        // laesst — nicht, weil er ihn verdeckt, sondern weil er ihn gar nicht
-        // erst ausgibt. Gemessen war vorher: VLC `started` bei +0,41 s, unser
-        // Sprung bei +1,00 s, Daten von der Zielstelle bei +1,12 s. Die
-        // 0,85 s dazwischen waren Bild und Ton von Sekunde null, und der
-        // alte Riegel („vor dem ersten Bild verpufft ein Sprung") hat genau
-        // das erzwungen: er wartete auf `time > 0`, also auf laufende Ausgabe.
+        // This is the path that never shows or plays the start of the episode: not
+        // because it hides it, but because it never outputs it. Measured before:
+        // VLC `started` at +0.41 s, our seek at +1.00 s, data from the target at
+        // +1.12 s. The 0.85 s in between were picture and sound from second zero, and
+        // the old latch ("a seek before the first picture fizzles") forced exactly
+        // that: it waited for `time > 0`, i.e. running output.
         //
-        // Was VLC 4 wirklich tut (libvlc/vlc, geprueft am Quelltext):
+        // What VLC 4 really does (libvlc/vlc, checked in source):
         //
-        // - `:start-paused` kommt ueber input_item_ApplyOptions am Eingang an
-        //   (input.c:249) und pausiert ihn zu Beginn von MainLoop (input.c:647).
-        // - Waehrend des Pufferns wird die Pause aufgeschoben (input.c:1755)
-        //   und am Puffer-Ende **vor** der Freigabe der Dekoder angewandt
-        //   (es_out.c:1268–1285). Kein Bild, kein Sample wird ausgegeben.
-        // - Ein Sprung im Pausenzustand wird ausgefuehrt; danach wird an der
-        //   Zielstelle gepuffert, und spaeter erzeugte Dekoder erben die Pause
-        //   (es_out.c:1288, decoder.c:436). Der Ton bleibt still.
-        // - Fortsetzen ueber `player.play()`: VLCKit ruft bei `Paused` direkt
-        //   set_pause(0). **Nur bei gemeldetem Paused** — vorher waere play()
-        //   ein Leerlauf (vlc_player_Start: schon gestartet, nicht pausiert),
-        //   und die aufgeschobene Pause liesse den Spieler danach stehen.
+        // - `:start-paused` arrives at the input via input_item_ApplyOptions
+        // (input.c:249) and pauses it at the start of MainLoop (input.c:647).
+        // - During buffering the pause is deferred (input.c:1755) and applied at the
+        // end of buffering **before** the decoders are released (es_out.c:1268-1285).
+        // No picture, no sample is output.
+        // - A seek in the paused state is executed; buffering then happens at the
+        // target, and decoders created later inherit the pause (es_out.c:1288,
+        // decoder.c:436). Audio stays silent.
+        // - Resuming via `player.play()`: VLCKit calls set_pause(0) directly on
+        // `Paused`. **Only on a reported Paused**; before that play() would be a
+        // no-op (vlc_player_Start: already started, not paused), and the deferred
+        // pause would leave the player stopped afterwards.
         //
-        // `:start-time` war die falsche Abkuerzung: es verschiebt die
-        // Zeitachse (i_stop += i_start, input.c:916), VLC meldet dann die
-        // Restlaenge. Der Ton-Rueckhalt ueber die Lautstaerke war nie wirksam:
-        // vor dem ersten Ton gibt es keinen Tonausgang, vlc_player_aout_
-        // SetVolume gibt -1 zurueck (aout.c:137) und VLCKit ignoriert das.
-        // Beides bleibt als Rueckfall stehen, traegt aber nichts mehr.
-        // **Software-Dekoder nach der zweiten Erstbild-Rettung**, oder von
-        // Anfang an für MPEG-4 Part 2 — siehe ``Erstbild/softwareOption`` und
-        // ``Erstbild/softwareVonAnfang(bildcodec:methode:)``.
-        var codec: String? = softwareDekoder ? Erstbild.softwareOption : nil
+        // `:start-time` was the wrong shortcut: it shifts the time axis (i_stop +=
+        // i_start, input.c:916), and VLC then reports the remaining length. The audio
+        // hold via volume never worked: before the first sound there is no audio
+        // output, vlc_player_aout_SetVolume returns -1 (aout.c:137) and VLCKit
+        // ignores that. Both remain as a fallback but no longer carry anything.
+        // **Software decoder after the second first-picture rescue**, or from the
+        // start for MPEG-4 Part 2; see ``Erstbild/softwareOption`` and
+        // ``Erstbild/softwareFromStart(bildcodec:methode:)``.
+        var codec: String? = softwareDecoder ? FirstFrame.softwareOption : nil
         #if DEBUG
-        if let zwang = Self.testZwang, !softwareDekoder || zwang.auchSoftware { codec = zwang.option }
-        for zusatz in Self.testZusatz { medium.addOption(zusatz) }
+        if let force = Self.testForce, !softwareDecoder || force.alsoSoftware { codec = force.option }
+        for addition in Self.testAddition { medium.addOption(addition) }
         #endif
         if let codec {
             medium.addOption(codec)
-            Protokoll.schreib("[Bild] Dekoderwahl \(codec)")
+            AppLog.writeOut("[Bild] Dekoderwahl \(codec)")
         }
 
-        // **Keine eigene Uhr** (`clock-master=input` brachte 2× auf 0,3 s,
-        // aber am iPhone setzte der Ton alle ~3 s aus, 27.09.2026 —
-        // zurückgenommen). Die Tonuhr bleibt; ein Tempowechsel braucht damit
-        // rund 2 s (`Tempolauf`).
+        // **No clock of its own** (`clock-master=input` brought 2x down to 0.3 s,
+        // but on iPhone the audio dropped out every ~3 s; reverted). The audio
+        // clock stays; a speed change therefore needs about 2 s (`Tempolauf`).
 
-        let pausiertStarten = abSekunden > 1
-        if pausiertStarten {
+        let pausedStart = offSeconds > 1
+        if pausedStart {
             medium.addOption(":start-paused")
         }
 
-        startposition = abSekunden
-        erstStelle = pausiertStarten ? abSekunden : nil
-        // Aus einer Übergabe stumm auch ohne Sprung — der Ton blendet dann
-        // auf, sobald eingesteuert ist (`tonFreigebenFallsFaellig`).
-        tonZurueckhalten(erstStelle != nil || Self.uebergabeAufblenden)
-        melder.neuBeginnen()
-        Protokoll.schreib("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(abSekunden)) s"
-            + (pausiertStarten ? " (pausiert, Sprung im Stillstand)" : ""))
-        // **Externe Untertitel** (T1-H4): VLC sucht über HTTP keine
-        // Nachbardateien, der Server nennt sie aber. Vorrang 0, damit VLC
-        // keine davon selbst einschaltet — das entscheidet `Spurregel`.
-        for datei in untertiteldateien {
-            let gehaengt = medium.addSlave(VLCMediaSlave(url: Stromweiterleiter.gemeinsam.adresse(fuer: datei.adresse), type: .subtitle, priority: 0))
-            Protokoll.schreib("[Spuren] Datei \(datei.index) angehängt \(gehaengt), Merkmal \(datei.merkmal ?? "—")")
+        startPosition = offSeconds
+        firstPoint = pausedStart ? offSeconds : nil
+        // From a handoff muted even without a seek; the audio then fades in as soon
+        // as it is steered in (`releaseAudioIfDue`).
+        holdBackAudio(firstPoint != nil || Self.handoffFadeIn)
+        reporter.newBegin()
+        AppLog.writeOut("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(offSeconds)) s"
+            + (pausedStart ? " (pausiert, Sprung im Stillstand)" : ""))
+        // **External subtitles**: VLC does not look for neighboring files
+        // over HTTP, but the server names them. Priority 0 so VLC does not enable any
+        // of them itself; `TrackRule` decides that.
+        for file in subtitleFiles {
+            let attached = medium.addSlave(VLCMediaSlave(url: StreamForwarder.gemeinsam.address(for: file.address), type: .subtitle, priority: 0))
+            AppLog.writeOut("[Spuren] Datei \(file.index) angehängt \(attached), Merkmal \(file.attribute ?? "—")")
         }
-        if Startmessung.an {
-            // VLC zählt seine Bilder sonst nur alle 250 ms nach — zu grob für
-            // eine Lücke von ein, zwei Bildern.
+        if StartMeasurement.an {
+            // VLC otherwise counts its pictures only every 250 ms, too coarse for a gap
+            // of one or two pictures.
             medium.addOption(":stats-min-report-interval=20")
         }
-        for option in spurOptionen() { medium.addOption(option) }
-        startmessungBeginnen()
-        Startmessung.geteilt.marke("Öffne (ab \(Int(abSekunden)) s\(pausiertStarten ? ", pausiert" : ""))")
+        for option in trackOptions() { medium.addOption(option) }
+        startMeasurementBegin()
+        StartMeasurement.shared.mark("Öffne (ab \(Int(offSeconds)) s\(pausedStart ? ", pausiert" : ""))")
         player.media = medium
         player.play()
         refreshPiPState()
 
-        startsprung = pausiertStarten ? abSekunden : nil
-        startsprungSeit = pausiertStarten ? Date() : nil
-        zielGesehenBei = nil
-        letzterStartsprungBefehl = .distantPast
-        startwacht?.invalidate()
-        if pausiertStarten {
-            // 50 ms, damit Sprung und Fortsetzen ohne fuehlbare Verzoegerung
-            // greifen. Der Takt lebt nur, bis der Start abgeschlossen ist.
-            startwacht = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.startsprungPruefen(anlass: "Takt") }
+        startJump = pausedStart ? offSeconds : nil
+        startJumpSince = pausedStart ? Date() : nil
+        targetWatched = nil
+        lastStartJumpCommand = .distantPast
+        startGuards?.invalidate()
+        if pausedStart {
+            // 50 ms so that seeking and resuming take effect without a noticeable
+            // delay. The tick lives only until the start is complete.
+            startGuards = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.startJumpCheck(occasion: "Takt") }
             }
         }
     }
 
-    /// Die Spurwahl nach ``Spurregel`` als Medienoptionen.
+    /// Track selection per ``Spurregel`` as media options.
     ///
-    /// Geprüft am VLC-Quelltext (es_out.c, `EsOutSelect`): `audio-track` und
-    /// `sub-track` sind „ausdrückliche“ Wünsche und schlagen die Vorauswahl
-    /// der Datei; gezählt wird je Art in Anlegereihenfolge. Für „keine
-    /// Untertitel“ gibt es keine Zahl — `sub-track=-1` heißt „VLC wählt“, und
-    /// dann gewinnt die Standardspur der Matroska. Eine Kennung, die es nicht
-    /// gibt (`sub-track-id=aus`), ist ebenfalls ausdrücklich und passt auf
-    /// nichts: VLC schaltet keinen Untertitel selbst ein. Eine spätere Wahl
-    /// von Hand geht mit Nachdruck durch und ist davon nicht betroffen.
-    private func spurOptionen() -> [String] {
-        guard let w = spurwunsch else { return [] }
-        let stroeme = w.quelle?.mediaStreams ?? []
-        guard !stroeme.isEmpty else { return [] }
-        let gedaechtnis = Spurgedaechtnis()
-        let tonIndex = Spurregel.ton(stroeme: stroeme,
-                                     gemerkt: w.titel.flatMap { gedaechtnis.ton(fuer: $0) },
-                                     wunschsprache: w.ton,
-                                     serverVorgabe: w.quelle?.defaultAudioStreamIndex)
-        let wahl = Spurregel.untertitel(stroeme: stroeme,
-                                        gemerkt: w.titel.flatMap { gedaechtnis.untertitel(fuer: $0) },
-                                        serverVorgabe: w.quelle?.defaultSubtitleStreamIndex,
-                                        automatisch: w.automatisch, tonindex: tonIndex,
-                                        tonwunsch: w.ton, wunschsprache: w.untertitel)
-        let lage = Spurzuordnung.startpositionen(stroeme: stroeme, ton: tonIndex, untertitel: wahl)
-        var optionen: [String] = []
-        if let ton = lage.ton { optionen.append(":audio-track=\(ton)") }
-        if let untertitel = lage.untertitel {
-            optionen.append(":sub-track=\(untertitel)")
+    /// Checked in VLC source (es_out.c, `EsOutSelect`): `audio-track` and
+    /// `sub-track` are "explicit" wishes and beat the file's preselection; counting
+    /// is per kind in creation order. There is no number for "no subtitles":
+    /// `sub-track=-1` means "VLC chooses", and then Matroska's default track wins.
+    /// An id that does not exist (`sub-track-id=aus`) is also explicit and matches
+    /// nothing: VLC turns no subtitle on by itself. A later manual choice goes
+    /// through with emphasis and is not affected.
+    private func trackOptions() -> [String] {
+        guard let w = trackRequest else { return [] }
+        let streams = w.source?.mediaStreams ?? []
+        guard !streams.isEmpty else { return [] }
+        let memory = TrackMemory()
+        let audioIndex = TrackRule.audio(streams: streams,
+                                     remembered: w.title.flatMap { memory.audio(for: $0) },
+                                     preferredLanguage: w.audio,
+                                     serverPreGift: w.source?.defaultAudioStreamIndex)
+        let choice = TrackRule.subtitle(streams: streams,
+                                        remembered: w.title.flatMap { memory.subtitle(for: $0) },
+                                        serverPreGift: w.source?.defaultSubtitleStreamIndex,
+                                        automatic: w.automatic, audioIndex: audioIndex,
+                                        tonwunsch: w.audio, preferredLanguage: w.subtitle)
+        let status = TrackMapping.startPositions(streams: streams, audio: audioIndex, subtitle: choice)
+        var options: [String] = []
+        if let audio = status.audio { options.append(":audio-track=\(audio)") }
+        if let subtitle = status.subtitle {
+            options.append(":sub-track=\(subtitle)")
         } else {
-            optionen.append(":sub-track-id=aus")
+            options.append(":sub-track-id=aus")
         }
-        Protokoll.schreib("[Spuren] beim Öffnen: Ton \(tonIndex.map(String.init) ?? "Datei") · Untertitel \(wahl)"
-            + " → \(optionen.joined(separator: " "))")
-        return optionen
+        AppLog.writeOut("[Spuren] beim Öffnen: Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)"
+            + " → \(options.joined(separator: " "))")
+        return options
     }
 
-    // MARK: - Pausierter Start
+    // MARK: - Paused start
 
-    /// Die Zielstelle, solange der pausierte Start noch laeuft.
-    private var startsprung: Double?
-    private var startsprungSeit: Date?
-    private var letzterStartsprungBefehl = Date.distantPast
-    private var startwacht: Timer?
+    /// The target position while the paused start is still running.
+    private var startJump: Double?
+    private var startJumpSince: Date?
+    private var lastStartJumpCommand = Date.distantPast
+    private var startGuards: Timer?
 
-    /// Laenger als das darf ein Start nicht pausiert bleiben. Danach wird
-    /// fortgesetzt, wo auch immer der Strom steht — ein stehender Spieler
-    /// ist schlimmer als ein falscher Einstieg.
-    private static let startsprungFrist: TimeInterval = 20
+    /// A start must not stay paused longer than this. After that it resumes
+    /// wherever the stream is; a stopped player is worse than a wrong entry
+    /// point.
+    private static let startJumpDeadline: TimeInterval = 20
 
-    /// Treibt den pausierten Start voran: Sprung anstossen, bis die Uhr in
-    /// der Naehe ist; fortsetzen, sobald VLC pausiert meldet.
+    /// Drives the paused start forward: trigger the seek until the clock is
+    /// near, resume once VLC reports paused.
     ///
-    /// Der Sprungbefehl geht in VLCs Warteschlange und wird waehrend des
-    /// Pufferns zurueckgestellt, nicht verworfen (input.c, ControlPop mit
-    /// b_postpone_seek); Wiederholungen werden dort zusammengefasst
-    /// (ControlGetReducedIndexLocked). Vor dem ersten Zustandswechsel gibt es
-    /// noch keinen Eingang, dann verpufft der Befehl — deshalb wird er im
-    /// Takt erneut geschickt, bis er ankommt.
-    private func startsprungPruefen(anlass: String) {
-        guard let ziel = startsprung else { startwacht?.invalidate(); startwacht = nil; return }
-        let stelle = positionSeconds
-        let zustand = player.state
-        let seit = startsprungSeit.map { Date().timeIntervalSince($0) } ?? 0
+    /// The seek command goes into VLC's queue and is postponed during buffering,
+    /// not discarded (input.c, ControlPop with b_postpone_seek); repeats are
+    /// merged there (ControlGetReducedIndexLocked). Before the first state change
+    /// there is no input yet and the command fizzles, so it is resent each tick
+    /// until it arrives.
+    private func startJumpCheck(occasion: String) {
+        guard let target = startJump else { startGuards?.invalidate(); startGuards = nil; return }
+        let spot = positionSeconds
+        let condition = player.state
+        let since = startJumpSince.map { Date().timeIntervalSince($0) } ?? 0
 
-        if seit > Self.startsprungFrist {
-            Protokoll.schreib("[Start] \(Int(seit)) s pausiert, Ziel \(Int(ziel)) s nicht erreicht (bei \(Int(stelle)) s) — fortsetzen trotzdem")
-            startsprungAbschliessen(fortsetzen: zustand == .paused)
+        if since > Self.startJumpDeadline {
+            AppLog.writeOut("[Start] \(Int(since)) s pausiert, Ziel \(Int(target)) s nicht erreicht (bei \(Int(spot)) s) — fortsetzen trotzdem")
+            startJumpComplete(resume: condition == .paused)
             return
         }
 
-        if stelle < ziel - 10 {
-            if Date().timeIntervalSince(letzterStartsprungBefehl) > 0.25,
-               zustand != .stopped, zustand != .error {
-                letzterStartsprungBefehl = Date()
-                player.time = VLCTime(int: Int32(clamping: Int(ziel * 1000)))
-                Protokoll.schreib("[Start] Sprung auf \(Int(ziel)) s angestossen (\(anlass), Zustand \(VLCMediaPlayerStateToString(zustand)), Uhr \(Int(stelle)) s)")
+        if spot < target - 10 {
+            if Date().timeIntervalSince(lastStartJumpCommand) > 0.25,
+               condition != .stopped, condition != .error {
+                lastStartJumpCommand = Date()
+                player.time = VLCTime(int: Int32(clamping: Int(target * 1000)))
+                AppLog.writeOut("[Start] Sprung auf \(Int(target)) s angestossen (\(occasion), Zustand \(VLCMediaPlayerStateToString(condition)), Uhr \(Int(spot)) s)")
             }
             return
         }
 
-        // Uhr ist am Ziel. Fortsetzen, sobald VLC wirklich pausiert ist —
-        // vorher ist play() ein Leerlauf, siehe oeffnen().
-        if zustand == .paused {
-            Protokoll.schreib("[Start] am Ziel (\(Int(stelle)) s) und pausiert → fortsetzen, \(String(format: "%.2f", seit)) s nach dem Öffnen")
-            startsprungAbschliessen(fortsetzen: true)
+        // The clock is at the target. Resume once VLC is really paused; before
+        // that play() is a no-op, see oeffnen().
+        if condition == .paused {
+            AppLog.writeOut("[Start] am Ziel (\(Int(spot)) s) und pausiert → fortsetzen, \(String(format: "%.2f", since)) s nach dem Öffnen")
+            startJumpComplete(resume: true)
             return
         }
 
-        // **`Playing` heisst hier noch nichts.** Gemessen im Simulator: VLC
-        // meldet Playing bei +0,405 s, die aufgeschobene Pause greift erst
-        // bei +0,699 s (am Puffer-Ende, input.c:1755 / es_out.c:1268). Wer
-        // bei Playing abschliesst, laesst den Spieler danach pausiert stehen
-        // — genau das ist beim ersten Versuch passiert. Der einzige Beweis,
-        // dass wirklich gespielt wird, ist eine Uhr, die vom Ziel aus
-        // weiterlaeuft; im Pausenzustand steht sie.
-        if zustand == .playing {
-            if let vorher = zielGesehenBei {
-                if stelle > vorher + 0.5 {
-                    Protokoll.schreib("[Start] am Ziel und die Uhr laeuft (\(Int(stelle)) s) — ohne Pause abgeschlossen")
-                    startsprungAbschliessen(fortsetzen: false)
+        // **`Playing` means nothing here yet.** Measured in the simulator: VLC
+        // reports Playing at +0.405 s, the deferred pause only takes effect at
+        // +0.699 s (end of buffering, input.c:1755 / es_out.c:1268). Finishing on
+        // Playing leaves the player paused afterwards, which happened on the first
+        // attempt. The only proof that it is really playing is a clock that keeps
+        // running from the target; when paused it stands still.
+        if condition == .playing {
+            if let before = targetWatched {
+                if spot > before + 0.5 {
+                    AppLog.writeOut("[Start] am Ziel und die Uhr laeuft (\(Int(spot)) s) — ohne Pause abgeschlossen")
+                    startJumpComplete(resume: false)
                 }
             } else {
-                zielGesehenBei = stelle
+                targetWatched = spot
             }
         }
     }
 
-    /// Erste am Ziel gemeldete Uhrzeit im Zustand Playing — siehe oben.
-    private var zielGesehenBei: Double?
+    /// First time reported at the target while Playing; see above.
+    private var targetWatched: Double?
 
-    private func startsprungAbschliessen(fortsetzen: Bool) {
-        startwacht?.invalidate()
-        startwacht = nil
-        startsprung = nil
-        startsprungSeit = nil
-        zielGesehenBei = nil
-        startposition = nil
-        erstStelle = nil
-        Startmessung.geteilt.marke("Startsprung abgeschlossen, fortsetzen: \(fortsetzen)")
-        tonZurueckhalten(false)
-        if fortsetzen { player.play() }
+    private func startJumpComplete(resume: Bool) {
+        startGuards?.invalidate()
+        startGuards = nil
+        startJump = nil
+        startJumpSince = nil
+        targetWatched = nil
+        startPosition = nil
+        firstPoint = nil
+        StartMeasurement.shared.mark("Startsprung abgeschlossen, fortsetzen: \(resume)")
+        holdBackAudio(false)
+        if resume { player.play() }
     }
 
-    // MARK: Startmessung — Bildfluss der ersten Sekunden
+    // MARK: Start measurement - picture flow of the first seconds
 
-    private var messtakt: Timer?
-    private var messSchlag: Date?
-    private var messBilder: UInt64 = 0
-    private var messSpaet: UInt64 = 0
-    private var messVerloren: UInt64 = 0
-    private var messTonVerloren: UInt64 = 0
+    private var measureTick: Timer?
+    private var messHit: Date?
+    private var messImages: UInt64 = 0
+    private var messLate: UInt64 = 0
+    private var messLost: UInt64 = 0
+    private var messAudioLost: UInt64 = 0
 
-    /// Tastet alle 10 ms ab, solange ``Startmessung`` misst: steht der
-    /// Hauptlauf (der Takt kommt zu spät), und zählt VLC verspätete oder
-    /// verworfene Bilder und Tonblöcke. Am Ende die Zahlen der Videoschicht.
+    /// Samples every 10 ms while ``Startmessung`` is measuring: is the main
+    /// thread blocked (the tick arrives late), and does VLC count late or dropped
+    /// pictures and audio blocks. At the end, the numbers of the video layer.
     ///
-    /// **Keine Bildlücken mehr.** VLCs Zähler kommen vom Eingangsfaden und
-    /// hängen mit ihm (28.09.: nach jeder „Lücke“ drei, vier Bilder auf
-    /// einmal). Das angezeigte Bild der Schicht (`displayedPixelBuffer()`)
-    /// taugt auch nicht: es meldete Standbilder, die niemand sah, und keins
-    /// dort, wo es ruckelte.
-    private func startmessungBeginnen() {
-        messtakt?.invalidate()
-        messtakt = nil
-        guard Startmessung.an else { return }
-        Startmessung.geteilt.beginnen()
-        messSchlag = nil
-        messBilder = 0
-        messSpaet = 0
-        messVerloren = 0
-        messTonVerloren = 0
-        let takt = Timer(timeInterval: 0.01, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.startmessungTakt() }
+    /// **No more picture gaps.** VLC's counters come from the input thread and
+    /// stall with it (after every "gap", three or four pictures at once). The
+    /// layer's displayed picture (`displayedPixelBuffer()`) is also unsuitable:
+    /// it reported still frames nobody saw, and none where it stuttered.
+    private func startMeasurementBegin() {
+        measureTick?.invalidate()
+        measureTick = nil
+        guard StartMeasurement.an else { return }
+        StartMeasurement.shared.begin()
+        messHit = nil
+        messImages = 0
+        messLate = 0
+        messLost = 0
+        messAudioLost = 0
+        let tick = Timer(timeInterval: 0.01, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.startMeasurementTick() }
         }
-        RunLoop.main.add(takt, forMode: .common)
-        messtakt = takt
+        RunLoop.main.add(tick, forMode: .common)
+        measureTick = tick
     }
 
-    private func startmessungTakt() {
-        let jetzt = Date()
-        guard !endgueltigGestoppt, Startmessung.geteilt.millisekunden != nil else {
-            messtakt?.invalidate()
-            messtakt = nil
-            Protokoll.schreib("[Start] Messung zu Ende · gezeigt \(messBilder), spät \(messSpaet), verloren \(messVerloren), Ton verloren \(messTonVerloren)")
-            Self.videoschicht(in: layer)?.sampleBufferRenderer.loadVideoPerformanceMetrics { werte in
-                guard let werte else { return }
-                Protokoll.schreib("[Start] Schicht: \(werte.totalNumberOfFrames) Bilder,"
-                    + " verworfen \(werte.numberOfDroppedFrames), beschädigt \(werte.numberOfCorruptedFrames)")
+    private func startMeasurementTick() {
+        let now = Date()
+        guard !finallyStopped, StartMeasurement.shared.milliseconds != nil else {
+            measureTick?.invalidate()
+            measureTick = nil
+            AppLog.writeOut("[Start] Messung zu Ende · gezeigt \(messImages), spät \(messLate), verloren \(messLost), Ton verloren \(messAudioLost)")
+            Self.videoLayer(in: layer)?.sampleBufferRenderer.loadVideoPerformanceMetrics { values in
+                guard let values else { return }
+                AppLog.writeOut("[Start] Schicht: \(values.totalNumberOfFrames) Bilder,"
+                    + " verworfen \(values.numberOfDroppedFrames), beschädigt \(values.numberOfCorruptedFrames)")
             }
             return
         }
-        if let vorher = messSchlag {
-            let luecke = jetzt.timeIntervalSince(vorher)
-            if luecke > 0.05 { Startmessung.geteilt.marke("Hauptlauf stand \(Int(luecke * 1000)) ms") }
+        if let before = messHit {
+            let gap = now.timeIntervalSince(before)
+            if gap > 0.05 { StartMeasurement.shared.mark("Hauptlauf stand \(Int(gap * 1000)) ms") }
         }
-        messSchlag = jetzt
-        guard let stat = player.media?.statistics else { return }
-        if stat.displayedPictures != messBilder {
-            if messBilder == 0 {
-                Startmessung.geteilt.marke("erstes Bild gezeigt · Uhr \(player.time.intValue) ms")
+        messHit = now
+        guard let stats = player.media?.statistics else { return }
+        if stats.displayedPictures != messImages {
+            if messImages == 0 {
+                StartMeasurement.shared.mark("erstes Bild gezeigt · Uhr \(player.time.intValue) ms")
             }
-            messBilder = stat.displayedPictures
+            messImages = stats.displayedPictures
         }
-        if stat.latePictures != messSpaet || stat.lostPictures != messVerloren
-            || stat.lostAudioBuffers != messTonVerloren {
-            messSpaet = stat.latePictures
-            messVerloren = stat.lostPictures
-            messTonVerloren = stat.lostAudioBuffers
-            Startmessung.geteilt.marke("VLC zählt spät \(messSpaet) · verloren \(messVerloren)"
-                + " · Ton verloren \(messTonVerloren) · gezeigt \(stat.displayedPictures)")
+        if stats.latePictures != messLate || stats.lostPictures != messLost
+            || stats.lostAudioBuffers != messAudioLost {
+            messLate = stats.latePictures
+            messLost = stats.lostPictures
+            messAudioLost = stats.lostAudioBuffers
+            StartMeasurement.shared.mark("VLC zählt spät \(messLate) · verloren \(messLost)"
+                + " · Ton verloren \(messAudioLost) · gezeigt \(stats.displayedPictures)")
         }
     }
 
-    /// Die `AVSampleBufferDisplayLayer`, die VLC unter die Fläche hängt.
-    private static func videoschicht(in wurzel: CALayer?) -> AVSampleBufferDisplayLayer? {
-        guard let wurzel else { return nil }
-        if let schicht = wurzel as? AVSampleBufferDisplayLayer { return schicht }
-        for kind in wurzel.sublayers ?? [] {
-            if let schicht = videoschicht(in: kind) { return schicht }
+    /// The `AVSampleBufferDisplayLayer` VLC attaches below the surface.
+    private static func videoLayer(in root: CALayer?) -> AVSampleBufferDisplayLayer? {
+        guard let root else { return nil }
+        if let stratum = root as? AVSampleBufferDisplayLayer { return stratum }
+        for kind in root.sublayers ?? [] {
+            if let stratum = videoLayer(in: kind) { return stratum }
         }
         return nil
     }
 
-    /// Entscheidend ist der *ausgelieferte* Container, nicht der der Datei:
-    /// bei Direct Stream packt der Server um. Jellyfins Adresse trägt ihn als
-    /// Endung („…/stream.mkv"), deshalb hat die Vorrang. Der gemeldete
-    /// Container ist nur der Rückfall, wenn keine Endung dasteht.
-    private func istMatroska(container: String?, url: URL) -> Bool {
-        let namen: Set<String> = ["mkv", "matroska", "webm", "mka", "mks"]
-        let endung = url.pathExtension.lowercased()
-        if !endung.isEmpty { return namen.contains(endung) }
+    /// What matters is the *delivered* container, not the file's: with direct
+    /// stream the server remuxes. Jellyfin's address carries it as the extension
+    /// (".../stream.mkv"), which therefore takes precedence. The reported
+    /// container is only the fallback when no extension is present.
+    private func isMatroska(container: String?, url: URL) -> Bool {
+        let names: Set<String> = ["mkv", "matroska", "webm", "mka", "mks"]
+        let suffix = url.pathExtension.lowercased()
+        if !suffix.isEmpty { return names.contains(suffix) }
         guard let container else { return false }
         return container.lowercased().split(separator: ",").contains {
-            namen.contains($0.trimmingCharacters(in: .whitespaces))
+            names.contains($0.trimmingCharacters(in: .whitespaces))
         }
     }
 
-    /// Wird gerufen, sobald **VLC selbst** umschaltet — nicht, wenn wir es
-    /// verlangen. Der Abspielknopf hängt daran; siehe `zustandGewechselt`.
-    var laeuftGemeldet: ((Bool) -> Void)?
+    /// Called as soon as **VLC itself** switches, not when we ask it to. The play
+    /// button hangs on this; see `stateSwitched`.
+    var runsReported: ((Bool) -> Void)?
 
-    /// Wird bei jedem Sprung von aussen gerufen, mit der Zielstelle — damit
-    /// der Server ihn sofort erfaehrt (Audit 16.09., T1-N1), egal ueber welchen
-    /// der vielen Wege gesprungen wurde. Das interne Nachfassen eines Sprungs
-    /// meldet nicht.
-    var sprungGemeldet: ((Double) -> Void)?
+    /// Called on every external seek with the target, so the server learns of it
+    /// immediately regardless of which of the many paths was used.
+    /// The internal retry of a seek does not report.
+    var jumpReported: ((Double) -> Void)?
 
-    /// Bricht VLC ab, bevor das erste Bild da ist (Datei nicht lesbar, Strom
-    /// nicht erreichbar, Medium nicht zu öffnen), meldet das hier den Grund.
-    /// Die Oberfläche zeigt dann eine Meldung statt endlos Schwarz.
-    var startFehlerGemeldet: ((String) -> Void)?
+    /// If VLC aborts before the first picture (file not readable, stream
+    /// unreachable, media cannot be opened), this reports the reason. The UI then
+    /// shows a message instead of endless black.
+    var startErrorReported: ((String) -> Void)?
 
     func pause() {
-        if pausiertSeit == nil { pausiertSeit = Date() }
+        if pausedSince == nil { pausedSince = Date() }
         player.pause()
         refreshPiPState()
     }
 
-    /// **Seit wann angehalten ist** — für ``Pausenruecksprung``. Gesetzt beim
-    /// Anhalten, auch wenn VLC von selbst anhält (Bild-im-Bild, ein Anruf);
-    /// gelöscht, sobald es wieder läuft.
-    private var pausiertSeit: Date?
+    /// **Since when it has been paused**, for ``Pausenruecksprung``. Set on
+    /// pausing, also when VLC pauses by itself (picture-in-picture, a call);
+    /// cleared as soon as it runs again.
+    private var pausedSince: Date?
 
-    /// **Wie das Bild in die Flaeche gelegt wird -- ganz oder formatfuellend.**
+    /// **How the picture is placed in the surface: whole or fill.**
     ///
-    /// `Smaller` legt das ganze Bild hinein und laesst Balken stehen, `Larger`
-    /// fuellt die Flaeche und schneidet ab. Beides ohne Verzerren; ein
-    /// dritter Zustand waere nur eine falsche Streckung, deshalb gibt es
-    /// zwei.
+    /// `Smaller` places the whole picture and leaves bars, `Larger` fills the
+    /// surface and crops. Both without distortion; a third state would only be a
+    /// wrong stretch, so there are two.
     ///
-    /// Nicht ueber `videoAspectRatio`: das setzt ein Seitenverhaeltnis und
-    /// zieht das Bild darauf, statt es zu beschneiden. Gesichter werden dabei
-    /// breit, und genau das will niemand.
-    func bildfuellend(_ an: Bool) {
+    /// Not via `videoAspectRatio`: that sets an aspect ratio and pulls the picture
+    /// to it instead of cropping. Faces get wide, which nobody wants.
+    func fillFrame(_ an: Bool) {
         player.videoFitMode = an ? .larger : .smaller
     }
 
-    /// Die Bildgroesse des Stroms in Pixeln, `zero` bevor das erste Bild da
-    /// ist. Wird gebraucht, um auszurechnen, wie weit zwischen „ganz hinein"
-    /// und „ganz ausfuellen" liegt.
+    /// The stream's picture size in pixels, `zero` before the first picture.
+    /// Needed to compute how far apart "fit" and "fill" are.
     var videoSize: CGSize { player.videoSize }
-    /// **Vor dem Weiterspielen die Tonsitzung aktivieren.**
+    /// **Activate the audio session before continuing playback.**
     ///
-    /// Nach einer Unterbrechung (Wecker, Stoppuhr, Anruf) ist sie inaktiv.
-    /// Die automatische Fortsetzung in `Wiedergabezentrale` zog sie schon
-    /// nach — der Abspielknopf nicht. Kam kein automatisches Ende der
-    /// Unterbrechung (ein Wecker meldet es oft gar nicht), drückte man selbst,
-    /// und VLC startete den Ton auf der inaktiven Sitzung: ein paar Sekunden
-    /// Stille, dann setzte er verspätet ein (17.09.2026, Stoppuhr).
-    /// `setActive(true)` auf einer schon aktiven Sitzung kostet nichts.
+    /// After an interruption (alarm, stopwatch, call) it is inactive. The
+    /// automatic resume in `PlaybackHub` already corrected that; the play
+    /// button did not. If no automatic end of the interruption came (an alarm
+    /// often does not report one), the user pressed play themselves, and VLC
+    /// started audio on the inactive session: a few seconds of silence, then it
+    /// set in late. `setActive(true)` on an already active session costs nothing.
     ///
-    /// **`ruecksprung`: nach langer Pause ein Stück zurück** (1.0.5). Die
-    /// Stelle wird gesetzt, solange VLC noch steht, und erst dann gespielt —
-    /// das erste neue Bild ist schon das von fünf Sekunden früher, ein
-    /// sichtbares Zurückspringen gibt es nicht. Wann, entscheidet
-    /// ``Pausenruecksprung``. Nur auf Wunsch der Oberfläche: SyncPlay, die
-    /// Rückkehr von AirPlay und das Ende des Schrubbens rufen ohne. Gibt das
-    /// Ziel zurück, damit die Anzeige es im selben Moment übernimmt.
+    /// **`jumpBack`: a bit back after a long pause.** The position is set while
+    /// VLC is still stopped and only then played, so the first new picture is
+    /// already the one from five seconds earlier and no visible jump back
+    /// happens. When is decided by ``Pausenruecksprung``. Only at the UI's
+    /// request: SyncPlay, returning from AirPlay and the end of scrubbing call
+    /// without. Returns the target so the display adopts it at the same moment.
     @discardableResult
-    func resume(ruecksprung: Bool = false) -> Double? {
-        let seit = pausiertSeit
-        pausiertSeit = nil
-        var ziel: Double?
-        if ruecksprung, !startsprungOffen,
-           let z = Pausenruecksprung.ziel(position: positionSeconds, pausiertSeit: seit,
-                                          jetzt: Date(), inGruppe: false) {
-            Protokoll.schreib("[VLC] Fortsetzen nach \(Int(Date().timeIntervalSince(seit ?? Date()))) s Pause"
+    func resume(jumpBack: Bool = false) -> Double? {
+        let since = pausedSince
+        pausedSince = nil
+        var target: Double?
+        if jumpBack, !startJumpOpen,
+           let z = PauseJumpBack.target(position: positionSeconds, pausedSince: since,
+                                          now: Date(), inGroup: false) {
+            AppLog.writeOut("[VLC] Fortsetzen nach \(Int(Date().timeIntervalSince(since ?? Date()))) s Pause"
                 + " — vorher auf \(Int(z)) s")
             seek(toSeconds: z)
-            ziel = z
+            target = z
         }
         #if os(iOS) || os(tvOS)
         do {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            Protokoll.schreib("[Ton] Sitzung vor dem Weiterspielen nicht aktivierbar: "
+            AppLog.writeOut("[Ton] Sitzung vor dem Weiterspielen nicht aktivierbar: "
                 + error.localizedDescription)
         }
         #endif
         player.play()
         refreshPiPState()
-        return ziel
+        return target
     }
 
-    /// Ein Startsprung, der noch nicht angekommen ist — dann steht die Stelle
-    /// noch nicht, und ein Rücksprung davon aus ginge ins Leere.
-    private var startsprungOffen: Bool { startsprung != nil }
+    /// A start seek that has not arrived yet: then the position is not in place,
+    /// and a step back from it would go nowhere.
+    private var startJumpOpen: Bool { startJump != nil }
 
     func stop() {
-        absichtlichBeendet = true
-        endgueltigGestoppt = true
-        tonZurueckhalten(false)
-        leerlaufsperreHalten()
-        wachhund?.invalidate()
-        wachhund = nil
-        startwacht?.invalidate()
-        startwacht = nil
-        startsprung = nil
+        intentionalEnded = true
+        finallyStopped = true
+        holdBackAudio(false)
+        holdIdleLock()
+        watchdog?.invalidate()
+        watchdog = nil
+        startGuards?.invalidate()
+        startGuards = nil
+        startJump = nil
         player.stop()
-        // **Die Ansicht muss danach wirklich gehen koennen.** `drawable` haelt
-        // laut VLCKit-Header stark, `player` haelt die Ansicht also fest, und
-        // die Ansicht den `player` — ein Kreis. Nachgemessen: eine Ansicht mit
-        // `drawable = self` lebt nach `stop()` weiter, ohne den Verweis nicht.
+        // **The view must be able to go away afterwards.** According to the VLCKit
+        // header `drawable` is strong, so `player` holds the view and the view holds
+        // the `player`: a cycle. Measured: a view with `drawable = self` outlives
+        // `stop()`, without the reference it does not.
         //
-        // Mit ihr lebte die Netzwache weiter. Legte sich der Rechner schlafen,
-        // riss das Netz ab und `streckeGewechselt` merkte die letzte Stelle
-        // vor; beim Aufwachen baute `neuVerbinden` den Strom wieder auf und
-        // spielte — Ton aus einem Player, der laengst geschlossen war.
+        // With it, the network watch lived on. When the machine went to sleep, the
+        // network dropped and `legSwitched` noted the last position; on wake,
+        // `newConnect` rebuilt the stream and played audio from a player that had
+        // long been closed.
         //
-        // `stop()` ist endgueltig (siehe `endgueltigGestoppt`); ein
-        // Folgenwechsel laeuft ueber `play(url:)` auf derselben Ansicht und
-        // kommt hier nicht vorbei. Deshalb darf die Netzwache hier enden.
-        netzwache.cancel()
-        wartetAufNetz = false
+        // `stop()` is final (see `finallyStopped`); an episode change goes via
+        // `play(url:)` on the same view and does not pass here. So the network watch
+        // may end here.
+        networkGuard.cancel()
+        waitsNetwork = false
         player.drawable = nil
-        // **Und die Rueckrufe los — sonst bleibt der ganze Player im Speicher.**
+        // **And release the callbacks, otherwise the whole player stays in memory.**
         //
-        // Der Kreis oben ist damit nicht ganz weg: VLC 4 behaelt den letzten
-        // Videoausgang fuer das naechste Medium, und dessen Flaeche haelt die
-        // Ansicht fest, bis der `VLCMediaPlayer` geht — und den haelt die
-        // Ansicht. Gemessen im iOS-Simulator: nach zwoelfmal Oeffnen und
-        // Schliessen lebten zwoelf `VLCPlayerView`. Das kostet wenig. Teuer
-        // war, was an ihr hing: die Rueckrufe fassen `PlayerScreen` und
-        // damit dessen ganzen Zustand — `Wiedergabezentrale`, Vorschaubilder,
-        // `Fernziel`, `Schirmtakt`, je Oeffnen einmal mehr. Nach `stop()` ruft
-        // hier ohnehin niemand mehr etwas: „spielt" und „angehalten" kommen
-        // nicht mehr, und ein Folgenwechsel geht ueber `play(url:)`.
-        onWiederherstellung = nil
-        laeuftGemeldet = nil
-        sprungGemeldet = nil
-        startFehlerGemeldet = nil
-        spurenGemeldet = nil
+        // The cycle above is not completely gone: VLC 4 keeps the last video output
+        // for the next media, and its surface holds the view until the
+        // `VLCMediaPlayer` goes, which the view holds. Measured in the iOS
+        // simulator: after opening and closing twelve times, twelve `VLCPlayerView`
+        // were alive. That costs little. What hung on it was expensive: the callbacks
+        // capture `PlayerScreen` and with it its whole state (`PlaybackHub`,
+        // preview images, `RemoteTarget`, `ScreenTick`), once more per opening. After
+        // `stop()` nobody calls anything here anyway: "playing" and "paused" no
+        // longer arrive, and an episode change goes via `play(url:)`.
+        onRestoration = nil
+        runsReported = nil
+        jumpReported = nil
+        startErrorReported = nil
+        tracksReported = nil
         #if os(iOS)
         onPiPAvailable = nil
         onPiPStateChanged = nil
         #endif
     }
 
-    // MARK: - Spuren und Geschwindigkeit
+    // MARK: - Tracks and speed
 
-    /// Verfuegbare Tonspuren. Bei Direct Play sind das die echten Spuren der
-    /// Datei — inklusive DTS und TrueHD, die ein AVPlayer nie zu sehen bekaeme.
-    var tonspuren: [VLCMediaPlayer.Track] { player.audioTracks }
-    var untertitelspuren: [VLCMediaPlayer.Track] { player.textTracks }
+    /// Available audio tracks. With direct play these are the file's real tracks,
+    /// including DTS and TrueHD, which an AVPlayer would never see.
+    var audioTracks: [VLCMediaPlayer.Track] { player.audioTracks }
+    var subtitleTracks: [VLCMediaPlayer.Track] { player.textTracks }
 
-    var gewaehlteTonspur: VLCMediaPlayer.Track? { player.audioTracks.first(where: \.isSelected) }
-    var gewaehlterUntertitel: VLCMediaPlayer.Track? { player.textTracks.first(where: \.isSelected) }
+    var selectedAudioTrack: VLCMediaPlayer.Track? { player.audioTracks.first(where: \.isSelected) }
+    var selectedSubtitle: VLCMediaPlayer.Track? { player.textTracks.first(where: \.isSelected) }
 
-    /// VLCs Zaehlwerk: verworfene Bilder, Bitraten, Dekoderbloecke.
+    /// VLC's counters: dropped pictures, bitrates, decoder blocks.
     ///
-    /// **Nur lesend, greift in nichts ein.** Sie beantwortet die eine Frage,
-    /// die man einer flatternden Wiedergabe sonst nicht ansieht: laeuft die
-    /// Datei wirklich glatt, oder sieht sie nur glatt aus, weil VLC still
-    /// Bilder wegwirft? `lostPictures` steigt dann, `displayedPictures`
-    /// bleibt zurueck — und genau das ist bei einer App, die niemals
-    /// transkodieren will, der Unterschied zwischen „geht" und „geht
-    /// gerade noch".
+    /// **Read-only, intervenes in nothing.** It answers the one question you
+    /// cannot otherwise tell about stuttering playback: does the file really play
+    /// smoothly, or does it only look smooth because VLC silently drops pictures?
+    /// `lostPictures` then rises while `displayedPictures` lags, and for an app
+    /// that never wants to transcode that is the difference between "works" and
+    /// "barely works".
     ///
-    /// `nil`, solange kein Medium geladen ist.
-    var statistik: VLCMedia.Stats? { player.media?.statistics }
+    /// `nil` as long as no media is loaded.
+    var statistics: VLCMedia.Stats? { player.media?.statistics }
 
-    /// **Kommen die Kanäle durch, oder mischt jemand still auf Stereo?**
+    /// **Do the channels get through, or does something silently mix down to stereo?**
     ///
-    /// Swiftfin meldet, dass ihr VLCKit-Player 5.1 auf Stereo mischt, während
-    /// ihr nativer Player alle Kanäle liefert (jellyfin/Swiftfin#2199, offen);
-    /// Streamyfin hatte bei 7.1 gar keinen Ton (#1515). Für eine App, die
-    /// niemals transkodieren will, wäre ein stiller Downmix im Client der
-    /// peinlichste Fehler: der Server liefert Direct Play, und wir werfen die
-    /// Kanäle weg, ohne dass es jemand sieht.
+    /// Swiftfin reports that its VLCKit player mixes 5.1 to stereo while the
+    /// native player delivers all channels (jellyfin/Swiftfin#2199, open);
+    /// Streamyfin had no sound at all with 7.1 (#1515). For an app that never
+    /// wants to transcode, a silent downmix in the client would be the most
+    /// embarrassing bug: the server delivers direct play, and we throw the
+    /// channels away unseen.
     ///
-    /// **Die Zeile ist erst am Fernseher aussagekräftig.** Am iPhone hat der
-    /// Lautsprecher zwei Kanäle, und zwei am Ausgang sind dort richtig —
-    /// dasselbe Ergebnis bedeutet dort also nichts. Erst wenn die Route mehr
-    /// könnte (HDMI am Apple TV, ein AirPlay-Empfänger), sagt ein Stereo-
-    /// Ausgang etwas aus.
-    func kanaeleNachmessen() {
-        // **Zwei verschiedene Spurlisten, und das ist kein Versehen.**
-        // `player.audioTracks` sagt, was *gewaehlt* ist — nur dort gibt es
-        // `isSelected` und einen Namen. `media.audioTracks` beschreibt die
-        // *Datei* und traegt als einzige die Kanalzahl, dafuer keinen Namen.
-        // Statt beide ueber einen bruechigen Namensvergleich zu verheiraten,
-        // steht hier schlicht beides untereinander: was gewaehlt ist, und was
-        // die Datei ueberhaupt anbietet.
-        let gewaehlt = player.audioTracks.first(where: \.isSelected)?.trackName ?? "—"
-        let spuren = (player.media?.audioTracks ?? []).map { spur -> String in
-            let sprache = spur.language ?? spur.trackDescription ?? "?"
-            return "\(sprache) \(spur.audio?.channelsNumber ?? 0)ch"
+    /// **The line is only meaningful on TV.** An iPhone speaker has two channels,
+    /// and two at the output are right there, so the same result means nothing.
+    /// Only when the route could do more (HDMI on Apple TV, an AirPlay receiver)
+    /// does a stereo output tell anything.
+    func channelsPostMeasure() {
+        // **Two different track lists, and that is deliberate.**
+        // `player.audioTracks` says what is *selected*: only there are `isSelected`
+        // and a name. `media.audioTracks` describes the *file* and alone carries the
+        // channel count, but no name. Instead of marrying the two through a brittle
+        // name comparison, both are simply listed one under the other: what is
+        // selected, and what the file offers at all.
+        let selected = player.audioTracks.first(where: \.isSelected)?.trackName ?? "—"
+        let tracks = (player.media?.audioTracks ?? []).map { track -> String in
+            let language = track.language ?? track.trackDescription ?? "?"
+            return "\(language) \(track.audio?.channelsNumber ?? 0)ch"
         }.joined(separator: ", ")
 
         #if os(macOS)
-        Protokoll.schreib("[Kanäle] gewählt: \(gewaehlt) · Datei: \(spuren)")
+        AppLog.writeOut("[Kanäle] gewählt: \(selected) · Datei: \(tracks)")
         #else
-        let sitzung = AVAudioSession.sharedInstance()
-        let ausgang = sitzung.currentRoute.outputs.first
-        Protokoll.schreib("[Kanäle] gewählt: \(gewaehlt) · Datei: \(spuren)"
-            + " · Ausgang \(ausgang?.portType.rawValue ?? "—")"
-            + " nimmt \(ausgang?.channels?.count ?? 0)"
-            + ", könnte \(sitzung.maximumOutputNumberOfChannels)")
+        let session = AVAudioSession.sharedInstance()
+        let output = session.currentRoute.outputs.first
+        AppLog.writeOut("[Kanäle] gewählt: \(selected) · Datei: \(tracks)"
+            + " · Ausgang \(output?.portType.rawValue ?? "—")"
+            + " nimmt \(output?.channels?.count ?? 0)"
+            + ", könnte \(session.maximumOutputNumberOfChannels)")
         #endif
     }
 
-    // MARK: Spurwahl (Audit 16.09., Stufe 4)
+    // MARK: Track choice
 
-    /// Serie oder Film, für den eine Handwahl gemerkt wird. Setzt
-    /// ``wendeSprachenAn(ton:untertitel:automatisch:quelle:titel:)`` bei jedem
-    /// Start und Folgenwechsel.
-    private var spurTitel: String?
-    /// Die Server-Angaben zur laufenden Datei — `MediaStream`s und Vorgaben.
-    private var spurQuelle: MediaSource?
-    /// Untertiteldateien, die am Medium hängen. Vor `play(url:)` gesetzt,
-    /// und nach einem Neuaufbau wieder angehängt.
-    private var untertiteldateien: [Untertiteldatei] = []
-    /// Eine gewählte Untertiteldatei, deren Spur VLC noch nicht meldet.
-    private var offenerUntertitel: Int?
-    private var gemeldeteSpuren = Spurindizes()
-    /// Die Spurwahl vor einem Neuaufbau, bis der neue Strom laeuft.
-    private var spurenNachAufbau: Spurindizes?
+    /// Series or movie for which a manual choice is remembered. Set by
+    /// ``wendeLanguagesAn(audio:subtitle:automatic:source:title:)`` at every
+    /// start and episode change.
+    private var trackTitle: String?
+    /// The server's information on the running file: `MediaStream`s and defaults.
+    private var trackSource: MediaSource?
+    /// Subtitle files attached to the media. Set before `play(url:)` and
+    /// reattached after a rebuild.
+    private var subtitleFiles: [SubtitleFile] = []
+    /// A chosen subtitle file whose track VLC does not report yet.
+    private var currentSubtitle: Int?
+    private var reportedTracks = TrackIndices()
+    /// The track selection before a rebuild, until the new stream runs.
+    private var tracksPostLayout: TrackIndices?
 
-    /// Nach einem Neuaufbau die Spurwahl von vorher wieder setzen.
+    /// After a rebuild, set the previous track selection again.
     ///
-    /// Die Spuren sind erst da, wenn der Strom laeuft; deshalb hier und nicht
-    /// in `neuVerbinden`. Untertitel `nil` heisst „aus", nicht „egal" - genau
-    /// der Fall, der vorher verloren ging.
-    private func spurenWiederSetzen() {
-        guard let vorher = spurenNachAufbau else { return }
-        spurenNachAufbau = nil
-        let ton = player.audioTracks, text = player.textTracks
-        let z = zuordnung(ton: ton, untertitel: text)
-        if let index = vorher.ton, let position = z.tonposition(index: index), position < ton.count {
-            ton[position].isSelectedExclusively = true
+    /// The tracks exist only once the stream runs, hence here and not in
+    /// `newConnect`. Subtitle `nil` means "off", not "don't care": exactly the
+    /// case that was lost before.
+    private func tracksAgainSet() {
+        guard let before = tracksPostLayout else { return }
+        tracksPostLayout = nil
+        let audio = player.audioTracks, text = player.textTracks
+        let z = mapping(audio: audio, subtitle: text)
+        if let index = before.audio, let position = z.audioPositionValue(index: index), position < audio.count {
+            audio[position].isSelectedExclusively = true
         }
-        if let index = vorher.untertitel, let position = z.untertitelposition(index: index),
+        if let index = before.subtitle, let position = z.subtitlePosition(index: index),
            position < text.count {
             text[position].isSelectedExclusively = true
-        } else if vorher.untertitel == nil {
+        } else if before.subtitle == nil {
             player.deselectAllTextTracks()
         }
-        Protokoll.schreib("[Spuren] nach Neuaufbau wieder gesetzt: Ton \(vorher.ton.map(String.init) ?? "—"), "
-            + "Untertitel \(vorher.untertitel.map(String.init) ?? "aus")")
+        AppLog.writeOut("[Spuren] nach Neuaufbau wieder gesetzt: Ton \(before.audio.map(String.init) ?? "—"), "
+            + "Untertitel \(before.subtitle.map(String.init) ?? "aus")")
     }
 
-    /// Die laufenden Spuren als Jellyfin-Index, bei jeder Änderung — für
-    /// Start- und Fortschrittsmeldung (T3 #8).
-    var spurenGemeldet: ((Spurindizes) -> Void)?
+    /// The running tracks as Jellyfin indexes, on every change, for start and
+    /// progress reports.
+    var tracksReported: ((TrackIndices) -> Void)?
 
     #if DEBUG
-    /// Fuer die Probe `-spurlauf` (tvOS), sonst unbenutzt.
-    static weak var zuletzt: VLCPlayerView?
+    /// For the `-trackRun` probe (tvOS), otherwise unused.
+    static weak var recent: VLCPlayerView?
     #endif
 
-    /// MD5 der Adresse als Hex — so benennt libVLC die Spuren einer
-    /// nachgeladenen Datei (siehe ``Abspielerspur/zusatzkennung``).
-    static func untertitelmerkmal(_ adresse: URL) -> String {
-        Insecure.MD5.hash(data: Data(adresse.absoluteString.utf8))
+    /// MD5 of the address as hex: how libVLC names the tracks of a
+    /// side-loaded file (see ``Abspielerspur/zusatzkennung``).
+    static func subtitleRememberTimes(_ address: URL) -> String {
+        Insecure.MD5.hash(data: Data(address.absoluteString.utf8))
             .map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func abspielerspur(_ spur: VLCMediaPlayer.Track) -> Abspielerspur {
-        Abspielerspur(kennung: spur.trackId, name: spur.trackName, sprache: spur.language,
-                      codec: Technikangaben.codecname(vlcKennung: spur.codec),
-                      kanaele: spur.audio.map { Int($0.channelsNumber) })
+    private static func playerTrack(_ track: VLCMediaPlayer.Track) -> PlayerTrack {
+        PlayerTrack(identifier: track.trackId, name: track.trackName, language: track.language,
+                      codec: TechDetails.codecNameValue(vlcId: track.codec),
+                      channels: track.audio.map { Int($0.channelsNumber) })
     }
 
-    private func zuordnung(ton: [VLCMediaPlayer.Track], untertitel: [VLCMediaPlayer.Track]) -> Spurzuordnung {
-        Spurzuordnung.bilden(ton: ton.map(Self.abspielerspur),
-                             untertitel: untertitel.map(Self.abspielerspur),
-                             stroeme: spurQuelle?.mediaStreams ?? [],
-                             dateien: untertiteldateien)
+    private func mapping(audio: [VLCMediaPlayer.Track], subtitle: [VLCMediaPlayer.Track]) -> TrackMapping {
+        TrackMapping.compose(audio: audio.map(Self.playerTrack),
+                             subtitle: subtitle.map(Self.playerTrack),
+                             streams: trackSource?.mediaStreams ?? [],
+                             files: subtitleFiles)
     }
 
-    /// Wählt Ton- und Untertitelspur nach ``Spurregel``: Handwahl je Serie,
-    /// Einstellungen, Server-Vorgaben, erzwungene Untertitel.
+    /// Selects audio and subtitle track per ``Spurregel``: manual choice per
+    /// series, settings, server defaults, forced subtitles.
     ///
-    /// Entschieden wird über Jellyfins Index; wo die Spur in VLC liegt, sagt
-    /// ``Spurzuordnung``. Vorher ging beides über den Spurnamen (T1-N4), und
-    /// der Ton wurde gar nicht gemerkt (T1-M1).
-    func wendeSprachenAn(ton: String, untertitel: String, automatisch: Bool,
-                         quelle: MediaSource?, titel: String?) {
-        spurTitel = titel
-        spurQuelle = quelle
-        let stroeme = quelle?.mediaStreams ?? []
-        let tonspuren = player.audioTracks
-        let utspuren = player.textTracks
-        let z = zuordnung(ton: tonspuren, untertitel: utspuren)
-        let gedaechtnis = Spurgedaechtnis()
-        // Nur der Stand *vor* der Wahl: VLC wendet eine Spurwahl im
-        // Eingangsfaden an, Millisekunden bis Zehntelsekunden später. Ein
-        // „nachher“ direkt danach zeigt noch den alten Stand (28.09.: „audio/2
-        // → audio/2“, obwohl gerade auf eine andere Tonspur umgeschaltet
-        // wurde). Was angefordert wird, steht in eigenen Zeilen.
-        Startmessung.geteilt.marke("Spuren vorher · Ton \(tonspuren.first(where: \.isSelected)?.trackId ?? "—")"
-            + " · Untertitel \(utspuren.first(where: \.isSelected)?.trackId ?? "—")")
+    /// The decision uses Jellyfin's index; where the track sits in VLC is told by
+    /// ``Spurzuordnung``. Before, both went by track name, and audio was
+    /// not remembered at all.
+    func wendeLanguagesAn(audio: String, subtitle: String, automatic: Bool,
+                         source: MediaSource?, title: String?) {
+        trackTitle = title
+        trackSource = source
+        let streams = source?.mediaStreams ?? []
+        let audioTracks = player.audioTracks
+        let subTracks = player.textTracks
+        let z = mapping(audio: audioTracks, subtitle: subTracks)
+        let memory = TrackMemory()
+        // Only the state *before* the selection: VLC applies a track selection on
+        // the input thread, milliseconds to tenths of a second later. An "after"
+        // directly following still shows the old state (e.g. "audio/2 -> audio/2"
+        // although another audio track was just selected). What is requested is in
+        // separate lines.
+        StartMeasurement.shared.mark("Spuren vorher · Ton \(audioTracks.first(where: \.isSelected)?.trackId ?? "—")"
+            + " · Untertitel \(subTracks.first(where: \.isSelected)?.trackId ?? "—")")
 
-        var tonIndex = Spurregel.ton(stroeme: stroeme,
-                                     gemerkt: titel.flatMap { gedaechtnis.ton(fuer: $0) },
-                                     wunschsprache: ton,
-                                     serverVorgabe: quelle?.defaultAudioStreamIndex)
-        // **Nur wählen, was nicht schon läuft.** Beim Start ist die gewünschte
-        // Spur meist schon die der Datei; sie trotzdem neu zu setzen, schickt
-        // eine Spurwahl durch Player und Eingang, mitten in den ersten
-        // Bildern — für nichts.
-        if let gesucht = tonIndex, let position = z.tonposition(index: gesucht) {
-            if !tonspuren[position].isSelected {
-                Startmessung.geteilt.marke("Tonwechsel nach dem Start → \(tonspuren[position].trackId) (Jellyfin \(gesucht))")
-                tonspuren[position].isSelectedExclusively = true
+        var audioIndex = TrackRule.audio(streams: streams,
+                                     remembered: title.flatMap { memory.audio(for: $0) },
+                                     preferredLanguage: audio,
+                                     serverPreGift: source?.defaultAudioStreamIndex)
+        // **Only select what is not already playing.** At start the wanted track is
+        // usually the file's own already; setting it anyway sends a track selection
+        // through player and input in the middle of the first pictures, for
+        // nothing.
+        if let searched = audioIndex, let position = z.audioPositionValue(index: searched) {
+            if !audioTracks[position].isSelected {
+                StartMeasurement.shared.mark("Tonwechsel nach dem Start → \(audioTracks[position].trackId) (Jellyfin \(searched))")
+                audioTracks[position].isSelectedExclusively = true
             }
         } else {
-            // Nicht zuzuordnen: der alte Weg über den Namen, sonst die Datei.
-            if !ton.isEmpty, let treffer = tonspuren.first(where: { Sprache.passt($0.trackName, zu: ton) }),
-               !treffer.isSelected {
-                Startmessung.geteilt.marke("Tonwechsel angefordert → \(treffer.trackId) (nach Name)")
-                treffer.isSelectedExclusively = true
+            // Cannot be mapped: the old way via the name, otherwise the file.
+            if !audio.isEmpty, let hit = audioTracks.first(where: { Language.fits($0.trackName, toward: audio) }),
+               !hit.isSelected {
+                StartMeasurement.shared.mark("Tonwechsel angefordert → \(hit.trackId) (nach Name)")
+                hit.isSelectedExclusively = true
             }
-            tonIndex = tonspuren.firstIndex(where: \.isSelected).flatMap { z.ton[$0] }
+            audioIndex = audioTracks.firstIndex(where: \.isSelected).flatMap { z.audio[$0] }
         }
 
-        let wahl = Spurregel.untertitel(stroeme: stroeme,
-                                        gemerkt: titel.flatMap { gedaechtnis.untertitel(fuer: $0) },
-                                        serverVorgabe: quelle?.defaultSubtitleStreamIndex,
-                                        automatisch: automatisch, tonindex: tonIndex,
-                                        tonwunsch: ton, wunschsprache: untertitel)
-        Protokoll.schreib("[Spuren] Ton \(tonIndex.map(String.init) ?? "Datei") · Untertitel \(wahl)"
-            + " · Vorgaben \(quelle?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
-            + "\(quelle?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"
-            + " · Zuordnung Ton \(z.ton) Untertitel \(z.untertitel)"
-            + " · Kennungen \(utspuren.map(\.trackId))")
-        untertitelSetzen(wahl, spuren: utspuren, zuordnung: z)
-        spurindizesMelden(Spurindizes(ton: tonIndex, untertitel: untertitelindex(wahl)))
-        seitenverhaeltnisPruefen(quelle)
+        let choice = TrackRule.subtitle(streams: streams,
+                                        remembered: title.flatMap { memory.subtitle(for: $0) },
+                                        serverPreGift: source?.defaultSubtitleStreamIndex,
+                                        automatic: automatic, audioIndex: audioIndex,
+                                        tonwunsch: audio, preferredLanguage: subtitle)
+        AppLog.writeOut("[Spuren] Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)"
+            + " · Vorgaben \(source?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
+            + "\(source?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"
+            + " · Zuordnung Ton \(z.audio) Untertitel \(z.subtitle)"
+            + " · Kennungen \(subTracks.map(\.trackId))")
+        subtitleSet(choice, tracks: subTracks, mapping: z)
+        trackIndicesReport(TrackIndices(audio: audioIndex, subtitle: subtitleIndex(choice)))
+        pagesRatioCheck(source)
     }
 
-    /// **Anamorphes Matroska aus ffmpeg: VLC 4 staucht das Bild** — siehe
-    /// ``Seitenverhaeltnis``. Dann gilt Jellyfins Anzeigeverhältnis.
-    /// Zurückgesetzt wird in `oeffnen`, sonst erbte die nächste Folge es.
-    private func seitenverhaeltnisPruefen(_ quelle: MediaSource?) {
-        guard let bild = quelle?.mediaStreams?.first(where: { $0.type == "Video" }),
-              let spur = player.videoTracks.first(where: \.isSelected) ?? player.videoTracks.first,
-              let video = spur.video,
-              let soll = Seitenverhaeltnis.korrektur(
+    /// **Anamorphic Matroska from ffmpeg: VLC 4 squashes the picture**; see
+    /// ``Seitenverhaeltnis``. Then Jellyfin's display ratio applies.
+    /// Reset in `open`, otherwise the next episode would inherit it.
+    private func pagesRatioCheck(_ source: MediaSource?) {
+        guard let image = source?.mediaStreams?.first(where: { $0.type == "Video" }),
+              let track = player.videoTracks.first(where: \.isSelected) ?? player.videoTracks.first,
+              let video = track.video,
+              let should = PagesRatio.correction(
                   sar: (UInt32(video.sourceAspectRatio), UInt32(video.sourceAspectRatioDenominator)),
-                  breite: bild.width ?? 0, hoehe: bild.height ?? 0, anzeige: bild.aspectRatio)
+                  width: image.width ?? 0, height: image.height ?? 0, display: image.aspectRatio)
         else { return }
-        player.videoAspectRatio = soll
-        Startmessung.geteilt.marke("Seitenverhältnis gesetzt")
-        Protokoll.schreib("[Bild] VLC meldet \(video.sourceAspectRatio):\(video.sourceAspectRatioDenominator)"
-            + " fuer \(bild.width ?? 0)x\(bild.height ?? 0) \(bild.aspectRatio ?? "?") — Anzeige auf \(soll) gesetzt")
+        player.videoAspectRatio = should
+        StartMeasurement.shared.mark("Seitenverhältnis gesetzt")
+        AppLog.writeOut("[Bild] VLC meldet \(video.sourceAspectRatio):\(video.sourceAspectRatioDenominator)"
+            + " fuer \(image.width ?? 0)x\(image.height ?? 0) \(image.aspectRatio ?? "?") — Anzeige auf \(should) gesetzt")
     }
 
-    private func untertitelindex(_ wahl: Spurregel.Untertitel) -> Int {
-        if case .strom(let index) = wahl { return index }
+    private func subtitleIndex(_ choice: TrackRule.Subtitle) -> Int {
+        if case .feed(let index) = choice { return index }
         return -1
     }
 
-    private func untertitelSetzen(_ wahl: Spurregel.Untertitel, spuren: [VLCMediaPlayer.Track],
-                                  zuordnung z: Spurzuordnung) {
-        offenerUntertitel = nil
-        guard case .strom(let index) = wahl else {
-            // Aktiv abschalten: die Datei bringt oft eine eigene Vorauswahl mit.
-            // Ist keine gewählt, gibt es nichts abzuschalten.
-            if spuren.contains(where: \.isSelected) {
-                Startmessung.geteilt.marke("Untertitel abgeschaltet")
+    private func subtitleSet(_ choice: TrackRule.Subtitle, tracks: [VLCMediaPlayer.Track],
+                                  mapping z: TrackMapping) {
+        currentSubtitle = nil
+        guard case .feed(let index) = choice else {
+            // Actively turn off: the file often brings its own preselection.
+            // If none is selected, there is nothing to turn off.
+            if tracks.contains(where: \.isSelected) {
+                StartMeasurement.shared.mark("Untertitel abgeschaltet")
                 player.deselectAllTextTracks()
             }
             return
         }
-        if let position = z.untertitelposition(index: index) {
-            if !spuren[position].isSelected { spuren[position].isSelectedExclusively = true }
+        if let position = z.subtitlePosition(index: index) {
+            if !tracks[position].isSelected { tracks[position].isSelectedExclusively = true }
         } else {
             player.deselectAllTextTracks()
-            if untertiteldateien.contains(where: { $0.index == index }) {
-                // Die Datei ist angehängt, aber noch nicht gelesen.
-                offenerUntertitel = index
-                Protokoll.schreib("[Spuren] Untertiteldatei \(index) noch nicht da, wartet")
+            if subtitleFiles.contains(where: { $0.index == index }) {
+                // The file is attached but not read yet.
+                currentSubtitle = index
+                AppLog.writeOut("[Spuren] Untertiteldatei \(index) noch nicht da, wartet")
             } else {
-                Protokoll.schreib("[Spuren] Untertitel \(index) nicht zuzuordnen, bleibt aus")
+                AppLog.writeOut("[Spuren] Untertitel \(index) nicht zuzuordnen, bleibt aus")
             }
         }
     }
 
-    /// VLC meldet eine neue Untertitelspur — vielleicht die gewählte Datei.
-    func offenenUntertitelSetzen() {
-        guard let index = offenerUntertitel else { return }
-        let spuren = player.textTracks
-        let z = zuordnung(ton: player.audioTracks, untertitel: spuren)
-        guard let position = z.untertitelposition(index: index) else { return }
-        offenerUntertitel = nil
-        spuren[position].isSelectedExclusively = true
-        Protokoll.schreib("[Spuren] Untertiteldatei \(index) nachgereicht")
-        spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: index))
+    /// VLC reports a new subtitle track, perhaps the chosen file.
+    func openSubtitleSet() {
+        guard let index = currentSubtitle else { return }
+        let tracks = player.textTracks
+        let z = mapping(audio: player.audioTracks, subtitle: tracks)
+        guard let position = z.subtitlePosition(index: index) else { return }
+        currentSubtitle = nil
+        tracks[position].isSelectedExclusively = true
+        AppLog.writeOut("[Spuren] Untertiteldatei \(index) nachgereicht")
+        trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: index))
     }
 
-    private func spurindizesMelden(_ neu: Spurindizes) {
-        guard neu != gemeldeteSpuren else { return }
-        gemeldeteSpuren = neu
-        spurenGemeldet?(neu)
+    private func trackIndicesReport(_ new: TrackIndices) {
+        guard new != reportedTracks else { return }
+        reportedTracks = new
+        tracksReported?(new)
     }
 
-    /// Von Hand gewählt: gilt sofort und für die ganze Serie (T1-M1).
-    func waehleTonspur(_ spur: VLCMediaPlayer.Track) {
-        spur.isSelectedExclusively = true
-        let spuren = player.audioTracks
-        let z = zuordnung(ton: spuren, untertitel: [])
-        let position = spuren.firstIndex { $0.trackId == spur.trackId }
-        let index = position.flatMap { z.ton[$0] }
-        if let spurTitel {
-            let stroeme = spurQuelle?.mediaStreams ?? []
-            let abdruck = index.flatMap { i in stroeme.first { $0.type == "Audio" && $0.index == i } }
-                .map { Spurabdruck(strom: $0, in: stroeme, name: spur.trackName) }
-                ?? Spurabdruck(spur: Self.abspielerspur(spur))
-            Spurgedaechtnis().merkeTon(abdruck, fuer: spurTitel)
-            Protokoll.schreib("[Spuren] Ton von Hand: \(index.map(String.init) ?? "?") \(abdruck)")
+    /// Chosen by hand: applies immediately and to the whole series.
+    func selectAudioTrack(_ track: VLCMediaPlayer.Track) {
+        track.isSelectedExclusively = true
+        let tracks = player.audioTracks
+        let z = mapping(audio: tracks, subtitle: [])
+        let position = tracks.firstIndex { $0.trackId == track.trackId }
+        let index = position.flatMap { z.audio[$0] }
+        if let trackTitle {
+            let streams = trackSource?.mediaStreams ?? []
+            let imprint = index.flatMap { i in streams.first { $0.type == "Audio" && $0.index == i } }
+                .map { TrackImprint(feed: $0, in: streams, name: track.trackName) }
+                ?? TrackImprint(track: Self.playerTrack(track))
+            TrackMemory().rememberAudio(imprint, for: trackTitle)
+            AppLog.writeOut("[Spuren] Ton von Hand: \(index.map(String.init) ?? "?") \(imprint)")
         }
-        spurindizesMelden(Spurindizes(ton: index, untertitel: gemeldeteSpuren.untertitel))
+        trackIndicesReport(TrackIndices(audio: index, subtitle: reportedTracks.subtitle))
     }
 
-    /// `nil` schaltet Untertitel ab.
+    /// `nil` turns subtitles off.
     ///
-    /// Hier — und nur hier — wird die Wahl für die Serie gemerkt: die Tafel
-    /// ist der einzige Weg, auf dem ein Mensch die Untertitelspur anfasst.
-    func waehleUntertitel(_ spur: VLCMediaPlayer.Track?) {
-        offenerUntertitel = nil
-        guard let spur else {
-            if let spurTitel { Spurgedaechtnis().merkeUntertitel(.aus, fuer: spurTitel) }
+    /// Here, and only here, the choice is remembered for the series: the panel
+    /// is the only way a person touches the subtitle track.
+    func selectSubtitle(_ track: VLCMediaPlayer.Track?) {
+        currentSubtitle = nil
+        guard let track else {
+            if let trackTitle { TrackMemory().rememberSubtitle(.off, for: trackTitle) }
             player.deselectAllTextTracks()
-            Protokoll.schreib("[Spuren] Untertitel von Hand: aus")
-            spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: -1))
+            AppLog.writeOut("[Spuren] Untertitel von Hand: aus")
+            trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: -1))
             return
         }
-        spur.isSelectedExclusively = true
-        let spuren = player.textTracks
-        let z = zuordnung(ton: [], untertitel: spuren)
-        let index = spuren.firstIndex { $0.trackId == spur.trackId }.flatMap { z.untertitel[$0] }
-        if let spurTitel {
-            let stroeme = spurQuelle?.mediaStreams ?? []
-            let abdruck = index.flatMap { i in stroeme.first { $0.type == "Subtitle" && $0.index == i } }
-                .map { Spurabdruck(strom: $0, in: stroeme, name: spur.trackName) }
-                ?? Spurabdruck(spur: Self.abspielerspur(spur))
-            Spurgedaechtnis().merkeUntertitel(.spur(abdruck), fuer: spurTitel)
-            Protokoll.schreib("[Spuren] Untertitel von Hand: \(index.map(String.init) ?? "?") \(abdruck)")
+        track.isSelectedExclusively = true
+        let tracks = player.textTracks
+        let z = mapping(audio: [], subtitle: tracks)
+        let index = tracks.firstIndex { $0.trackId == track.trackId }.flatMap { z.subtitle[$0] }
+        if let trackTitle {
+            let streams = trackSource?.mediaStreams ?? []
+            let imprint = index.flatMap { i in streams.first { $0.type == "Subtitle" && $0.index == i } }
+                .map { TrackImprint(feed: $0, in: streams, name: track.trackName) }
+                ?? TrackImprint(track: Self.playerTrack(track))
+            TrackMemory().rememberSubtitle(.track(imprint), for: trackTitle)
+            AppLog.writeOut("[Spuren] Untertitel von Hand: \(index.map(String.init) ?? "?") \(imprint)")
         }
-        spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: index))
+        trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: index))
     }
 
-    /// Namen für die Untertitelliste, je `trackId`.
+    /// Names for the subtitle list, per `trackId`.
     ///
-    /// VLCs Spurname, außer der Server weiß mehr: eine nachgeladene Datei
-    /// heißt bei VLC nur „Track 1", und zwei Spuren namens „Deutsch" sind
-    /// nicht auseinanderzuhalten (T1-N4). Dann Sprache, Format und ob sie
-    /// erzwungen oder eine eigene Datei ist.
-    func untertitelnamen() -> [String: String] {
-        let spuren = player.textTracks
-        let z = zuordnung(ton: [], untertitel: spuren)
-        let stroeme = spurQuelle?.mediaStreams ?? []
-        var namen: [String: String] = [:]
-        for (position, spur) in spuren.enumerated() {
-            let doppelt = spuren.filter { $0.trackName == spur.trackName }.count > 1
-            guard let index = z.untertitel[position],
-                  let strom = stroeme.first(where: { $0.type == "Subtitle" && $0.index == index }),
-                  doppelt || strom.isExternal == true || strom.isHearingImpaired == true else {
-                namen[spur.trackId] = spur.trackName
+    /// VLC's track name, unless the server knows more: a side-loaded file is
+    /// just "Track 1" to VLC, and two tracks named "German" cannot be told apart
+    ///. Then language, format and whether it is forced or a separate
+    /// file.
+    func subtitleNames() -> [String: String] {
+        let tracks = player.textTracks
+        let z = mapping(audio: [], subtitle: tracks)
+        let streams = trackSource?.mediaStreams ?? []
+        var names: [String: String] = [:]
+        for (position, track) in tracks.enumerated() {
+            let double = tracks.filter { $0.trackName == track.trackName }.count > 1
+            guard let index = z.subtitle[position],
+                  let feed = streams.first(where: { $0.type == "Subtitle" && $0.index == index }),
+                  double || feed.isExternal == true || feed.isHearingImpaired == true else {
+                names[track.trackId] = track.trackName
                 continue
             }
-            let teile: [String?] = [
-                strom.sprachname ?? spur.trackName,
-                Technikangaben.codecname(strom.codec),
-                strom.isForced == true ? String(localized: "Erzwungen") : nil,
-                strom.isHearingImpaired == true ? String(localized: "Hörgeschädigt") : nil,
-                strom.isExternal == true ? String(localized: "Datei") : nil,
+            let parts: [String?] = [
+                feed.languageName ?? track.trackName,
+                TechDetails.codecNameValue(feed.codec),
+                feed.isForced == true ? String(localized: "Erzwungen") : nil,
+                feed.isHearingImpaired == true ? String(localized: "Hörgeschädigt") : nil,
+                feed.isExternal == true ? String(localized: "Datei") : nil,
             ]
-            namen[spur.trackId] = teile.compactMap { $0 }.joined(separator: " · ")
+            names[track.trackId] = parts.compactMap { $0 }.joined(separator: " · ")
         }
-        return namen
+        return names
     }
 
 
-    /// 1.0 ist normal. VLC nimmt Werte zwischen 0,25 und 4.
+    /// 1.0 is normal. VLC accepts values between 0.25 and 4.
     var tempo: Float {
         get { player.rate }
         set { player.rate = newValue; refreshPiPState() }
     }
 
-    // MARK: - Verzögerung
+    // MARK: - Delay
 
-    /// Untertitel und Ton gegen das Bild verschoben — nur hier, nur lokal.
-    /// SyncPlay sieht davon nichts: die Gruppe gleicht Filmzeit ab, und die
-    /// ändert sich dadurch nicht.
-    var untertitelVerzoegerung = Verzoegerung.null {
-        didSet { if untertitelVerzoegerung != oldValue { verzoegerungNachziehen() } }
+    /// Subtitles and audio shifted against the picture, only here, only locally.
+    /// SyncPlay sees none of it: the group compares movie time, and that does
+    /// not change.
+    var subtitleDelay = Delay.null {
+        didSet { if subtitleDelay != oldValue { delayCatchUp() } }
     }
-    var tonVerzoegerung = Verzoegerung.null {
-        didSet { if tonVerzoegerung != oldValue { verzoegerungNachziehen() } }
-    }
-
-    /// Vor jedem `play` auf einen anderen Titel: dieselbe Serie behält den
-    /// Wert, alles andere beginnt bei null (`Verzoegerung.fuerNeuenTitel`).
-    func verzoegerungFuerNeuenTitel(alterTitel: String, alteSerie: String?,
-                                    neuerTitel: String, neueSerie: String?) {
-        untertitelVerzoegerung = .fuerNeuenTitel(untertitelVerzoegerung, alterTitel: alterTitel,
-                                                 alteSerie: alteSerie, neuerTitel: neuerTitel,
-                                                 neueSerie: neueSerie)
-        tonVerzoegerung = .fuerNeuenTitel(tonVerzoegerung, alterTitel: alterTitel,
-                                          alteSerie: alteSerie, neuerTitel: neuerTitel,
-                                          neueSerie: neueSerie)
+    var audioDelay = Delay.null {
+        didSet { if audioDelay != oldValue { delayCatchUp() } }
     }
 
-    /// **VLC vergisst die Verzögerung mit jedem neuen Medium** — auch nach
-    /// einem Neuaufbau, und vor `play` gesetzt kommt sie gar nicht an
-    /// (gemessen, siehe `Verzoegerung`). Deshalb nicht einmal setzen, sondern
-    /// nachsetzen, sobald VLC etwas anderes liest: beim Ändern, bei
-    /// „spielt" und im Sekundentakt des Wachhunds.
-    private func verzoegerungNachziehen() {
+    /// Before every `play` of another title: the same series keeps the value,
+    /// everything else starts at zero (`Delay.forNewTitle`).
+    func delayForNewTitle(oldTitle: String, oldSeries: String?,
+                                    newTitle: String, addedSeries: String?) {
+        subtitleDelay = .forNewTitle(subtitleDelay, oldTitle: oldTitle,
+                                                 oldSeries: oldSeries, newTitle: newTitle,
+                                                 addedSeries: addedSeries)
+        audioDelay = .forNewTitle(audioDelay, oldTitle: oldTitle,
+                                          oldSeries: oldSeries, newTitle: newTitle,
+                                          addedSeries: addedSeries)
+    }
+
+    /// **VLC forgets the delay with every new media**, also after a rebuild,
+    /// and set before `play` it does not arrive at all (measured, see
+    /// `Delay`). So do not set it once but set it again whenever VLC reads
+    /// something else: on change, on "playing" and in the watchdog's one-second
+    /// tick.
+    private func delayCatchUp() {
         guard player.media != nil else { return }
-        let text = player.currentVideoSubTitleDelay, ton = player.currentAudioPlaybackDelay
-        if untertitelVerzoegerung.weichtAb(vonMikrosekunden: text) {
-            player.currentVideoSubTitleDelay = untertitelVerzoegerung.mikrosekunden
-            Startmessung.geteilt.marke("Untertitelverzögerung gesetzt")
-            Protokoll.schreib("[Verzögerung] Untertitel \(untertitelVerzoegerung.millisekunden) ms"
+        let text = player.currentVideoSubTitleDelay, audio = player.currentAudioPlaybackDelay
+        if subtitleDelay.softOff(fromMicroseconds: text) {
+            player.currentVideoSubTitleDelay = subtitleDelay.microseconds
+            StartMeasurement.shared.mark("Untertitelverzögerung gesetzt")
+            AppLog.writeOut("[Verzögerung] Untertitel \(subtitleDelay.milliseconds) ms"
                 + " gesetzt, VLC liest \(player.currentVideoSubTitleDelay) µs")
         }
-        if tonVerzoegerung.weichtAb(vonMikrosekunden: ton) {
-            player.currentAudioPlaybackDelay = tonVerzoegerung.mikrosekunden
-            Startmessung.geteilt.marke("Tonverzögerung gesetzt")
-            Protokoll.schreib("[Verzögerung] Ton \(tonVerzoegerung.millisekunden) ms"
+        if audioDelay.softOff(fromMicroseconds: audio) {
+            player.currentAudioPlaybackDelay = audioDelay.microseconds
+            StartMeasurement.shared.mark("Tonverzögerung gesetzt")
+            AppLog.writeOut("[Verzögerung] Ton \(audioDelay.milliseconds) ms"
                 + " gesetzt, VLC liest \(player.currentAudioPlaybackDelay) µs")
         }
     }
 
     // MARK: - Position
 
-    /// Aktuelle Position in Sekunden.
+    /// Current position in seconds.
     var positionSeconds: Double { Double(player.time.intValue) / 1000 }
 
-    /// Gesamtlaenge in Sekunden. 0, solange VLC die Datei noch liest.
+    /// Total length in seconds. 0 while VLC is still reading the file.
     ///
-    /// **Nennt VLC keine, gilt die des Servers.** libVLC 4 kennt bei MPEG-TS
-    /// ueber HTTP nie eine Laenge (``MediaSource/laufzeitSekunden``) — ohne
-    /// sie gab es keinen Balken und keine Fortschrittsmeldung. Die Quelle ist
-    /// erst mit den Spuren da; bis dahin bleibt es bei 0 wie vorher.
+    /// **If VLC reports none, the server's applies.** libVLC 4 never knows a
+    /// length for MPEG-TS over HTTP (``MediaSource/laufzeitSekunden``); without
+    /// it there was no bar and no progress report. The source exists only with
+    /// the tracks; until then it stays 0 as before.
     var durationSeconds: Double {
         guard let ms = player.media?.length.intValue, ms > 0 else {
-            return spurQuelle?.laufzeitSekunden ?? 0
+            return trackSource?.runtimeSeconds ?? 0
         }
-        // Der Server liefert die Restlaenge; die Oberflaeche braucht die
-        // ganze. Bei Versatz null ist beides dasselbe.
+        // The server delivers the remaining length; the UI needs the whole. With
+        // offset zero both are the same.
         return Double(ms) / 1000
     }
 
     var isPlaying: Bool { player.isPlaying }
 
-    /// Springt an eine absolute Stelle.
+    /// Seeks to an absolute position.
     ///
-    /// Bewusst über `jump(withOffset:)` statt `player.time = …`. Aus dem
-    /// Geräteprotokoll: bei `time =` forderte VLC für Sekunde 1222 das Byte
-    /// 21,7 MB an — also Sekunde 30 — und las sich von dort 2,3 GB weit
-    /// sequenziell vor. Das dauerte 28 Sekunden. Derselbe Sprung über
-    /// `jump(withOffset:)` fordert sofort das richtige Byte an (22,5 % der
-    /// Datei) und ist nach sechs Sekunden da.
-    /// **Zwei Wege, und welcher taugt, entscheidet die Datei.**
+    /// Deliberately via `jump(withOffset:)` instead of `player.time = ...`. From
+    /// the device log: with `time =` VLC requested byte 21.7 MB for second 1222,
+    /// i.e. second 30, and read sequentially forward 2.3 GB from there. That took
+    /// 28 seconds. The same seek via `jump(withOffset:)` requests the right byte
+    /// immediately (22.5 % of the file) and arrives after six seconds.
+    /// **Two paths, and the file decides which works.**
     ///
-    /// `jump(withOffset:)` und `player.time = …` landen in VLC 4 in
-    /// verschiedenen Suchern. Fuer eine Datei war `jump` der schnelle und
-    /// `time` brauchte 28 Sekunden — das steht seit damals in
-    /// `Erfahrungen.md`. Fuer eine andere ist es genau umgekehrt: dort sind
-    /// die Sprungpunkte unlesbar, `jump` liest ab Dateianfang vorwaerts, und
-    /// `time` sitzt sofort. Swiftfin nimmt immer `time` und springt in dieser
-    /// Datei ohne Verzoegerung — bei Direct Play, also derselben Rohdatei.
+    /// `jump(withOffset:)` and `player.time = ...` end up in different seekers in
+    /// VLC 4. For one file `jump` was fast and `time` took 28 seconds; for
+    /// another it is exactly the reverse: its seek points are unreadable, `jump`
+    /// reads forward from the start of the file, and `time` lands instantly.
+    /// Swiftfin always uses `time` and seeks that file without delay with direct
+    /// play, i.e. the same raw file.
     ///
-    /// Es gibt also keinen Weg, der immer richtig ist. Statt einen zu waehlen
-    /// und zu hoffen, wird der erste versucht und **nachgemessen**; kommt er
-    /// nicht an, nimmt der naechste den anderen. Das kostet einmal je Datei
-    /// ein paar Sekunden und danach nie wieder.
+    /// So no path is always right. Instead of choosing one and hoping, the first
+    /// is tried and **verified afterwards**; if it does not arrive, the next one
+    /// takes the other. This costs a few seconds once per file and never again.
     func seek(toSeconds seconds: Double) {
-        // **Am Eingang begrenzt.** Ein Ziel aus NaN oder unendlich (eine
-        // Laufzeit von null, durch die geteilt wurde) liess weiter unten
-        // `Int(sekunden * 1000)` abstuerzen — die Umwandlung prueft nicht.
-        guard let seconds = Sprungziel.sekunden(seconds) else {
-            Protokoll.schreib("[VLC] Sprungziel ohne Zahl verworfen")
+        // **Bounded at the entry.** A target of NaN or infinity (a runtime of zero
+        // that was divided by) made `Int(seconds * 1000)` crash further down; the
+        // conversion does not check.
+        guard let seconds = JumpTarget.seconds(seconds) else {
+            AppLog.writeOut("[VLC] Sprungziel ohne Zahl verworfen")
             return
         }
-        melder.sprungJetzt()
-        sprungAusloesen(auf: seconds, ueberZeit: zeitsetzenBesser)
-        sprungBeobachten(ziel: seconds)
+        reporter.jumpNow()
+        jumpTrigger(on: seconds, overTime: timeSetBetter)
+        jumpObserve(target: seconds)
         refreshPiPState()
-        sprungGemeldet?(seconds)
+        jumpReported?(seconds)
     }
 
-    private func sprungAusloesen(auf sekunden: Double, ueberZeit: Bool) {
-        if ueberZeit {
-            Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
-            player.time = VLCTime(int: Int32(clamping: Int(sekunden * 1000)))
+    private func jumpTrigger(on seconds: Double, overTime: Bool) {
+        if overTime {
+            AppLog.writeOut("[VLC] Sprung auf \(Int(seconds)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
+            player.time = VLCTime(int: Int32(clamping: Int(seconds * 1000)))
         } else {
-            let abstand = sekunden - positionSeconds
-            Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber den Abstand \(Int(abstand)) s")
-            player.jump(withOffset: Int32(clamping: Int(abstand * 1000)), completion: {})
+            let spacing = seconds - positionSeconds
+            AppLog.writeOut("[VLC] Sprung auf \(Int(seconds)) s ueber den Abstand \(Int(spacing)) s")
+            player.jump(withOffset: Int32(clamping: Int(spacing * 1000)), completion: {})
         }
     }
 
-    /// Merkt sich, wohin gesprungen werden sollte — `sprungNachmessen` sieht
-    /// eine Sekunde spaeter nach, ob es geklappt hat.
-    private func sprungBeobachten(ziel: Double) {
-        offenesZiel = ziel
-        offenSeit = Date()
-        sprungStufe = 0
-        letzterSprungbefehl = Date()
+    /// Remembers where the seek should go; `jumpPostMeasure` checks a second
+    /// later whether it worked.
+    private func jumpObserve(target: Double) {
+        openTarget = target
+        openSince = Date()
+        jumpLevel = 0
+        lastJumpCommand = Date()
     }
 
 
-    /// Relativ springen.
+    /// Relative seek.
     ///
-    /// **Ist der vorige Sprung noch unterwegs, zählt sein Ziel**
-    /// (17.09.2026, iPhone): „Intro überspringen", gleich danach „30 s vor" —
-    /// und die Wiedergabe sprang zurück an das Ende des Intros. Zwei Gründe:
-    /// `jump(withOffset:)` rechnet von VLCs eigener, noch alter Zeit, und
-    /// `sprungNachmessen` wachte weiter über das **alte** Ziel, sah die
-    /// Wiedergabe 30 s daneben und sprang „zur Rettung" dorthin zurück. Jetzt
-    /// springt ein Sprung auf einen offenen absolut vom offenen Ziel aus, und
-    /// nachgemessen wird das neue Ziel.
+    /// **If the previous seek is still in flight, its target counts**: "Skip
+    /// intro", right after "30 s forward", and playback jumped back to the end of
+    /// the intro. Two reasons: `jump(withOffset:)` computes from VLC's own, still
+    /// old time, and `jumpPostMeasure` kept watching the **old** target, saw
+    /// playback 30 s off and jumped back there "to the rescue". Now a seek on a
+    /// pending one is absolute from the pending target, and the new target is
+    /// verified.
     func jump(seconds: Int32) {
-        melder.sprungJetzt()
-        if let offen = offenesZiel {
-            let ziel = max(offen + Double(seconds), 0)
-            Protokoll.schreib("[VLC] Sprung um \(seconds) s vom offenen Ziel \(Int(offen)) s")
-            sprungAusloesen(auf: ziel, ueberZeit: zeitsetzenBesser)
-            sprungBeobachten(ziel: ziel)
+        reporter.jumpNow()
+        if let opened = openTarget {
+            let target = max(opened + Double(seconds), 0)
+            AppLog.writeOut("[VLC] Sprung um \(seconds) s vom offenen Ziel \(Int(opened)) s")
+            jumpTrigger(on: target, overTime: timeSetBetter)
+            jumpObserve(target: target)
             refreshPiPState()
-            sprungGemeldet?(ziel)
+            jumpReported?(target)
             return
         }
-        let zeile = "[VLC] Sprung um \(seconds) s von \(Int(positionSeconds)) s"
-        Self.log.info("\(zeile, privacy: .public)")
-        let ziel = positionSeconds + Double(seconds)
+        let row = "[VLC] Sprung um \(seconds) s von \(Int(positionSeconds)) s"
+        Self.log.info("\(row, privacy: .public)")
+        let target = positionSeconds + Double(seconds)
         player.jump(withOffset: seconds * 1000, completion: {})
         refreshPiPState()
-        sprungGemeldet?(ziel)
+        jumpReported?(target)
     }
 }
 
 extension VLCMediaPlayer.Track {
-    /// „Deutsch · AAC · 5.1" statt VLCs rohem Spurnamen.
+    /// "German - AAC - 5.1" instead of VLC's raw track name.
     ///
-    /// **Bewusst nicht über Jellyfins `MediaStream`-Liste**, obwohl die schon
-    /// hübsch formatiert ist: die Position in VLCs Spurliste müsste dafür zur
-    /// Position in Jellyfins Liste passen, und ein Fehltreffer zeigte eine
-    /// falsche Sprache — schlimmer als der rohe Name. Alles kommt von der Spur.
-    /// Identität und Vergleich bleiben bei `trackName`.
-    var huebscherName: String {
+    /// **Deliberately not via Jellyfin's `MediaStream` list**, although it is
+    /// already nicely formatted: the position in VLC's track list would have to
+    /// match the position in Jellyfin's list, and a miss would show a wrong
+    /// language, worse than the raw name. Everything comes from the track.
+    /// Identity and comparison stay with `trackName`.
+    var prettyName: String {
         let libvlcName = codecName()
-        return Technikangaben.tonspurname(
-            sprache: language,
-            codec: Technikangaben.codecname(vlcKennung: codec) ?? (libvlcName.isEmpty ? nil : libvlcName),
-            kanaele: audio.map { Int($0.channelsNumber) }
+        return TechDetails.audioTrackName(
+            language: language,
+            codec: TechDetails.codecNameValue(vlcId: codec) ?? (libvlcName.isEmpty ? nil : libvlcName),
+            channels: audio.map { Int($0.channelsNumber) }
         ) ?? trackName
     }
 }
 
 
-/// Beobachtet VLCs Zustand — bewusst ohne Actor-Isolation, weil VLCKit aus
-/// einem eigenen Thread meldet.
-/// Leitet VLCs eigene Meldungen in dieselbe Datei wie unsere — und in den
-/// Speicher, aus dem ein Nutzer sein Protokoll teilt. Im ausgelieferten Bau
-/// nur ab Warnung: dort stehen VLCs Verbindungsfehler, und mehr soll dort
-/// keine Last machen.
+/// Observes VLC's state, deliberately without actor isolation because VLCKit
+/// reports from its own thread.
+/// Routes VLC's own messages into the same file as ours and into the buffer
+/// from which a user shares their log. In the shipped build only from warning
+/// up: there VLC's connection errors appear, and nothing more should add
+/// load.
 ///
-/// **Gefiltert, nicht vollstaendig.** Auf `debug` schreibt VLC hunderte Zeilen
-/// je Sekunde; ungefiltert waere die Datei nach Sekunden an ihrer Grenze und
-/// das Protokollieren selbst der Engpass. Durchgelassen wird, was die Frage
-/// beantwortet, wo die Wartezeit herkommt: Zugriffsschicht, Demuxer, Puffer,
-/// Decoder — dazu alles, was VLC selbst als Fehler oder Warnung einstuft.
-final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
-    /// **Die Stufe ist selbst eine Last, kein blosser Filter.**
+/// **Filtered, not complete.** At `debug` VLC writes hundreds of lines per
+/// second; unfiltered, the file would hit its limit within seconds and the
+/// logging itself would be the bottleneck. What answers where the wait comes
+/// from is let through: access layer, demuxer, buffer, decoder, plus
+/// everything VLC itself rates as error or warning.
+final class FileLog: NSObject, VLCLogging, @unchecked Sendable {
+    /// **The level is a load itself, not a mere filter.**
     ///
-    /// Auf `debug` meldet VLC waehrend der Wiedergabe hunderte Zeilen je
-    /// Sekunde, und jede laeuft hier durch `print`, eine Sperre und einen
-    /// Dateischreibvorgang. Wer damit misst, wie gleichmaessig Bilder auf
-    /// den Schirm kommen, misst zu einem guten Teil sich selbst — am
-    /// 08.09.2026 sind so vier Messungen am Apple TV entstanden, deren
-    /// Ruckeln womoeglich vom Protokollieren stammte.
+    /// At `debug` VLC emits hundreds of lines per second during playback, and
+    /// each runs through `print`, a lock and a file write. Anyone measuring how
+    /// evenly pictures reach the screen measures largely themselves; four
+    /// measurements on Apple TV came about that way, whose stutter may have come
+    /// from logging.
     ///
-    /// `warning` laesst genau das durch, was zur Ausgabe etwas sagt: VLC
-    /// stuft verspaetete Bilder und Uhrabweichungen als Warnung ein. Fuer
-    /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
-    /// Schluessel — dann darf es auch langsam sein.
+    /// `warning` lets through exactly what says something about the output: VLC
+    /// rates late pictures and clock deviations as warnings. For the demuxer
+    /// search that needs `debug`, a set key suffices; then it may be slow.
     #if DEBUG
-    private var grundstufe: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
+    private var reasonLevel: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
         ? .debug : .info
     #else
-    private var grundstufe: VLCLogLevel = .warning
+    private var reasonLevel: VLCLogLevel = .warning
     #endif
 
-    /// Im Fenster der ``Startmessung`` auf `debug`: Die Zeilen, die den
-    /// Anlauf von Ton und Uhr beschreiben („deferring start", „starting
-    /// late", die Latenz des Ausgangs), stuft VLC als `debug` ein. Durch
-    /// kommen davon nur ``Startmessung/vlcDebugStichworte`` — der Rest wird
-    /// verworfen, bevor er Sperre oder Platte sieht.
+    /// In the ``Startmessung`` window at `debug`: the lines describing the start
+    /// of audio and clock ("deferring start", "starting late", the output
+    /// latency) are rated `debug` by VLC. Of these only
+    /// ``Startmessung/vlcDebugKeywords`` get through; the rest is discarded
+    /// before it sees a lock or the disk.
     var level: VLCLogLevel {
-        get { Startmessung.geteilt.millisekunden != nil ? .debug : grundstufe }
-        set { grundstufe = newValue }
+        get { StartMeasurement.shared.milliseconds != nil ? .debug : reasonLevel }
+        set { reasonLevel = newValue }
     }
 
-    /// **Nach Inhalt sieben, nicht nach Modul.**
+    /// **Filter by content, not by module.**
     ///
-    /// Erster Anlauf liess nur Meldungen bestimmter Module durch — mkv,
-    /// avcodec, videotoolbox. Im Protokoll standen daraufhin ausschliesslich
-    /// `http` und `libvlc`: VLCKit reicht den Modulnamen fuer die meisten
-    /// Meldungen gar nicht durch. Der Filter hat also genau das
-    /// weggeworfen, wonach gesucht wurde, und das Ergebnis sah aus wie
-    /// Funkstille. Geblieben ist nur das, was VLC selbst als Fehler
-    /// einstufte.
+    /// The first attempt let through only messages from certain modules: mkv,
+    /// avcodec, videotoolbox. The log then contained only `http` and `libvlc`:
+    /// VLCKit does not pass the module name for most messages. The filter thus
+    /// threw away exactly what was being looked for, and the result looked like
+    /// radio silence. What remained was only what VLC itself rated as an error.
     ///
-    /// Jetzt andersherum: alles behalten, ausser dem HTTP-Rahmenverkehr. Der
-    /// ist die eigentliche Flut — tausend Zeilen in dreissig Sekunden —, und
-    /// er sagt nichts, was die Bereichsanfragen nicht schon sagen.
-    private static let flut = ["frame of", "window update", "setting:", "headers:"]
+    /// Now the other way round: keep everything except HTTP framing traffic. That
+    /// is the real flood, a thousand lines in thirty seconds, and it says nothing
+    /// the range requests do not already say.
+    private static let flood = ["frame of", "window update", "setting:", "headers:"]
 
-    /// **Was auf `info` trotzdem durchkommt.**
+    /// **What still gets through at `info`.**
     ///
-    /// Die Stufe steht auf `info`, weil genau dort die eine Zeile faellt, die
-    /// sagt, *womit* dekodiert wird -- „using video decoder module ...".
-    /// Ohne sie ist nicht zu entscheiden, ob HEVC ueber VideoToolbox laeuft
-    /// oder auf der CPU, und beide Faelle sehen von aussen gleich aus.
-    /// Geschrieben wird deshalb nur, was diese Frage beantwortet, dazu alles
-    /// ab Warnung -- der Rest wird verworfen, bevor er eine Sperre oder die
-    /// Platte sieht.
-    private static let gesucht = ["decoder module", "using video", "using audio",
+    /// The level is `info` because the one line that says *what* decodes falls
+    /// there: "using video decoder module ...". Without it you cannot tell whether
+    /// HEVC runs on VideoToolbox or on the CPU, and both look the same from
+    /// outside. So only what answers that question is written, plus everything
+    /// from warning up; the rest is discarded before it sees a lock or the
+    /// disk.
+    private static let searched = ["decoder module", "using video", "using audio",
                                   "videotoolbox", "hardware", "vout display",
                                   "picture is too late", "clock"]
 
-    func handleMessage(_ nachricht: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
-        let text = nachricht.lowercased()
-        guard !Self.flut.contains(where: { text.contains($0) }) else { return }
-        let modul = context?.module ?? "?"
-        if let ms = Startmessung.geteilt.millisekunden {
-            let liste = logLevel == .debug ? Startmessung.vlcDebugStichworte : Startmessung.vlcStichworte
-            if liste.contains(where: { text.contains($0) }) {
-                Protokoll.schreib("[Start] +\(ms) ms [vlc/\(modul)] \(nachricht)")
+    func handleMessage(_ postDirection: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
+        let text = postDirection.lowercased()
+        guard !Self.flood.contains(where: { text.contains($0) }) else { return }
+        let moduleRef = context?.module ?? "?"
+        if let ms = StartMeasurement.shared.milliseconds {
+            let list = logLevel == .debug ? StartMeasurement.vlcDebugKeywords : StartMeasurement.vlcStitchWords
+            if list.contains(where: { text.contains($0) }) {
+                AppLog.writeOut("[Start] +\(ms) ms [vlc/\(moduleRef)] \(postDirection)")
                 return
             }
         }
-        guard logLevel != .debug || grundstufe == .debug else { return }
-        let wichtig = logLevel == .error || logLevel == .warning
-        guard wichtig || Self.gesucht.contains(where: { text.contains($0) }) else { return }
-        Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
+        guard logLevel != .debug || reasonLevel == .debug else { return }
+        let important = logLevel == .error || logLevel == .warning
+        guard important || Self.searched.contains(where: { text.contains($0) }) else { return }
+        AppLog.writeOut("[vlc/\(moduleRef)] \(postDirection)")
     }
 }
 
-final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendable {
+final class StateReporter: NSObject, VLCMediaPlayerDelegate, @unchecked Sendable {
     private weak var player: VLCMediaPlayer?
     private let lock = NSLock()
-    private var letzterSprung: Date?
+    private var lastJump: Date?
 
     init(player: VLCMediaPlayer) {
         self.player = player
         super.init()
     }
 
-    func sprungJetzt() {
-        lock.lock(); letzterSprung = Date(); lock.unlock()
+    func jumpNow() {
+        lock.lock(); lastJump = Date(); lock.unlock()
     }
 
-    private var pufferstand: Float = 0
-    private var pufferWuchsZuletzt = Date.distantPast
+    private var bufferState: Float = 0
+    private var bufferGrewLast = Date.distantPast
 
-    /// **Wann der Puffer zuletzt gewachsen ist.**
+    /// **When the buffer last grew.**
     ///
-    /// Das ist der Unterschied zwischen „langsam" und „tot". Ein abgerissener
-    /// Strom fuellt nichts mehr; ein zaeher fuellt weiter, nur nicht schnell
-    /// genug. Wer beides gleich behandelt, reisst genau dem den Boden weg,
-    /// der gerade dabei ist, sich zu fangen.
-    var pufferWuchsVor: TimeInterval {
+    /// This is the difference between "slow" and "dead". A dropped stream fills
+    /// nothing anymore; a sluggish one keeps filling, just not fast enough.
+    /// Treating both the same pulls the rug from under exactly the one that is
+    /// about to recover.
+    var bufferGrewPre: TimeInterval {
         lock.lock(); defer { lock.unlock() }
-        return Date().timeIntervalSince(pufferWuchsZuletzt)
+        return Date().timeIntervalSince(bufferGrewLast)
     }
 
-    private var seitSprung: String {
+    private var sinceJump: String {
         lock.lock(); defer { lock.unlock() }
-        guard let letzterSprung else { return "—" }
-        return String(format: "%.1f", Date().timeIntervalSince(letzterSprung))
+        guard let lastJump else { return "—" }
+        return String(format: "%.1f", Date().timeIntervalSince(lastJump))
     }
 
-    /// Wird beim ersten Übergang nach Playing gerufen.
-    var beginntZuSpielen: (() -> Void)?
-    var zustandWechsel: ((VLCMediaPlayerState) -> Void)?
-    /// Eine Untertitelspur ist dazugekommen — etwa eine nachgeladene Datei.
-    var untertitelHinzu: (() -> Void)?
+    /// Called on the first transition to Playing.
+    var startPlay: (() -> Void)?
+    var stateSwitch: ((VLCMediaPlayerState) -> Void)?
+    /// A subtitle track was added, e.g. a side-loaded file.
+    var subtitleTo: (() -> Void)?
 
     func mediaPlayerTrackAdded(_ trackId: String, with trackType: VLCMedia.TrackType) {
         guard trackType == .text else { return }
-        untertitelHinzu?()
+        subtitleTo?()
     }
-    private var hatGespielt = false
+    private var hasPlay = false
 
-    /// Vor einem neuen Aufbau: sonst bliebe die Startposition ungesetzt, weil
-    /// der Uebergang nach Playing nur beim ersten Mal gemeldet wird.
-    func neuBeginnen() {
+    /// Before a new setup: otherwise the start position would stay unset because
+    /// the transition to Playing is reported only the first time.
+    func newBegin() {
         lock.lock(); defer { lock.unlock() }
-        hatGespielt = false
+        hasPlay = false
     }
 
-    func mediaPlayerStateChanged(_ neu: VLCMediaPlayerState) {
-        let name = VLCMediaPlayerStateToString(neu)
+    func mediaPlayerStateChanged(_ new: VLCMediaPlayerState) {
+        let name = VLCMediaPlayerStateToString(new)
         let position = Int((player?.time.intValue ?? 0) / 1000)
-        Protokoll.schreib("[VLC] Zustand: \(name) · Position \(position) s · \(seitSprung) s nach Sprung")
+        AppLog.writeOut("[VLC] Zustand: \(name) · Position \(position) s · \(sinceJump) s nach Sprung")
 
-        // Unter derselben Sperre wie neuBeginnen(): der Zustand kommt aus
-        // VLCs Thread, das Zuruecksetzen vom Hauptthread.
+        // Under the same lock as newBegin(): the state comes from VLC's thread,
+        // the reset from the main thread.
         lock.lock()
-        let erstmals = (neu == .playing && !hatGespielt)
-        if erstmals { hatGespielt = true }
+        let firstTimes = (new == .playing && !hasPlay)
+        if firstTimes { hasPlay = true }
         lock.unlock()
 
-        if erstmals { beginntZuSpielen?() }
-        zustandWechsel?(neu)
+        if firstTimes { startPlay?() }
+        stateSwitch?(new)
     }
 
-    private var letzteMeldung = Date.distantPast
+    private var lastMessage = Date.distantPast
 
-    func mediaPlayerBufferingChanged(_ fortschritt: Float) {
-        // Der Wert kommt als 0,0–1,0. Und die Meldung feuert dutzendfach je
-        // Sekunde — ungedrosselt bremst allein das Protokollieren die App.
-        guard fortschritt < 1 else { return }
+    func mediaPlayerBufferingChanged(_ progress: Float) {
+        // The value arrives as 0.0-1.0. And the callback fires dozens of times per
+        // second; unthrottled, the logging alone slows the app.
+        guard progress < 1 else { return }
         lock.lock()
-        // Ein Ruecksetzer auf null ist der Beginn eines neuen Fuellens, kein
-        // Rueckschritt — sonst gaelte der Neuanlauf als Stillstand.
+        // A reset to zero is the start of a new fill, not a step back; otherwise the
+        // restart would count as a stall.
         //
-        // **Nur der Sprung auf null, nicht das Verharren dort.** Vorher stand
-        // hier `fortschritt == 0`, und das trifft auch einen Puffer, der
-        // dauerhaft bei null steht: jeder Rueckruf frischte den Zeitstempel
-        // auf, `pufferWuchsVor` blieb bei null, und die Notbremse haette in
-        // genau der Lage, fuer die es sie gibt, nie ausgeloest. Gefunden von
-        // der iOS-Sitzung beim Gegenlesen; in unserer Messung kamen in dieser
-        // Lage gar keine Rueckrufe, der Fehler war also nie zu sehen — eine
-        // Luecke in der Logik, kein beobachteter Ausfall.
-        if fortschritt > pufferstand || (fortschritt == 0 && pufferstand > 0) {
-            pufferWuchsZuletzt = Date()
+        // **Only the jump to zero, not staying there.** It used to be
+        // `progress == 0`, which also hits a buffer that stays at zero: every
+        // callback refreshed the timestamp, `bufferGrewPre` stayed at zero, and the
+        // emergency brake would never have triggered in exactly the situation it
+        // exists for. Found while cross-reading; in our measurement no callbacks came
+        // in that situation at all, so the error was never seen: a gap in the logic,
+        // not an observed failure.
+        if progress > bufferState || (progress == 0 && bufferState > 0) {
+            bufferGrewLast = Date()
         }
-        pufferstand = fortschritt
-        let faellig = Date().timeIntervalSince(letzteMeldung) > 1
-        if faellig { letzteMeldung = Date() }
+        bufferState = progress
+        let due = Date().timeIntervalSince(lastMessage) > 1
+        if due { lastMessage = Date() }
         lock.unlock()
-        guard faellig else { return }
-        Protokoll.schreib("[VLC] puffert: \(Int(fortschritt * 100)) %")
+        guard due else { return }
+        AppLog.writeOut("[VLC] puffert: \(Int(progress * 100)) %")
     }
 }
 
 #if os(iOS)
-// MARK: - Bild-im-Bild
+// MARK: - Picture in picture
 
-/// Der Grund für diese App — und der Grund, warum sie VLCKit 4 statt 3
-/// einbindet. Auf tvOS gibt es das nicht: dort ist der Fernseher schon das
-/// große Bild, und ein kleines daneben hat kein Zuhause.
+/// The reason for this app, and the reason it embeds VLCKit 4 instead of 3.
+/// tvOS does not have it: there the TV is already the big picture, and a
+/// small one beside it has no home.
 extension VLCPlayerView: @preconcurrency VLCPictureInPictureDrawable {
 
     func mediaController() -> VLCPictureInPictureMediaControlling { controller }
 
     func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)? {
-        if Self.pipAbgeschaltet {
-            Protokoll.schreib("[VLC] Bild-im-Bild für diesen Lauf abgeschaltet")
+        if Self.pipDisabled {
+            AppLog.writeOut("[VLC] Bild-im-Bild für diesen Lauf abgeschaltet")
             return nil
         }
         return { [weak self] window in
@@ -2801,7 +2725,7 @@ extension VLCPlayerView: @preconcurrency VLCPictureInPictureDrawable {
                 self.pipWindow = window
                 window?.stateChangeEventHandler = { [weak self] started in
                     Task { @MainActor in
-                        self?.bildImBildLaeuft = started
+                        self?.imageImageRuns = started
                         self?.onPiPStateChanged?(started)
                     }
                 }

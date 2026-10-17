@@ -3,225 +3,248 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Jellyseerr und Overseerr — suchen, was der Server **nicht** hat, und es
-/// anfragen.
+/// Jellyseerr and Overseerr: search for what the server does **not** have, and
+/// request it.
 ///
-/// **Warum die halbe Anbindung hier steht und nicht in einer Ansicht.** Was
-/// ein Suchtreffer bedeutet, welcher Stand welche Handlung erlaubt und wie
-/// aus einer Antwort ein Eintrag wird, ist auf allen sechs Plattformen
-/// dieselbe Frage — und ohne Simulator prüfbar. Die Ansicht entscheidet
-/// hinterher nur noch, wie es aussieht.
+/// **Why half the integration lives here and not in a view.** What a search hit
+/// means, which state allows which action and how a response becomes an entry is the
+/// same question on all six platforms, and testable without a simulator. The view
+/// only decides how it looks.
 ///
-/// **Die Anmeldung läuft über Jellyfin, nicht über ein eigenes Konto.** Seerr
-/// nimmt unter `/api/v1/auth/jellyfin` denselben Benutzernamen und dasselbe
-/// Passwort wie der Medienserver und legt dafür eine Sitzung an — als
-/// **Keks**, nicht als Merkmal im Kopf. Deshalb hält `Seerrzugang` eine
-/// Zeichenkette, die aussieht wie ein Token und keiner ist.
+/// **Sign-in goes through Jellyfin, not through an own account.** Seerr accepts the
+/// same user name and password as the media server at `/api/v1/auth/jellyfin` and
+/// creates a session for it, as a **cookie**, not as a token in a header. So
+/// `SeerrAccess` holds a string that looks like a token and is not one.
 
-/// Wie weit ein Titel bei Seerr ist.
+/// How far a title has got at Seerr.
 ///
-/// Die Zahlen kommen aus der Schnittstelle und stehen dort wörtlich so:
+/// The numbers come from the API and read exactly like this:
 /// `1 = UNKNOWN, 2 = PENDING, 3 = PROCESSING, 4 = PARTIALLY_AVAILABLE,
-/// 5 = AVAILABLE, 6 = DELETED`. Sie werden nicht umbenannt — wer sie im
-/// Protokoll sieht, soll sie in Seerrs eigener Oberfläche wiederfinden.
-public enum Seerrstand: Int, Codable, Sendable, Equatable {
-    /// Niemand hat es angefragt. Der einzige Stand, der einen Knopf verdient.
-    case offen = 1
-    case wartetAufFreigabe = 2
-    case laedt = 3
-    case teilweiseDa = 4
-    case da = 5
-    case geloescht = 6
+/// 5 = AVAILABLE, 6 = DELETED`. They are not renamed: anyone seeing them in the
+/// log should recognise them in Seerr's own UI.
+public enum SeerrState: Int, Codable, Sendable, Equatable {
+    /// Nobody has requested it. The only state that deserves a button.
+    case opened = 1
+    case waitsSharing = 2
+    case loads = 3
+    case partWayPresent = 4
+    case present = 5
+    case deleted = 6
 
-    /// Darf der Nutzer hier anfragen?
+    /// May the user request here?
     ///
-    /// **Ein Stand ist keine Schaltfläche.** Was wartet oder lädt, lässt sich
-    /// nicht noch einmal anfragen; ein Knopf daneben wäre eine Behauptung, es
-    /// gäbe etwas zu tun. Bei `teilweiseDa` schon — dort fehlen Staffeln, und
-    /// genau die kann man nachfordern.
-    public var anfragbar: Bool {
+    /// **A state is not a button.** What is waiting or loading cannot be requested again;
+    /// a button there would claim there is something to do. For `partWayPresent` it applies:
+    /// seasons are missing there, and exactly those can be requested.
+    public var requestable: Bool {
         switch self {
-        case .offen, .geloescht, .teilweiseDa: true
-        case .wartetAufFreigabe, .laedt, .da: false
+        case .opened, .deleted, .partWayPresent: true
+        case .waitsSharing, .loads, .present: false
         }
     }
 
-    /// Liegt der Titel schon auf dem Server? Dann gehört er in den oberen
-    /// Block, nicht in den unteren.
-    public var schonDa: Bool { self == .da }
+    /// Is the title already on the server? Then it belongs in the upper block, not the
+    /// lower one.
+    public var alreadyPresent: Bool { self == .present }
 }
 
-/// Ein Treffer von Seerr — ein Titel, den der eigene Server (noch) nicht hat.
-public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
-    /// Die Kennung bei TMDB. Seerr nimmt sie beim Anfragen als `mediaId`.
+/// A Seerr hit: a title the own server does not (yet) have.
+public struct SeerrHit: Sendable, Hashable, Identifiable, Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case art
+        case title = "titel"
+        case year = "jahr"
+        case posterPath = "plakatPfad"
+        case backdropPath = "kulissePfad"
+        case state = "stand"
+    }
+    /// The TMDB identifier. Seerr takes it as `mediaId` when requesting.
     public let id: Int
-    /// `movie` oder `tv`. Personen fallen beim Einlesen heraus.
+    /// `movie` or `tv`. People are dropped when parsing.
     public let art: String
-    public let titel: String
-    public let jahr: Int?
-    public let plakatPfad: String?
-    /// Das **Querbild**, nicht das Plakat.
+    public let title: String
+    public let year: Int?
+    public let posterPath: String?
+    /// The **landscape image**, not the poster.
     ///
-    /// TMDB liefert beides getrennt, und der Kopf einer Detailseite braucht
-    /// das Querbild: ein hochgezogenes Plakat ist zu hoch, drückt alles
-    /// darunter nach unten und war nie dafür gedacht.
-    public let kulissePfad: String?
-    public let stand: Seerrstand
+    /// TMDB delivers both separately, and the header of a detail page needs the landscape
+    /// image: a stretched poster is too tall, pushes everything below it down and was
+    /// never meant for this.
+    public let backdropPath: String?
+    public let state: SeerrState
 
-    public var istSerie: Bool { art == "tv" }
+    public var isSeries: Bool { art == "tv" }
 
-    /// Die Bildadresse bei TMDB.
+    /// The image URL at TMDB.
     ///
-    /// **Nicht von Seerr, sondern von TMDB.** Seerr liefert nur den Pfad;
-    /// das Bild holt der Nutzer direkt, ohne Umweg über den eigenen Server
-    /// und ohne Merkmal. `w342` ist die kleinste Grösse, die auf einem
-    /// Plakat in einem Raster nicht weich aussieht.
-    public func plakat(breite: Int = 342) -> URL? {
-        Self.tmdb(plakatPfad, breite: breite)
+    /// **Not from Seerr, but from TMDB.** Seerr only supplies the path; the user fetches
+    /// the image directly, without going through the own server and without a token.
+    /// `w342` is the smallest size that does not look soft on a poster in a grid.
+    public func poster(width: Int = 342) -> URL? {
+        Self.tmdb(posterPath, width: width)
     }
 
-    /// Das Querbild für den Kopf einer Seite. **Nur das Querbild** — fehlt
-    /// es, kommt nichts zurück statt eines hochgezogenen Plakats.
-    public func kulisse(breite: Int = 780) -> URL? {
-        Self.tmdb(kulissePfad, breite: breite)
+    /// The landscape image for the head of a page. **Only the landscape image**: if it is
+    /// missing, nothing is returned instead of a stretched poster.
+    public func backdrop(width: Int = 780) -> URL? {
+        Self.tmdb(backdropPath, width: width)
     }
 
-    private static func tmdb(_ pfad: String?, breite: Int) -> URL? {
-        guard let pfad, !pfad.isEmpty else { return nil }
-        return URL(string: "https://image.tmdb.org/t/p/w\(breite)\(pfad)")
+    private static func tmdb(_ path: String?, width: Int) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w\(width)\(path)")
     }
 }
 
 
-/// Ein Mensch aus der Besetzung.
+/// A person from the cast.
 ///
-/// **Rolle, nicht Beruf.** Seerr fuehrt unter `credits.cast` die Darsteller
-/// mit ihrer Figur; die Crew steht daneben und gehoert nicht auf eine Seite,
-/// auf der man einen Titel anfragt.
-public struct Seerrperson: Sendable, Hashable, Identifiable, Codable {
+/// **Role, not profession.** Seerr lists the actors under `credits.cast` with their
+/// character; the crew sits next to it and does not belong on a page where one
+/// requests a title.
+public struct SeerrPerson: Sendable, Hashable, Identifiable, Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case role = "rolle"
+        case imagePath = "bildPfad"
+    }
     public let id: Int
     public let name: String
-    /// Die Figur, die er spielt. Kann fehlen.
-    public let rolle: String?
-    public let bildPfad: String?
+    /// The character they play. May be missing.
+    public let role: String?
+    public let imagePath: String?
 
-    /// Das Portraet bei TMDB. `w185` ist die kleinste Groesse, die auf einem
-    /// 76er Kreis nicht weich wird.
-    public func bild(breite: Int = 185) -> URL? {
-        guard let bildPfad, !bildPfad.isEmpty else { return nil }
-        return URL(string: "https://image.tmdb.org/t/p/w\(breite)\(bildPfad)")
+    /// The portrait at TMDB. `w185` is the smallest size that does not get soft in a
+    /// 76-point circle.
+    public func image(width: Int = 185) -> URL? {
+        guard let imagePath, !imagePath.isEmpty else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w\(width)\(imagePath)")
     }
 }
 
-/// Eine Staffel, wie Seerr sie kennt.
-public struct Seerrstaffel: Sendable, Hashable, Identifiable, Codable {
-    /// Die Nummer, so wie sie beim Anfragen wieder hinausgeht.
-    public let nummer: Int
-    public let folgen: Int
-    /// Was der eigene Server davon schon hat.
-    public let stand: Seerrstand
+/// A season as Seerr knows it.
+public struct SeerrSeason: Sendable, Hashable, Identifiable, Codable {
+    enum CodingKeys: String, CodingKey {
+        case number = "nummer"
+        case episodes = "folgen"
+        case state = "stand"
+    }
+    /// The number as it goes out again when requesting.
+    public let number: Int
+    public let episodes: Int
+    /// What the own server already has of it.
+    public let state: SeerrState
 
-    public var id: Int { nummer }
-    /// Staffel 0 ist bei TMDB das Sammelbecken für Specials.
-    public var istSpecials: Bool { nummer == 0 }
+    public var id: Int { number }
+    /// Season 0 is where TMDB collects specials.
+    public var isSpecials: Bool { number == 0 }
 }
 
-/// Was auf der Seite eines Titels steht, den es noch nicht gibt.
-public struct Seerrdetail: Sendable, Equatable, Codable {
-    public let beschreibung: String?
-    /// Höchstens zwei — mehr passt nicht in eine Nebenzeile, und die dritte
-    /// sagt ohnehin nichts mehr.
+/// What is on the page of a title that does not exist yet.
+public struct SeerrDetail: Sendable, Equatable, Codable {
+    enum CodingKeys: String, CodingKey {
+        case description = "beschreibung"
+        case genres
+        case runtime = "laufzeit"
+        case rating = "bewertung"
+        case seasons = "staffeln"
+        case cast = "besetzung"
+        case similarOne = "aehnliches"
+        case state = "stand"
+    }
+    public let description: String?
+    /// At most two: more does not fit into a secondary line, and the third says nothing
+    /// anyway.
     public let genres: [String]
-    /// In Minuten. Bei einer Serie die Länge einer Folge.
-    public let laufzeit: Int?
-    public let bewertung: Double?
-    public let staffeln: [Seerrstaffel]
-    /// Die Besetzung, in der Reihenfolge, in der Seerr sie liefert — das ist
-    /// die Reihenfolge der Wichtigkeit, nicht das Alphabet.
-    public let besetzung: [Seerrperson]
-    /// Was Seerr sonst noch vorschlaegt. **Dieselbe Sorte Treffer wie aus
-    /// der Suche**, damit die Kachel und die Seite dahinter dieselben sind.
+    /// In minutes. For a series, the length of one episode.
+    public let runtime: Int?
+    public let rating: Double?
+    public let seasons: [SeerrSeason]
+    /// The cast, in the order in which Seerr delivers it, which is the order of
+    /// importance, not alphabetical.
+    public let cast: [SeerrPerson]
+    /// What else Seerr suggests. **The same kind of hit as from search**, so the tile and
+    /// the page behind it are the same.
     ///
-    /// Kommt aus einem **zweiten** Abruf — siehe ``Seerr/vorschlaege(aus:art:)``.
-    public let aehnliches: [Seerrtreffer]
-    /// **Der Stand des ganzen Titels, frisch vom Server.** Der Suchtreffer
-    /// trägt nur den Stand vom Zeitpunkt der Suche; nach einer Anfrage (die
-    /// Seerr womöglich sofort freigibt) und beim erneuten Öffnen gilt dieser.
-    /// `nil`, wenn die Antwort ihn nicht trägt — dann bleibt der Treffer.
-    public let stand: Seerrstand?
+    /// Comes from a **second** fetch, see ``Seerr/vorschlaege(aus:art:)``.
+    public let similarOne: [SeerrHit]
+    /// **The state of the whole title, fresh from the server.** The search hit only
+    /// carries the state at the time of the search; after a request (which Seerr may
+    /// approve at once) and on reopening, this one applies.
+    /// `nil` if the response does not carry it; then the hit stays.
+    public let state: SeerrState?
 
-    /// Dieselbe Auskunft, nur mit den Vorschlaegen aus dem zweiten Abruf.
-    public func mit(aehnliches neu: [Seerrtreffer]) -> Seerrdetail {
-        Seerrdetail(beschreibung: beschreibung, genres: genres, laufzeit: laufzeit,
-                    bewertung: bewertung, staffeln: staffeln, besetzung: besetzung,
-                    aehnliches: neu, stand: stand)
+    /// The same information, only with the suggestions from the second fetch.
+    public func with(similarOne new: [SeerrHit]) -> SeerrDetail {
+        SeerrDetail(description: description, genres: genres, runtime: runtime,
+                    rating: rating, seasons: seasons, cast: cast,
+                    similarOne: new, state: state)
     }
 }
 
-/// Adresse und Sitzung. Liegt beim Nutzer, nicht hier.
-public struct Seerrzugang: Codable, Sendable, Equatable {
-    public let adresse: URL
-    /// Der Sitzungskeks, so wie er im `Cookie`-Kopf wieder hinausgeht.
-    public let keks: String
-    /// Eigene Köpfe für einen Vorposten vor Seerr — Cloudflare Access,
-    /// Authelia, Pangolin. **Leer für fast alle.** Sie liegen mit dem Keks
-    /// im Schlüsselbund, weil sie genauso ein Zugang sind.
-    public let koepfe: [Eigenkopf]
+/// Address and session. Held by the user, not here.
+public struct SeerrAccess: Codable, Sendable, Equatable {
+    public let address: URL
+    /// The session cookie as it goes out again in the `Cookie` header.
+    public let cookie: String
+    /// Custom headers for a gateway in front of Seerr: Cloudflare Access,
+    /// Authelia, Pangolin. **Empty for almost everyone.** They are stored with the cookie
+    /// in the keychain because they are credentials just the same.
+    public let headers: [OwnHeader]
 
-    public init(adresse: URL, keks: String, koepfe: [Eigenkopf] = []) {
-        self.adresse = adresse
-        self.keks = keks
-        self.koepfe = Eigenkoepfe.bereinigt(koepfe)
+    public init(address: URL, cookie: String, headers: [OwnHeader] = []) {
+        self.address = address
+        self.cookie = cookie
+        self.headers = OwnHeaders.cleaned(headers)
     }
 
-    private enum CodingKeys: String, CodingKey { case adresse, keks, koepfe }
+    private enum CodingKeys: String, CodingKey { case address = "adresse", cookie = "keks", headers = "koepfe" }
 
-    /// **Ein Zugang von vorher hat kein Feld `koepfe`** — und muss trotzdem
-    /// lesbar bleiben. Scheiterte das Lesen, wäre jeder bestehende Nutzer
-    /// still von Seerr getrennt; genau das ist bei der Ablage schon einmal
-    /// passiert.
+    /// **A stored credential from before has no `headers` field** and must still be
+    /// readable. If reading failed, every existing user would be silently disconnected
+    /// from Seerr; that has happened once already with storage.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        adresse = try c.decode(URL.self, forKey: .adresse)
-        keks = try c.decode(String.self, forKey: .keks)
-        koepfe = try c.decodeIfPresent([Eigenkopf].self, forKey: .koepfe) ?? []
+        address = try c.decode(URL.self, forKey: .address)
+        cookie = try c.decode(String.self, forKey: .cookie)
+        headers = try c.decodeIfPresent([OwnHeader].self, forKey: .headers) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(adresse, forKey: .adresse)
-        try c.encode(keks, forKey: .keks)
-        // Leer bleibt weg: ein Zugang ohne Köpfe sieht aus wie immer.
-        if !koepfe.isEmpty { try c.encode(koepfe, forKey: .koepfe) }
+        try c.encode(address, forKey: .address)
+        try c.encode(cookie, forKey: .cookie)
+        // Empty is left out: a credential without headers looks as it always did.
+        if !headers.isEmpty { try c.encode(headers, forKey: .headers) }
     }
 }
 
-/// Die Teile, die ohne Netz prüfbar sind.
+/// The parts that can be tested without a network.
 ///
-/// **Absichtlich getrennt vom Abruf.** Was eine Antwort bedeutet, ist die
-/// Frage, an der es hängt; ob der Abruf durchkommt, ist Sache des Netzes.
-/// Genau diese Trennung fehlte bei der Ablage, und dort hat sie jeden
-/// bestehenden Nutzer die Anmeldung gekostet.
+/// **Deliberately separate from the fetch.** What a response means is the question
+/// everything depends on; whether the fetch gets through is up to the network. This
+/// separation was missing in storage, and it cost every existing user their sign-in.
 public enum Seerr {
 
-    /// Aus Seerrs Suchantwort die Treffer, die uns etwas angehen.
+    /// From Seerr's search response, the hits that matter here.
     ///
-    /// **Personen fallen heraus.** Die Schnittstelle liefert sie mit
-    /// (`mediaType: "person"`), und ein Schauspieler ist nichts, was man
-    /// anfragen kann. Ebenso fällt heraus, was gar keinen Titel trägt.
+    /// **People are dropped.** The API includes them (`mediaType: person`), and an
+    /// actor is nothing that can be requested. Entries without any title are dropped
+    /// too.
     ///
-    /// Fehlt `mediaInfo`, hat noch nie jemand danach gefragt — das ist
-    /// `offen`, nicht „unbekannt". Seerr legt den Eintrag erst mit der
-    /// ersten Anfrage an.
-    public static func treffer(ausSuche daten: Data) -> [Seerrtreffer] {
-        guard let a = try? JSONDecoder().decode(Trefferliste.self, from: daten) else { return [] }
-        return treffer(aus: a.results, standardArt: nil)
+    /// If `mediaInfo` is missing, nobody has ever asked for it: that is `opened`, not
+    /// “unknown”. Seerr only creates the entry with the first request.
+    public static func hit(fromSearch data: Data) -> [SeerrHit] {
+        guard let a = try? JSONDecoder().decode(HitList.self, from: data) else { return [] }
+        return hit(from: a.results, standardArt: nil)
     }
 
-    /// Die Form, in der Seerr Trefferlisten ausliefert — Suche wie
-    /// Vorschlaege. **Einmal beschrieben, zweimal benutzt.**
-    struct Trefferliste: Decodable {
-        struct Eintrag: Decodable {
+    /// The shape in which Seerr delivers hit lists, search as well as suggestions.
+    /// **Described once, used twice.**
+    struct HitList: Decodable {
+        struct Record: Decodable {
             let id: Int
             let mediaType: String?
             let title: String?
@@ -233,305 +256,289 @@ public enum Seerr {
             let mediaInfo: Info?
             struct Info: Decodable { let status: Int? }
         }
-        let results: [Eintrag]
+        let results: [Record]
     }
 
-    /// **`standardArt` ist der Unterschied zwischen Suche und Vorschlag.**
+    /// **`standardArt` is the difference between search and suggestion.**
     ///
-    /// In der Suche steht an jedem Eintrag, was er ist — dort *muss* die
-    /// Angabe kommen, sonst waere ein Schauspieler nicht von einem Film zu
-    /// unterscheiden. Unter `recommendations` einer Filmseite stehen nur
-    /// Filme, und Seerr spart sich das Feld. Ohne diesen Rueckfall kam dort
-    /// nie ein Treffer an, obwohl die Antwort voll war.
-    struct Filmografie: Decodable { let cast: [Trefferliste.Eintrag]? }
+    /// In search every entry says what it is, so the field *must* be read, otherwise an
+    /// actor could not be told from a film. Under `recommendations` of a film page there
+    /// are only films, and Seerr omits the field. Without this fallback no hit ever
+    /// arrived there although the response was full.
+    struct Filmography: Decodable { let cast: [HitList.Record]? }
 
-    /// **Ohne Doppelte.** Eine Serie steht in der Filmografie einmal je Rolle
-    /// — wer zwei Figuren gespielt hat, stünde sonst zweimal da.
-    public static func treffer(ausFilmografie daten: Data) -> [Seerrtreffer] {
-        guard let f = try? JSONDecoder().decode(Filmografie.self, from: daten) else { return [] }
-        var gesehen = Set<String>()
-        return treffer(aus: f.cast ?? [], standardArt: nil)
-            .filter { gesehen.insert("\($0.art)-\($0.id)").inserted }
+    /// **Without duplicates.** A series appears in the filmography once per role, so
+    /// someone who played two characters would appear twice.
+    public static func hit(fromFilmography data: Data) -> [SeerrHit] {
+        guard let f = try? JSONDecoder().decode(Filmography.self, from: data) else { return [] }
+        var watched = Set<String>()
+        return hit(from: f.cast ?? [], standardArt: nil)
+            .filter { watched.insert("\($0.art)-\($0.id)").inserted }
     }
 
-    static func treffer(aus eintraege: [Trefferliste.Eintrag],
-                        standardArt: String?) -> [Seerrtreffer] {
-        eintraege.compactMap { e in
+    static func hit(from entries: [HitList.Record],
+                        standardArt: String?) -> [SeerrHit] {
+        entries.compactMap { e in
             guard let art = e.mediaType ?? standardArt, art == "movie" || art == "tv" else { return nil }
-            guard let titel = e.title ?? e.name, !titel.isEmpty else { return nil }
-            let datum = e.releaseDate ?? e.firstAirDate
-            return Seerrtreffer(
+            guard let title = e.title ?? e.name, !title.isEmpty else { return nil }
+            let date = e.releaseDate ?? e.firstAirDate
+            return SeerrHit(
                 id: e.id,
                 art: art,
-                titel: titel,
-                jahr: datum.flatMap { Int($0.prefix(4)) },
-                plakatPfad: e.posterPath,
-                kulissePfad: e.backdropPath,
-                stand: e.mediaInfo?.status.flatMap(Seerrstand.init(rawValue:)) ?? .offen)
+                title: title,
+                year: date.flatMap { Int($0.prefix(4)) },
+                posterPath: e.posterPath,
+                backdropPath: e.backdropPath,
+                state: e.mediaInfo?.status.flatMap(SeerrState.init(rawValue:)) ?? .opened)
         }
     }
 
-    /// Aus Seerrs Detailantwort, was die Seite braucht.
+    /// From Seerr's detail response, what the page needs.
     ///
-    /// **Staffel 0 fällt heraus.** TMDB legt dort Specials ab; wer „alle
-    /// Staffeln" anfragt, meint sie nicht mit, und in einer Liste zum
-    /// Ankreuzen steht sie ganz oben, wo niemand sie erwartet.
+    /// **Season 0 is dropped.** TMDB keeps specials there; whoever requests “all
+    /// seasons” does not mean them, and in a list to tick it sits at the very top where
+    /// nobody expects it.
     ///
-    /// Fehlt einer Staffel der Stand, ist sie **offen** — dieselbe
-    /// Begründung wie beim Suchtreffer: Seerr legt den Eintrag erst mit der
-    /// ersten Anfrage an.
-    public static func detail(aus daten: Data) -> Seerrdetail? {
-        struct Antwort: Decodable {
-            struct Besetzung: Decodable {
-                struct Kopf: Decodable {
+    /// If a season has no state, it is **open**, same reasoning as for the search hit:
+    /// Seerr only creates the entry with the first request.
+    public static func detail(from data: Data) -> SeerrDetail? {
+        struct Reply: Decodable {
+            struct Cast: Decodable {
+                struct Header: Decodable {
                     let id: Int
                     let name: String?
                     let character: String?
                     let profilePath: String?
                 }
-                let cast: [Kopf]?
+                let cast: [Header]?
             }
-            struct Staffel: Decodable {
+            struct Season: Decodable {
                 let seasonNumber: Int
                 let episodeCount: Int?
                 let mediaInfo: Info?
             }
             struct Info: Decodable { let status: Int? }
-            struct Gattung: Decodable { let name: String? }
+            struct Genre: Decodable { let name: String? }
             let overview: String?
-            let genres: [Gattung]?
+            let genres: [Genre]?
             let runtime: Int?
             let episodeRunTime: [Int]?
             let voteAverage: Double?
-            let seasons: [Staffel]?
-            let credits: Besetzung?
-            let mediaInfo: MedienInfo?
-            struct MedienInfo: Decodable {
+            let seasons: [Season]?
+            let credits: Cast?
+            let mediaInfo: MediaInfo?
+            struct MediaInfo: Decodable {
                 let status: Int?
-                struct Staffelstand: Decodable { let seasonNumber: Int; let status: Int? }
-                let seasons: [Staffelstand]?
+                struct SeasonState: Decodable { let seasonNumber: Int; let status: Int? }
+                let seasons: [SeasonState]?
             }
         }
-        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten) else { return nil }
+        guard let a = try? JSONDecoder().decode(Reply.self, from: data) else { return nil }
 
-        // Der Stand je Staffel steht nicht bei der Staffel, sondern in einer
-        // zweiten Liste daneben. Erst zusammenführen, dann ausliefern.
-        var staende: [Int: Seerrstand] = [:]
+        // The state per season is not on the season but in a second list next to it. Merge
+        // first, then deliver.
+        var states: [Int: SeerrState] = [:]
         for e in a.mediaInfo?.seasons ?? [] {
-            if let s = e.status.flatMap(Seerrstand.init(rawValue:)) { staende[e.seasonNumber] = s }
+            if let s = e.status.flatMap(SeerrState.init(rawValue:)) { states[e.seasonNumber] = s }
         }
-        let staffeln = (a.seasons ?? [])
+        let seasons = (a.seasons ?? [])
             .filter { $0.seasonNumber > 0 }
-            .map { Seerrstaffel(nummer: $0.seasonNumber,
-                                folgen: $0.episodeCount ?? 0,
-                                stand: staende[$0.seasonNumber] ?? .offen) }
+            .map { SeerrSeason(number: $0.seasonNumber,
+                                episodes: $0.episodeCount ?? 0,
+                                state: states[$0.seasonNumber] ?? .opened) }
 
-        // **Wer keinen Namen hat, ist keine Besetzung.** Und mehr als zwanzig
-        // Koepfe liest niemand — TMDB fuehrt bei grossen Serien ueber hundert,
-        // und jeder davon waere ein Bild, das geholt wird.
-        let besetzung = (a.credits?.cast ?? []).compactMap { k -> Seerrperson? in
+        // **Without a name, it is not cast.** And nobody reads more than twenty heads: TMDB
+        // lists over a hundred for big series, and each would be an image to fetch.
+        let cast = (a.credits?.cast ?? []).compactMap { k -> SeerrPerson? in
             guard let name = k.name, !name.isEmpty else { return nil }
-            return Seerrperson(id: k.id, name: name,
-                               rolle: (k.character?.isEmpty ?? true) ? nil : k.character,
-                               bildPfad: k.profilePath)
+            return SeerrPerson(id: k.id, name: name,
+                               role: (k.character?.isEmpty ?? true) ? nil : k.character,
+                               imagePath: k.profilePath)
         }.prefix(20).map { $0 }
 
         let text = a.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return Seerrdetail(beschreibung: (text?.isEmpty ?? true) ? nil : text,
+        return SeerrDetail(description: (text?.isEmpty ?? true) ? nil : text,
                            genres: (a.genres ?? []).compactMap(\.name).prefix(2).map { $0 },
-                           laufzeit: a.runtime ?? a.episodeRunTime?.first,
-                           bewertung: a.voteAverage,
-                           staffeln: staffeln,
-                           besetzung: besetzung,
-                           // **Leer, und das ist kein Versehen.** Die
-                           // Vorschlaege kommen aus einem eigenen Abruf;
-                           // ``SeerrClient/detail(art:id:)`` setzt sie nach.
-                           aehnliches: [],
-                           // Fehlt `mediaInfo`, hat noch nie jemand gefragt.
-                           stand: a.mediaInfo?.status.flatMap(Seerrstand.init(rawValue:)) ?? .offen)
+                           runtime: a.runtime ?? a.episodeRunTime?.first,
+                           rating: a.voteAverage,
+                           seasons: seasons,
+                           cast: cast,
+                           // **Empty, and that is no oversight.** The suggestions come from a separate fetch;
+                           // ``SeerrClient/detail(art:id:)`` adds them afterwards.
+                           similarOne: [],
+                           // If `mediaInfo` is missing, nobody has ever asked.
+                           state: a.mediaInfo?.status.flatMap(SeerrState.init(rawValue:)) ?? .opened)
     }
 
-    /// Die Vorschlaege zu einem Titel.
+    /// The suggestions for a title.
     ///
-    /// **Ein eigener Abruf, kein Feld der Detailantwort.** Genau das war der
-    /// Fehler: `credits` liefert Seerr in der Detailantwort mit, die
-    /// Vorschlaege nicht — die stehen unter `/{art}/{id}/recommendations`.
-    /// Die Besetzung war deshalb da und „Aehnliches" blieb leer, samt
-    /// Ueberschrift, auch bei Titeln, zu denen es reichlich gibt.
+    /// **A separate fetch, not a field of the detail response.** Seerr includes
+    /// `credits` in the detail response, but not the suggestions; those are under
+    /// `/{art}/{id}/recommendations`. So the cast was there while “Similar” stayed empty,
+    /// heading included, even for titles that have plenty.
     ///
-    /// `art` ist nicht Zierde: in dieser Antwort steht an den Eintraegen
-    /// **kein** `mediaType` — die Seite weiss ja, was sie ist. Ohne den
-    /// Rueckfall kaeme auch aus einer vollen Antwort nichts an.
-    public static func vorschlaege(aus daten: Data, art: String) -> [Seerrtreffer] {
-        guard let a = try? JSONDecoder().decode(Trefferliste.self, from: daten) else { return [] }
-        return treffer(aus: a.results, standardArt: art)
+    /// `art` is not decoration: in this response the entries carry **no** `mediaType`,
+    /// since the page knows what it is. Without the fallback nothing would arrive even
+    /// from a full response.
+    public static func suggestions(from data: Data, art: String) -> [SeerrHit] {
+        guard let a = try? JSONDecoder().decode(HitList.self, from: data) else { return [] }
+        return hit(from: a.results, standardArt: art)
     }
 
-    /// Den Sitzungskeks aus der Antwort auf die Anmeldung holen.
+    /// Get the session cookie from the response to the sign-in.
     ///
-    /// **Seerr arbeitet mit einer Sitzung, nicht mit einem Merkmal.** Nach
-    /// `POST /api/v1/auth/jellyfin` steht sie in `Set-Cookie`, meist als
-    /// `connect.sid`. Wir schneiden alles hinter dem ersten Strichpunkt ab —
-    /// `Path`, `HttpOnly` und `Expires` gehören dem Browser, nicht uns.
+    /// **Seerr works with a session, not a token.** After `POST /api/v1/auth/jellyfin` it
+    /// is in `Set-Cookie`, usually as `connect.sid`. Everything after the first semicolon
+    /// is cut off: `Path`, `HttpOnly` and `Expires` belong to the browser, not to the app.
     ///
-    /// Mehrere Kekse werden mit `, ` aneinandergehängt; deshalb wird je
-    /// Bestandteil gesucht und nicht auf einen einzigen gehofft.
-    public static func keks(ausKopf setCookie: String) -> String? {
-        for teil in setCookie.split(separator: ",") {
-            let stueck = teil.trimmingCharacters(in: .whitespaces)
-            guard let gleich = stueck.firstIndex(of: "="),
-                  stueck[..<gleich].contains("sid") else { continue }
-            let bis = stueck.firstIndex(of: ";") ?? stueck.endIndex
-            let keks = String(stueck[..<bis])
-            if !keks.hasSuffix("=") { return keks }
+    /// Several cookies are joined with `, `; so each part is searched instead of hoping
+    /// for a single one.
+    public static func cookie(fromHeader setCookie: String) -> String? {
+        for part in setCookie.split(separator: ",") {
+            let piece = part.trimmingCharacters(in: .whitespaces)
+            guard let same = piece.firstIndex(of: "="),
+                  piece[..<same].contains("sid") else { continue }
+            let until = piece.firstIndex(of: ";") ?? piece.endIndex
+            let cookie = String(piece[..<until])
+            if !cookie.hasSuffix("=") { return cookie }
         }
         return nil
     }
 
-    /// Den Sitzungskeks aus dem Keksspeicher der Verbindung holen.
-    static func keksAusSpeicher(fuer adresse: URL, sitzung: URLSession) -> String? {
-        guard let speicher = sitzung.configuration.httpCookieStorage,
-              let kekse = speicher.cookies(for: adresse) else { return nil }
-        guard let treffer = kekse.first(where: { $0.name.contains("sid") && !$0.value.isEmpty })
+    /// Get the session cookie from the connection's cookie store.
+    static func cookieOutCache(for address: URL, session: URLSession) -> String? {
+        guard let cache = session.configuration.httpCookieStorage,
+              let cookies = cache.cookies(for: address) else { return nil }
+        guard let hit = cookies.first(where: { $0.name.contains("sid") && !$0.value.isEmpty })
         else { return nil }
-        return "\(treffer.name)=\(treffer.value)"
+        return "\(hit.name)=\(hit.value)"
     }
 
-    /// Beim Abmelden: die Kekse dieser Adresse aus der Verbindung nehmen.
+    /// On sign-out: remove the cookies of this address from the connection.
     ///
-    /// **Sonst bleibt die Sitzung am Leben, die niemand mehr sehen kann.** Der
-    /// gespeicherte Zugang ist weg, der Keks im Speicher nicht — und der
-    /// nächste Anmeldeversuch bekommt deshalb keine neue Sitzung.
-    public static func kekseVergessen(fuer adresse: URL,
-                                      sitzung: URLSession = .ortsnetzfaehig) {
-        guard let speicher = sitzung.configuration.httpCookieStorage,
-              let kekse = speicher.cookies(for: adresse) else { return }
-        for keks in kekse { speicher.deleteCookie(keks) }
+    /// **Otherwise the session stays alive where nobody can see it.** The stored
+    /// credential is gone, the cookie in memory is not, and the next sign-in attempt
+    /// therefore gets no new session.
+    public static func cookiesForget(for address: URL,
+                                      session: URLSession = .localNetworkCapable) {
+        guard let cache = session.configuration.httpCookieStorage,
+              let cookies = cache.cookies(for: address) else { return }
+        for cookie in cookies { cache.deleteCookie(cookie) }
     }
 
-    /// Was beim Anfragen an Seerr geht.
+    /// What goes to Seerr when requesting.
     ///
-    /// **Bei einem Film gibt es keine Staffeln, und dann darf das Feld auch
-    /// nicht dastehen.** Seerr nimmt entweder eine Liste von Nummern oder das
-    /// Wort `all`; ein leeres Feld hat es schon einmal mit „gar keine"
-    /// verwechselt.
-    public static func anfrageRumpf(art: String, id: Int, staffeln: [Int]?) -> [String: Any] {
-        var rumpf: [String: Any] = ["mediaType": art, "mediaId": id]
-        if art == "tv", let staffeln, !staffeln.isEmpty {
-            rumpf["seasons"] = staffeln
+    /// **A movie has no seasons, and then the field must not be there.** Seerr takes
+    /// either a list of numbers or the word `all`; an empty field has once been mistaken
+    /// for “none at all”.
+    public static func requestBody(art: String, id: Int, seasons: [Int]?) -> [String: Any] {
+        var shell: [String: Any] = ["mediaType": art, "mediaId": id]
+        if art == "tv", let seasons, !seasons.isEmpty {
+            shell["seasons"] = seasons
         } else if art == "tv" {
-            rumpf["seasons"] = "all"
+            shell["seasons"] = "all"
         }
-        return rumpf
+        return shell
     }
 
-    /// Die Adresse aufräumen, bevor sie gespeichert wird.
+    /// Tidy the address before it is stored.
     ///
-    /// Dieselbe Sorgfalt wie beim Jellyfin-Server: der Nutzer tippt
-    /// `seerr.example.de`, `https://seerr.example.de/` oder mit `/api/v1`
-    /// dahinter — gemeint ist immer dasselbe.
-    public static func adresse(aus eingabe: String) -> URL? {
-        var text = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// The same care as for the Jellyfin server: the user types `seerr.example.de`,
+    /// `https://seerr.example.de/` or with `/api/v1` at the end; the same thing is meant.
+    public static func address(from typedInput: String) -> URL? {
+        var text = typedInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        // **Dieselbe Regel wie beim Medienserver, nicht eine zweite.**
-        // Wer `192.168.1.9:5055` tippt, meint kein `https` — dort steht
-        // praktisch nie ein Zertifikat, und die Anmeldung scheiterte an
-        // etwas, das mit Seerr nichts zu tun hat. `AppModelURLNormalizer.istImHeimnetz`
-        // beantwortet das seit dem Jellyfin-Server; sie hier noch einmal zu
-        // schreiben wäre die Kopie, die auseinanderläuft.
+        // **The same rule as for the media server, not a second one.** Whoever types
+        // `192.168.1.9:5055` does not mean `https`: there is practically never a certificate,
+        // and the sign-in would fail on something unrelated to Seerr.
+        // `AppModelURLNormalizer.isHomeNetwork` answers that for the Jellyfin server;
+        // writing it again here would be the copy that drifts apart.
         if !text.lowercased().hasPrefix("http") {
-            text = (AppModelURLNormalizer.istImHeimnetz(text) ? "http://" : "https://") + text
+            text = (AppModelURLNormalizer.isHomeNetwork(text) ? "http://" : "https://") + text
         }
         while text.hasSuffix("/") { text.removeLast() }
-        for anhang in ["/api/v1", "/api"] where text.lowercased().hasSuffix(anhang) {
-            text.removeLast(anhang.count)
+        for attachment in ["/api/v1", "/api"] where text.lowercased().hasSuffix(attachment) {
+            text.removeLast(attachment.count)
         }
         while text.hasSuffix("/") { text.removeLast() }
         return URL(string: text)
     }
 
-    /// Die Adressen, die probiert werden — in dieser Reihenfolge.
+    /// The addresses that are tried, in this order.
     ///
-    /// **Weil Raten manchmal danebengeht.** `adresse(aus:)` waehlt das Schema
-    /// nach derselben Regel wie beim Medienserver, und die trifft die meisten
-    /// Faelle. Trifft sie daneben, lief die Anmeldung bisher in eine
-    /// Zeitueberschreitung, und der Nutzer musste `https://` selbst davor
-    /// tippen — genau so ist es 09.2026 auf dem Mac gegangen.
+    /// **Because guessing sometimes misses.** `address(aus:)` picks the scheme by the same
+    /// rule as for the media server, which hits most cases. If it misses, sign-in ran into
+    /// a timeout and the user had to type `https://` themselves.
     ///
-    /// Der Medienserver kennt den zweiten Versuch laengst
-    /// (``AppModelURLNormalizer.andersHerum``); Seerr bekommt ihn jetzt auch.
+    /// The media server has long had the second attempt
+    /// (``AppModelURLNormalizer.reversed``); Seerr now gets it too.
     ///
-    /// **Nur wenn wir geraten haben.** Wer das Schema selbst hinschreibt, hat
-    /// entschieden — dann wird nicht dahinter ausgewichen. Das ist auch der
-    /// Grund, warum die Liste hier entsteht und nicht an der Aufrufstelle: ob
-    /// geraten wurde, weiss nur diese Funktion.
-    public static func adressen(aus eingabe: String) -> [URL] {
-        guard let erste = adresse(aus: eingabe) else { return [] }
-        let getippt = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// **Only if the scheme was guessed.** Whoever writes the scheme has decided, and then
+    /// there is no fallback. That is also why the list is built here and not at the call
+    /// site: only this function knows whether it guessed.
+    public static func addresses(from typedInput: String) -> [URL] {
+        guard let first = address(from: typedInput) else { return [] }
+        let wasTapped = typedInput.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased().hasPrefix("http")
-        guard !getippt else { return [erste] }
-        var teile = URLComponents(url: erste, resolvingAgainstBaseURL: false)
-        teile?.scheme = erste.scheme == "https" ? "http" : "https"
-        guard let zweite = teile?.url else { return [erste] }
-        return [erste, zweite]
+        guard !wasTapped else { return [first] }
+        var parts = URLComponents(url: first, resolvingAgainstBaseURL: false)
+        parts?.scheme = first.scheme == "https" ? "http" : "https"
+        guard let second = parts?.url else { return [first] }
+        return [first, second]
     }
 }
 
-/// Der Abruf. Alles, was hier passiert, hängt am Netz — was es **bedeutet**,
-/// steht oben in ``Seerr`` und ist ohne Netz geprüft.
+/// The fetch. Everything here depends on the network; what it **means** is above in
+/// ``Seerr`` and tested without a network.
 public actor SeerrClient {
-    private let zugang: Seerrzugang
+    private let access: SeerrAccess
 
-    /// Die Adresse, an der dieser Zugang haengt — fuers Abmelden gebraucht,
-    /// damit die Kekse derselben Adresse mitgehen. **`nonisolated`**, weil `zugang`
-    /// ein `let` auf ein `Sendable` ist und das Abmelden auf Android aus einer
-    /// nicht-async Funktion kommt, die nicht warten kann.
-    public nonisolated var adresse: URL { zugang.adresse }
-    private let sitzung: URLSession
+    /// The address this credential belongs to, needed for sign-out so that the cookies of
+    /// the same address go with it. **`nonisolated`**, because `zugang` is a `let` of a
+    /// `Sendable` and sign-out on Android comes from a non-async function that cannot
+    /// wait.
+    public nonisolated var address: URL { access.address }
+    private let session: URLSession
 
-    public init(zugang: Seerrzugang, sitzung: URLSession = .ortsnetzfaehig) {
-        self.zugang = zugang
-        self.sitzung = sitzung
+    public init(access: SeerrAccess, session: URLSession = .localNetworkCapable) {
+        self.access = access
+        self.session = session
     }
 
-    /// Anmelden mit den Zugangsdaten des **Medienservers**.
+    /// Sign in with the credentials of the **media server**.
     ///
-    /// Seerr fragt Jellyfin selbst, ob Name und Passwort stimmen, und legt
-    /// dafür eine eigene Sitzung an. Zurück kommt der Keks, den jeder weitere
-    /// Aufruf mitträgt.
+    /// Seerr asks Jellyfin itself whether name and password are right and creates an own
+    /// session for it. The cookie comes back and every further call carries it.
     ///
-    /// `koepfe` gehen schon mit dieser ersten Anfrage hinaus — ein Vorposten
-    /// vor Seerr lässt sonst gar nicht erst bis zur Anmeldung durch.
-    public static func anmelden(an adresse: URL, benutzer: String, passwort: String,
-                                koepfe: [Eigenkopf] = [],
-                                sitzung: URLSession = .ortsnetzfaehig) async throws -> Seerrzugang {
-        var req = URLRequest(url: adresse.appendingPathComponent("api/v1/auth/jellyfin"))
+    /// `headers` go out with this very first request, since a gateway in front of Seerr
+    /// would otherwise not let anything through to the sign-in.
+    public static func signIn(an address: URL, user: String, password: String,
+                                headers: [OwnHeader] = [],
+                                session: URLSession = .localNetworkCapable) async throws -> SeerrAccess {
+        var req = URLRequest(url: address.appendingPathComponent("api/v1/auth/jellyfin"))
         req.httpMethod = "POST"
-        Eigenkoepfe.anwenden(koepfe, auf: &req)
+        OwnHeaders.apply(headers, on: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(
-            withJSONObject: ["username": benutzer, "password": passwort])
-        // **Kein alter Keks bei der Anmeldung.** Seerr benutzt
-        // express-session: liegt ein noch gültiger Keks der Verbindung bei,
-        // bleibt die alte Sitzung gültig und der Server schickt **kein**
-        // `Set-Cookie` — die Anmeldung sah dann aus wie „Seerr hat keine
-        // Sitzung mitgegeben", obwohl sie gelungen war. Genau so lief es bei
-        // Rückmeldung vom 17.09.: abmelden in der App warf nur unseren gespeicherten
-        // Keks weg, der im Keksspeicher der Verbindung blieb liegen, und
-        // danach ging keine Anmeldung mehr.
+            withJSONObject: ["username": user, "password": password])
+        // **No old cookie when signing in.** Seerr uses express-session: if a still valid
+        // cookie of the connection is attached, the old session stays valid and the server
+        // sends **no** `Set-Cookie`, so the sign-in looked like “Seerr did not return a
+        // session” although it had succeeded. That is what happened after signing out in the
+        // app: it only threw away the stored cookie, the one in the connection's cookie store
+        // stayed, and afterwards no sign-in worked any more.
         req.httpShouldHandleCookies = false
 
-        let (daten, antwort) = try await sitzung.data(for: req)
-        guard let http = antwort as? HTTPURLResponse else {
+        let (data, answer) = try await session.data(for: req)
+        guard let http = answer as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine Antwort von Seerr.")
         }
-        // **Vor jeder anderen Deutung.** Eine Anmeldeseite davor sah aus wie
-        // „Seerr hat keine Sitzung mitgegeben" (bei 200 nach Umleitung) oder
-        // wie ein falsches Passwort (bei 403) — beides führte in die Irre.
-        // Nur nicht bei 404: dort hat schlicht kein Seerr geantwortet, und
-        // ein fremder Webserver schickt seine Fehlerseite ebenfalls als HTML.
-        if http.statusCode != 404, Eigenkoepfe.anmeldeseite(http) {
-            throw JellyfinError.transport(Eigenkoepfe.anmeldeseiteText)
+        // **Before any other interpretation.** A login page in front looked like “Seerr did
+        // not return a session” (200 after redirect) or like a wrong password (403): both
+        // misleading. Except for 404: there simply no Seerr answered, and a foreign web
+        // server also sends its error page as HTML.
+        if http.statusCode != 404, OwnHeaders.loginPage(http) {
+            throw JellyfinError.transport(OwnHeaders.loginPageText)
         }
         switch http.statusCode {
         case 200, 201: break
@@ -541,65 +548,63 @@ public actor SeerrClient {
             throw JellyfinError.transport("Unter dieser Adresse antwortet kein Seerr.")
         default:
             throw JellyfinError.http(status: http.statusCode,
-                                     body: String(data: daten.prefix(200), encoding: .utf8))
+                                     body: String(data: data.prefix(200), encoding: .utf8))
         }
-        // **Der Keks ist der Zugang.** Ohne ihn wäre die Anmeldung zwar
-        // gelungen, aber der nächste Aufruf stünde wieder davor.
+        // **The cookie is the credential.** Without it the sign-in would have succeeded, but
+        // the next call would face the same wall again.
         //
-        // Der Rückfall auf den Keksspeicher ist die zweite Hälfte desselben
-        // Falls: hat die Verbindung den Keks schon geschluckt (oder hängt eine
-        // Weiterleitung davor), steht er dort und nicht mehr im Kopf. Eine
-        // gültige Sitzung wegzuwerfen, nur weil sie an der anderen Stelle
-        // liegt, wäre der teuerste Fehler von beiden.
-        let keks = http.value(forHTTPHeaderField: "Set-Cookie").flatMap(Seerr.keks(ausKopf:))
-            ?? Seerr.keksAusSpeicher(fuer: adresse, sitzung: sitzung)
-        guard let keks else {
+        // The fallback to the cookie store is the second half of the same case: if the
+        // connection already swallowed the cookie (or a redirect sits in front), it is there
+        // and no longer in the header. Throwing away a valid session just because it sits in
+        // the other place would be the costlier mistake of the two.
+        let cookie = http.value(forHTTPHeaderField: "Set-Cookie").flatMap(Seerr.cookie(fromHeader:))
+            ?? Seerr.cookieOutCache(for: address, session: session)
+        guard let cookie else {
             throw JellyfinError.transport("Seerr hat keine Sitzung mitgegeben.")
         }
-        return Seerrzugang(adresse: adresse, keks: keks, koepfe: koepfe)
+        return SeerrAccess(address: address, cookie: cookie, headers: headers)
     }
 
 
-    private func anfrage(_ pfad: String, methode: String = "GET",
-                         abfrage: [URLQueryItem] = [], rumpf: Data? = nil) throws -> URLRequest {
-        var teile = URLComponents(url: zugang.adresse.appendingPathComponent("api/v1/" + pfad),
+    private func petition(_ path: String, method: String = "GET",
+                         query: [URLQueryItem] = [], shell: Data? = nil) throws -> URLRequest {
+        var parts = URLComponents(url: access.address.appendingPathComponent("api/v1/" + path),
                                   resolvingAgainstBaseURL: false)
-        if !abfrage.isEmpty { teile?.queryItems = abfrage }
-        guard let url = teile?.url else { throw JellyfinError.transport("Adresse unbrauchbar.") }
+        if !query.isEmpty { parts?.queryItems = query }
+        guard let url = parts?.url else { throw JellyfinError.transport("Adresse unbrauchbar.") }
         var req = URLRequest(url: url)
-        req.httpMethod = methode
-        // Die eigenen Köpfe zuerst — `Cookie` ist dort gesperrt, der Keks
-        // bleibt also unserer.
-        Eigenkoepfe.anwenden(zugang.koepfe, auf: &req)
-        req.setValue(zugang.keks, forHTTPHeaderField: "Cookie")
-        // Der Keks kommt nur von uns — nicht aus dem gemeinsamen Speicher
-        // (wie beim Anmelden).
+        req.httpMethod = method
+        // The custom headers first: `Cookie` is blocked there, so the cookie stays the
+        // app's own.
+        OwnHeaders.apply(access.headers, on: &req)
+        req.setValue(access.cookie, forHTTPHeaderField: "Cookie")
+        // The cookie comes only from the app, not from the shared store (as when signing
+        // in).
         req.httpShouldHandleCookies = false
-        if let rumpf {
-            req.httpBody = rumpf
+        if let shell {
+            req.httpBody = shell
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         return req
     }
 
-    /// Suchen. Fehler sind hier kein Grund zu werfen: die Seerr-Treffer sind
-    /// eine Zugabe zur eigenen Bibliothek, und wenn Seerr schweigt, soll die
-    /// Suche trotzdem etwas zeigen.
-    public func suchen(_ begriff: String) async -> [Seerrtreffer] {
-        guard let req = try? anfrage("search", abfrage: [.init(name: "query", value: begriff)]),
-              let (daten, antwort) = try? await sitzung.data(for: req),
-              let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return [] }
-        return Seerr.treffer(ausSuche: daten)
+    /// Search. Errors are no reason to throw here: the Seerr hits are an extra on top of
+    /// the own library, and if Seerr is silent, search should still show something.
+    public func searching(_ term: String) async -> [SeerrHit] {
+        guard let req = try? petition("search", query: [.init(name: "query", value: term)]),
+              let (data, answer) = try? await session.data(for: req),
+              let http = answer as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+        return Seerr.hit(fromSearch: data)
     }
 
-    /// Anfragen. Hier wird sehr wohl geworfen — der Nutzer hat gedrückt und
-    /// muss erfahren, ob es geklappt hat.
-    public func anfragen(art: String, id: Int, staffeln: [Int]? = nil) async throws {
-        let rumpf = try JSONSerialization.data(
-            withJSONObject: Seerr.anfrageRumpf(art: art, id: id, staffeln: staffeln))
-        let req = try anfrage("request", methode: "POST", rumpf: rumpf)
-        let (daten, antwort) = try await sitzung.data(for: req)
-        guard let http = antwort as? HTTPURLResponse else {
+    /// Request. This one does throw: the user pressed a button and must learn whether it
+    /// worked.
+    public func askFor(art: String, id: Int, seasons: [Int]? = nil) async throws {
+        let shell = try JSONSerialization.data(
+            withJSONObject: Seerr.requestBody(art: art, id: id, seasons: seasons))
+        let req = try petition("request", method: "POST", shell: shell)
+        let (data, answer) = try await session.data(for: req)
+        guard let http = answer as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine Antwort von Seerr.")
         }
         switch http.statusCode {
@@ -607,56 +612,52 @@ public actor SeerrClient {
         case 401, 403:
             throw JellyfinError.transport("Deine Seerr-Anmeldung gilt nicht mehr.")
         case 409:
-            // Kein Fehler: jemand war schneller. Der Stand sagt es beim
-            // nächsten Laden von selbst.
+            // Not an error: someone was faster. The state says so on the next load by itself.
             return
         default:
             throw JellyfinError.http(status: http.statusCode,
-                                     body: String(data: daten.prefix(200), encoding: .utf8))
+                                     body: String(data: data.prefix(200), encoding: .utf8))
         }
     }
 
-    /// Beschreibung, Bewertung und Staffeln zu einem Treffer.
+    /// Description, rating and seasons for a hit.
     ///
-    /// Kommt nichts, bleibt die Seite bei dem, was der Suchtreffer schon
-    /// trägt — eine leere Beschreibung ist besser als eine Fehlermeldung für
-    /// etwas, das nur schmückt.
-    public func detail(art: String, id: Int) async -> Seerrdetail? {
-        // **Zwei Abrufe, nebeneinander.** Die Vorschlaege stehen nicht in der
-        // Detailantwort, sondern unter einem eigenen Pfad. Nacheinander
-        // waeren es zwei Wartezeiten fuer eine Seite.
-        async let haupt = hole("\(art)/\(id)")
-        async let vorschlag = hole("\(art)/\(id)/recommendations")
-        let (a, b) = await (haupt, vorschlag)
+    /// If nothing comes, the page stays with what the search hit already carries; an empty
+    /// description is better than an error message for something that only decorates.
+    public func detail(art: String, id: Int) async -> SeerrDetail? {
+        // **Two fetches, side by side.** The suggestions are not in the detail response but
+        // under a path of their own. Sequentially, that would be two waits for one page.
+        async let main = hole("\(art)/\(id)")
+        async let preHit = hole("\(art)/\(id)/recommendations")
+        let (a, b) = await (main, preHit)
 
-        guard let a, let auskunft = Seerr.detail(aus: a) else { return nil }
-        // **Kommen keine Vorschlaege, steht die Seite trotzdem.** Sie sind
-        // eine Zugabe; ein Fehler dort darf die Beschreibung nicht kosten.
-        guard let b else { return auskunft }
-        return auskunft.mit(aehnliches: Seerr.vorschlaege(aus: b, art: art))
+        guard let a, let inquiry = Seerr.detail(from: a) else { return nil }
+        // **If no suggestions come, the page still stands.** They are an extra; an error there
+        // must not cost the description.
+        guard let b else { return inquiry }
+        return inquiry.with(similarOne: Seerr.suggestions(from: b, art: art))
     }
 
-    /// Ein GET, der bei allem ausser einer 200 nichts zurueckgibt.
-    /// **Was eine Person gemacht hat**, soweit Seerr es kennt — für „Kann
-    /// angefragt werden" auf ihrer Seite. Ohne zu werfen: das ist eine
-    /// Zugabe, ein Fehler hier darf die Seite nicht kosten.
-    public func filmografie(person tmdb: Int) async -> [Seerrtreffer] {
-        guard let daten = await hole("person/\(tmdb)/combined_credits") else { return [] }
-        return Seerr.treffer(ausFilmografie: daten)
+    /// A GET that returns nothing for anything but a 200.
+    /// **What a person has done**, as far as Seerr knows, for “Can be requested” on their
+    /// page. Without throwing: this is an extra, an error here must not cost the page.
+    public func filmography(person tmdb: Int) async -> [SeerrHit] {
+        guard let data = await hole("person/\(tmdb)/combined_credits") else { return [] }
+        return Seerr.hit(fromFilmography: data)
     }
 
-    private func hole(_ pfad: String) async -> Data? {
-        guard let req = try? anfrage(pfad),
-              let (daten, antwort) = try? await sitzung.data(for: req),
-              let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return daten
+    private func hole(_ path: String) async -> Data? {
+        guard let req = try? petition(path),
+              let (data, answer) = try? await session.data(for: req),
+              let http = answer as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        return data
     }
 
-    /// Ob die gespeicherte Sitzung noch gilt.
-    public func gilt() async -> Bool {
-        guard let req = try? anfrage("auth/me"),
-              let (_, antwort) = try? await sitzung.data(for: req),
-              let http = antwort as? HTTPURLResponse else { return false }
+    /// Whether the stored session is still valid.
+    public func applies() async -> Bool {
+        guard let req = try? petition("auth/me"),
+              let (_, answer) = try? await session.data(for: req),
+              let http = answer as? HTTPURLResponse else { return false }
         return http.statusCode == 200
     }
 }

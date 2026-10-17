@@ -1,171 +1,165 @@
 import JellyfinKit
 import SwiftUI
 
-/// **Alle Titel eines Genres** — aus den Chips auf der Startseite.
+/// **All titles of a genre**, from the chips on the home page.
 ///
-/// Dasselbe Raster wie Bibliothek, Suche und Merkliste, dieselbe
-/// Spaltenrechnung. Die zuletzt hinzugefügten zuerst: wer ein Genre antippt,
-/// sucht meist, was neu ist.
+/// The same grid as library, search and watchlist, with the same column
+/// calculation. Most recently added first: whoever taps a genre usually wants
+/// what is new.
 struct GenreView: View {
     let model: AppModel
     let name: String
 
-    @Environment(\.dismiss) private var zurueck
-    @Environment(\.breit) private var breit
+    @Environment(\.dismiss) private var back
+    @Environment(\.wide) private var wide
     @State private var items: [Item] = []
-    /// Titel, die der Server insgesamt hat — fuer die Zaehlmarke und die
-    /// Frage „gibt es noch mehr".
-    @State private var gesamt = 0
-    /// Wie viele Eintraege des Servers schon abgerufen sind. **Nicht
-    /// `items.count`:** Doppelte (ein Werk in zwei Bibliotheken) fallen je
-    /// Seite weg, der Server zaehlt sie aber mit — nachgeladen wird ab
-    /// dem Abrufstand, sonst kaeme dieselbe Seite wieder.
-    @State private var abgerufen = 0
-    @State private var laedtNach = false
-    /// Aendert sich bei Sehstand oder Merkliste anderswo — dann still neu.
-    @State private var auffrischStand = 0
-    @State private var laedt = true
-    /// Der Abruf ist gescheitert — nicht „das Genre ist leer".
-    @State private var gestoert = false
-    /// Wie weit gescrollt ist — fuer Verlauf und Scrollkante des Kopfes.
+    /// Titles the server has in total, for the count badge and the question "is
+    /// there more".
+    @State private var total = 0
+    /// How many server entries are already fetched. **Not `items.count`:**
+    /// duplicates (one work in two libraries) drop out per page, but the server counts
+    /// them; loading continues from the fetch offset, otherwise the same page would
+    /// come again.
+    @State private var retrieved = 0
+    @State private var loadsPost = false
+    /// Changes with watched state or watchlist elsewhere; then reload silently.
+    @State private var refreshState = 0
+    @State private var loads = true
+    /// The fetch failed, which is not the same as "the genre is empty".
+    @State private var disrupted = false
+    /// How far it is scrolled, for the fade and the header's scroll edge.
     ///
-    /// **Ohne Rueckkopplung:** dieser Kopf ist immer gleich hoch (keine
-    /// Wertreihe, die zuklappt), und gemessen wird ohnehin die Summe aus
-    /// Versatz und oberem Rand — die bleibt richtig, auch wenn sich der Rand
-    /// aendert. Siehe die lange Begruendung in `MerklisteView`.
-    @State private var versatz: CGFloat = 0
+    /// **No feedback loop:** this header is always the same height (no value row that
+    /// collapses), and what is measured is the sum of offset and top inset, which
+    /// stays correct even if the inset changes. See the long reasoning in
+    /// `WatchlistView`.
+    @State private var offset: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
-            Stil.grund.ignoresSafeArea()
-            GeometryReader { rahmen in
-                raster(spalten: Stil.spalten(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit),
-                                             breit: breit))
+            Theme.reason.ignoresSafeArea()
+            GeometryReader { frameRect in
+                grid(columns: Theme.columns(usableNow: frameRect.size.width - 2 * Theme.margin(wide: wide),
+                                             wide: wide))
             }
-            if !laedt, gestoert {
-                // **`nil` heisst gestoert, `[]` heisst leer.** `model.titel`
-                // gibt beides getrennt zurueck, und hier stand `?? []` — der
-                // Unterschied wurde also weggeworfen, und ein Netzfehler
-                // wurde zur Aussage „in diesem Genre gibt es nichts".
-                Leerzustand.serverAbgetaucht(model, erneut: { Task { await holen() } })
-            } else if !laedt, items.isEmpty {
-                Leerzustand(symbol: "tag",
-                            kopfzeile: "Nichts in diesem Genre",
+            if !loads, disrupted {
+                // **`nil` means failed, `[]` means empty.** `model.title` returns both
+                // separately, and `?? []` used to be here, discarding the difference, so a
+                // network error became the statement "there is nothing in this genre".
+                EmptyState.serverDived(model, retry: { Task { await fetch() } })
+            } else if !loads, items.isEmpty {
+                EmptyState(symbol: "tag",
+                            headerLine: "Nichts in diesem Genre",
                             text: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.")
             }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .background(WischZurueck())
+        .background(SwipeBack())
         #endif
-        // Auch bei Gesehen-/Lesezeichenwechsel anderswo: still neu laden
-        // (ohne Platzhalter, mit so viel, wie schon dasteht), sonst zeigt die
-        // Kachel Balken und Haken von vorher.
-        .task(id: "\(name)|\(auffrischStand)") { await holen() }
-        .nachholen(bei: model.listenAuffrischen) { auffrischStand = model.listenAuffrischen }
+        // Also on watched/bookmark changes elsewhere: reload silently (no
+        // placeholders, with as much as is already shown), otherwise the tile shows the
+        // previous bar and checkmark.
+        .task(id: "\(name)|\(refreshState)") { await fetch() }
+        .catchUp(at: model.listenRefresh) { refreshState = model.listenRefresh }
     }
 
-    private func holen() async {
-        laedt = items.isEmpty
-        let stand = abgerufen
-        let umfang = min(300, max(AppModel.seitengroesse, stand))
-        let ergebnis = await model.titelMitZahl(gattung: name, limit: umfang)
-        // Ein abgebrochener Lauf (`.task(id:)`) hat nichts mehr zu sagen.
+    private func fetch() async {
+        loads = items.isEmpty
+        let state = retrieved
+        let reach = min(300, max(AppModel.pagesSize, state))
+        let result = await model.titleWithNumber(genre: name, limit: reach)
+        // A cancelled run (`.task(id:)`) has nothing left to say.
         guard !Task.isCancelled else { return }
-        // Hat `nachladen` waehrenddessen eine Seite angehaengt, ist diese
-        // Antwort kuerzer als das, was dasteht: die Liste wuerde schrumpfen
-        // und gleich wieder nachladen. Dann noch einmal mit dem neuen Umfang.
-        guard stand == abgerufen else { return await holen() }
-        if let ergebnis {
-            gestoert = false
-            items = ergebnis.items
-            gesamt = ergebnis.gesamt
-            abgerufen = umfang
+        // If `loadMore` appended a page meanwhile, this response is shorter than what
+        // is shown: the list would shrink and immediately load more. Then once more
+        // with the new extent.
+        guard state == retrieved else { return await fetch() }
+        if let result {
+            disrupted = false
+            items = result.items
+            total = result.total
+            retrieved = reach
         } else {
-            // Bleibt eine Liste stehen, ist sie besser als eine Stoermeldung.
-            gestoert = items.isEmpty
+            // A list that stays is better than an error message.
+            disrupted = items.isEmpty
         }
-        laedt = false
+        loads = false
     }
 
-    private func nachladen() async {
-        guard abgerufen < gesamt, !laedtNach, !laedt else { return }
-        laedtNach = true
-        defer { laedtNach = false }
-        let ab = abgerufen
-        guard let seite = await model.titelMitZahl(gattung: name, startIndex: ab),
-              ab == abgerufen else { return }
-        // Seitenuebergreifend nach Kennung: die Seite fasst nur ihre eigenen
-        // Doppelten zusammen.
-        items = Listenregeln.anhaengen(seite.items, an: items)
-        gesamt = seite.gesamt
-        abgerufen = ab + AppModel.seitengroesse
+    private func loadMore() async {
+        guard retrieved < total, !loadsPost, !loads else { return }
+        loadsPost = true
+        defer { loadsPost = false }
+        let since = retrieved
+        guard let page = await model.titleWithNumber(genre: name, startIndex: since),
+              since == retrieved else { return }
+        // Across pages by id: the page only merges its own duplicates.
+        items = ListRules.append(page.items, an: items)
+        total = page.total
+        retrieved = since + AppModel.pagesSize
     }
 
-    /// **Derselbe Kopf wie auf den beiden anderen gepushten Rasterseiten.**
+    /// **The same header as on the other two pushed grid pages.**
     ///
-    /// Er stand hier fest ueber der Scrollflaeche: kein Verlauf, keine
-    /// Scrollkante, Plakate liefen an einer harten Kante vorbei. Merkliste
-    /// und die Downloadunterseite haengen ihren Kopf seit dem Umbau in
-    /// `Unschaerfekopf` und geben ihm den Versatz mit; Genre war die einzige
-    /// der drei, die das nicht tat.
+    /// It used to sit fixed above the scroll area: no fade, no scroll edge, posters
+    /// ran past a hard edge. Watchlist and the downloads subpage hang their header in
+    /// `BlurHeader` and pass it the offset; genre was the only one of the three
+    /// that did not.
     ///
-    /// `Unterseitenkopf` bringt seinen eigenen Seitenrand mit, `Unschaerfekopf`
-    /// auch — der innere wird deshalb zurueckgerechnet, genau wie in
-    /// `MerklisteView` und `DownloadsView`.
-    private var kopf: some View {
-        Unschaerfekopf(versatz: versatz) {
-            // Der Name kommt vom Server und wird nicht übersetzt.
+    /// `SubpageHeader` brings its own page margin, as does `BlurHeader`, so the
+    /// inner one is subtracted, exactly as in `WatchlistView` and `DownloadsView`.
+    private var header: some View {
+        BlurHeader(offset: offset) {
+            // The name comes from the server and is not translated.
             //
-            // **Rechts die Zählmarke, und sonst nichts.** Eine Unterseite
-            // trägt Pfeil, Titel und Zählmarke (BRAND, Abschnitt 7) — die
-            // fehlte hier, dabei ist „bin ich hier durch?" bei einem Genre
-            // dieselbe Frage wie in der Bibliothek. Ein Servername gehört
-            // dagegen ausdrücklich **nicht** hierher: den zeigt allein die
-            // Bibliotheksseite, weil dort bei zwei Konten zwei
-            // Bibliotheken gleich heißen können.
-            Unterseitenkopf(titel: name, zurueck: { zurueck() }) {
-                if !items.isEmpty { Zaehlmarke(anzahl: max(gesamt, items.count)) }
+            // **The count badge on the right, and nothing else.** A subpage carries arrow,
+            // title and count badge, and it was missing here, although
+            // "have I been through this?" is the same question for a genre as in the
+            // library. A server name explicitly does **not** belong here: only the library
+            // page shows it, because with two accounts two libraries can have the same name.
+            SubpageHeader(title: name, back: { back() }) {
+                if !items.isEmpty { CountMark(count: max(total, items.count)) }
             }
-            .padding(.horizontal, -Stil.rand(breit: breit))
+            .padding(.horizontal, -Theme.margin(wide: wide))
         }
     }
 
-    private func raster(spalten: Int) -> some View {
+    private func grid(columns: Int) -> some View {
         ScrollView {
-            // Erst die Form, dann der Inhalt — wie in der Bibliothek.
-            if items.isEmpty, laedt {
-                Rasterplatzhalter(spalten: spalten)
-                    .padding(.horizontal, Stil.rand(breit: breit))
+            // Shape first, then content, as in the library.
+            if items.isEmpty, loads {
+                GridPlaceholder(columns: columns)
+                    .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 8)
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
-                                     count: spalten),
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
+                                     count: columns),
                       alignment: .leading, spacing: 20) {
                 ForEach(items) { item in
                     NavigationLink(value: item) {
-                        PosterTile(model: model, item: item, breite: nil)
+                        PosterTile(model: model, item: item, width: nil)
                     }
-                    .buttonStyle(Stil.Druckknopf())
-                    .kachelmenue(item, model: model)
+                    .buttonStyle(Theme.PressButton())
+                    .tileMenu(item, model: model)
                     .onAppear {
-                        guard Listenregeln.imNachladebereich(item.id, in: items, spalten: spalten)
+                        guard ListRules.postLoadSection(item.id, in: items, columns: columns)
                         else { return }
-                        Task { await nachladen() }
+                        Task { await loadMore() }
                     }
                 }
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
-        } action: { _, neu in versatz = neu }
-        // Der Kopf sitzt als Sicherheitsrand, nicht als Auflage — die
-        // Begruendung steht in `HauptView`. Kurz: sein oberer Rand kam sonst
-        // aus einer eigenen Messung, die in dieselbe Flaeche zurueckgeht.
-        .safeAreaInset(edge: .top, spacing: 0) { kopf }
+        } action: { _, new in offset = new }
+        // The header sits as a safe-area inset, not as an overlay; the reasoning is in
+        // `MainView`. In short: its top inset otherwise came from a measurement of its
+        // own that feeds back into the same area.
+        .safeAreaInset(edge: .top, spacing: 0) { header }
     }
 }

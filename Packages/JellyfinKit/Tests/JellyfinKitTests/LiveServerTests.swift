@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import JellyfinKit
 
-/// Tests gegen den echten Server. Laufen nur, wenn SWIFTLY_LIVE_SERVER gesetzt
-/// ist — damit die normale Testsuite offline bleibt.
+/// Tests against a real server. They run only when SWIFTLY_LIVE_SERVER is
+/// set, so the normal test suite stays offline.
 @Suite("Live-Server", .enabled(if: ProcessInfo.processInfo.environment["SWIFTLY_LIVE_SERVER"] != nil))
 struct LiveServerTests {
 

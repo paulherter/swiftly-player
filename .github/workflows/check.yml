@@ -1,0 +1,93 @@
+# Checks on every push what would otherwise go unchecked.
+#
+# **Why.** A large Swift codebase across six platforms, with build checks run
+# by hand on a single machine. A target that has not been built for days
+# breaks "for no reason" sooner or later - most often a line in `project.yml`
+# repeated verbatim in several target blocks, and a find-and-replace that only
+# covered one half.
+#
+# **Two jobs, separated on purpose.** The package check runs on Linux in about
+# a minute and catches most problems; the Apple builds need a macOS machine
+# and take long. Whoever only touched logic sees the result without waiting
+# for Xcode.
+
+name: Prüfen
+
+on:
+  push:
+    branches: [main, ios, ipad, mac, tvos, linux, windows]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # One running pass per branch is enough. Two pushes in a row want the
+  # result of the second.
+  group: pruefen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paket:
+    name: JellyfinKit — Tests
+    runs-on: ubuntu-24.04
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+
+      # **The cache saves half the runtime.** Without it every run
+      # downloads the dependencies again.
+      - name: Abhängigkeiten zwischenspeichern
+        uses: actions/cache@v4
+        with:
+          path: Packages/JellyfinKit/.build
+          key: paket-${{ runner.os }}-${{ hashFiles('Packages/JellyfinKit/Package.resolved') }}
+          restore-keys: paket-${{ runner.os }}-
+
+      - name: Tests
+        working-directory: Packages/JellyfinKit
+        run: swift test --enable-code-coverage
+
+  apple:
+    name: iOS, tvOS, macOS — Bau
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      # **The .xcodeproj is not checked in** and is generated from
+      # `project.yml`. Without this step there is no target to build.
+      - name: Projekt erzeugen
+        run: xcodegen generate
+
+      # **A full build is not possible here.** Linking needs
+      # `Vendor/VLCKit.xcframework` - 2.7 GB, not in the repo, and fetching
+      # it on every run costs more than it gains.
+      #
+      # What is still checked is exactly the class of error that breaks an
+      # unrelated target "for no reason": whether `project.yml` still
+      # resolves, whether all three schemes exist, and whether every source
+      # file listed in a target is actually there. A find-and-replace across
+      # several target blocks shows up here before anyone notices it in
+      # their own build.
+      - name: Projekt und Schemata pruefen
+        run: |
+          set -euo pipefail
+          xcodebuild -project Swiftly.xcodeproj -list
+          for schema in Swiftly-iOS Swiftly-tvOS Swiftly-macOS; do
+            xcodebuild -project Swiftly.xcodeproj -list | grep -qx "        $schema" \
+              || { echo "Schema fehlt: $schema"; exit 1; }
+          done
+
+      # Every file that `project.yml` puts into a target must exist. If one
+      # is missing, a fresh checkout does not build, and the error looks
+      # like a missing symbol.
+      - name: Quellen vollstaendig?
+        run: |
+          set -euo pipefail
+          fehlt=0
+          while read -r pfad; do
+            [ -e "$pfad" ] || { echo "FEHLT: $pfad"; fehlt=1; }
+          done < <(grep -oE '^[[:space:]]+- (path: )?[A-Za-z0-9_/.-]+\.swift' project.yml \
+                   | sed -E 's/^[[:space:]]+- (path: )?//' | sort -u)
+          exit $fehlt

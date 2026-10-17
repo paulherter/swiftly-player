@@ -1,13 +1,13 @@
 .build/
-# Die geteilten Dateien werden vor jedem Bau aus Linux/ gespiegelt. Sie
-# gehoeren nicht ins Repo — es gibt sie schon einmal.
+# The shared files are mirrored from Linux/ before every build. They do not
+# belong in the repo, since they already exist there.
 Sources/SwiftlyWindows/
-Ressourcen/
-Sources/CBildbruecke/
-Sources/CMedientasten/
-Sources/CSchriften/
+Resources/
+Sources/CImageBridge/
+Sources/CMediaKeys/
+Sources/CFonts/
 
-# Was beim Bauen entsteht.
-Ablage/
-Mittel/*.res
+# Build output.
+Output/
+Assets/*.res
 bau.log

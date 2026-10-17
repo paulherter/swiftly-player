@@ -1,5 +1,5 @@
-# Die Fassungen folgen dem offiziellen swift-android-examples-Stand, gegen den die
-# Werkzeugkette am 14.09.2026 geprueft wurde. Hochziehen erst, wenn das hier laeuft.
+# Versions follow the official swift-android-examples state the toolchain was checked against.
+# Raise only once this still builds.
 [versions]
 agp = "8.13.0"
 kotlin = "2.0.21"
@@ -8,16 +8,16 @@ lifecycleRuntimeKtx = "2.9.2"
 activityCompose = "1.10.1"
 composeBom = "2024.09.00"
 coroutines = "1.10.2"
-# Dieselbe Maschine wie auf Apple, Linux und Windows — Direct Play verhaelt sich gleich.
+# The same engine as on Apple, Linux and Windows, so Direct Play behaves the same.
 libvlc = "3.6.3"
-# 3.0.4 passt zu Kotlin 2.0.21; neuere Coil-Fassungen verlangen neuere Kotlin-Metadaten.
+# 3.0.4 matches Kotlin 2.0.21; newer Coil versions require newer Kotlin metadata.
 coil = "3.0.4"
-# Dieselbe Startanimation wie auf Apple (`Startanimation.swift` spielt sie mit Lottie ab).
+# The same launch animation as on Apple (`StartAnimation.swift` plays it with Lottie).
 lottie = "6.5.2"
-# Googles Bewertungsdialog — das Gegenstueck zu `requestReview` auf iOS.
+# Google's in-app review dialog, counterpart of `requestReview` on iOS.
 playReview = "2.0.2"
-# Fuer die Watch-Next-Reihe auf Android TV (`TvContractCompat`) — das Gegenstueck zum
-# Top Shelf auf tvOS. Einzige stabile Fassung; seither nur Alpha-Nachfolger.
+# For the Watch Next row on Android TV (`TvContractCompat`), counterpart of Top Shelf on tvOS.
+# The only stable version; only alpha successors since.
 tvprovider = "1.0.0"
 
 [libraries]

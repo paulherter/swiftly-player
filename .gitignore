@@ -1,4 +1,4 @@
-# XcodeGen erzeugt das Projekt — nie einchecken
+# XcodeGen generates the project - never check it in
 *.xcodeproj
 *.xcworkspace
 
@@ -10,35 +10,28 @@ xcuserdata/
 .swiftpm/
 build/
 
-# 2,7 GB — wird mit Werkzeuge/vlckit-holen.sh geholt
+# 2.7 GB - fetched with Werkzeuge/vlckit-fetch.sh
 Vendor
 
-# Die Notizen liegen in ../Swiftly-Notizen und haengen hier als Symlink.
-# **Ohne Schraegstrich** — mit einem greift die Regel auf Symlinks nicht,
-# und genau so ist der Vendor-Symlink einmal ins Repo gerutscht.
+# Private notes and docs live outside this repository and may be linked in
+# as symlinks. The patterns have **no trailing slash**: with one, the rule
+# does not match symlinks (this is how the Vendor symlink once slipped in).
 CLAUDE.md
 VERHALTEN.md
 Erfahrungen.md
-# Am 06.09.2026 nachgetragen: es entstand in der Nacht davor und stand
-# als einziges der Handbuecher nicht im Riegel. Es liegt wie die anderen
-# in ../Swiftly-Notizen — der Eintrag ist die Sperre, nicht das Aufraeumen.
+# Guard entry: keeps this private handbook out of the public repository.
 GESTALTUNG.md
-# Arbeitsunterlagen wie die drei darueber: der Ablauf und die Fallen.
-# Sie gehoeren ins Arbeitsverzeichnis, nicht in die oeffentliche Ablage —
-# sie erklaeren, wie wir arbeiten, und nennen dabei Messungen, Fehlgriffe
-# und Namen.
+# Working documents like the three above (workflow and pitfalls). They
+# belong in the working directory, not in the public repository.
 ABLAUF.md
-# **Ohne Schraegstrich**, wie die Zeilen darueber. Am 09.09.2026 wurde
-# `Fallen` vom echten Ordner zum Symlink ins Notizen-Repo — und `Fallen/`
-# griff ab da nicht mehr. Die Sammlung waere beim naechsten Push
-# oeffentlich geworden; sie nennt Messungen, Fehlgriffe und Namen.
+# **No trailing slash**, like the lines above: a directory turned into a
+# symlink is no longer matched by `Fallen/`.
 Fallen
 
-# **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
-# sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder
-# werden — wer eine dieser Dateien anlegt, veroeffentlicht sie sonst beim
-# naechsten Push, ohne es zu merken. Alle **ohne Schraegstrich**, sonst
-# greift die Regel auf Symlinks nicht.
+# **Guard, not cleanup.** These paths live outside this repository and are
+# not present here. The entries make sure they never get committed by
+# accident. All **without a trailing slash**, otherwise the rule does not
+# match symlinks.
 AppStore
 Entwuerfe
 Rohbilder
@@ -46,18 +39,14 @@ Spec
 Werkzeuge/Discord
 Werkzeuge/Grafik
 Werkzeuge/Iconbauer
-# **Claudes eigener Ordner.** Hier liegen Einstellungen, Faehigkeiten — und
-# unter `worktrees/` ganze Abzuege des Arbeitsbaums samt CLAUDE.md,
-# AppStore/, Spec/ und Rohbildern. Am 04.09.2026 lag genau so ein Abzug da:
-# nicht eingecheckt, aber auch nicht gesperrt. Ein `git add -A` haette
-# gereicht. Die Regeln darunter greifen zwar auf jeder Ebene, aber nicht auf
-# README.md oder project.yml in so einem Abzug.
+# **Local agent folder.** Holds settings, skills and, under `worktrees/`,
+# full copies of the working tree including private docs and raw assets.
+# The patterns below match at any depth, but not README.md or project.yml
+# inside such a copy.
 .claude
 
-# **Das Aufspielwerkzeug fuer den Linux-Rechner.** Es nennt Rechnernamen,
-# Pfade und die Wayland-Sitzung — Werkzeug, kein Code. Es liegt dauerhaft
-# unter ~/swiftly-starten.sh auf dem Zielrechner, und der post-receive-Hook
-# ruft es dort auf, nicht aus dem Auscheck.
+# **Local deploy tool for the Linux machine.** It names hosts, paths and
+# the Wayland session - tooling, not code.
 .linux
 
 MORGEN.md
@@ -66,18 +55,18 @@ PRUEFUNG.md
 TESTEN.md
 PLAYER-TVOS.md
 
-# Das Jellyfin-Web-Theme ist ein eigenes Vorhaben und gehoert nicht in
-# den Client. Es liegt weiter im Arbeitsverzeichnis.
+# The Jellyfin web theme is a separate project and does not belong in the
+# client.
 Jellyfin-Theme
 
-# Arbeitsordner eines Skills — Zwischenstaende, kein Code.
+# Scratch folder of a local skill - intermediate output, not code.
 .impeccable
 __pycache__/
 
-# **Die Zugangsdaten der Trakt-Anwendung** (client_id, client_secret). Sie
-# liegen nur auf den Bau-Rechnern; ohne die Datei gibt es in der App kein
-# Trakt. Aufbau steht in `Trakt.swift` beim Typ `TraktZugang`.
+# **Credentials of the Trakt application** (client_id, client_secret). They
+# exist only on the build machines; without the file the app has no Trakt.
+# Format: see `TraktAccess` in `Trakt.swift`.
 Packages/JellyfinKit/Sources/JellyfinKit/Resources/Trakt.json
 
-# Beim Bau aus LICENSES/ kopiert (Linux/bauen.sh) - nie von Hand pflegen.
-Linux/Ressourcen/Lizenzen/
+# Copied from LICENSES/ during the build (Linux/build.sh) - never edit by hand.
+Linux/Resources/Licenses/

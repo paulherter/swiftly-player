@@ -1,0 +1,16 @@
+
+/* ---------------------------------------------------------------
+   Sketches. Drawn by hand, not screenshots: reproducing third-party
+   interfaces is not allowed, and a simplified drawing shows more
+   clearly where to click anyway. Always the same structure: a window
+   frame, grey placeholders instead of text, and exactly ONE target in
+   teal where the pointer rests. No third-party logo in the drawing.
+   --------------------------------------------------------------- */
+.skizze { grid-column: 1 / -1; margin: 18px 0 0; padding: 10px; border-radius: 14px;
+  background: var(--tief); border: 1px solid var(--linie); }
+.skizze svg { display: block; width: 100%; height: auto; }
+.skizze text { font-family: var(--schriftart); font-size: 11px; fill: var(--leise); }
+.skizze .titel { font-size: 12.5px; font-weight: 600; fill: var(--schrift); }
+.skizze .ziel { font-size: 11.5px; font-weight: 600; fill: var(--schrift); }
+.skizze figcaption { margin: 10px 4px 2px; color: var(--sehr-leise); font-size: 13.5px; line-height: 1.45; }
+@media (min-width: 901px) { .skizze { grid-column: 2; } }

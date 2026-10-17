@@ -1,21 +1,21 @@
 import Foundation
 
-/// Das DeviceProfile ist der wichtigste Datensatz der App.
+/// The DeviceProfile is the most important data structure of the app.
 ///
-/// Jellyfin entscheidet allein anhand dieses Profils, ob es eine Datei
-/// unangetastet ausliefert (Direct Play), nur den Container umpackt
-/// (Direct Stream) oder das Video neu encodiert (Transcode).
+/// Jellyfin decides solely from this profile whether it delivers a file
+/// untouched (Direct Play), only repackages the container (Direct Stream) or
+/// re-encodes the video (Transcode).
 ///
-/// Swiftlys Ziel ist, dass Transcode nie passiert. Dafür deklarieren wir die
-/// vollen Fähigkeiten von libVLC — inklusive der drei Punkte, an denen andere
-/// Clients typischerweise in eine Transkodierung rutschen:
+/// Swiftly aims for transcoding never to happen. To that end it declares the
+/// full capabilities of libVLC, including the three points where other clients
+/// typically slip into transcoding:
 ///
-///  1. **Untertitel.** Wird ein Format nicht als `Embed`/`External` deklariert,
-///     brennt der Server es ins Bild — und das erzwingt ein Video-Reencode.
-///     Deshalb steht unten jedes Bitmap-Format (PGS, VOBSUB, DVB) drin.
-///  2. **Bitrate.** Ein zu niedriges Limit löst Transkodierung aus, obwohl
-///     Codec und Container passen. Im Heimnetz gibt es kein sinnvolles Limit.
-///  3. **Audio.** DTS, TrueHD und MLP fehlen in AVPlayer-Profilen. VLC kann sie.
+///  1. **Subtitles.** If a format is not declared as `Embed`/`External`, the
+///     server burns it into the picture, which forces a video re-encode. That
+///     is why every bitmap format (PGS, VOBSUB, DVB) is listed below.
+///  2. **Bitrate.** A limit that is too low triggers transcoding although
+///     codec and container fit. On a home network there is no sensible limit.
+///  3. **Audio.** DTS, TrueHD and MLP are missing from AVPlayer profiles. VLC can play them.
 public struct DeviceProfile: Codable, Sendable {
 
     public var name: String
@@ -105,100 +105,97 @@ public struct DeviceProfile: Codable, Sendable {
     }
 }
 
-// MARK: - Das VLC-Profil
+// MARK: - The VLC profile
 
 public extension DeviceProfile {
 
-    /// Container, die libVLC direkt öffnet.
+    /// Containers that libVLC opens directly.
     static let vlcContainers = [
         "mkv", "mp4", "mov", "m4v", "avi", "flv", "webm", "asf", "wmv",
         "ts", "m2ts", "mts", "mpegts", "mpg", "mpeg", "vob", "3gp", "3g2",
-        // `ogg`: so nennt Jellyfin eine .ogv, ffprobe sagt nur „ogg". Fehlte
-        // es, wurde Theora/Vorbis umgewandelt, obwohl libVLC 3 und 4 die
-        // Datei abspielen (gemessen 25.09.2026).
+        // `ogg`: Jellyfin calls a .ogv that, ffprobe only says "ogg". If it were
+        // missing, Theora/Vorbis would be converted although libVLC 3 and 4 play
+        // the file.
         "ogg", "ogv", "ogm", "rm", "rmvb", "divx", "f4v", "mk3d", "nsv", "dav", "wtv",
     ]
 
-    /// Container reiner Audiodateien, in Jellyfins Schreibweise.
+    /// Containers of pure audio files, in Jellyfin's spelling.
     static let vlcAudioContainers = [
         "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma", "ape", "alac",
         "mkv", "mka", "webm", "wv", "aiff", "aif", "caf", "w64", "au", "tta",
         "mpc", "ac3", "eac3", "dts", "truehd", "mp2",
     ]
 
-    /// Videocodecs, die libVLC dekodiert. Auf Apple-Silicon laufen h264, hevc
-    /// und av1 (ab A17 Pro / M3) in Hardware, der Rest in Software.
+    /// Video codecs that libVLC decodes. On Apple silicon h264, hevc and av1
+    /// (from A17 Pro / M3) run in hardware, the rest in software.
     static let vlcVideoCodecs = [
         "h264", "hevc", "h265", "av1", "vp8", "vp9", "mpeg4", "mpeg2video",
         "mpeg1video", "vc1", "wmv1", "wmv2", "wmv3", "msmpeg4v1", "msmpeg4v2",
         "msmpeg4v3", "h263", "theora", "dvvideo", "prores", "ffv1", "mjpeg",
     ]
 
-    /// Audiocodecs. DTS, TrueHD und MLP sind der Grund, warum ein reines
-    /// AVPlayer-Profil bei Film-Rips regelmäßig transkodiert.
+    /// Audio codecs. DTS, TrueHD and MLP are why a pure AVPlayer profile regularly
+    /// transcodes movie rips.
     static let vlcAudioCodecs = [
         "aac", "aac_latm", "ac3", "eac3", "dts", "dca", "dtshd", "truehd", "mlp",
         "mp3", "mp2", "mp1", "flac", "alac", "vorbis", "opus", "wmav1", "wmav2",
         "wmapro", "wmalossless",
-        // Blu-ray-, DVD- und Kameramaterial fuehrt PCM in mehreren Breiten.
+        // Blu-ray, DVD and camera material carries PCM in several widths.
         "pcm_s16le", "pcm_s16be", "pcm_s24le", "pcm_s32le", "pcm_f32le",
         "pcm_alaw", "pcm_mulaw", "pcm_bluray", "pcm_dvd",
-        // Gehoert zu den Containern rm und rmvb, die unten deklariert sind.
+        // Belongs to the containers rm and rmvb declared below.
         "cook", "sipr", "ra_144", "ra_288",
         "ape", "wavpack", "tta", "musepack",
         "amr_nb", "amr_wb", "nellymoser", "speex", "adpcm_ima_wav", "adpcm_ms",
     ]
 
-    /// Untertitelformate. `Embed` heißt: im Container mitliefern, Client
-    /// rendert selbst. `External` heißt: als separate Datei nachladen.
-    /// Beides vermeidet das Einbrennen — und damit die Transkodierung.
+    /// Subtitle formats. `Embed` means: delivered inside the container, the client
+    /// renders it itself. `External` means: loaded as a separate file.
+    /// Both avoid burning in, and therefore transcoding.
     static let vlcSubtitleProfiles: [SubtitleProfile] = {
         let embedded = [
             "srt", "subrip", "ass", "ssa", "vtt", "webvtt", "mov_text",
-            // `stpp` ist Timed Text in MP4. Fehlt es, brennt der Server den
-            // Untertitel ins Bild — und muss dafuer das Video neu rechnen.
-            // Das ist der teuerste der drei Faelle aus CLAUDE.md.
+            // `stpp` is Timed Text in MP4. If it is missing, the server burns the
+            // subtitle into the picture and has to re-encode the video for it.
+            // This is the most expensive case: the video has to be re-encoded.
             "stpp", "ttml", "dfxp",
             "sami", "smi", "microdvd", "teletext", "dvbsub", "dvb_subtitle",
             "pgssub", "pgs", "hdmv_pgs_subtitle",
             "dvdsub", "dvd_subtitle", "vobsub", "idx",
             "cc_dec", "eia_608", "subviewer", "mpl2", "pjs", "jacosub", "realtext",
         ]
-        // `pgssub` ist eine .sup-Datei neben dem Film. Jellyfin nennt sie so
-        // und liefert sie **roh** aus, wenn ein Client genau dieses Format als
-        // `External` nimmt (`SubtitleEncoder.GetReadableFile`). Fehlte es,
-        // fand der Server fuer den gewaehlten Untertitel kein Profil und
-        // antwortete mit `Encode` — Einbrennen, also Neuencode des Bildes.
-        // libVLC 3 und 4 laden die Datei als Nebenspur ueber den
-        // avformat-Demuxer, auch unter dem Namen `Stream.pgssub` (gemessen
-        // 25.09.2026). Externes VobSub (`dvdsub`) steht bewusst **nicht**
-        // hier: das kann Jellyfin nicht roh ausliefern, es wuerde in Text
-        // umwandeln wollen und scheitern.
+        // `pgssub` is a .sup file next to the movie. Jellyfin calls it that and
+        // delivers it **raw** when a client accepts exactly this format as
+        // `External` (`SubtitleEncoder.GetReadableFile`). If it were missing, the
+        // server found no profile for the chosen subtitle and answered with
+        // `Encode`: burn-in, i.e. re-encoding the picture. libVLC 3 and 4 load the
+        // file as a side track through the avformat demuxer, also under the name
+        // `Stream.pgssub`. External VobSub (`dvdsub`) is deliberately **not** listed
+        // here: Jellyfin cannot deliver it raw, it would try to convert it to text
+        // and fail.
         let external = ["srt", "subrip", "ass", "ssa", "vtt", "webvtt", "sub", "idx", "smi", "pgssub"]
         return embedded.map { SubtitleProfile(format: $0, method: "Embed") }
              + external.map { SubtitleProfile(format: $0, method: "External") }
     }()
 
-    /// Das Profil, mit dem Swiftly gegen den Server auftritt.
+    /// The profile Swiftly presents to the server.
     ///
-    /// - Parameter maxBitrate: Standardmäßig praktisch unbegrenzt. Nur für
-    ///   unterwegs über eine schmale Leitung sinnvoll zu senken — dann
-    ///   transkodiert der Server bewusst.
+    /// - Parameter maxBitrate: Practically unlimited by default. Only worth
+    ///   lowering when on the road over a thin connection; the server then
+    ///   transcodes deliberately.
     static func vlc(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
         var direct: [DirectPlayProfile] = []
 
-        // Ein Eintrag pro Container **ohne** Codec-Einschränkung: für Jellyfin
-        // heißt ein fehlendes `VideoCodec`/`AudioCodec`, dass jeder Codec in
-        // diesem Container erlaubt ist.
+        // One entry per container **without** a codec restriction: for Jellyfin a
+        // missing `VideoCodec`/`AudioCodec` means any codec is allowed in this
+        // container.
         //
-        // Hier standen einmal die beiden Listen von oben, aneinandergereiht.
-        // Das war ein stiller Widerspruch zum Ziel dieser App: eine
-        // Positivliste kann nur zu kurz sein, und alles, was nicht darin
-        // steht, lässt den Server umwandeln — auch wenn libVLC es
-        // klaglos abspielen würde. Die Listen bleiben trotzdem stehen, sie
-        // tragen jetzt nur noch die Diagnose in `PlaybackPlan.diagnose`:
-        // dort beantworten sie die Frage „woran lag es", nicht „was ist
-        // erlaubt".
+        // This used to be the two lists above, concatenated. That silently
+        // contradicted the goal of this app: an allow list can only be too short, and
+        // anything not in it makes the server convert, even if libVLC would play it
+        // without complaint. The lists stay anyway; they now only feed the diagnosis
+        // in `PlaybackPlan.diagnose`, where they answer "what was the cause", not
+        // "what is allowed".
         for container in vlcContainers {
             direct.append(
                 DirectPlayProfile(
@@ -210,18 +207,18 @@ public extension DeviceProfile {
             )
         }
 
-        // Reine Audiodateien — alles, was libVLC 3 und 4 abspielen (gemessen
-        // 25.09.2026 an je einer erzeugten Datei). Der Name ist der, den
-        // Jellyfin aus ffprobes `format_name` macht: `.mka` heisst dort `mkv`,
-        // `.mp2` heisst `mp3`, rohes TrueHD `truehd`. Fehlt ein Container,
-        // wandelt der Server die Musik um, obwohl nichts dagegen spricht.
+        // Pure audio files: everything libVLC 3 and 4 play (checked with one
+        // generated file each). The name is the one Jellyfin derives from ffprobe's
+        // `format_name`: `.mka` is `mkv` there, `.mp2` is `mp3`, raw TrueHD is
+        // `truehd`. If a container is missing, the server converts the music although
+        // nothing speaks against it.
         for container in vlcAudioContainers {
             direct.append(DirectPlayProfile(container: container, type: "Audio",
                                             videoCodec: nil, audioCodec: nil))
         }
 
-        // Fallback, falls doch einmal transkodiert werden muss. Bewusst
-        // HLS + h264/aac, weil das überall läuft.
+        // Fallback in case transcoding is ever needed. Deliberately HLS + h264/aac,
+        // because it plays everywhere.
         let transcoding = [
             TranscodingProfile(container: "ts", type: "Video", videoCodec: "h264",
                                audioCodec: "aac", context: "Streaming", protocolName: "hls")
@@ -240,67 +237,65 @@ public extension DeviceProfile {
 
 }
 
-// MARK: - Das AirPlay-Profil
+// MARK: - The AirPlay profile
 
 public extension DeviceProfile {
 
-    /// Das Profil für **echtes AirPlay** — bewusst eng, und das ist keine
-    /// Nachlässigkeit.
+    /// The profile for **real AirPlay**: deliberately narrow, and that is not
+    /// negligence.
     ///
-    /// **Wofür.** AirPlay für Video geht bei Apple ausschließlich über
-    /// `AVPlayer`. Der kennt weder Matroska noch DTS, und der Apple TV am
-    /// anderen Ende nimmt DTS ohnehin nicht an. Wer AirPlay anbietet, muss dem
-    /// Server deshalb ein Profil zeigen, das *AVPlayers* Grenzen beschreibt —
-    /// nicht libVLCs. Dieses hier ist die einzige Stelle in der App, an der
-    /// wir absichtlich weniger deklarieren, als wir können.
+    /// **Purpose.** On Apple platforms AirPlay for video only works through
+    /// `AVPlayer`. It knows neither Matroska nor DTS, and the Apple TV at the other
+    /// end does not accept DTS anyway. Anyone offering AirPlay must therefore show
+    /// the server a profile that describes *AVPlayer's* limits, not libVLC's. This
+    /// is the only place in the app that deliberately declares less than it
+    /// can do.
     ///
-    /// **Und es bricht das Versprechen der App nicht.** Am Server nachgemessen
-    /// (Jellyfin 10.11.11): mit diesem Profil antwortet er
-    /// `SupportsDirectPlay: false`, `SupportsDirectStream: false`,
-    /// `SupportsTranscoding: true` — aber **`TranscodeReasons: None`**. Es
-    /// wird nichts neu gerechnet, nur der Container von Matroska nach
-    /// fragmentiertem MP4 umgepackt. Die Übersicht nennt das trotzdem
-    /// „Transcoding"; das ist Jellyfins Beschriftung, nicht der Vorgang.
+    /// **And it does not break the app's promise.** Checked against the server
+    /// (Jellyfin 10.11.11): with this profile it answers `SupportsDirectPlay: false`,
+    /// `SupportsDirectStream: false`, `SupportsTranscoding: true`, but
+    /// **`TranscodeReasons: None`**. Nothing is re-encoded, only the container is
+    /// repackaged from Matroska to fragmented MP4. The overview still calls that
+    /// "Transcoding"; that is Jellyfin's label, not the operation.
     ///
-    /// Was hier drinsteht, steht in Apples Vorgaben für HLS: Video H.264 und
-    /// HEVC, Ton AAC, AC-3, E-AC-3, ALAC und FLAC. Dieselbe Liste prüft
-    /// ``AirPlayEignung`` **vor** dem Knopf — damit niemand AirPlay drückt und
-    /// Bild ohne Ton bekommt.
-    /// - Parameter maxBitrate: Praktisch unbegrenzt, wie beim VLC-Profil —
-    ///   **und das war eine Messung, keine Uebernahme.**
+    /// What is listed here follows Apple's HLS requirements: video H.264 and HEVC,
+    /// audio AAC, AC-3, E-AC-3, ALAC and FLAC. ``AirPlaySuitability`` checks the same
+    /// list **before** the button, so nobody presses AirPlay and gets picture
+    /// without sound.
+    /// - Parameter maxBitrate: Practically unlimited, as with the VLC profile,
+    ///   **and that was a measurement, not an assumption.**
     ///
-    ///   Hier stand kurz 120 Mbit/s, mit einer plausiblen Begruendung: Jellyfin
-    ///   gibt diese Zahl als *Zielrate* an ffmpeg weiter, und eine Zielrate von
-    ///   1 Gbit/s kann niemand liefern. Am Server nachgemessen, mit erzwungenem
-    ///   Neuencode:
+    ///   A limit such as 120 Mbit/s looks plausible: Jellyfin passes this number
+    ///   to ffmpeg as the *target rate*, and nobody can deliver a target of
+    ///   1 Gbit/s. Measured against the server with a forced re-encode:
     ///
     ///   ```
-    ///   Zielrate 1 Gbit/s    Stillstand, -12889 „No response for map in 3s"
-    ///   Zielrate 120 Mbit/s  Stillstand, dieselbe Meldung
-    ///   Bild wird kopiert    spielt sofort
+    ///   target 1 Gbit/s     stalls, -12889 "No response for map in 3s"
+    ///   target 120 Mbit/s   stalls, same message
+    ///   picture is copied   plays immediately
     ///   ```
     ///
-    ///   Die Zielrate war also nie das Problem. **Ein echter Neuencode geht
-    ///   fuer AirPlay grundsaetzlich nicht**, und eine Grenze richtet nur
-    ///   Schaden an: eine Datei oberhalb davon wuerde dadurch erst zum
-    ///   Neuencode gemacht, obwohl sie sonst schlicht kopiert worden waere.
+    ///   So the target rate was never the problem. **A real re-encode does not
+    ///   work for AirPlay at all**, and a limit only does harm: a file above it
+    ///   would be turned into a re-encode when it would otherwise simply have
+    ///   been copied.
     ///
-    ///   Verhindert wird der Neuencode deshalb anders — durch ``AirPlayEignung``
-    ///   vor dem Umschalten und durch `SubtitleStreamIndex: -1` beim Fragen,
-    ///   damit kein Untertitel eingebrannt wird. Passiert er trotzdem, faellt
-    ///   der Abspieler nach zwoelf Sekunden aufs Telefon zurueck.
+    ///   The re-encode is therefore prevented differently: by ``AirPlaySuitability``
+    ///   before switching and by `SubtitleStreamIndex: -1` when asking, so no
+    ///   subtitle is burned in. If it happens anyway, the player falls back to the
+    ///   phone after twelve seconds.
     static func airplay(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
-        // Passt die Datei schon, macht der Server gar nichts. Der Fall ist
-        // seltener als er klingt, aber er kostet nichts, ihn zu erlauben.
+        // If the file already fits, the server does nothing. The case is rarer than
+        // it sounds, but allowing it costs nothing.
         let direct = ["mp4", "m4v", "mov"].map { container in
             DirectPlayProfile(container: container, type: "Video",
                               videoCodec: "h264,hevc",
                               audioCodec: "aac,ac3,eac3,alac,flac,mp3")
         }
 
-        // **Der eigentliche Weg.** `videoCodec` nennt beide erlaubten Codecs,
-        // damit Jellyfin die Videospur kopieren darf statt sie zu rechnen —
-        // steht dort nur `h264`, wird jeder HEVC-Film neu encodiert.
+        // **The actual path.** `videoCodec` names both allowed codecs so Jellyfin may
+        // copy the video track instead of computing it; with only `h264` there, every
+        // HEVC movie is re-encoded.
         let transcoding = [
             TranscodingProfile(container: "mp4", type: "Video",
                                videoCodec: "h264,hevc",
@@ -308,33 +303,30 @@ public extension DeviceProfile {
                                context: "Streaming", protocolName: "hls")
         ]
 
-        // Nur Textformate, und `External` statt `Embed`.
+        // Text formats only, and `External` instead of `Embed`.
         //
-        // **Ein Bitmap-Untertitel wäre hier der einzige echte Transcode-Grund
-        // der ganzen App.** PGS oder VOBSUB kann AVPlayer nicht zeichnen, also
-        // würde der Server sie ins Bild brennen — und dafür das Video neu
-        // rechnen müssen. Sie stehen deshalb absichtlich *nicht* drin: fehlt
-        // das Format, liefert Jellyfin den Strom ohne Untertitel aus, statt
-        // ihn einzubrennen. Kein Untertitel ist besser als ein Neuencode.
-        let untertitel = ["vtt", "webvtt", "srt", "subrip"]
+        // **A bitmap subtitle would be the only real transcode reason in the whole
+        // app.** AVPlayer cannot draw PGS or VOBSUB, so the server would burn them
+        // into the picture and have to re-encode the video for it. They are
+        // deliberately *not* listed: if the format is missing, Jellyfin delivers the
+        // stream without subtitles instead of burning them in. No subtitle is better
+        // than a re-encode.
+        let subtitle = ["vtt", "webvtt", "srt", "subrip"]
             .map { SubtitleProfile(format: $0, method: "External") }
 
-        // **HEVC nur mit der Kennung, die AVFoundation annimmt.**
+        // **HEVC only with the tag AVFoundation accepts.**
         //
-        // HEVC in MP4 steht entweder als `hvc1` oder als `hev1` in der Datei.
-        // AVPlayer — und damit der Apple TV am anderen Ende — spielt nur
-        // `hvc1` (Dolby Vision: `dvh1`); bei `hev1` kommt der Ton und kein
-        // Bild. Genau das wurde bei AirPlay von HEVC gemeldet. Ohne diese
-        // Bedingung reichte der Server eine solche MP4 per Direct Play durch.
-        //
-        // Mit ihr lehnt er Direct Play ab (`VideoCodecTagNotSupported`, ein
-        // Grund, der Kopieren weiter erlaubt) und packt ueber das HLS-Profil
-        // unten um — dabei setzt er selbst `-tag:v:0 hvc1`
-        // (DynamicHlsController, Jellyfin 10.11). Das Bild wird kopiert, nicht
-        // neu gerechnet. Matroska traegt keine Kennung (`CodecTag` leer) und
-        // ist deshalb mit `IsRequired: false` nicht betroffen; es wird
-        // ohnehin umgepackt. Dieselbe Liste nimmt jellyfin-web fuer Safari.
-        let hevcKennung = CodecProfile(
+        // HEVC in MP4 is tagged either `hvc1` or `hev1` in the file. AVPlayer, and
+        // with it the Apple TV at the other end, only plays `hvc1` (Dolby Vision:
+        // `dvh1`); with `hev1` you get sound and no picture. Without this condition
+        // the server would pass such an MP4 through as Direct Play.
+        // With it, the server rejects Direct Play (`VideoCodecTagNotSupported`, a
+        // reason that still allows copying) and repackages through the HLS profile
+        // below, setting `-tag:v:0 hvc1` itself (DynamicHlsController, Jellyfin
+        // 10.11). The picture is copied, not re-encoded. Matroska carries no tag
+        // (`CodecTag` empty) and is therefore unaffected with `IsRequired: false`; it
+        // is repackaged anyway. jellyfin-web uses the same list for Safari.
+        let hevcId = CodecProfile(
             type: "Video", codec: "hevc",
             conditions: [ProfileCondition(condition: "EqualsAny", property: "VideoCodecTag",
                                           value: "hvc1|dvh1", isRequired: false)]
@@ -346,8 +338,8 @@ public extension DeviceProfile {
             maxStaticBitrate: maxBitrate,
             directPlayProfiles: direct,
             transcodingProfiles: transcoding,
-            subtitleProfiles: untertitel,
-            codecProfiles: [hevcKennung]
+            subtitleProfiles: subtitle,
+            codecProfiles: [hevcId]
         )
     }
 

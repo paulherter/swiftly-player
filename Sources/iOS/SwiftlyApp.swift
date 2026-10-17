@@ -6,23 +6,20 @@ struct SwiftlyApp: App {
 
     var body: some Scene {
         WindowGroup { RootView() }
-            // **Ohne das bleibt ein Download im Hintergrund liegen.**
+            // **Without this a background download is left hanging.**
             //
-            // Eine 18-GB-Datei laedt nicht in den dreissig Sekunden, die iOS
-            // einer App im Hintergrund laesst; die Hintergrundsitzung gibt
-            // den Vorgang deshalb an einen Systemdienst ab, der weiterlaeuft,
-            // wenn die App beendet ist. Wird sie fertig, **startet iOS die
-            // App eigens dafuer wieder** — und erwartet, dass jemand
-            // hinsieht. Fehlt diese Zeile, kommt der Start ins Leere: die
-            // fertige Datei bleibt in Apples Zwischenablage stehen, und beim
-            // naechsten Oeffnen faengt der Download von vorn an.
+            // An 18 GB file does not download in the thirty seconds iOS gives an app in the
+            // background; the background session therefore hands the transfer to a system
+            // service that keeps running after the app is terminated. When it finishes, **iOS
+            // relaunches the app just for this** and expects someone to look. Without this
+            // line the launch leads nowhere: the finished file stays in Apple's staging area,
+            // and the next opening starts the download from scratch.
             //
-            // Die Kennung muss dieselbe sein wie in `Downloadverwaltung` —
-            // daher von dort, nicht getippt.
-            .backgroundTask(.urlSession(Downloadverwaltung.sitzungskennung)) {
-                // Das blosse Aufwachen genuegt: die Sitzung stellt ihre
-                // Rueckrufe von selbst zu, sobald das Modell sie anfasst.
-                // Hier steht nichts zu tun — aber die Zeile muss stehen.
+            // The identifier must be the same as in `DownloadManager`, hence taken from
+            // there, not typed.
+            .backgroundTask(.urlSession(DownloadManager.sessionId)) {
+                // Merely waking up is enough: the session delivers its callbacks by itself as
+                // soon as the model touches it. Nothing to do here, but the line must be there.
             }
     }
 }

@@ -2,394 +2,377 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// **Seerr — anfordern, was der Server nicht hat.**
+/// **Seerr: request what the server does not have.**
 ///
-/// Der Client liegt im Paket (`JellyfinKit.SeerrClient`) und ist
-/// plattformunabhaengig; hier steht nur die Oberflaeche. Auf den
-/// Apple-Fassungen ist das `Seerrmodell` plus vier Ansichten — die Aufteilung
-/// ist dieselbe, nur in GTK gezeichnet.
+/// The client is in the package (`JellyfinKit.SeerrClient`) and platform
+/// independent; only the UI is here. On the Apple builds that is `SeerrModel`
+/// plus four views; the split is the same, drawn in GTK.
 extension App {
 
-    /// Der Zugang, einmal aus der Ablage geholt.
-    func seerrLaden() {
-        seerrzugang = Speicher.seerrLesen()
-        seerrclient = seerrzugang.map { SeerrClient(zugang: $0) }
+    /// The credentials, fetched once from storage.
+    func seerrLoad() {
+        seerrAccess = Cache.seerrRead()
+        seerrClient = seerrAccess.map { SeerrClient(access: $0) }
     }
 
-    var seerrDa: Bool { seerrclient != nil }
+    var seerrPresent: Bool { seerrClient != nil }
 
-    // MARK: Einstellungen
+    // MARK: Settings
 
-    /// **Adresse und Schluessel, mehr braucht es nicht.**
+    /// **Address and key, nothing more.**
     ///
-    /// Woertlich die Felder der Apple-Fassung (`SeerrEinstellungenView`):
-    /// die Adresse des Dienstes und ein API-Schluessel. Geprueft wird mit
-    /// `gilt()`, damit ein Tippfehler hier auffaellt und nicht erst, wenn
-    /// jemand etwas anfordern will.
-    func seerrSeiteBauen(_ block: Widget!) {
-        anhaengen(block, seerrKopf())
+    /// The same fields as the Apple version (`SeerrSettingsView`): the
+    /// service address and an API key. It is checked with `gilt()` so a typo shows
+    /// up here and not only when someone wants to request something.
+    func seerrPageBuild(_ block: Widget!) {
+        append(block, seerrHeader())
 
-        let hinweis = beschriftung(
-            uebersetzt("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
-            stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(hinweis), 0)
-        gtk_widget_set_margin_bottom(hinweis, 18)
-        anhaengen(block, hinweis)
+        let hint = label(
+            translated("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
+            style: "swiftly-zweitzeile", wrap: true)
+        gtk_label_set_xalign(OpaquePointer(hint), 0)
+        gtk_widget_set_margin_bottom(hint, 18)
+        append(block, hint)
 
-        // **Verbunden oder Formular, nicht beides.** Auf dem Mac steht an
-        // dieser Stelle `if seerr.verbunden { verbunden } else { formular }`.
-        // Hier stand immer das Formular — und damit gab es keinen Weg, eine
-        // Verbindung wieder zu loesen: wer sich einmal angemeldet hatte,
-        // konnte den Zugang nur noch ueberschreiben.
-        if seerrDa, let zugang = seerrzugang {
-            anhaengen(block, seerrVerbundenGruppe(zugang))
+        // **Connected or form, not both.** On the Mac this spot reads
+        // `if seerr.verbunden { verbunden } else { formSheet }`. Here the form was
+        // always shown, so there was no way to disconnect: once signed in, the
+        // credentials could only be overwritten.
+        if seerrPresent, let access = seerrAccess {
+            append(block, seerrConnectedGroup(access))
             return
         }
 
-        let adresse: Widget! = gtk_entry_new()
-        gtk_entry_set_placeholder_text(alsFeld(adresse), "seerr.example.com")
-        if let z = seerrzugang { gtk_editable_set_text(OpaquePointer(adresse), z.adresse.absoluteString) }
-        anhaengen(block, feldzeile(uebersetzt("Adresse"), adresse))
+        let address: Widget! = gtk_entry_new()
+        gtk_entry_set_placeholder_text(asField(address), "seerr.example.com")
+        if let z = seerrAccess { gtk_editable_set_text(OpaquePointer(address), z.address.absoluteString) }
+        append(block, fieldRow(translated("Adresse"), address))
 
-        let benutzer: Widget! = gtk_entry_new()
-        gtk_entry_set_placeholder_text(alsFeld(benutzer), uebersetzt("Benutzername"))
-        gtk_editable_set_text(OpaquePointer(benutzer), benutzername)
-        anhaengen(block, feldzeile(uebersetzt("Benutzername"), benutzer))
+        let user: Widget! = gtk_entry_new()
+        gtk_entry_set_placeholder_text(asField(user), translated("Benutzername"))
+        gtk_editable_set_text(OpaquePointer(user), username)
+        append(block, fieldRow(translated("Benutzername"), user))
 
-        let passwort: Widget! = gtk_entry_new()
-        gtk_entry_set_visibility(alsFeld(passwort), 0)
-        gtk_entry_set_placeholder_text(alsFeld(passwort), uebersetzt("Passwort"))
-        anhaengen(block, feldzeile(uebersetzt("Passwort"), passwort))
+        let password: Widget! = gtk_entry_new()
+        gtk_entry_set_visibility(asField(password), 0)
+        gtk_entry_set_placeholder_text(asField(password), translated("Passwort"))
+        append(block, fieldRow(translated("Passwort"), password))
 
-        // „Erweitert" — eigene Header fuer einen Dienst vor Seerr (Issue #4).
-        let (erweitert, kopfleser) = erweitertBauen(vorhanden: [])
-        gtk_widget_set_margin_bottom(erweitert, 14)
-        anhaengen(block, erweitert)
+        // "Erweitert": custom headers for a service in front of Seerr (issue #4).
+        let (advanced, headerReader) = advancedBuild(available: [])
+        gtk_widget_set_margin_bottom(advanced, 14)
+        append(block, advanced)
 
-        // **Das Passwort wird nicht gesichert** — nur die Sitzung, die Seerr
-        // dafuer ausstellt. Woertlich die Zusage der Apple-Fassung, und sie
-        // steht dort wie hier sichtbar auf der Seite, nicht nur im Quelltext.
-        let zusage = beschriftung(
-            uebersetzt("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
-            stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(zusage), 0)
-        gtk_widget_add_css_class(zusage, "dim-label")
-        anhaengen(block, zusage)
+        // **The password is not stored**, only the session Seerr issues for it. Same
+        // promise as the Apple version, and it is shown on the page, not only in the
+        // source.
+        let commitment = label(
+            translated("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
+            style: "swiftly-zweitzeile", wrap: true)
+        gtk_label_set_xalign(OpaquePointer(commitment), 0)
+        gtk_widget_add_css_class(commitment, "dim-label")
+        append(block, commitment)
 
-        let stand = beschriftung("", stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(stand), 0)
-        gtk_widget_set_margin_top(stand, 12)
-        gtk_widget_set_visible(stand, 0)
-        anhaengen(block, stand)
+        let state = label("", style: "swiftly-zweitzeile", wrap: true)
+        gtk_label_set_xalign(OpaquePointer(state), 0)
+        gtk_widget_set_margin_top(state, 12)
+        gtk_widget_set_visible(state, 0)
+        append(block, state)
 
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        gtk_widget_set_margin_top(reihe, 20)
-        let standKiste = Zeigerkiste(stand)
-        let aKiste = Zeigerkiste(adresse)
-        let bKiste = Zeigerkiste(benutzer)
-        let pKiste = Zeigerkiste(passwort)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
+        gtk_widget_set_margin_top(rail, 20)
+        let stateBox = PointerBox(state)
+        let aBox = PointerBox(address)
+        let bBox = PointerBox(user)
+        let pBox = PointerBox(password)
 
-        let verbinden = hauptknopf(uebersetzt("Verbinden"), symbol: "object-select-symbolic")
-        beiSignal(verbinden, "clicked") { [weak self] in
+        let linkUp = primaryButton(translated("Verbinden"), symbol: "object-select-symbolic")
+        signal(linkUp, "clicked") { [weak self] in
             guard let self else { return }
-            let roh = String(cString: gtk_editable_get_text(OpaquePointer(aKiste.widget)))
-            let b = String(cString: gtk_editable_get_text(OpaquePointer(bKiste.widget)))
-            let pw = String(cString: gtk_editable_get_text(OpaquePointer(pKiste.widget)))
-            let koepfe = kopfleser.koepfe()
-            // **Eine Eingabe ergibt mehrere Adressen.** `Seerr.adressen` faechert
-            // sie auf (mit und ohne Schema, mit und ohne Port) — dieselbe Regel
-            // wie auf den Apple-Fassungen, im Paket und dort getestet.
-            let adressen = Seerr.adressen(aus: roh)
-            guard !adressen.isEmpty else {
-                self.seerrStandZeigen(standKiste, uebersetzt("Das ist keine gültige Adresse."))
+            let raw = String(cString: gtk_editable_get_text(OpaquePointer(aBox.widget)))
+            let b = String(cString: gtk_editable_get_text(OpaquePointer(bBox.widget)))
+            let pw = String(cString: gtk_editable_get_text(OpaquePointer(pBox.widget)))
+            let headers = headerReader.headers()
+            // **One input yields several addresses.** `Seerr.addresses` fans it out (with
+            // and without scheme, with and without port); same rule as on the Apple
+            // builds, in the package and tested there.
+            let addresses = Seerr.addresses(from: raw)
+            guard !addresses.isEmpty else {
+                self.seerrStateShow(stateBox, translated("Das ist keine gültige Adresse."))
                 return
             }
             guard !b.isEmpty, !pw.isEmpty else {
-                self.seerrStandZeigen(standKiste, uebersetzt("Benutzername und Passwort fehlen"))
+                self.seerrStateShow(stateBox, translated("Benutzername und Passwort fehlen"))
                 return
             }
-            self.seerrStandZeigen(standKiste, uebersetzt("Verbinde…"))
-            // Die Antwort kann kommen, wenn die Seite schon zu ist.
-            let standLebt = Lebenszeichen(standKiste.widget)
+            self.seerrStateShow(stateBox, translated("Verbinde…"))
+            // The response may arrive after the page is closed.
+            let stateLives = LifeCharacter(stateBox.widget)
             Task.detached {
-                var letzter: String?
-                for url in adressen {
+                var lastOne: String?
+                for url in addresses {
                     do {
-                        let neu = try await SeerrClient.anmelden(an: url, benutzer: b, passwort: pw,
-                                                                 koepfe: koepfe)
-                        aufHauptfaden {
-                            self.seerrzugang = neu
-                            self.seerrclient = SeerrClient(zugang: neu)
-                            self.seerrGilt = true
-                            Speicher.seerrSchreiben(neu)
-                            // Das Passwortfeld wird geleert, sobald es nicht
-                            // mehr gebraucht wird — sofern die Seite noch steht.
-                            guard standLebt.lebt else { return }
-                            gtk_editable_set_text(OpaquePointer(pKiste.widget), "")
-                            self.seerrStandZeigen(standKiste, uebersetzt("Verbunden"))
+                        let new = try await SeerrClient.signIn(an: url, user: b, password: pw,
+                                                                 headers: headers)
+                        onMainThread {
+                            self.seerrAccess = new
+                            self.seerrClient = SeerrClient(access: new)
+                            self.seerrApplies = true
+                            Cache.seerrWrite(new)
+                            // The password field is cleared once it is no longer needed, if the page
+                            // still exists.
+                            guard stateLives.lives else { return }
+                            gtk_editable_set_text(OpaquePointer(pBox.widget), "")
+                            self.seerrStateShow(stateBox, translated("Verbunden"))
                         }
                         return
                     } catch {
-                        letzter = lesbarerFehler(error)
+                        lastOne = readableError(error)
                     }
                 }
-                // **Erst festhalten, dann hinueberreichen.** Eine
-                // veraenderliche Variable ueber die Fadengrenze zu greifen
-                // laesst Swift 6 nicht zu — und zu Recht: der Block laeuft
-                // spaeter.
-                let meldung = letzter ?? uebersetzt("Keine Verbindung")
-                aufHauptfaden(solange: standLebt) {
-                    self.seerrStandZeigen(standKiste, meldung)
+                // **Capture first, then hand over.** Swift 6 does not allow capturing a
+                // mutable variable across a thread boundary, rightly so: the block runs
+                // later.
+                let message = lastOne ?? translated("Keine Verbindung")
+                onMainThread(during: stateLives) {
+                    self.seerrStateShow(stateBox, message)
                 }
             }
         }
-        anhaengen(reihe, verbinden)
-        // **Kein gesperrter Knopf, sondern keiner** (`SeerrEinstellungenView`
-        // auf dem Mac): solange Adresse, Benutzer und Passwort nicht
-        // dastehen, ist nichts zu tun, und ein grauer Knopf behauptet das
-        // Gegenteil. Er erscheint, sobald alle drei gefuellt sind.
-        let knopfKiste = Zeigerkiste(verbinden)
-        let nachfuehren: () -> Void = {
-            let voll = [aKiste, bKiste, pKiste].allSatisfy {
+        append(rail, linkUp)
+        // **No disabled button, no button** (`SeerrSettingsView` on the Mac):
+        // until address, user and password are filled there is nothing to do, and a
+        // gray button suggests otherwise. It appears once all three are filled.
+        let buttonBox = PointerBox(linkUp)
+        let bringUpToDate: () -> Void = {
+            let full = [aBox, bBox, pBox].allSatisfy {
                 !String(cString: gtk_editable_get_text(OpaquePointer($0.widget)))
                     .trimmingCharacters(in: .whitespaces).isEmpty
             }
-            gtk_widget_set_visible(knopfKiste.widget, voll ? 1 : 0)
+            gtk_widget_set_visible(buttonBox.widget, full ? 1 : 0)
         }
-        for feld in [adresse, benutzer, passwort] {
-            beiSignal(feld, "changed", nachfuehren)
+        for inputField in [address, user, password] {
+            signal(inputField, "changed", bringUpToDate)
         }
-        nachfuehren()
+        bringUpToDate()
 
-        if seerrzugang != nil {
-            let weg = nebenknopf("user-trash-symbolic", name: uebersetzt("Verbindung trennen"))
-            beiSignal(weg, "clicked") { [weak self] in
+        if seerrAccess != nil {
+            let distance = secondaryButton("user-trash-symbolic", name: translated("Verbindung trennen"))
+            signal(distance, "clicked") { [weak self] in
                 guard let self else { return }
-                self.seerrzugang = nil
-                self.seerrclient = nil
-                Speicher.seerrSchreiben(nil)
-                gtk_editable_set_text(OpaquePointer(aKiste.widget), "")
-                gtk_editable_set_text(OpaquePointer(pKiste.widget), "")
-                self.seerrStandZeigen(standKiste, uebersetzt("Getrennt"))
+                self.seerrAccess = nil
+                self.seerrClient = nil
+                Cache.seerrWrite(nil)
+                gtk_editable_set_text(OpaquePointer(aBox.widget), "")
+                gtk_editable_set_text(OpaquePointer(pBox.widget), "")
+                self.seerrStateShow(stateBox, translated("Getrennt"))
             }
-            anhaengen(reihe, weg)
+            append(rail, distance)
         }
-        anhaengen(block, reihe)
+        append(block, rail)
     }
 
-    /// **Derselbe Kopf wie jede andere Unterseite.**
+    /// **The same header as every other subpage.**
     ///
-    /// Hier stand ein eigener aus drei Zeilen, weil `unterseitenkopf` privat
-    /// war — und genau die eine Zeile fehlte darin, auf die es ankommt: der
-    /// Zurueckpfeil. Die Seite war damit eine Sackgasse. Der Mac nimmt an
-    /// derselben Stelle `Unterseitenkopf(titel:zurueck:)`
-    /// (`Sources/macOS/SeerrEinstellungenView.swift:27`).
-    private func seerrKopf() -> Widget! {
-        let kopf = unterseitenkopf(uebersetzt("Seerr"))
-        gtk_widget_set_margin_bottom(kopf, 10)
-        return kopf
+    /// This used to be a custom three-line one because `subpageHeader` was
+    /// private, and it lacked the one thing that matters: the back arrow, making
+    /// the page a dead end. The Mac uses `SubpageHeader(title:back:)` here.
+    private func seerrHeader() -> Widget! {
+        let header = subpageHeader(translated("Seerr"))
+        gtk_widget_set_margin_bottom(header, 10)
+        return header
     }
 
-    private func seerrStandZeigen(_ kiste: Zeigerkiste, _ text: String) {
-        gtk_label_set_text(OpaquePointer(kiste.widget), text)
-        gtk_widget_set_visible(kiste.widget, 1)
+    private func seerrStateShow(_ container: PointerBox, _ text: String) {
+        gtk_label_set_text(OpaquePointer(container.widget), text)
+        gtk_widget_set_visible(container.widget, 1)
     }
 
-    /// **Was steht, wenn es steht.** Adresse, Zustand der Sitzung, und der
-    /// Weg hinaus.
+    /// **What is shown when connected.** Address, session state, and the way
+    /// out.
     ///
-    /// „Verbindung trennen", nicht „Abmelden" — wortgleich vom Mac, samt
-    /// Begruendung: bei Seerr selbst bleibt alles, wie es ist; es geht nur um
-    /// diesen einen Zugang hier.
-    private func seerrVerbundenGruppe(_ zugang: Seerrzugang) -> Widget! {
-        let g = einstellungsgruppe(uebersetzt("Verbunden"))
-        let wort: String
-        switch seerrGilt {
-        case .some(true):  wort = uebersetzt("Aktiv")
-        case .some(false): wort = uebersetzt("Sitzung abgelaufen")
-        case nil:          wort = uebersetzt("Wird geprüft …")
+    /// "Verbindung trennen", not "Abmelden", worded like the Mac: everything on
+    /// the Seerr side stays as it is; only this one connection here is dropped.
+    private func seerrConnectedGroup(_ access: SeerrAccess) -> Widget! {
+        let g = settingGroup(translated("Verbunden"))
+        let word: String
+        switch seerrApplies {
+        case .some(true):  word = translated("Aktiv")
+        case .some(false): word = translated("Sitzung abgelaufen")
+        case nil:          word = translated("Wird geprüft …")
         }
-        anhaengen(g.raum, wertezeile(symbol: "network-transmit-receive-symbolic",
-                                     titel: zugang.adresse.absoluteString,
-                                     wert: wort))
-        anhaengen(g.raum, zeilenstrich())
-        anhaengen(g.raum, wertezeile(symbol: "window-close-symbolic",
-                                     titel: uebersetzt("Verbindung trennen")) { [weak self] in
+        append(g.space, valuesRow(symbol: "network-transmit-receive-symbolic",
+                                     title: access.address.absoluteString,
+                                     value: word))
+        append(g.space, rowsLine())
+        append(g.space, valuesRow(symbol: "window-close-symbolic",
+                                     title: translated("Verbindung trennen")) { [weak self] in
             guard let self else { return }
-            // Erst den Keks der Verbindung, dann den Zugang: sonst bleibt die
-            // Sitzung gueltig und der naechste Anmeldeversuch bekommt keine
-            // neue (`Seerr.kekseVergessen`).
-            if let adresse = self.seerrzugang?.adresse { Seerr.kekseVergessen(fuer: adresse) }
-            self.seerrzugang = nil
-            self.seerrclient = nil
-            self.seerrGilt = nil
-            Speicher.seerrSchreiben(nil)
-            // Die Suche zeigt sonst weiter die fremden Treffer der letzten
-            // Abfrage — die kommen von einem Dienst, der nicht mehr
-            // angebunden ist.
-            self.seerrTrefferZeigen([])
-            self.unterseiteOeffnen(.seerr)
+            // First the connection's cookie, then the credentials; otherwise the session
+            // stays valid and the next sign-in attempt gets no new one
+            // (`Seerr.cookiesForget`).
+            if let address = self.seerrAccess?.address { Seerr.cookiesForget(for: address) }
+            self.seerrAccess = nil
+            self.seerrClient = nil
+            self.seerrApplies = nil
+            Cache.seerrWrite(nil)
+            // Otherwise search keeps showing the foreign hits of the last query, which
+            // come from a service that is no longer connected.
+            self.seerrHitShow([])
+            self.subpageOpen(.seerr)
         })
 
-        // **Ob die Sitzung noch traegt, weiss nur der Dienst.** Der Keks
-        // laeuft ab, und ein Zugang, der dasteht und nicht mehr gilt, ist
-        // schlimmer als keiner: die Suche bliebe still leer.
+        // **Only the service knows whether the session still holds.** The cookie
+        // expires, and credentials that are there but no longer valid are worse than
+        // none: search would stay silently empty.
         //
-        // Geprueft wird einmal je Besuch, und das Ergebnis baut die Seite an
-        // Ort und Stelle neu — denselben Weg nehmen hier alle Auswahllisten.
-        // Ein Zeiger auf die Wertbeschriftung ueber eine Fadengrenze waere
-        // die andere Moeglichkeit und die schlechtere.
-        if let client = seerrclient, seerrGilt == nil {
+        // It is checked once per visit, and the result rebuilds the page in place,
+        // the same way all selection lists work here. A pointer to the value label
+        // across a thread boundary would be the alternative and the worse one.
+        if let client = seerrClient, seerrApplies == nil {
             Task.detached { [self] in
-                let gilt = await client.gilt()
-                aufHauptfaden {
-                    guard self.offeneUnterseite == .seerr else { return }
-                    self.seerrGilt = gilt
-                    self.unterseiteOeffnen(.seerr)
+                let applies = await client.applies()
+                onMainThread {
+                    guard self.openSubpage == .seerr else { return }
+                    self.seerrApplies = applies
+                    self.subpageOpen(.seerr)
                 }
             }
         }
-        return g.aussen
+        return g.outer
     }
 
-    /// Beschriftung ueber dem Feld — die Form der uebrigen Einstellungen.
-    private func feldzeile(_ titel: String, _ feld: Widget!) -> Widget! {
-        let stapelchen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 6)
-        gtk_widget_set_margin_bottom(stapelchen, 14)
-        let l = beschriftung(titel, stil: "swiftly-zweitzeile")
+    /// Caption above the field, the form of the other settings.
+    private func fieldRow(_ title: String, _ inputField: Widget!) -> Widget! {
+        let smallStack = stack(GTK_ORIENTATION_VERTICAL, spacing: 6)
+        gtk_widget_set_margin_bottom(smallStack, 14)
+        let l = label(title, style: "swiftly-zweitzeile")
         gtk_label_set_xalign(OpaquePointer(l), 0)
-        anhaengen(stapelchen, l)
-        anhaengen(stapelchen, feld)
-        return stapelchen
+        append(smallStack, l)
+        append(smallStack, inputField)
+        return smallStack
     }
 }
 
-// MARK: - Suche und Anfrage
+// MARK: - Search and request
 
 extension App {
 
-    /// Die Treffer aus Seerr unter die eigenen legen — oder beides verbergen.
-    /// **Was schon auf dem Server liegt, wird hier nicht noch einmal
-    /// gezeigt.** Ein Titel im Stand `da` steht bereits in den eigenen
-    /// Treffern darueber — die Zeile „Anfragen ueber Seerr" darunter waere
-    /// dieselbe Kachel ein zweites Mal, und beim Antippen kaeme eine
-    /// Nachfrage fuer etwas, das niemand anfragen muss. Die Apple-Fassungen
-    /// loesen das ueber zwei Bloecke; hier gibt es nur einen, also faellt
-    /// der Stand ganz heraus.
-    func seerrTrefferZeigen(_ treffer: [Seerrtreffer]) {
-        guard seerrRaster != nil else { return }
-        let fremde = treffer.filter { $0.stand != .da }
-        let sichtbar = !fremde.isEmpty
-        gtk_widget_set_visible(seerrKopfzeile, sichtbar ? 1 : 0)
-        gtk_widget_set_visible(seerrRaster, sichtbar ? 1 : 0)
-        gtk_label_set_text(OpaquePointer(seerrZahl), String(fremde.count))
-        // Erst wenn auch Seerr nichts hat, gilt „Nichts gefunden".
-        seerrTrefferLeer = fremde.isEmpty
-        if suchleer != nil {
-            gtk_widget_set_visible(suchleer, eigeneTrefferLeer && fremde.isEmpty ? 1 : 0)
+    /// Put the Seerr results below the own ones, or hide both.
+    /// **Anything already on the server is not shown again.** A title in state
+    /// `present` is already in the own results above; the "Anfragen ueber Seerr" row
+    /// below would be the same tile twice, and tapping it would ask for
+    /// confirmation for something nobody has to request. The Apple builds solve
+    /// this with two blocks; here there is only one, so that state is dropped.
+    func seerrHitShow(_ hit: [SeerrHit]) {
+        guard seerrGrid != nil else { return }
+        let foreignOnes = hit.filter { $0.state != .present }
+        let visible = !foreignOnes.isEmpty
+        gtk_widget_set_visible(seerrHeaderRow, visible ? 1 : 0)
+        gtk_widget_set_visible(seerrGrid, visible ? 1 : 0)
+        gtk_label_set_text(OpaquePointer(seerrNumber), String(foreignOnes.count))
+        // "Nichts gefunden" only applies once Seerr has nothing either.
+        seerrHitEmpty = foreignOnes.isEmpty
+        if searchEmpty != nil {
+            gtk_widget_set_visible(searchEmpty, ownHitEmpty && foreignOnes.isEmpty ? 1 : 0)
         }
-        rasterLeeren(seerrRaster)
-        for t in fremde {
-            gtk_flow_box_insert(OpaquePointer(seerrRaster), seerrKachel(t), -1)
+        gridEmpty(seerrGrid)
+        for t in foreignOnes {
+            gtk_flow_box_insert(OpaquePointer(seerrGrid), seerrTile(t), -1)
         }
     }
 
-    /// **Eine Kachel wie jede andere, plus die Marke.**
+    /// **A tile like any other, plus the badge.**
     ///
-    /// Die Marke sagt, was mit dem Titel schon passiert ist: wartet,
-    /// angefragt, teilweise. Ohne sie fragt man dreimal dasselbe an und
-    /// wundert sich, dass nichts geschieht — genau dafuer gibt es
-    /// `Seerrstand` im Paket.
-    func seerrKachel(_ t: Seerrtreffer) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-kachel")
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+    /// The badge says what already happened to the title: waiting, requested,
+    /// partial. Without it the same title gets requested three times with no
+    /// visible effect; `Seerrstand` in the package exists for this.
+    func seerrTile(_ t: SeerrHit) -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-kachel")
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
 
-        let (huelle, bild) = gerahmtesBild(breite: Stil.kachelBreite,
-                                           hoehe: Stil.kachelHoehe, stil: "swiftly-plakat")
-        if let url = t.plakat() {
-            bildLaden(bild, url: url, schluessel: "seerr-\(t.art)-\(t.id)", sofort: true)
+        let (wrapper, image) = framedImage(width: Theme.tileWidth,
+                                           height: Theme.tileHeight, style: "swiftly-plakat")
+        if let url = t.poster() {
+            imageLoad(image, url: url, key: "seerr-\(t.art)-\(t.id)", immediate: true)
         }
-        // **Blass, und das ist die ganze Auskunft.** Ein Plakat in voller
-        // Deckung sieht aus wie ein Titel, den der Server hat
-        // (`Sources/macOS/SeerrKachelUndSeite.swift:17-20`). Hier fehlte das
-        // eine Merkmal, an dem man auf den ersten Blick sieht, dass er es
-        // nicht ist.
-        gtk_widget_set_opacity(huelle, 0.45)
-        // **Unten links, nicht oben rechts** — `:19`, `.bottomLeading` mit 8
-        // Innenrand. Und gefuellt in der Farbe des Standes, nicht als
-        // umrandete Plakette: `swiftly-marke` war eine Klasse, die es im
-        // Stilblatt gar nicht gab, also sahen „wartet", „angefragt" und
-        // „teilweise" identisch aus.
-        if let wort = seerrMarkenwort(t.stand) {
-            let marke = beschriftung(wort, stil: "swiftly-marke")
-            gtk_widget_add_css_class(marke, seerrMarkenstil(t.stand))
-            gtk_widget_set_halign(marke, GTK_ALIGN_START)
-            gtk_widget_set_valign(marke, GTK_ALIGN_END)
-            gtk_widget_set_margin_bottom(marke, 8)
-            gtk_widget_set_margin_start(marke, 8)
-            gtk_overlay_add_overlay(OpaquePointer(huelle), marke)
+        // **Faded, and that is the whole message.** A poster at full opacity looks
+        // like a title the server has (`Sources/macOS/SeerrTileAndPage.swift`).
+        // The one cue that shows at a glance that it is not was missing.
+        gtk_widget_set_opacity(wrapper, 0.45)
+        // **Bottom left, not top right** (`.bottomLeading` with 8 padding), and
+        // filled with the state's color, not an outlined pill: `swiftly-marke` was a
+        // class missing from the style sheet, so "wartet", "angefragt" and
+        // "teilweise" looked identical.
+        if let word = seerrBrandName(t.state) {
+            let mark = label(word, style: "swiftly-marke")
+            gtk_widget_add_css_class(mark, seerrBrandStyle(t.state))
+            gtk_widget_set_halign(mark, GTK_ALIGN_START)
+            gtk_widget_set_valign(mark, GTK_ALIGN_END)
+            gtk_widget_set_margin_bottom(mark, 8)
+            gtk_widget_set_margin_start(mark, 8)
+            gtk_overlay_add_overlay(OpaquePointer(wrapper), mark)
         }
-        anhaengen(block, huelle)
+        append(block, wrapper)
 
-        // Innen 1 Punkt Abstand, Titel `kachelTitel` in `schriftLeise`, die
-        // Zweitzeile in `schriftSehrLeise` — `:24-31`. Hier stand der Titel in
-        // vollem Weiss und derselben Groesse wie ein Fliesstext.
-        let textblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
-        let titel = beschriftung(t.titel, stil: "swiftly-kacheltitel")
-        gtk_widget_add_css_class(titel, "dim-label")
-        gtk_label_set_xalign(OpaquePointer(titel), 0)
-        gtk_label_set_ellipsize(OpaquePointer(titel), PANGO_ELLIPSIZE_END)
-        gtk_label_set_max_width_chars(OpaquePointer(titel), 1)
-        anhaengen(textblock, titel)
+        // 1 point spacing inside, title `tileTitleText` in `schriftLeise`, second
+        // line in `schriftSehrLeise`. The title used to be full white and the same
+        // size as body text.
+        let textBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 1)
+        let title = label(t.title, style: "swiftly-kacheltitel")
+        gtk_widget_add_css_class(title, "dim-label")
+        gtk_label_set_xalign(OpaquePointer(title), 0)
+        gtk_label_set_ellipsize(OpaquePointer(title), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(title), 1)
+        append(textBlock, title)
 
-        // „2019 · Serie", nicht nur die Jahreszahl — `:50-53`.
-        let art = t.istSerie ? uebersetzt("Serie") : uebersetzt("Film")
-        let unten = beschriftung(t.jahr.map { "\($0) · \(art)" } ?? art,
-                                 stil: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(unten, "swiftly-leise")
-        gtk_label_set_xalign(OpaquePointer(unten), 0)
-        anhaengen(textblock, unten)
-        anhaengen(block, textblock)
+        // "2019 · Serie", not just the year.
+        let art = t.isSeries ? translated("Serie") : translated("Film")
+        let bottom = label(t.year.map { "\($0) · \(art)" } ?? art,
+                                 style: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(bottom, "swiftly-leise")
+        gtk_label_set_xalign(OpaquePointer(bottom), 0)
+        append(textBlock, bottom)
+        append(block, textBlock)
 
-        gtk_button_set_child(alsKnopf(knopf), block)
-        // Eine Aussage je Kachel: Titel, Jahr und Art, und der Stand der
-        // Anfrage — die Marke ist im Bild und fiele sonst heraus.
-        beschriften(knopf, ([t.titel, t.jahr.map { "\($0) · \(art)" } ?? art]
-                            + [seerrMarkenwort(t.stand)].compactMap { $0 })
+        gtk_button_set_child(asButton(button), block)
+        // One statement per tile: title, year and kind, and the request state; the
+        // badge is part of the image and would otherwise be missed.
+        caption(button, ([t.title, t.year.map { "\($0) · \(art)" } ?? art]
+                            + [seerrBrandName(t.state)].compactMap { $0 })
                                 .joined(separator: ", "))
-        // **Erst die Seite, dann die Anfrage.** Vorher loeste ein Tipp
-        // sofort die Rueckfrage aus — ohne dass man wusste, worum es geht,
-        // wie lang es ist oder welche Staffeln es gibt.
-        beiSignal(knopf, "clicked") { [weak self] in self?.seerrSeiteOeffnen(t) }
-        return knopf
+        // **Page first, then the request.** A tap used to trigger the confirmation
+        // right away, without showing what it is about, how long it is or which
+        // seasons exist.
+        signal(button, "clicked") { [weak self] in self?.seerrPageOpen(t) }
+        return button
     }
 
-    /// Dieselbe Tabelle wie `Seerrstand.kurzwort` auf den Apple-Fassungen —
-    /// **Wort fuer Wort, auch wo es sich falsch anfuehlt.**
+    /// Same table as `Seerrstand.shortWord` on the Apple builds, **word for word,
+    /// even where it feels wrong.**
     ///
-    /// `laedt` heisst „angefragt", nicht „laedt". Der Stand bedeutet bei
-    /// Seerr, dass die Anfrage durch ist und beim Beschaffer liegt; ob dort
-    /// gerade etwas ueber die Leitung geht, weiss niemand. Seerrs eigene
-    /// Oberflaeche nennt ihn ebenfalls „Requested". Auf dem Mac stand das
-    /// schon einmal falsch und ist dort behoben; hier neu zu erfinden hiesse,
-    /// denselben Fehler ein zweites Mal einzubauen.
-    /// Die Farbe der Marke, als Stilklasse. Dieselben Werte wie
-    /// `Seerrstand.farbe` auf Apple (`Sources/Shared/Seerrmarke.swift:63-68`).
-    private func seerrMarkenstil(_ stand: Seerrstand) -> String {
-        switch stand {
-        case .wartetAufFreigabe: return "swiftly-marke-wartet"
-        case .laedt:             return "swiftly-marke-laedt"
+    /// `loads` means "angefragt", not "laedt". In Seerr that state means the
+    /// request went through and is with the downloader; whether anything is
+    /// actually transferring is unknown. Seerr's own UI also calls it
+    /// "Requested". The Mac had this wrong once and fixed it; reinventing it here
+    /// would repeat the bug.
+    /// The badge color as a style class, same values as `Seerrstand.farbe` on
+    /// Apple (`Sources/Shared/SeerrMark.swift`).
+    private func seerrBrandStyle(_ state: SeerrState) -> String {
+        switch state {
+        case .waitsSharing: return "swiftly-marke-wartet"
+        case .loads:             return "swiftly-marke-laedt"
         default:                 return "swiftly-marke-akzent"
         }
     }
 
-    private func seerrMarkenwort(_ stand: Seerrstand) -> String? {
-        switch stand {
-        case .offen, .geloescht:    return nil
-        case .wartetAufFreigabe:    return uebersetzt("wartet")
-        case .laedt:                return uebersetzt("angefragt")
-        case .teilweiseDa:          return uebersetzt("teilweise")
-        case .da:                   return nil
+    private func seerrBrandName(_ state: SeerrState) -> String? {
+        switch state {
+        case .opened, .deleted:    return nil
+        case .waitsSharing:    return translated("wartet")
+        case .loads:                return translated("angefragt")
+        case .partWayPresent:          return translated("teilweise")
+        case .present:                   return nil
         }
     }}

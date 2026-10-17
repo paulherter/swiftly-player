@@ -2,334 +2,334 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// **Trakt auf Linux und Windows** — dieselbe Anbindung wie auf Apple
-/// (`Sources/Shared/Traktkonto.swift`), mit derselben Logik aus dem Paket
-/// (`TraktClient`, `Traktmelder`). Hier steht nur Ablage, Seite und die
-/// Aufrufe aus dem Spieler.
+/// **Trakt on Linux and Windows**: the same integration as on Apple
+/// (`Sources/Shared/TraktAccount.swift`), with the same logic from the package
+/// (`TraktClient`, `TraktReporter`). This file only has storage, the page and
+/// the calls from the player.
 ///
-/// **Ohne `Trakt.json` im Bau gibt es nichts davon** — keine Zeile in den
-/// Einstellungen, kein Melder. Die Datei liegt nicht im Repo; siehe
-/// `TraktZugang` im Paket.
-final class Traktlage: @unchecked Sendable {
-    let client: TraktClient? = TraktZugang.ausPaket.map { TraktClient(zugang: $0) }
+/// **Without `Trakt.json` in the build none of it exists**: no row in
+/// settings, no reporter. The file is not in the repo; see `TraktAccess` in
+/// the package.
+final class TraktStatus: @unchecked Sendable {
+    let client: TraktClient? = TraktAccess.outPackage.map { TraktClient(access: $0) }
 
-    /// Je Jellyfin-Konto ein Zugang, wie auf Apple — was die Kinder sehen,
-    /// gehört nicht in den Verlauf der Eltern. Nur auf dem Hauptfaden.
-    var tokens: [String: TraktToken] = Traktlage.lesen()
+    /// One credential set per Jellyfin account, as on Apple: what the children
+    /// watch does not belong in the parents' history. Main thread only.
+    var tokens: [String: TraktToken] = TraktStatus.read()
 
-    /// Der Stand der Anmeldeseite. Nur auf dem Hauptfaden.
-    var code: TraktGeraetecode?
-    var codeBis = Date.distantPast
-    var fehler: String?
-    var holt = false
-    var vorgang: Task<Void, Never>?
-    /// „Läuft ab in 9:58" — vergisst sich selbst, wenn GTK es abräumt.
-    var restfeld: Widget?
+    /// The state of the sign-in page. Main thread only.
+    var code: TraktDevicesCode?
+    var codeUntil = Date.distantPast
+    var error: String?
+    var fetches = false
+    var preGait: Task<Void, Never>?
+    /// "Läuft ab in 9:58" (expires in): forgets itself when GTK tears it down.
+    var remainingField: Widget?
 
-    lazy var melder: Traktmelder? = client.map { client in
-        Traktmelder(
+    lazy var reporter: TraktReporter? = client.map { client in
+        TraktReporter(
             client: client,
-            geaendert: { neu, kennung in
-                guard let kennung else { return }
-                aufHauptfaden { traktlage.merken(neu, konto: kennung) }
+            changed: { new, identifier in
+                guard let identifier else { return }
+                onMainThread { traktStatus.remember(new, account: identifier) }
             },
-            protokoll: { zeile in Protokoll.schreib("[Trakt] " + zeile) })
+            log: { row in AppLog.writeOut("[Trakt] " + row) })
     }
 
-    var verfuegbar: Bool { client != nil }
+    var available: Bool { client != nil }
 
-    func merken(_ neu: TraktToken?, konto: String) {
-        tokens[konto] = neu
-        Traktlage.schreiben(tokens)
+    func remember(_ new: TraktToken?, account: String) {
+        tokens[account] = new
+        TraktStatus.write(tokens)
     }
 
-    // MARK: Ablage
+    // MARK: Storage
 
-    /// **Neben der Sitzung, mit denselben Rechten** (Datei 0600) — dieselbe
-    /// Abwägung wie beim Seerr-Zugang in `Speicher.swift`: ein Schlüsselbund
-    /// kostete hier eine neue Abhängigkeit.
-    private static var datei: URL {
-        Plattform.einstellungsordner.appendingPathComponent("trakt.json")
+    /// **Next to the session, with the same permissions** (file mode 0600), the
+    /// same trade-off as for the Seerr credentials in `Cache.swift`: a keyring
+    /// would cost a new dependency here.
+    private static var file: URL {
+        Platform.settingFolder.appendingPathComponent("trakt.json")
     }
 
-    private static func lesen() -> [String: TraktToken] {
-        guard let daten = try? Data(contentsOf: datei) else { return [:] }
-        return (try? JSONDecoder().decode([String: TraktToken].self, from: daten)) ?? [:]
+    private static func read() -> [String: TraktToken] {
+        guard let data = try? Data(contentsOf: file) else { return [:] }
+        return (try? JSONDecoder().decode([String: TraktToken].self, from: data)) ?? [:]
     }
 
-    private static func schreiben(_ tokens: [String: TraktToken]) {
+    private static func write(_ tokens: [String: TraktToken]) {
         guard !tokens.isEmpty else {
-            try? FileManager.default.removeItem(at: datei)
+            try? FileManager.default.removeItem(at: file)
             return
         }
         do {
-            try FileManager.default.createDirectory(at: Plattform.einstellungsordner,
+            try FileManager.default.createDirectory(at: Platform.settingFolder,
                                                     withIntermediateDirectories: true)
-            try JSONEncoder().encode(tokens).write(to: datei, options: [.atomic])
+            try JSONEncoder().encode(tokens).write(to: file, options: [.atomic])
             #if !os(Windows)
             try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                  ofItemAtPath: datei.path)
+                                                  ofItemAtPath: file.path)
             #endif
         } catch {
-            Protokoll.schreib("[Trakt] Zugang ließ sich nicht sichern: \(error.localizedDescription)")
+            AppLog.writeOut("[Trakt] Zugang ließ sich nicht sichern: \(error.localizedDescription)")
         }
     }
 }
 
-let traktlage = Traktlage()
+let traktStatus = TraktStatus()
 
 extension App {
 
-    private var traktkonto: String? { bund?.aktives.kontoschluessel }
-    private var traktToken: TraktToken? { traktkonto.flatMap { traktlage.tokens[$0] } }
+    private var traktAccount: String? { bundle?.activeOne.accountKey }
+    private var traktToken: TraktToken? { traktAccount.flatMap { traktStatus.tokens[$0] } }
 
-    // MARK: Wiedergabe — neben den Meldungen an Jellyfin
+    // MARK: Playback, alongside the reports to Jellyfin
 
-    /// Der Token geht vor jedem Start mit durch die Reihe — so gilt nach
-    /// einem Kontowechsel sofort der richtige, ohne eigenen Haken im Wechsel.
-    func traktStart(_ client: JellyfinClient, titel: Item, ticks: Int64) {
-        guard let melder = traktlage.melder else { return }
+    /// The token is passed through the queue before every start, so after an
+    /// account switch the right one applies immediately, with no special hook in
+    /// the switch.
+    func traktStart(_ client: JellyfinClient, title: Item, ticks: Int64) {
+        guard let reporter = traktStatus.reporter else { return }
         let token = traktToken
-        melder.tokenSetzen(token, kennung: traktkonto)
+        reporter.tokenSet(token, identifier: traktAccount)
         guard token != nil else { return }
-        melder.melden(.start(titelID: titel.id,
-                             ziel: { await TraktZiel.aufloesen(titel, client: client) },
-                             stelle: Double(ticks) / 10_000_000,
-                             dauer: titel.runtimeSeconds ?? 0))
+        reporter.report(.start(titleID: title.id,
+                             target: { await TraktTarget.resolve(title, client: client) },
+                             spot: Double(ticks) / 10_000_000,
+                             duration: title.runtimeSeconds ?? 0))
     }
 
-    func traktLaufzustand(laeuft: Bool, stelle: Double) {
-        traktlage.melder?.melden(.laufzustand(laeuft: laeuft, stelle: stelle))
+    func traktRunState(running: Bool, spot: Double) {
+        traktStatus.reporter?.report(.runState(running: running, spot: spot))
     }
 
-    func traktSprung(auf stelle: Double) {
-        traktlage.melder?.melden(.sprung(stelle: stelle))
+    func traktJump(on spot: Double) {
+        traktStatus.reporter?.report(.leap(spot: spot))
     }
 
-    func traktStopp(titel: Item, ticks: Int64) {
-        traktlage.melder?.melden(.stopp(titelID: titel.id, stelle: Double(ticks) / 10_000_000))
+    func traktStop(title: Item, ticks: Int64) {
+        traktStatus.reporter?.report(.stop(titleID: title.id, spot: Double(ticks) / 10_000_000))
     }
 
-    // MARK: Einstellungen
+    // MARK: Settings
 
-    /// Die Zeile unter Seerr — nur mit Zugangsdaten im Bau.
-    func traktZeile(_ raum: Widget!) {
-        guard traktlage.verfuegbar else { return }
-        let da = traktToken != nil
-        anhaengen(raum, zeilenstrich())
-        anhaengen(raum, wertezeile(symbol: "object-select-symbolic",
-                                   titel: "Trakt",
-                                   unter: uebersetzt("Trägt ein, was du schaust"),
-                                   wert: da ? uebersetzt("Verbunden") : nil,
-                                   pfeil: !da) { [weak self] in
-            self?.unterseiteOeffnen(.trakt)
+    /// The row under Seerr, only with credentials in the build.
+    func traktRow(_ space: Widget!) {
+        guard traktStatus.available else { return }
+        let present = traktToken != nil
+        append(space, rowsLine())
+        append(space, valuesRow(symbol: "object-select-symbolic",
+                                   title: "Trakt",
+                                   under: translated("Trägt ein, was du schaust"),
+                                   value: present ? translated("Verbunden") : nil,
+                                   arrow: !present) { [weak self] in
+            self?.subpageOpen(.trakt)
         })
     }
 
-    /// Die Seite — derselbe Aufbau wie auf dem Mac
-    /// (`Sources/macOS/TraktEinstellungenView.swift`): Kopf, Erklärung,
-    /// dann „Verbunden" oder der Weg dorthin, darunter der Hinweis aufs
-    /// Plugin.
-    func traktSeiteBauen(_ block: Widget!) {
-        let kopf = unterseitenkopf("Trakt")
-        gtk_widget_set_margin_bottom(kopf, 10)
-        anhaengen(block, kopf)
-        // **Wer die Seite verlaesst, bricht das Nachfragen ab** — sonst fragte
-        // die App zehn Minuten lang weiter. Beim Neuaufbau derselben Seite
-        // wird der Kopf auch abgeraeumt; dann steht sie danach wieder offen.
-        beiSignal(kopf, "destroy") {
-            aufHauptfaden { if app.offeneUnterseite != .trakt { app.traktAbbrechen() } }
+    /// The page, built like the Mac one
+    /// (`Sources/macOS/TraktSettingsView.swift`): header, explanation, then
+    /// "Verbunden" or the way there, and below it the pointer to the plugin.
+    func traktPageBuild(_ block: Widget!) {
+        let header = subpageHeader("Trakt")
+        gtk_widget_set_margin_bottom(header, 10)
+        append(block, header)
+        // **Leaving the page cancels polling**, otherwise the app would keep asking
+        // for ten minutes. When the same page is rebuilt the header is also removed;
+        // it is then open again afterwards.
+        signal(header, "destroy") {
+            onMainThread { if app.openSubpage != .trakt { app.traktCancel() } }
         }
 
-        let text = beschriftung(
-            uebersetzt("Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen."),
-            stil: "swiftly-koerper", umbruch: true)
+        let text = label(
+            translated("Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen."),
+            style: "swiftly-koerper", wrap: true)
         gtk_widget_add_css_class(text, "dim-label")
         gtk_label_set_xalign(OpaquePointer(text), 0)
-        anhaengen(block, text)
+        append(block, text)
 
         if let token = traktToken {
-            let g = einstellungsgruppe(uebersetzt("Verbunden"))
-            gtk_widget_set_margin_top(g.aussen, 26)
-            anhaengen(g.raum, wertezeile(symbol: "network-transmit-receive-symbolic",
-                                         titel: token.benutzer ?? "Trakt",
-                                         wert: uebersetzt("Aktiv")))
-            anhaengen(g.raum, zeilenstrich())
-            // „Trennen", nicht „Abmelden" — wie bei Seerr.
-            anhaengen(g.raum, wertezeile(symbol: "window-close-symbolic",
-                                         titel: uebersetzt("Verbindung trennen")) { [weak self] in
-                self?.traktTrennen()
+            let g = settingGroup(translated("Verbunden"))
+            gtk_widget_set_margin_top(g.outer, 26)
+            append(g.space, valuesRow(symbol: "network-transmit-receive-symbolic",
+                                         title: token.user ?? "Trakt",
+                                         value: translated("Aktiv")))
+            append(g.space, rowsLine())
+            // "Trennen", not "Abmelden", as with Seerr.
+            append(g.space, valuesRow(symbol: "window-close-symbolic",
+                                         title: translated("Verbindung trennen")) { [weak self] in
+                self?.traktDisconnect()
             })
-            anhaengen(block, g.aussen)
+            append(block, g.outer)
         } else {
-            traktAnmeldeteil(block)
+            traktLoginPart(block)
         }
 
-        let hinweis = beschriftung(
-            uebersetzt("Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt."),
-            stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_widget_add_css_class(hinweis, "swiftly-sehrleise")
-        gtk_label_set_xalign(OpaquePointer(hinweis), 0)
-        gtk_widget_set_margin_top(hinweis, 14)
-        anhaengen(block, hinweis)
+        let hint = label(
+            translated("Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt."),
+            style: "swiftly-zweitzeile", wrap: true)
+        gtk_widget_add_css_class(hint, "swiftly-sehrleise")
+        gtk_label_set_xalign(OpaquePointer(hint), 0)
+        gtk_widget_set_margin_top(hint, 14)
+        append(block, hint)
     }
 
-    private func traktAnmeldeteil(_ block: Widget!) {
-        let teil = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_margin_top(teil, 26)
-        anhaengen(block, teil)
+    private func traktLoginPart(_ block: Widget!) {
+        let part = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_margin_top(part, 26)
+        append(block, part)
 
-        if let code = traktlage.code {
-            let satz = beschriftung(String(format: uebersetzt("Geh auf %@ und gib diesen Code ein."),
-                                           code.adresseKurz),
-                                    stil: "swiftly-koerper", umbruch: true)
-            gtk_label_set_xalign(OpaquePointer(satz), 0)
-            anhaengen(teil, satz)
+        if let code = traktStatus.code {
+            let sentence = label(String(format: translated("Geh auf %@ und gib diesen Code ein."),
+                                           code.addressShort),
+                                    style: "swiftly-koerper", wrap: true)
+            gtk_label_set_xalign(OpaquePointer(sentence), 0)
+            append(part, sentence)
 
-            let feld = beschriftung(code.nutzercode, stil: "swiftly-codegross")
-            gtk_label_set_selectable(OpaquePointer(feld), 1)
-            gtk_widget_set_halign(feld, GTK_ALIGN_FILL)
-            gtk_widget_set_hexpand(feld, 1)
-            gtk_widget_set_margin_top(feld, 16)
-            anhaengen(teil, feld)
+            let inputField = label(code.userCode, style: "swiftly-codegross")
+            gtk_label_set_selectable(OpaquePointer(inputField), 1)
+            gtk_widget_set_halign(inputField, GTK_ALIGN_FILL)
+            gtk_widget_set_hexpand(inputField, 1)
+            gtk_widget_set_margin_top(inputField, 16)
+            append(part, inputField)
 
-            let rest = beschriftung("", stil: "swiftly-zweitzeile")
+            let rest = label("", style: "swiftly-zweitzeile")
             gtk_widget_add_css_class(rest, "swiftly-sehrleise")
             gtk_label_set_xalign(OpaquePointer(rest), 0)
             gtk_widget_set_margin_top(rest, 10)
-            anhaengen(teil, rest)
-            traktlage.restfeld = rest
-            // Nur vergessen, wenn es noch dieses Feld ist — beim Neuaufbau
-            // steht womoeglich schon das naechste drin.
-            let kiste = Zeigerkiste(rest)
-            beiSignal(rest, "destroy") {
-                if traktlage.restfeld == kiste.widget { traktlage.restfeld = nil }
+            append(part, rest)
+            traktStatus.remainingField = rest
+            // Only forget if it is still this field; on a rebuild the next one may
+            // already be in place.
+            let container = PointerBox(rest)
+            signal(rest, "destroy") {
+                if traktStatus.remainingField == container.widget { traktStatus.remainingField = nil }
             }
-            traktRestZeigen()
+            traktRemainingShow()
 
-            // Mit dem Code in der Adresse — dann muss nichts abgetippt werden.
-            let oeffnen = hauptknopf(uebersetzt("Trakt öffnen"), symbol: "go-next-symbolic")
-            gtk_widget_set_margin_top(oeffnen, 20)
-            let ziel = code.direktadresse
-            beiSignal(oeffnen, "clicked") { imBrowser(ziel) }
-            anhaengen(teil, oeffnen)
+            // With the code in the URL, so nothing has to be typed.
+            let open = primaryButton(translated("Trakt öffnen"), symbol: "go-next-symbolic")
+            gtk_widget_set_margin_top(open, 20)
+            let target = code.directAddress
+            signal(open, "clicked") { browser(target) }
+            append(part, open)
             return
         }
 
-        if traktlage.holt {
-            let l = beschriftung(uebersetzt("Hole Code…"), stil: "swiftly-koerper")
+        if traktStatus.fetches {
+            let l = label(translated("Hole Code…"), style: "swiftly-koerper")
             gtk_widget_add_css_class(l, "dim-label")
             gtk_label_set_xalign(OpaquePointer(l), 0)
-            anhaengen(teil, l)
+            append(part, l)
             return
         }
 
-        if let fehler = traktlage.fehler {
-            let l = beschriftung(fehler, stil: "swiftly-zweitzeile", umbruch: true)
+        if let error = traktStatus.error {
+            let l = label(error, style: "swiftly-zweitzeile", wrap: true)
             gtk_widget_add_css_class(l, "swiftly-warnung")
             gtk_label_set_xalign(OpaquePointer(l), 0)
             gtk_widget_set_margin_bottom(l, 20)
-            anhaengen(teil, l)
+            append(part, l)
         }
-        let knopf = hauptknopf(traktlage.fehler == nil ? uebersetzt("Mit Trakt verbinden")
-                                                       : uebersetzt("Neuer Code"),
+        let button = primaryButton(traktStatus.error == nil ? translated("Mit Trakt verbinden")
+                                                       : translated("Neuer Code"),
                                symbol: "object-select-symbolic")
-        beiSignal(knopf, "clicked") { [weak self] in self?.traktVerbinden() }
-        anhaengen(teil, knopf)
+        signal(button, "clicked") { [weak self] in self?.traktConnect() }
+        append(part, button)
     }
 
-    private func traktRestZeigen() {
-        guard let feld = traktlage.restfeld else { return }
-        let sekunden = max(0, Int(traktlage.codeBis.timeIntervalSinceNow))
-        let text = String(format: uebersetzt("Läuft ab in %lld:%@"),
-                          sekunden / 60, String(format: "%02d", sekunden % 60))
-        gtk_label_set_text(OpaquePointer(feld), text)
+    private func traktRemainingShow() {
+        guard let inputField = traktStatus.remainingField else { return }
+        let seconds = max(0, Int(traktStatus.codeUntil.timeIntervalSinceNow))
+        let text = String(format: translated("Läuft ab in %lld:%@"),
+                          seconds / 60, String(format: "%02d", seconds % 60))
+        gtk_label_set_text(OpaquePointer(inputField), text)
     }
 
-    /// Nur neu bauen, wenn die Seite noch offen ist — wer weitergeklickt
-    /// hat, soll nicht zurückgeholt werden.
-    private func traktSeiteAuffrischen() {
-        guard offeneUnterseite == .trakt else { return }
-        unterseiteOeffnen(.trakt, schub: .ohne)
+    /// Only rebuild if the page is still open; someone who clicked on should not
+    /// be pulled back.
+    private func traktPageRefresh() {
+        guard openSubpage == .trakt else { return }
+        subpageOpen(.trakt, push: .without)
     }
 
-    private func traktVerbinden() {
-        guard let client = traktlage.client, let konto = traktkonto else { return }
-        traktlage.vorgang?.cancel()
-        traktlage.code = nil
-        traktlage.fehler = nil
-        traktlage.holt = true
-        traktSeiteAuffrischen()
-        traktlage.vorgang = Task.detached { [self] in
+    private func traktConnect() {
+        guard let client = traktStatus.client, let account = traktAccount else { return }
+        traktStatus.preGait?.cancel()
+        traktStatus.code = nil
+        traktStatus.error = nil
+        traktStatus.fetches = true
+        traktPageRefresh()
+        traktStatus.preGait = Task.detached { [self] in
             do {
-                let code = try await client.geraetecode()
-                aufHauptfaden {
-                    traktlage.holt = false
-                    traktlage.code = code
-                    traktlage.codeBis = Date().addingTimeInterval(code.gueltig)
-                    self.traktSeiteAuffrischen()
+                let code = try await client.devicesCode()
+                onMainThread {
+                    traktStatus.fetches = false
+                    traktStatus.code = code
+                    traktStatus.codeUntil = Date().addingTimeInterval(code.valid)
+                    self.traktPageRefresh()
                 }
-                // Der Sekundentakt für „Läuft ab in" — endet mit dem Vorgang.
-                let takt = Task.detached {
+                // The one-second tick for "Läuft ab in"; it ends with the operation.
+                let tick = Task.detached {
                     while !Task.isCancelled {
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
-                        aufHauptfaden { self.traktRestZeigen() }
+                        onMainThread { self.traktRemainingShow() }
                     }
                 }
-                defer { takt.cancel() }
-                var neu = try await client.freigabeAbwarten(code)
-                neu.benutzer = await client.benutzername(neu)
-                let fertig = neu
+                defer { tick.cancel() }
+                var new = try await client.sharingWaitFor(code)
+                new.user = await client.username(new)
+                let done = new
                 guard !Task.isCancelled else { return }
-                aufHauptfaden {
-                    traktlage.merken(fertig, konto: konto)
-                    traktlage.code = nil
-                    if self.traktkonto == konto {
-                        traktlage.melder?.tokenSetzen(fertig, kennung: konto)
+                onMainThread {
+                    traktStatus.remember(done, account: account)
+                    traktStatus.code = nil
+                    if self.traktAccount == account {
+                        traktStatus.reporter?.tokenSet(done, identifier: account)
                     }
-                    self.traktSeiteAuffrischen()
+                    self.traktPageRefresh()
                 }
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
                 let text = Self.traktText(error)
-                aufHauptfaden {
-                    traktlage.holt = false
-                    traktlage.code = nil
-                    traktlage.fehler = text
-                    self.traktSeiteAuffrischen()
+                onMainThread {
+                    traktStatus.fetches = false
+                    traktStatus.code = nil
+                    traktStatus.error = text
+                    self.traktPageRefresh()
                 }
             }
         }
     }
 
-    /// Beim Verlassen der Seite: nicht zehn Minuten weiterfragen.
-    func traktAbbrechen() {
-        traktlage.vorgang?.cancel()
-        traktlage.vorgang = nil
-        traktlage.code = nil
-        traktlage.holt = false
-        traktlage.fehler = nil
+    /// On leaving the page: do not keep asking for ten minutes.
+    func traktCancel() {
+        traktStatus.preGait?.cancel()
+        traktStatus.preGait = nil
+        traktStatus.code = nil
+        traktStatus.fetches = false
+        traktStatus.error = nil
     }
 
-    private func traktTrennen() {
-        guard let konto = traktkonto else { return }
-        let alt = traktlage.tokens[konto]
-        traktlage.merken(nil, konto: konto)
-        traktlage.melder?.tokenSetzen(nil, kennung: konto)
-        if let alt, let client = traktlage.client {
-            Task.detached { await client.widerrufen(alt) }
+    private func traktDisconnect() {
+        guard let account = traktAccount else { return }
+        let alt = traktStatus.tokens[account]
+        traktStatus.remember(nil, account: account)
+        traktStatus.reporter?.tokenSet(nil, identifier: account)
+        if let alt, let client = traktStatus.client {
+            Task.detached { await client.revoked(alt) }
         }
-        traktSeiteAuffrischen()
+        traktPageRefresh()
     }
 
-    private static func traktText(_ fehler: any Error) -> String {
-        switch fehler as? TraktFehler {
-        case .codeAbgelaufen: uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen.")
-        case .abgelehnt:      uebersetzt("Trakt hat die Verbindung nicht freigegeben.")
-        case .ratenlimit:     uebersetzt("Trakt bremst gerade. Versuch es in ein paar Minuten noch mal.")
-        default:              uebersetzt("Trakt ist gerade nicht erreichbar.")
+    private static func traktText(_ error: any Error) -> String {
+        switch error as? TraktError {
+        case .codeExpired: translated("Der Code ist abgelaufen. Hol dir einen neuen.")
+        case .rejected:      translated("Trakt hat die Verbindung nicht freigegeben.")
+        case .rateLimit:     translated("Trakt bremst gerade. Versuch es in ein paar Minuten noch mal.")
+        default:              translated("Trakt ist gerade nicht erreichbar.")
         }
     }
 }

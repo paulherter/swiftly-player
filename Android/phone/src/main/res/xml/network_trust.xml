@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **Also trust custom root certificates.**
+
+  From Android 7, apps trust only the system store, not certificates the user
+  installed. Anyone running Jellyfin behind a private certificate authority
+  (not on the internet, so no Let's Encrypt) saw "The server's certificate is
+  not trusted" although the browser on the same phone opened it fine.
+
+  `user` is listed on purpose: the device owner installed it themselves, and
+  without this entry a private server is unreachable.
+
+  **Cleartext (http) stays allowed for every address, on purpose.**
+
+  Jellyfin mostly runs at home without TLS: `http://192.168.…:8096`,
+  `http://nas.local:8096`, a Tailscale name or a public address without a
+  certificate. The user types the address freely, so a list of allowed hosts
+  (`domain-config`) cannot exist, and this file does not know IP ranges such as
+  192.168.0.0/16. A ban would have broken exactly these servers. Without a
+  scheme the app uses https, on the home network http (`ServerURL` in the
+  package). The rule lives only here, not additionally as
+  `usesCleartextTraffic` in the manifest, which this file overrides from
+  Android 7 anyway.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

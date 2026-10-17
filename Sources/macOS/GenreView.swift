@@ -1,98 +1,95 @@
 import JellyfinKit
 import SwiftUI
 
-/// **Alle Titel eines Genres** — aus den Chips auf der Startseite.
+/// **All titles of one genre**, reached from the chips on the home screen.
 ///
-/// Dasselbe Raster wie Bibliothek und Suche, dieselbe Spaltenrechnung. Die
-/// zuletzt hinzugefügten zuerst: wer ein Genre anklickt, sucht meist, was
-/// neu ist.
+/// Same grid and column calculation as Library and Search. Newest first:
+/// people who tap a genre usually look for what is new.
 struct GenreView: View {
     let model: AppModel
     let name: String
-    let zurueck: () -> Void
+    let back: () -> Void
 
     @Environment(Navigator.self) private var navigator
-    @Environment(\.bereich) private var bereich
+    @Environment(\.section) private var section
 
     @State private var items: [Item] = []
-    @State private var laedt = true
-    /// **`nil` heisst gestoert, `[]` heisst leer.** `model.titel` gibt beides
-    /// getrennt zurueck, und hier stand `?? []` — der Unterschied wurde also
-    /// weggeworfen, und ein Netzfehler wurde zur Aussage „in diesem Genre
-    /// gibt es nichts".
-    @State private var gestoert = false
+    @State private var loads = true
+    /// **`nil` means failed, `[]` means empty.** `model.title` returns the two separately;
+    /// collapsing them with `?? []` would turn a network error into
+    /// "nothing in this genre".
+    @State private var disrupted = false
 
-    private var spalten: [GridItem] {
-        [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
-                  spacing: Stil.kachelAbstand, alignment: .topLeading)]
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: Theme.tileWidth, maximum: Theme.tileWidth),
+                  spacing: Theme.tileSpacing, alignment: .topLeading)]
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Der Name kommt vom Server und wird nicht übersetzt.
-                Unterseitenkopf(name: name, zurueck: zurueck)
+                // The name comes from the server and is not translated.
+                SubpageHeader(name: name, back: back)
 
-                // Erst die Form, dann der Inhalt — wie in der Bibliothek.
-                if items.isEmpty, laedt {
-                    Rasterplatzhalter(spalten: 6, reihen: 2).padding(.top, 20)
+                // Shape first, then content, as in the library.
+                if items.isEmpty, loads {
+                    GridPlaceholder(columns: 6, rails: 2).padding(.top, 20)
                 }
 
-                LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
-                    ForEach(items, id: \.id) { eintrag in
-                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
-                            Posterkachel(titel: eintrag.name,
-                                         zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true),
-                                         fortschritt: eintrag.userData?.playedPercentage.map { $0 / 100 },
-                                         marke: Anzeigeregeln.kachelmarke(
-                                            art: eintrag.type,
-                                            staffeln: eintrag.childCount,
-                                            gesehen: eintrag.userData?.played,
-                                            offeneFolgen: eintrag.userData?.unplayedItemCount),
-                                         zeichen: eintrag.kachelzeichen,
-                                         vorholen: {
-                Serienspeicher.geteilt.vorholen(eintrag, mit: model)
-                Planvorrat.vorholen(eintrag, mit: model)
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                    ForEach(items, id: \.id) { entryRecord in
+                        Button { navigator.openIt(.title(entryRecord), in: section) } label: {
+                            PosterCell(title: entryRecord.name,
+                                         secondLine: entryRecord.productionYear.map { "\($0)" },
+                                         image: model.imageURL(for: entryRecord, portrait: true),
+                                         progress: entryRecord.userData?.playedPercentage.map { $0 / 100 },
+                                         mark: DisplayRules.tileMark(
+                                            art: entryRecord.type,
+                                            seasons: entryRecord.childCount,
+                                            watched: entryRecord.userData?.played,
+                                            openEpisodes: entryRecord.userData?.unplayedItemCount),
+                                         symbolText: entryRecord.tileCharacter,
+                                         prefetch: {
+                SeriesCache.shared.prefetch(entryRecord, with: model)
+                PlanPreAdvice.prefetch(entryRecord, with: model)
             })
                         }
-                        .buttonStyle(Stil.Druckknopf())
-                        .kachelmenue(eintrag, model: model)
+                        .buttonStyle(Theme.PressButton())
+                        .tileMenu(entryRecord, model: model)
                     }
                 }
                 .padding(.top, 20)
 
-                if !laedt, gestoert, items.isEmpty {
-                    Leerzustand(
+                if !loads, disrupted, items.isEmpty {
+                    EmptyState(
                         symbol: "externaldrive.badge.xmark",
-                        kopfzeile: "Server ist abgetaucht",
-                        text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                        hauptknopf: ("Erneut versuchen", { Task { await holen() } }))
+                        headerLine: "Server ist abgetaucht",
+                        text: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        primaryButton: ("Erneut versuchen", { Task { await fetch() } }))
                         .padding(.top, 80)
-                } else if !laedt, items.isEmpty {
-                    // **Ohne Knopf, und das mit Absicht.** Ein Leerzustand
-                    // bekommt nur dann einen, wenn es etwas zu tun gibt
-                    // (BAUTEILE 6); hier ist der Ausweg der Rückweg.
-                    Leerzustand(symbol: "tag", kopfzeile: "Nichts in diesem Genre",
+                } else if !loads, items.isEmpty {
+                    // **No button, on purpose.** An empty state only gets one when there is something
+                    // to do; here the way out is the back button.
+                    EmptyState(symbol: "tag", headerLine: "Nichts in diesem Genre",
                                 text: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.")
                         .padding(.top, 80)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.inhaltOben)
+            .padding(.horizontal, Theme.edgeSpacing)
+            .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .seitenscrollen()
-        .task(id: "\(name)|\(model.listenAuffrischen)") { await holen() }
+        .pagesScroll()
+        .task(id: "\(name)|\(model.listenRefresh)") { await fetch() }
     }
 
-    private func holen() async {
-        laedt = items.isEmpty
-        let ergebnis = await model.titel(gattung: name, limit: 200)
-        gestoert = ergebnis == nil
-        items = ergebnis ?? []
-        laedt = false
+    private func fetch() async {
+        loads = items.isEmpty
+        let result = await model.title(genre: name, limit: 200)
+        disrupted = result == nil
+        items = result ?? []
+        loads = false
     }
 }

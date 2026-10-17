@@ -1,534 +1,493 @@
 import JellyfinKit
 import SwiftUI
 
-/// Die Seite eines Titels, den der eigene Server noch nicht hat.
+/// The page of a title the own server does not have yet.
 ///
-/// **Dieselbe Seite wie sonst, nur eine andere Handlung.** Getauscht ist der
-/// grosse Knopf — aus *Fortsetzen* wird *Anfragen* — und die Reiter: es gibt
-/// keine Folgen zu zeigen, wohl aber Besetzung und Vorschlaege.
+/// **The same page as usual, just a different action.** Swapped are the big button
+/// (*Continue* becomes *Request*) and the tabs: there are no episodes to show, but
+/// cast and suggestions.
 ///
-/// **Der Aufbau ist der der Serienseite, Zeile fuer Zeile**, und das ist
-/// keine Bequemlichkeit, sondern die Lehre aus drei Runden. Wer die Seite
-/// nachbaut, trifft die Abstaende nicht: der Kopf sass tiefer, das Bild hing
-/// beim Scrollen fest, oben stand ein Verlauf, den es dort nie gab. Jede
-/// dieser drei Abweichungen war ein Baustein, der schon dalag und nicht
-/// benutzt wurde — `Heldbild` misst sich im Raum „blatt", `Detailkopf`
-/// bringt seinen eigenen, sehr viel schwaecheren Verlauf mit, und
-/// `.ignoresSafeArea(edges: .top)` ist der Grund, warum das Bild ueberhaupt
-/// bis nach oben laeuft.
+/// **The structure is the series page's, line by line.** That is not convenience
+/// but the lesson of three rounds. Rebuilding the page misses the spacing: the
+/// header sat lower, the image stuck while scrolling, and a gradient showed at the
+/// top that never existed there. Each of these three deviations was a component
+/// that already existed and went unused: `Heldbild` measures itself in the "blatt"
+/// space, `DetailHeader` brings its own, much weaker gradient, and
+/// `.ignoresSafeArea(edges: .top)` is why the image reaches the top at all.
 ///
-/// Was hier abweicht, weicht mit Absicht ab und steht als Kommentar dabei.
+/// What deviates here does so on purpose and has a comment.
 struct SeerrDetailView: View {
     let model: AppModel
-    let treffer: Seerrtreffer
+    let hit: SeerrHit
 
-    @Environment(\.dismiss) private var zurueck
-    @Environment(\.breit) private var breit
+    @Environment(\.dismiss) private var back
+    @Environment(\.wide) private var wide
 
-    /// Wie weit gescrollt wurde — der Kopf blendet danach ein. Wie dort.
-    /// Wie hoch die Staffelliste zusammen ist — gemessen, damit das Blatt
-    /// nicht hoeher wird als sein Inhalt.
-    @State private var listenhoehe: CGFloat = 0
-    @State private var versatz: CGFloat = 0
+    /// How far scrolled; the header fades in after that. As there.
+    /// How tall the season list is in total, measured so the sheet does not get taller
+    /// than its content.
+    @State private var listsHeight: CGFloat = 0
+    @State private var offset: CGFloat = 0
 
-    @State private var stand: Seerrstand
-    @State private var laeuft = false
-    @State private var fehler: String?
-    @State private var angefragt = false
-    @State private var detail: Seerrdetail?
-    /// **Der Unterschied, den die Seite bisher nicht kannte.** `detail` blieb
-    /// bei einem stummen Jellyseerr auf `nil`, und Beschreibung, Staffeln,
-    /// Besetzung und Ähnliches verschwanden wortlos — die Seite sah aus wie
-    /// ein Titel, über den es nichts zu sagen gibt.
-    @State private var detailGestoert = false
-    /// Welche Staffeln angekreuzt sind. Leer heisst **alle** — so wie beim
-    /// ersten Oeffnen, wo niemand etwas ausgewaehlt hat.
-    @State private var gewaehlt: Set<Int> = []
-    @State private var blattOffen = false
-    /// **Hat der Nutzer schon einmal gedrueckt?** Bei einem Film ist die
-    /// Anfrage sonst einen Fingerbreit entfernt Bei einer Serie fragt das
-    /// Staffelblatt ohnehin nach, das ist dort der zweite Schritt.
-    @State private var bestaetigt = false
-    /// Welche der vier Bestaetigungen gerade dasteht. Wird beim Antippen
-    /// gezogen, nicht beim Zeichnen.
-    @State private var fassung = 0
+    @State private var state: SeerrState
+    @State private var running = false
+    @State private var error: String?
+    @State private var requested = false
+    @State private var detail: SeerrDetail?
+    /// **The difference the page did not know before.** With a silent Jellyseerr
+    /// `detail` stayed `nil`, and description, seasons, cast and similar vanished
+    /// without a word; the page looked like a title there is nothing to say about.
+    @State private var detailDisturbed = false
+    /// Which seasons are ticked. Empty means **all**, as on first open when nobody has selected anything.
+    @State private var selected: Set<Int> = []
+    @State private var sheetOpen = false
+    /// **Has the user pressed once already?** For a movie the request is otherwise a
+    /// finger's width away. For a series the season sheet asks anyway, which is the
+    /// second step there.
+    @State private var confirmed = false
+    /// Which of the four confirmations is showing. Drawn on tap, not on render.
+    @State private var version = 0
 
-    init(model: AppModel, treffer: Seerrtreffer) {
+    init(model: AppModel, hit: SeerrHit) {
         self.model = model
-        self.treffer = treffer
-        _stand = State(initialValue: treffer.stand)
+        self.hit = hit
+        _state = State(initialValue: hit.state)
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // **Breit derselbe Kopf wie eine echte Detailseite.**
+                    // **Wide, the same header as a real detail page.**
                     //
-                    // Hier stand auch im Querformat der schmale Aufbau: ein
-                    // Streifen ueber die ganze Breite, Titel darunter, Knopf
-                    // darunter. Auf einem 1000 Punkt breiten Fenster ist das
-                    // der Briefschlitz, gegen den `Heldkopf` gebaut wurde —
-                    // und die Seite stand damit neben Film und Serie wie aus
-                    // einer anderen App. Auf dem Mac ist genau das der
-                    // Unterschied: Plakat und Text nebeneinander, die
-                    // Beschreibung als eigener Block darunter.
+                    // Landscape used to show the narrow layout here: a strip across the full width,
+                    // title below, button below. On a 1000 point wide window that is the mail slot
+                    // `HeroHeader` was built against, and the page stood next to movie and series like
+                    // from another app. On the Mac that is exactly the difference: poster and text
+                    // side by side, the description as its own block below.
                     //
-                    // Kein Fortschritt: was es hier noch nicht gibt, hat auch
-                    // niemand halb gesehen.
-                    if breit {
-                        Heldkopf(bild: treffer.kulisse(),
-                                 poster: treffer.plakat(),
-                                 titel: treffer.titel,
-                                 nebenzeile: nebenzeile) {
+                    // No progress: what does not exist here yet, nobody has half seen.
+                    if wide {
+                        HeroHeader(image: hit.backdrop(),
+                                 poster: hit.poster(),
+                                 title: hit.title,
+                                 secondaryLine: secondaryLine) {
                             VStack(alignment: .leading, spacing: 14) {
-                                belegzeile
-                                hauptknopf
+                                proofRow
+                                primaryButton
                             }
                         }
-                        beschreibung
-                            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
-                            .padding(.horizontal, Stil.randSeiteBreit)
+                        description
+                            .frame(maxWidth: Theme.readWidth, alignment: .leading)
+                            .padding(.horizontal, Theme.edgePageWide)
                             .padding(.top, 18)
                             .padding(.bottom, 22)
                     } else {
                     hero
 
                     VStack(alignment: .leading, spacing: 14) {
-                        belegzeile
-                        hauptknopf
-                        beschreibung
+                        proofRow
+                        primaryButton
+                        description
                     }
-                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 14)
                     }
 
-                    // **Zwei Reihen, keine Reiter.** Genau wie auf der
-                    // Filmseite: eine Reihe Besetzung, darunter eine Reihe
-                    // Aehnliches. Als Reiter mit Raster stand hier eine Wand
-                    // aus zwanzig Koepfen Waagerecht zeigt eine Reihe fuenf
-                    // und deutet den Rest an; wer mehr will, schiebt.
-                    besetzung
-                    aehnlichesreihe
-                    if detailGestoert {
-                        // Hier steht Seerrs Adresse, nicht die des eigenen
-                        // Servers: der eigene laeuft, sonst waere man nicht
-                        // auf dieser Seite.
-                        Stoerhinweis(model: model, erneut: { Task { await detailLaden() } },
-                                     adresse: model.seerr.adresse)
+                    // **Two rows, no tabs.** Exactly as on the movie page: a row of cast, below it a
+                    // row of similar titles. As tabs with a grid this was a wall of twenty heads.
+                    // Horizontally a row shows five and hints at the rest; whoever wants more
+                    // scrolls.
+                    cast
+                    similarRail
+                    if detailDisturbed {
+                        // This holds Seerr's address, not the own server's: the own one is running, or you would not be on this page.
+                        DisturbHint(model: model, retry: { Task { await detailLoad() } },
+                                     address: model.seerr.address)
                     }
                 }
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            // Der Raum, in dem `Heldbild` seine Dehnung misst. Fehlte er,
-            // blieb das Bild beim Scrollen stehen, statt mitzugehen.
+            // The space in which `Heldbild` measures its stretch. Without it the image stayed put while scrolling instead of moving along.
             .coordinateSpace(.named("blatt"))
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                versatz = neu
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+                offset = new
             }
-            // Ohne das steht ueber dem Bild der schwarze Streifen des
-            // sicheren Bereichs.
+            // Without this the safe area's black strip shows above the image.
             .ignoresSafeArea(edges: .top)
 
-            // **Unser eigenes Blatt, nicht das des Systems.** Ein `.sheet`
-            // bringt seine eigene Sprache mit — abgerundete Ecken oben,
-            // Griff, Navigationsleiste — und stand damit neben „Mehr" und
-            // den Wiedergabelisten wie aus einer anderen App.
-            if let fehler {
-                Hinweisstreifen(text: fehler) { self.fehler = nil }
+            // **Our own sheet, not the system's.** A `.sheet` brings its own language
+            // (rounded corners at the top, grabber, navigation bar) and stood next to "More"
+            // and the playlists like from another app.
+            if let error {
+                HintStrip(text: error) { self.error = nil }
                     .zIndex(21)
             }
 
-            Detailkopf(titel: treffer.titel, versatz: versatz) { zurueck() }
+            DetailHeader(title: hit.title, offset: offset) { back() }
         }
-        // Welche Staffeln — als Blatt von unten, an der Seite und nicht im
-        // Stapel: ein Blatt ist ein Modifikator.
-        .blatt(offen: $blattOffen) { staffelblatt }
+        // Which seasons: a sheet from below, attached to the side and not in the stack, since a sheet is a modifier.
+        .sheet(opened: $sheetOpen) { seasonSheet }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
-        .background(WischZurueck())
+        .background(SwipeBack())
         #endif
-        // **Die Frage steht nicht ewig.** Wer den Knopf einmal antippt und
-        // dann weiterliest, soll nicht Minuten spaeter einen Knopf vorfinden,
-        // der beim naechsten Tipp sofort anfragt.
-        .task(id: bestaetigt) {
-            guard bestaetigt else { return }
+        // **The question does not stand forever.** Whoever taps the button once and
+        // keeps reading should not find, minutes later, a button that requests on the very
+        // next tap.
+        .task(id: confirmed) {
+            guard confirmed else { return }
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            // **Nach einem Fehler bleibt sie stehen.** Wer bestaetigt hat und
-            // eine Fehlermeldung bekommt, hat seine Antwort schon gegeben —
-            // der naechste Tipp ist der erneute Versuch, nicht wieder die
-            // Rueckfrage. Waehrend die Anfrage laeuft, ebenso nicht zuruecknehmen.
-            guard !laeuft, fehler == nil else { return }
-            bestaetigt = false
+            // **After an error it stays.** Whoever confirmed and gets an error message has
+            // already given their answer; the next tap is the retry, not the question again.
+            // Likewise do not take it back while the request is running.
+            guard !running, error == nil else { return }
+            confirmed = false
         }
-        // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
-        // Normalfall" — wer alles will, kreuzt alles an; wer eine will, muss
-        // nicht erst acht abwaehlen.
-        .task { await detailLaden() }
+        // **Nothing preselected.** Nobody downloads all of them normally: whoever wants
+        // everything ticks everything; whoever wants one should not have to deselect
+        // eight first.
+        .task { await detailLoad() }
     }
 
-    private func detailLaden() async {
-        let geholt = await model.seerr.detail(treffer)
-        detailGestoert = geholt == nil
-        if let geholt {
-            detail = geholt
-            // Der Server weiß es besser als der Suchtreffer von vorhin.
-            if let neu = geholt.stand { stand = neu }
+    private func detailLoad() async {
+        let fetched = await model.seerr.detail(hit)
+        detailDisturbed = fetched == nil
+        if let fetched {
+            detail = fetched
+            // The server knows better than the search hit from before.
+            if let new = fetched.state { state = new }
         }
     }
 
-    // MARK: Teile
+    // MARK: Parts
 
-    /// Wortgleich mit `SeriesDetailView.hero`, nur mit dem Querbild von TMDB
-    /// statt dem des eigenen Servers.
+    /// Word for word as `SeriesDetailView.hero`, only with TMDB's landscape image instead of the own server's.
     private var hero: some View {
-        Heldbild(url: treffer.kulisse())
-            .overlay(alignment: .bottom) { Heldauslauf() }
+        HeroImage(url: hit.backdrop())
+            .overlay(alignment: .bottom) { HeroRunOut() }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(verbatim: treffer.titel)
-                        .font(Stil.titel)
-                        .tracking(Stil.sperrungTitel)
-                        .foregroundStyle(Stil.schrift)
-                    Text(verbatim: nebenzeile)
-                        // Jahr, Laufzeit, Genre sind eine Angabe: 12, wie
-                        // unter jedem anderen Heldbild. Vorher 13 Regular —
-                        // eine Stufe, die es nicht gibt.
-                        .font(Stil.klein)
-                        .foregroundStyle(Stil.schriftLeise)
+                    Text(verbatim: hit.title)
+                        .font(Theme.title)
+                        .tracking(Theme.lockTitle)
+                        .foregroundStyle(Theme.font)
+                    Text(verbatim: secondaryLine)
+                        // Year, runtime, genre are one statement: 12, as under every other hero image. Before: 13 Regular, a step that does not exist.
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontQuiet)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
                 .padding(.bottom, 16)
             }
     }
 
-    /// Jahr, Staffeln oder Laufzeit, Gattungen — dieselbe Reihenfolge wie
-    /// dort.
-    private var nebenzeile: String {
-        var teile: [String] = []
-        if let jahr = treffer.jahr { teile.append("\(jahr)") }
-        if treffer.istSerie {
-            let n = detail?.staffeln.count ?? 0
-            if n > 0 { teile.append(n == 1 ? String(localized: "1 Staffel")
+    /// Year, seasons or runtime, genres: the same order as there.
+    private var secondaryLine: String {
+        var parts: [String] = []
+        if let year = hit.year { parts.append("\(year)") }
+        if hit.isSeries {
+            let n = detail?.seasons.count ?? 0
+            if n > 0 { parts.append(n == 1 ? String(localized: "1 Staffel")
                                            : String(localized: "\(n) Staffeln")) }
-        } else if let m = detail?.laufzeit, m > 0 {
-            teile.append(String(localized: "\(m) Min."))
+        } else if let m = detail?.runtime, m > 0 {
+            parts.append(String(localized: "\(m) Min."))
         }
-        let gattungen = detail?.genres ?? []
-        if !gattungen.isEmpty { teile.append(gattungen.joined(separator: ", ")) }
-        if teile.isEmpty {
-            teile.append(treffer.istSerie ? String(localized: "Serie")
+        let genres = detail?.genres ?? []
+        if !genres.isEmpty { parts.append(genres.joined(separator: ", ")) }
+        if parts.isEmpty {
+            parts.append(hit.isSeries ? String(localized: "Serie")
                                           : String(localized: "Film"))
         }
-        return teile.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 
-    /// **Wirklich dieselbe Zeile wie dort.** Sie stand hier ein zweites Mal
-    /// nachgebaut, mit denselben Zahlen — Symbol 11 heavy, Wort 13 medium,
-    /// Abstaende 6 und 14. Jetzt reicht die Seite nur noch Symbol, Wort und
-    /// Farbe hinein; die Masse stehen an einer Stelle.
+    /// **Really the same row as there.** It stood here a second time, rebuilt with the
+    /// same numbers (symbol 11 heavy, word 13 medium, spacing 6 and 14). Now the page
+    /// only passes in symbol, word and color; the measures live in one place.
     ///
-    /// **Null ist keine Bewertung.** TMDB liefert bei einem unbewerteten
-    /// Titel eine Null, und daraus wuerde „★ 0,0" — eine Auskunft, die
-    /// falsch ist. Deshalb faellt sie hier heraus und nicht erst dort.
-    private var belegzeile: some View {
-        Belegzeile(bewertung: (detail?.bewertung).flatMap { $0 > 0 ? $0 : nil },
-                   eigen: (symbol: stand.symbol, wort: stand.wort, farbe: stand.farbe))
+    /// **Zero is not a rating.** For an unrated title TMDB delivers a zero, which would
+    /// become "★ 0.0", a false statement. So it drops out here and not only there.
+    private var proofRow: some View {
+        ProofRow(rating: (detail?.rating).flatMap { $0 > 0 ? $0 : nil },
+                   own: (symbol: state.symbol, word: state.word, color: state.color))
     }
 
-    /// **Ein Stand ist keine Schaltflaeche.**
+    /// **A status is not a button.**
     ///
-    /// Was wartet oder laedt, laesst sich nicht noch einmal anfragen; dort
-    /// steht eine Auskunft statt eines grauen Knopfes.
+    /// What waits or loads cannot be requested again; a statement stands there instead
+    /// of a gray button.
     ///
-    /// Der Stapel ringsum ist der von `SeriesDetailView.hauptknopf` —
-    /// derselbe `VStack(spacing: 9)`, damit die Zeile darunter auf derselben
-    /// Hoehe sitzt wie dort „Noch 25 Minuten".
+    /// The surrounding stack is that of `SeriesDetailView.primaryButton`: the same
+    /// `VStack(spacing: 9)`, so the row below sits at the same height as "25 minutes
+    /// left" there.
     @ViewBuilder
-    private var hauptknopf: some View {
+    private var primaryButton: some View {
         VStack(alignment: .leading, spacing: 9) {
-            if angefragt {
-                auskunft(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
-            } else if stand.anfragbar {
-                Button(action: gedrueckt) {
+            if requested {
+                inquiry(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
+            } else if state.requestable {
+                Button(action: pressed) {
                     HStack(spacing: 8) {
-                        // Kein Ring: der Text sagt „Wird angefragt…".
-                        Image(systemName: bestaetigt ? "checkmark" : "plus")
+                        // No ring: the text says "Wird angefragt…".
+                        Image(systemName: confirmed ? "checkmark" : "plus")
                             .font(.system(size: 15, weight: .semibold))
-                            .opacity(laeuft ? 0.5 : 1)
-                        Text(knopftext)
+                            .opacity(running ? 0.5 : 1)
+                        Text(buttonText)
                     }
                 }
-                // **Derselbe Knopf wie „Fortsetzen", ohne Wenn und Aber.**
-                // Er war einmal in Akzent — aber der Stand darueber traegt
-                // ihn schon, und zweimal dieselbe Farbe auf einer Seite macht
-                // aus einem Zeichen fuer Zustand eine Grundfarbe. Was ihn
-                // unterscheidet, ist das Wort darauf.
+                // **The same button as "Continue", no ifs and buts.** It was once in accent, but
+                // the status above already carries it, and the same color twice on a page turns a
+                // signal for state into a base color. What distinguishes it is the word on it.
                 //
-                // Hoehe, Ecke und Schriftgrad stehen im Stil und nicht hier —
-                // ein nachgebauter Knopf sass sichtbar tiefer und runder.
-                .buttonStyle(HauptknopfStil(dehnt: !breit))
-                .disabled(laeuft)
-                // Der Wechsel der Beschriftung soll zu sehen sein, sonst
-                // liest niemand, dass sich etwas geaendert hat.
-                .animation(Stil.sprung, value: bestaetigt)
+                // Height, corner and font size live in the style and not here; a rebuilt button
+                // sat visibly lower and rounder.
+                .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+                .disabled(running)
+                // The change of label should be visible, otherwise nobody reads that something changed.
+                .animation(Theme.leap, value: confirmed)
             } else {
-                auskunft(stand.hinweis)
+                inquiry(state.hint)
             }
         }
     }
 
-    /// **Die zweite Stufe sagt, was zu tun ist.**
+    /// **The second step says what to do.**
     ///
-    /// Vorher stand dort „Wirklich anfragen?" — Rückmeldung vom 21.09.: „Man versteht
-    /// nicht, dass man nochmal drücken muss." Ein Knopf, auf dem eine Frage
-    /// steht, ist eine Frage ohne Antwort: man weiss nicht, ob Druecken
-    /// bestaetigt oder abbricht. Jede Fassung faengt deshalb mit „Nochmal" an
-    /// — die Anweisung vorn, die Pointe dahinter.
+    /// It used to say "Really request?" (feedback: "you don't understand that you have
+    /// to press again"). A button with a question on it is a question without an
+    /// answer: you do not know whether pressing confirms or cancels. Every version
+    /// therefore starts with "Nochmal": the instruction first, the punchline behind.
     ///
-    /// Vier Fassungen, und gewuerfelt wird **einmal**, beim Antippen: sonst
-    /// wechselte der Text unter dem Finger, sobald die Ansicht neu zeichnet.
-    /// Dieselbe zweimal hintereinander kommt nicht.
+    /// Four versions, and the dice are rolled **once**, on tap: otherwise the text
+    /// would change under the finger whenever the view redraws. The same one never
+    /// comes twice in a row.
     ///
-    /// Kein Emoji: das Zeichen bleibt der Haken, und die Laune steckt im Wort.
-    /// Sobald Seerr ein Zuruecknehmen kann, faellt die Rueckfrage ganz weg —
-    /// dann geschieht die Anfrage sofort und bietet „Rueckgaengig" an, so wie
-    /// es in `BRAND.md` steht. Dafuer fehlt im Modell der Aufruf zum
-    /// Zurueckziehen; solange er fehlt, waere ein Tipp ohne Rueckfrage nicht
-    /// umkehrbar.
-    private static let bestaetigungen: [LocalizedStringResource] = [
+    /// No emoji: the symbol stays the checkmark and the mood is in the word. Once
+    /// Seerr can undo, the confirmation drops entirely: the request then happens
+    /// immediately and offers "Undo". The model lacks the withdraw
+    /// call for that; until it exists, a tap without confirmation would not be
+    /// reversible.
+    private static let confirmations: [LocalizedStringResource] = [
         "Nochmal, dann läuft’s", "Nochmal — ab die Post",
         "Nochmal, dann frag ich", "Nochmal, her damit"
     ]
 
-    private var knopftext: String {
-        if laeuft { return String(localized: "Wird angefragt…") }
-        guard bestaetigt else { return String(localized: "Anfragen") }
-        return String(localized: Self.bestaetigungen[fassung])
+    private var buttonText: String {
+        if running { return String(localized: "Wird angefragt…") }
+        guard confirmed else { return String(localized: "Anfragen") }
+        return String(localized: Self.confirmations[version])
     }
 
-    /// **Zwei Stufen, und die zweite ist der eigentliche Auftrag.**
+    /// **Two steps, and the second is the actual order.**
     ///
-    /// Bei einer Serie uebernimmt das Staffelblatt die zweite Stufe: dort
-    /// steht noch einmal, was angefragt wird, und der Knopf darin loest aus.
-    /// Ein Film hat nichts auszuwaehlen — deshalb fragt hier der Knopf
-    /// selbst nach, statt ein Blatt zu oeffnen, das nur eine Frage enthaelt.
-    private func gedrueckt() {
-        if treffer.istSerie {
-            blattOffen = true
+    /// For a series the season sheet takes the second step: it states again what is
+    /// requested, and the button in it triggers. A movie has nothing to select, so here
+    /// the button asks itself instead of opening a sheet that holds only a question.
+    private func pressed() {
+        if hit.isSeries {
+            sheetOpen = true
             return
         }
-        guard bestaetigt else {
-            // Einmal wuerfeln, und nicht dieselbe wie zuletzt.
-            let andere = (0 ..< Self.bestaetigungen.count).filter { $0 != fassung }
-            fassung = andere.randomElement() ?? 0
-            bestaetigt = true
+        guard confirmed else {
+            // Roll once, and not the same as last time.
+            let other = (0 ..< Self.confirmations.count).filter { $0 != version }
+            version = other.randomElement() ?? 0
+            confirmed = true
             return
         }
-        Task { await anfragen() }
+        Task { await askFor() }
     }
 
     @ViewBuilder
-    private var beschreibung: some View {
-        if let text = detail?.beschreibung {
-            Klapptext(text: text)
+    private var description: some View {
+        if let text = detail?.description {
+            CollapsibleText(text: text)
         }
     }
 
-    /// Wortgleich mit `ItemDetailView.besetzung`, nur mit den Koepfen von
-    /// TMDB statt denen des eigenen Servers — samt der Grenze bei zwoelf.
+    /// Word for word as `ItemDetailView.cast`, only with TMDB's heads instead of
+    /// the own server's, including the limit at twelve.
     ///
-    /// Kein Pfeil daneben: eine Seite mit der vollen Besetzung gibt es hier
-    /// nicht, und ein Pfeil waere das Versprechen, dass es sie gaebe.
+    /// No arrow beside it: a page with the full cast does not exist here, and an arrow
+    /// would promise one.
     @ViewBuilder
-    private var besetzung: some View {
-        let leute = detail?.besetzung ?? []
-        if !leute.isEmpty {
-            Abschnitt(titel: "Besetzung") {
+    private var cast: some View {
+        let folks = detail?.cast ?? []
+        if !folks.isEmpty {
+            Segment(title: "Besetzung") {
                 HStack(alignment: .top, spacing: 14) {
-                    ForEach(leute.prefix(12)) { person in
-                        Besetzungskachel(bild: person.bild(), name: person.name,
-                                         rolle: person.rolle)
+                    ForEach(folks.prefix(12)) { person in
+                        CastTile(image: person.image(), name: person.name,
+                                         role: person.role)
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
         }
     }
 
-    /// Dieselbe Reihe wie dort — mit `Seerrkachel` statt `PosterTile`, weil
-    /// auch das Vorgeschlagene nicht auf dem Server liegt und blass gehoert.
+    /// The same row as there, with `SeerrTile` instead of `PosterTile`, because the
+    /// suggestions are not on the server either and belong pale.
     ///
-    /// Das feste Mass steht hier und nicht in der Kachel: im Raster der Suche
-    /// bekommt sie ihre Breite von der Spalte, in einer Reihe hat sie keine.
+    /// The fixed measure lives here and not in the tile: in the search grid it gets its
+    /// width from the column, in a row it has none.
     @ViewBuilder
-    private var aehnlichesreihe: some View {
-        let andere = detail?.aehnliches ?? []
-        if !andere.isEmpty {
-            Abschnitt(titel: "Ähnliche Titel") {
-                HStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                    ForEach(andere) { t in
+    private var similarRail: some View {
+        let other = detail?.similarOne ?? []
+        if !other.isEmpty {
+            Segment(title: "Ähnliche Titel") {
+                HStack(alignment: .top, spacing: Theme.tileSpacing) {
+                    ForEach(other) { t in
                         NavigationLink(value: t) {
-                            Seerrkachel(treffer: t).frame(width: Stil.kachelBreite)
+                            SeerrTile(hit: t).frame(width: Theme.tileWidth)
                         }
-                        .buttonStyle(Stil.Druckknopf())
+                        .buttonStyle(Theme.PressButton())
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
         }
     }
 
-    // MARK: Stand in Worten
+    // MARK: Status in words
 
-    // Symbol, Wort, Farbe und Hinweis stehen in `Seerrmarke.swift` — dieselbe
-    // Tabelle, aus der auch die Kachel liest. Hier stand sie ein zweites Mal,
-    // mit anderen Symbolen und anderen Farben.
+    // Symbol, word, color and hint live in `SeerrMark.swift`, the same table the tile reads. It used to exist here a second time, with other symbols and other colors.
 
-    private func auskunft(_ text: String) -> some View {
+    private func inquiry(_ text: String) -> some View {
         Text(verbatim: text)
-            // **Mitwachsend, nicht fest** — BRAND.md, Abschnitt 2. Gilt für die
-            // Auskunft, die Staffelzeilen und den Knopf im Blatt; ihre Höhen
-            // sind deshalb Mindesthöhen. Fest bleiben der Seitentitel über dem
-            // Heldbild und seine Nebenzeile: die Leiste dort trägt ein Bild.
-            .mitwachsend(15)
-            .foregroundStyle(Stil.schriftLeise)
+            // **Growing with the text, not fixed**. Applies to the
+            // statement, the season rows and the button in the sheet; their heights are
+            // therefore minimum heights. Fixed stay the page title above the hero image and
+            // its subline: the bar there carries an image.
+            .growing(15)
+            .foregroundStyle(Theme.fontQuiet)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 13).padding(.horizontal, 14)
-            // Flaechenmass, nicht Feldmass: der Kasten ist eine Flaeche,
-            // kein Eingabefeld. Er stand auf 10, weil das die Zahl war, die
-            // gerade in der Naehe stand.
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
+            // Surface measure, not field measure: the box is a surface, not an input field. It was 10 because that was the number nearby.
+            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
     }
 
-    // MARK: Staffeln
+    // MARK: Seasons
 
-    /// Die Staffeln zum Ankreuzen.
+    /// The seasons to tick.
     ///
-    /// **Was schon da ist, laesst sich nicht ankreuzen** — und sagt daneben,
-    /// dass es da ist. Ein Kaestchen, das man druecken darf und das nichts
-    /// bewirkt, ist schlimmer als keines.
+    /// **What is already there cannot be ticked** and says beside it that it is there.
+    /// A checkbox you may press that does nothing is worse than none.
     @ViewBuilder
-    private var staffelliste: some View {
-        ForEach(detail?.staffeln ?? []) { st in
+    private var seasonList: some View {
+        ForEach(detail?.seasons ?? []) { st in
             Button {
-                guard st.stand.anfragbar else { return }
-                if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
-                else { gewaehlt.insert(st.nummer) }
+                guard st.state.requestable else { return }
+                if selected.contains(st.number) { selected.remove(st.number) }
+                else { selected.insert(st.number) }
             } label: {
                 HStack(spacing: 10) {
-                    Text("Staffel \(st.nummer)")
-                        .mitwachsend(15)
-                        .foregroundStyle(st.stand.anfragbar ? Stil.schrift
-                                                            : Stil.schriftSehrLeise)
-                    if st.folgen > 0 {
-                        Text("· \(st.folgen) Folgen")
-                            .mitwachsend(12).foregroundStyle(Stil.schriftSehrLeise)
+                    Text("Staffel \(st.number)")
+                        .growing(15)
+                        .foregroundStyle(st.state.requestable ? Theme.font
+                                                            : Theme.fontVeryQuiet)
+                    if st.episodes > 0 {
+                        Text("· \(st.episodes) Folgen")
+                            .growing(12).foregroundStyle(Theme.fontVeryQuiet)
                     }
                     Spacer(minLength: 8)
-                    if st.stand.anfragbar {
-                        Image(systemName: gewaehlt.contains(st.nummer)
+                    if st.state.requestable {
+                        Image(systemName: selected.contains(st.number)
                                 ? "checkmark.square.fill" : "square")
                             .font(.system(size: 17))
-                            .foregroundStyle(gewaehlt.contains(st.nummer)
-                                ? Stil.akzent : Stil.schriftSehrLeise)
+                            .foregroundStyle(selected.contains(st.number)
+                                ? Theme.accent : Theme.fontVeryQuiet)
                     } else {
-                        Text(st.stand == .da ? "vorhanden" : "unterwegs")
-                            .mitwachsend(12).foregroundStyle(Stil.schriftSehrLeise)
+                        Text(st.state == .present ? "vorhanden" : "unterwegs")
+                            .growing(12).foregroundStyle(Theme.fontVeryQuiet)
                     }
                 }
-                .padding(.horizontal, Stil.randAbstand)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .frame(minHeight: 50)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(Stil.Druckzeile())
-            // Das Kreuz im Kaestchen ist der Akzent, und der Akzent ist
-            // Farbe: vorgelesen klang eine angekreuzte Staffel wie jede
-            // andere. `.isSelected` sagt den Zustand mit.
-            .accessibilityAddTraits(gewaehlt.contains(st.nummer) ? .isSelected : [])
+            .buttonStyle(Theme.PressRow())
+            // The cross in the box is the accent, and the accent is color: read aloud a ticked season sounded like any other. `.isSelected` conveys the state.
+            .accessibilityAddTraits(selected.contains(st.number) ? .isSelected : [])
         }
     }
 
-    /// Was im Blatt steht. Rumpf, Bewegung und Griff kommen von
-    /// ``Blattmodifikator``.
+    /// What is in the sheet. Body, motion and grabber come from ``Blattmodifikator``.
     @ViewBuilder
-    private var staffelblatt: some View {
-        Blattrubrik(text: Text("Welche Staffeln?"))
+    private var seasonSheet: some View {
+        SheetCategory(text: Text("Welche Staffeln?"))
 
         ScrollView {
-            VStack(spacing: 0) { staffelliste }
-                // Gemessen, nicht angenommen.
+            VStack(spacing: 0) { seasonList }
+                // Measured, not assumed.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { listenhoehe = $0 }
+                    action: { listsHeight = $0 }
         }
-        // **So hoch wie die Staffeln, hoechstens 320.**
+        // **As tall as the seasons, at most 320.**
         //
-        // Hier stand `.frame(maxHeight: 320)`, und das reicht nicht: eine
-        // `ScrollView` ist senkrecht gierig und nimmt sich die 320 auch dann,
-        // wenn drei Staffeln nur 150 brauchen. Uebrig blieb ein Hohlraum von
-        // gut zwei Zentimetern unter der letzten Zeile, der nichts tut. Rückmeldung
-        // vom 22.09.: „da sind so 2 cm frei, als waere da etwas, was aber eben
-        // nicht da ist."
+        // There used to be `.frame(maxHeight: 320)`, and that is not enough: a
+        // `ScrollView` is vertically greedy and takes the 320 even when three seasons need
+        // only 150. What remained was a hollow of a good two centimeters under the last
+        // row, doing nothing. Feedback: "there are about 2 cm free, as if something were
+        // there that is not."
         //
-        // Dieselbe Rechnung wie im `Auswahlblatt`, wo sie samt Begruendung
-        // schon steht.
-        .frame(height: min(listenhoehe, 320))
+        // The same calculation as in `SelectionSheet`, where it is already explained.
+        .frame(height: min(listsHeight, 320))
         .scrollIndicators(.hidden)
 
-        // Über die volle Breite, weil der Knopf darunter es auch ist.
-        Blattlinie()
+        // Full width, because the button below is too.
+        SheetLine()
 
         Button {
-            blattOffen = false
-            Task { await anfragen() }
+            sheetOpen = false
+            Task { await askFor() }
         } label: {
-            Text(gewaehlt.isEmpty ? "Staffel wählen"
-                                  : "\(gewaehlt.count) anfragen")
-                .mitwachsend(15, .semibold)
-                .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
+            Text(selected.isEmpty ? "Staffel wählen"
+                                  : "\(selected.count) anfragen")
+                .growing(15, .semibold)
+                .foregroundStyle(selected.isEmpty ? Theme.fontVeryQuiet : Theme.accent)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 54)
         }
-        .buttonStyle(Stil.Druckzeile())
-        .disabled(gewaehlt.isEmpty)
+        .buttonStyle(Theme.PressRow())
+        .disabled(selected.isEmpty)
     }
 
-    private func anfragen() async {
-        fehler = nil
-        laeuft = true
-        defer { laeuft = false }
+    private func askFor() async {
+        error = nil
+        running = true
+        defer { running = false }
         do {
-            // Leer heisst alle — Seerr versteht das Wort `all`, und wer
-            // nichts angekreuzt hat, will nicht nichts.
-            // **Nie leer.** `nil` bedeutet bei Seerr „alle Staffeln", und das
-            // ist der Fall, den niemand versehentlich ausloesen soll — wer
-            // nur nachsieht, welche es gibt, fragt sonst die ganze Serie an.
+            // Empty means all; Seerr understands the word `all`, and whoever ticked nothing
+            // does not want nothing.
+            // **Never empty.** `nil` means "all seasons" to Seerr, and that is the case nobody
+            // should trigger by accident: whoever only looks at which ones exist would
+            // otherwise request the whole series.
             //
-            // **Nur für Serien.** Ein Film hat keine Staffeln, `gewaehlt` ist
-            // dort immer leer — der Wächter warf ihn stillschweigend hinaus,
-            // und der Druck auf „Anfragen" tat gar nichts.
-            let staffeln: [Int]?
-            if treffer.istSerie {
-                guard !gewaehlt.isEmpty else { return }
-                staffeln = Array(gewaehlt).sorted()
+            // **Only for series.** A movie has no seasons, `selected` is always empty there;
+            // the guard silently threw it out, and pressing "Request" did nothing at all.
+            let seasons: [Int]?
+            if hit.isSeries {
+                guard !selected.isEmpty else { return }
+                seasons = Array(selected).sorted()
             } else {
-                staffeln = nil
+                seasons = nil
             }
-            try await model.seerr.anfragen(treffer, staffeln: staffeln)
-            // **Den Stand lesen, nicht annehmen.** Gibt Seerr die Anfrage
-            // sofort frei, ist der Titel „lädt" oder da, nicht „wartet".
-            gewaehlt = []
-            await detailLaden()
-            if stand.anfragbar { stand = .wartetAufFreigabe }
-            angefragt = stand == .wartetAufFreigabe
+            try await model.seerr.askFor(hit, seasons: seasons)
+            // **Read the state, do not assume.** If Seerr approves the request immediately, the title is "loading" or there, not "waiting".
+            selected = []
+            await detailLoad()
+            if state.requestable { state = .waitsSharing }
+            requested = state == .waitsSharing
         } catch {
-            fehler = lesbarerFehler(error)
+            self.error = readableError(error)
         }
     }
 }

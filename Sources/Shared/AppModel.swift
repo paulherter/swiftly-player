@@ -10,20 +10,18 @@ import UIKit
 @Observable
 final class AppModel {
 
-    /// **Eines je Prozess — nicht eines je `RootView.init`.**
+    /// **One per process, not one per `RootView.init`.**
     ///
-    /// `@State private var model = AppModel()` wertet den Ausdruck bei jedem
-    /// Anlegen der `RootView` aus; SwiftUI behaelt nur das erste und wirft
-    /// die anderen weg. Jedes weggeworfene hatte aber schon alles getan:
-    /// Schluesselbund gelesen, Sitzung wiederhergestellt, Anfragen an den
-    /// Server geschickt, eine zweite Hintergrundsitzung mit derselben
-    /// Kennung angelegt. Und weil `init` im `body` der App laeuft, merkte
-    /// sich SwiftUI dessen Lesezugriffe: lief beim Start ein Download im
-    /// System weiter, aenderte die Uebernahme danach `posten`, die App baute
-    /// ihren `body` neu, legte eine neue `RootView` an — und die ein neues
-    /// Modell. Gemessen im iOS-Simulator: rund 70 Modelle je Sekunde, ohne
-    /// Ende, solange die App offen war.
-    static let einziges = AppModel()
+    /// `@State private var model = AppModel()` evaluates the expression every time
+    /// `RootView` is created; SwiftUI keeps only the first and discards the rest.
+    /// Each discarded one had already done everything: read the keychain, restored
+    /// the session, sent requests to the server, created a second background session
+    /// with the same identifier. And because `init` runs in the app's `body`,
+    /// SwiftUI tracked its reads: if a download was still running in the system at
+    /// launch, the takeover then changed `entries`, the app rebuilt its `body`,
+    /// created a new `RootView` and with it a new model. Measured in the iOS
+    /// simulator: about 70 models per second, endlessly while the app was open.
+    static let only = AppModel()
 
     enum Phase: Equatable {
         case disconnected
@@ -35,552 +33,536 @@ final class AppModel {
     var phase: Phase = .disconnected
     var errorMessage: String?
     var views: [Item] = []
-    /// Für die Kopfzeile im Profilmenü.
+    /// For the header in the profile menu.
     var serverName: String?
 
-    // MARK: Einstellungen
+    // MARK: Settings
 
-    /// Nie umwandeln lassen. Der Grund für diese App — deshalb Vorgabe an.
-    /// **Je Server.** Ein Server wandelt vielleicht um, der andere nicht —
-    /// die Wahl gehört zum Server, nicht zum Gerät (`serverSchluessel`).
-    var immerDirectPlay: Bool { didSet { merken(immerDirectPlay, "immerDirectPlay" + serverSchluessel) } }
-    /// Obergrenze in Mbit/s, 0 heißt unbegrenzt. Greift nur, wenn Direct Play
-    /// nicht erzwungen wird.
-    var bitratenGrenze: Int { didSet { merken(bitratenGrenze, "bitratenGrenze" + serverSchluessel) } }
-    var querformatFest: Bool { didSet { merken(querformatFest, "querformatFest") } }
-    var fortschrittAufKacheln: Bool { didSet { merken(fortschrittAufKacheln, "fortschritt") } }
+    /// Never allow transcoding. The reason for this app, hence the default is on.
+    /// **Per server.** One server may transcode, another not; the choice belongs to
+    /// the server, not the device (`serverKey`).
+    var alwaysDirectPlay: Bool { didSet { remember(alwaysDirectPlay, "immerDirectPlay" + serverKey) } }
+    /// Upper limit in Mbit/s, 0 means unlimited. Applies only when Direct Play is
+    /// not forced.
+    var bitratesLimit: Int { didSet { remember(bitratesLimit, "bitratenGrenze" + serverKey) } }
+    var landscapeFixed: Bool { didSet { remember(landscapeFixed, "querformatFest") } }
+    var progressOnTiles: Bool { didSet { remember(progressOnTiles, "fortschritt") } }
 
-    /// Leer heißt: nehmen, was der Server vorgibt.
-    var tonSprache: String { didSet { merken(tonSprache, "tonSprache") } }
-    var untertitelSprache: String { didSet { merken(untertitelSprache, "utSprache") } }
-    /// Untertitel nur einschalten, wenn der Ton nicht in der gewünschten
-    /// Sprache läuft.
-    var untertitelAutomatisch: Bool { didSet { merken(untertitelAutomatisch, "utAuto") } }
-    /// Ob am Ende von selbst weitergeschaltet wird. Regel in `Weiterschalten`:
-    /// eigene Wahl vor Konto-Einstellung vor „an".
-    var naechsteAutomatisch: Bool {
-        get { Weiterschalten.gilt(eigeneWahl: naechsteAutomatischGewaehlt, konto: naechsteAutomatischKonto) }
-        set { naechsteAutomatischGewaehlt = newValue }
+    /// Empty means: take whatever the server specifies.
+    var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
+    var subtitleLanguage: String { didSet { remember(subtitleLanguage, "utSprache") } }
+    /// Only enable subtitles if the audio is not in the preferred language.
+    var subtitleAutomatic: Bool { didSet { remember(subtitleAutomatic, "utAuto") } }
+    /// Whether playback continues on its own at the end. Rule in `Weiterschalten`:
+    /// own choice before account setting before "on".
+    var nextAutomatic: Bool {
+        get { Advance.applies(ownSelection: nextAutomaticSelected, account: nextAutomaticAccount) }
+        set { nextAutomaticSelected = newValue }
     }
-    /// Nur gesetzt, wenn jemand den Schalter in Swiftly umgelegt hat.
-    private var naechsteAutomatischGewaehlt: Bool? {
-        didSet { if let naechsteAutomatischGewaehlt { merken(naechsteAutomatischGewaehlt, "naechsteAuto") } }
+    /// Set only if someone flipped the switch in Swiftly.
+    private var nextAutomaticSelected: Bool? {
+        didSet { if let nextAutomaticSelected { remember(nextAutomaticSelected, "naechsteAuto") } }
     }
-    /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: sie kommt
-    /// bei jedem Start frisch, und ein anderes Konto hat eine andere.
-    private var naechsteAutomatischKonto: Bool?
-    /// Steht auf `true`, sobald nach einem fertig geschauten Titel die Frage
-    /// nach einer Bewertung dran ist. Die Wurzel fragt und setzt zurück.
-    var bewertungFaellig = false
-    /// Dasselbe für den einmaligen Hinweis auf den Discord (`Gemeinschaft`).
-    var discordHinweisFaellig = false
-    /// Ob gerade ein Player offen ist. **Beide Anstöße warten darauf**: der
-    /// Wechsel zur nächsten Folge zählt einen Titel, während der Player
-    /// weiterläuft — und eine Frage über dem Bild wäre das Schlechteste.
-    var playerOffen = false
+    /// The account's `EnableNextEpisodeAutoPlay`. Not persisted: it arrives fresh
+    /// on every launch, and another account has another.
+    private var nextAutomaticAccount: Bool?
+    /// Becomes `true` once the rating question is due after a title is finished.
+    /// The root view asks and resets it.
+    var ratingDue = false
+    /// Same for the one-time hint about the community Discord (`Community`).
+    var discordHintDue = false
+    /// Whether a player is open right now. **Both prompts wait for it**: the
+    /// switch to the next episode counts a title while the player keeps running, and
+    /// a question over the picture would be the worst thing.
+    var playerOpen = false
 
-    /// „Zuletzt hinzugefügt" getrennt nach Filmen und Serien.
+    /// "Recently added" split into movies and series.
     ///
-    /// **Vorgabe aus, damit sich für niemanden etwas ändert.** Eine Reihe mit
-    /// allem ist der Stand seit der ersten Fassung; wer sie getrennt will,
-    /// schaltet um. Ausdrücklich `false` beim ersten Start — `UserDefaults`
-    /// gibt für einen unbekannten Schlüssel ohnehin `false`, aber das hier
-    /// steht als Absicht da, nicht als Zufall.
-    var neuzugangGetrennt: Bool { didSet { merken(neuzugangGetrennt, "neuGetrennt") } }
+    /// **Default off so nothing changes for anyone.** One row with everything is the
+    /// state since the first version; whoever wants them split switches. Explicitly
+    /// `false` on first launch: `UserDefaults` returns `false` for an unknown key
+    /// anyway, but this states the intent instead of relying on chance.
+    var newAccessDisconnected: Bool { didSet { remember(newAccessDisconnected, "neuGetrennt") } }
 
-    // MARK: Startseite nach Wunsch
+    // MARK: Home page as desired
 
-    /// Reihenfolge der festen Reihen. Wer eine ausblendet, behält ihren Platz.
+    /// Order of the fixed rows. Hiding one keeps its place.
     ///
-    /// **Doppelte werden hier abgefangen, nicht in den drei Ansichten.**
-    /// Umsortiert wird an drei Stellen — `DarstellungView` auf iOS, dieselbe
-    /// Datei unter `macOS`, `ProfilView` auf tvOS — und jede schreibt die ganze
-    /// Liste zurück. Eine Prüfung je Ansicht wäre dreimal dieselbe Zeile, und
-    /// die vierte Ansicht hätte sie wieder nicht. Die Regel liegt im Paket
-    /// (`Startreihenfolge.sauber`), die Stelle, die sie durchsetzt, hier.
+    /// **Duplicates are caught here, not in the three views.** Reordering happens in
+    /// three places (`PresentationView` on iOS, the same file under `macOS`,
+    /// `ProfileView` on tvOS) and each writes back the whole list. A check per view
+    /// would be the same line three times, and the fourth view would lack it again.
+    /// The rule lives in the package (`StartRailsEpisode.clean`), the place that
+    /// enforces it is here.
     ///
-    /// Die zweite Zuweisung lässt `didSet` noch einmal laufen; dann ist die
-    /// Liste schon sauber und es wird gemerkt. Mehr als diesen einen Umlauf
-    /// kann es nicht geben — `sauber` ist auf sich selbst angewandt dasselbe.
-    var startReihen: [Startreihe] {
+    /// The second assignment runs `didSet` once more; by then the list is clean and
+    /// it is stored. There cannot be more than this one pass, since `clean` applied
+    /// to itself is identical.
+    var startRails: [StartRail] {
         didSet {
-            let sauber = Startreihenfolge.sauber(startReihen)
-            guard sauber == startReihen else {
-                let vorher = startReihen.map(\.rawValue).joined(separator: ",")
-                let nachher = sauber.map(\.rawValue).joined(separator: ",")
-                Self.log.error("Startreihen doppelt — \(vorher, privacy: .public) wird zu \(nachher, privacy: .public)")
-                startReihen = sauber
+            let clean = StartRailsEpisode.clean(startRails)
+            guard clean == startRails else {
+                let before = startRails.map(\.rawValue).joined(separator: ",")
+                let afterwards = clean.map(\.rawValue).joined(separator: ",")
+                Self.log.error("Startreihen doppelt — \(before, privacy: .public) wird zu \(afterwards, privacy: .public)")
+                startRails = clean
                 return
             }
-            merken(startReihen.map(\.rawValue), "startReihen")
+            remember(startRails.map(\.rawValue), "startReihen")
         }
     }
-    var startAus: Set<Startreihe> { didSet { merken(startAus.map(\.rawValue), "startAus") } }
-    /// **Genres entweder als Chips oder als Reihen**, nie beides: an heißt
-    /// eine Reihe Chips unter dem Kopf, aus heißt die gewählten Genres als
-    /// eigene Reihen. Von Haus aus aus und ohne Genres — die Startseite
-    /// bleibt, wie sie war, bis jemand etwas will.
-    var genreChips: Bool { didSet { merken(genreChips, "genreChips") } }
-    var startGenres: [String] { didSet { merken(startGenres, "startGenres") } }
-    /// **Bibliotheken und Sammlungen als eigene Startreihen**, in der
-    /// gewählten Folge. Die Wahl gehört zum Server (`serverSchluessel`) — die
-    /// Kennungen sind seine —, und sie bleibt auch stehen, wenn eine Bibliothek
-    /// dort verschwindet oder dem Profil nicht zugänglich ist: die Reihe fehlt
-    /// dann nur (`Startseitenlader.bibliotheksreihen`). Die Rechnung liegt im
-    /// Paket (`Startbibliotheken`).
-    var startBibliotheken: [Startbibliothek] {
+    var startOut: Set<StartRail> { didSet { remember(startOut.map(\.rawValue), "startAus") } }
+    /// **Genres either as chips or as rows**, never both: on means one row of
+    /// chips under the header, off means the chosen genres appear as rows of their
+    /// own. Off by default and without genres, so the home page stays as it was
+    /// until someone wants something.
+    var genreChips: Bool { didSet { remember(genreChips, "genreChips") } }
+    var startGenres: [String] { didSet { remember(startGenres, "startGenres") } }
+    /// **Libraries and collections as home page rows of their own**, in the chosen
+    /// order. The choice belongs to the server (`serverKey`), since the IDs
+    /// are its own, and it stays even if a library disappears there or is not
+    /// accessible to the profile: the row is just missing
+    /// (`HomeLoader.libraryRails`). The computation lives in the package
+    /// (`StartLibraries`).
+    var startLibraries: [StartLibrary] {
         didSet {
-            let sauber = Startbibliotheken.sauber(startBibliotheken)
-            guard sauber == startBibliotheken else { startBibliotheken = sauber; return }
-            merken(Startbibliotheken.daten(startBibliotheken) ?? Data(), "startBibliotheken" + serverSchluessel)
+            let clean = StartLibraries.clean(startLibraries)
+            guard clean == startLibraries else { startLibraries = clean; return }
+            remember(StartLibraries.data(startLibraries) ?? Data(), "startBibliotheken" + serverKey)
         }
     }
-    /// Wie viel Vorrat der Player haelt. Siehe ``Pufferstufe`` im Paket.
-    var pufferstufe: Pufferstufe { didSet { merken(pufferstufe.rawValue, "pufferstufe") } }
-    /// **Zeigt Discord, was gerade laeuft — und ist aus, bis man es
-    /// einschaltet.**
+    /// How much buffer the player holds. See ``BufferLevel`` in the package.
+    var bufferLevel: BufferLevel { didSet { remember(bufferLevel.rawValue, "pufferstufe") } }
+    /// **Shows on Discord what is playing, and is off until enabled.**
     ///
-    /// Es ist die einzige Einstellung dieser App, die etwas nach **draussen**
-    /// gibt: wer sie anlegt, sagt jedem in seinen Discord-Servern, welchen
-    /// Film er gerade sieht. Eine Vorgabe „an" waere hier kein Komfort,
-    /// sondern eine Veroeffentlichung, um die niemand gebeten hat — genau
-    /// dieselbe Ueberlegung wie bei H1 und bei Seerr, nur mit mehr Gewicht.
-    var discordAnzeigen: Bool { didSet {
-        merken(discordAnzeigen, "discordAnzeigen")
-        // Wer ausschaltet, will sofort weg sein, nicht beim naechsten Wechsel.
-        if !discordAnzeigen { Discordanzeiger.geteilt.abraeumen() }
+    /// It is the only setting of this app that sends something **outside**: enabling
+    /// it tells everyone in your Discord servers which movie you are watching. An
+    /// "on" default would not be a convenience but a publication nobody asked for,
+    /// the same consideration as with the off-by-default rule and Seerr, only with more weight.
+    var discordShow: Bool { didSet {
+        remember(discordShow, "discordAnzeigen")
+        // Whoever turns it off wants to be gone immediately, not at the next
+        // change.
+        if !discordShow { DiscordIndicator.shared.tidyAway() }
     } }
-    var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
-    var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
+    var backSeconds: Int { didSet { remember(backSeconds, "zurueckSek") } }
+    var forwardSeconds: Int { didSet { remember(forwardSeconds, "vorSek") } }
 
-    /// **H1 — aus, bis man es einschaltet.**
+    /// **off until enabled.**
     ///
-    /// Ohne diesen Schalter gibt es weder den Reiter unten noch das Feld auf
-    /// der Detailseite noch die Ringe in der Folgenliste. Wie bei Seerr: wer
-    /// es nicht will, sieht ausser der einen Zeile in den Einstellungen
-    /// nichts davon.
+    /// Without this switch there is neither the bottom tab nor the field on the
+    /// detail page nor the rings in the episode list. As with Seerr: whoever does
+    /// not want it sees nothing of it besides the one settings row.
     var downloadsAn: Bool {
         didSet {
-            merken(downloadsAn, "downloadsAn")
-            // Ein ausgeschalteter Download laedt nicht weiter. Was auf der
-            // Platte liegt, bleibt liegen — H10 fragt beim Ausschalten, was
-            // damit geschehen soll, und diese Zeile haelt nur an.
+            remember(downloadsAn, "downloadsAn")
+            // A disabled download does not continue. What is on disk stays; the pause rule asks
+            // when turning off what should happen to it, and this line only pauses.
             if downloadsAn {
-                downloads.netzBeobachten()
+                downloads.networkObserve()
             } else {
-                downloads.allesAnhalten()
-                // Der Pfadbeobachter kostet nichts Nennenswertes, laeuft aber
-                // auch fuer nichts, solange die Funktion aus ist.
-                downloads.netzNichtMehrBeobachten()
+                downloads.allHalt()
+                // The path observer costs nothing noteworthy, but also does not run for
+                // nothing while the feature is off.
+                downloads.networkNotMoreObserve()
             }
         }
     }
-    /// `Policy.EnableContentDownloading` des Kontos, als ``Downloadrecht``.
-    /// Nicht gespeichert: kommt bei jedem Start frisch, und ein anderes Konto
-    /// hat ein anderes Recht.
-    private(set) var downloadrecht: Downloadrecht = .unbekannt
-    /// Darf der Server für dieses Konto Video umwandeln? Sonst bietet der
-    /// Player keine Bitratengrenze an — sie bliebe ohne Wirkung.
-    private(set) var umwandelnErlaubt = true
-    /// **Ob beim Laden eine kleinere Qualität zur Wahl steht** — Bild und Ton
-    /// umwandeln, entschieden im Paket (`Downloadqualitaet.waehlbar`). Ohne
-    /// Antwort erlaubt, wie beim Player.
-    private(set) var downloadqualitaetWaehlbar = true
+    /// The account's `Policy.EnableContentDownloading`, as ``DownloadPermission``. Not
+    /// persisted: arrives fresh on every launch, and another account has another
+    /// right.
+    private(set) var downloadPermission: DownloadPermission = .unknown
+    /// May the server transcode video for this account? Otherwise the player
+    /// offers no bitrate limit, since it would have no effect.
+    private(set) var convertAllowed = true
+    /// **Whether a smaller quality is selectable when downloading** (converting
+    /// picture and audio), decided in the package (`DownloadQuality.waehlbar`).
+    /// Allowed without an answer, as with the player.
+    private(set) var downloadQualitySelectable = true
 
-    /// **Ob ein Ladeknopf ueberhaupt erscheint** — der Schalter oben *und*
-    /// das Recht am Konto, entschieden im Paket.
+    /// **Whether a download button appears at all**: the switch above *and* the
+    /// account's right, decided in the package.
     ///
-    /// Nicht `downloadsAn` an den Knopfstellen: der Reiter unten und die
-    /// Zeile in den Einstellungen haengen weiter am Schalter allein, sonst
-    /// kaeme jemand, der das Recht heute verliert, nicht mehr an die Dateien,
-    /// die er gestern geladen hat — auch nicht, um sie zu loeschen.
-    var downloadKnopfZeigen: Bool {
-        Downloadrecht.anbieten(recht: downloadrecht, funktionAn: downloadsAn)
+    /// Not `downloadsAn` at the button sites: the bottom tab and the settings row
+    /// still depend on the switch alone, otherwise someone who loses the right today
+    /// could no longer reach the files downloaded yesterday, not even to delete
+    /// them.
+    var downloadButtonShow: Bool {
+        DownloadPermission.offer(rights: downloadPermission, functionOn: downloadsAn)
     }
 
-    /// **H5.** An bei der ersten Aktivierung — bei Originaldateien ist alles
-    /// andere unfreundlich.
-    var nurUeberWLAN: Bool {
+    /// **H5.** On at first activation; with original files everything else is
+    /// unfriendly.
+    var onlyOverWLAN: Bool {
         didSet {
-            merken(nurUeberWLAN, "nurUeberWLAN")
-            downloads.nurUeberWLAN = nurUeberWLAN
-        if downloadsAn { downloads.netzBeobachten() }
+            remember(onlyOverWLAN, "nurUeberWLAN")
+            downloads.onlyOverWLAN = onlyOverWLAN
+        if downloadsAn { downloads.networkObserve() }
         }
     }
 
 
-    /// Anhang für Einstellungen, die je Server gelten. Ohne Sitzung leer —
-    /// dann gilt der alte, gerätweite Wert.
-    private var serverSchluessel: String {
+    /// Suffix for settings that apply per server. Empty without a session, in which
+    /// case the old device-wide value applies.
+    private var serverKey: String {
         session.map { "|" + $0.serverURL.absoluteString } ?? ""
     }
 
-    /// Direct Play und Bitratengrenze des aktuellen Servers. Hat er noch
-    /// keine eigenen, gilt die bisherige gerätweite Wahl.
-    private func wiedergabeLaden() {
-        let ablage = UserDefaults.standard
-        let k = serverSchluessel
-        immerDirectPlay = ablage.object(forKey: "immerDirectPlay" + k) as? Bool
-            ?? ablage.object(forKey: "immerDirectPlay") as? Bool ?? true
-        bitratenGrenze = ablage.object(forKey: "bitratenGrenze" + k) as? Int
-            ?? ablage.integer(forKey: "bitratenGrenze")
-        startBibliotheken = Startbibliotheken.lesen(ablage.data(forKey: "startBibliotheken" + k))
+    /// Direct Play and bitrate limit of the current server. If it has none of its
+    /// own yet, the previous device-wide choice applies.
+    private func playbackLoad() {
+        let store = UserDefaults.standard
+        let k = serverKey
+        alwaysDirectPlay = store.object(forKey: "immerDirectPlay" + k) as? Bool
+            ?? store.object(forKey: "immerDirectPlay") as? Bool ?? true
+        bitratesLimit = store.object(forKey: "bitratenGrenze" + k) as? Int
+            ?? store.integer(forKey: "bitratenGrenze")
+        startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken" + k))
     }
 
-    private func merken(_ wert: Any, _ name: String) {
-        UserDefaults.standard.set(wert, forKey: name)
+    private func remember(_ value: Any, _ name: String) {
+        UserDefaults.standard.set(value, forKey: name)
     }
 
-    // MARK: - Mehrere Bibliotheken derselben Gattung
+    // MARK: - Several libraries of the same kind
 
-    /// Alle Bibliotheken einer Gattung, in der Reihenfolge des Servers.
+    /// All libraries of a type, in the server's order.
     ///
-    /// **Ein Server kann mehrere Filmbibliotheken haben** — aus dem
-    /// TestFlight: eine auf einer externen Platte, eine lokale. Der Reiter
-    /// „Filme" nahm bis dahin `views.first` und zeigte damit nur die erste;
-    /// die zweite war in der App nicht erreichbar. Aufgefallen ist es nie,
-    /// weil unser Prüfserver genau eine hat.
+    /// **A server can have several movie libraries**: one on an external disk, one
+    /// local. The "Movies" tab used `views.first` and so showed only the first; the
+    /// second was unreachable in the app. It was never noticed because our test
+    /// server has exactly one.
     ///
-    /// Suche, „Weiterschauen" und „Zuletzt hinzugefügt" gehen ohne
-    /// `ParentId` an den Server und sahen deshalb immer alles — nur das
-    /// Durchblättern war halbiert.
-    func bibliotheken(art: String) -> [Item] {
+    /// Search, "Continue Watching" and "Recently Added" go to the server without
+    /// `ParentId` and so always saw everything; only browsing was halved.
+    func libraries(art: String) -> [Item] {
         views.filter { $0.collectionType == art }
     }
 
-    /// Welche Bibliothek zuletzt gewählt war — je Gattung gemerkt.
+    /// Which library was chosen last, remembered per type.
     ///
-    /// Über die Kennung und nicht über den Platz in der Liste: der Server
-    /// darf umsortieren, und dann zeigte „Filme" plötzlich die andere
-    /// Sammlung. Ist die gemerkte Bibliothek verschwunden, fällt die Wahl
-    /// still auf die erste zurück.
-    func gewaehlteBibliothek(art: String) -> Item? {
-        let vorhanden = bibliotheken(art: art)
-        if let kennung = UserDefaults.standard.string(forKey: Self.bibliotheksname(art)),
-           let treffer = vorhanden.first(where: { $0.id == kennung }) {
-            return treffer
+    /// By ID and not by position in the list: the server may reorder, and then
+    /// "Movies" would suddenly show the other collection. If the remembered library
+    /// is gone, the choice silently falls back to the first.
+    func selectedLibrary(art: String) -> Item? {
+        let available = libraries(art: art)
+        if let identifier = UserDefaults.standard.string(forKey: Self.libraryName(art)),
+           let hit = available.first(where: { $0.id == identifier }) {
+            return hit
         }
-        return vorhanden.first
+        return available.first
     }
 
-    func bibliothekWaehlen(_ bibliothek: Item, art: String) {
-        merken(bibliothek.id, Self.bibliotheksname(art))
+    func librarySelect(_ library: Item, art: String) {
+        remember(library.id, Self.libraryName(art))
     }
 
-    private static func bibliotheksname(_ art: String) -> String { "bibliothek-\(art)" }
+    private static func libraryName(_ art: String) -> String { "bibliothek-\(art)" }
 
 
-    // MARK: - Titelmenü: Alle, Sammlungen, Bibliotheken
+    // MARK: - Title menu: All, Collections, Libraries
 
-    /// Die Sammlungen des Kontos — `nil`, solange nicht gefragt.
-    private(set) var sammlungsverzeichnis: Sammlungsverzeichnis?
-    /// Filme und Serien je gemischter Bibliothek.
-    private(set) var bibliotheksanteile: [String: Bibliotheksanteil] = [:]
-    /// Für welches Konto und welche Bibliotheken beides gilt.
-    private var angebotFuer: String?
-    private var angebotLaeuft: String?
+    /// The account's collections; `nil` until asked.
+    private(set) var collectionDirectory: CollectionDirectory?
+    /// Movies and series per mixed library.
+    private(set) var libraryShares: [String: LibraryShare] = [:]
+    /// Which account and which libraries both apply to.
+    private var offeringFor: String?
+    private var offeringRuns: String?
 
-    private var angebotsschluessel: String {
-        "\(kontowechsel)|" + views.map(\.id).joined(separator: ",")
+    private var offeringKey: String {
+        "\(accountSwitch)|" + views.map(\.id).joined(separator: ",")
     }
 
-    /// Was der Titel dieses Bereichs zur Wahl anbietet — die Regel steht im
-    /// Paket (``Bereichsangebot``).
+    /// What the title of this section offers for selection; the rule lives in the
+    /// package (``SectionOffering``).
     ///
-    /// **Was einem anderen Konto gehört, zählt nicht.** Bis das neue
-    /// geladen ist, steht nur da, was `views` allein hergibt.
-    func bereichsangebot(art: String) -> Bereichsangebot {
-        let gilt = angebotFuer == angebotsschluessel
-        return Bereichsangebot.bilden(art: art, views: views,
-                                      anteile: gilt ? bibliotheksanteile : [:],
-                                      verzeichnis: gilt ? sammlungsverzeichnis : nil)
+    /// **What belongs to another account does not count.** Until the new one has
+    /// loaded, only what `views` alone provides is shown.
+    func sectionOffering(art: String) -> SectionOffering {
+        let applies = offeringFor == offeringKey
+        return SectionOffering.compose(art: art, views: views,
+                                      shares: applies ? libraryShares : [:],
+                                      directory: applies ? collectionDirectory : nil)
     }
 
-    /// Holt Sammlungen und Anteile gemischter Bibliotheken.
+    /// Fetches collections and shares of mixed libraries.
     ///
-    /// **Nicht in `loadViews`**, aber nach der Startseite: `Startseitenmodell`
-    /// stößt es an, wenn die Reihen stehen — damit die erste Detail- oder
-    /// Bibliotheksseite nicht darauf wartet.
+    /// **Not in `loadViews`**, but after the home page: `HomeModel` triggers
+    /// it once the rows are up, so the first detail or library page does not wait
+    /// for it.
     ///
-    /// **Nicht nur einmal je Konto.** Die erste Fassung merkte sich das
-    /// Ergebnis, bis sich Konto oder Bibliotheken änderten; wer auf dem
-    /// Server eine Sammlung anlegte, sah sie erst nach einem Neustart der
-    /// App. Jetzt gilt ein Stand eine Minute — öffnet man danach Filme oder
-    /// Serien wieder, wird nachgesehen.
-    func angebotLaden() async {
+    /// **Not only once per account.** An earlier version remembered the result until
+    /// account or libraries changed; creating a collection on the server only showed
+    /// after restarting the app. Now a state is valid for a minute; opening Movies
+    /// or Series again after that checks again.
+    func offeringLoad() async {
         guard let client, !views.isEmpty else { return }
-        let fuer = angebotsschluessel
-        let frisch = angebotZeit.map { Date().timeIntervalSince($0) < 60 } ?? false
-        guard angebotFuer != fuer || !frisch, angebotLaeuft != fuer else { return }
-        angebotLaeuft = fuer
-        defer { if angebotLaeuft == fuer { angebotLaeuft = nil } }
-        let stand = views
-        async let anteile = client.bibliotheksanteile(views: stand)
-        async let verzeichnis: Sammlungsverzeichnis? = {
-            let mitVerborgenen = (try? await client.userViews(verborgene: true)) ?? stand
-            if Sammlungsverzeichnis.ausgeblendet(sichtbar: stand, mitVerborgenen: mitVerborgenen) {
-                return .leer
+        let of = offeringKey
+        let freshValue = offeringTime.map { Date().timeIntervalSince($0) < 60 } ?? false
+        guard offeringFor != of || !freshValue, offeringRuns != of else { return }
+        offeringRuns = of
+        defer { if offeringRuns == of { offeringRuns = nil } }
+        let state = views
+        async let shares = client.libraryShares(views: state)
+        async let directory: CollectionDirectory? = {
+            let withHidden = (try? await client.userViews(hidden: true)) ?? state
+            if CollectionDirectory.hidden(visible: state, withHidden: withHidden) {
+                return .empty
             }
-            return try? await client.sammlungsverzeichnis(ansichten: mitVerborgenen)
+            return try? await client.collectionDirectory(viewList: withHidden)
         }()
-        let neueAnteile = await anteile
-        let neuesVerzeichnis = await verzeichnis
-        // Inzwischen das Konto gewechselt: das Ergebnis gehört niemandem mehr.
-        guard fuer == angebotsschluessel else { return }
-        bibliotheksanteile = neueAnteile
-        // **Gescheitert ist nicht leer.** Ohne Antwort bleibt der Stand
-        // ungültig, und die nächste Seite fragt noch einmal.
-        guard let neuesVerzeichnis else { return }
-        sammlungsverzeichnis = neuesVerzeichnis
-        angebotFuer = fuer
-        angebotZeit = Date()
+        let newShares = await shares
+        let newDirectory = await directory
+        // The account changed in the meantime: the result belongs to nobody
+        // anymore.
+        guard of == offeringKey else { return }
+        libraryShares = newShares
+        // **Failed is not empty.** Without an answer the state stays invalid, and the
+        // next page asks again.
+        guard let newDirectory else { return }
+        collectionDirectory = newDirectory
+        offeringFor = of
+        offeringTime = Date()
     }
-    private var angebotZeit: Date?
+    private var offeringTime: Date?
 
-    /// Die Kennungen der Bibliotheken, aus denen „Alle" liest — für das
-    /// Sieb, mit denselben Filtern wie die Seite.
-    func titelsieb(_ quelle: Regalquelle, filter: Bibliotheksfilter) async -> Titelsieb? {
+    /// The IDs of the libraries that "All" reads from, for the filter, with the
+    /// same filters as the page.
+    func titleFilter(_ source: ShelfSource, filter: LibraryFilter) async -> TitleFilter? {
         guard let client else { return nil }
         do {
-            return try await client.titelsieb(quelle, filters: filter.jellyfinFilter,
-                                              istGesehen: filter.istGesehen)
+            return try await client.titleFilter(source, filters: filter.jellyfinFilter,
+                                              isWatched: filter.isWatched)
         } catch {
             Self.log.error("Titelsieb fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
 
-    /// Die Sammlungen, zu denen ein Titel gehört — aus dem Verzeichnis, nur
-    /// wenn es zu diesem Konto gehört.
-    func sammlungen(mit titel: Item) -> [Sammlung] {
-        guard angebotFuer == angebotsschluessel else { return [] }
-        return sammlungsverzeichnis?.sammlungen(mit: titel) ?? []
+    /// The collections a title belongs to, from the directory, only if it belongs
+    /// to this account.
+    func collections(with title: Item) -> [ItemCollection] {
+        guard offeringFor == offeringKey else { return [] }
+        return collectionDirectory?.collections(with: title) ?? []
     }
 
-    /// Die Plakate der ersten Titel je Sammlung — einmal geholt, dann aus dem
-    /// Speicher: das Mosaik fragt bei jedem Erscheinen neu, und jedes Mal
-    /// dieselbe Abfrage wäre Verschwendung. Wie Android (`Mosaikspeicher` in
-    /// `SammlungSeite.kt`). Geleert beim Kontowechsel, in `nachDemWechsel()`.
-    private var sammlungstitelSpeicher: [String: [Item]] = [:]
+    /// The posters of the first titles per collection, fetched once and then from
+    /// memory: the mosaic asks anew on every appearance, and the same query each time
+    /// would be wasteful. Like Android (`MosaicCache` in `CollectionPage.kt`).
+    /// Cleared on account switch, in `afterSwitch()`.
+    private var collectionTitleCache: [String: [Item]] = [:]
 
-    /// Die Titel einer Sammlung für die Reihe auf der Detailseite.
+    /// The titles of a collection for the row on the detail page.
     ///
-    /// **Still, ohne `errorMessage`.** Die Reihe ist eine Zugabe; scheitert
-    /// sie, fehlt sie — eine Fehlermeldung über der ganzen Seite wäre für
-    /// eine Reihe, nach der niemand gefragt hat, zu laut.
-    func sammlungstitel(_ sammlung: Sammlung, art: String) async -> [Item]? {
-        await sammlungstitel(sammlung, art: art, limit: 100)
+    /// **Silent, without `errorMessage`.** The row is an extra; if it fails it is
+    /// missing. An error message over the whole page would be too loud for a row
+    /// nobody asked for.
+    func collectionTitle(_ collection: ItemCollection, art: String) async -> [Item]? {
+        await collectionTitle(collection, art: art, limit: 100)
     }
 
-    /// **Die ersten vier Plakate fuer das Mosaik** einer Sammlung ohne eigenes
-    /// Bild — vier Titel, nicht hundert. Steht die volle Liste schon im
-    /// Speicher, kommen sie daraus.
-    func sammlungsplakate(_ sammlung: Sammlung, art: String) async -> [Item]? {
-        if let voll = sammlungstitelSpeicher[sammlung.id + "|" + art] {
-            return Array(voll.prefix(4))
+    /// **The first four posters for the mosaic** of a collection without its own
+    /// image: four titles, not a hundred. If the full list is already in memory,
+    /// they come from there.
+    func collectionPosters(_ collection: ItemCollection, art: String) async -> [Item]? {
+        if let full = collectionTitleCache[collection.id + "|" + art] {
+            return Array(full.prefix(4))
         }
-        return await sammlungstitel(sammlung, art: art, limit: 4)
+        return await collectionTitle(collection, art: art, limit: 4)
     }
 
-    private func sammlungstitel(_ sammlung: Sammlung, art: String, limit: Int) async -> [Item]? {
-        let schluessel = sammlung.id + "|" + art + (limit == 100 ? "" : "|\(limit)")
-        if let gespeichert = sammlungstitelSpeicher[schluessel] { return gespeichert }
+    private func collectionTitle(_ collection: ItemCollection, art: String, limit: Int) async -> [Item]? {
+        let key = collection.id + "|" + art + (limit == 100 ? "" : "|\(limit)")
+        if let saved = collectionTitleCache[key] { return saved }
         guard let client else { return nil }
-        let quelle = Regalquelle(eltern: sammlung.id, art: art, sammlung: true)
-        guard let gefunden = try? await client.items(parentID: quelle.eltern, limit: limit,
-                                       sortBy: Sortierung.erscheinung.feld,
-                                       sortOrder: quelle.richtung(.erscheinung),
-                                       recursive: quelle.rekursiv,
-                                       includeItemTypes: quelle.typen).items else { return nil }
-        sammlungstitelSpeicher[schluessel] = gefunden
-        return gefunden
+        let source = ShelfSource(parent: collection.id, art: art, collection: true)
+        guard let found = try? await client.items(parentID: source.parent, limit: limit,
+                                       sortBy: Sorting.erscheinung.inputField,
+                                       sortOrder: source.bearing(.erscheinung),
+                                       recursive: source.recursive,
+                                       includeItemTypes: source.types).items else { return nil }
+        collectionTitleCache[key] = found
+        return found
     }
 
-    /// Eine Reihe „Teil der Sammlung": die Sammlung und ihre übrigen Titel.
-    typealias Sammlungsreihendaten = (sammlung: Sammlung, titel: [Item])
+    /// A "Part of the collection" row: the collection and its other titles.
+    typealias CollectionRailsData = (collection: ItemCollection, title: [Item])
 
-    /// Die Reihen „Teil der Sammlung" zu einem Titel — leer, wenn er in
-    /// keiner Sammlung steht. Die Filmseite holt sie zusammen mit Extras und
-    /// Ähnlichem und blendet alles auf einmal ein.
+    /// The "Part of the collection" rows for a title; empty if it is in no
+    /// collection. The movie page fetches them together with extras and similar
+    /// titles and fades everything in at once.
     ///
-    /// **Einmal hier, nicht je Plattform.** Dieselbe Schleife stand in drei
-    /// `Sammlungsreihe`-Ansichten (iPhone, Mac, Fernseher) — die Ansichten
-    /// bleiben getrennt, weil Zeiger, Fokus und Finger den Weg zur
-    /// Sammlungsseite verschieden brauchen; was sie zeigen, entscheidet nur
-    /// diese Funktion.
-    func sammlungsreihen(zu titel: Item) async -> [Sammlungsreihendaten] {
-        guard let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return [] }
-        // **Ein vorhandenes Verzeichnis reicht, aufgefrischt wird nebenher.**
-        // Die Detailseite wartet mit dem Einblenden auf diese Reihen; mit
-        // `await` hing sie beim ersten Öffnen (und nach jeder Minute) an zwei
-        // Abrufen hintereinander — `UserViews` mit Verborgenen und alle
-        // Sammlungen. Am 26.09.2026 gemessen: Filmseite 417–527 ms, davon
-        // der Rest nach Titel und Plan nur dieses Warten.
-        if angebotFuer == angebotsschluessel {
-            Task { await angebotLaden() }
+    /// **Once here, not per platform.** The same loop existed in three
+    /// `Sammlungsreihe` views (iPhone, Mac, TV). The views stay separate because
+    /// pointer, focus and finger need different paths to the collection page; what
+    /// they show is decided only by this function.
+    func collectionRails(toward title: Item) async -> [CollectionRailsData] {
+        guard let art = LibraryGenre.art(toType: title.type) else { return [] }
+        // **An existing directory is enough; refreshing happens on the side.** The
+        // detail page waits for these rows before fading in; with `await` it hung on
+        // two sequential fetches on first open (and after every minute): `UserViews`
+        // with hidden ones and all collections. Measured: movie page 417-527 ms, the
+        // rest after title and plan being just this wait.
+        if offeringFor == offeringKey {
+            Task { await offeringLoad() }
         } else {
-            await angebotLaden()
+            await offeringLoad()
         }
-        var gefunden: [Sammlungsreihendaten] = []
-        // Höchstens zwei Reihen. Steht ein Film in mehr Sammlungen, sind die
-        // übrigen meist automatisch angelegte Doppel.
-        for sammlung in sammlungen(mit: titel).prefix(2) {
-            guard let liste = await sammlungstitel(sammlung, art: art) else { continue }
-            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
-            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
+        var found: [CollectionRailsData] = []
+        // At most two rows. If a movie is in more collections, the others are mostly
+        // automatically created duplicates.
+        for collection in collections(with: title).prefix(2) {
+            guard let list = await collectionTitle(collection, art: art) else { continue }
+            let other = ListRules.withoutDouble(list).filter { $0.id != title.id }
+            if !other.isEmpty { found.append((collection, other)) }
         }
-        return gefunden
+        return found
     }
 
-    /// Die gemerkte Wahl dieses Bereichs, geprüft gegen das Angebot.
-    func bereichswahl(art: String) -> Bereichswahl {
-        bereichsangebot(art: art)
-            .wahl(gemerkt: UserDefaults.standard.string(forKey: Self.bibliotheksname(art)))
+    /// The remembered choice of this section, checked against the offer.
+    func sectionSelection(art: String) -> SectionSelection {
+        sectionOffering(art: art)
+            .choice(remembered: UserDefaults.standard.string(forKey: Self.libraryName(art)))
     }
 
-    func bereichWaehlen(_ wahl: Bereichswahl, art: String) {
-        merken(wahl.merkwert, Self.bibliotheksname(art))
+    func sectionSelect(_ choice: SectionSelection, art: String) {
+        remember(choice.rememberValue, Self.libraryName(art))
     }
 
-    /// Was dem Server als Grenze gemeldet wird — die Rechnung liegt im Paket
-    /// (``Bitratengrenze``), weil Linux dieselbe Antwort geben muss und sie
-    /// dort wortgleich ein zweites Mal stand.
-    private var profilBitrate: Int {
-        Bitratengrenze.fuer(immerDirectPlay: immerDirectPlay, megabit: bitratenGrenze)
+    /// What is reported to the server as the limit. The computation lives in the
+    /// package (``Bitratengrenze``) because Linux must give the same answer and it
+    /// existed there verbatim a second time.
+    private var profileBitrate: Int {
+        BitratesLimit.of(alwaysDirectPlay: alwaysDirectPlay, megabit: bitratesLimit)
     }
     var serverVersion: String?
     var isWorking = false
 
-    /// **Ein Haken, und zwar hier.**
+    /// **One hook, and here.**
     ///
-    /// `client` wird an fuenf Stellen gesetzt — beim Verbinden, beim
-    /// Anmelden, beim Kontowechsel, beim Wiederherstellen und beim
-    /// Abmelden —, und die Downloads muessen an allen fuenfen mitgehen.
-    /// Fuenf Aufrufe an fuenf Stellen sind vier Gelegenheiten, einen zu
-    /// vergessen; genau so ist die Fernsteuerung beim Kontowechsel
-    /// haengengeblieben. `session` steht dabei schon richtig: `bund` wird
-    /// auf jedem der fuenf Wege vor `client` gesetzt.
+    /// `client` is set in five places: on connect, on sign-in, on account switch, on
+    /// restore and on sign-out, and downloads must follow at all five. Five calls in
+    /// five places are four chances to forget one; that is exactly how the remote
+    /// control got stuck on account switch. `session` is already right here: `bundle`
+    /// is set before `client` on each of the five paths.
     private(set) var client: JellyfinClient? {
         didSet {
-            downloads.anmelden(client: client, konto: session?.userID)
-            // Die Gruppe hängt am Konto: beim Wechsel und Abmelden mit dem
-            // alten Client verlassen (`Gemeinsammodell.kontoGewechselt`).
-            if client !== oldValue { Gemeinsammodell.geteilt.kontoGewechselt(alt: oldValue) }
+            downloads.signIn(client: client, account: session?.userID)
+            // The group belongs to the account: on switch and sign-out it is left with
+            // the old client (`SharedModel.accountSwitched`).
+            if client !== oldValue { SharedModel.shared.accountSwitched(alt: oldValue) }
         }
     }
-    private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { wiedergabeLaden() } } }
+    private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { playbackLoad() } } }
 
-    /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
-    /// der Profilseite. Leer, solange niemand angemeldet ist.
-    /// Die Anbindung an Seerr. **Liegt hier, weil sie eine Sitzung hält** —
-    /// eine Ansicht, die sie besitzt, verliert sie beim Schliessen, und ein
-    /// zweites Modell daneben hätte einen zweiten Zugang.
-    let seerr = Seerrmodell()
-    /// Trakt — liegt hier aus demselben Grund wie `seerr`, und weil die
-    /// Meldungen an Trakt neben denen an Jellyfin entstehen (`reportStart`
-    /// und folgende).
-    let trakt = Traktkonto()
+    /// All accounts on this server, in the order of the strip above the profile
+    /// page. Empty while nobody is signed in.
+    /// The Seerr connection. **Lives here because it holds a session**: a view that
+    /// owns it loses it on closing, and a second model alongside would have a second
+    /// access.
+    let seerr = SeerrModel()
+    /// Trakt: lives here for the same reason as `seerr`, and because the reports
+    /// to Trakt arise alongside those to Jellyfin (`reportStart` and following).
+    let trakt = TraktAccount()
 
-    /// Was auf dem Geraet liegt. **Liegt hier aus demselben Grund wie
-    /// `seerr`:** sie haelt eine Hintergrundsitzung, und eine Ansicht, die
-    /// sie besaesse, verloere sie beim Schliessen — mitten im Download.
-    let downloads = Downloadverwaltung()
+    /// What is stored on the device. **Lives here for the same reason as
+    /// `seerr`:** it holds a background session, and a view that owned it would
+    /// lose it on closing, in the middle of a download.
+    let downloads = DownloadManager()
 
-    private(set) var konten: [Session] = []
+    private(set) var accounts: [Session] = []
 
-    /// Zählt jeden Kontowechsel. Ansichten hängen sich daran, um neu zu laden.
+    /// Counts every account switch. Views attach to it to reload.
     ///
-    /// **Warum ein Zähler und nicht `phase`.** Beim ersten Anmelden springt
-    /// die Phase von `disconnected` auf `ready`, und daran hängt die
-    /// Startseite. Beim Wechsel zwischen zwei Konten bleibt sie auf `ready`
-    /// stehen — es passiert also nichts, und auf dem Schirm steht weiter das
-    /// vorige Konto.
-    private(set) var kontowechsel = 0
+    /// **Why a counter and not `phase`.** On first sign-in the phase jumps from
+    /// `disconnected` to `ready`, and the home page hangs on that. Switching between
+    /// two accounts it stays at `ready`, so nothing happens and the screen keeps
+    /// showing the previous account.
+    private(set) var accountSwitch = 0
 
-    /// **Zählt jede beendete Wiedergabe — erst, wenn der Server sie kennt.**
+    /// **Counts every finished playback, but only once the server knows it.**
     ///
-    /// Am 16.09.2026 gemeldet: aus einer Folge nach sechs, sieben Minuten
-    /// raus, und die Serienseite zeigte sie weiter als ungesehen. Gemessen am
-    /// Simulator gegen den Testserver: die Endmeldung kam an, der Server
-    /// führte die Stelle auf die Sekunde (399 s gemeldet, 399 s gespeichert).
-    /// Falsch war nur die Seite darunter — sie hatte ihren Stand **vor** der
-    /// Wiedergabe geholt und nie wieder: der Player liegt auf tvOS und macOS
-    /// als Ebene über der stehenbleibenden Seite, `.task` läuft nicht neu.
+    /// Reported bug: leaving an episode after six or seven minutes, and the series
+    /// page kept showing it as unwatched. Measured on the simulator against the test
+    /// server: the final report arrived and the server tracked the position to the
+    /// second (399 s reported, 399 s stored). Only the page underneath was wrong: it
+    /// had fetched its state **before** playback and never again, since on tvOS and
+    /// macOS the player lies as a layer over the page that stays put, and `.task`
+    /// does not rerun.
     ///
-    /// Gezählt wird nach der Endmeldung und nicht beim Schließen des
-    /// Players: wer beim Schließen neu lädt, fragt, bevor die Meldung
-    /// angekommen ist, und bekommt den Stand des letzten Takts — bis zu zehn
-    /// Sekunden zu früh. Seiten mit Fortschritt hängen ihr Auffrischen hier an.
-    private(set) var wiedergabeBeendet = 0
-    /// Ein Sehstand wurde von Hand geaendert (Folge, Staffel, Serie).
-    private(set) var sehstandGeaendert = 0
-    /// **Worauf Seiten mit Sehstand hoeren.** Beides aendert, was dort steht:
-    /// eine zu Ende geschaute Folge und ein Haken von Hand. Vorher hoerten
-    /// sie nur auf das Erste — wer eine ganze Serie abhakte, sah die Folgen
-    /// darunter weiter offen, bis er die Seite neu oeffnete (18.09.2026).
-    var seitenAuffrischen: Int { wiedergabeBeendet + sehstandGeaendert }
-    /// Ein Titel wurde gemerkt oder ausgetragen.
-    private(set) var merklisteGeaendert = 0
-    /// **Worauf Listen hören** (Merkliste, Filme/Serien, Suche): Sehstand
-    /// und Lesezeichen. Detailseiten hören bewusst nur auf
-    /// `seitenAuffrischen` — sie haben das Lesezeichen selbst gesetzt.
-    var listenAuffrischen: Int { seitenAuffrischen + merklisteGeaendert }
+    /// Counting happens after the final report and not when the player closes: a
+    /// reload on close asks before the report arrived and gets the state of the last
+    /// beat, up to ten seconds too early. Pages with progress attach their refresh
+    /// here.
+    private(set) var playbackEnded = 0
+    /// A watch state was changed by hand (episode, season, series).
+    private(set) var watchStateChanged = 0
+    /// **What pages with watch state listen to.** Both change what is shown there:
+    /// an episode watched to the end and a manual checkmark. Previously they
+    /// listened only to the first; marking a whole series showed the episodes below
+    /// still open until the page was reopened.
+    var pagesRefresh: Int { playbackEnded + watchStateChanged }
+    /// A title was added to or removed from the watchlist.
+    private(set) var watchlistChanged = 0
+    /// **What lists listen to** (watchlist, movies/series, search): watch state
+    /// and bookmarks. Detail pages deliberately listen only to `pagesRefresh`,
+    /// since they set the bookmark themselves.
+    var listenRefresh: Int { pagesRefresh + watchlistChanged }
 
-    /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
+    /// **The source of truth for who is signed in.**
     ///
-    /// `session` bleibt daneben stehen, weil die halbe App sie liest; sie
-    /// wird von hier aus nachgezogen und nirgends sonst gesetzt. Zwei
-    /// Stellen, die dasselbe behaupten dürfen, laufen sonst auseinander —
-    /// bei `trefferauskunft` ist genau das passiert.
-    private var bund: Kontenbund? {
+    /// `session` stays alongside because half the app reads it; it is updated from
+    /// here and set nowhere else. Two places allowed to claim the same thing drift
+    /// apart, which is exactly what happened with `hitInfo`.
+    private var bundle: AccountBundle? {
         didSet {
-            konten = bund?.konten ?? []
-            session = bund?.aktives
-            // Seerr hängt an einem Server — beim Wechsel auf einen anderen
-            // gilt dessen Zugang. Innerhalb eines Servers ändert sich nichts.
-            seerr.serverGewechselt(bund?.aktives.serverURL)
-            // Trakt haengt am Konto, nicht am Server (`Traktkonto`).
-            trakt.kontoGewechselt(bund?.aktives.kontoschluessel)
-            profilbilderVorholen()
+            accounts = bundle?.accounts ?? []
+            session = bundle?.activeOne
+            // Seerr is tied to a server: on switching to another, its access applies.
+            // Within one server nothing changes.
+            seerr.serverSwitched(bundle?.activeOne.serverURL)
+            // Trakt is tied to the account, not the server (`TraktAccount`).
+            trakt.accountSwitched(bundle?.activeOne.accountKey)
+            profileImagePrefetch()
         }
     }
 
-    /// **Die Bilder der anderen Konten, bevor jemand danach fragt.**
+    /// **The images of the other accounts, before anyone asks.**
     ///
-    /// Die Adresse steht sofort da — sie wird aus Serveradresse, Kennung und
-    /// Zugang gebaut, ohne Netzweg. Das **Bild** dagegen wurde erst geholt,
-    /// wenn das Profilzeichen zum ersten Mal auf dem Schirm stand: beim
-    /// ersten Oeffnen des Profils sah man deshalb kurz den Buchstaben und
-    /// danach das Bild. Rückmeldung vom 22.09.: „beim ersten Oeffnen tauchen die
-    /// anderen Profilbilder erst spaeter auf."
+    /// The URL is available immediately: it is built from server address, ID and
+    /// access, without a network trip. The **image** itself was only fetched once
+    /// the profile glyph first appeared on screen, so opening the profile the first
+    /// time briefly showed the letter and then the image. Feedback: "on first open
+    /// the other profile images appear later."
     ///
-    /// Es sind hoechstens eine Handvoll kleiner Bilder, und sie stehen fest,
-    /// sobald der Bund steht. Wer sie dann holt, hat sie, wenn sie gebraucht
-    /// werden. Ohne Vorrang: das laufende Plakat geht vor.
-    private func profilbilderVorholen() {
-        let adressen = konten.compactMap { benutzerbildURL(fuer: $0) }
-        guard !adressen.isEmpty else { return }
+    /// There are at most a handful of small images, and they are fixed as soon as
+    /// the bundle exists. Whoever fetches them then has them when needed. Without
+    /// priority: the current poster goes first.
+    private func profileImagePrefetch() {
+        let addresses = accounts.compactMap { userImageURL(for: $0) }
+        guard !addresses.isEmpty else { return }
         Task.detached(priority: .background) {
-            for adresse in adressen {
-                _ = await Bildspeicher.geteilt.laden(adresse, aufGeraet: true)
+            for address in addresses {
+                _ = await ImageCache.shared.load(address, onDevice: true)
             }
         }
     }
 
-    /// Die Server im Bund, in der Reihenfolge ihres ersten Kontos.
-    var server: [URL] { bund?.server ?? [] }
-    func konten(auf server: URL) -> [Session] { bund?.konten(auf: server) ?? [] }
+    /// The servers in the bundle, in the order of their first account.
+    var server: [URL] { bundle?.server ?? [] }
+    func accounts(on server: URL) -> [Session] { bundle?.accounts(on: server) ?? [] }
 
     nonisolated private static let sessionKey = "session"
-    /// Der Schlüssel für den ganzen Bund. Der alte oben bleibt liegen: wer
-    /// noch einmal eine ältere Fassung startet, findet dort seine Sitzung.
-    private static let kontenKey = "konten"
+    /// The key for the whole bundle. The old one above stays: starting an older
+    /// version again finds its session there.
+    private static let accountsKey = "konten"
     nonisolated static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
-    /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
-    /// **Nicht mehr `private`.** `Uebernahmemodell` muss die eigene Kennung
-    /// kennen, sonst zeigt das Gerät sich selbst als „läuft woanders" an —
-    /// und das fällt erst auf, wenn nur ein Gerät läuft.
+    /// Stable device ID. Jellyfin lists the session with it in the dashboard.
+    /// **No longer `private`.** `TakeoverModel` must know its own ID, otherwise
+    /// the device shows itself as "playing elsewhere", which only becomes noticeable
+    /// when a single device is running.
     static var deviceID: String = {
         let key = "de.paulherter.swiftly.deviceID"
         if let existing = UserDefaults.standard.string(forKey: key) { return existing }
@@ -598,170 +580,165 @@ final class AppModel {
     }
 
     init() {
-        let ablage = UserDefaults.standard
-        // `object(forKey:)` unterscheidet „nie gesetzt" von „aus" — mit
-        // `bool(forKey:)` wäre die Vorgabe immer falsch.
-        immerDirectPlay = ablage.object(forKey: "immerDirectPlay") as? Bool ?? true
-        bitratenGrenze = ablage.integer(forKey: "bitratenGrenze")
-        querformatFest = ablage.object(forKey: "querformatFest") as? Bool ?? true
-        fortschrittAufKacheln = ablage.object(forKey: "fortschritt") as? Bool ?? true
-        tonSprache = ablage.string(forKey: "tonSprache") ?? ""
-        untertitelSprache = ablage.string(forKey: "utSprache") ?? ""
-        untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
-        // **Nie gesetzt heißt nicht „an".** Dann gilt die Einstellung des
-        // Jellyfin-Kontos (T3 #15); wer den Schalter umgelegt hat, behält ihn.
-        naechsteAutomatischGewaehlt = ablage.object(forKey: "naechsteAuto") as? Bool
-        // **Getrennt ist die Vorgabe**, seit dem 11.09.2026. Wer es ausdrücklich
-        // ausgeschaltet hat, behält das; wer es nie angefasst hat, bekommt die
-        // beiden Reihen.
-        neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? true
-        // **Die Rechnung liegt im Paket** (`Startreihenfolge.geltend`): eine
-        // Reihe, die es beim Merken noch nicht gab, kommt hinten dazu, und was
-        // doppelt in der Ablage steht, kommt einmal heraus. Hier stand eine
-        // zweite Fassung derselben Rechnung — und die kannte nur die erste
-        // Hälfte. Ein Gerät, auf dem „neueFilme" zweimal abgelegt war, trug den
-        // Fehler damit über jeden Start hinweg.
-        let abgelegteReihen = ablage.stringArray(forKey: "startReihen") ?? []
-        let geltendeReihen = Startreihenfolge.geltend(abgelegt: abgelegteReihen)
-        if !abgelegteReihen.isEmpty, geltendeReihen.map(\.rawValue) != abgelegteReihen {
-            let vorher = abgelegteReihen.joined(separator: ",")
-            let nachher = geltendeReihen.map(\.rawValue).joined(separator: ",")
-            Self.log.info("Startreihen glattgezogen: abgelegt \(vorher, privacy: .public) → \(nachher, privacy: .public)")
+        let store = UserDefaults.standard
+        // `object(forKey:)` distinguishes "never set" from "off"; with
+        // `bool(forKey:)` the default would always be false.
+        alwaysDirectPlay = store.object(forKey: "immerDirectPlay") as? Bool ?? true
+        bitratesLimit = store.integer(forKey: "bitratenGrenze")
+        landscapeFixed = store.object(forKey: "querformatFest") as? Bool ?? true
+        progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
+        audioLanguage = store.string(forKey: "tonSprache") ?? ""
+        subtitleLanguage = store.string(forKey: "utSprache") ?? ""
+        subtitleAutomatic = store.object(forKey: "utAuto") as? Bool ?? false
+        // **Never set does not mean "on".** Then the Jellyfin account's setting
+        // applies; whoever flipped the switch keeps it.
+        nextAutomaticSelected = store.object(forKey: "naechsteAuto") as? Bool
+        // **Split is the default.** Whoever explicitly turned it off keeps that;
+        // whoever never touched it gets the two rows.
+        newAccessDisconnected = store.object(forKey: "neuGetrennt") as? Bool ?? true
+        // **The computation lives in the package** (`StartRailsEpisode.applicable`): a
+        // row that did not exist when stored is appended, and anything duplicated in
+        // the stored list comes out once. A second version of the same computation used
+        // to live here and knew only the first half. A device on which "neueFilme" was
+        // stored twice carried the error across every launch.
+        let storedRails = store.stringArray(forKey: "startReihen") ?? []
+        let applicableRails = StartRailsEpisode.applicable(stored: storedRails)
+        if !storedRails.isEmpty, applicableRails.map(\.rawValue) != storedRails {
+            let before = storedRails.joined(separator: ",")
+            let afterwards = applicableRails.map(\.rawValue).joined(separator: ",")
+            Self.log.info("Startreihen glattgezogen: abgelegt \(before, privacy: .public) → \(afterwards, privacy: .public)")
         }
-        startReihen = geltendeReihen
-        startAus = Set((ablage.stringArray(forKey: "startAus") ?? []).compactMap(Startreihe.init(rawValue:)))
-        genreChips = ablage.object(forKey: "genreChips") as? Bool ?? false
-        startGenres = ablage.stringArray(forKey: "startGenres") ?? []
-        startBibliotheken = Startbibliotheken.lesen(ablage.data(forKey: "startBibliotheken"))
-        pufferstufe = (ablage.string(forKey: "pufferstufe")
-                       .flatMap(Pufferstufe.init(rawValue:))) ?? .normal
-        discordAnzeigen = ablage.object(forKey: "discordAnzeigen") as? Bool ?? false
-        zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
-        vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
-        downloadsAn = ablage.object(forKey: "downloadsAn") as? Bool ?? false
-        nurUeberWLAN = ablage.object(forKey: "nurUeberWLAN") as? Bool ?? true
+        startRails = applicableRails
+        startOut = Set((store.stringArray(forKey: "startAus") ?? []).compactMap(StartRail.init(rawValue:)))
+        genreChips = store.object(forKey: "genreChips") as? Bool ?? false
+        startGenres = store.stringArray(forKey: "startGenres") ?? []
+        startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken"))
+        bufferLevel = (store.string(forKey: "pufferstufe")
+                       .flatMap(BufferLevel.init(rawValue:))) ?? .normal
+        discordShow = store.object(forKey: "discordAnzeigen") as? Bool ?? false
+        backSeconds = store.object(forKey: "zurueckSek") as? Int ?? 10
+        forwardSeconds = store.object(forKey: "vorSek") as? Int ?? 30
+        downloadsAn = store.object(forKey: "downloadsAn") as? Bool ?? false
+        onlyOverWLAN = store.object(forKey: "nurUeberWLAN") as? Bool ?? true
 
-        // `didSet` laeuft waehrend `init` nicht — der Schalter muss einmal
-        // von Hand durchgereicht werden, sonst laedt die Verwaltung beim
-        // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
-        downloads.nurUeberWLAN = nurUeberWLAN
-        // Aus demselben Grund der Pfadbeobachter: ohne ihn blieb die
-        // Verwaltung nach jedem Neustart bei „WLAN" und „Netz da" stehen —
-        // „Nur über WLAN" griff erst, wenn jemand einen Schalter anfasste.
-        if downloadsAn { downloads.netzBeobachten() }
+        // `didSet` does not run during `init`; the switch must be passed through once
+        // by hand, otherwise the manager downloads over cellular on first launch
+        // despite the default forbidding it.
+        downloads.onlyOverWLAN = onlyOverWLAN
+        // Same reason for the path observer: without it the manager stayed at "Wi-Fi"
+        // and "network available" after every restart, and "Wi-Fi only" only took
+        // effect once someone touched a switch.
+        if downloadsAn { downloads.networkObserve() }
 
-        // **Das Paket bekommt einen Faden nach draussen.**
+        // **The package gets a thread to the outside.**
         //
-        // `Protokoll` liegt hier in der App, weil es in eine Datei im
-        // App-Behaelter schreibt; das Paket kennt es nicht. Die stillsten
-        // Stellen der ganzen App stecken aber genau dort — eine
-        // Steckverbindung, die nicht zustande kommt, eine Antwort, die
-        // niemand ansieht. Am 10.09.2026 hat das eine halbe Nacht gekostet.
-        Spur.schreiben = { Protokoll.schreib($0) }
-        Stromweiterleiter.protokoll = { Protokoll.schreib($0) }
+        // `AppLog` lives here in the app because it writes to a file in the app
+        // container; the package does not know it. But the quietest places in the whole
+        // app are exactly there: a connection that does not come up, a response nobody
+        // looks at.
+        TrackSupport.write = { AppLog.writeOut($0) }
+        StreamForwarder.log = { AppLog.writeOut($0) }
 
-        // **Abseits des Hauptlaufs:** der Test liest und schreibt nur den
-        // Eintrag „dauertest" und meldet ins Protokoll — nichts, was die
-        // Anmeldung braucht. Vorher lagen bis zu vier Keychain-Aufrufe vor
-        // dem ersten Bild.
-        Task.detached(priority: .utility) { Self.keychainSelbsttest() }
-        // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste
-        // Abruf die eigenen Header — und die ersten Plakate gleich danach.
-        Self.eigeneKoepfeLaden()
+        // **Off the main path:** the test reads and writes only the "dauertest" entry
+        // and reports to the log, nothing the sign-in needs. Previously up to four
+        // keychain calls sat before the first frame.
+        Task.detached(priority: .utility) { Self.keychainSelfIt() }
+        // **Before the session.** Behind a gateway the very first request needs its
+        // own headers, and the first posters right after.
+        Self.ownHeadersLoad()
         #if DEBUG
-        testsitzungSetzen()
+        setTestSession()
         #endif
         restoreSession()
     }
 
     #if DEBUG
-    /// **Selbsttest ohne Anmeldemaske.** Legt ein Konto an einer
-    /// Testadresse an, als wäre es angemeldet — für Start- und Lastproben
-    /// gegen einen nachgebauten Server, ohne Passwort und ohne Bedienung:
+    /// **Self-test without a sign-in form.** Creates an account at a test address
+    /// as if signed in, for launch and load tests against a replica server, without
+    /// password and without interaction:
     ///
-    ///     xcrun simctl launch <geraet> de.paulherter.swiftly -testsitzung http://127.0.0.1:8899
-    private func testsitzungSetzen() {
-        let argumente = ProcessInfo.processInfo.arguments
-        guard let i = argumente.firstIndex(of: "-testsitzung"), i + 1 < argumente.count,
-              let adresse = URL(string: argumente[i + 1]) else { return }
+    /// xcrun simctl launch <device> <bundle-id> -testsitzung http://127.0.0.1:8899
+    private func setTestSession() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: "-testsitzung"), i + 1 < arguments.count,
+              let address = URL(string: arguments[i + 1]) else { return }
         let s = Session(accessToken: "testmerkmal", userID: "testnutzer",
-                        userName: "Test", serverURL: adresse)
-        // `-testsitzung2`: ein zweites Konto am selben Testserver — für den
-        // Kontowechsel-Selbsttest (`Kontowechsellauf`). Zuerst aufgenommen, damit
-        // das erste Konto das angemeldete bleibt.
-        var vorher = bundLaden()
-        if argumente.contains("-testsitzung2") {
-            let zweites = Session(accessToken: "testmerkmal2", userID: "testnutzer2",
-                                  userName: "Test 2", serverURL: adresse)
-            vorher = Kontenbund.aufnehmen(zweites, in: vorher).bund
+                        userName: "Test", serverURL: address)
+        // `-testsitzung2`: a second account on the same test server, for the account
+        // switch self-test (`AccountSwitchRun`). Added first so the first account
+        // remains the signed-in one.
+        var before = loadBundle()
+        if arguments.contains("-testsitzung2") {
+            let second = Session(accessToken: "testmerkmal2", userID: "testnutzer2",
+                                  userName: "Test 2", serverURL: address)
+            before = AccountBundle.record(second, in: before).bundle
         }
-        bund = Kontenbund.aufnehmen(s, in: vorher).bund
-        bundSichern()
-        Protokoll.schreib("[Selbsttest] Testsitzung an \(adresse.absoluteString)")
+        bundle = AccountBundle.record(s, in: before).bundle
+        saveBundle()
+        AppLog.writeOut("[Selbsttest] Testsitzung an \(address.absoluteString)")
     }
     #endif
 
-    /// Prüft, ob der Server antwortet, und zieht dabei Name und Fassung nach.
-    func verbindungPruefen() async -> String {
+    /// Checks whether the server answers and updates name and version.
+    func connectionCheck() async -> String {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
             let info = try await client.publicSystemInfo()
-            // Inzwischen auf einen anderen Server gewechselt: dessen Name
-            // nicht mit dem von eben überschreiben.
+            // Switched to another server in the meantime: do not overwrite its name with
+            // the one from before.
             guard self.client === client else { return String(localized: "Nicht angemeldet.") }
             serverName = info.serverName ?? serverName
             serverVersion = info.version ?? serverVersion
-            // **Hier und nicht in einem eigenen Takt.** Das ist der eine
-            // Punkt, an dem nachgewiesen ist, dass der Server antwortet —
-            // und die Prüfung läuft ohnehin nach jedem Verbinden, Anmelden
-            // und Kontowechsel. Ein zweiter Wecker daneben würde raten.
-            await nachmeldungenAbschicken()
+            // **Here and not in a timer of its own.** This is the one point where it is
+            // proven that the server answers, and the check runs after every connect,
+            // sign-in and account switch anyway. A second timer alongside would guess.
+            await pendingSubmit()
             return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
         } catch {
-            return lesbar(error)
+            return readable(error)
         }
     }
 
-    /// **„Verbindung prüfen" für den Knopf** — mit Frist.
+    /// **"Check connection" for the button**, with a deadline.
     ///
-    /// Die Prüfung selbst kann länger dauern als der Abruf: nach der Antwort
-    /// werden noch die liegengebliebenen Meldungen verschickt, und die hängen
-    /// am selben Netz. Bis dahin stand „Moment…" neben einem gesperrten Knopf,
-    /// ohne Ende in Sicht. Nach `frist` gibt es eine Antwort und der Knopf ist
-    /// wieder frei; die Prüfung darf im Hintergrund zu Ende laufen.
-    func verbindungPruefen(frist: Duration) async -> String {
-        @MainActor final class Einmal { var fertig = false }
-        let einmal = Einmal()
-        return await withCheckedContinuation { fortsetzung in
+    /// The check itself can take longer than the request: after the response the
+    /// queued reports are sent, and they hang on the same network. Until then
+    /// "One moment..." stood next to a disabled button with no end in sight. After
+    /// `deadline` there is an answer and the button is free again; the check may finish
+    /// in the background.
+    func connectionCheck(deadline: Duration) async -> String {
+        @MainActor final class InTimes { var done = false }
+        let inTimes = InTimes()
+        return await withCheckedContinuation { continuation in
             Task { @MainActor in
-                let antwort = await self.verbindungPruefen()
-                guard !einmal.fertig else { return }
-                einmal.fertig = true
-                fortsetzung.resume(returning: antwort)
+                let answer = await self.connectionCheck()
+                guard !inTimes.done else { return }
+                inTimes.done = true
+                continuation.resume(returning: answer)
             }
             Task { @MainActor in
-                try? await Task.sleep(for: frist)
-                guard !einmal.fertig else { return }
-                einmal.fertig = true
-                fortsetzung.resume(returning: String(localized: "Der Server hat nicht geantwortet."))
+                try? await Task.sleep(for: deadline)
+                guard !inTimes.done else { return }
+                inTimes.done = true
+                continuation.resume(returning: String(localized: "Der Server hat nicht geantwortet."))
             }
         }
     }
 
-    /// Schreibt und liest beim Start einen Testwert. Schlägt das fehl, geht
-    /// auch die Sitzung verloren — dann steht der Grund im Log statt dass man
-    /// sich wundert, warum man sich ständig neu anmelden muss.
-    nonisolated private static func keychainSelbsttest() {
-        // Bleibt bewusst liegen: so lässt sich messen, ob Einträge eine
-        // Neuinstallation überleben — genau das ist die Frage.
+    /// Writes and reads a test value at launch. If that fails, the session is lost
+    /// too; then the reason is in the log instead of wondering why you keep having to
+    /// sign in again.
+    nonisolated private static func keychainSelfIt() {
+        // Deliberately left in place: this makes it measurable whether entries
+        // survive a reinstall, which is exactly the question.
         if let alt = Keychain.load(key: "dauertest"),
            let text = String(data: alt, encoding: .utf8) {
             Self.log.info("Keychain: Eintrag überlebt seit \(text, privacy: .public)")
         } else {
-            let stempel = ISO8601DateFormatter().string(from: Date())
+            let stamp = ISO8601DateFormatter().string(from: Date())
             do {
-                try Keychain.save(Data(stempel.utf8), key: "dauertest")
-                Self.log.info("Keychain: kein alter Eintrag, neu angelegt um \(stempel, privacy: .public)")
+                try Keychain.save(Data(stamp.utf8), key: "dauertest")
+                Self.log.info("Keychain: kein alter Eintrag, neu angelegt um \(stamp, privacy: .public)")
             } catch {
                 Self.log.error("Keychain: Schreiben fehlgeschlagen — \(String(describing: error), privacy: .public)")
             }
@@ -771,47 +748,47 @@ final class AppModel {
 
     // MARK: - Verbinden
 
-    /// Welche Adressprüfung gerade gilt — siehe ``Pruefstand``.
-    @ObservationIgnored private var pruefstand = Pruefstand()
-    @ObservationIgnored private var pruefaufgabe: Task<Void, Never>?
+    /// Which address check is currently valid; see ``Pruefstand``.
+    @ObservationIgnored private var checkState = CheckState()
+    @ObservationIgnored private var checkTask: Task<Void, Never>?
 
-    /// **Startet die Prüfung einer eingetippten Adresse** — vom Knopf wie von
-    /// der Senden-Taste der Tastatur.
+    /// **Starts the check of a typed address**, from the button as well as the
+    /// keyboard's send key.
     ///
-    /// Läuft schon eine, bleibt es bei ihr: der Knopf ist dann gesperrt, die
-    /// Tastatur war es nicht, und ihr zweites Senden startete eine zweite
-    /// Prüfung neben der ersten. Wer die Adresse ändert, bricht die laufende
-    /// über ``adresseGeaendert(_:)`` ab, bevor er neu sendet.
-    func verbindenStarten(_ raw: String, koepfe: [Eigenkopf] = []) {
-        guard pruefstand.laufend == nil else { return }
-        let marke = pruefstand.beginnen(raw)
-        pruefaufgabe = Task { await connect(to: raw, koepfe: koepfe, marke: marke) }
+    /// If one is already running, it stays with it: the button is then disabled, the
+    /// keyboard was not, and its second send started a second check alongside the
+    /// first. Whoever changes the address cancels the running one via
+    /// ``addressChanged(_:)`` before sending again.
+    func connectStart(_ raw: String, headers: [OwnHeader] = []) {
+        guard checkState.ongoing == nil else { return }
+        let mark = checkState.begin(raw)
+        checkTask = Task { await connect(to: raw, headers: headers, mark: mark) }
     }
 
-    /// Die Adresse wurde während der Prüfung geändert: die Prüfung abbrechen
-    /// und die Maske wieder freigeben. Ihre Antwort kommt nicht mehr an.
+    /// The address was changed during the check: cancel the check and release the
+    /// form. Its response no longer arrives.
     ///
-    /// Steht im Feld noch die geprüfte Adresse, bleibt es bei der Prüfung —
-    /// „Zuletzt verbunden" setzt das Feld und startet im selben Zug, und die
-    /// Änderungsmeldung des Feldes kommt erst danach an.
-    func adresseGeaendert(_ adresse: String) {
-        guard let laufend = pruefstand.laufend, laufend.adresse != adresse else { return }
-        pruefaufgabe?.cancel()
-        pruefaufgabe = nil
-        pruefstand.verwerfen()
+    /// If the field still shows the checked address, the check stays: "Last
+    /// connected" sets the field and starts in the same step, and the field's change
+    /// notification only arrives afterwards.
+    func addressChanged(_ address: String) {
+        guard let ongoing = checkState.ongoing, ongoing.address != address else { return }
+        checkTask?.cancel()
+        checkTask = nil
+        checkState.discard()
         if phase == .connecting { phase = .disconnected }
         errorMessage = nil
     }
 
-    /// `koepfe` kommen aus „Erweitert" auf der Anmeldeseite — leer für fast
-    /// alle, und dann bleibt, was für diese Adresse schon eingetragen ist.
+    /// `headers` come from "Advanced" on the sign-in page; empty for almost
+    /// everyone, and then what is already stored for this address remains.
     ///
-    /// **Jede Zuweisung nach einem `await` fragt erst die Marke.** Eine
-    /// Prüfung, die inzwischen überholt ist, fasst weder Phase noch Meldung
-    /// an — sonst setzte ihr später Fehler die App auf die Adressmaske
-    /// zurück, obwohl die nächste Prüfung längst zur Anmeldung geführt hatte.
-    private func connect(to raw: String, koepfe: [Eigenkopf], marke: Pruefmarke) async {
-        defer { pruefstand.abschliessen(marke) }
+    /// **Every assignment after an `await` first asks the token.** A check that has
+    /// been superseded touches neither phase nor message; otherwise its late error
+    /// would reset the app to the address form although the next check had long led
+    /// to sign-in.
+    private func connect(to raw: String, headers: [OwnHeader], mark: CheckMark) async {
+        defer { checkState.complete(mark) }
         errorMessage = nil
         phase = .connecting
 
@@ -821,263 +798,254 @@ final class AppModel {
             return
         }
 
-        // Erst wie geraten, dann andersherum.
+        // First as guessed, then the other way around.
         //
-        // Ohne Schema wird für Adressen außerhalb des Heimnetzes `https`
-        // angenommen. Läuft dort ein Server ohne Zertifikat, scheitert der
-        // erste Versuch an der Verbindung — nicht an einer Antwort. Genau
-        // dann, und nur dann, ist ein zweiter Versuch über `http` sinnvoll.
-        // Bei einer Antwort mit Fehlercode wäre er falsch: der Server ist ja
-        // da, er sagt nur etwas anderes.
-        if await verbindeMit(url, koepfe: koepfe, marke: marke) { return }
-        guard pruefstand.gilt(marke) else { return }
+        // Without a scheme, `https` is assumed for addresses outside the home network.
+        // If a server without a certificate runs there, the first attempt fails at the
+        // connection, not at a response. Exactly then, and only then, is a second
+        // attempt over `http` worthwhile. With a response carrying an error code it
+        // would be wrong: the server is there, it just says something else.
+        if await connectWith(url, headers: headers, mark: mark) { return }
+        guard checkState.applies(mark) else { return }
 
-        // Den Grund des **ersten** Versuchs festhalten.
+        // Keep the reason of the **first** attempt.
         //
-        // Sonst überschreibt der Ausweichversuch ihn mit seinem eigenen, und
-        // der ist fast immer der falsche: scheitert `https` schon an der
-        // Namensauflösung, scheitert `http` daran ebenso — es meldet nur
-        // vorher, dass iOS unverschlüsselte Verbindungen sperrt. Der Nutzer
-        // liest dann „richte https ein", obwohl der Server schlicht nicht zu
-        // finden war.
-        let echterGrund = errorMessage
+        // Otherwise the fallback attempt overwrites it with its own, which is almost
+        // always the wrong one: if `https` already fails at name resolution, `http`
+        // fails the same way, but reports earlier that iOS blocks unencrypted
+        // connections. The user then reads "set up https" although the server simply
+        // could not be found.
+        let realReason = errorMessage
 
-        // **Nicht nach jedem Fehler.** Gibt es den Namen nicht oder lief die
-        // Frist ab, scheitert `http` genauso — nur noch einmal so spät.
+        // **Not after every error.** If the name does not exist or the deadline
+        // expired, `http` fails just the same, only twice as late.
         if raw.contains("://") == false,
-           let erster = letzterAnschlussfehler,
-           Adresspruefung.ausweichenLohnt(nach: erster),
-           let ausweich = AppModelURLNormalizer.andersHerum(url),
-           await verbindeMit(ausweich, koepfe: koepfe, marke: marke) { return }
-        guard pruefstand.gilt(marke) else { return }
+           let firstOne = lastConnectionError,
+           AddressCheck.fallbackPaysOff(to: firstOne),
+           let alternate = AppModelURLNormalizer.reversed(url),
+           await connectWith(alternate, headers: headers, mark: mark) { return }
+        guard checkState.applies(mark) else { return }
 
-        errorMessage = echterGrund
+        errorMessage = realReason
         phase = .disconnected
     }
 
-    /// Der rohe Fehler des letzten Versuchs in ``verbindeMit(_:koepfe:marke:)``
-    /// — für die Frage, ob der Ausweichversuch lohnt.
-    @ObservationIgnored private var letzterAnschlussfehler: (any Error)?
+    /// The raw error of the last attempt in ``connectWith(_:headers:mark:)``, for
+    /// deciding whether the fallback attempt is worthwhile.
+    @ObservationIgnored private var lastConnectionError: (any Error)?
 
-    /// - Returns: `true`, wenn der Server geantwortet hat. Bei überholter
-    ///   Marke `false`, ohne etwas anzufassen.
-    private func verbindeMit(_ url: URL, koepfe: [Eigenkopf] = [], marke: Pruefmarke) async -> Bool {
+    /// - Returns: `true` if the server answered. `false` with a superseded token,
+    /// without touching anything.
+    private func connectWith(_ url: URL, headers: [OwnHeader] = [], mark: CheckMark) async -> Bool {
         let c = JellyfinClient(baseURL: url, deviceID: Self.deviceID, deviceName: Self.deviceName)
-        let vorher = Eigenkoepfe.eingetragen(fuer: url)
-        let neu = Eigenkoepfe.bereinigt(koepfe)
-        if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: url) }
-        letzterAnschlussfehler = nil
+        let before = OwnHeaders.registered(for: url)
+        let new = OwnHeaders.cleaned(headers)
+        if !new.isEmpty { OwnHeaders.setDown(new, for: url) }
+        lastConnectionError = nil
         do {
-            let info = try await c.erreichbarkeitPruefen()
-            guard pruefstand.gilt(marke) else {
-                if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
+            let info = try await c.checkReachability()
+            guard checkState.applies(mark) else {
+                if !new.isEmpty { OwnHeaders.setDown(before, for: url) }
                 return false
             }
-            // Erst jetzt ablegen: fuer eine Adresse, unter der nichts
-            // antwortet, bleibt nichts im Schluesselbund liegen.
-            if !neu.isEmpty { eigeneKoepfeSichern(neu, fuer: url) }
+            // Store only now: for an address where nothing answers, nothing is left in
+            // the keychain.
+            if !new.isEmpty { ownHeadersSafe(new, for: url) }
             client = c
             serverName = info.serverName ?? url.host()
             serverVersion = info.version
             phase = .needsLogin(serverName: info.serverName ?? url.host() ?? "Server",
                                 version: info.version ?? "?")
-            serverMerken(adresse: url.host() ?? url.absoluteString,
+            serverRemember(address: url.host() ?? url.absoluteString,
                          name: info.serverName ?? url.host() ?? "Server",
                          version: info.version ?? "?")
             errorMessage = nil
             return true
         } catch {
-            if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
-            guard pruefstand.gilt(marke) else { return false }
-            letzterAnschlussfehler = error
-            errorMessage = anschlussfehler(error, adresse: url)
+            if !new.isEmpty { OwnHeaders.setDown(before, for: url) }
+            guard checkState.applies(mark) else { return false }
+            lastConnectionError = error
+            errorMessage = connectionError(error, address: url)
             return false
         }
     }
 
-    /// Verbindungsfehler so, dass die Ursache daraus hervorgeht.
+    /// Connection errors presented so the cause is evident.
     ///
-    /// Der häufigste Fall bei selbst gehosteten Servern ist eine unver-
-    /// schlüsselte Adresse außerhalb des Heimnetzes: die sperrt iOS von sich
-    /// aus, und die Fehlermeldung des Systems sagt das nicht.
-    /// Den Systemfehler um den Hinweis ergänzen, der ihn deutbar macht.
+    /// The most common case with self-hosted servers is an unencrypted address
+    /// outside the home network: iOS blocks it by itself, and the system's error
+    /// message does not say so. Add the hint that makes the system error
+    /// interpretable.
     ///
-    /// **Der Fall, um den es hier geht, ist eine Falschmeldung des Systems.**
-    /// Verweigert der Nutzer die Ortsnetz-Erlaubnis, meldet URLSession
-    /// „Die Internetverbindung scheint offline zu sein" — obwohl das Netz
-    /// einwandfrei läuft und nur diese eine Erlaubnis fehlt. Wer das liest,
-    /// prüft sein WLAN und findet nichts. Also sagen wir es.
+    /// **The case at hand is a false report by the system.** If the user denies the
+    /// local network permission, URLSession reports "The Internet connection appears
+    /// to be offline" although the network works fine and only this one permission
+    /// is missing. Anyone reading that checks their Wi-Fi and finds nothing. So say
+    /// it.
     ///
-    /// Der frühere Hinweis („richte https ein") ist weg: seit
-    /// `NSAllowsArbitraryLoads` sperrt iOS http nicht mehr, und ein Rat, der
-    /// nicht mehr stimmt, ist schlechter als keiner.
-    private func anschlussfehler(_ fehler: any Error, adresse: URL) -> String {
-        let text = lesbar(fehler)
-        let imHeimnetz = AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "")
-        // Nur bei „offline", und nur im Heimnetz: draußen ist derselbe Fehler
-        // schlicht ein fehlendes Netz, und dann wäre der Hinweis irreführend.
-        if imHeimnetz, (fehler as? URLError)?.code == .notConnectedToInternet {
+    /// The earlier hint ("set up https") is gone: since `NSAllowsArbitraryLoads` iOS
+    /// no longer blocks http, and advice that is no longer true is worse than none.
+    private func connectionError(_ error: any Error, address: URL) -> String {
+        let text = readable(error)
+        let inHomeNetwork = AppModelURLNormalizer.isHomeNetwork(address.host() ?? "")
+        // Only for "offline", and only on the home network: outside, the same error
+        // is simply a missing network, and the hint would be misleading.
+        if inHomeNetwork, (error as? URLError)?.code == .notConnectedToInternet {
             return String(localized: "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".")
         }
         return text
     }
 
-    /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
-    /// Passwort oder Quick Connect.
-    /// Nimmt eine frische Sitzung an. Gibt zurück, ob es ein **Kontowechsel**
-    /// war — dann hat diese Funktion bereits aufgeräumt und neu geladen, und
-    /// der Aufrufer soll nicht noch einmal laden.
+    /// What happens the same way after every successful sign-in, whether by
+    /// password or Quick Connect.
+    /// Takes a fresh session. Returns whether it was an **account switch**; then
+    /// this function has already cleaned up and reloaded, and the caller must not
+    /// load again.
     ///
-    /// `angemeldetMit` ist der Client, auf dem angemeldet wurde, wenn es
-    /// nicht der laufende war (``anmeldeclient()``). Er wird erst hier
-    /// übernommen, **nach** dem Bund — so geht `client.didSet` mit dem
-    /// richtigen Konto an die Downloads, und die Gruppe wird noch mit dem
-    /// Merkmal des vorigen Kontos verlassen.
+    /// `signedInWith` is the client that was signed in on, if not the running one
+    /// (``anmeldeclient()``). It is adopted only here, **after** the bundle, so
+    /// `client.didSet` reaches downloads with the right account, and the group is
+    /// still left with the previous account's identity.
     @discardableResult
-    func sitzungUebernehmen(_ s: Session, angemeldetMit neuer: JellyfinClient? = nil) -> Bool {
-        // **Die Regel steht im Paket**, nicht hier: derselbe Server heisst
-        // dazunehmen und wechseln, ein anderer heisst von vorn. Beide
-        // Fassungen — diese und die von GTK — hatten sie sich selbst
-        // hergeleitet, und an dieser Antwort hängt das ganze Aufräumen.
-        let (neuerBund, warAngemeldet) = Kontenbund.aufnehmen(s, in: bund)
-        bund = neuerBund
-        bundSichern()
-        if let neuer, neuer !== client { client = neuer }
+    func sessionAdopt(_ s: Session, signedInWith newer: JellyfinClient? = nil) -> Bool {
+        // **The rule lives in the package**, not here: the same server means add and
+        // switch, another one means start from scratch. Both versions (this one and
+        // GTK) had derived it themselves, and all cleanup hangs on this answer.
+        let (newBundle, wasSignedIn) = AccountBundle.record(s, in: bundle)
+        bundle = newBundle
+        saveBundle()
+        if let newer, newer !== client { client = newer }
         phase = .ready
-        // **War die App schon angemeldet, ist das ein Kontowechsel.** Der
-        // Client ist schon der des neuen Kontos; was fehlt, ist alles andere. Ohne das Aufräumen bleiben Bibliotheken und
-        // Startseite beim vorigen Konto stehen — und mit dem neuen Merkmal
-        // abgefragt gibt der Server sie nicht heraus. Genau so kam
-        // „Anmeldung abgelehnt", nachdem ein zweites Konto dazukam.
-        if warAngemeldet { nachDemWechsel() }
-        // Name und Fassung stehen sonst nur nach einer frischen Verbindung
-        // bereit — in den Einstellungen stand danach „Server · ?".
-        Task { _ = await verbindungPruefen() }
-        return warAngemeldet
+        // **If the app was already signed in, this is an account switch.** The client
+        // is already the new account's; everything else is missing. Without cleanup,
+        // libraries and home page stay on the previous account, and queried with the
+        // new identity the server does not return them. That is how "Sign-in rejected"
+        // came about after a second account was added.
+        if wasSignedIn { afterSwitch() }
+        // Name and version are otherwise only available after a fresh connection;
+        // settings then showed "Server · ?".
+        Task { _ = await connectionCheck() }
+        return wasSignedIn
     }
 
-    /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.
-    private func nachDemWechsel() {
-        // **Die Bibliotheken werden ersetzt, nicht erst geleert.**
+    /// What must be redone after every account switch, besides the client
+    /// itself.
+    private func afterSwitch() {
+        // **Libraries are replaced, not cleared first.**
         //
-        // Hier stand `views = []`. Das ist derselbe Fehler, der schon die
-        // Vorschaubilder gekostet hat, nur an einer anderen Stelle: zwischen
-        // dem Leeren und der Antwort des Servers steht die Seitenleiste leer
-        // da und baut sich danach neu auf — auf dem Schreibtisch als Zucken
-        // der Bibliotheksliste, auf dem Telefon als Sprung.
+        // This used to be `views = []`. It is the same mistake that already cost the
+        // thumbnails, in another place: between clearing and the server's response the
+        // sidebar stands empty and then rebuilds, which looks like a twitch of the
+        // library list on the desktop and a jump on the phone.
         //
-        // Was stehenbleibt, gehoert fuer den Bruchteil einer Sekunde noch dem
-        // vorigen Konto. Das ist verschmerzbar: die Kennungen der Bibliotheken
-        // gelten serverweit, und `loadViews` ersetzt sie in einem Zug, sobald
-        // die Antwort da ist.
+        // What remains belongs to the previous account for a fraction of a second. That
+        // is tolerable: library IDs are valid server-wide, and `loadViews` replaces
+        // them in one step once the response is in.
         //
-        // **Der Anstoss muss von hier kommen.** `Startseitenmodell` holt die
-        // Bibliotheken nur nach, wenn keine da sind — ohne das Leeren wuerde
-        // es also nie nachladen, und die Liste des vorigen Kontos bliebe
-        // stehen.
+        // **The trigger must come from here.** `HomeModel` only fetches
+        // libraries if there are none; without clearing it would never reload, and the
+        // previous account's list would stay.
         Task { await loadViews() }
         errorMessage = nil
-        sammlungstitelSpeicher.removeAll()
-        // Der Ersatz fürs Kopfbild hängt an der nächsten Folge — und die ist
-        // je Konto eine andere.
-        kopfbildErsatz.removeAll()
-        kopfbildSucht.removeAll()
-        kontowechsel += 1
+        collectionTitleCache.removeAll()
+        // The replacement for the header image hangs on the next episode, which is
+        // different per account.
+        headerImageFallback.removeAll()
+        headerImageSearches.removeAll()
+        accountSwitch += 1
         #if os(tvOS)
-        Regal.leeren()
+        Shelf.wipe()
         #endif
-        // **Die Fernsteuerung gehört dazu, und das sieht man ihr nicht an.**
-        // Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
-        // bleibt beim Wechsel aber stehen, und dann meldete sich das Gerät
-        // weiter mit dem Merkmal des vorigen Kontos am Server.
-        fernsteuerungNeuStarten()
+        // **The remote control belongs here, which is not obvious.** Otherwise it is
+        // started only when the main view appears, but that stays put on a switch, and
+        // the device would keep reporting to the server with the previous account's
+        // identity.
+        remoteControlNewStart()
     }
 
-    /// Der Client, auf dem eine Anmeldung laufen soll.
+    /// The client on which a sign-in is to run.
     ///
-    /// **Immer ein frischer.** `authenticate` setzt das Merkmal des Clients
-    /// um, auf dem es läuft. Lief die Anmeldung auf dem laufenden Client,
-    /// blieb dieselbe Instanz stehen und `client.didSet` feuerte nie: bei
-    /// „Weiteres Konto hinzufügen" wurde die Gruppe des vorigen Kontos nicht
-    /// verlassen, und die Downloads blieben beim vorigen Konto (bei der
-    /// ersten Anmeldung ohne Konto). ``sitzungUebernehmen(_:angemeldetMit:)``
-    /// übernimmt ihn erst, wenn die Anmeldung geklappt hat.
-    func anmeldeclient() -> JellyfinClient? { client?.ohneKonto() }
+    /// **Always a fresh one.** `authenticate` applies the client's identity to the
+    /// client it runs on. If sign-in ran on the running client, the same instance
+    /// stayed and `client.didSet` never fired: with "Add another account" the
+    /// previous account's group was not left, and downloads stayed with the
+    /// previous account (on first sign-in with no account). 
+    /// ``sessionAdopt(_:signedInWith:)`` adopts it only once the sign-in
+    /// worked.
+    func loginClient() -> JellyfinClient? { client?.withoutAccount() }
 
     func login(username: String, password: String) async {
-        guard let anmelder = anmeldeclient() else { return }
+        guard let signInClient = loginClient() else { return }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            let s = try await anmelder.authenticate(username: username, password: password)
-            // **Nicht zusätzlich laden, wenn es ein Wechsel war** — gleiche
-            // Begründung wie bei Quick Connect: `sitzungUebernehmen` räumt
-            // dann selbst auf und stösst das Neuladen an, und ein zweiter
-            // Lauf daneben liefert sich mit dem ersten ein Rennen.
+            let s = try await signInClient.authenticate(username: username, password: password)
+            // **Do not additionally load if it was a switch**, same reasoning as for
+            // Quick Connect: `sessionAdopt` cleans up itself and triggers the reload,
+            // and a second run alongside races with the first.
             //
-            // Hier fiel es länger nicht auf als dort: auf dem Fernseher, wo
-            // der Profilwechsel zuerst gebaut wurde, führt „Weiteres Konto
-            // hinzufügen" auf Quick Connect. Name und Passwort sind der Weg
-            // auf iPhone, iPad und dem Schreibtisch — also genau dort, wo
-            // gleich vier Plattformen darauf gestossen wären. Von der
-            // Mac-Sitzung beim Nachlesen gefunden, nicht durch einen Fehler.
-            if !sitzungUebernehmen(s, angemeldetMit: anmelder) { await loadViews() }
+            // This went unnoticed longer here than there: on TV, where the profile switch
+            // was built first, "Add another account" leads to Quick Connect. Name and
+            // password are the path on iPhone, iPad and desktop, i.e. exactly where four
+            // platforms would have hit it. Found when reading through the code, not through
+            // a failure.
+            if !sessionAdopt(s, signedInWith: signInClient) { await loadViews() }
         } catch {
-            errorMessage = lesbar(error)
+            errorMessage = readable(error)
         }
     }
 
-    /// Quick Connect: Code freigeben, der auf einem anderen Gerät steht.
-    // MARK: - Weiterer Server
+    /// Quick Connect: authorize a code shown on another device.
+    // MARK: - Additional server
 
-    /// Der Server, der gerade aufgenommen wird. **Die laufende Sitzung bleibt,
-    /// wie sie ist**: `connect(to:)` stellt die ganze App auf den
-    /// Anmeldebildschirm — wer mitten in ihr einen zweiten Server hinzufügt,
-    /// soll dort nicht landen und bei einem Abbruch zurückfinden müssen. Erst
-    /// wenn die Anmeldung klappt, kommt der Server in den Bund.
-    @ObservationIgnored private var aufnahme: JellyfinClient?
-    @ObservationIgnored private var aufnahmeName: String?
+    /// The server being added. **The running session stays as it is**:
+    /// `connect(to:)` puts the whole app on the sign-in screen, and someone adding a
+    /// second server in the middle should not land there and have to find their way
+    /// back after cancelling. Only when sign-in works does the server join the
+    /// bundle.
+    @ObservationIgnored private var onboarding: JellyfinClient?
+    @ObservationIgnored private var onboardingName: String?
 
-    /// Prüft eine Adresse und hält den Server bereit — Name und Fassung, oder
-    /// `nil` mit dem Grund in `errorMessage`.
-    func serverPruefen(_ roh: String, koepfe: [Eigenkopf] = []) async -> (name: String, fassung: String)? {
+    /// Checks an address and keeps the server ready: name and version, or `nil`
+    /// with the reason in `errorMessage`.
+    func serverCheck(_ raw: String, headers: [OwnHeader] = []) async -> (name: String, version: String)? {
         errorMessage = nil
-        guard let url = Self.normalizeServerURL(roh) else {
+        guard let url = Self.normalizeServerURL(raw) else {
             errorMessage = String(localized: "Die Adresse konnte nicht gelesen werden.")
             return nil
         }
-        var kandidaten = [url]
-        if !roh.contains("://"), let anders = AppModelURLNormalizer.andersHerum(url) {
-            kandidaten.append(anders)
+        var candidates = [url]
+        if !raw.contains("://"), let different = AppModelURLNormalizer.reversed(url) {
+            candidates.append(different)
         }
-        let neu = Eigenkoepfe.bereinigt(koepfe)
-        var letzter: (any Error)?
-        for adresse in kandidaten {
-            let c = JellyfinClient(baseURL: adresse, deviceID: Self.deviceID, deviceName: Self.deviceName)
-            let vorher = Eigenkoepfe.eingetragen(fuer: adresse)
-            if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: adresse) }
+        let new = OwnHeaders.cleaned(headers)
+        var lastOne: (any Error)?
+        for address in candidates {
+            let c = JellyfinClient(baseURL: address, deviceID: Self.deviceID, deviceName: Self.deviceName)
+            let before = OwnHeaders.registered(for: address)
+            if !new.isEmpty { OwnHeaders.setDown(new, for: address) }
             let info: PublicSystemInfo
-            do { info = try await c.erreichbarkeitPruefen() } catch {
-                letzter = error
-                if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: adresse) }
-                // Kein Name, keine Antwort in der Frist: `http` scheitert
-                // genauso, nur noch einmal so spät.
-                if !Adresspruefung.ausweichenLohnt(nach: error) { break }
+            do { info = try await c.checkReachability() } catch {
+                lastOne = error
+                if !new.isEmpty { OwnHeaders.setDown(before, for: address) }
+                // No name, no answer within the deadline: `http` fails just the same, only
+                // twice as late.
+                if !AddressCheck.fallbackPaysOff(to: error) { break }
                 continue
             }
             do {
-                if !neu.isEmpty { eigeneKoepfeSichern(neu, fuer: adresse) }
-                aufnahme = c
-                let name = info.serverName ?? adresse.host() ?? String(localized: "Server")
-                aufnahmeName = name
+                if !new.isEmpty { ownHeadersSafe(new, for: address) }
+                onboarding = c
+                let name = info.serverName ?? address.host() ?? String(localized: "Server")
+                onboardingName = name
                 return (name, info.version ?? "?")
             }
         }
-        // Eine Anmeldeseite davor ist kein fehlendes Jellyfin — der Satz
-        // dazu sagt, was zu tun ist.
-        if let j = letzter as? JellyfinError, case let .transport(text) = j,
-           text == Eigenkoepfe.anmeldeseiteText {
+        // A sign-in page in front is not a missing Jellyfin; the accompanying
+        // sentence says what to do.
+        if let j = lastOne as? JellyfinError, case let .transport(text) = j,
+           text == OwnHeaders.loginPageText {
             errorMessage = text
             return nil
         }
@@ -1085,1301 +1053,1260 @@ final class AppModel {
         return nil
     }
 
-    /// Meldet am bereitgehaltenen Server an und nimmt ihn in den Bund. Die App
-    /// wechselt dorthin — wie beim Wechsel auf ein anderes Konto.
-    func anmeldenAmNeuenServer(benutzer: String, passwort: String) async -> Bool {
-        guard let aufnahme else { return false }
+    /// Signs in on the held server and adds it to the bundle. The app switches
+    /// there, as when switching to another account.
+    func signInAtNewServer(user: String, password: String) async -> Bool {
+        guard let onboarding else { return false }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            serverAufnehmen(try await aufnahme.authenticate(username: benutzer, password: passwort))
+            serverRecord(try await onboarding.authenticate(username: user, password: password))
             return true
         } catch {
-            errorMessage = lesbar(error)
+            errorMessage = readable(error)
             return false
         }
     }
 
-    // **Quick Connect am neuen Server** — derselbe Ablauf wie beim ersten
-    // Anmelden (`QuickConnectModell`), nur mit dem bereitgehaltenen Server
-    // statt dem, mit dem die App gerade verbunden ist.
+    // **Quick Connect on the new server**: the same flow as the first sign-in
+    // (`QuickConnectModel`), but with the held server instead of the one the app is
+    // currently connected to.
 
-    func quickConnectStartenAmNeuenServer() async throws -> Anmeldecode {
-        guard let aufnahme else { throw JellyfinError.notAuthenticated }
-        return try await aufnahme.quickConnectStarten()
+    func quickConnectStartAtNewServer() async throws -> LoginCode {
+        guard let onboarding else { throw JellyfinError.notAuthenticated }
+        return try await onboarding.quickConnectStart()
     }
 
-    func quickConnectNachfragenAmNeuenServer(_ vorgang: Anmeldecode) async -> Quickconnectstand {
-        guard let aufnahme else { return .gescheitert }
-        return await aufnahme.quickConnectNachfragen(vorgang)
+    func quickConnectAskAgainAtNewServer(_ preGait: LoginCode) async -> QuickConnectState {
+        guard let onboarding else { return .failed }
+        return await onboarding.quickConnectAskAgain(preGait)
     }
 
-    func anmeldenMitQuickConnectAmNeuenServer(_ vorgang: Anmeldecode) async -> Bool {
-        guard let aufnahme else { return false }
+    func signInWithQuickConnectAtNewServer(_ preGait: LoginCode) async -> Bool {
+        guard let onboarding else { return false }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            serverAufnehmen(try await aufnahme.anmeldenMitQuickConnect(vorgang))
+            serverRecord(try await onboarding.signInWithQuickConnect(preGait))
             return true
         } catch {
-            errorMessage = lesbar(error)
+            errorMessage = readable(error)
             return false
         }
     }
 
-    /// Der eine Abschluss für beide Wege: in den Bund, sichern, hinwechseln.
-    private func serverAufnehmen(_ s: Session) {
-        bund = Kontenbund.aufnehmen(s, in: bund).bund
-        bundSichern()
-        aufnahme = nil
-        neuVerbinden()
-        if let aufnahmeName { serverName = aufnahmeName }
+    /// The one completion for both paths: into the bundle, secure, switch.
+    private func serverRecord(_ s: Session) {
+        bundle = AccountBundle.record(s, in: bundle).bundle
+        saveBundle()
+        onboarding = nil
+        newConnect()
+        if let onboardingName { serverName = onboardingName }
     }
 
-    func serverAufnahmeAbbrechen() {
-        aufnahme = nil
-        aufnahmeName = nil
+    func serverOnboardingCancel() {
+        onboarding = nil
+        onboardingName = nil
         errorMessage = nil
     }
 
-    func quickConnectFreigeben(code: String) async throws {
+    func quickConnectShare(code: String) async throws {
         guard let client else { throw JellyfinError.notAuthenticated }
-        try await client.quickConnectFreigeben(code: code)
+        try await client.quickConnectShare(code: code)
     }
 
-    // MARK: Fernsteuerung
+    // MARK: Remote control
 
-    /// Die offene Socket-Verbindung, über die Befehle vom Server kommen.
-    @ObservationIgnored private var fern: Fernsteuerung?
-    /// **Starten und Beenden laufen nacheinander, nie nebeneinander.**
+    /// The open socket connection over which commands arrive from the server.
+    @ObservationIgnored private var far: RemoteControl?
+    /// **Start and stop run in sequence, never side by side.**
     ///
-    /// Angestossen wird von mehreren Stellen: die Hauptansicht beim
-    /// Erscheinen und Verschwinden, `signOut`, und der Kontowechsel. Jeder
-    /// Anstoss war eine eigene Aufgabe, und zwischen ihren `await`s konnten
-    /// sie sich überholen: ein Start sah `fern == nil`, ein zweiter auch, und
-    /// es standen zwei Leitungen — oder ein Beenden lief vor dem Start des
-    /// vorigen Kontos durch, und dessen Leitung blieb offen. Jeder Schritt
-    /// wartet jetzt auf den vorigen.
-    @ObservationIgnored private var fernkette: Task<Void, Never>?
+    /// They are triggered from several places: the main view on appearing and
+    /// disappearing, `signOut`, and the account switch. Each trigger was a task of
+    /// its own, and between their `await`s they could overtake each other: one start
+    /// saw `far == nil`, a second also, and two connections stood; or a stop ran
+    /// before the previous account's start finished, and its connection stayed open.
+    /// Each step now waits for the previous.
+    @ObservationIgnored private var remoteChain: Task<Void, Never>?
 
-    /// Hängt einen Schritt hinten an die Kette und gibt ihn zurück.
-    private func fernEinreihen(_ schritt: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
-        let vorher = fernkette
-        let aufgabe = Task { @MainActor in
-            await vorher?.value
-            await schritt()
+    /// Appends a step to the chain and returns it.
+    private func remoteInRails(_ step: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let before = remoteChain
+        let task = Task { @MainActor in
+            await before?.value
+            await step()
         }
-        fernkette = aufgabe
-        return aufgabe
+        remoteChain = task
+        return task
     }
-    /// Setzt der Player, solange er auf dem Schirm ist.
-    @ObservationIgnored var fernbefehl: ((Fernbefehl) -> Void)?
-    /// Setzt, wer gemeinsam schauen kann (bisher nur das iPhone und iPad).
-    /// Kommt über denselben Kanal wie die Fernbefehle.
-    @ObservationIgnored var syncPlayNachricht: ((SyncPlayNachricht) -> Void)?
-    /// **Wer gerade übernimmt** — kommt als Hinweis kurz vor dem Stopp
-    /// (``JellyfinClient/uebergabeHinweis(an:geraet:)``). Der Player liest es
-    /// beim Stopp: mit frischem Hinweis geht das Bild als Karte ab und fliegt
-    /// hinaus; ohne war es ein Stopp aus dem Dashboard, und er schließt wie
-    /// immer. Der Name steht nur im Protokoll.
-    @ObservationIgnored var uebergabeZiel: (name: String, zeit: Date)?
+    /// Set by the player while it is on screen.
+    @ObservationIgnored var remoteCommand: ((RemoteCommand) -> Void)?
+    /// Set by whoever can watch together (so far only iPhone and iPad). Comes over
+    /// the same channel as the remote commands.
+    @ObservationIgnored var syncPlayPostDirection: ((SyncPlayPostDirection) -> Void)?
+    /// **Who is taking over right now.** Arrives as a hint shortly before the stop
+    /// (``JellyfinClient/handoffHint(an:geraet:)``). The player reads it at the
+    /// stop: with a fresh hint the picture leaves as a card and flies out; without,
+    /// it was a stop from the dashboard, and it closes as usual. The name appears
+    /// only in the log.
+    @ObservationIgnored var handoffTarget: (name: String, time: Date)?
 
-    /// Der Name des übernehmenden Geräts, wenn der letzte Hinweis frisch ist
-    /// — und nur einmal: der Hinweis gilt für genau diesen Stopp.
-    func uebergabeZielNehmen() -> String? {
-        guard let ziel = uebergabeZiel else { return nil }
-        uebergabeZiel = nil
-        return Uebernahme.istUebergabe(hinweisVor: Date().timeIntervalSince(ziel.zeit)) ? ziel.name : nil
+    /// The name of the taking-over device if the last hint is fresh, and only
+    /// once: the hint applies to exactly this stop.
+    func handoffTargetTake() -> String? {
+        guard let target = handoffTarget else { return nil }
+        handoffTarget = nil
+        return Takeover.isHandoff(hintPre: Date().timeIntervalSince(target.time)) ? target.name : nil
     }
 
-    /// Fähigkeiten melden und zuhören.
+    /// Report capabilities and listen.
     ///
-    /// Beides ist nötig, damit das Dashboard die Sitzung bedienen kann: ohne
-    /// die Meldung bleiben dort die Knöpfe grau, ohne den Socket kommen die
-    /// Befehle nie an.
-    func fernsteuerungStarten() async {
-        await fernEinreihen { [weak self] in await self?.fernStarten() }.value
+    /// Both are needed for the dashboard to control the session: without the report
+    /// its buttons stay gray, without the socket the commands never arrive.
+    func remoteControlStart() async {
+        await remoteInRails { [weak self] in await self?.remoteStart() }.value
     }
 
-    func fernsteuerungBeenden() async {
-        await fernEinreihen { [weak self] in await self?.fernBeenden() }.value
+    func remoteControlEnd() async {
+        await remoteInRails { [weak self] in await self?.remoteEnd() }.value
     }
 
-    /// Nach einem Kontowechsel: die Leitung des vorigen Kontos zu, die des
-    /// neuen auf — als **ein** Schritt, damit nichts dazwischenkommt.
-    private func fernsteuerungNeuStarten() {
-        _ = fernEinreihen { [weak self] in
-            await self?.fernBeenden()
-            await self?.fernStarten()
+    /// After an account switch: close the previous account's connection and open
+    /// the new one, as **one** step so nothing interleaves.
+    private func remoteControlNewStart() {
+        _ = remoteInRails { [weak self] in
+            await self?.remoteEnd()
+            await self?.remoteStart()
         }
     }
 
-    private func fernStarten() async {
-        guard let client, fern == nil else { return }
+    private func remoteStart() async {
+        guard let client, far == nil else { return }
         do {
-            try await client.faehigkeitenMelden()
+            try await client.reportCapabilities()
         } catch {
-            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+            AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
             Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
         }
-        guard let steuerung = try? await client.fernsteuerung() else { return }
-        // Inzwischen gewechselt oder abgemeldet: diese Leitung gehört einem
-        // Konto, das nicht mehr gilt.
+        guard let controls = try? await client.remoteControl() else { return }
+        // Switched or signed out in the meantime: this connection belongs to an
+        // account that no longer applies.
         guard self.client === client else {
-            await steuerung.beenden()
+            await controls.finish()
             return
         }
-        fern = steuerung
-        await steuerung.syncPlayHoeren { [weak self] nachricht in
-            Task { @MainActor in self?.syncPlayNachricht?(nachricht) }
+        far = controls
+        await controls.syncPlayHear { [weak self] postDirection in
+            Task { @MainActor in self?.syncPlayPostDirection?(postDirection) }
         }
-        await steuerung.uebergabeHoeren { [weak self] name in
+        await controls.handoffHear { [weak self] name in
             Task { @MainActor in
-                self?.uebergabeZiel = (name, Date())
-                Protokoll.schreib("[Uebergabe] Hinweis: übernimmt \(name)")
+                self?.handoffTarget = (name, Date())
+                AppLog.writeOut("[Uebergabe] Hinweis: übernimmt \(name)")
             }
         }
-        await steuerung.starten { [weak self] befehl in
+        await controls.start { [weak self] command in
             Task { @MainActor in
-                // Gemeldet wird, was der Befehl ausloest: Pause und Weiter
-                // ueber `laufzustandGemeldet`, Spruenge ueber
-                // `sprungGemeldet`. Frueher stand hier eine eigene Meldung
-                // nach 400 ms aus `Spielstand` — die ging nach einem
-                // Folgenwechsel mit der neuen Stelle an die alte Folge (T1-M9).
-                self?.fernbefehl?(befehl)
+                // What the command triggers is reported: pause and resume via
+                // `runStateReported`, seeks via `jumpReported`. A separate report after
+                // 400 ms from `PlayState` used to be here; after an episode change it went to
+                // the old episode with the new position.
+                self?.remoteCommand?(command)
             }
         }
     }
 
-    private func fernBeenden() async {
-        let alte = fern
-        fern = nil
-        await alte?.beenden()
+    private func remoteEnd() async {
+        let old = far
+        far = nil
+        await old?.finish()
     }
 
-    /// Bibliotheken aus der Startseitenablage — nur, solange noch keine vom
-    /// Server da sind. `loadViews()` ersetzt sie.
-    func bibliothekenVorab(_ vorab: [Item]) {
-        if views.isEmpty { views = vorab }
+    /// Libraries from the home page store, only while none from the server are
+    /// there yet. `loadViews()` replaces them.
+    func librariesPreOff(_ preOff: [Item]) {
+        if views.isEmpty { views = preOff }
     }
 
     func loadViews() async {
         guard let client else { return }
-        // **Gilt nur für das Konto, für das gefragt wurde.** Die Kaltstart-
-        // Ablage stösst das Laden an, bevor jemand das Konto wechseln kann;
-        // kam die Antwort des vorigen Kontos nach der des neuen, standen
-        // dessen Bibliotheken und Downloadrechte unter dem neuen.
-        let konto = kontowechsel
-        func gilt() -> Bool { konto == kontowechsel && self.client === client }
+        // **Applies only to the account that was asked about.** The cold-start store
+        // triggers loading before anyone can switch accounts; if the previous account's
+        // response arrived after the new one's, its libraries and download rights stood
+        // under the new account.
+        let account = accountSwitch
+        func applies() -> Bool { account == accountSwitch && self.client === client }
         isWorking = true
         defer { isWorking = false }
-        // Nebenher und ohne Fehlermeldung: kommt nichts, bleibt es wie es war.
+        // On the side and without an error message: if nothing comes, it stays as it
+        // was.
         Task {
-            let vorgaben = await client.kontovorgaben()
-            guard gilt() else { return }
-            naechsteAutomatischKonto = vorgaben?.naechsteFolgeAutomatisch
-            // Ohne Antwort `.unbekannt`, also erlaubt: ein Netzfehler nimmt
-            // niemandem etwas weg. Den harten Riegel haelt ohnehin
-            // `JellyfinClient.downloadURL`, und der merkt sich den letzten
-            // bekannten Stand.
-            downloadrecht = vorgaben?.downloadrecht ?? .unbekannt
-            // Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im Player.
-            umwandelnErlaubt = vorgaben?.umwandelnErlaubt ?? true
-            downloadqualitaetWaehlbar = vorgaben?.downloadqualitaetWaehlbar ?? true
-            Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto)), Downloads: \(downloadrecht.rawValue)")
+            let guidelines = await client.accountDefaults()
+            guard applies() else { return }
+            nextAutomaticAccount = guidelines?.nextEpisodeAutomatic
+            // Without an answer `.unknown`, hence allowed: a network error takes
+            // nothing away from anyone. The hard barrier is held by
+            // `JellyfinClient.downloadURL` anyway, which remembers the last known state.
+            downloadPermission = guidelines?.downloadPermission ?? .unknown
+            // Without an answer: allowed, so the quality choice stays in the player.
+            convertAllowed = guidelines?.convertAllowed ?? true
+            downloadQualitySelectable = guidelines?.downloadQualitySelectable ?? true
+            AppLog.writeOut("[Konto] Nächste Folge automatisch: \(String(describing: nextAutomaticAccount)), Downloads: \(downloadPermission.rawValue)")
         }
         do {
-            let neu = try await client.userViews()
-            guard gilt() else { return }
-            views = neu
+            let new = try await client.userViews()
+            guard applies() else { return }
+            views = new
         } catch {
-            guard gilt() else { return }
-            errorMessage = lesbar(error)
+            guard applies() else { return }
+            errorMessage = readable(error)
         }
     }
 
-    /// Einen Titel frisch holen — vor allem wegen der Wiedergabeposition.
+    /// Fetch a title fresh, mainly for the playback position.
     func item(id: String) async -> Item? {
         guard let client else { return nil }
         return try? await client.item(id: id)
     }
 
-    /// Der erste Trailer, der als Datei auf dem Server liegt.
-    func trailer(zu item: Item) async -> Item? {
+    /// The first trailer that exists as a file on the server.
+    func trailer(toward item: Item) async -> Item? {
         guard let client else { return nil }
-        return (try? await client.trailer(zu: item.id))?.first
+        return (try? await client.trailer(toward: item.id))?.first
     }
 
-    /// Stösst das Neueinlesen der Metadaten an. Der Server arbeitet danach im
-    /// Hintergrund weiter — die Antwort heisst nur „angenommen".
-    func metadatenAuffrischen(_ item: Item) async -> String {
+    /// Triggers the metadata refresh. The server continues in the background
+    /// afterwards; the response only means "accepted".
+    func metadataRefresh(_ item: Item) async -> String {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
-            try await client.metadatenAuffrischen(item.id)
+            try await client.metadataRefresh(item.id)
             return String(localized: "Der Server liest die Metadaten neu ein.")
         } catch {
-            return lesbar(error)
+            return readable(error)
         }
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst wirklich nichts Ähnliches.**
+    /// **`nil` means disturbed, `[]` means really nothing similar.**
     ///
-    /// Hier stand `(try? …) ?? []`. Damit sah ein abgebrochener Abruf genauso
-    /// aus wie eine Sammlung ohne Verwandtes — die Serienseite sagte „Nichts
-    /// Ähnliches gefunden", obwohl sie den Server nie erreicht hatte. Das ist
-    /// dieselbe Lüge, die bei der Suche schon einmal einzeln behoben wurde;
-    /// seit dem 21.09.2026 ist sie hier an der Wurzel weg.
-    func aehnliche(_ item: Item) async -> [Item]? {
+    /// This used to be `(try? ...) ?? []`. A cancelled fetch then looked the same as
+    /// a title without related items: the series page said "Nothing similar found"
+    /// although it never reached the server. It is the same lie that had been fixed
+    /// for search on its own; here it is gone at the root.
+    func similar(_ item: Item) async -> [Item]? {
         guard let client else { return nil }
-        return try? await client.aehnliche(itemID: item.id, zu: item)
+        return try? await client.similar(itemID: item.id, toward: item)
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst keine Extras.** Siehe `aehnliche`.
+    /// **`nil` means disturbed, `[]` means no extras.** See `similar`.
     func extras(_ item: Item) async -> [Item]? {
         guard let client else { return nil }
         return try? await client.extras(itemID: item.id)
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst nichts gefunden.**
+    /// **`nil` means disturbed, `[]` means nothing found.**
     ///
-    /// Hier stand `(try? …) ?? []`, und damit wurde aus jedem Netzfehler eine
-    /// leere Trefferliste — die Suche sagte dann „Auf deinem Server steht dazu
-    /// nichts", obwohl sie den Server gar nicht erreicht hatte. Eine App, die
-    /// bei Netzproblemen behauptet, die Sammlung sei leer, verliert Vertrauen
-    /// schneller, als sie es mit Politur gewinnt.
-    func suche(_ begriff: String) async -> [Item]? {
-        guard let client, begriff.count >= 2 else { return [] }
-        return try? await client.suche(begriff)
+    /// This used to be `(try? ...) ?? []`, which turned every network error into an
+    /// empty result list: search then said "Nothing on your server for this" although
+    /// it never reached the server. An app that claims during network problems that
+    /// the collection is empty loses trust faster than polish gains it.
+    func search(_ term: String) async -> [Item]? {
+        guard let client, term.count >= 2 else { return [] }
+        return try? await client.search(term)
     }
 
-    // MARK: - Personen und Genres
+    // MARK: - People and genres
 
-    /// Was es von einer Person auf dem Server gibt — Filme und Serien, die
-    /// neuesten zuerst.
+    /// What the server has of a person: movies and series, newest first.
     ///
-    /// **Die Regel liegt im Paket** (`JellyfinClient.titel(person:)`), nicht
-    /// hier. Sie stand bis zum 12.09.2026 an dieser Stelle und erreichte
-    /// damit Linux und Windows nicht — die hängen ausschließlich am Paket.
-    /// Dort hat sie jetzt auch Tests.
-    /// **`nil` heisst gestoert, `[]` heisst: von dieser Person liegt nichts da.**
-    func titel(person id: String) async -> [Item]? {
+    /// **The rule lives in the package** (`JellyfinClient.title(person:)`), not
+    /// here. It used to sit here and so did not reach Linux and Windows, which depend
+    /// only on the package. There it now has tests too.
+    /// **`nil` means disturbed, `[]` means: nothing by this person is stored.**
+    func title(person id: String) async -> [Item]? {
         guard let client else { return nil }
-        return await client.titel(person: id)
+        return await client.title(person: id)
     }
 
-    /// Titel eines Genres, die zuletzt hinzugefügten zuerst. `nil`, wenn der
-    /// Server nicht geantwortet hat — dann bleibt eine Reihe, wie sie war.
-    /// **Die Regel liegt im Paket** (`JellyfinClient.titel(gattung:)`), damit
-    /// Linux und Windows sie erreichen.
-    func titel(gattung: String, limit: Int = 24) async -> [Item]? {
+    /// Titles of a genre, most recently added first. `nil` if the server did not
+    /// answer; then a row stays as it was.
+    /// **The rule lives in the package** (`JellyfinClient.title(genre:)`) so Linux
+    /// and Windows reach it.
+    func title(genre: String, limit: Int = 24) async -> [Item]? {
         guard let client else { return nil }
-        return await client.titel(gattung: gattung, limit: limit)
+        return await client.title(genre: genre, limit: limit)
     }
 
-    /// Eine Seite eines Genres **mit der Gesamtzahl des Servers** — fuer
-    /// Zaehlmarke und Nachladen. `nil` heisst: der Server hat nicht geantwortet.
-    func titelMitZahl(gattung: String, limit: Int = AppModel.seitengroesse,
-                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+    /// One page of a genre **with the server's total count**, for the count badge
+    /// and paging. `nil` means the server did not answer.
+    func titleWithNumber(genre: String, limit: Int = AppModel.pagesSize,
+                      startIndex: Int = 0) async -> (items: [Item], total: Int)? {
         guard let client else { return nil }
-        return await client.titelMitZahl(gattung: gattung, limit: limit, startIndex: startIndex)
+        return await client.titleWithNumber(genre: genre, limit: limit, startIndex: startIndex)
     }
 
-    /// Eine Seite der Filmografie mit der Gesamtzahl des Servers.
-    func titelMitZahl(person id: String, limit: Int = AppModel.seitengroesse,
-                      startIndex: Int = 0) async -> (items: [Item], gesamt: Int)? {
+    /// One page of the filmography with the server's total count.
+    func titleWithNumber(person id: String, limit: Int = AppModel.pagesSize,
+                      startIndex: Int = 0) async -> (items: [Item], total: Int)? {
         guard let client else { return nil }
-        return await client.titelMitZahl(person: id, limit: limit, startIndex: startIndex)
+        return await client.titleWithNumber(person: id, limit: limit, startIndex: startIndex)
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst: der Server kennt keine Genres.**
+    /// **`nil` means disturbed, `[]` means: the server knows no genres.**
     ///
-    /// Die Genre-Auswahl in den Einstellungen stand bei jedem Netzfehler leer
-    /// da — als hätte der Server keine Genres, nicht als hätte er geschwiegen.
-    /// Was als eigene Startreihe zur Wahl steht: die Bibliotheken des Kontos
-    /// und seine Sammlungen, ohne das, was schon gewählt ist. Der Auswahl
-    /// fehlen die Sammlungen, bis das Verzeichnis geholt ist — es wird hier
-    /// abgewartet.
-    func startAuswahl() async -> [Item] {
-        await angebotLaden()
-        let gilt = angebotFuer == angebotsschluessel
-        let sammlungen = gilt ? (sammlungsverzeichnis?.alle.map(\.item) ?? []) : []
-        return Startbibliotheken.auswahl(
-            bibliotheken: views.filter { Startbibliotheken.waehlbar($0) },
-            sammlungen: sammlungen, gewaehlt: startBibliotheken)
+    /// The genre picker in settings stood empty on every network error, as if the
+    /// server had no genres rather than having been silent.
+    /// What is available as a home row of its own: the account's libraries and its
+    /// collections, minus what is already chosen. The picker lacks the collections
+    /// until the directory is fetched; that is awaited here.
+    func startSelection() async -> [Item] {
+        await offeringLoad()
+        let applies = offeringFor == offeringKey
+        let collections = applies ? (collectionDirectory?.all.map(\.item) ?? []) : []
+        return StartLibraries.pick(
+            libraries: views.filter { StartLibraries.selectable($0) },
+            collections: collections, selected: startLibraries)
     }
 
-    func gattungen() async -> [String]? {
+    func genres() async -> [String]? {
         guard let client else { return nil }
-        return try? await client.gattungen()
+        return try? await client.genres()
     }
 
     // MARK: - Kopfbild
 
-    /// Was der Kopf einer Seite zeigt, wenn es keinen Hintergrund gibt —
-    /// einmal gesucht, dann gemerkt.
-    private(set) var kopfbildErsatz: [String: URL] = [:]
-    @ObservationIgnored private var kopfbildSucht: Set<String> = []
+    /// What a page header shows when there is no backdrop: searched once, then
+    /// remembered.
+    private(set) var headerImageFallback: [String: URL] = [:]
+    @ObservationIgnored private var headerImageSearches: Set<String> = []
 
-    /// **Für den Kopf einer Seite immer irgendein Bild.**
+    /// **Always some image for a page header.**
     ///
-    /// Zuerst, was wirklich quer liegt (`Bildwahl.kopf`). Fehlt das, wird im
-    /// Hintergrund weitergesucht: bei einer Serie das Standbild der Folge,
-    /// die man als Nächstes schauen würde — sonst die erste, jede andere
-    /// könnte vorwegnehmen, was man noch nicht gesehen hat —, bei allem
-    /// anderen das Plakat. Das sieht quer beschnitten nicht perfekt aus, aber
-    /// es ist etwas da. Vorher stand bei einer Serie ohne Hintergrund ein
-    /// leerer Kopf.
+    /// First what is really landscape (`ImageSelection.header`). If missing, the search
+    /// continues in the background: for a series the still of the episode you would
+    /// watch next (the first one otherwise, since any other might spoil what you
+    /// have not seen), for everything else the poster. Cropped to landscape it does
+    /// not look perfect, but something is there. Previously a series without a
+    /// backdrop had an empty header.
     ///
-    /// Antwortet sofort mit dem, was schon bekannt ist; kommt der Ersatz
-    /// später, zeichnen die Seiten von selbst neu — das Modell ist
-    /// beobachtbar.
-    /// Dasselbe Kopfbild in einer bestimmten Breite (in Pixeln) — fuer den
-    /// Download, der es in Bildschirmaufloesung auf das Geraet legt.
-    func kopfbildURL(for item: Item, breite: Int) -> URL? {
-        guard let bilder else { return nil }
-        return Bildwahl.kopf(item, adressen: bilder, breite: breite)
+    /// Answers immediately with what is already known; if the replacement arrives
+    /// later, the pages redraw by themselves, since the model is observable.
+    /// The same header image at a given width (in pixels), for the download that
+    /// puts it on the device at screen resolution.
+    func headerImageURL(for item: Item, width: Int) -> URL? {
+        guard let images else { return nil }
+        return ImageSelection.header(item, addresses: images, width: width)
     }
 
-    /// Logo-Adresse für die `Titelmarke`; `nil`, wenn der Server keins führt.
+    /// Logo URL for the `TitleMark`; `nil` if the server has none.
     func logoURL(for item: Item) -> URL? {
-        guard let bilder else { return nil }
-        return Bildwahl.logo(item, adressen: bilder)
+        guard let images else { return nil }
+        return ImageSelection.logo(item, addresses: images)
     }
 
-    func kopfbildURL(for item: Item) -> URL? {
-        guard let bilder else { return nil }
-        if let url = Bildwahl.kopf(item, adressen: bilder, breite: 1200) { return url }
-        if let ersatz = kopfbildErsatz[item.id] { return ersatz }
-        guard !kopfbildSucht.contains(item.id) else { return nil }
-        kopfbildSucht.insert(item.id)
-        let konto = kontowechsel
+    func headerImageURL(for item: Item) -> URL? {
+        guard let images else { return nil }
+        if let url = ImageSelection.header(item, addresses: images, width: 1200) { return url }
+        if let substitute = headerImageFallback[item.id] { return substitute }
+        guard !headerImageSearches.contains(item.id) else { return nil }
+        headerImageSearches.insert(item.id)
+        let account = accountSwitch
         Task { [weak self] in
             guard let self else { return }
-            let (url, gestoert) = await self.kopfbildErsatzSuchen(for: item)
-            // Die Antwort des vorigen Kontos gehört nicht in den Speicher des
-            // neuen (der beim Wechsel geleert wurde).
-            guard konto == self.kontowechsel else { return }
-            // **Nach einem Netzaussetzer wieder freigeben.** Die Marke blieb
-            // sonst stehen, und diese Seite suchte bis zum Neustart nie
-            // wieder. Hat der Titel schlicht kein Bild, bleibt sie stehen —
-            // sonst fragte jedes Neuzeichnen erneut.
-            if gestoert { self.kopfbildSucht.remove(item.id) }
+            let (url, disrupted) = await self.headerImageFallbackSearch(for: item)
+            // The previous account's response does not belong in the new account's store
+            // (which was cleared on switch).
+            guard account == self.accountSwitch else { return }
+            // **Release again after a network drop.** Otherwise the mark stayed set and
+            // this page never searched again until restart. If the title simply has no
+            // image, it stays set, otherwise every redraw would ask again.
+            if disrupted { self.headerImageSearches.remove(item.id) }
             guard let url else { return }
-            self.kopfbildErsatz[item.id] = url
+            self.headerImageFallback[item.id] = url
         }
         return nil
     }
 
-    /// Nur, was wirklich quer liegt — ohne die Suche nach Ersatz. Für die
-    /// Personenseite, deren Banner durch die Hintergründe ihrer Titel wechselt:
-    /// ein Plakat quer beschnitten gehört dort nicht in den Wechsel.
-    func querbildEcht(for item: Item) -> URL? {
-        guard let bilder else { return nil }
-        return Bildwahl.kopf(item, adressen: bilder, breite: 1200)
+    /// Only what is really landscape, without the search for a replacement. For
+    /// the person page, whose banner cycles through the backdrops of their titles: a
+    /// poster cropped to landscape does not belong in the rotation.
+    func landscapeImageReal(for item: Item) -> URL? {
+        guard let images else { return nil }
+        return ImageSelection.header(item, addresses: images, width: 1200)
     }
 
-    /// `gestoert`: keine der Abfragen kam durch — dann lohnt ein neuer Versuch.
-    private func kopfbildErsatzSuchen(for item: Item) async -> (URL?, gestoert: Bool) {
-        guard let bilder else { return (nil, false) }
-        var folge: Item?
-        var gestoert = false
+    /// `disrupted`: none of the queries got through, so another attempt is
+    /// worthwhile.
+    private func headerImageFallbackSearch(for item: Item) async -> (URL?, disrupted: Bool) {
+        guard let images else { return (nil, false) }
+        var episode: Item?
+        var disrupted = false
         if item.type == "Series", let client {
-            var fehler = 0
-            do { folge = try await client.naechsteFolgeDerSerie(seriesID: item.id) } catch { fehler += 1 }
-            if folge == nil {
-                do { folge = try await client.folgen(seriesID: item.id).first } catch { fehler += 1 }
+            var failures = 0
+            do { episode = try await client.nextEpisodeSeries(seriesID: item.id) } catch { failures += 1 }
+            if episode == nil {
+                do { episode = try await client.episodes(seriesID: item.id).first } catch { failures += 1 }
             }
-            gestoert = fehler == 2
+            disrupted = failures == 2
         }
-        // Welches Bild gilt, steht im Paket — dieselbe Regel wie auf Android.
-        return (Bildwahl.kopfMitErsatz(item, folge: folge, adressen: bilder), gestoert)
+        // Which image applies is decided in the package, the same rule as on
+        // Android.
+        return (ImageSelection.headerWithFallback(item, episode: episode, addresses: images), disrupted)
     }
 
-    /// Der eine Ort, an dem Bildadressen entstehen.
+    /// The one place where image URLs are built.
     ///
-    /// Vorher taten das fünf fast gleiche Blöcke, und zwei davon hängten das
-    /// Zugangsmerkmal nicht an — was nur solange gutging, wie der Server
-    /// Bilder auch unangemeldet herausgibt.
-    /// Externe Untertiteldateien eines Plans, mit voller Adresse — der
-    /// Player hängt sie beim Öffnen an (T1-H4). Von der Platte die, die beim
-    /// Herunterladen mitgekommen sind.
-    func untertiteldateien(_ plan: PlaybackPlan) -> [Untertiteldatei] {
+    /// Previously five nearly identical blocks did that, and two of them did not
+    /// attach the access token, which only worked as long as the server returns
+    /// images when not signed in.
+    /// External subtitle files of a plan, with full URL; the player attaches them on
+    /// opening. For downloads, those that came along when downloading.
+    func subtitleFiles(_ plan: PlaybackPlan) -> [SubtitleFile] {
         if plan.url.isFileURL {
-            return Downloadverwaltung.untertitel(zur: plan.url, merkmal: VLCPlayerView.untertitelmerkmal)
+            return DownloadManager.subtitle(to: plan.url, attribute: VLCPlayerView.subtitleRememberTimes)
         }
         guard let session else { return [] }
-        return Untertiteldatei.aus(stroeme: plan.quelle?.mediaStreams ?? [],
-                                   server: session.serverURL, schluessel: session.accessToken,
-                                   merkmal: VLCPlayerView.untertitelmerkmal)
+        return SubtitleFile.from(streams: plan.source?.mediaStreams ?? [],
+                                   server: session.serverURL, key: session.accessToken,
+                                   attribute: VLCPlayerView.subtitleRememberTimes)
     }
 
-    private var bilder: Bildadresse? {
+    private var images: ImageAddress? {
         guard let session else { return nil }
-        return Bildadresse(basis: session.serverURL, token: session.accessToken)
+        return ImageAddress(base: session.serverURL, token: session.accessToken)
     }
 
-    /// Das Plakat eines Titels. **Ohne Marke**, weil der Aufrufer sie nicht
-    /// immer hat — Jellyfin gibt das Bild auch so heraus; die Marke ist nur
-    /// fuer den Zwischenspeicher gut.
-    /// 300 Punkt hoch: die Zeile zeigt 96, und ein Plakat, das mitgeladen
-    /// wird, soll auch auf dem iPad taugen.
-    func plakatURL(itemID: String, marke: String? = nil) -> URL? {
-        bilder?.bauen(itemID: itemID, marke: marke, mass: .hoechstensHoch(300))
+    /// A title's poster. **Without token**, since the caller does not always have
+    /// one: Jellyfin returns the image anyway, and the token only serves the cache.
+    /// 300 points tall: the row shows 96, and a poster that is loaded anyway should
+    /// also be good enough on the iPad.
+    func posterURL(itemID: String, mark: String? = nil) -> URL? {
+        images?.construct(itemID: itemID, mark: mark, mass: .atMostHigh(300))
     }
 
-    /// Porträt eines Mitwirkenden.
-    func personBild(_ person: Person, maxHeight: Int = 220) -> URL? {
-        bilder?.bauen(itemID: person.id, marke: person.primaryImageTag,
-                      mass: .hoechstensHoch(maxHeight))
+    /// Portrait of a cast member.
+    func personImage(_ person: Person, maxHeight: Int = 220) -> URL? {
+        images?.construct(itemID: person.id, mark: person.primaryImageTag,
+                      mass: .atMostHigh(maxHeight))
     }
 
-    func setzeMerkliste(_ item: Item, an: Bool) async -> String? {
+    func setWatchlist(_ item: Item, an: Bool) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
-            try await client.setzeMerkliste(itemID: item.id, an: an)
-            merklisteGeaendert += 1
+            try await client.setWatchlist(itemID: item.id, an: an)
+            watchlistChanged += 1
             return nil
         }
-        catch { return lesbar(error) }
+        catch { return readable(error) }
     }
 
-    /// **H6 und H9 holen sich hier ihre Angabe.**
+    /// **the expendable-titles rule and the missing-title rule get their information here.**
     ///
-    /// Beide Regeln haengen an etwas, das nur der Server weiss: ob ein Titel
-    /// gesehen ist, und ob es ihn ueberhaupt noch gibt. Was daraus folgt,
-    /// steht bei ``Downloadverwaltung/nachziehen(vorhanden:gesehen:)``.
+    /// Both rules depend on something only the server knows: whether a title has been
+    /// watched, and whether it still exists at all. What follows from that is in
+    /// ``Downloadverwaltung/nachziehen(vorhanden:gesehen:)``.
     ///
-    /// **Ohne Antwort passiert nichts, und das ist der Normalfall.**
-    /// Downloads sind fuer unterwegs gebaut; unterwegs antwortet kein
-    /// Server. Wuerde ein Fehlschlag als Antwort gelten, stuende an jedem
-    /// Titel „nicht mehr auf dem Server" — genau dort, wo die Funktion
-    /// gebraucht wird. Bricht ein Teilstueck ab, bleibt alles, wie es war.
-    func downloadsNachziehen() async {
-        guard let client, !downloads.posten.isEmpty else { return }
-        // **Erst melden, dann lesen.** Sonst hört die Liste vom Server den
-        // Stand von vor dem Flug — und der Haken der offline gesehenen Folge
-        // verschwände, bis die Nachmeldung durch ist.
-        await nachmeldungenAbschicken()
-        let ids = downloads.posten.map(\.id)
-        var vorhanden: Set<String> = []
-        var sehstand: [String: UserItemData] = [:]
-        // Hundert Kennungen je Anfrage — dasselbe Mass, mit dem auch die
-        // Bibliotheksseiten blaettern. Bei zehn Downloads ist es eine.
-        for ab in stride(from: 0, to: ids.count, by: 100) {
-            let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
-            guard let antwort = try? await client.items(limit: stueck.count,
-                                                        ids: stueck) else { return }
-            for titel in antwort.items {
-                vorhanden.insert(titel.id)
-                sehstand[titel.id] = titel.userData
+    /// **Nothing happens without an answer, and that is the normal case.** Downloads
+    /// are built for on the road; on the road no server answers. If a failure
+    /// counted as an answer, every title would say "no longer on the server",
+    /// exactly where the feature is needed. If a part fails, everything stays as it
+    /// was.
+    func downloadsCatchUp() async {
+        guard let client, !downloads.entries.isEmpty else { return }
+        // **Report first, then read.** Otherwise the list hears the state from before
+        // the flight from the server, and the checkmark of the episode watched offline
+        // would vanish until the report is through.
+        await pendingSubmit()
+        let ids = downloads.entries.map(\.id)
+        var available: Set<String> = []
+        var watchState: [String: UserItemData] = [:]
+        // A hundred IDs per request, the same measure the library pages page by. With
+        // ten downloads it is one.
+        for since in stride(from: 0, to: ids.count, by: 100) {
+            let piece = Array(ids[since ..< min(since + 100, ids.count)])
+            guard let answer = try? await client.items(limit: piece.count,
+                                                        ids: piece) else { return }
+            for title in answer.items {
+                available.insert(title.id)
+                watchState[title.id] = title.userData
             }
         }
-        downloads.nachziehen(vorhanden: vorhanden, sehstand: sehstand)
-        downloads.abschnitteNachholen()
+        downloads.follow(available: available, watchState: watchState)
+        downloads.sectionsCatchUp()
     }
 
     @discardableResult
-    func setzeGesehen(_ item: Item, an: Bool) async -> String? {
+    func setWatched(_ item: Item, an: Bool) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
-            try await client.setzeGesehen(itemID: item.id, an: an)
-            // **Hier, nicht in den sechs Ansichten, die das rufen.**
+            try await client.setWatched(itemID: item.id, an: an)
+            // **Here, not in the six views that call this.**
             //
-            // Der `Serienspeicher` hält die Folgen einer Serie samt Sehstand
-            // und läuft nicht ab. Die Serienseite setzt sich daraus zusammen,
-            // die Staffelansicht holte frisch und schrieb nicht zurück — wer
-            // eine Staffel abhakte und zurückging, sah wieder lauter offene
-            // Folgen. Jede Ansicht einzeln nachziehen zu lassen hätte
-            // geheißen, dass die siebte es vergisst.
+            // The `SeriesCache` holds a series' episodes with watch state and does not
+            // expire. The series page is assembled from it; the season view fetched fresh
+            // and did not write back, so checking off a season and going back showed all
+            // episodes open again. Having each view update individually would have meant the
+            // seventh forgets it.
             //
-            // Bei einer Folge und bei einer Staffel ist die Serie betroffen,
-            // bei einer Serie sie selbst.
-            Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
-            sehstandGeaendert += 1
+            // For an episode and a season the series is affected, for a series itself.
+            SeriesCache.shared.forget(item.seriesId ?? item.id)
+            watchStateChanged += 1
             return nil
-        } catch { return lesbar(error) }
+        } catch { return readable(error) }
     }
 
-    /// Aus „Weiterschauen" nehmen — die Stelle auf null, gesehen bleibt.
-    /// Gibt einen lesbaren Grund zurück, wenn es scheitert.
+    /// Remove from "Continue Watching": position to zero, watched stays. Returns a
+    /// readable reason if it fails.
     @discardableResult
-    func ausWeiterschauenNehmen(_ item: Item) async -> String? {
+    func fromContinueWatchingTake(_ item: Item) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
         do {
-            try await client.stelleZuruecksetzen(itemID: item.id)
-            Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
-            sehstandGeaendert += 1
+            try await client.pointBackSet(itemID: item.id)
+            SeriesCache.shared.forget(item.seriesId ?? item.id)
+            watchStateChanged += 1
             return nil
-        } catch { return lesbar(error) }
+        } catch { return readable(error) }
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst: die Serie hat keine Staffeln.**
+    /// **`nil` means disturbed, `[]` means: the series has no seasons.**
     ///
-    /// Eine Serie ohne Staffeln gibt es wirklich (frisch angelegt, noch nichts
-    /// eingelesen). Ein stummer Server ist etwas anderes, und die Serienseite
-    /// muss beides auseinanderhalten können.
-    func staffeln(_ serie: Item) async -> [Item]? {
+    /// A series without seasons really exists (freshly created, nothing scanned
+    /// yet). A silent server is something else, and the series page must be able to
+    /// tell them apart.
+    func seasons(_ series: Item) async -> [Item]? {
         guard let client else { return nil }
-        return try? await client.staffeln(seriesID: serie.id)
+        return try? await client.seasons(seriesID: series.id)
     }
 
-    /// **`nil` heisst gestoert, `[]` heisst: die Staffel hat keine Folgen.**
-    func folgen(serie: String, staffel: String?) async -> [Item]? {
+    /// **`nil` means disturbed, `[]` means: the season has no episodes.**
+    func episodes(series: String, season: String?) async -> [Item]? {
         guard let client else { return nil }
-        return try? await client.folgen(seriesID: serie, seasonID: staffel)
+        return try? await client.episodes(seriesID: series, seasonID: season)
     }
 
-    /// Wo man in dieser Serie steht — für den großen Knopf.
-    /// **Die Regel liegt im Paket** (`JellyfinClient.standInSerie(_:)`) — sie
-    /// gehört zu A10 und muss überall dieselbe Antwort geben.
-    func standInSerie(_ serie: Item) async -> Item? {
+    /// Where you are in this series, for the big button.
+    /// **The rule lives in the package** (`JellyfinClient.stateInSeries(_:)`); it
+    /// belongs to the next-episode rule and must give the same answer everywhere.
+    func stateInSeries(_ series: Item) async -> Item? {
         guard let client else { return nil }
-        return await client.standInSerie(serie.id)
+        return await client.stateInSeries(series.id)
     }
 
-    /// Wie `standInSerie`, aber eine Störung wirft — `nil` heisst: keine Folgen.
-    func standInSerieGeprueft(_ serie: Item) async throws -> Item? {
+    /// Like `stateInSeries`, but a disturbance throws; `nil` means: no episodes.
+    func stateInSeriesChecked(_ series: Item) async throws -> Item? {
         guard let client else { return nil }
-        return try await client.standInSerieGeprueft(serie.id)
+        return try await client.stateInSeriesChecked(series.id)
     }
 
-    /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404
-    /// und die Ansicht faellt auf den Anfangsbuchstaben zurueck.
-    /// **Immer dieselbe Kante, egal wie gross es gezeigt wird.**
+    /// The profile image from Jellyfin. If missing, the server answers 404 and the
+    /// view falls back to the initial letter.
+    /// **Always the same edge length, however large it is shown.**
     ///
-    /// Hier stand eine Groesse als Argument, und die Aufrufer nutzten sie:
-    /// 120 in der Kopfzeile, 200 auf der Profilseite, 240 im Kontenstreifen.
-    /// Drei Groessen sind **drei Adressen** — und damit drei Eintraege im
-    /// `Bildspeicher`, von denen jeder einzeln geholt werden will. Deshalb
-    /// blendete das Profilbild beim Oeffnen der Profilseite jedes Mal neu
-    /// ein, obwohl dasselbe Gesicht oben in der Leiste schon stand.
+    /// A size used to be an argument and callers used it: 120 in the header, 200 on
+    /// the profile page, 240 in the account strip. Three sizes are **three URLs**,
+    /// so three entries in the `ImageCache`, each fetched separately. That is why
+    /// the profile image faded in anew every time the profile page opened, although
+    /// the same face already stood in the bar above.
     ///
-    /// 480 ist die groesste Stelle (240 Punkt im Kontenstreifen, doppelt fuer
-    /// Retina). Ein Avatar in dieser Kante ist ein paar Kilobyte; einmal
-    /// geholt traegt er jede Stelle, und `Bildspeicher` entschluesselt ihn
-    /// ohnehin auf sein eigenes Mass herunter.
-    static let benutzerbildKante = 480
+    /// 480 is the largest spot (240 points in the account strip, doubled for
+    /// Retina). An avatar at that edge is a few kilobytes; fetched once it serves
+    /// every spot, and `ImageCache` decodes it down to its own size anyway.
+    static let userImageEdge = 480
 
-    func benutzerbildURL() -> URL? {
+    func userImageURL() -> URL? {
         guard let session else { return nil }
-        return bilder?.benutzer(session.userID, kante: Self.benutzerbildKante)
+        return images?.user(session.userID, border: Self.userImageEdge)
     }
 
-    /// Dasselbe für ein bestimmtes Konto — für den Streifen, in dem mehrere
-    /// nebeneinander stehen und nur eines das aktive ist.
-    /// **Beim Server des Kontos, mit dessen Zugang** — nicht mit dem des
-    /// gerade aktiven. Seit es mehrere Server gibt, fragte die App die Bilder
-    /// der anderen beim falschen Server an, und sie verschwanden, bis man zu
-    /// ihnen wechselte.
-    func benutzerbildURL(fuer konto: Session) -> URL? {
-        Bildadresse(basis: konto.serverURL, token: konto.accessToken)
-            .benutzer(konto.userID, kante: Self.benutzerbildKante)
+    /// The same for a specific account, for the strip where several stand side by
+    /// side and only one is active.
+    /// **From the account's server, with its access**, not the currently active one.
+    /// Since multiple servers exist, the app asked the wrong server for the others'
+    /// images, and they vanished until you switched to them.
+    func userImageURL(for account: Session) -> URL? {
+        ImageAddress(base: account.serverURL, token: account.accessToken)
+            .user(account.userID, border: Self.userImageEdge)
     }
 
-    /// Waagerechtes Bild für die Reihe „Weiterschauen".
+    /// Landscape image for the "Continue Watching" row.
     ///
-    /// Bewusst vom übergeordneten Titel, nicht von der Folge: ein Standbild
-    /// aus der Folge sagt wenig und sieht neben den anderen Reihen beliebig
-    /// aus. Gefragt war „eine Art Cover".
-    func querbildURL(for item: Item, breite: Int = 600) -> URL? {
-        querbild(for: item, breite: breite)?.url
+    /// Deliberately from the parent title, not the episode: a still from the episode
+    /// says little and looks arbitrary next to the other rows. The request was "a
+    /// kind of cover".
+    func landscapeImageURL(for item: Item, width: Int = 600) -> URL? {
+        landscapeImage(for: item, width: width)?.url
     }
 
-    /// **Die Kette liegt jetzt im Paket** — `JellyfinKit.Bildwahl.quer`.
+    /// **The chain now lives in the package**: `JellyfinKit.ImageSelection.landscape`.
     ///
-    /// Sie stand hier, war damit aber an SwiftUI gebunden und fuer die
-    /// Linux-Fassung unerreichbar. An ihr haengt nichts, was mit Oberflaeche
-    /// oder Uebersetzung zu tun haette; die Begruendung zu jeder Stufe steht
-    /// dort, samt der Messung, dass eine Folge nie einen eigenen Hintergrund
-    /// hat.
-    private func querbild(for item: Item, breite: Int) -> (url: URL, quelle: String)? {
-        guard let bilder else { return nil }
-        return Bildwahl.quer(item, adressen: bilder, breite: breite)
+    /// It used to be here, tying it to SwiftUI and making it unreachable for the
+    /// Linux version. Nothing about it concerns UI or translation; the reasoning for
+    /// each step lives there, including the measurement that an episode never has a
+    /// backdrop of its own.
+    private func landscapeImage(for item: Item, width: Int) -> (url: URL, source: String)? {
+        guard let images else { return nil }
+        return ImageSelection.landscape(item, addresses: images, width: width)
     }
 
-    /// **Das Bild einer Folge, quer** — für die Karte von „Hier
-    /// weiterschauen". `nil` ohne eigenes Bild.
-    func folgenbildURL(for item: Item, breite: Int = 1280) -> URL? {
-        guard let marke = item.imageTags?["Primary"] else { return nil }
-        return bilder?.bauen(itemID: item.id, marke: marke, mass: .hoechstensBreit(breite))
+    /// **An episode's image, landscape**, for the "Continue Here" card. `nil`
+    /// without an image of its own.
+    func episodeImageURL(for item: Item, width: Int = 1280) -> URL? {
+        guard let mark = item.imageTags?["Primary"] else { return nil }
+        return images?.construct(itemID: item.id, mark: mark, mass: .atMostWide(width))
     }
 
-    /// Das Bild fuer den Sperrbildschirm und das Kontrollzentrum.
+    /// The image for the lock screen and Control Center.
     ///
-    /// **Bei Folgen das Standbild der Folge, nicht das Plakat der Serie.**
-    /// Das Plakat sagt nur, welche Serie laeuft — das steht daneben ohnehin
-    /// als Text. Das Standbild zeigt, *wo* man ist, und das ist die Auskunft,
-    /// die dort etwas traegt.
+    /// **For episodes the episode's still, not the series poster.** The poster only
+    /// says which series is playing, which is shown next to it as text anyway. The
+    /// still shows *where* you are, which is the information that carries something
+    /// there.
     ///
-    /// Filme behalten ihr Plakat: dort gibt es kein Standbild, und das
-    /// Plakat *ist* der Titel.
-    func sperrbildURL(for item: Item, hoehe: Int = 600) -> URL? {
-        if item.seriesId != nil, let marke = item.imageTags?["Primary"] {
-            return bilder?.bauen(itemID: item.id, marke: marke,
-                                 mass: .hoechstensHoch(hoehe))
+    /// Movies keep their poster: there is no still, and the poster *is* the title.
+    func lockImageURL(for item: Item, height: Int = 600) -> URL? {
+        if item.seriesId != nil, let mark = item.imageTags?["Primary"] {
+            return images?.construct(itemID: item.id, mark: mark,
+                                 mass: .atMostHigh(height))
         }
-        return imageURL(for: item, maxHeight: hoehe, hochkant: true)
+        return imageURL(for: item, maxHeight: height, portrait: true)
     }
 
-    /// Die Folge nach dieser.
-    func folgeNach(_ item: Item) async -> Item? {
-        // **Ohne Server die nächste geladene Folge**, mit Server wie bisher —
-        // die Regel liegt im Paket (`Downloadregeln.folgeNach`).
+    /// The episode after this one.
+    func episodePost(_ item: Item) async -> Item? {
+        // **Without a server, the next downloaded episode**; with a server as
+        // before. The rule lives in the package (`DownloadRules.episodePost`).
         let client = self.client
-        return await Downloadregeln.folgeNach(item, aus: downloads.posten,
-                                              ohneNetz: downloads.keinNetz) {
-            guard let client, let serie = item.seriesId else { return nil }
-            return try await client.folgeNach(itemID: item.id, seriesID: serie)
+        return await DownloadRules.episodePost(item, from: downloads.entries,
+                                              withoutNetwork: downloads.noNetwork) {
+            guard let client, let series = item.seriesId else { return nil }
+            return try await client.episodePost(itemID: item.id, seriesID: series)
         }
     }
 
-    /// Angefangene Titel.
-    /// `nil` heißt: die Anfrage ist fehlgeschlagen. Das ist etwas anderes als
-    /// eine leere Liste — mit `try?` sah beides gleich aus, und ein einzelner
-    /// Aussetzer hat die Startseite lautlos geleert.
-    func weiterschauen() async -> [Item]? {
+    /// Started titles.
+    /// `nil` means the request failed. That differs from an empty list: with `try?`
+    /// both looked the same, and a single dropout silently emptied the home page.
+    func continueWatching() async -> [Item]? {
         guard let client else { return nil }
         return try? await client.resumeItems()
     }
 
-    /// Nächste ungesehene Folgen laufender Serien.
+    /// Next unwatched episodes of ongoing series.
     ///
-    /// - Parameter ohne: Titel, die schon unter „Weiterschauen" stehen.
-    ///   Jellyfin listet angefangene Folgen in beiden Abfragen; ohne das
-    ///   Aussortieren stünde dieselbe Folge zweimal auf der Startseite.
-    func naechsteFolge(ohne bereitsGezeigt: [Item] = []) async -> [Item]? {
-        guard let client, let alle = try? await client.nextUp() else { return nil }
-        let schonDa = Set(bereitsGezeigt.map(\.id))
-        return alle.filter { !schonDa.contains($0.id) }
+    /// - Parameter ohne: titles already in "Continue Watching".
+    /// Jellyfin lists started episodes in both queries; without filtering them out
+    /// the same episode would appear twice on the home page.
+    func nextEpisode(without alreadyShown: [Item] = []) async -> [Item]? {
+        guard let client, let all = try? await client.nextUp() else { return nil }
+        let alreadyPresent = Set(alreadyShown.map(\.id))
+        return all.filter { !alreadyPresent.contains($0.id) }
     }
 
-    /// Zuletzt Hinzugefügtes über alle Bibliotheken.
-    /// Neu dazugekommen — je Serie ein Eintrag, neueste zuerst.
+    /// Recently added across all libraries.
+    /// New arrivals, one entry per series, newest first.
     ///
-    /// Jellyfins eigene Zusammenfassung nennt nur die Serie und die Zahl der
-    /// neuen Folgen, nicht die Staffel. Deshalb ungruppiert holen und selbst
-    /// zusammenfassen: die erste Folge je Serie ist die neueste, weil der
-    /// Server bereits nach Datum sortiert.
-    /// - Parameter in: Nur aus dieser Bibliothek. `nil` heißt: aus allen.
-    /// **Die Regel liegt im Paket** (`JellyfinClient.zuletztHinzugefuegt`) —
-    /// sie stand hier und erreichte Linux und Windows nicht.
-    func zuletztHinzugefuegt(in bibliothek: String? = nil) async -> [Item]? {
+    /// Jellyfin's own grouping names only the series and the number of new episodes,
+    /// not the season. So fetch ungrouped and group ourselves: the first episode per
+    /// series is the newest, since the server already sorts by date.
+    /// - Parameter in: only from this library. `nil` means from all.
+    /// **The rule lives in the package** (`JellyfinClient.lastAdded`); it
+    /// used to be here and did not reach Linux and Windows.
+    func lastAdded(in library: String? = nil) async -> [Item]? {
         guard let client else { return nil }
-        return await client.zuletztHinzugefuegt(in: bibliothek)
+        return await client.lastAdded(in: library)
     }
 
-    /// Eine Seite aus einer Bibliothek.
+    /// One page from a library.
     ///
-    /// Gibt neben den Titeln zurück, wie viele es insgesamt gibt — sonst weiß
-    /// die Ansicht nicht, wann sie aufhören darf nachzuladen. Vorher wurden
-    /// stur die ersten zweihundert geholt und der Rest war über die
-    /// Oberfläche nicht erreichbar.
+    /// Returns, besides the titles, how many there are in total; otherwise the view
+    /// does not know when it may stop loading more. Previously the first two hundred
+    /// were fetched blindly and the rest was unreachable through the UI.
     func items(in parentID: String,
                art: String? = nil,
-               sortierung: Sortierung = .name,
-               filter: Bibliotheksfilter = .alle,
-               ab startIndex: Int = 0,
-               anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
-        await items(aus: Regalquelle(eltern: parentID, art: art), sortierung: sortierung,
-                    filter: filter, ab: startIndex, anzahl: anzahl)
+               sorting: Sorting = .name,
+               filter: LibraryFilter = .all,
+               since startIndex: Int = 0,
+               count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
+        await items(from: ShelfSource(parent: parentID, art: art), sorting: sorting,
+                    filter: filter, since: startIndex, count: count)
     }
 
-    /// Eine Seite aus einer Bibliothek, aus allen oder aus einer Sammlung —
-    /// die Unterschiede stehen in ``Regalquelle``.
-    func items(aus quelle: Regalquelle,
-               sortierung: Sortierung = .name,
-               filter: Bibliotheksfilter = .alle,
-               ab startIndex: Int = 0,
-               anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+    /// One page from a library, from all, or from a collection; the differences
+    /// are in ``ShelfSource``.
+    func items(from source: ShelfSource,
+               sorting: Sorting = .name,
+               filter: LibraryFilter = .all,
+               since startIndex: Int = 0,
+               count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
         guard let client else { return nil }
         do {
-            let antwort = try await client.items(parentID: quelle.eltern,
-                                                 limit: anzahl,
+            let answer = try await client.items(parentID: source.parent,
+                                                 limit: count,
                                                  startIndex: startIndex,
-                                                 sortBy: sortierung.feld,
-                                                 sortOrder: quelle.richtung(sortierung),
+                                                 sortBy: sorting.inputField,
+                                                 sortOrder: source.bearing(sorting),
                                                  filters: filter.jellyfinFilter,
-                                                 istGesehen: filter.istGesehen,
-                                                 // Rekursiv, sobald die Gattung
-                                                 // feststeht: sonst blieben die
-                                                 // Titel unter den virtuellen
-                                                 // Ordnern unerreichbar.
-                                                 recursive: quelle.rekursiv,
-                                                 includeItemTypes: quelle.typen)
-            return (antwort.items, antwort.totalRecordCount)
+                                                 isWatched: filter.isWatched,
+                                                 // Recursive once the type is set; otherwise the titles under the virtual
+                                                 // folders stay unreachable.
+                                                 recursive: source.recursive,
+                                                 includeItemTypes: source.types)
+            return (answer.items, answer.totalRecordCount)
         } catch {
-            // Nicht in `errorMessage`: das zeigen nur die Anmelde- und
-            // Serverseiten (und blieb dort Minuten später stehen). Die
-            // Bibliotheksseite zeigt ihre Störung selbst.
+            // Not into `errorMessage`: only the sign-in and server pages show that (and
+            // it stayed there minutes later). The library page shows its own disturbance.
             Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
 
-    /// Alles Gemerkte — **quer über alle Bibliotheken**.
+    /// Everything bookmarked, **across all libraries**.
     ///
-    /// Deshalb ohne `parentID`: die Merkliste ist keine Bibliothek, ihre
-    /// Grenze ist der Haken und nicht ein Ordner auf der Platte. Und deshalb
-    /// **rekursiv**: ohne das liefert Jellyfin nur, was ganz oben liegt, und
-    /// das ist bei einem Server mit virtuellen Ordnern so gut wie nichts.
+    /// Hence without `parentID`: the watchlist is not a library, its boundary is the
+    /// bookmark and not a folder on disk. And hence **recursive**: otherwise
+    /// Jellyfin returns only what lies at the very top, which is next to nothing on
+    /// a server with virtual folders.
     ///
-    /// `art` ist hier der Gattungsfilter der Seite: `nil` heisst Filme **und**
-    /// Serien. Ohne die Aufzaehlung kaemen auch Staffeln, Folgen und
-    /// Sammlungen mit — alles, woran je ein Haken hing.
-    func gemerkte(art: String? = nil,
-                  sortierung: Sortierung = .neueste,
-                  ab startIndex: Int = 0,
-                  anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+    /// `art` here is the page's type filter: `nil` means movies **and** series.
+    /// Without the enumeration, seasons, episodes and collections would come along
+    /// too, anything that ever had a bookmark.
+    func remembered(art: String? = nil,
+                  sorting: Sorting = .latest,
+                  since startIndex: Int = 0,
+                  count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
         guard let client else { return nil }
-        let gattungen = art.map { Bibliotheksgattung.typen(zu: $0) } ?? ["Movie", "Series"]
+        let genres = art.map { LibraryGenre.types(toward: $0) } ?? ["Movie", "Series"]
         do {
-            // Je Werk einmal (``Werke``) — ein Film aus zwei Bibliotheken
-            // trägt den Haken in beiden.
-            let antwort = try await client.gemerkteWerke(typen: gattungen,
-                                                         sortBy: sortierung.feld,
-                                                         sortOrder: sortierung.richtung,
+            // Once per work (``Items``): a movie from two libraries carries the bookmark
+            // in both.
+            let answer = try await client.rememberedItems(types: genres,
+                                                         sortBy: sorting.inputField,
+                                                         sortOrder: sorting.bearing,
                                                          startIndex: startIndex,
-                                                         limit: anzahl,
-                                                         // Die Bibliotheken liegen schon da — das spart
-                                                         // `UserViews` bei jeder Seite.
-                                                         bibliotheken: views.isEmpty ? nil : views)
-            return (antwort.items, antwort.totalRecordCount)
+                                                         limit: count,
+                                                         // The libraries are already there, which saves `UserViews` on every page.
+                                                         libraries: views.isEmpty ? nil : views)
+            return (answer.items, answer.totalRecordCount)
         } catch {
-            // Nicht in `errorMessage`: das zeigen nur die Anmelde- und
-            // Serverseiten (und blieb dort Minuten später stehen). Die
-            // Bibliotheksseite zeigt ihre Störung selbst.
+            // Not into `errorMessage`: only the sign-in and server pages show that (and
+            // it stayed there minutes later). The library page shows its own disturbance.
             Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
 
-    /// Groß genug, dass man beim ersten Wischen nicht ans Ende kommt, klein
-    /// genug, dass die erste Seite schnell steht.
-    static let seitengroesse = 60
+    /// Large enough that the first swipe does not reach the end, small enough that
+    /// the first page appears quickly.
+    static let pagesSize = 60
 
-    // MARK: - Dateien, deren Index nichts taugt
-
-
+    // MARK: - Files whose index is useless
 
 
 
-    /// Fragt den Server, wie er diesen Titel ausliefern würde.
+
+
+    /// Asks the server how it would deliver this title.
     ///
-    /// `still`: ein Fehler landet nur im Protokoll, nicht als Meldung — für
-    /// das Vorbereiten im Hintergrund (``Folgenvorbereitung``), um das niemand
-    /// gebeten hat.
+    /// `still`: an error lands only in the log, not as a message; for the background
+    /// preparation (``EpisodePreparation``) nobody asked for.
     func plan(for itemID: String, still: Bool = false) async -> PlaybackPlan? {
-        // **H8 — liegt die Datei hier, braucht es den Server nicht.**
+        // **if the file is here, the server is not needed.**
         //
-        // Und zwar vor dem `guard`: ohne Netz ist `client` zwar da, aber
-        // `playbackPlan` liefe in seine Frist und käme mit nichts zurück.
-        // Genau dafür ist heruntergeladen worden; ein Ladeschirm, der zwanzig
-        // Sekunden auf einen Server wartet, den es im Flugzeug nicht gibt,
-        // wäre die Funktion, die sich selbst aufhebt.
+        // Before the `guard`: without network `client` exists, but `playbackPlan` would
+        // run into its deadline and return nothing. That is what downloading is for; a
+        // loading screen that waits twenty seconds for a server that does not exist on
+        // a plane would be the feature canceling itself out.
         //
-        // Der Nutzer merkt davon nichts — kein zweiter Knopf, keine Wahl.
-        if let datei = downloads.datei(fuer: itemID) {
-            let p = downloads.posten(fuer: itemID)
-            return .vonDerPlatte(datei, container: p?.container, mediaSourceID: p?.quelle,
-                                 bildcodec: p?.bildcodec)
+        // The user notices nothing: no second button, no choice.
+        if let file = downloads.file(for: itemID) {
+            let p = downloads.entries(for: itemID)
+            return .fromSlab(file, container: p?.container, mediaSourceID: p?.source,
+                                 videoCodec: p?.videoCodec)
         }
         guard let client else { return nil }
         do {
             let plan = try await client.playbackPlan(for: itemID,
-                                                       profile: .vlc(maxBitrate: profilBitrate))
+                                                       profile: .vlc(maxBitrate: profileBitrate))
             if plan == nil {
-                // Tritt bei Serien und Staffeln auf: die haben keine
-                // Mediendatei, nur ihre Folgen haben eine.
+                // Occurs with series and seasons: they have no media file, only their
+                // episodes do.
                 Self.log.error("Kein Plan für \(itemID, privacy: .public) — Server nannte keine MediaSource")
             }
             return plan
         } catch {
             Self.log.error("PlaybackInfo fehlgeschlagen für \(itemID, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            if !still { errorMessage = lesbar(error) }
+            if !still { errorMessage = readable(error) }
             return nil
         }
     }
 
-    /// Poster-URL. Wird hier gebaut statt im Client, damit die Ansichten
-    /// nicht auf den Actor warten müssen.
-    func imageURL(for item: Item, maxHeight: Int = 480, hochkant: Bool = false) -> URL? {
-        guard let bilder else { return nil }
-        // Hochkant heisst bei einer Folge: das Plakat der Serie. Warum, steht
-        // in `Bildwahl.hochkant` — hier stand dieselbe Regel ein zweites Mal.
-        if hochkant {
-            return Bildwahl.hochkant(item, adressen: bilder, maxHoehe: maxHeight)
+    /// Poster URL. Built here instead of in the client so views do not have to
+    /// wait for the actor.
+    func imageURL(for item: Item, maxHeight: Int = 480, portrait: Bool = false) -> URL? {
+        guard let images else { return nil }
+        // Portrait means, for an episode, the series poster. Why is in
+        // `ImageSelection.portrait`; the same rule used to stand here a second time.
+        if portrait {
+            return ImageSelection.portrait(item, addresses: images, maxHeight: maxHeight)
         }
-        guard let marke = item.imageTags?["Primary"] else { return nil }
-        return bilder.bauen(itemID: item.id, marke: marke,
-                            mass: .hoechstensHoch(maxHeight))
+        guard let mark = item.imageTags?["Primary"] else { return nil }
+        return images.construct(itemID: item.id, mark: mark,
+                            mass: .atMostHigh(maxHeight))
     }
 
-    /// Vorspann, Rückblick und Abspann einer Folge.
+    /// Intro, recap and credits of an episode.
     ///
-    /// Leer heißt: der Server weiß nichts davon — kein Plugin, keine Analyse,
-    /// oder eine ältere Fassung. Dann bleibt alles wie vorher.
-    func abschnitte(fuer itemID: String) async -> [JellyfinKit.Abschnitt] {
-        // Die beim Download abgelegten zuerst — ohne Netz gibt es keine
-        // anderen (`Downloadregeln.abschnitte`).
+    /// Empty means the server knows nothing about them: no plugin, no analysis, or an
+    /// older version. Then everything stays as before.
+    func sections(for itemID: String) async -> [JellyfinKit.Segment] {
+        // Those stored at download first; without network there are no others
+        // (`DownloadRules.sections`).
         let client = self.client
-        return await Downloadregeln.abschnitte(abgelegt: downloads.posten(fuer: itemID)?.abschnitte) {
-            await client?.abschnitte(fuer: itemID) ?? []
+        return await DownloadRules.sections(stored: downloads.entries(for: itemID)?.sections) {
+            await client?.sections(for: itemID) ?? []
         }
     }
 
-    /// Vorschaubilder beim Spulen — `nil` ohne Trickplay am Server.
-    func trickplay(fuer itemID: String, quelle: String?) async -> Trickplay? {
+    /// Thumbnails while scrubbing; `nil` without trickplay on the server.
+    func trickplay(for itemID: String, source: String?) async -> Trickplay? {
         guard let client else { return nil }
-        return await client.trickplay(itemID: itemID, mediaSourceID: quelle)
+        return await client.trickplay(itemID: itemID, mediaSourceID: source)
     }
 
-    /// Die Kapitel der laufenden Fassung — leer, wenn die Datei keine hat
-    /// oder der Server nicht antwortet. Dann bleibt die Leiste ein Stück.
-    func kapitel(fuer itemID: String, quelle: String?) async -> [Kapitel] {
+    /// The chapters of the running version; empty if the file has none or the
+    /// server does not answer. Then the bar stays a single piece.
+    func chapter(for itemID: String, source: String?) async -> [Chapter] {
         guard let client else { return [] }
-        return await client.kapitel(itemID: itemID, mediaSourceID: quelle)
+        return await client.chapter(itemID: itemID, mediaSourceID: source)
     }
 
-    func trickplayBlatt(_ itemID: String, quelle: String?, breite: Int, blatt: Int) async -> Data? {
+    func trickplaySheet(_ itemID: String, source: String?, width: Int, sheet: Int) async -> Data? {
         guard let client else { return nil }
-        return await client.trickplayBlatt(itemID: itemID, mediaSourceID: quelle,
-                                           breite: breite, blatt: blatt)
+        return await client.trickplaySheet(itemID: itemID, mediaSourceID: source,
+                                           width: width, sheet: sheet)
     }
 
-    // MARK: - Wiedergabe melden
+    // MARK: - Reporting playback
     //
-    // Schlägt eine Meldung fehl, ist das kein Grund, die Wiedergabe zu stören —
-    // deshalb wird der Fehler hier nur vermerkt, nicht angezeigt.
+    // If a report fails, that is no reason to disturb playback; so the error is only
+    // noted here, not shown.
 
-    /// Was eine Meldung an den Server braucht. Der Client wird beim Einreihen
-    /// festgehalten: wechselt danach das Konto, gehoert die Meldung trotzdem
-    /// dem, der geschaut hat.
-    struct Meldeinhalt: Sendable {
+    /// What a report to the server needs. The client is captured when queued: if
+    /// the account switches afterwards, the report still belongs to whoever
+    /// watched.
+    struct ReportContent: Sendable {
         let client: JellyfinClient?
         let item: Item
         let plan: PlaybackPlan
-        let sekunden: Double
-        let spuren: Spurindizes
+        let seconds: Double
+        let tracks: TrackIndices
     }
 
-    private enum Meldefehler: Error { case keinServer }
+    private enum ReportError: Error { case noServer }
 
-    /// **Abgesetzt, nicht abgewartet** (Audit 16.09., T1-H2). Die Reihe steht
-    /// im Paket (`Meldewarteschlange`): Reihenfolge, Zusammenfassen, Frist
-    /// und die Stoppsperre je PlaySession. Hier steht nur, was gesendet wird.
-    @ObservationIgnored private let meldungen = Meldewarteschlange<Meldeinhalt> { meldung in
-        let inhalt = meldung.nutzlast
-        guard let client = inhalt.client else { throw Meldefehler.keinServer }
+    /// **Dispatched, not awaited.** The queue lives in the package
+    /// (`ReportQueue`): order, coalescing, deadline and the stop lock per
+    /// PlaySession. Here only what is sent.
+    @ObservationIgnored private let messages = ReportQueue<ReportContent> { message in
+        let content = message.payload
+        guard let client = content.client else { throw ReportError.noServer }
         #if DEBUG
-        // Messlauf: ein Server, der nicht antwortet (tvOS `-messlauf`).
+        // Measurement run: a server that does not answer (tvOS `-measurementRun`).
         if ProcessInfo.processInfo.arguments.contains("-meldungenHaengen") {
             try await Task.sleep(for: .seconds(30))
         }
         #endif
-        let item = inhalt.item, plan = inhalt.plan
-        let ticks = JellyfinClient.ticks(fromSeconds: inhalt.sekunden)
-        switch meldung.art {
+        let item = content.item, plan = content.plan
+        let ticks = JellyfinClient.ticks(fromSeconds: content.seconds)
+        switch message.art {
         case .start:
-            try await AppModel.startSenden(client: client, item: item, plan: plan, ticks: ticks,
-                                           spuren: inhalt.spuren)
-            Protokoll.schreib("[Melden] Start \(Int(inhalt.sekunden)) s \(item.id) session \(plan.playSessionID ?? "nil")"
-                + " Spuren \(inhalt.spuren.ton.map(String.init) ?? "—")/\(inhalt.spuren.untertitel.map(String.init) ?? "—")")
-        case let .fortschritt(pausiert):
+            try await AppModel.startSend(client: client, item: item, plan: plan, ticks: ticks,
+                                           tracks: content.tracks)
+            AppLog.writeOut("[Melden] Start \(Int(content.seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")"
+                + " Spuren \(content.tracks.audio.map(String.init) ?? "—")/\(content.tracks.subtitle.map(String.init) ?? "—")")
+        case let .progress(paused):
             try await client.reportProgress(itemID: item.id, plan: plan,
-                                            positionTicks: ticks, paused: pausiert, spuren: inhalt.spuren)
-            Protokoll.schreib("[Melden] Progress \(Int(inhalt.sekunden)) s pausiert \(pausiert) \(item.id)"
-                + " Spuren \(inhalt.spuren.ton.map(String.init) ?? "—")/\(inhalt.spuren.untertitel.map(String.init) ?? "—")")
-        case .stopp:
+                                            positionTicks: ticks, paused: paused, tracks: content.tracks)
+            AppLog.writeOut("[Melden] Progress \(Int(content.seconds)) s pausiert \(paused) \(item.id)"
+                + " Spuren \(content.tracks.audio.map(String.init) ?? "—")/\(content.tracks.subtitle.map(String.init) ?? "—")")
+        case .stop:
             try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
         }
     }
 
-    private func meldung(_ art: Meldewarteschlange<Meldeinhalt>.Art, item: Item,
-                         plan: PlaybackPlan, seconds: Double) -> Meldewarteschlange<Meldeinhalt>.Meldung {
+    private func message(_ art: ReportQueue<ReportContent>.Art, item: Item,
+                         plan: PlaybackPlan, seconds: Double) -> ReportQueue<ReportContent>.Message {
         .init(art: art,
-              schluessel: Stoppsperre.schluessel(itemID: item.id, playSessionID: plan.playSessionID),
-              nutzlast: Meldeinhalt(client: client, item: item, plan: plan, sekunden: seconds,
-                                    spuren: laufendeSpuren))
+              key: StopLock.key(itemID: item.id, playSessionID: plan.playSessionID),
+              payload: ReportContent(client: client, item: item, plan: plan, seconds: seconds,
+                                    tracks: runningTracks))
     }
 
-    /// Die Spuren, die der Player zuletzt gemeldet hat, als Jellyfin-Index
-    /// (T3 #8). Gehen mit Start und Fortschritt hinaus; der Player setzt sie
-    /// bei jedem Öffnen zurück und nach jeder Wahl neu.
-    @ObservationIgnored private var laufendeSpuren = Spurindizes()
+    /// The tracks the player last reported, as Jellyfin index. They go out with
+    /// start and progress; the player resets them on every open and anew after every
+    /// choice.
+    @ObservationIgnored private var runningTracks = TrackIndices()
 
-    func spurenGewaehlt(_ spuren: Spurindizes) {
-        laufendeSpuren = spuren
+    func tracksSelected(_ tracks: TrackIndices) {
+        runningTracks = tracks
     }
 
-    /// Kehrt sofort zurueck; gesendet wird in der Reihe.
+    /// Returns immediately; sending happens in the queue.
     func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) {
-        // Auch ohne Server: ein Titel von der Platte laeuft wieder, und sein
-        // naechstes Ende soll gemeldet werden duerfen — die Reihe gibt die
-        // Sperre beim Einreihen frei.
-        laufenderTitel = (item, plan)
-        gemeldetPausiert = false
-        Startmessung.geteilt.marke("Start an den Server")
-        meldungen.melden(meldung(.start, item: item, plan: plan, seconds: seconds))
-        trakt.start(item: item, client: client, sekunden: seconds)
+        // Also without a server: a title from disk plays again, and its next end
+        // should be allowed to be reported; the queue releases the lock on enqueueing.
+        runningTitle = (item, plan)
+        reportedPaused = false
+        StartMeasurement.shared.mark("Start an den Server")
+        messages.report(message(.start, item: item, plan: plan, seconds: seconds))
+        trakt.start(item: item, client: client, seconds: seconds)
     }
 
-    private nonisolated static func startSenden(client: JellyfinClient, item: Item,
+    private nonisolated static func startSend(client: JellyfinClient, item: Item,
                                                 plan: PlaybackPlan, ticks: Int64,
-                                                spuren: Spurindizes) async throws {
-        // **Die Faehigkeiten vor jeder Wiedergabe erneut melden.**
+                                                tracks: TrackIndices) async throws {
+        // **Report capabilities again before every playback.**
         //
-        // Sie wurden bisher **einmal** gemeldet, beim Erscheinen der
-        // Hauptansicht. Das reicht nicht, und am 10.09.2026 ist es
-        // aufgeschlagen: die Uebernahme ging auf beiden Geraeten
-        // gleichzeitig nicht mehr, in beide Richtungen.
+        // They used to be reported **once**, when the main view appeared. That is not
+        // enough: handover stopped working on both devices at once, in both directions.
         //
-        // Der Grund liegt darin, wie der Server sucht. `Sessions` wird mit
-        // `controllableByUserId` gefragt — es kommen also nur Sitzungen
-        // zurueck, die **Befehle annehmen**, und das weiss der Server nur
-        // durch `Sessions/Capabilities/Full`. Eine Sitzung lebt dort aber
-        // nicht ewig: Serverneustart, Zeitablauf, laengerer Hintergrund, und
-        // sie ist weg. Die naechste Wiedergabe legt dann eine **neue** an —
-        // und die hat die Faehigkeiten nie bekommen, weil das nur beim
-        // Programmstart geschah. Beide Geraete sind dann fuereinander
-        // unsichtbar, bis jemand die App neu startet. Das erklaert auch,
-        // warum es „auf einmal" nicht mehr ging und nicht schleichend.
+        // The reason lies in how the server searches. `Sessions` is queried with
+        // `controllableByUserId`, so only sessions that **accept commands** come back,
+        // and the server knows that only through `Sessions/Capabilities/Full`. But a
+        // session does not live forever there: server restart, timeout, a longer time in
+        // the background, and it is gone. The next playback then creates a **new** one,
+        // which never received the capabilities because that only happened at program
+        // start. Both devices are then invisible to each other until someone restarts
+        // the app. That also explains why it stopped "suddenly" and not gradually.
         //
-        // Der Aufruf ist billig, geht an dieselbe Gegenstelle, an die gleich
-        // die Startmeldung geht, und ist beliebig oft wiederholbar. Hier und
-        // nicht anderswo, weil genau das der Zeitpunkt ist, an dem das andere
-        // Geraet uns sehen koennen muss.
+        // The call is cheap, goes to the same peer that gets the start report right
+        // after, and can be repeated any number of times. Here and nowhere else,
+        // because this is the moment the other device must be able to see us.
         //
-        // Scheitert das, geht der Start trotzdem — ausser die Frist hat
-        // abgebrochen; dann ist auch der Start nicht mehr dran.
+        // If it fails, the start still goes ahead, unless the deadline cancelled; then
+        // the start is not due anymore either.
         do {
-            try await client.faehigkeitenMelden()
+            try await client.reportCapabilities()
         } catch {
             try Task.checkCancellation()
-            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+            AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
         }
-        try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, spuren: spuren)
+        try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, tracks: tracks)
     }
 
-    /// Was gerade laeuft — gemerkt, damit ein Fernbefehl, eine Pause oder ein
-    /// Sprung sofort gemeldet werden kann, ohne den Player danach zu fragen.
+    /// What is playing right now, remembered so a remote command, a pause or a seek
+    /// can be reported immediately without asking the player.
     ///
-    /// **Folgt dem Lebenslauf der Wiedergabe** (T1-M9): gesetzt mit dem Start,
-    /// geloescht mit dem Stopp. Frueher setzte ihn nur der Fortschritt, und nie
-    /// zurueck — ein Fernbefehl kurz nach Wechsel oder Schliessen meldete die
-    /// neue Stelle an die alte Folge.
-    @ObservationIgnored private var laufenderTitel: (item: Item, plan: PlaybackPlan)?
-    /// Was dem Server zuletzt als Laufzustand gesagt wurde — damit VLCs
-    /// Meldung nur einmal je Wechsel hinausgeht.
-    @ObservationIgnored private var gemeldetPausiert = false
+    /// **Follows the playback lifecycle:** set on start, cleared on stop. It used to
+    /// be set only by progress and never reset, so a remote command shortly after a
+    /// switch or close reported the new position to the old episode.
+    @ObservationIgnored private var runningTitle: (item: Item, plan: PlaybackPlan)?
+    /// What the server was last told as run state, so VLC's report goes out only
+    /// once per change.
+    @ObservationIgnored private var reportedPaused = false
 
-    /// Kehrt sofort zurueck; gesendet wird in der Reihe. Nach dem Stopp
-    /// dieser Sitzung verworfen.
+    /// Returns immediately; sending happens in the queue. Discarded after this
+    /// session's stop.
     func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
-        guard meldungen.melden(meldung(.fortschritt(pausiert: paused), item: item,
+        guard messages.report(message(.progress(paused: paused), item: item,
                                        plan: plan, seconds: seconds)) else {
-            Protokoll.schreib("[Melden] Fortschritt nach Stopp verworfen \(item.id)")
+            AppLog.writeOut("[Melden] Fortschritt nach Stopp verworfen \(item.id)")
             return
         }
-        laufenderTitel = (item, plan)
-        gemeldetPausiert = paused
+        runningTitle = (item, plan)
+        reportedPaused = paused
     }
 
-    /// **VLC hat angehalten oder laeuft wieder — sofort melden** (T1-N1).
+    /// **VLC paused or resumed: report immediately.**
     ///
-    /// Haengt an `VLCPlayerView.laeuftGemeldet`, nicht am Druck: der Knopf
-    /// wartet auf VLC, und wer im Druck meldete, las den Zustand von davor
-    /// (iOS meldete Pause als „laeuft"). Einmal hier fuer alle Fassungen;
-    /// vor dem Start und nach dem Stopp gibt es keinen laufenden Titel.
-    func laufzustandGemeldet(laeuft: Bool, sekunden: Double) {
-        guard let laufenderTitel, gemeldetPausiert == laeuft else { return }
-        Protokoll.schreib("[Melden] sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(sekunden)) s")
-        trakt.laufzustand(laeuft: laeuft, sekunden: sekunden)
-        reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
-                       seconds: sekunden, paused: !laeuft)
+    /// Hangs on `VLCPlayerView.runsReported`, not on the tap: the button waits for
+    /// VLC, and reporting in the tap read the state from before (iOS reported pause
+    /// as "playing"). Once here for all versions; before start and after stop there
+    /// is no running title.
+    func runStateReported(running: Bool, seconds: Double) {
+        guard let runningTitle, reportedPaused == running else { return }
+        AppLog.writeOut("[Melden] sofort: \(running ? "weiter" : "Pause") bei \(Int(seconds)) s")
+        trakt.runState(running: running, seconds: seconds)
+        reportProgress(item: runningTitle.item, plan: runningTitle.plan,
+                       seconds: seconds, paused: !running)
     }
 
-    /// **Gesprungen — sofort melden**, mit der Zielstelle. Haengt an
-    /// `VLCPlayerView.sprungGemeldet`, damit kein Sprungweg es vergisst.
-    func sprungGemeldet(ziel: Double) {
-        guard let laufenderTitel else { return }
-        reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
-                       seconds: max(0, ziel), paused: gemeldetPausiert)
-        trakt.sprung(sekunden: max(0, ziel))
+    /// **Seeked: report immediately**, with the target position. Hangs on
+    /// `VLCPlayerView.jumpReported` so no seek path forgets it.
+    func jumpReported(target: Double) {
+        guard let runningTitle else { return }
+        reportProgress(item: runningTitle.item, plan: runningTitle.plan,
+                       seconds: max(0, target), paused: reportedPaused)
+        trakt.leap(seconds: max(0, target))
     }
 
-    /// **Die App geht in den Hintergrund** (T3 #5): den Stand jetzt melden,
-    /// nicht erst im naechsten Takt — eingefroren kaeme der nie.
+    /// **The app goes to the background:** report the state now, not at the next
+    /// beat, which would never come while frozen.
     ///
-    /// `beginBackgroundTask` haelt die App wach, bis die Meldung durch ist
-    /// oder ihre Frist abgelaufen.
-    func hintergrundMelden(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
-        let eintrag = meldung(.fortschritt(pausiert: paused), item: item, plan: plan, seconds: seconds)
-        guard meldungen.fortschrittErlaubt(eintrag.schluessel) else { return }
-        Protokoll.schreib("[Melden] Hintergrund: \(Int(seconds)) s pausiert \(paused)")
+    /// `beginBackgroundTask` keeps the app awake until the report is through or its
+    /// deadline has passed.
+    func backgroundReport(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
+        let entryRecord = message(.progress(paused: paused), item: item, plan: plan, seconds: seconds)
+        guard messages.progressAllowed(entryRecord.key) else { return }
+        AppLog.writeOut("[Melden] Hintergrund: \(Int(seconds)) s pausiert \(paused)")
         #if os(iOS) || os(tvOS)
-        let aufgabe = UIApplication.shared.beginBackgroundTask(withName: "Wiedergabe melden")
+        let task = UIApplication.shared.beginBackgroundTask(withName: "Wiedergabe melden")
         Task {
-            let ergebnis = await meldungen.meldenUndWarten(eintrag)
-            Protokoll.schreib("[Melden] Hintergrund: \(ergebnis)")
-            UIApplication.shared.endBackgroundTask(aufgabe)
+            let result = await messages.reportAndWait(entryRecord)
+            AppLog.writeOut("[Melden] Hintergrund: \(result)")
+            UIApplication.shared.endBackgroundTask(task)
         }
         #else
-        meldungen.melden(eintrag)
+        messages.report(entryRecord)
         #endif
-        laufenderTitel = (item, plan)
-        gemeldetPausiert = paused
+        runningTitle = (item, plan)
+        reportedPaused = paused
     }
 
-    /// Zählt einen fertig geschauten Titel und meldet, ob danach die Frage
-    /// nach einer Bewertung oder der Hinweis auf den Discord dran ist —
-    /// höchstens eins davon (``Gemeinschaft/anstoss``).
-    func fertigGeschaut(position: Double, dauer: Double) {
-        guard Bewertungsfrage.zaehltAlsFertig(position: position, dauer: dauer) else { return }
-        let ablage = UserDefaults.standard
-        let fertig = ablage.integer(forKey: "bewertungFertig") + 1
-        ablage.set(fertig, forKey: "bewertungFertig")
-        let fassung = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    /// Counts a finished title and reports whether the rating prompt or the hint
+    /// about the Discord is due next, at most one of them (``Gemeinschaft/anstoss``).
+    func doneWatch(position: Double, duration: Double) {
+        guard RatingQuestion.countsAsReady(position: position, duration: duration) else { return }
+        let store = UserDefaults.standard
+        let done = store.integer(forKey: "bewertungFertig") + 1
+        store.set(done, forKey: "bewertungFertig")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         #if os(tvOS)
-        // tvOS hat keine Bewertungsabfrage — `requestReview` gibt es dort nicht.
-        let bewertungMoeglich = false
+        // tvOS has no review prompt; `requestReview` does not exist there.
+        let ratingPossible = false
         #else
-        let bewertungMoeglich = true
+        let ratingPossible = true
         #endif
-        switch Gemeinschaft.anstoss(fertig: fertig,
-                                    bewertungZuletzt: ablage.string(forKey: "bewertungFassung"),
-                                    fassung: fassung,
-                                    discordGezeigt: ablage.bool(forKey: "discordHinweisGezeigt"),
-                                    bewertungMoeglich: bewertungMoeglich) {
-        case .bewertung:
-            ablage.set(fassung, forKey: "bewertungFassung")
-            bewertungFaellig = true
+        switch Community.kickoff(done: done,
+                                    ratingLast: store.string(forKey: "bewertungFassung"),
+                                    version: version,
+                                    discordShown: store.bool(forKey: "discordHinweisGezeigt"),
+                                    ratingPossible: ratingPossible) {
+        case .rating:
+            store.set(version, forKey: "bewertungFassung")
+            ratingDue = true
         case .discord:
-            // Gleich als gezeigt merken: stürzt die App vorher ab oder wird
-            // sie geschlossen, kommt der Hinweis lieber nie als zweimal.
-            ablage.set(true, forKey: "discordHinweisGezeigt")
-            discordHinweisFaellig = true
+            // Mark as shown right away: if the app crashes or is closed before, the hint
+            // would rather never come than twice.
+            store.set(true, forKey: "discordHinweisGezeigt")
+            discordHintDue = true
         case nil:
             break
         }
     }
 
-    /// Das Ende — **abgewartet**, weil danach die Seiten neu laden (d8492ca).
-    /// Die Reihe schickt es hinter einem noch laufenden Start; doppelt kommt es
-    /// nicht (Stoppsperre in der Reihe).
+    /// The end, **awaited**, because the pages reload afterwards. The queue sends
+    /// it behind a start that is still running; it does not arrive twice (stop lock in
+    /// the queue).
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
         let ticks = JellyfinClient.ticks(fromSeconds: seconds)
-        // Das Konto von jetzt, nicht das nach dem Warten — wechselt es
-        // dazwischen, gehört die Stelle trotzdem dem, der geschaut hat.
-        let konto = session?.userID
-        // Der gemerkte Stand der Serie ist ab jetzt alt — siehe
-        // `Serienspeicher.standVergessen`.
-        if let serie = item.seriesId { Serienspeicher.geteilt.standVergessen(serie) }
-        // Mit und ohne Netz: der Download kennt seinen Stand selbst (1.0.5).
-        downloads.wiedergabeVermerken(item.id, ticks: ticks)
-        // Auch nach einer Nachmeldung: die Seite soll dann wenigstens den
-        // Stand des letzten Takts zeigen, nicht den von vor dem Abspielen.
+        // The current account, not the one after waiting: if it switches in between,
+        // the position still belongs to whoever watched.
+        let account = session?.userID
+        // The remembered series state is stale from now on; see
+        // `SeriesCache.stateForget`.
+        if let series = item.seriesId { SeriesCache.shared.stateForget(series) }
+        // With and without network: the download knows its own state.
+        downloads.playbackRemember(item.id, ticks: ticks)
+        // Also after a deferred report: the page should then at least show the state
+        // of the last beat, not the one from before playing.
         //
-        // **Nur, wenn der Player zu ist.** Beim Wechsel zur nächsten Folge
-        // stoppt die alte, während er offen bleibt; zählte das mit, luden
-        // Startseite, Filme, Serien und Detailseiten hinter dem Player neu
-        // (Audit 29.09.2026). Das Schließen meldet danach die letzte Folge.
-        defer { if !playerOffen { wiedergabeBeendet += 1 } }
-        let eintrag = meldung(.stopp, item: item, plan: plan, seconds: seconds)
-        // Vor dem Abwarten: Trakt hat seine eigene Reihe und wartet auf
-        // Jellyfin nicht — und Jellyfin nicht auf Trakt.
-        trakt.stopp(item: item, sekunden: seconds)
-        // Sofort, nicht nach der Antwort: ein Fernbefehl in der Zwischenzeit
-        // gehoert keinem Titel mehr (T1-M9).
-        if let laufenderTitel,
-           Stoppsperre.schluessel(itemID: laufenderTitel.item.id,
-                                  playSessionID: laufenderTitel.plan.playSessionID) == eintrag.schluessel {
-            self.laufenderTitel = nil
+        // **Only when the player is closed.** When switching to the next episode the old
+        // one stops while the player stays open; if that counted, home page, movies,
+        // series and detail pages behind the player reloaded. Closing then reports the
+        // last episode.
+        defer { if !playerOpen { playbackEnded += 1 } }
+        let entryRecord = message(.stop, item: item, plan: plan, seconds: seconds)
+        // Before awaiting: Trakt has its own queue and does not wait for Jellyfin, nor
+        // Jellyfin for Trakt.
+        trakt.stop(item: item, seconds: seconds)
+        // Immediately, not after the response: a remote command in the meantime no
+        // longer belongs to any title.
+        if let runningTitle,
+           StopLock.key(itemID: runningTitle.item.id,
+                                  playSessionID: runningTitle.plan.playSessionID) == entryRecord.key {
+            self.runningTitle = nil
         }
-        let ergebnis = await meldungen.meldenUndWarten(eintrag)
-        switch ergebnis {
-        case .gesendet:
+        let result = await messages.reportAndWait(entryRecord)
+        switch result {
+        case .sent:
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
-            Protokoll.schreib("[Melden] Stopped \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")")
-            // Eine ältere Stelle aus dem Flugzeug darf danach nicht mehr hinaus.
-            if let konto {
-                nachmeldungen = Nachmelderegeln.ueberholt(itemID: item.id, konto: konto, in: nachmeldungen)
+            AppLog.writeOut("[Melden] Stopped \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")")
+            // An older position from the plane must not go out afterwards.
+            if let account {
+                pending = PostReportRules.overFetches(itemID: item.id, account: account, in: pending)
             }
-        case .verworfen:
-            Protokoll.schreib("[Melden] Stopped doppelt verworfen \(item.id) session \(plan.playSessionID ?? "nil")")
-        case .gescheitert, .zeitUeberschritten:
-            // **Hier entsteht die Angabe, für die es Downloads gibt.**
+        case .discarded:
+            AppLog.writeOut("[Melden] Stopped doppelt verworfen \(item.id) session \(plan.playSessionID ?? "nil")")
+        case .failed, .timeOverStep:
+            // **This is where the information downloads exist for is created.**
             //
-            // Wer einen Titel im Flugzeug sieht, erzeugt genau eine Auskunft,
-            // die niemand sonst hat: wo er aufgehört hat. Ginge sie hier
-            // verloren, hätte der Server den Stand vom Start des Flugs, und
-            // zu Hause liefe die Folge von vorn los. H8, zweite Hälfte.
-            Self.log.error("Ende-Meldung nicht durch (\(String(describing: ergebnis), privacy: .public)), wird nachgemeldet")
-            Protokoll.schreib("[Melden] Stopped \(ergebnis) → Nachmeldung \(item.id)")
-            nachmelden(item.id, ticks, konto: konto)
+            // Whoever watches a title on a plane produces exactly one piece of information
+            // nobody else has: where they stopped. If it were lost here, the server would
+            // have the state from the start of the flight, and at home the episode would
+            // start from the beginning. The offline rule, second half.
+            Self.log.error("Ende-Meldung nicht durch (\(String(describing: result), privacy: .public)), wird nachgemeldet")
+            AppLog.writeOut("[Melden] Stopped \(result) → Nachmeldung \(item.id)")
+            reportLater(item.id, ticks, account: account)
         }
     }
 
-    // MARK: H8 — was der Server noch nicht weiss
+    // MARK: what the server does not know yet
 
-    private static let nachmeldeschluessel = "nachmeldungen"
+    private static let postReportKey = "nachmeldungen"
 
-    private var nachmeldungen: [Nachmeldung] {
+    private var pending: [PendingReport] {
         get {
-            guard let roh = UserDefaults.standard.data(forKey: Self.nachmeldeschluessel)
+            guard let raw = UserDefaults.standard.data(forKey: Self.postReportKey)
             else { return [] }
-            return (try? JSONDecoder().decode([Nachmeldung].self, from: roh)) ?? []
+            return (try? JSONDecoder().decode([PendingReport].self, from: raw)) ?? []
         }
         set {
-            guard let roh = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(roh, forKey: Self.nachmeldeschluessel)
+            guard let raw = try? JSONEncoder().encode(newValue) else { return }
+            UserDefaults.standard.set(raw, forKey: Self.postReportKey)
         }
     }
 
     #if DEBUG
-    /// Für den Selbsttest (`Offlinelauf`).
-    var nachmeldungenFuerLauf: [Nachmeldung] { nachmeldungen }
-    /// Eine Meldung von früher unterschieben — prüft „der neuere Stand gewinnt".
-    func nachmeldungUnterschieben(_ itemID: String, ticks: Int64, wann: Date) {
-        guard let konto = session?.userID else { return }
-        nachmeldungen = Nachmelderegeln.aufnehmen(
-            Nachmeldung(itemID: itemID, konto: konto, ticks: ticks, wann: wann), in: nachmeldungen)
+    /// For the self-test (`OfflineRun`).
+    var pendingReportsRun: [PendingReport] { pending }
+    /// Slip in a report from earlier; checks "the newer state wins".
+    func pendingReportUnderPush(_ itemID: String, ticks: Int64, moment: Date) {
+        guard let account = session?.userID else { return }
+        pending = PostReportRules.record(
+            PendingReport(itemID: itemID, account: account, ticks: ticks, moment: moment), in: pending)
     }
-    var laufenderTitelKennung: String? { laufenderTitel?.item.id }
+    var runningTitleId: String? { runningTitle?.item.id }
     #endif
 
-    private func nachmelden(_ itemID: String, _ ticks: Int64, konto: String?) {
-        guard let konto else { return }
-        nachmeldungen = Nachmelderegeln.aufnehmen(
-            Nachmeldung(itemID: itemID, konto: konto, ticks: ticks),
-            in: nachmeldungen)
+    private func reportLater(_ itemID: String, _ ticks: Int64, account: String?) {
+        guard let account else { return }
+        pending = PostReportRules.record(
+            PendingReport(itemID: itemID, account: account, ticks: ticks),
+            in: pending)
     }
 
-    /// Alles Liegengebliebene abschicken. Läuft nach jeder erfolgreichen
-    /// Verbindungsprüfung — also genau dann, wenn der Server nachweislich
-    /// wieder da ist, statt in einem eigenen Takt zu raten — und vor dem
-    /// Nachziehen der Downloads.
+    /// Send everything left over. Runs after every successful connection check,
+    /// i.e. exactly when the server is demonstrably back, instead of guessing in a
+    /// timer of its own, and before the downloads are brought up to date.
     ///
-    /// **Was gilt, entscheidet das Paket** (`JellyfinClient.nachmelden`):
-    /// älteste zuerst, ein neuerer Stand am Server gewinnt, beim ersten
-    /// Fehler bleibt der Rest liegen. **Nie zweimal gleichzeitig** — die
-    /// Prüfung läuft nach Verbinden, Anmelden und Kontowechsel, und zwei
-    /// Durchgänge nebeneinander schickten dieselbe Stelle doppelt.
-    func nachmeldungenAbschicken() async {
-        guard !nachmeldenLaeuft, let client, let konto = session?.userID else { return }
-        let offen = Nachmelderegeln.faellig(nachmeldungen, konto: konto)
-        guard !offen.isEmpty else { return }
-        nachmeldenLaeuft = true
-        defer { nachmeldenLaeuft = false }
-        let erledigt = await client.nachmelden(offen) { Protokoll.schreib($0) }
-        guard !erledigt.isEmpty else { return }
-        nachmeldungen = Nachmelderegeln.erledigt(erledigt, in: nachmeldungen)
-        Self.log.info("\(erledigt.count) Stellen nachgemeldet")
+    /// **The package decides what applies** (`JellyfinClient.reportLater`): oldest
+    /// first, a newer state on the server wins, on the first error the rest stays.
+    /// **Never twice at once:** the check runs after connect, sign-in and account
+    /// switch, and two passes side by side sent the same position twice.
+    func pendingSubmit() async {
+        guard !reportLaterRuns, let client, let account = session?.userID else { return }
+        let opened = PostReportRules.due(pending, account: account)
+        guard !opened.isEmpty else { return }
+        reportLaterRuns = true
+        defer { reportLaterRuns = false }
+        let completed = await client.reportLater(opened) { AppLog.writeOut($0) }
+        guard !completed.isEmpty else { return }
+        pending = PostReportRules.completed(completed, in: pending)
+        Self.log.info("\(completed.count) Stellen nachgemeldet")
     }
 
-    @ObservationIgnored private var nachmeldenLaeuft = false
+    @ObservationIgnored private var reportLaterRuns = false
 
-    /// Auf ein anderes Konto desselben Servers umschalten.
+    /// Switch to another account on the same server.
     ///
-    /// **Kein neues Passwort.** Beide Merkmale liegen im Schlüsselbund; der
-    /// Wechsel tauscht nur, welches gilt. Was danach neu aufgebaut werden
-    /// muss, steht in ``neuVerbinden()`` — es ist mehr, als man denkt.
-    func kontoWechseln(zu kennung: String) {
-        // Über den Kontoschlüssel — dieselbe Benutzerkennung kann es auf zwei
-        // Servern geben. Eine bloße Kennung von früher geht weiterhin.
-        guard var neu = bund, let ziel = neu.konto(kennung),
-              ziel.kontoschluessel != neu.aktives.kontoschluessel else { return }
-        neu.wechseln(zu: kennung)
-        bund = neu
-        bundSichern()
-        neuVerbinden()
+    /// **No new password.** Both tokens are in the keychain; the switch only changes
+    /// which one applies. What must be rebuilt afterwards is in ``newConnect()``;
+    /// it is more than you would think.
+    func switchAccount(toward identifier: String) {
+        // By account key: the same user ID can exist on two servers. A bare ID from
+        // before still works.
+        guard var new = bundle, let target = new.account(identifier),
+              target.accountKey != new.activeOne.accountKey else { return }
+        new.switchTo(toward: identifier)
+        bundle = new
+        saveBundle()
+        newConnect()
     }
 
-    /// Baut alles neu auf, was am angemeldeten Konto hängt.
+    /// Rebuilds everything that hangs on the signed-in account.
     ///
-    /// **Die Fernsteuerung gehört dazu, und das sieht man ihr nicht an.**
-    /// Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
-    /// bleibt beim Kontowechsel aber stehen, und dann meldete sich das Gerät
-    /// weiter mit dem Merkmal des vorigen Kontos am Server. Auf dem iPhone
-    /// wäre danach die falsche Wiedergabe zum Übernehmen angeboten worden.
-    private func neuVerbinden() {
+    /// **The remote control belongs here, which is not obvious.** Otherwise it is
+    /// started only when the main view appears, but that stays put on an account
+    /// switch, and the device would keep reporting to the server with the previous
+    /// account's identity. On the iPhone the wrong playback would then have been
+    /// offered for takeover.
+    private func newConnect() {
         guard let s = session else { return }
-        // Anderer Server: bis seine Antwort da ist, steht die Adresse statt
-        // des alten Namens da — nicht der Name des Servers von eben.
+        // Another server: until its response arrives, the address is shown instead of
+        // the old name, not the previous server's name.
         if client?.baseURL.absoluteString.lowercased() != s.serverURL.absoluteString.lowercased() {
             serverName = s.serverURL.host()
             serverVersion = nil
         }
-        // **Beim Wechsel wird nicht abgemeldet.** `abmelden()` schickt ein
-        // `Sessions/Logout` an den Server und zieht das Merkmal ein — richtig
-        // beim Abmelden, verheerend beim Umschalten: das Konto, von dem man
-        // weggeht, waere danach unbrauchbar, und der Weg zurueck endet in
-        // „Anmeldung abgelehnt". Der alte Client wird einfach fallen
-        // gelassen; das Merkmal bleibt gueltig und liegt im Schluesselbund.
-        let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
+        // **Switching does not sign out.** `signOff()` sends `Sessions/Logout` to the
+        // server and withdraws the token: right when signing out, disastrous when
+        // switching, since the account being left would then be unusable and the way
+        // back ends in "Sign-in rejected". The old client is simply dropped; the token
+        // stays valid and sits in the keychain.
+        let newer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
                                    deviceName: Self.deviceName, session: s)
-        client = neuer
+        client = newer
         phase = .ready
-        nachDemWechsel()
-        Task { _ = await verbindungPruefen() }
+        afterSwitch()
+        Task { _ = await connectionCheck() }
     }
 
     func signOut() {
-        // Der Socket lief vorher weiter — mit einem Zugangsmerkmal, das der
-        // Nutzer gerade loswerden wollte. Seit die Fernsteuerung sich nach
-        // einem Abriss selbst wieder aufbaut, hätte sie das auch getan.
-        let alter = client
-        // Sofort eingereiht, nicht erst in der Aufgabe: sonst kann der
-        // Neustart für das nächste Konto (`neuVerbinden` unten) vor diesem
-        // Beenden in der Kette stehen.
-        let beendet = fernEinreihen { [weak self] in await self?.fernBeenden() }
+        // The socket used to keep running, with an access token the user had just
+        // wanted to get rid of. Since the remote control rebuilds itself after a drop,
+        // it would have done so here too.
+        let older = client
+        // Enqueued immediately, not inside the task: otherwise the restart for the
+        // next account (`newConnect` below) could end up in the chain before this
+        // stop.
+        let ended = remoteInRails { [weak self] in await self?.remoteEnd() }
         Task {
-            await beendet.value
-            await alter?.abmelden()
+            await ended.value
+            await older?.signOff()
         }
-        // **Abmelden trifft nur das aktive Konto.** Sind noch andere da,
-        // schaltet die App auf das nächste um, statt zur Serveranmeldung
-        // zurückzufallen — wer den Server ganz verlassen will, meldet jedes
-        // Konto einzeln ab. Ein Knopf, eine Bedeutung.
-        if let konto = session?.kontoschluessel { Startseitenmodell.ablageLoeschen(konto) }
-        if let rest = bund?.entfernt(bund?.aktiveKennung ?? "") {
-            bund = rest
-            bundSichern()
-            neuVerbinden()
+        // **Signing out affects only the active account.** If others remain, the app
+        // switches to the next instead of falling back to the server sign-in; whoever
+        // wants to leave the server entirely signs out each account individually. One
+        // button, one meaning.
+        if let account = session?.accountKey { HomeModel.storeDelete(account) }
+        if let rest = bundle?.removed(bundle?.activeId ?? "") {
+            bundle = rest
+            saveBundle()
+            newConnect()
             return
         }
 
-        Keychain.delete(key: Self.kontenKey)
+        Keychain.delete(key: Self.accountsKey)
         Keychain.delete(key: Self.sessionKey)
-        // Sonst stehen im Top Shelf weiter die Titel des vorigen Kontos.
+        // Otherwise the Top Shelf keeps showing the previous account's titles.
         //
-        // **Nur auf dem Fernseher, und deshalb eingeklammert.** Ein Top Shelf
-        // gibt es sonst nirgends: `Regalvorschau.swift` steht in der
-        // tvOS-App und in ihrer Erweiterung, in keinem anderen Ziel. Ohne
-        // die Klammer bricht macOS an dieser Zeile ab — dort sind die
-        // geteilten Dateien einzeln aufgezaehlt, waehrend iOS `Sources/Shared`
-        // als ganzen Ordner nimmt und die Datei versehentlich mitbekommt.
-        // Der Bau auf iOS beweist hier also nichts.
+        // **Only on TV, hence wrapped in a condition.** A Top Shelf exists nowhere else:
+        // `ShelfPreview.swift` lives in the tvOS app and its extension, in no other
+        // target. Without the condition macOS fails at this line: there the shared files
+        // are listed individually, while iOS takes `Sources/Shared` as a whole folder
+        // and gets the file by accident. So a build on iOS proves nothing here.
         #if os(tvOS)
-        Regal.leeren()
+        Shelf.wipe()
         #endif
-        bund = nil
+        bundle = nil
         client = nil
         views = []
         errorMessage = nil
         phase = .disconnected
     }
 
-    // MARK: - Sitzung sichern
+    // MARK: - Saving the session
 
-    func bundSichern() {
-        guard let bund else { return }
+    func saveBundle() {
+        guard let bundle else { return }
         do {
-            try Keychain.save(JSONEncoder().encode(bund), key: Self.kontenKey)
-            // Sofort zurücklesen: ein Schreibfehler, der erst beim nächsten
-            // Start auffällt, kostet unnötig eine Anmeldung.
-            guard Keychain.load(key: Self.kontenKey) != nil else {
+            try Keychain.save(JSONEncoder().encode(bundle), key: Self.accountsKey)
+            // Read back immediately: a write error that only shows at the next launch
+            // needlessly costs a sign-in.
+            guard Keychain.load(key: Self.accountsKey) != nil else {
                 Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
                 errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.")
                 return
@@ -2390,64 +2317,58 @@ final class AppModel {
         }
     }
 
-    /// Liest den Bund — und nimmt eine einzelne Sitzung aus der Zeit davor an.
+    /// Reads the bundle and adopts a single session from the time before.
     ///
-    /// **Die Übernahme steht hier und nicht im Paket**, weil nur der
-    /// Zustandshalter weiß, wo etwas liegt. Der alte Eintrag wird nicht
-    /// gelöscht: wer noch einmal eine ältere Fassung startet, soll nicht
-    /// plötzlich abgemeldet sein.
-    private func bundLaden() -> Kontenbund? {
-        // **Wo die Daten liegen, weiß nur der Zustandshalter; was sie
-        // bedeuten, steht im Paket.** Genau diese Trennung hat gefehlt: die
-        // Übernahme der Einzelsitzung stand hier und noch einmal in der
-        // GTK-Fassung, in zwei Schreibweisen.
-        Kontenbund.ausAblage(bund: Keychain.load(key: Self.kontenKey),
-                             einzelne: Keychain.load(key: Self.sessionKey))
+    /// **The adoption lives here and not in the package**, because only the state
+    /// holder knows where something is stored. The old entry is not deleted: whoever
+    /// starts an older version again should not suddenly be signed out.
+    private func loadBundle() -> AccountBundle? {
+        // **Only the state holder knows where the data lives; what it means is
+        // defined in the package.** This separation was missing: the adoption of the
+        // single session existed here and again in the GTK version, in two spellings.
+        AccountBundle.outStore(bundle: Keychain.load(key: Self.accountsKey),
+                             individual: Keychain.load(key: Self.sessionKey))
     }
 
     private func restoreSession() {
-        guard let wieder = bundLaden() else { return }
-        bund = wieder
-        let s = wieder.aktives
-        let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
+        guard let anew = loadBundle() else { return }
+        bundle = anew
+        let s = anew.activeOne
+        let newer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
                                    deviceName: Self.deviceName, session: s)
-        client = neuer
+        client = newer
         phase = .ready
         Task {
-            // Name und Fassung stehen sonst nur nach einer frischen Verbindung
-            // bereit — in den Einstellungen stand danach „Server · ?".
+            // Name and version are otherwise only available after a fresh connection;
+            // settings then showed "Server · ?".
             //
-            // **Beide Prüfungen nebeneinander.** `verbindungPruefen` wartet
-            // auf die liegengebliebenen Nachmeldungen (Frist je Anfrage bis
-            // 20 s); ein widerrufenes Merkmal kam so erst danach zur
-            // Abmeldung, und bis dahin zeigte die Startseite „Server ist
-            // abgetaucht", obwohl der Server antwortete.
-            async let gilt = neuer.sitzungGiltNoch()
-            _ = await verbindungPruefen()
+            // **Both checks side by side.** `connectionCheck` waits for the queued
+            // reports (deadline per request up to 20 s); a revoked token thus only led to
+            // sign-out after that, and until then the home page showed "Server unreachable"
+            // although the server answered.
+            async let applies = newer.sessionAppliesStill()
+            _ = await connectionCheck()
 
-            // Und prüfen, ob das Merkmal überhaupt noch gilt.
+            // And check whether the token is still valid at all.
             //
-            // Vorher genügte ein Eintrag im Keychain, um `ready` zu setzen.
-            // Ein widerrufenes Merkmal führte damit nicht auf den
-            // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
-            // von dort gibt es keinen Weg zurück außer über das Profilmenü.
-            guard await gilt else {
-                // **Nur, wenn dieses Konto noch das aktive ist.** Die Prüfung
-                // kann langsam sein; wer in der Zwischenzeit auf ein anderes
-                // Konto gewechselt hat, würde sonst mit ihrem Ergebnis
-                // abgemeldet — das neue Konto statt des widerrufenen.
-                // `client` wird bei jedem Wechsel neu angelegt; ist es nicht
-                // mehr dieser, gilt die Antwort niemandem mehr.
-                guard client === neuer else { return }
+            // Previously a keychain entry was enough to set `ready`. A revoked token then
+            // led not to the sign-in screen but to "No contact with the server", and from
+            // there the only way back is the profile menu.
+            guard await applies else {
+                // **Only if this account is still the active one.** The check can be slow;
+                // someone who switched to another account in the meantime would otherwise be
+                // signed out by its result: the new account instead of the revoked one.
+                // `client` is created anew on every switch; if it is no longer this one, the
+                // answer applies to nobody.
+                guard client === newer else { return }
                 let name = session?.userName
                 signOut()
-                // **Nach dem Abmelden kann noch ein Konto da sein.** Seit es
-                // mehrere gibt, schaltet `signOut` auf das nächste um statt
-                // zur Serveranmeldung zurückzufallen — und dann wäre „bitte
-                // neu anmelden" schlicht falsch: der Nutzer ist angemeldet,
-                // nur mit einem anderen Konto.
-                if let weiter = session?.userName {
-                    errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(weiter).")
+                // **After signing out an account can still be there.** Since there are
+                // several, `signOut` switches to the next instead of falling back to the server
+                // sign-in, and then "please sign in again" would simply be wrong: the user is
+                // signed in, just with another account.
+                if let proceed = session?.userName {
+                    errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(proceed).")
                 } else {
                     errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
                 }
@@ -2456,65 +2377,64 @@ final class AppModel {
         }
     }
 
-    /// Liegt in JellyfinKit, damit sie ohne Simulator testbar ist.
+    /// Lives in JellyfinKit so it is testable without a simulator.
     static func normalizeServerURL(_ raw: String) -> URL? {
         AppModelURLNormalizer.normalize(raw)
     }
 }
 
 extension AppModel {
-    /// **Der Weg in die Wiedergabe einer Folge, einmal.**
+    /// **The path into playing an episode, once.**
     ///
-    /// Stand zeichengleich in `Shared/SeriesView.swift` und
-    /// `tvOS/SerienView.swift` — bis auf das Zuweisungsziel. Genau die Sorte,
-    /// die auseinanderlaeuft: Es reicht, dass einer die Meldung aendert oder
-    /// eine Pruefung ergaenzt, und die Plattformen antworten verschieden.
+    /// It stood character for character in `Shared/SeriesView.swift` and
+    /// `tvOS/SeriesView.swift`, except for the assignment target. Exactly the kind
+    /// that drifts apart: it is enough for one to change the message or add a check,
+    /// and the platforms answer differently.
     ///
-    /// Gibt `nil` zurueck, wenn der Server keinen Plan liefert. Die Meldung
-    /// dazu steht in `folgeNichtGeladen`, damit sie ebenfalls nur einmal
-    /// existiert.
-    func folgenwunsch(_ folge: Item, ab: Double) async -> Abspielwunsch? {
-        guard let plan = await plan(for: folge.id) else { return nil }
-        return Abspielwunsch(item: folge, plan: plan, startAt: ab)
+    /// Returns `nil` if the server delivers no plan. The message for that is in
+    /// `episodeNotLoaded` so it, too, exists only once.
+    func episodesRequest(_ episode: Item, since: Double) async -> PlayRequest? {
+        guard let plan = await plan(for: episode.id) else { return nil }
+        return PlayRequest(item: episode, plan: plan, startAt: since)
     }
 
-    static var folgeNichtGeladen: String {
+    static var episodeNotLoaded: String {
         String(localized: "Die Folge konnte nicht geladen werden.")
     }
 }
 
-/// Die festen Reihen der Startseite — ein- und ausschaltbar, umsortierbar.
+/// The fixed home page rows: can be turned on and off and reordered.
 ///
-/// **Neue Filme und neue Serien sind eigene Reihen**, damit man sie einzeln
-/// schieben kann: wer Serien oben will und Filme unten, soll das können.
-/// `neuzugaenge` ist die gemeinsame Reihe, wenn „Neuzugänge getrennt" aus ist.
-// `Startreihe` liegt seit dem 13.09.2026 im Paket (`Startreihen.swift`) — die
-// Frage, welche Reihe wann gilt, ist keine Anzeigefrage, und hier erreichte
-// sie Linux und Windows nicht.
+/// **New movies and new series are rows of their own** so they can be moved
+/// individually: someone who wants series on top and movies at the bottom should
+/// be able to. `newArrivals` is the shared row when "Split new additions" is
+/// off.
+// `StartRail` lives in the package (`StartRails.swift`): which row applies
+// when is not a display question, and here it did not reach Linux and Windows.
 
-/// Name und Zeichen einer Reihe — **hier, nicht in einer Ansicht.**
+/// Name and symbol of a row, **here and not in a view.**
 ///
-/// Sie standen in `DarstellungView`, und die gibt es nur auf iOS. Die
-/// Mac-Fassung braucht dieselben Wörter für dieselben Reihen; eine zweite
-/// Liste wäre genau die kopierte Funktion, vor der CLAUDE.md warnt.
-extension Startreihe {
+/// They used to be in `PresentationView`, which exists only on iOS. The Mac
+/// version needs the same words for the same rows; a second list would be
+/// exactly the kind of copied function to avoid.
+extension StartRail {
     var name: LocalizedStringKey {
         switch self {
-        case .weiterschauen: "Weiterschauen"
-        case .naechsteFolge: "Nächste Folge"
-        case .neueFilme:     "Neue Filme"
-        case .neueSerien:    "Neue Serien"
-        case .neuzugaenge:   "Neu hinzugefügt"
+        case .continueWatching: "Weiterschauen"
+        case .nextEpisode: "Nächste Folge"
+        case .newMovies:     "Neue Filme"
+        case .newSeries:    "Neue Serien"
+        case .newArrivals:   "Neu hinzugefügt"
         }
     }
 
     var symbol: String {
         switch self {
-        case .weiterschauen: "play.circle"
-        case .naechsteFolge: "forward.end"
-        case .neueFilme:     "film"
-        case .neueSerien:    "tv"
-        case .neuzugaenge:   "sparkles"
+        case .continueWatching: "play.circle"
+        case .nextEpisode: "forward.end"
+        case .newMovies:     "film"
+        case .newSeries:    "tv"
+        case .newArrivals:   "sparkles"
         }
     }
 }

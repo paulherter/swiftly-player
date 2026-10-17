@@ -1,0 +1,7 @@
+// Icon and manifest of the launcher.
+//
+// ID 1 for the icon: Windows uses the lowest ID as the program icon, and
+// `launcher.c` loads it under the same number.
+// ID 1 for the manifest (type 24): this is how Windows finds it at startup.
+1 ICON "..\\Assets\\swiftly.ico"
+1 24 "launcher.manifest"

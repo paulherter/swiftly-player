@@ -1,44 +1,44 @@
 #!/bin/bash
-# PreToolUse-Haken: verhindert Schreibzugriffe in einen fremden Arbeitsbaum.
+# PreToolUse hook: prevents writes into a foreign working tree.
 #
-# CLAUDE.md sagt es dreimal, und trotzdem ist der tvOS-Sitzung am 05.09.2026
-# eine Uebernahme abhandengekommen. Eine Regel, die nur dasteht, wird
-# irgendwann uebersehen; eine, die der Haken durchsetzt, nicht.
+# A rule that is only written down gets overlooked sooner or later; one that
+# the hook enforces does not. A port once went missing because a session wrote
+# into another platform's tree.
 #
-# Gesperrt wird genau ein Fall: das Ziel liegt in einem **anderen Auscheck
-# desselben Git-Verzeichnisses**. Alles andere bleibt offen — Notizen
-# ist ein eigenes Repo, der Kritzelordner gehoert zu keinem, beide sind frei.
+# Exactly one case is blocked: the target lies in **another checkout of the
+# same Git directory**. Everything else stays open -- a separate repo, or a
+# scratch folder that belongs to none, are both free.
 #
-# Rueckgabe 2 blockt und schickt stderr an die Sitzung zurueck.
+# Exit code 2 blocks and sends stderr back to the session.
 
-eingabe=$(cat)
-ziel=$(printf '%s' "$eingabe" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
-[ -z "$ziel" ] && exit 0
+input=$(cat)
+target=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
+[ -z "$target" ] && exit 0
 
-# Neue Dateien gibt es noch nicht — bis zum naechsten vorhandenen Ordner hoch.
-ordner=$(dirname "$ziel")
-while [ ! -d "$ordner" ] && [ "$ordner" != "/" ]; do ordner=$(dirname "$ordner"); done
+# New files do not exist yet -- walk up to the nearest existing folder.
+folder=$(dirname "$target")
+while [ ! -d "$folder" ] && [ "$folder" != "/" ]; do folder=$(dirname "$folder"); done
 
-zielbaum=$(git -C "$ordner" rev-parse --show-toplevel 2>/dev/null) || exit 0
-zielgit=$(git -C "$ordner" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+zielbaum=$(git -C "$folder" rev-parse --show-toplevel 2>/dev/null) || exit 0
+zielgit=$(git -C "$folder" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 
-eigen="${CLAUDE_PROJECT_DIR:-$PWD}"
-eigenbaum=$(git -C "$eigen" rev-parse --show-toplevel 2>/dev/null) || exit 0
-eigengit=$(git -C "$eigen" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+own="${CLAUDE_PROJECT_DIR:-$PWD}"
+eigenbaum=$(git -C "$own" rev-parse --show-toplevel 2>/dev/null) || exit 0
+eigengit=$(git -C "$own" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 
-# Fremdes Repo (Notizen, anderswo) — nicht meine Zustaendigkeit.
+# Foreign repo (separate notes repo, elsewhere) -- not our concern.
 [ "$zielgit" != "$eigengit" ] && exit 0
-# Eigener Baum — alles gut.
+# Own tree -- all good.
 [ "$zielbaum" = "$eigenbaum" ] && exit 0
 
-zweig=$(git -C "$zielbaum" rev-parse --abbrev-ref HEAD 2>/dev/null)
-liegt=$(git -C "$zielbaum" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+branch=$(git -C "$zielbaum" rev-parse --abbrev-ref HEAD 2>/dev/null)
+lies=$(git -C "$zielbaum" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
 
 cat >&2 <<HINWEIS
 Gesperrt: das ist ein fremder Arbeitsbaum.
 
-  Ziel   $ziel
-  Baum   $zielbaum  (Zweig $zweig, $liegt geaenderte Dateien)
+  Ziel   $target
+  Baum   $zielbaum  (Zweig $branch, $lies geaenderte Dateien)
   Deiner $eigenbaum
 
 In einen fremden Arbeitsbaum wird nicht geschrieben — auch nicht gutgemeint,

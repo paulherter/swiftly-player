@@ -1,14 +1,14 @@
 # 🎬 VLCKit
 
 Swiftly Player ships a VLCKit built with its own patches. The official
-build fetched by `Werkzeuge/vlckit-holen.sh` does not have them, and two of
+build fetched by `Werkzeuge/vlckit-fetch.sh` does not have them, and two of
 the problems below are bad enough that the app is not usable without the fix.
 
 Every patch lives in `Werkzeuge/vlckit-patches/` with a README of its own that
 carries the measurements. The patches are being submitted upstream so that
 official builds can be used again.
 
-**How to rebuild it:** `Werkzeuge/vlckit-bau/README.md` lists the upstream
+**How to rebuild it:** `Werkzeuge/vlckit-build/README.md` lists the upstream
 commits, the order of the patches, the exact build and `xcodebuild
 -create-xcframework` commands and how to put the result into Swiftly.
 
@@ -75,10 +75,9 @@ apps under Profile → About → Open-source licenses.
 
 **What is shipped.** The apps for iPhone, iPad, Mac and Apple TV embed
 `VLCKit.framework` (version 4.0.0-a23) built from VideoLAN's sources plus the
-patches in `Werkzeuge/vlckit-patches/`. The iPhone/iPad and Apple TV slices
-were built on 28 Sep 2026, the Mac slice on 16 Sep 2026 (it does not contain
-the patches that came later; `0036` to `0038` only affect the audio output of
-iOS and tvOS). VLC is built with `--disable-gpl`, and FFmpeg without
+patches in `Werkzeuge/vlckit-patches/`. All slices (iPhone/iPad,
+Apple TV, Mac) were built on 16 Sep 2026; they do not contain the patches
+`0035` to `0038`. VLC is built with `--disable-gpl`, and FFmpeg without
 `--enable-gpl`.
 
 **Upstream source.**
@@ -92,19 +91,19 @@ iOS and tvOS). VLC is built with `--disable-gpl`, and FFmpeg without
 **Swiftly's changes.** Public in this repository, in `Werkzeuge/vlckit-patches/`:
 
 - against libVLC, as `libvlc/patches/` entries: `0028`, `0030`, `0031`,
-  `0032`, `0033`, `0034`, `0036`, `0037`, `0038`
-- against VLCKit itself: `VLCKit-pause-ohne-warteschlange.patch`
+  `0032`, `0033`, `0034`
+- against VLCKit itself: `VLCKit-pause-without-queue.patch`
   (`Sources/Playback/VLCMediaPlayer.m`; it is not applied by VLCKit's build
   script and has to be applied by hand)
-- `0035` lies in the directory but is in no shipped build
+- `0035` to `0038` lie in the directory but are in no shipped build
 
 **Rebuilding and replacing the library.**
 
 ```sh
 git clone https://code.videolan.org/videolan/VLCKit.git && cd VLCKit
 git checkout 4.0.0-a23
-cp <swiftly>/Werkzeuge/vlckit-patches/00*.patch libvlc/patches/   # without 0035
-git apply <swiftly>/Werkzeuge/vlckit-patches/VLCKit-pause-ohne-warteschlange.patch
+cp <swiftly>/Werkzeuge/vlckit-patches/00*.patch libvlc/patches/   # without 0035 to 0038
+git apply <swiftly>/Werkzeuge/vlckit-patches/VLCKit-pause-without-queue.patch
 ./compileAndBuildVLCKit.sh -r -f      # iPhone/iPad (device and simulator)
 ./compileAndBuildVLCKit.sh -r -t -f   # Apple TV
 ./compileAndBuildVLCKit.sh -r -x      # Mac
@@ -116,15 +115,15 @@ per slice under `build/`. Assemble them into one `Vendor/VLCKit-gepatcht.xcframe
 with `xcodebuild -create-xcframework -framework <slice>/VLCKit.framework ...`
 (one `-framework` per slice) and build Swiftly as described in
 [Building.md](Building.md). You may change the library and use your own build
-with Swiftly Player; that is what the LGPL asks us to make possible.
+with Swiftly Player; the LGPL requires that this stays possible.
 
-**Written offer.** On request we provide the complete corresponding source
-code of VLCKit, libVLC (including the VLC 3.0.21 runtime and plugins shipped
-for Windows) and the bundled libraries of every version of Swiftly
-Player that we distribute, including the patches and build scripts, as a
-download or on a data medium, for at least three years after the release of
-that version. Ask at info@swiftlyplayer.com and name the version and platform.
-We may charge no more than the cost of the delivery.
+**Written offer.** On request, the complete corresponding source code of
+VLCKit, libVLC (including the VLC 3.0.21 runtime and plugins shipped for
+Windows) and the bundled libraries is provided for every distributed version of
+Swiftly Player, including the patches and build scripts, as a download or on a
+data medium, for at least three years after the release of that version. Ask at
+info@swiftlyplayer.com and name the version and platform. Charges are limited
+to the cost of delivery.
 
 **Is the shipped binary reproducible from these sources?** Almost, and not
 bit for bit. The iPhone/iPad and Apple TV device slices in `Vendor/` are
@@ -144,7 +143,7 @@ release so that slice and sources match again.
 
 Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit), which is
 licensed under the **LGPL-2.1-or-later**. It is not stored in this repository
-(2 GB); `Werkzeuge/vlckit-holen.sh` fetches VideoLAN's official build and
+(2 GB); `Werkzeuge/vlckit-fetch.sh` fetches VideoLAN's official build and
 verifies its SHA-256, and the section above says how to build the patched
 version the apps ship. The full source of this application is published so
 that anyone can rebuild it against their own build of that library.

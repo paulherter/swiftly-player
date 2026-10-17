@@ -1,0 +1,100 @@
+#
+# For Arch, CachyOS, Manjaro, EndeavourOS. Build and install:
+#
+# makepkg -si
+#
+# Swift is not in the official repositories. `swift-bin` from the AUR is the
+# usual way; if the toolchain is already installed via swiftly under $HOME,
+# set SWIFT=/path/to/swift and makepkg uses it.
+
+pkgname=swiftly-jellyfin
+pkgver=1.0.6
+pkgrel=1
+pkgdesc="Jellyfin-Client, der niemals transkodiert"
+arch=('x86_64' 'aarch64')
+# **Why the current name matters.** `swiftly-for-jellyfin` is a separate,
+# still-active repository. GitHub does not redirect: `git ls-remote` shows a
+# different `main` there and no `windows` branch, so `source=` would fetch the
+# wrong tree. The old location only keeps `gh-pages` (the old package source)
+# alive; the README explains how to migrate.
+url="https://github.com/paulherter/swiftly-player"
+license=('MPL-2.0')
+depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
+makedepends=('git' 'gcc' 'pkgconf' 'swift-bin')
+source=("git+$url.git#branch=main"
+        "git+https://github.com/Samsung/rlottie.git")
+sha256sums=('SKIP' 'SKIP')
+
+_swift() { echo "${SWIFT:-swift}"; }
+
+build() {
+    # rlottie is linked statically: it is in no distro repository, and a bundled
+    # `.so` would be a dependency that goes missing on other machines.
+    export SWIFTLY_RLOTTIE_ZIEL="$srcdir/rlottie-praefix"
+    bash "$srcdir/swiftly-player/Werkzeuge/rlottie-build.sh" "$srcdir/rlottie"
+
+    export PKG_CONFIG_PATH="$SWIFTLY_RLOTTIE_ZIEL/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    cd "$srcdir/swiftly-player/Linux"
+    "$(_swift)" build -c release -Xswiftc -static-stdlib
+    # The same call reports the build output path; `.build/release` is only a
+    # symlink that SwiftPM may repoint.
+    "$(_swift)" build -c release -Xswiftc -static-stdlib --show-bin-path \
+        > "$srcdir/bauordner.txt"
+}
+
+package() {
+    local q="$srcdir/swiftly-player"
+    local b
+    b="$(cat "$srcdir/bauordner.txt")"
+    [ -d "$b" ] || { echo "Kein Bauordner: $b" >&2; return 1; }
+
+    # Binary and resource bundle stay together: Swift locates `Bundle.module`
+    # via the path of the running executable.
+    install -Dm755 "$b/SwiftlyLinux" "$pkgdir/usr/lib/$pkgname/$pkgname"
+
+    # **Both names.** Up to Swift 6.3 a bundle is `<Target>_<Target>.resources`,
+    # from 6.4 on `<Target>_<Target>.bundle`; the generated `Bundle.module`
+    # accessor looks for the exact name used at build time. Matching only
+    # `.resources` silently produced a package without any bundle on 6.4, which
+    # then failed at startup with "unable to find bundle named
+    # SwiftlyLinux_SwiftlyLinux".
+    local n=0 buendel z
+    for buendel in "$b"/*.resources "$b"/*.bundle; do
+        [ -d "$buendel" ] || continue
+        cp -r "$buendel" "$pkgdir/usr/lib/$pkgname/"
+        n=$((n + 1))
+    done
+    [ "$n" -gt 0 ] || { echo "Kein Ressourcenbuendel in $b" >&2; return 1; }
+    # JellyfinKit's bundle carries `de.lproj` and `en.lproj`; without it the app
+    # fails one step later in `Textkatalog.bundle(bundle:sprache:)`.
+    for z in SwiftlyLinux JellyfinKit; do
+        [ -d "$pkgdir/usr/lib/$pkgname/${z}_${z}.resources" ] ||
+        [ -d "$pkgdir/usr/lib/$pkgname/${z}_${z}.bundle" ] ||
+            { echo "Ressourcenbuendel fehlt: ${z}_${z}" >&2; return 1; }
+    done
+    cp -r "$q/Linux/Resources" "$pkgdir/usr/lib/$pkgname/Resources"
+    install -d "$pkgdir/usr/bin"
+    ln -s "/usr/lib/$pkgname/$pkgname" "$pkgdir/usr/bin/$pkgname"
+
+    install -Dm644 "$q/Linux/Install/de.paulherter.swiftly.desktop" \
+        "$pkgdir/usr/share/applications/de.paulherter.swiftly.desktop"
+    install -Dm644 "$q/Linux/Install/de.paulherter.swiftly.metainfo.xml" \
+        "$pkgdir/usr/share/metainfo/de.paulherter.swiftly.metainfo.xml"
+
+    for grad in 32 64 128 256 512; do
+        install -Dm644 \
+            "$q/Linux/Resources/icons/hicolor/${grad}x${grad}/apps/de.paulherter.swiftly.png" \
+            "$pkgdir/usr/share/icons/hicolor/${grad}x${grad}/apps/de.paulherter.swiftly.png"
+    done
+
+    # **Licenses: no `|| true`.** libVLC is LGPL; the package must not be built
+    # without the license text and the written offer.
+    install -Dm644 "$q/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "$q/THIRD-PARTY-NOTICES.md" \
+        "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
+    local t
+    for t in "$q"/LICENSES/*; do
+        install -Dm644 "$t" "$pkgdir/usr/share/licenses/$pkgname/LICENSES/$(basename "$t")"
+        install -Dm644 "$t" "$pkgdir/usr/lib/$pkgname/Resources/Licenses/$(basename "$t")"
+    done
+}

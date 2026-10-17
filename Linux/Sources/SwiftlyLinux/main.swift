@@ -5,135 +5,128 @@ import JellyfinKit
 import WinSDK
 #endif
 
-/// Einstiegspunkt. Alles Weitere steht in ``App``.
+/// Entry point. Everything else is in ``App``.
 ///
-/// **Die App lebt in einer globalen Referenz**, weil GTKs Rückrufe aus C
-/// kommen und nichts einfangen können. Sie wird beim Start einmal erzeugt und
-/// hält sich bis zum Ende.
-// **Pango soll unter Windows denselben Weg gehen wie unter Linux.**
+/// **The app lives in a global reference** because GTK callbacks come from C
+/// and cannot capture anything. It is created once at startup and kept until
+/// the end.
+// **Pango should take the same path on Windows as on Linux.**
 //
-// PangoCairo hat dort zwei Rueckseiten: die von Win32 und die von fontconfig.
-// Ohne Angabe nimmt es Win32 — und die kennt weder unsere mitgelieferte
-// Schrift noch dieselbe Ausrichtung der Buchstaben wie Linux und der Mac.
-// Gemessen: mit der Vorgabe blieb die Oberflaeche auf Segoe UI, obwohl Inter
-// danebenlag und ordnungsgemaess angemeldet war.
+// PangoCairo has two backends there: Win32 and fontconfig. Without a setting
+// it picks Win32, which knows neither the bundled font nor the same glyph
+// alignment as Linux and the Mac. Measured: with the default, the UI stayed on
+// Segoe UI although Inter was present and registered correctly.
 //
-// Muss vor allem anderen stehen: die Schriftenkarte entsteht beim ersten
-// Text, und danach ist die Wahl nicht mehr zu aendern. Die 0 heisst
-// „nicht ueberschreiben" — wer es selbst setzt, behaelt seine Wahl.
+// Must come before everything else: the font map is created at the first text,
+// and the choice cannot be changed afterwards. The 0 means "do not overwrite",
+// so an explicit setting by the user is kept.
 #if os(Windows)
 _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 #endif
 
-// **Die erste Zeile, die zaehlt.** Bis hierher hat Windows alle DLLs geladen
-// (und beim ersten Start vom Defender pruefen lassen). Der Abstand zwischen
-// "[Start] App gestartet" und dieser Zeile im Protokoll ist genau diese
-// Pruefung.
-Startstufe.melden("programm")
-// **Woher die Uhrzeit kommt** — steht hier UTC, obwohl der Rechner woanders
-// steht, sind die Uhrzeiten gegen die des Startprogramms verschoben und die
-// Laufzeit ist das Mass. Siehe ``Protokoll``.
-Protokoll.zeitzoneMelden()
-// Welche Sprache die Oberflaeche nimmt und warum — ein Bericht „englisch
-// auf deutschem Windows" ist sonst nicht zu klaeren.
-Protokoll.schreib("[Sprache] Wuensche \(oberflaechenkatalog.wuensche.joined(separator: ", ")), "
-    + "vorhanden \(oberflaechenkatalog.vorhandeneSprachen.joined(separator: ", ")), "
-    + "gewaehlt \(oberflaechenkatalog.sprache)")
+// **The first line that counts.** Up to here Windows has loaded all DLLs (and
+// had Defender check them on first start). The gap between "[Start] App
+// gestartet" and this line in the log is exactly that check.
+StartLevel.report("programm")
+// **Where the timestamp comes from.** If this shows UTC although the machine
+// is elsewhere, the times are shifted against the launcher's, and the runtime
+// is the measure. See ``AppLog``.
+AppLog.timeZoneReport()
+// Which language the UI uses and why; otherwise a report like "English on a
+// German Windows" cannot be resolved.
+AppLog.writeOut("[Sprache] Wuensche \(upperAreasCatalog.requests.joined(separator: ", ")), "
+    + "vorhanden \(upperAreasCatalog.availableLanguages.joined(separator: ", ")), "
+    + "gewaehlt \(upperAreasCatalog.language)")
 
-// **Das Paket bekommt seinen Faden nach draussen**, wie auf den
-// Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket
-// scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
-// vergangen. Hier reicht `print`: das Startskript leitet die Ausgabe
-// ohnehin in `swiftly-linux.log`.
-Spur.schreiben = { text in
-    // **Mit Uhrzeit.** Ohne sie steht im Protokoll zwar, *was* passiert ist,
-    // aber nicht *wann* — und bei einer Leitung, die auf- und abgeht, ist
-    // genau der Abstand die Auskunft. Am 10.09.2026 stand dort zwanzigmal
-    // „Leitung verloren" untereinander, und es war nicht zu sagen, ob das
-    // ueber eine Minute ging oder ueber eine Stunde.
+// **The package gets its output channel**, as on the Apple versions. The
+// control channel and the session query in the package otherwise fail
+// silently. `print` is enough here: the start script redirects the output to
+// `swiftly-linux.log` anyway.
+TrackSupport.write = { text in
+    // **With a timestamp.** Without it the log shows *what* happened but not
+    // *when*, and for a connection that goes up and down the interval is the
+    // information. Twenty "connection lost" lines in a row are useless if you
+    // cannot tell whether they span a minute or an hour.
     let u = DateFormatter()
     u.dateFormat = "HH:mm:ss"
     print("\(u.string(from: Date())) [Paket] \(text)")
-    Protokollring.geteilt.anhaengen("[Paket] \(text)")
-    // **Und sofort hinausschreiben.**
+    LogRing.shared.append("[Paket] \(text)")
+    // **And write out immediately.**
     //
-    // `print` in eine **umgeleitete** Datei ist blockweise gepuffert, nicht
-    // zeilenweise — am Bildschirm faellt das nie auf, in einer Protokolldatei
-    // sofort. Am 10.09.2026 hat das eine Dreiviertelstunde gekostet: solange
-    // eine Diagnose im Sekundentakt lief, war der Puffer schnell voll und
-    // alles stand da; sobald sie leise wurde, kam **gar nichts** mehr an, und
-    // es sah aus, als liefe die Funktion nicht. Sie lief die ganze Zeit.
+    // `print` into a **redirected** file is block-buffered, not line-buffered. On a
+    // terminal this never shows; in a log file it does. While a diagnostic ran
+    // every second the buffer filled quickly and everything appeared; once it got
+    // quiet, **nothing** arrived, and it looked as if the function was not running.
+    // It was running the whole time.
     //
-    // Dazu die halb geschriebenen Zeilen, die uns vorher irritiert haben —
-    // `[Paket] [Dis` mitten im Satz: das war ein Puffer, der zwischen zwei
-    // Schreibern geleert wurde.
-    // `fflush(nil)` und nicht `fflush(stdout)`: `stdout` ist eine
-    // veraenderliche globale Variable, und Swift 6 laesst sie aus einem
-    // nebenlaeufigen Zusammenhang nicht zu — „not concurrency-safe because it
-    // involves shared mutable state". Mit `nil` werden alle offenen Stroeme
-    // geleert, und der Name faellt weg.
+    // This also explains half-written lines like `[Paket] [Dis` mid-sentence: a
+    // buffer flushed between two writers.
+    // `fflush(nil)` rather than `fflush(stdout)`: `stdout` is a mutable global
+    // variable, and Swift 6 rejects it in a concurrent context ("not
+    // concurrency-safe because it involves shared mutable state"). `nil` flushes
+    // all open streams and avoids the name.
     fflush(nil)
 }
-// Der Weiterleiter vor libVLC (Issue #4) meldet in dasselbe Protokoll.
-Stromweiterleiter.protokoll = { Spur.schreiben?($0) }
+// The forwarder in front of libVLC (issue #4) logs to the same log.
+StreamForwarder.log = { TrackSupport.write?($0) }
 
 nonisolated(unsafe) let app = App()
 
-nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { anwendung, _ in
-    Startstufe.melden("oberflaeche")
-    // Vor dem Stilblatt und vor dem ersten Mass: beide fragen den Faktor.
-    Skalierung.einrichten(nutzer: app.wahlen.oberflaeche)
-    Stil.anwenden()
-    app.aufbauen(anwendung: anwendung!.assumingMemoryBound(to: GtkApplication.self))
-    app.kopfzeileEinrichten()
-    // Nur im Debug-Bau: eine Datei sagt der App, wohin sie gehen soll —
-    // damit eine Sitzung nachsehen kann, bevor sie etwas meldet.
-    Fernsteuerpult.lauschen(app)
+nonisolated(unsafe) private let start: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { hostApp, _ in
+    StartLevel.report("oberflaeche")
+    // Before the style sheet and before the first measurement: both ask for the
+    // scale factor.
+    Scaling.setUp(user: app.selection.surface)
+    Theme.apply()
+    app.buildUp(hostApp: hostApp!.assumingMemoryBound(to: GtkApplication.self))
+    app.headerRowSetUp()
+    // Debug builds only: a file tells the app where to go, so a session can look
+    // before reporting anything.
+    RemoteConsole.eavesdrop(app)
 }
 
-// **Ohne Sitzungsbus gibt es keine Einmaligkeit.**
+// **Without a session bus there is no single instance.**
 //
-// `GApplication` meldet sich beim Start auf D-Bus an — daher kommt das
-// Verhalten, dass eine zweite Kopie die erste nach vorn holt statt ein zweites
-// Fenster zu öffnen. Unter Windows gibt es diesen Bus nicht: die Anmeldung
-// schlägt fehl, und `g_application_run` kehrt zurück, **ohne das Fenster je zu
-// bauen**. Gemessen beim ersten Start: die App war nach einer Zehntelsekunde
-// wieder weg, mit nichts als einer Warnung über den fehlenden Bus.
+// `GApplication` registers on D-Bus at startup; that is where the behavior
+// comes from that a second copy brings the first to the front instead of
+// opening a second window. Windows has no such bus: registration fails and
+// `g_application_run` returns **without ever building the window**. Measured
+// on first start: the app was gone after a tenth of a second, with only a
+// warning about the missing bus.
 //
-// Der Preis ist, dass sich die App unter Windows zweimal starten lässt. Das
-// ist dort auch das übliche Verhalten.
+// The cost is that the app can be started twice on Windows, which is also the
+// usual behavior there.
 //
-// `G_APPLICATION_NON_UNIQUE` kommt nicht als Name in Swift an — die Aufzählung
-// heisst in glib seit 2.74 anders, und die alten Namen sind nur noch Makros.
-// 32 ist der Wert, den sie seit jeher trägt (das sechste Bit).
+// `G_APPLICATION_NON_UNIQUE` does not reach Swift by name: the enumeration was
+// renamed in glib 2.74 and the old names are only macros. 32 is the value it
+// has always carried (the sixth bit).
 #if os(Windows)
-let merkmale = GApplicationFlags(rawValue: 32)
-// **Der Installer muss sehen, dass Swiftly laeuft.** `Swiftly.iss` nennt
-// dieselben Namen unter `AppMutex`; steht einer davon, warnt Setup, statt an
-// einer gesperrten EXE zu scheitern. Einmal je Sitzung und einmal global, wie
-// Inno Setup es empfiehlt — so sieht auch ein Installer aus einer anderen
-// Anmeldung die laufende App. Die Griffe bleiben offen, bis der Prozess
-// endet; Windows raeumt sie dann ab. Schlaegt der globale fehl, reicht der
-// lokale.
-nonisolated(unsafe) let laufmarken: [HANDLE?] = ["SwiftlyPlayer", "Global\\SwiftlyPlayer"].map {
+let traits = GApplicationFlags(rawValue: 32)
+// **The installer must see that Swiftly is running.** `Swiftly.iss` names the
+// same names under `AppMutex`; if one exists, setup warns instead of failing on
+// a locked EXE. Once per session and once global, as Inno Setup recommends, so
+// an installer from another login also sees the running app. The handles stay
+// open until the process ends; Windows then cleans them up. If the global one
+// fails, the local one suffices.
+nonisolated(unsafe) let runMarks: [HANDLE?] = ["SwiftlyPlayer", "Global\\SwiftlyPlayer"].map {
     $0.withCString(encodedAs: UTF16.self) { CreateMutexW(nil, false, $0) }
 }
 #else
-let merkmale = GApplicationFlags(rawValue: 0)
+let traits = GApplicationFlags(rawValue: 0)
 #endif
 
-// **Vorher wegräumen, was von einer älteren Fassung noch läuft oder liegt**
-// (`Altlauf.swift`) — sonst holt die zweite Kopie die erste nach vorn, und die
-// ist nach einem Update die alte.
+// **First remove whatever an older version still runs or leaves behind**
+// (`OldRun.swift`); otherwise the second copy brings the first to the front,
+// and after an update that is the old one.
 #if os(Linux)
-Altlauf.aufraeumen()
+OldRun.cleanUp()
 #endif
 
-let anwendung = gtk_application_new("de.paulherter.swiftly", merkmale)
-g_signal_connect_data(UnsafeMutableRawPointer(anwendung), "activate",
-                      unsafeBitCast(starten, to: GCallback.self),
+let hostApp = gtk_application_new("de.paulherter.swiftly", traits)
+g_signal_connect_data(UnsafeMutableRawPointer(hostApp), "activate",
+                      unsafeBitCast(start, to: GCallback.self),
                       nil, nil, GConnectFlags(rawValue: 0))
 
-let ergebnis = g_application_run(
-    unsafeBitCast(anwendung, to: UnsafeMutablePointer<GApplication>.self), 0, nil)
-exit(ergebnis)
+let result = g_application_run(
+    unsafeBitCast(hostApp, to: UnsafeMutablePointer<GApplication>.self), 0, nil)
+exit(result)

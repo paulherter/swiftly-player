@@ -1,21 +1,19 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// **Dieselbe Oberflaeche wie auf Linux, nicht eine zweite.**
+// **The same UI as on Linux, not a second one.**
 //
-// GTK4 gibt es fuer Windows als MSVC-Bau (gvsbuild), samt `pkg-config.exe`
-// und den `.pc`-Dateien. Damit spricht der Windows-Bau dieselbe C-Schnittstelle
-// an wie der Linux-Bau — und deshalb gibt es hier **keine zweite Fassung des
-// Quelltextes**. `bauen.ps1` spiegelt die geteilten Dateien aus
-// `../Linux/Sources/SwiftlyLinux` vor jedem Bau nach `Sources/SwiftlyWindows`
-// (dort gitignoriert); was sich zwischen den Plattformen unterscheidet, steht
-// als `#if os(Windows)` in genau diesen geteilten Dateien.
+// GTK4 exists for Windows as an MSVC build (gvsbuild), with `pkg-config.exe`
+// and the `.pc` files. The Windows build therefore uses the same C interface as
+// the Linux build, and there is **no second copy of the source**. `build.ps1`
+// mirrors the shared files from `../Linux/Sources/SwiftlyLinux` to
+// `Sources/SwiftlyWindows` (gitignored there) before every build; whatever
+// differs between platforms is an `#if os(Windows)` in exactly these shared
+// files.
 //
-// Der Umweg ueber das Spiegeln ist noetig, weil SwiftPM keine Ziele ausserhalb
-// des Paketverzeichnisses erlaubt — nachgemessen, die Fehlermeldung lautet
-// „target ... is outside the package root". Ein Paket fuer den geteilten Teil
-// waere sauberer; das ist der naechste Schritt, sobald die Linux-Fassung nicht
-// mehr taeglich angefasst wird.
+// Mirroring is needed because SwiftPM does not allow targets outside the
+// package directory (error: "target ... is outside the package root"). A
+// package for the shared part would be cleaner.
 let package = Package(
     name: "SwiftlyWindows",
     defaultLocalization: "de",
@@ -23,35 +21,33 @@ let package = Package(
         .package(path: "../Packages/JellyfinKit")
     ],
     targets: [
-        // **Ohne `pkgConfig`, obwohl gvsbuild eine `pkg-config.exe` mitbringt.**
-        // Die Include- und Bindepfade stehen in `bauen.ps1` und werden als
-        // `-Xcc -I…` uebergeben. Das ist eine Zeile mehr im Skript und dafuer
-        // ein Weg weniger, der auf einem fremden Rechner anders ausfallen kann.
+        // **No `pkgConfig`, although gvsbuild ships a `pkg-config.exe`.** The include
+        // and link paths are in `build.ps1` and passed as `-Xcc -I...`. That is one more
+        // line in the script but one less thing that can behave differently on another
+        // machine.
         .systemLibrary(name: "CGtk"),
         .systemLibrary(name: "CVLC"),
-        // rlottie fuer die Startanimation. `Werkzeuge/rlottie-bauen.ps1`
-        // uebersetzt dieselben Quellen wie auf Linux, nur mit MSVC und als
-        // statische Bibliothek.
+        // rlottie for the start animation. `Werkzeuge/rlottie-build.ps1` compiles the
+        // same sources as on Linux, only with MSVC and as a static library.
         .systemLibrary(name: "CRlottie"),
-        // libepoxy fuer den HDR-Shader (`hdrbild.c`) - GTK bringt es ohnehin mit.
-        .target(name: "CBildbruecke", dependencies: ["CVLC"],
+        // libepoxy for the HDR shader (`hdrimage.c`); GTK brings it anyway.
+        .target(name: "CImageBridge", dependencies: ["CVLC"],
                 linkerSettings: [.linkedLibrary("epoxy")]),
-        // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
-        // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
-        .target(name: "CMedientasten"),
-        // Meldet die mitgelieferte Schrift bei fontconfig an. Sie liegt bei,
-        // weil SF Pro es nur auf dem Mac gibt und alle Plattformen gleich
-        // aussehen sollen.
-        .target(name: "CSchriften",
+        // The keyboard's media keys. Empty on Linux, where MPRIS handles this; on
+        // Windows it needs its own window procedure.
+        .target(name: "CMediaKeys"),
+        // Registers the bundled font with fontconfig. It ships with the app because SF
+        // Pro exists only on the Mac and all platforms should look the same.
+        .target(name: "CFonts",
                 linkerSettings: [.linkedLibrary("fontconfig")]),
         .executableTarget(
             name: "SwiftlyWindows",
             dependencies: [
                 "CGtk",
                 "CVLC",
-                "CBildbruecke",
-                "CMedientasten",
-                "CSchriften",
+                "CImageBridge",
+                "CMediaKeys",
+                "CFonts",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],

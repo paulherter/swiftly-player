@@ -4,67 +4,66 @@ import SwiftUI
 struct PosterTile: View {
     let model: AppModel
     let item: Item
-    /// Im Raster füllt die Kachel ihre Spalte, in einer Reihe hat sie ihr
-    /// festes Maß. Fest gesetzt passten nur zwei Spalten nebeneinander und
-    /// rechts blieb eine breite Lücke.
-    var breite: CGFloat? = Stil.kachelBreite
-    /// Vorgegebene Auskunft statt der eigenen.
+    /// In a grid the tile fills its column; in a row it has its fixed size.
+    /// With a fixed size only two columns fit side by side and a wide gap
+    /// remained on the right.
+    var width: CGFloat? = Theme.tileWidth
+    /// Supplied info instead of the tile's own.
     ///
-    /// Die Trefferliste sagt mehr als eine Bibliothek — Art, Jahr, Staffeln,
-    /// **Laufzeit**. Als das Raster die Zeilen ablöste, fiel die Laufzeit
-    /// weg, und damit sagte dieselbe Suche auf dem iPad weniger als auf dem
-    /// iPhone. D4 gilt auch für Trefferlisten.
-    var auskunft: String?
-    /// **Nur für eine Sammlungskachel:** Sammlung und Bereich, aus denen ein
-    /// Ersatzplakat gebaut wird, falls die Sammlung selbst keins hat.
-    var mosaikQuelle: (sammlung: Sammlung, art: String)? = nil
+    /// The result list says more than a library: kind, year, seasons,
+    /// **runtime**. When the grid replaced the rows, the runtime was lost, and
+    /// the same search said less on iPad than on iPhone. The result-count rule applies to result
+    /// lists too.
+    var inquiry: String?
+    /// **Collection tiles only:** collection and section from which a
+    /// substitute poster is built if the collection has none of its own.
+    var mosaicSource: (collection: ItemCollection, art: String)? = nil
 
-    /// Bei einer Folge steht oben die Serie und unten die Nummer — sonst
-    /// Titel und Jahr.
+    /// For an episode the series is shown on top and the number below;
+    /// otherwise title and year.
     ///
-    /// Dieselbe Regel wie in der Reihe auf der Startseite. Sie fehlte hier,
-    /// solange dieses Plakat nur Filme und Serien zeigte; seit die Suche
-    /// breit ein Raster statt Zeilen bringt, landen auch Folgen darin — und
-    /// standen dort ohne jeden Hinweis, um welche es geht.
-    private var titelzeile: String {
+    /// The same rule as in the row on the home page. It was missing here as
+    /// long as this poster showed only movies and series; since wide search
+    /// shows a grid instead of rows, episodes land in it too and appeared
+    /// without any hint which one they are.
+    private var titleLine: String {
         item.type == "Episode" ? (item.seriesName ?? item.name) : item.name
     }
 
-    private var unterzeile: String? {
-        if let auskunft { return auskunft }
-        if item.type == "Episode" { return item.folgenkuerzel }
+    private var subline: String? {
+        if let inquiry { return inquiry }
+        if item.type == "Episode" { return item.episodeCode }
         return item.productionYear.map(String.init)
     }
 
-    /// **Plakat und Text blenden zusammen ein.**
+    /// **Poster and text fade in together.**
     ///
-    /// Das Bild blendet seit dem Umbau von selbst ein, der Titel darunter
-    /// stand sofort da — beim Wechsel der Bibliothek sah man erst die
-    /// Beschriftungen und dann die Plakate hineinlaufen. Die Kachel blendet
-    /// deshalb als Ganzes ein, und das Bild darin bringt seinen eigenen
-    /// weichen Wechsel mit.
-    @State private var da = false
+    /// The image fades in by itself since the rework, but the title below was
+    /// there immediately: on a library switch the labels showed first and the
+    /// posters faded in afterwards. The tile therefore fades in as a whole,
+    /// and the image inside brings its own soft transition.
+    @State private var present = false
 
-    /// **Das Plakat, oder sein Ersatz.**
+    /// **The poster, or its substitute.**
     ///
-    /// Eine Sammlung ohne eigenes Titelbild bekäme sonst nur das Filmsymbol
-    /// — bei einer Sammlung mit fünf Filmen eine Auskunft, die nichts sagt.
-    /// `mosaikQuelle` steht nur an der Sammlungskachel; überall sonst ist es
-    /// `nil`, und hier steht genau das Plakat wie vorher.
+    /// A collection without its own cover would otherwise get only the movie
+    /// symbol, which says nothing for a collection of five movies.
+    /// `mosaicSource` is set only on the collection tile; everywhere else it
+    /// is `nil`, and this shows exactly the poster as before.
     @ViewBuilder
-    private var plakat: some View {
-        if let mosaikQuelle, item.imageTags?["Primary"] == nil {
-            Sammlungsmosaik(model: model, sammlung: mosaikQuelle.sammlung,
-                            art: mosaikQuelle.art, breite: breite)
+    private var poster: some View {
+        if let mosaicSource, item.imageTags?["Primary"] == nil {
+            CollectionMosaic(model: model, collection: mosaicSource.collection,
+                            art: mosaicSource.art, width: width)
         } else {
-            Bild(url: model.imageURL(for: item, maxHeight: 500, hochkant: true),
-                 breite: breite,
-                 hoehe: breite.map { $0 * 1.5 },
-                 verhaeltnis: breite == nil ? 2.0 / 3.0 : nil,
-                 ecke: Stil.eckeKachel,
-                 fortschritt: item.userData?.playedPercentage.map { $0 / 100 }) {
-                Stil.flaeche.overlay {
-                    Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
+            Picture(url: model.imageURL(for: item, maxHeight: 500, portrait: true),
+                 width: width,
+                 height: width.map { $0 * 1.5 },
+                 ratio: width == nil ? 2.0 / 3.0 : nil,
+                 corner: Theme.cornerTile,
+                 progress: item.userData?.playedPercentage.map { $0 / 100 }) {
+                Theme.area.overlay {
+                    Image(systemName: "film").foregroundStyle(Theme.fontVeryQuiet)
                 }
             }
         }
@@ -72,757 +71,729 @@ struct PosterTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
-            // die Höhe der tatsächlichen Breite — 2 : 3, wie jedes Plakat.
-            plakat
-            // **Drei Zustaende, drei Zeichen.** Balken heisst angefangen,
-            // Haken heisst gesehen, eine Zahl heisst: so viel liegt hier.
-            // Bis hierher gab es nur den Balken — und bei einer Serie sagt
-            // der gar nichts, weil er den Stand der angefangenen Folge zeigt
-            // und nicht den der Serie.
+            // Fixed width: fixed height. If the tile fills its column, the height
+            // follows the actual width at 2:3, like every poster.
+            poster
+            // **Three states, three marks.** A bar means started, a checkmark means
+            // watched, a number means that many are here. Until now there was only the
+            // bar, which says nothing for a series because it shows the state of the
+            // started episode, not of the series.
             .overlay(alignment: .topTrailing) {
-                if let marke = Anzeigeregeln.kachelmarke(
+                if let mark = DisplayRules.tileMark(
                     art: item.type,
-                    staffeln: item.childCount,
-                    gesehen: item.userData?.played,
-                    offeneFolgen: item.userData?.unplayedItemCount) {
-                    Kachelplakette(marke: marke)
+                    seasons: item.childCount,
+                    watched: item.userData?.played,
+                    openEpisodes: item.userData?.unplayedItemCount) {
+                    TileBadge(mark: mark)
                 }
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                // **Einzeilig.** Zwei Zeilen liessen die Kacheln einer Reihe
-                // verschieden hoch enden, und der laengere Titel schob seine
-                // Angabe nach unten. Gekuerzt wird mit Punkten, nicht
-                // umgebrochen.
-                Text(titelzeile)
-                    .font(Stil.kachel)
-                    .foregroundStyle(Stil.schrift)
+                // **Single line.** Two lines would make the tiles of a row end at
+                // different heights, and the longer title would push its info down.
+                // Truncated with an ellipsis, not wrapped.
+                Text(titleLine)
+                    .font(Theme.tile)
+                    .foregroundStyle(Theme.font)
                     .lineLimit(1)
                     .multilineTextAlignment(.leading)
-                if let unterzeile {
-                    Text(unterzeile)
-                        .font(Stil.klein)
-                        // Die Angabe unter einem Plakat ist der leiseste Ton,
-                        // nicht der mittlere: `schriftLeise` traegt Fliesstext
-                        // und Werte, eine Jahreszahl unter dem Titel nicht.
-                        .foregroundStyle(Stil.schriftSehrLeise)
-                        // Die volle Trefferauskunft braucht auf 138 Punkt
-                        // zwei Zeilen. In der Bibliothek steht dort nur ein
-                        // Jahr, da bleibt es bei einer.
-                        .lineLimit(auskunft == nil ? 1 : 2)
+                if let subline {
+                    Text(subline)
+                        .font(Theme.small)
+                        // The info under a poster is the quietest tone, not the middle one:
+                        // `schriftLeise` is for body text and values, not a year under a title.
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        // The full search info needs two lines at 138 pt. In the library there
+                        // is only a year, so one line is enough.
+                        .lineLimit(inquiry == nil ? 1 : 2)
                 }
             }
-            // **Der Text ist so breit wie das Plakat, nicht wie der Titel.**
+            // **The text is as wide as the poster, not as the title.**
             //
-            // Hier stand keine Grenze. Ein `VStack` ist so breit wie sein
-            // breitestes Kind, und ein einzeiliger Text kuerzt erst, wenn ihm
-            // jemand eine Breite vorgibt — sonst waechst er. In einer Reihe
-            // mit fester Kachelbreite wurde die Kachel dadurch breiter als
-            // ihr Plakat, und „Obsession – Du sollst mich lieben" lief nach
-            // rechts ueber die Reihe hinaus. Auffaellig wurde es nur bei der
-            // letzten Kachel, weil dort rechts Platz ist; bei den anderen
-            // schob sie sich hinter den Nachbarn.
+            // There was no limit here. A `VStack` is as wide as its widest child, and
+            // a single-line text only truncates when given a width; otherwise it
+            // grows. In a row with fixed tile width the tile became wider than its
+            // poster, and a long title ran off to the right beyond the row. It was
+            // noticeable only on the last tile, since there is room on the right; on
+            // the others it pushed behind the neighbor.
             //
-            // Im Raster gibt die Spalte die Breite vor, also `infinity`.
-            .frame(maxWidth: breite ?? .infinity, alignment: .leading)
+            // In the grid the column sets the width, so `infinity`.
+            .frame(maxWidth: width ?? .infinity, alignment: .leading)
         }
-        // Im Raster richtet SwiftUI die Zellen einer Zeile mittig aus. Bei
-        // zweizeiligen Titeln rutschten die kürzeren Kacheln dadurch nach
-        // unten und die Poster lagen nicht mehr auf einer Linie.
+        // In the grid SwiftUI centers the cells of a row. With two-line titles
+        // the shorter tiles slid down and the posters no longer lined up.
         .frame(maxHeight: .infinity, alignment: .top)
-        .opacity(da ? 1 : 0)
+        .opacity(present ? 1 : 0)
         .onAppear {
-            guard !da else { return }
-            withAnimation(Stil.einblenden) { da = true }
+            guard !present else { return }
+            withAnimation(Theme.reveal) { present = true }
         }
-        // Eine Aussage je Kachel statt zweier Bruchstücke, und der
-        // Fortschritt kommt mit — er ist eine Zeichnung im Bild und fiel für
-        // VoiceOver bisher heraus.
-        // Mit Jahr bzw. Staffel und Folge, und „gesehen" aus der Plakette.
-        // Die Suche gibt ihre eigene Auskunft mit; dann gilt die.
+        // One statement per tile instead of two fragments, and progress is
+        // included: it is a drawing in the image and was missing for VoiceOver.
+        // With year or season and episode, and "watched" from the badge.
+        // Search supplies its own info; that one wins.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: auskunft.map { "\(titelzeile), \($0)" } ?? item.kachelansage))
-        .accessibilityValue(Text(verbatim: item.kachelzustand))
+        .accessibilityLabel(Text(verbatim: inquiry.map { "\(titleLine), \($0)" } ?? item.tileAnnouncement))
+        .accessibilityValue(Text(verbatim: item.tileState))
     }
 }
 
 
-// MARK: - Einzelner Titel
+// MARK: - Single title
 
 struct ItemDetailView: View {
     let model: AppModel
     let item: Item
 
-    @Environment(\.dismiss) private var zurueck
-    @Environment(\.breit) private var breit
-    @Environment(\.weit) private var weit
+    @Environment(\.dismiss) private var back
+    @Environment(\.wide) private var wide
+    @Environment(\.broad) private var broad
 
-    /// Wie weit gescrollt wurde — der Kopf blendet danach ein.
+    /// How far it has scrolled; the header fades in accordingly.
     ///
-    /// **Nicht als `@State` hier.** Jeder Scrollschritt baute sonst den ganzen
-    /// `body` neu: Kopfbild mit `GeometryReader`, Belegzeile, Knopfreihe, drei
-    /// Reihen, Dateiauszug. Auf der Filmseite stockte das Scrollen sichtbar, auf
-    /// der leichteren Serienseite nicht. Jetzt liest nur `Detailkopfleser` den Wert
-    /// — dieselbe Behebung wie `Scrollweg` auf der Startseite.
-    @State private var weg = Scrollweg()
+    /// **Not as `@State` here.** Every scroll step would rebuild the whole
+    /// `body`: hero image with `GeometryReader`, info line, button row, three
+    /// rows, file excerpt. On the movie page scrolling visibly stuttered, on
+    /// the lighter series page it did not. Now only `DetailHeaderReader` reads
+    /// the value, the same fix as `Scrollweg` on the home page.
+    @State private var distance = ScrollDistance()
 
     @State private var plan: PlaybackPlan?
-    /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
-    @State private var planDa = false
-    @State private var ladeblatt = false
-    @State private var pruefe = true
-    @State private var abspielen: Abspielwunsch?
-    /// Sperrt einen zweiten Tipp, solange ein Plan beim Druck geholt wird.
-    @State private var bereitet = false
-    @State private var mehrOffen = false
-    @State private var meldung: String?
-    @State private var frisch: Item?
-    @State private var aehnliche: [Item] = []
-    /// **`[]` und „gescheitert" sind zwei Dinge.** Der Abschnitt „Ähnliche
-    /// Titel" verschwand bei einem Netzfehler ersatzlos, waehrend die
-    /// Serienseite zwei Dateien weiter „Nichts Ähnliches gefunden" sagte —
-    /// zwei Antworten auf dieselbe Frage, und beide falsch.
-    @State private var aehnlicheGestoert = false
+    /// The plan has been answered, with or without a result. See `proofRow`.
+    @State private var planPresent = false
+    @State private var loadSheet = false
+    @State private var examine = true
+    @State private var play: PlayRequest?
+    /// Blocks a second tap while a plan is being fetched on press.
+    @State private var prepares = false
+    @State private var moreOpen = false
+    @State private var message: String?
+    @State private var freshValue: Item?
+    @State private var similar: [Item] = []
+    /// **`[]` and "failed" are two things.** The "Similar titles" section
+    /// vanished without a trace on a network error, while the series page two
+    /// files away said "Nothing similar found": two answers to the same
+    /// question, both wrong.
+    @State private var similarDisturbed = false
     @State private var extras: [Item] = []
-    @State private var sammlungsreihen: [Sammlungsreihe.Reihe] = []
-    /// Alles unter der Beschreibung ist beantwortet. Siehe `body`.
-    @State private var untenDa = false
-    /// Anfangswert aus dem Listenobjekt: Merkliste-Lesezeichen und Gesehen-
-    /// Haken stehen vom ersten Bild an richtig, nicht erst nach der letzten
-    /// Anfrage. `frisch` zieht nur noch nach.
-    @State private var gemerkt: Bool
-    @State private var gesehen: Bool
+    @State private var collectionRails: [CollectionRail.Rail] = []
+    /// Everything below the description has been answered. See `body`.
+    @State private var bottomPresent = false
+    /// Initial value from the list object: watchlist bookmark and watched
+    /// checkmark are correct from the first frame, not only after the last
+    /// request. `frisch` only catches up.
+    @State private var remembered: Bool
+    @State private var watched: Bool
 
     @MainActor init(model: AppModel, item: Item) {
         self.model = model
         self.item = item
-        _gemerkt = State(initialValue: item.userData?.isFavorite ?? false)
-        _gesehen = State(initialValue: item.userData?.played ?? false)
+        _remembered = State(initialValue: item.userData?.isFavorite ?? false)
+        _watched = State(initialValue: item.userData?.played ?? false)
     }
 
-    private var aktuell: Item { frisch ?? item }
+    private var current: Item { freshValue ?? item }
 
-    /// Was von diesem Titel schon auf dem Gerät liegt — `nil` heisst nichts.
-    private var geladen: Downloadposten? { model.downloads.posten(fuer: aktuell.id) }
+    /// What of this title is already on the device; `nil` means nothing.
+    private var loaded: DownloadItem? { model.downloads.entries(for: current.id) }
 
-    /// Der Eintrag, den ein Download bekäme. Die Größe kommt aus derselben
-    /// Quelle, die der Player nähme — **H2**, es ist dieselbe Datei.
-    private var alsPosten: Downloadposten? {
-        guard let konto = model.session?.userID else { return nil }
-        let quelle = plan?.quelle ?? aktuell.mediaSources?.first
-        return Downloadposten(
-            id: aktuell.id, konto: konto, art: .film, titel: aktuell.name,
-            laufzeitTicks: aktuell.runTimeTicks, container: quelle?.container,
-            quelle: quelle?.id, bytes: quelle?.size ?? 0,
-            sehstand: aktuell.userData, bildcodec: quelle?.bildcodec)
+    /// The entry a download would get. The size comes from the same source
+    /// the player would use: it is the same file.
+    private var asEntry: DownloadItem? {
+        guard let account = model.session?.userID else { return nil }
+        let source = plan?.source ?? current.mediaSources?.first
+        return DownloadItem(
+            id: current.id, account: account, art: .film, title: current.name,
+            runtimeTicks: current.runTimeTicks, container: source?.container,
+            source: source?.id, bytes: source?.size ?? 0,
+            watchState: current.userData, videoCodec: source?.videoCodec)
     }
 
-    private var fortsetzenAb: Double? { aktuell.fortsetzenAb }
+    private var resumeFrom: Double? { current.resumeFrom }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if breit {
-                        Heldkopf(bild: model.kopfbildURL(for: aktuell),
-                                 poster: model.imageURL(for: aktuell, maxHeight: 600,
-                                                        hochkant: true),
-                                 titel: aktuell.name, logo: model.logoURL(for: aktuell),
-                                 nebenzeile: nebenzeile,
-                                 fortschritt: aktuell.userData?.playedPercentage
+                    if wide {
+                        HeroHeader(image: model.headerImageURL(for: current),
+                                 poster: model.imageURL(for: current, maxHeight: 600,
+                                                        portrait: true),
+                                 title: current.name, logo: model.logoURL(for: current),
+                                 secondaryLine: secondaryLine,
+                                 progress: current.userData?.playedPercentage
                                      .map { $0 / 100 }) {
                             VStack(alignment: .leading, spacing: 14) {
-                                belegzeile
-                                // Knöpfe und Aktionsreihe in einer Zeile: hier
-                                // ist Breite da, und untereinander stünden sie
-                                // in einer halbleeren Spalte.
-                                // Nebeneinander nur, wenn es reicht.
-                                // Hochkant hat der Textblock 476 Punkt; die
-                                // Reihe braucht rund 620, und SwiftUI setzt
-                                // die Beschriftungen dann senkrecht.
-                                if weit {
+                                proofRow
+                                // Buttons and action row in one line: there is width here, and stacked
+                                // they would sit in a half-empty column. Side by side only if it fits.
+                                // In portrait the text block is 476 pt; the row needs about 620, and
+                                // SwiftUI then sets the labels vertically.
+                                if broad {
                                     HStack(alignment: .center, spacing: 14) {
-                                        hauptknopf
-                                        aktionsreihe
+                                        primaryButton
+                                        actionRail
                                     }
                                 } else {
-                                    hauptknopf
-                                    aktionsreihe
+                                    primaryButton
+                                    actionRail
                                 }
                             }
                         }
-                        // Fließtext bekommt ein Maß. Über die volle Breite
-                        // gezogen sind das Zeilen mit 140 Zeichen.
-                        beschreibung
-                            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
-                            .padding(.horizontal, Stil.randSeiteBreit)
+                        // Body text gets a measure. Stretched over the full width the lines
+                        // would be 140 characters long.
+                        description
+                            .frame(maxWidth: Theme.readWidth, alignment: .leading)
+                            .padding(.horizontal, Theme.edgePageWide)
                             .padding(.top, 18)
                     } else {
                     hero
                     VStack(alignment: .leading, spacing: 14) {
-                        // Doch über dem Knopf, direkt unter dem Namen: unter
-                        // ihm stand sie zwischen Knopf und Aktionsreihe und
-                        // trennte zwei Dinge, die zusammengehören.
-                        belegzeile
-                        // **Knopf und Reihe sind ein Block, also stehen sie
-                        // dichter.** Der Abstand war 14, genauso gross wie der
-                        // zu allem anderen — waagerecht stehen die Felder der
-                        // Reihe aber nur 8 auseinander. Damit war der Abstand
-                        // nach oben groesser als der zwischen den Feldern, und
-                        // die Reihe las sich als eigene Sache statt als
-                        // Fortsetzung des Knopfs. Rückmeldung vom 21.09.: „damit es
-                        // irgendwie clean wie ein Element aussieht".
+                        // Above the button after all, directly under the name: below it, it sat
+                        // between button and action row and separated two things that belong
+                        // together.
+                        proofRow
+                        // **Button and row are one block, so they sit closer.** The spacing was
+                        // 14, same as to everything else, but horizontally the row's fields are
+                        // only 8 apart. The gap above was thus larger than between the fields,
+                        // and the row read as a separate thing instead of a continuation of the
+                        // button. Feedback: "so it looks like one clean element".
                         VStack(alignment: .leading, spacing: 8) {
-                            hauptknopf
-                            aktionsreihe
+                            primaryButton
+                            actionRail
                         }
-                            // Die Reihe traegt ihre Beschriftungen dicht unter
-                            // den Kreisen; ohne Zugabe stossen sie fast an den
-                            // Text darunter.
+                            // The row carries its labels close under the circles; without extra
+                            // space they almost touch the text below.
                             .padding(.bottom, 8)
-                        beschreibung
+                        description
                     }
-                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 14)
                     }
 
-                    // **Alles darunter kommt auf einmal** (24.09.2026). Besetzung,
-                    // Extras, Sammlung und Ähnliches trafen einzeln ein, drückten
-                    // sich in die Seite und schoben den Rest vor sich her. Jetzt
-                    // wartet die Seite auf alle und blendet sie gemeinsam ein —
-                    // wie die Serienseite seit `2b17f044`: keine Platzhalter,
-                    // kein Leerhinweis, solange noch geladen wird.
-                    if untenDa {
+                    // **Everything below arrives at once.** Cast, extras, collection and
+                    // similar used to arrive individually, pushed into the page and shoved
+                    // the rest ahead of them. Now the page waits for all of them and fades
+                    // them in together, like the series page: no placeholders and no
+                    // empty-state hint while still loading.
+                    if bottomPresent {
                         VStack(alignment: .leading, spacing: 0) {
-                            besetzung
-                            extrasreihe
-                            // Über „Ähnliche Titel": die Sammlung ist die nähere
-                            // Verwandtschaft. Nur bei Titeln, die in einer stehen.
-                            Sammlungsreihe(model: model, titel: item, reihen: sammlungsreihen)
-                            aehnlichesreihe
-                            // Die Dateiangaben ganz nach unten: sie beantworten eine
-                            // Frage, die man erst später stellt.
-                            dateiauszug
+                            cast
+                            extrasRail
+                            // Above "Similar titles": the collection is the closer relation. Only
+                            // for titles that are in one.
+                            CollectionRail(model: model, title: item, rails: collectionRails)
+                            similarRail
+                            // File details at the very bottom: they answer a question asked only
+                            // later.
+                            fileExcerpt
                         }
                         .transition(.opacity)
                     }
                 }
-                // **Nie breiter als der Schirm.** Wird ein Kind breiter, ist es
-                // sonst die ganze Seite — und eine Seite, die breiter ist als
-                // ihre Scrollfläche, lässt sich seitwärts ziehen.
+                // **Never wider than the screen.** If a child gets wider, it becomes the
+                // whole page, and a page wider than its scroll area can be dragged
+                // sideways.
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                // **Die Farbe des Kopfbilds unter der Seite** (Versuch
-                // `experiment-glas`), schmal wie breit. Breit trägt `Heldkopf`
-                // sein Bild als Grund und blendet es über `aufBildfarbe` mit
-                // einer Maske aus statt mit `grund` — darunter liegt dasselbe
-                // Netz, gerechnet ab seiner Mindesthöhe (iPad, 1.0.5).
+                // **The color of the header image beneath the page** (experiment
+                // `experiment-glas`), narrow and wide. Wide, `HeroHeader` carries its image
+                // as the background and fades it out via `onImageTint` with a mask
+                // instead of `reason`; beneath it lies the same mesh, computed from its
+                // minimum height (iPad, 1.0.5).
                 .background(alignment: .top) {
-                    Stimmungsgrund(url: model.kopfbildURL(for: aktuell),
-                                   ab: breit ? Stil.heldHoeheBreit : Stil.heldHoehe)
+                    MoodReason(url: model.headerImageURL(for: current),
+                                   since: wide ? Theme.heroHeightWide : Theme.heroHeightValue)
                 }
-                // Darüber durchsichtige statt fester Flächen — siehe
-                // `Stil.flaecheDurchsichtig`.
-                .environment(\.aufBildfarbe, true)
-                .environment(\.bildfarbeQuelle, model.kopfbildURL(for: aktuell))
+                // Translucent instead of solid surfaces above it, see
+                // `Theme.flaecheDurchsichtig`.
+                .environment(\.onImageTint, true)
+                .environment(\.imageColorSource, model.headerImageURL(for: current))
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
             .ignoresSafeArea(edges: .top)
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                weg.setzen(neu)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+                distance.setDown(new)
             }
 
-            // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
-            // auf breiten Fenstern zwei Wege zu denselben Handlungen.
-            if !breit {
-                Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
-                               handlungen: mehrHandlungen)
+            // The sheet hangs on an empty surface; without `if` there would be two
+            // routes to the same actions on wide windows.
+            if !wide {
+                ActionSheet(opened: $moreOpen, title: current.name,
+                               actions: moreActions)
                     .zIndex(20)
             }
-            if let posten = alsPosten {
-                Ladeblatt(offen: $ladeblatt, model: model, posten: [posten],
-                          titel: aktuell.name,
-                          bilder: [aktuell.id: model.plakatURL(
-                              itemID: aktuell.id,
-                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 },
-                          gescheitert: { meldung = $0 },
-                          qualitaetWaehlen: true)
+            if let entries = asEntry {
+                LoadSheet(opened: $loadSheet, model: model, entries: [entries],
+                          title: current.name,
+                          images: [current.id: model.posterURL(
+                              itemID: current.id,
+                              mark: current.imageTags?["Primary"])].compactMapValues { $0 },
+                          failed: { message = $0 },
+                          qualitySelect: true)
                     .zIndex(20)
             }
-            if let meldung {
-                Hinweisstreifen(text: meldung) { self.meldung = nil }
+            if let message {
+                HintStrip(text: message) { self.message = nil }
                     .zIndex(21)
             }
 
-            Detailkopfleser(titel: aktuell.name, weg: weg) { zurueck() }
+            DetailHeaderReader(title: current.name, distance: distance) { back() }
         }
 
-        // Breit hängt die Tafel am Knopf statt am unteren Bildrand. Der
-        // Anker kommt aus `alsHandlungsanker()`; über feste Koordinaten
-        // ginge es nicht, weil die Knopfreihe mit der Länge der
-        // Beschriftung wandert.
-        .overlayPreferenceValue(Handlungsanker.self) { anker in
-            GeometryReader { raum in
-                if breit, mehrOffen, let anker {
-                    Handlungstafel(offen: $mehrOffen, titel: aktuell.name,
-                                   handlungen: mehrHandlungen,
-                                   anker: raum[anker], raum: raum.size)
+        // Wide, the panel hangs on the button instead of the bottom edge of the
+        // image. The anchor comes from `asActionAnchor()`; fixed coordinates
+        // would not work because the button row shifts with the label length.
+        .overlayPreferenceValue(ActionAnchor.self) { anchor in
+            GeometryReader { space in
+                if wide, moreOpen, let anchor {
+                    ActionPanel(opened: $moreOpen, title: current.name,
+                                   actions: moreActions,
+                                   anchor: space[anchor], space: space.size)
                 }
             }
         }
 
         #if os(iOS)
-        .background(WischZurueck())
+        .background(SwipeBack())
         .toolbar(.hidden, for: .navigationBar)
-        .playerCover(item: $abspielen) { wunsch in
-            PlayerScreen(model: model, item: wunsch.item,
-                         plan: wunsch.plan, startAt: wunsch.startAt)
+        .playerCover(item: $play) { wish in
+            PlayerScreen(model: model, item: wish.item,
+                         plan: wish.plan, startAt: wish.startAt)
         }
         #endif
-        .nachholen(bei: model.seitenAuffrischen) { Task { await auffrischen() } }
+        .catchUp(at: model.pagesRefresh) { Task { await refresh() } }
         .task {
-            async let frischerTitel = model.item(id: item.id)
-            async let planung = model.plan(for: item.id, still: true)
-            async let aehnlich = model.aehnliche(item)
+            async let freshTitle = model.item(id: item.id)
+            async let planning = model.plan(for: item.id, still: true)
+            async let alike = model.similar(item)
             async let extra = model.extras(item)
-            async let sammlung = model.sammlungsreihen(zu: item)
-            // **Titel und Plan gleich setzen, der Rest folgt getrennt.** Die
-            // langsamste Anfrage („Ähnliche", „Sammlungen") hielt sonst den
-            // Hauptknopf samt Direct-Play-Marke und „Fortsetzen ab …"
-            // zurück; die Serienseite trennt das schon.
-            let neuerTitel = await frischerTitel
-            let neuerPlan = await planung
-            frisch = neuerTitel
-            plan = neuerPlan
-            gemerkt = aktuell.userData?.isFavorite ?? false
-            gesehen = aktuell.userData?.played ?? false
-            withAnimation(Stil.einblenden) { planDa = true }
-            // **Doppelte Kennungen raus.** Der Server liefert unter
-            // „Aehnliches" denselben Titel gelegentlich zweimal, und `ForEach`
-            // ordnet ueber die Kennung zu: zwei gleiche Kennungen heissen zwei
-            // gleiche Kacheln und ein Tipp, der danebengreift. Dieselbe Regel
-            // wie in Suche, Startseite und Merkliste — sie fehlte nur hier.
-            let frischeAehnliche = await aehnlich
-            // Abgebrochen (Seite überdeckt) ist keine Störung; die Aufgabe
-            // startet beim Zurückkommen neu.
+            async let collection = model.collectionRails(toward: item)
+            // **Set title and plan together, the rest follows separately.** The
+            // slowest request ("Similar", "Collections") would otherwise hold back
+            // the main button with its Direct Play mark and "Continue from ..."; the
+            // series page already separates this.
+            let newTitle = await freshTitle
+            let newPlan = await planning
+            freshValue = newTitle
+            plan = newPlan
+            remembered = current.userData?.isFavorite ?? false
+            watched = current.userData?.played ?? false
+            withAnimation(Theme.reveal) { planPresent = true }
+            // **Remove duplicate identifiers.** Under "Similar" the server
+            // occasionally returns the same title twice, and `ForEach` maps by
+            // identifier: two equal identifiers mean two equal tiles and a tap that
+            // misses. The same rule as in search, home and watchlist; it was only
+            // missing here.
+            let freshSimilar = await alike
+            // Cancelled (page covered) is not a failure; the task restarts on
+            // return.
             if Task.isCancelled { return }
-            // Extras sind kein eigener Abschnitt mit Aussage: fehlen sie,
-            // fehlt die Reihe. Ein zweiter Stoerhinweis unter dem ersten waere
-            // dieselbe Auskunft zweimal.
-            let neueExtras = (await extra) ?? []
-            let neueSammlungen = await sammlung
-            // **Ein Einblenden für den Rest.** Erst wenn alles darunter
-            // beantwortet ist, wird es auf einmal gesetzt.
-            aehnlicheGestoert = frischeAehnliche == nil && aehnliche.isEmpty
-            if let frischeAehnliche {
-                aehnliche = Listenregeln.ohneDoppelte(frischeAehnliche)
+            // Extras are not a section with a statement: if missing, the row is
+            // missing. A second error hint below the first would be the same
+            // information twice.
+            let newExtras = (await extra) ?? []
+            let newCollections = await collection
+            // **One fade-in for the rest.** Only when everything below has been
+            // answered is it set all at once.
+            similarDisturbed = freshSimilar == nil && similar.isEmpty
+            if let freshSimilar {
+                similar = ListRules.withoutDouble(freshSimilar)
             }
-            extras = neueExtras
-            sammlungsreihen = neueSammlungen
-            withAnimation(Stil.einblenden) { untenDa = true }
-            pruefe = false
+            extras = newExtras
+            collectionRails = newCollections
+            withAnimation(Theme.reveal) { bottomPresent = true }
+            examine = false
         }
     }
 
-    /// Den Titel neu vom Server holen, nachdem sich sein Zustand geändert hat.
-    /// Auch hier holt eine Funktion alles, was sich ändern kann.
+    /// Refetch the title from the server after its state changed. Here too
+    /// one function fetches everything that can change.
     ///
-    /// Der Plan fehlte. Er ändert sich beim Zurücksetzen des Fortschritts
-    /// zwar nicht — die Abspielart hängt nicht daran —, aber die Auslassung
-    /// war dieselbe wie auf der Serienseite, wo sie sichtbar wurde. Zwei
-    /// Wege, die dasselbe holen sollen, und einer weiß weniger.
-    private func auffrischen() async {
-        async let frischerTitel = model.item(id: item.id)
-        async let planung = model.plan(for: item.id, still: true)
-        frisch = await frischerTitel
-        plan = await planung
-        gemerkt = aktuell.userData?.isFavorite ?? false
-        gesehen = aktuell.userData?.played ?? false
+    /// The plan was missing. It does not change on resetting progress (the
+    /// playback mode does not depend on it), but the omission was the same as
+    /// on the series page, where it became visible. Two paths that should
+    /// fetch the same thing, and one knows less.
+    private func refresh() async {
+        async let freshTitle = model.item(id: item.id)
+        async let planning = model.plan(for: item.id, still: true)
+        freshValue = await freshTitle
+        plan = await planning
+        remembered = current.userData?.isFavorite ?? false
+        watched = current.userData?.played ?? false
     }
 
-    // MARK: Teile
+    // MARK: Parts
 
-    /// Gleiche Höhe wie auf der Serienseite — vorher waren es 260 gegen 300.
+    /// Same height as on the series page; before it was 260 versus 300.
     private var hero: some View {
-        Heldbild(url: model.kopfbildURL(for: aktuell))
-            .overlay(alignment: .bottom) { Heldauslauf(bild: model.kopfbildURL(for: aktuell)) }
+        HeroImage(url: model.headerImageURL(for: current))
+            .overlay(alignment: .bottom) { HeroRunOut(image: model.headerImageURL(for: current)) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     #if os(iOS)
-                    Titelmarke(titel: aktuell.name, logo: model.logoURL(for: aktuell))
+                    TitleMark(title: current.name, logo: model.logoURL(for: current))
                     #else
-                    Text(aktuell.name)
-                        .font(Stil.titel)
-                        .tracking(Stil.sperrungTitel)
-                        .foregroundStyle(Stil.schrift)
+                    Text(current.name)
+                        .font(Theme.title)
+                        .tracking(Theme.lockTitle)
+                        .foregroundStyle(Theme.font)
                     #endif
-                    Text(nebenzeile)
-                        // Jahr, Laufzeit, Genre sind eine Angabe: 12. Vorher
-                        // 14, was in keiner Stufe vorkommt.
-                        .font(Stil.klein)
-                        .foregroundStyle(Stil.schriftLeise)
+                    Text(secondaryLine)
+                        // Year, runtime, genre are one piece of info: 12. Before it was 14,
+                        // which appears in no step of the scale.
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontQuiet)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
                 .padding(.bottom, 16)
             }
     }
 
-    /// Jahr, Laufzeit und Genre — im Heldenbild, nicht mehr in einer eigenen
-    /// Zeile darunter.
-    private var nebenzeile: String { aktuell.nebenzeile }
+    /// Year, runtime and genre sit in the hero image, no longer in a line of
+    /// their own below.
+    private var secondaryLine: String { current.secondaryLine }
 
-    /// **Erst mit dem Plan, dann als Ganzes.** Sterne und FSK sind sofort da,
-    /// die Direct-Play-Marke erst mit dem Wiedergabeplan — und schob sich dann
-    /// links davor und die beiden anderen nach rechts. Jetzt hält die Zeile
-    /// ihren Platz, bleibt aber unsichtbar, bis der Plan da ist, und blendet
-    /// dann auf einmal ein. Kommt kein Plan, blendet sie trotzdem ein — dann
-    /// eben ohne Marke.
-    private var belegzeile: some View {
-        Belegzeile(direktplay: plan?.isLossless ?? false,
-                   hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
-                   bewertung: aktuell.communityRating,
-                   freigabe: aktuell.officialRating)
-            // **Feste Höhe, auch leer.** Die Zeile kommt erst mit dem Plan —
-            // und aus der Liste oft ohne Bewertung und Freigabe. Leer hatte sie
-            // keine Höhe, der Knopf darunter saß höher und rutschte nach
-            // unten, sobald sie sich füllte. So hoch wie eine Marke, immer.
-            // `height`, nicht `minHeight`: der Umbau auf mitwachsende Schrift
-            // hat daraus ein Mindestmass gemacht und damit die Begruendung
-            // darueber entwertet — bei groesserer Systemschrift waere die Zeile
-            // ueber 26 gewachsen und der Knopf haette genau so gesprungen, wie
-            // es hier steht. Die Zeile traegt nur Plaketten, und Plaketten
-            // bleiben fest (BRAND 2).
+    /// **First with the plan, then as a whole.** Stars and age rating are
+    /// there immediately, the Direct Play mark only with the playback plan,
+    /// and it then pushed in on the left and moved the other two right. Now
+    /// the line holds its place but stays invisible until the plan is there,
+    /// then fades in at once. If no plan comes, it fades in anyway, just
+    /// without the mark.
+    private var proofRow: some View {
+        ProofRow(directPlayFlag: plan?.isLossless ?? false,
+                   hint: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
+                   rating: current.communityRating,
+                   sharing: current.officialRating)
+            // **Fixed height, even when empty.** The line only comes with the plan,
+            // and from the list often without rating and age rating. Empty, it had no
+            // height; the button below sat higher and dropped as soon as it filled.
+            // As tall as one badge, always. `height`, not `minHeight`: the rework to
+            // growing type turned it into a minimum and thereby invalidated the
+            // reasoning above. With larger system type the line would have grown
+            // beyond 26 and the button would have jumped exactly as described. The
+            // line holds only badges, and badges stay fixed.
             .frame(height: 26, alignment: .leading)
-            .opacity(planDa ? 1 : 0)
+            .opacity(planPresent ? 1 : 0)
     }
 
-    /// **Ein Knopf, nicht zwei.**
+    /// **One button, not two.**
     ///
-    /// Unter „Fortsetzen" stand ein zweiter, gleich breiter Knopf „Von vorn" —
-    /// bei einem angefangenen Film also zwei volle Zeilen Knopf ueber dem
-    /// Inhalt. Und er war doppelt: „Von vorn abspielen" steht seit jeher in
-    /// der Mehr-Tafel (`Titelhandlungen.fuerFilm`), genau wie
-    /// „Fortschritt zuruecksetzen" daneben. Rückmeldung vom 22.09.: „mach den weg, der
-    /// ist ja sowieso in dem Menue."
+    /// Below "Continue" there was a second, equally wide "Start over" button,
+    /// so for a started movie two full button rows sat above the content. It
+    /// was also redundant: "Play from start" has always been in the More
+    /// panel (`TitleActions.forMovie`), just like "Reset progress" next to
+    /// it. Feedback: "get rid of it, it's in the menu anyway".
     ///
-    /// Die Seite hat damit wieder **eine** Hauptsache, und die Reihe darunter
-    /// faengt 60 Punkt weiter oben an.
-    private var hauptknopf: some View {
-        // **Restzeit und Balken wie auf der Serienseite.**
+    /// The page again has **one** main thing, and the row below starts 60
+    /// points higher.
+    private var primaryButton: some View {
+        // **Remaining time and bar as on the series page.**
         //
-        // Dort stehen sie seit jeher unter dem Fortsetzen-Knopf; ein
-        // angefangener Film zeigte dagegen nur „Fortsetzen ab 51:10" und
-        // liess offen, wie viel noch kommt. Dieselbe Frage, dieselbe Antwort —
-        // Aufbau und Abstand zeichengleich mit `SeriesView.hauptknopf`.
+        // There they have always sat under the Continue button; a started movie
+        // showed only "Continue from 51:10" and left open how much is left. The
+        // same question, the same answer: layout and spacing identical to
+        // `SeriesView.primaryButton`.
         VStack(alignment: .leading, spacing: 9) {
-            Button { starte(ab: fortsetzenAb ?? 0) } label: {
-                if let ab = fortsetzenAb {
-                    Label("Fortsetzen ab \(zeitText(ab))", systemImage: "play.fill")
+            Button { launch(since: resumeFrom ?? 0) } label: {
+                if let since = resumeFrom {
+                    Label("Fortsetzen ab \(timeText(since))", systemImage: "play.fill")
                 } else {
                     Label("Abspielen", systemImage: "play.fill")
                 }
             }
-            .buttonStyle(HauptknopfStil(dehnt: !breit))
-            // Langer Druck: das Kachelmenü des Titels, wie an seiner Kachel.
-            .kachelmenue(aktuell, model: model)
-            // Nur waehrend der Plan beim Druck unterwegs ist. Vorher hing der
-            // Knopf am vorab geladenen Plan: scheiterte dieser eine Abruf,
-            // blieb er fuer immer grau, ohne ein Wort.
-            .disabled(bereitet)
+            .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+            // Long press: the title's tile menu, as on its tile.
+            .tileMenu(current, model: model)
+            // Only while the plan is on its way on press. Before, the button hung on
+            // the preloaded plan: if that single request failed, it stayed gray
+            // forever without a word.
+            .disabled(prepares)
 
-            if let rest = aktuell.restzeitText {
-                // Restzeit ist eine Angabe: 12.
-                Text(rest).mitwachsend(12).foregroundStyle(Stil.schriftLeise)
+            if let rest = current.remainingTimeText {
+                // Remaining time is one piece of info: 12.
+                Text(rest).growing(12).foregroundStyle(Theme.fontQuiet)
             }
-            // Breit sitzt der Fortschritt am Poster im Kopf — hier waere er
-            // ein zweites Mal dasselbe, und zwar quer ueber die Seite.
-            if !breit, let anteil = aktuell.userData?.playedPercentage, anteil > 0 {
-                Fortschrittsbalken(anteil: anteil / 100)
+            // Wide, progress sits on the poster in the header; here it would be the
+            // same thing a second time, and across the whole page.
+            if !wide, let share = current.userData?.playedPercentage, share > 0 {
+                ProgressBar(share: share / 100)
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
         }
     }
 
-    private var aktionsreihe: some View {
-        // Schmal verteilen die Spacer die Knöpfe über die Zeile; breit
-        // stehen sie neben dem Abspielknopf und sollen zusammenbleiben.
+    private var actionRail: some View {
+        // Narrow, the spacers distribute the buttons across the row; wide, they
+        // sit next to the play button and should stay together.
         HStack(spacing: 8) {
-            Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
-                         titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
-                gemerkt.toggle()
-                // Sofort umschalten, damit der Knopf antwortet — aber
-                // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
-                // Anzeige stehen und log.
+            ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
+                         title: "Merkliste", active: remembered, stretches: !broad) {
+                remembered.toggle()
+                // Switch immediately so the button responds, but revert if the server
+                // says no. Before, the display stayed put and lied.
                 Task {
-                    if let grund = await model.setzeMerkliste(aktuell, an: gemerkt) {
-                        gemerkt.toggle()
-                        meldung = grund
+                    if let reason = await model.setWatchlist(current, an: remembered) {
+                        remembered.toggle()
+                        message = reason
                     }
                 }
             }
-            // **Das fünfte Feld, und nur wenn die Funktion an ist.**
+            // **The fifth field, only when the feature is on.**
             //
-            // An zweiter Stelle, nicht am Ende: Merkliste und Download sind
-            // das Paar „für später" und gehören nebeneinander. Fünf Felder
-            // auf 354 Punkt ergeben 62 je Feld — über den 44, die eine
-            // Trefferfläche braucht.
+            // In second place, not at the end: watchlist and download are the "for
+            // later" pair and belong side by side. Five fields in 354 pt give 62 each,
+            // above the 44 a hit target needs.
             //
-            // Wer die Funktion nie einschaltet, sieht die Reihe unverändert
-            // mit ihren vier Feldern; deshalb wächst sie hier statt eine
-            // fünfte Stelle immer freizuhalten.
-            if model.downloadKnopfZeigen, aktuell.type != "Series" {
-                Downloadfeld(posten: geladen, dehnt: !weit) {
-                    ringGetippt(geladen, model.downloads) { ladeblatt = true }
+            // Whoever never enables the feature sees the row unchanged with its four
+            // fields; that is why it grows here instead of always reserving a fifth
+            // slot.
+            if model.downloadButtonShow, current.type != "Series" {
+                DownloadField(entries: loaded, stretches: !broad) {
+                    ringTap(loaded, model.downloads) { loadSheet = true }
                 }
             }
 
-            Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
-            Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                         titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {
-                gesehen.toggle()
+            ActionButton(symbol: "film", title: "Trailer", stretches: !broad) { trailerStart() }
+            ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
+                         title: "Gesehen", active: watched, stretches: !broad) {
+                watched.toggle()
                 Task {
-                    if let grund = await model.setzeGesehen(aktuell, an: gesehen) {
-                        gesehen.toggle()
-                        meldung = grund
+                    if let reason = await model.setWatched(current, an: watched) {
+                        watched.toggle()
+                        message = reason
                     }
                 }
             }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
-                .alsHandlungsanker()
+            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad) { moreOpen = true }
+                .asActionAnchor()
         }
-        // Kein eigener Rand mehr: die vier Felder teilen sich die Zeile und
-        // enden dort, wo der Knopf darüber endet.
+        // No margin of its own anymore: the four fields share the row and end
+        // where the button above ends.
     }
 
     @ViewBuilder
-    private var beschreibung: some View {
-        if let text = aktuell.beschreibung {
+    private var description: some View {
+        if let text = current.description {
             VStack(alignment: .leading, spacing: 8) {
-                // Einzeilig mit Auslassung, Antippen klappt auf. Der volle
-                // Text war auf dieser Seite zu wuchtig.
-                Klapptext(text: text)
+                // Single line with truncation, tap expands. The full text was too heavy
+                // on this page.
+                CollapsibleText(text: text)
 
-                if !aktuell.regie.isEmpty {
+                if !current.direction.isEmpty {
                     HStack(spacing: 5) {
-                        Text("Regie").foregroundStyle(Stil.schriftLeise)
-                        Text(aktuell.regie.joined(separator: ", "))
-                            .foregroundStyle(Stil.schrift)
+                        Text("Regie").foregroundStyle(Theme.fontQuiet)
+                        Text(current.direction.joined(separator: ", "))
+                            .foregroundStyle(Theme.font)
                     }
-                    // Eine Rolle ist eine Angabe: 12. Vorher 13 — der Grad
-                    // traegt in der Leiter Medium und gehoert dem Titel unter
-                    // einem Plakat.
+                    // A role is one piece of info: 12. Before it was 13; that grade is
+                    // Medium in the scale and belongs to the title under a poster.
                     //
-                    // **Mitwachsend:** sie steht unter dem Beschreibungstext,
-                    // und der folgt der Systemschrift schon (`Klapptext`). Mit
-                    // fester Zeile darunter lief die Haelfte des Absatzes mit
-                    // und die andere nicht.
-                    .mitwachsend(12)
+                    // **Growing:** it sits under the description text, which already follows
+                    // the system type (`CollapsibleText`). With a fixed line below, half the
+                    // paragraph scaled and the other half did not.
+                    .growing(12)
                 }
             }
         }
     }
 
-    /// Der Auszug, um den es in dieser App geht.
+    /// The excerpt this app is about.
     @ViewBuilder
-    private var dateiauszug: some View {
-        if let quelle = plan?.quelle {
+    private var fileExcerpt: some View {
+        if let source = plan?.source {
             VStack(alignment: .leading, spacing: 0) {
-                // **Den eigenen Rand zurücknehmen.** `Gruppentitel` rückt sich
-                // selbst um `randAbstand` ein, und der Stapel hier legt den
-                // Seitenrand noch einmal darum — „Datei" stand doppelt so weit
-                // innen wie seine Zeilen und wie „Besetzung" darunter.
-                Gruppentitel(text: "Datei")
-                    .padding(.horizontal, -Stil.randAbstand)
+                // **Take back its own margin.** `Gruppentitel` indents itself by
+                // `edgeSpacing`, and the stack here wraps the side margin around it once
+                // more: "File" sat twice as far in as its rows and as "Cast" below.
+                GroupsTitle(text: "Datei")
+                    .padding(.horizontal, -Theme.edgeSpacing)
                     .padding(.top, 22)
-                Rectangle().fill(Stil.linie).frame(height: 1)
-                if quelle.container != nil {
-                    Dateizeile(bezeichnung: "Container", wert: Dateiangaben.container(quelle) ?? "")
-                    Rectangle().fill(Stil.linie).frame(height: 1)
+                Rectangle().fill(Theme.line).frame(height: 1)
+                if source.container != nil {
+                    FileRow(designation: "Container", value: FileDetails.container(source) ?? "")
+                    Rectangle().fill(Theme.line).frame(height: 1)
                 }
-                if let video = quelle.mediaStreams?.first(where: { $0.type == "Video" }) {
-                    Dateizeile(bezeichnung: "Video", wert: Dateiangaben.video(video, quelle))
-                    Rectangle().fill(Stil.linie).frame(height: 1)
+                if let video = source.mediaStreams?.first(where: { $0.type == "Video" }) {
+                    FileRow(designation: "Video", value: FileDetails.video(video, source))
+                    Rectangle().fill(Theme.line).frame(height: 1)
                 }
-                ForEach(Array((quelle.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).enumerated()),
-                        id: \.offset) { paar in
-                    Dateizeile(bezeichnung: paar.offset == 0 ? "Ton" : " ",
-                               wert: paar.element.kurz)
-                    Rectangle().fill(Stil.linie).frame(height: 1)
+                ForEach(Array((source.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).enumerated()),
+                        id: \.offset) { pair in
+                    FileRow(designation: pair.offset == 0 ? "Ton" : " ",
+                               value: pair.element.short)
+                    Rectangle().fill(Theme.line).frame(height: 1)
                 }
-                let untertitel = (quelle.mediaStreams ?? []).filter { $0.type == "Subtitle" }
-                Dateizeile(bezeichnung: "Untertitel",
-                           wert: Dateiangaben.untertitel(untertitel))
-                Rectangle().fill(Stil.linie).frame(height: 1)
+                let subtitle = (source.mediaStreams ?? []).filter { $0.type == "Subtitle" }
+                FileRow(designation: "Untertitel",
+                           value: FileDetails.subtitle(subtitle))
+                Rectangle().fill(Theme.line).frame(height: 1)
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
         }
     }
 
     @ViewBuilder
-    private var besetzung: some View {
-        let leute = aktuell.darsteller
-        if !leute.isEmpty {
-            // **Jetzt antippbar**, und der Pfeil ist weg: er versprach eine
-            // Gesamtliste, die es nie gab. Ein Tipp öffnet die Person — was es
-            // mit ihr auf dem Server gibt, und mit Seerr, was sich anfragen
-            // lässt. Von einem Tester gemeldet.
-            Abschnitt(titel: "Besetzung") {
+    private var cast: some View {
+        let folks = current.actors
+        if !folks.isEmpty {
+            // **Tappable now**, and the arrow is gone: it promised a full list that
+            // never existed. A tap opens the person: what exists for them on the
+            // server, and with Seerr what can be requested. Reported by a tester.
+            Segment(title: "Besetzung") {
                 HStack(spacing: 14) {
-                    ForEach(leute.prefix(12)) { person in
-                        NavigationLink(value: PersonRoute(person: person, herkunft: aktuell.name)) {
-                            Besetzungskachel(bild: model.personBild(person),
-                                             name: person.name, rolle: person.role)
+                    ForEach(folks.prefix(12)) { person in
+                        NavigationLink(value: PersonRoute(person: person, origin: current.name)) {
+                            CastTile(image: model.personImage(person),
+                                             name: person.name, role: person.role)
                         }
-                        .buttonStyle(Stil.Druckknopf())
+                        .buttonStyle(Theme.PressButton())
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
         }
     }
 
     @ViewBuilder
-    private var extrasreihe: some View {
+    private var extrasRail: some View {
         if !extras.isEmpty {
-            Abschnitt(titel: "Extras") {
+            Segment(title: "Extras") {
                 HStack(spacing: 12) {
                     ForEach(extras) { extra in
-                        Extrakachel(model: model, extra: extra, bereitet: $bereitet,
-                                    fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
-                            abspielen = $0
+                        ExtraTile(model: model, extra: extra, prepares: $prepares,
+                                    missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                            play = $0
                         }
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
         }
     }
 
     @ViewBuilder
-    private var aehnlichesreihe: some View {
-        if aehnliche.isEmpty {
-            // Nur wenn der Abruf gescheitert ist. Eine Sammlung ohne
-            // Verwandtes braucht keinen Abschnitt.
-            if aehnlicheGestoert {
-                // **Kein `Abschnitt`.** Der legt seinen Inhalt in eine
-                // waagerechte Scrollflaeche, und darin faellt ein Hinweis, der
-                // die Breite nehmen soll, auf seine Textbreite zusammen.
+    private var similarRail: some View {
+        if similar.isEmpty {
+            // Only if the fetch failed. A collection without related items needs no
+            // section.
+            if similarDisturbed {
+                // **Not `Abschnitt`.** It puts its content in a horizontal scroll area,
+                // and there a hint meant to take the full width collapses to its text
+                // width.
                 VStack(alignment: .leading, spacing: 12) {
-                    Reihentitel(text: "Ähnliche Titel")
-                        .padding(.horizontal, Stil.rand(breit: breit))
-                    Stoerhinweis(model: model, erneut: { erneutAehnliche() },
-                                 abstandOben: 0)
+                    RailTitle(text: "Ähnliche Titel")
+                        .padding(.horizontal, Theme.margin(wide: wide))
+                    DisturbHint(model: model, retry: { againSimilar() },
+                                 spacingTop: 0)
                 }
-                .padding(.top, Stil.reihenAbstand)
+                .padding(.top, Theme.railsSpacing)
             }
         } else {
-            Abschnitt(titel: "Ähnliche Titel") {
-                LazyHStack(spacing: Stil.kachelAbstand) {
-                    ForEach(aehnliche) { titel in
-                        NavigationLink(value: titel) {
-                            PosterTile(model: model, item: titel)
+            Segment(title: "Ähnliche Titel") {
+                LazyHStack(spacing: Theme.tileSpacing) {
+                    ForEach(similar) { title in
+                        NavigationLink(value: title) {
+                            PosterTile(model: model, item: title)
                         }
-                        .buttonStyle(Stil.Druckknopf())
+                        .buttonStyle(Theme.PressButton())
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
         }
     }
 
-    private func starte(ab: Double) {
-        Stil.ruck(.mittel)
+    private func launch(since: Double) {
+        Theme.jerk(.medium)
         if let plan {
-            abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
+            play = PlayRequest(item: current, plan: plan, startAt: since)
             return
         }
-        // **Kein vorab geladener Plan** — noch unterwegs oder gescheitert.
-        // Dann beim Druck holen, wie auf der Serienseite, und sagen, wenn
-        // es wieder nichts wird.
-        Abspielwunsch.starten(aktuell, ab: ab, model: model, bereitet: $bereitet,
-                              fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                              abspielen: { wunsch in
-                                  plan = wunsch.plan
-                                  abspielen = wunsch
+        // **No preloaded plan**: still on its way or failed. Then fetch on
+        // press, as on the series page, and say so if that fails too.
+        PlayRequest.start(current, since: since, model: model, prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              play: { wish in
+                                  plan = wish.plan
+                                  play = wish
                               })
     }
 
-    /// Nur die eine Reihe nachholen — die ganze Seite neu zu laden waere fuer
-    /// einen gescheiterten Abschnitt zu viel.
-    private func erneutAehnliche() {
+    /// Retry only that one row; reloading the whole page would be too much
+    /// for one failed section.
+    private func againSimilar() {
         Task {
-            let frisch = await model.aehnliche(item)
-            aehnlicheGestoert = frisch == nil
-            if let frisch { aehnliche = Listenregeln.ohneDoppelte(frisch) }
+            let freshValue = await model.similar(item)
+            similarDisturbed = freshValue == nil
+            if let freshValue { similar = ListRules.withoutDouble(freshValue) }
         }
     }
 
 }
 
-/// Abschnitt mit Überschrift und waagerecht scrollendem Inhalt.
-struct Abschnitt<Inhalt: View>: View {
-    @Environment(\.breit) private var breit
-    let titel: LocalizedStringKey
-    var pfeil = false
-    @ViewBuilder var inhalt: () -> Inhalt
+/// Section with a heading and horizontally scrolling content.
+struct Segment<ContentBody: View>: View {
+    @Environment(\.wide) private var wide
+    let title: LocalizedStringKey
+    var arrow = false
+    @ViewBuilder var content: () -> ContentBody
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 5) {
-                // **Nicht selbst gesetzt.** Der Grad war derselbe, die
-                // Sperrung fehlte — „Weiterschauen" auf der Startseite steht
-                // auf −0,3, „Besetzung" hier stand auf null. Auf der
-                // Seerr-Seite treffen inzwischen beide Formen aufeinander.
-                Reihentitel(text: titel)
-                if pfeil {
+                // **Not set by itself.** The grade was the same, the tracking was
+                // missing: "Continue watching" on the home page has -0.3, "Cast" here
+                // had zero. On the Seerr page both forms now meet.
+                RailTitle(text: title)
+                if arrow {
                     Image(systemName: "chevron.right")
-                        // Ein Winkel ist 13 Semifett. Vorher 12 Semifett — auf
-                        // 12 steht in der Leiter Regular, und ein halbfetter
-                        // Winkel in einem Regular-Grad ist keine der Stufen.
+                        // A chevron is 13 semibold. Before it was 12 semibold; at 12 the scale
+                        // has Regular, and a semibold chevron in a Regular grade is none of the
+                        // steps.
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .foregroundStyle(Theme.fontVeryQuiet)
                 }
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                inhalt()
+                content()
                     #if os(iOS)
-                    // **Der Zug vom linken Rand gehört der Seite.** Ohne das
-                    // fing die Reihe ihn ab — auf der Personenseite fuhr „Auf
-                    // deinem Server" auf, statt dass die Seite zurückging.
-                    // Im Inhalt, nicht als Hintergrund: siehe `Wischzeile`.
+                    // **The pull from the left edge belongs to the page.** Without this the
+                    // row caught it: on the person page "On your server" slid in instead of
+                    // the page going back. In the content, not as a background, see
+                    // `SwipeRow`.
                     .overlay(alignment: .topLeading) {
-                        RandGesteVorrang().frame(width: 0, height: 0)
+                        EdgeGesturePreRank().frame(width: 0, height: 0)
                     }
                     #endif
             }
         }
-        // 28, nicht 26: „Reihe zu Reihe" ist eine Zahl, und die
-                        // Startseite nimmt 28. Zwei Rhythmen fuer dieselbe
-                        // Bauart merkt man beim Durchtippen.
-                        .padding(.top, Stil.reihenAbstand)
+        // 28, not 26: "row to row" is one number, and the
+                        // home page uses 28. Two rhythms for the same layout are noticeable
+                        // when tapping through.
+                        .padding(.top, Theme.railsSpacing)
     }
 }
 
 extension ItemDetailView {
 
-    func trailerStarten() {
-        Trailerstart.starten(aktuell, model: model,
-                             abspielen: { abspielen = $0 },
-                             melden: { meldung = $0 })
+    func trailerStart() {
+        TrailerStart.start(current, model: model,
+                             play: { play = $0 },
+                             report: { message = $0 })
     }
 
-    var mehrHandlungen: [Titelhandlung] {
-        Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
-                                 starten: { starte(ab: $0) },
-                                 melden: { meldung = $0 },
-                                 gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
-                                     ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
+    var moreActions: [TitleAction] {
+        TitleActions.forMovie(current, plan: plan, model: model,
+                                 start: { launch(since: $0) },
+                                 report: { message = $0 },
+                                 gemeinsam: SharedModel.shared.mayCreate
+                                     ? { [current] in SharedModel.shared.createFor = current } : nil)
     }
 }

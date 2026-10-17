@@ -1,616 +1,582 @@
 import JellyfinKit
 import SwiftUI
 
-/// Die Startseite. Reihen mit Hochkant-Postern — was angefangen ist, zuerst.
+/// The home page. Rows of portrait posters, with whatever is in progress first.
 struct HomeView: View {
     let model: AppModel
 
-    @Environment(\.breit) private var breit
-    @Environment(\.fensterknoepfe) private var fensterknoepfe
-    @Environment(\.scenePhase) private var lebenslage
+    @Environment(\.wide) private var wide
+    @Environment(\.windowButtons) private var windowButtons
+    @Environment(\.scenePhase) private var lifeStatus
 
-    /// Laden und Reihenfolge stehen in `Startseitenmodell` — geteilt mit
-    /// der tvOS-Fassung.
-    @State private var stand = Startseitenmodell()
-    @State private var abspielen: Abspielwunsch?
-    @State private var bereitet = false
-    @State private var meldung: String?
-    /// „Server wechseln" meldet ab — erst nachfragen.
-    @State private var abmeldeblatt = false
-    /// Keine der Anfragen kam durch.
-    @State private var laedtNeu = false
-    /// Wie weit die Seite gescrollt ist — **nur für den Kopfverlauf.**
-    @State private var weg = Scrollweg()
-    /// **Ein Kontowechsel läuft** (Versuch `experiment-glas`): die Reihen
-    /// sind aus und kommen erst, wenn Inhalt da ist und die Profilseite zu
-    /// ist — dann gestaffelt (``Reihenauftritt``).
-    @State private var wechsel = false
+    /// Loading and ordering live in `HomeModel`, shared with the tvOS
+    /// version.
+    @State private var state = HomeModel()
+    @State private var play: PlayRequest?
+    @State private var prepares = false
+    @State private var message: String?
+    /// Switching server signs out: ask for confirmation first.
+    @State private var signOutSheet = false
+    /// None of the requests succeeded.
+    @State private var loadsNew = false
+    /// How far the page has scrolled, **only for the header gradient.**
+    @State private var distance = ScrollDistance()
+    /// **An account switch is running** (experiment `experiment-glas`): the rows are
+    /// off and only return once there is content and the profile page is closed,
+    /// then staggered (``Reihenauftritt``).
+    @State private var change = false
 
-    /// Die Reihen stehen — kein Wechsel unterwegs. Beim Tipp in der
-    /// Profilauswahl gehen sie sofort aus, noch bevor das Konto wechselt.
-    private var zeigen: Bool { !wechsel && !Kontowechselflug.geteilt.wartet }
-    /// Die Reihen stehen im Baum — außer zwischen Tipp und Freigabe.
-    private var gebaut: Bool { zeigen || aufbau }
-    @State private var aufbau = false
+    /// The rows are showing; no switch in progress. On a tap in the profile picker
+    /// they go off immediately, before the account changes.
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits }
+    /// The rows are in the tree, except between the tap and the release.
+    private var built: Bool { showItem || structure }
+    @State private var structure = false
 
-    /// Es gibt etwas zu zeigen, und nichts liegt mehr davor.
-    private var freigegeben: Bool {
-        (!stand.alleLeer || stand.geladen) && !Kontowechselflug.geteilt.wartet
+    /// There is something to show and nothing in front of it anymore.
+    private var released: Bool {
+        (!state.allEmpty || state.loaded) && !AccountSwitchTransition.shared.waits
     }
 
     var body: some View {
         ZStack(alignment: .top) {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
 
-            inhalt
-                // Der Wechsel zieht die Scrollflaeche heran — die Kopfzeile
-                // darueber liegt fest, siehe `bereichsinhalt()`.
-                // Die Unterlage ist leer: hier lag einmal ein farbiger
-                // Schein hinter dem Inhalt. Er ist gefallen — die Startseite
-                // traegt denselben dunklen Kopfverlauf wie jede andere Seite.
-                .bereichsinhalt {
+            content
+                // The switch pulls in the scroll area; the header above stays fixed, see
+                // `areaContent()`.
+                // The backdrop is empty: a colored glow used to sit behind the content here. It
+                // is gone; the home page carries the same dark header gradient as every other
+                // page.
+                .areaContent {
                     EmptyView()
                 }
-                // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
-                // Inhalt — siehe `bereichsleiste()`.
-                .bereichsleiste()
+                // Below the header and the takeover selection, above the content; see
+                // `sectionBar()`.
+                .sectionBar()
 
-            kopf
+            header
 
-            if let meldung {
-                Hinweisstreifen(text: meldung) { self.meldung = nil }
-                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
+            if let message {
+                HintStrip(text: message) { self.message = nil }
+                    .padding(.bottom, wide ? 0 : Theme.stripHeight)
             }
 
-            // **`alleLeer`, nicht drei eigene Abfragen.** Hier standen
-            // Weiterschauen, Nächste Folge und die gemeinsame Neuzugangsreihe
-            // — und nicht die getrennten Reihen „Neue Filme" und „Neue
-            // Serien". Wer „Neuzugänge getrennt" an hat und nichts angefangen
-            // hat, bekam deshalb „Hier ist noch nichts" **über** eine volle
-            // Startseite gelegt: `zuletzt` ist dann immer leer, weil die
-            // Titel in den getrennten Reihen stehen. Mac und Fernseher fragen
-            // seit jeher `alleLeer`; nur hier stand die ältere Abschrift.
-            if stand.geladen, stand.alleLeer {
-                // Das Wann zum Wie aus `Leerzustand`: ohne animiertes
-                // Einfuegen bleibt die `.transition` dort wirkungslos.
-                nichtsDa
-                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
-                    .animation(Stil.einblenden, value: stand.geladen)
-        // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
-        // eintreffen.
-        .animation(Stil.einblenden, value: stand.gattungsreihen.map(\.name))
-        .animation(Stil.einblenden, value: bibliotheken.map(\.id))
+            // **`allEmpty`, not three separate checks.** This used to check Continue
+            // Watching, Next Episode and the combined new-additions row, but not the
+            // separate "New Movies" and "New Series" rows. With "split new additions" on and
+            // nothing in progress, "Nothing here yet" was laid **over** a full home page:
+            // `recent` is always empty then, because the titles are in the separate rows.
+            // Mac and TV have always asked `allEmpty`; only this older copy remained here.
+            if state.loaded, state.allEmpty {
+                // The "when" for the "how" from `Leerzustand`: without an animated insertion,
+                // the `.transition` there has no effect.
+                notPresent
+                    .padding(.bottom, wide ? 0 : Theme.stripHeight)
+                    .animation(Theme.reveal, value: state.loaded)
+        // The "when" for the "how" above: the genre rows cross-fade when they arrive.
+        .animation(Theme.reveal, value: state.genreRails.map(\.name))
+        .animation(Theme.reveal, value: libraries.map(\.id))
             }
         }
-        // **Nach dem Zusehen neu holen, ohne Frist.**
+        // **Refetch after watching, with no grace period.**
         //
-        // Wer aus dem Player zurückkommt, hat die Stelle gerade verschoben —
-        // „Weiterschauen" ist damit sicher veraltet, und die Folge ist unter
-        // Umständen zu Ende und gehört gar nicht mehr in die Reihe.
-        // **Die Einstellung greift sofort, nicht beim naechsten Ziehen.**
+        // When someone returns from the player they have just moved the position, so
+        // "Continue Watching" is certainly stale, and the episode may be finished and no
+        // longer belong in the row.
+        // **The setting takes effect immediately, not on the next pull.**
         //
-        // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
-        // stehen erst nach einer neuen Abfrage fest. Ohne das sah man seine
-        // eigene Einstellung erst, wenn man die Seite von Hand nachlud, und
-        // hielt sie fuer wirkungslos.
+        // Toggling changes which rows exist at all, and those are only known after a new
+        // fetch. Without this, the setting only showed after a manual reload and looked
+        // like it did nothing.
         //
-        // **Ein `task`, nicht zwei** — wie auf tvOS. Hier stand zusaetzlich
-        // ein schlichtes `.task { if !stand.geladen … }`; beide liefen beim
-        // Erscheinen, der zweite fand `geladen` noch falsch und holte alle
-        // Reihen ein zweites Mal (gemessen 25.09.2026: zwei Laeufe in
-        // derselben Millisekunde).
-        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startBibliotheken.map(\.id).joined(separator: "|"))") {
-            // Läuft ein Kontowechsel, lädt der — nicht die Rückkehr auf die
-            // Seite, die mit ihm zusammenfällt (sonst holte sie noch einmal
-            // das alte Konto).
-            if Kontowechselflug.geteilt.wartet { return }
-            await laden()
+        // **One `task`, not two**, as on tvOS. There was an additional plain
+        // `.task { if !state.loaded … }`; both ran on appearing, the second still saw
+        // `loaded` as false and fetched all rows a second time (two runs in the same
+        // millisecond).
+        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
+            // If an account switch is running, it does the loading, not the return to the
+            // page that coincides with it (otherwise it would fetch the old account again).
+            if AccountSwitchTransition.shared.waits { return }
+            await load()
         }
-        // **Nicht an `phase` haengen.** Die steht beim Kontowechsel schon auf
-        // `.ready` und aendert sich nicht — die Startseite lud nie neu und
-        // zeigte die Titel des vorigen Kontos. Auf tvOS ist genau das bei
-        // `kontowechsel` ist der Zaehler, der dafuer da ist.
-        .onChange(of: model.kontowechsel) { _, _ in
-            // Erst aus, dann laden, dann gestaffelt ein (Versuch
-            // `experiment-glas`).
-            Kontowechselflug.notiz("wechsel: startseite blendet aus")
-            wechsel = true
+        // **Do not hang it on `phase`.** During an account switch it is already
+        // `.ready` and does not change, so the home page never reloaded and showed the
+        // previous account's titles. On tvOS this is exactly what `accountSwitch` is for:
+        // the counter exists for this.
+        .onChange(of: model.accountSwitch) { _, _ in
+            // First off, then load, then staggered in (experiment `experiment-glas`).
+            AccountSwitchTransition.note("wechsel: startseite blendet aus")
+            change = true
             Task {
-                await laden()
-                if wechsel, freigegeben { einblenden() }
+                await load()
+                if change, released { reveal() }
             }
         }
-        .onChange(of: freigegeben) { _, jetzt in
-            if jetzt, wechsel { einblenden() }
+        .onChange(of: released) { _, now in
+            if now, change { reveal() }
         }
-        // Neu geholt wird nach der Endmeldung, nicht beim Zumachen: beim
-        // Zumachen ist sie noch unterwegs (`AppModel.wiedergabeBeendet`).
-        .nachholen(bei: model.seitenAuffrischen) { Task { await laden() } }
-        // Rückkehr in den Vordergrund (VERHALTEN D8, Frist 30 s): wer auf
-        // einem anderen Gerät weitergeschaut hat, sieht nicht den Stand von
-        // gestern.
-        .onChange(of: lebenslage) { _, neu in
-            guard neu == .active, stand.brauchtAuffrischung,
-                  !Kontowechselflug.geteilt.wartet else { return }
-            Task { await laden() }
+        // Refetch happens after the end report, not on closing: when closing, it is
+        // still in flight (`AppModel.playbackEnded`).
+        .catchUp(at: model.pagesRefresh) { Task { await load() } }
+        // Return to the foreground (30 s grace): someone who kept
+        // watching on another device does not see yesterday's state.
+        .onChange(of: lifeStatus) { _, new in
+            guard new == .active, state.needsRefresh,
+                  !AccountSwitchTransition.shared.waits else { return }
+            Task { await load() }
         }
         .overlay(alignment: .topTrailing) {
-            Handlungsblatt(offen: $abmeldeblatt,
-                           titel: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
-                           handlungen: [
-                Titelhandlung(symbol: "rectangle.portrait.and.arrow.right",
-                              text: "Abmelden", warnend: true) { model.signOut() },
+            ActionSheet(opened: $signOutSheet,
+                           title: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
+                           actions: [
+                TitleAction(symbol: "rectangle.portrait.and.arrow.right",
+                              text: "Abmelden", cautionary: true) { model.signOut() },
             ])
         }
-        .playerCover(item: $abspielen) { wunsch in
-            PlayerScreen(model: model, item: wunsch.item,
-                         plan: wunsch.plan, startAt: wunsch.startAt)
+        .playerCover(item: $play) { wish in
+            PlayerScreen(model: model, item: wish.item,
+                         plan: wish.plan, startAt: wish.startAt)
         }
     }
 
-    /// Wortmarke links, Profilbild rechts.
+    /// Wordmark on the left, profile picture on the right.
     ///
-    /// Der Inhalt läuft beim Scrollen sichtbar darunter durch, statt an einer
-    /// harten schwarzen Kante abzuschneiden. Die Lupe ist weg — Suchen ist
-    /// jetzt ein eigener Bereich in der Leiste unten.
-    @ViewBuilder private var kopf: some View {
-        if breit {
-            // **Kein Verlauf.** Er trägt auf dem iPhone die Kopfzeile, die
-            // oben liegt — hier liegt die Leiste links, und über dem Inhalt
-            // ist nichts, worunter er durchlaufen müsste. Ein Verlauf ohne
-            // Kopfzeile ist Zierde, und die hat diese Gestaltung nicht.
+    /// Content visibly scrolls underneath instead of being cut off at a hard black
+    /// edge. The magnifier is gone; Search is now its own section in the bar below.
+    @ViewBuilder private var header: some View {
+        if wide {
+            // **No gradient.** On iPhone it carries the top header bar; here the bar is on
+            // the left, and above the content there is nothing for it to run under. A
+            // gradient without a header bar is decoration, which this design does not have.
             EmptyView()
         } else {
-            kopfzeile
+            headerLine
         }
     }
 
-    private var kopfzeile: some View {
-        // **Der Verlauf zieht erst beim Scrollen auf.** Im Ruhezustand liegt
-        // unter dem Kopf noch kein Inhalt — dort deckt er nichts ab.
-        // `kopfzeile` gibt es ohnehin nur schmal.
-        Kopfleser(weg: weg) {
+    private var headerLine: some View {
+        // **The gradient only pulls in when scrolling.** At rest there is no content
+        // under the header yet, so it covers nothing. `headerLine` only exists in narrow
+        // layout anyway.
+        HeaderReader(distance: distance) {
             HStack(alignment: .center, spacing: 0) {
-                Wortmarke(hoehe: 30)
+                Wordmark(height: 30)
                 Spacer(minLength: 0)
 
-                // **Drei Zeichen, eine Sprache.**
+                // **Three symbols, one language.**
                 //
-                // Das Angebot war ein Kreis mit Flaeche und Rand — richtig,
-                // solange es allein neben dem Profilbild stand: es ist ein
-                // Angebot, keine dauerhafte Schaltflaeche, und sollte
-                // auffallen. Sobald die Merkliste dazukam, las sich derselbe
-                // Kreis neben einem nackten Zeichen wie zwei verschiedene
-                // Arten von Knopf.
+                // The offer was a circle with fill and border. That was right as long as it
+                // stood alone next to the profile picture: it is an offer, not a permanent
+                // button, and should stand out. Once Watchlist was added, the same circle next
+                // to a bare symbol read as two different kinds of button.
                 //
-                // Was es heraushebt, ist jetzt nicht die **Form**, sondern
-                // die **Farbe** — und das ist ohnehin unsere Regel: der
-                // Akzent traegt Zustand, keine Flaechen.
+                // What sets it apart is now not the **shape** but the **color**, which is our
+                // rule anyway: the accent carries state, not surfaces.
                 //
-                // **Das Angebot steht nicht mehr hier**, sondern in
-                // `Kopfziele` selbst: es gehoert zu Merkliste und Profil und
-                // damit auf jede Wurzelseite, nicht nur auf diese.
-                Kopfziele(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL())
+                // **The offer is no longer here** but in `HeaderTargets` itself: it belongs with
+                // Watchlist and Profile and so on every root page, not just this one.
+                HeaderTargets(name: model.session?.userName ?? "?",
+                          image: model.userImageURL())
             }
-            .foregroundStyle(Stil.schrift)
+            .foregroundStyle(Theme.font)
         }
     }
 
-    /// Statt eines leeren schwarzen Bildschirms: sagen, was los ist, und einen
-    /// Weg zurück anbieten.
+    /// Instead of an empty black screen: say what is going on and offer a way back.
     ///
-    /// Der Text nennt die Serveradresse. Das ist der eigentliche Gewinn — daran
-    /// erkennt man auf einen Blick, ob der Server aus ist oder man im falschen
-    /// Netz steckt. Vorher stand da nur, dass etwas nicht ging.
-    @ViewBuilder private var nichtsDa: some View {
-        if stand.gestoert {
-            Leerzustand.serverAbgetaucht(model, laedt: laedtNeu,
-                                         erneut: { neuVersuchen() },
-                                         wechseln: { abmeldeblatt = true })
+    /// The text names the server address. That is the real gain: it shows at a
+    /// glance whether the server is down or you are on the wrong network. Before, it
+    /// only said something had failed.
+    @ViewBuilder private var notPresent: some View {
+        if state.disrupted {
+            EmptyState.serverDived(model, loads: loadsNew,
+                                         retry: { newTry() },
+                                         switchTo: { signOutSheet = true })
         } else {
-            Leerzustand(
+            EmptyState(
                 symbol: "tray",
-                kopfzeile: "Hier ist noch nichts",
+                headerLine: "Hier ist noch nichts",
                 text: "Sobald in Jellyfin etwas liegt, taucht es hier auf.",
-                stillerKnopf: ("Aktualisieren", { neuVersuchen() }))
+                quietButton: ("Aktualisieren", { newTry() }))
         }
     }
 
-    /// **Der Leerzustand rechnet die Navileiste ab.**
+    /// **The empty state accounts for the nav bar.**
     ///
-    /// Er sitzt mittig im ganzen Fenster, und schmal liegen die unteren 54
-    /// Punkt davon unter der Leiste: der Block sass also sichtbar zu tief,
-    /// waehrend er auf der Bibliotheksseite mittig stand. Dieselbe Zahl, die
-    /// die Scrollflaechen als `contentMargins` freihalten.
+    /// It is centered in the whole window, and when narrow the bottom 54 pt of that
+    /// lie under the bar: the block sat visibly too low, while it was centered on the
+    /// library page. The same number the scroll areas keep free as `contentMargins`.
 
-    private func neuVersuchen() {
-        laedtNeu = true
+    private func newTry() {
+        loadsNew = true
         Task {
-            await laden()
-            laedtNeu = false
+            await load()
+            loadsNew = false
         }
     }
 
-    private var inhalt: some View {
+    private var content: some View {
         ScrollView {
-            // **Voller Stapel.** Er hat den gemeldeten Fehler geloest: der
-            // faule schaetzt die Hoehe entladener Reihen, und weil eine Reihe
-            // nicht gleich hoch ist, erschien die letzte zu spaet und
-            // verschwand beim Hochscrollen wieder.
+            // **Full stack.** It fixed the reported bug: the lazy one estimates the height
+            // of unloaded rows, and since rows are not equally tall, the last one appeared
+            // too late and vanished again when scrolling up.
             //
-            // Er stand einen Bau lang unter Verdacht, die App abzuschiessen.
-            // Das war er nicht — die Abstuerze kamen von der Bibliothek, nicht
-            // von hier, und ich habe zwei Baue lang am falschen Bildschirm
-            // gesucht. Was aus dem Verdacht bleibt, ist richtig und bleibt
-            // stehen: die Reihe traegt einen `LazyHStack`, und jedes Bild wird
-            // so gross entschluesselt, wie es dasteht.
-            VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
-                // **Die Reihen stehen schon, bevor sie Inhalt haben.** Statt
-                // eines Rings mitten auf der Seite: zwei Reihen in ihrer
-                // Form, die überblenden, sobald die Titel da sind. Man sieht
-                // sofort, was für eine Seite das wird.
-                // Nicht während eines Kontowechsels: dann bleibt die Seite
-                // leer, bis die Reihen gestaffelt kommen.
-                if !stand.geladen, zeigen {
-                    Reihenplatzhalter(quer: true)
-                    Reihenplatzhalter()
+            // It was suspected of crashing the app for one build. It was not: the crashes
+            // came from the library, not from here. What remains of the suspicion is correct
+            // and stays: the row uses a `LazyHStack`, and every image is decoded only as
+            // large as it is shown.
+            VStack(alignment: .leading, spacing: Theme.railsSpacing) {
+                // **The rows stand before they have content.** Instead of a spinner in the
+                // middle of the page: two rows in their shape that cross-fade once the titles
+                // are there. You see at once what kind of page it will be.
+                // Not during an account switch: the page stays empty until the rows come in
+                // staggered.
+                if !state.loaded, showItem {
+                    RailsPlaceholder(landscape: true)
+                    RailsPlaceholder()
                 }
-                // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
-                // Einstieg, kein Inhalt: ein Tipp öffnet das Genre.
-                // **Während des Wechsels gar nicht gebaut** (Versuch
-                // `experiment-glas`): beim Tipp sind die Reihen des alten
-                // Kontos sofort weg — nichts blitzt hinter der zurückgehenden
-                // Seite auf —, und was mitten im Flug ankommt, wird nicht
-                // gesetzt und nicht entschlüsselt. Erst nach der Landung.
-                if gebaut {
+                // **Genres as chips, at the very top**, when enabled. An entry point, not
+                // content: a tap opens the genre.
+                // **Not built at all during the switch** (experiment `experiment-glas`): on tap
+                // the old account's rows are gone immediately, so nothing flashes behind the
+                // page going back, and whatever arrives mid-flight is neither set nor decoded.
+                // Only after landing.
+                if built {
                 if model.genreChips, !model.startGenres.isEmpty {
-                    gattungschips.reihenauftritt(0, da: zeigen)
+                    genreChips.railEntrance(0, present: showItem)
                 }
-                // **Die festen Reihen in der eingestellten Reihenfolge**, ohne
-                // die ausgeblendeten — Einstellungen → Darstellung → Startseite.
-                ForEach(Array(festeReihen.enumerated()), id: \.element.id) { i, reihe in
-                    feste(reihe).reihenauftritt(i + 1, da: zeigen)
+                // **The fixed rows in the configured order**, without the hidden ones;
+                // Settings → Appearance → Home.
+                ForEach(Array(fixedRails.enumerated()), id: \.element.id) { i, rail in
+                    pinned(rail).railEntrance(i + 1, present: showItem)
                 }
-                // Die gewählten Genres als eigene Reihen, nach den festen.
+                // The chosen genres as their own rows, after the fixed ones.
                 //
-                // **Sie blenden ein, statt zu erscheinen.** Sie kommen einen
-                // Netzweg spaeter als die festen Reihen — ohne Uebergang stand
-                // dort erst nichts und dann auf einen Schlag alles.
-                // **Davor die gewählten Bibliotheken und Sammlungen** (Darstellung →
-                // Startseite → „+"): Titel ist ihr Name, der Kopf öffnet sie.
-                // Ohne Wahl ist die Liste leer und diese Zeile kostet nichts.
-                ForEach(Array(bibliotheken.enumerated()), id: \.element.id) { j, r in
-                    Reihe(model: model, titel: "", name: r.name, items: r.items,
-                          ziel: SammlungRoute(sammlung: model.startBibliotheken.first { $0.id == r.id }?.item
+                // **They fade in instead of appearing.** They arrive one network round trip
+                // after the fixed rows; without a transition there was first nothing and then
+                // everything at once.
+                // **Before them, the chosen libraries and collections** (Appearance → Home →
+                // "+"): the title is their name, the header opens them. With no selection the
+                // list is empty and this line costs nothing.
+                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, r in
+                    Rail(model: model, title: "", name: r.name, items: r.items,
+                          target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
                                                 ?? Item(id: r.id, name: r.name), art: nil))
                         .transition(.opacity)
-                        .reihenauftritt(festeReihen.count + 1 + j, da: zeigen)
+                        .railEntrance(fixedRails.count + 1 + j, present: showItem)
                 }
-                ForEach(Array(stand.gattungsreihen.enumerated()), id: \.element.id) { j, r in
-                    Reihe(model: model, titel: "", name: r.name, items: r.items)
+                ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, r in
+                    Rail(model: model, title: "", name: r.name, items: r.items)
                         .transition(.opacity)
-                        .reihenauftritt(festeReihen.count + bibliotheken.count + 1 + j, da: zeigen)
+                        .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
                 }
                 }
-                // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
-                // stehen jetzt in der Leiste unten.
+                // The "Libraries" row is gone; Movies and Series are now in the bar below.
             }
             .padding(.top, 8)
-            // **So breit wie die Seite, auch ohne Inhalt.** Die Scrollflaeche
-            // richtet sich in der Breite nach ihrem Inhalt — gemessen im
-            // Simulator: bei leerer Startseite schrumpfte sie auf null, und
-            // die Leiste unten, die als Auflage darauf liegt, mit ihr.
+            // **As wide as the page, even without content.** The scroll area takes its
+            // width from its content; measured in the simulator: with an empty home page it
+            // shrank to zero, and the bar below, which sits on it as an overlay, with it.
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .animation(Stil.einblenden, value: stand.geladen)
-        // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
-        // eintreffen.
-        .animation(Stil.einblenden, value: stand.gattungsreihen.map(\.name))
+        .animation(Theme.reveal, value: state.loaded)
+        // The "when" for the "how" above: the genre rows cross-fade when they arrive.
+        .animation(Theme.reveal, value: state.genreRails.map(\.name))
         .scrollIndicators(.hidden)
-        // Oben unter dem unscharfen Kopf durch, unten über der Leiste enden.
+        // Run under the blurred header at the top, end above the bar at the bottom.
         //
-        // Breit gibt es unten keine Leiste — die steht links. Der Platz, den
-        // `leisteHoehe` freihält, wäre dort ein leerer Streifen.
-        .contentMargins(.top, (breit ? Stil.kopfOben + 20 : 58)
-                        + (fensterknoepfe ? Fensterknoepfe.hoehe : 0),
+        // When wide there is no bar at the bottom; it is on the left. The space
+        // `stripHeight` keeps free would be an empty strip there.
+        .contentMargins(.top, (wide ? Theme.headerTop + 20 : 58)
+                        + (windowButtons ? WindowButtons.height : 0),
                         for: .scrollContent)
-        .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
+        .contentMargins(.bottom, wide ? 24 : Theme.stripHeight + 12,
                         for: .scrollContent)
-        // Null im Ruhezustand: `contentOffset` startet bei minus dem oberen
-        // Einzug, und was hier gebraucht wird, ist der zurueckgelegte Weg.
+        // Zero at rest: `contentOffset` starts at minus the top inset, and what is
+        // needed here is the distance traveled.
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
-        } action: { _, neu in
-            // **Nicht jedes Bild, und nicht ueber 240.** Der Versatz stand als
-            // `@State` in dieser Ansicht; jeder Scrollschritt baute damit die
-            // ganze Scrollflaeche samt `refreshable` und `contentMargins` neu,
-            // und unter iOS 18 lief die Seite dabei auf und ab. Jetzt lesen ihn
-            // nur der Kopf, und oberhalb von 240 aendert sich daran
-            // sichtbar nichts mehr.
-            let wert = min(max(neu, 0), 240)
-            if abs(wert - weg.wert) >= 0.5 { weg.wert = wert }
+        } action: { _, new in
+            // **Not every frame, and not beyond 240.** The offset used to be `@State` in
+            // this view; every scroll step rebuilt the whole scroll area including
+            // `refreshable` and `contentMargins`, and on iOS 18 the page bounced up and down.
+            // Now only the header reads it, and above 240 nothing visibly changes anymore.
+            let value = min(max(new, 0), 240)
+            if abs(value - distance.value) >= 0.5 { distance.value = value }
         }
-        .refreshable { await laden() }
+        .refreshable { await load() }
     }
 
-    /// Aus den Fortsetzen-Reihen direkt in die Folge, ohne Zwischenseite.
-    private func starte(_ item: Item) {
-        guard !bereitet else { return }
-        bereitet = true
-        // Beim Druck, nicht nach der Antwort (siehe `Stil.ruck`).
-        Stil.ruck(.mittel)
-        // **Kein Lader auf der Kachel.** Gedaempft mit Kreisel sah der
-        // Start ruckelig aus; der Player soll einfach aufgehen.
+    /// From the continue rows straight into the episode, without an intermediate
+    /// page.
+    private func launch(_ item: Item) {
+        guard !prepares else { return }
+        prepares = true
+        // On press, not after the answer (see `Theme.jerk`).
+        Theme.jerk(.medium)
+        // **No spinner on the tile.** Dimmed with a spinner the start looked jerky; the
+        // player should simply open.
         Task {
-            defer { bereitet = false }
-            // Frisch holen: die Position im Listeneintrag ist oft veraltet.
-            // Der Plan hängt nicht vom frischen Eintrag ab: beide
-            // nebeneinander holen, nicht nacheinander.
-            async let frisch = model.item(id: item.id)
-            async let planAbruf = model.plan(for: item.id)
-            let aktuell = await frisch ?? item
-            guard let plan = await planAbruf else {
-                // Statt Stille: sagen, dass es nicht ging.
-                meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+            defer { prepares = false }
+            // Fetch fresh: the position in the list entry is often stale.
+            // The plan does not depend on the fresh entry: fetch both side by side, not one
+            // after the other.
+            async let freshValue = model.item(id: item.id)
+            async let planFetch = model.plan(for: item.id)
+            let current = await freshValue ?? item
+            guard let plan = await planFetch else {
+                // Instead of silence: say that it failed.
+                message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
                 return
             }
-            abspielen = Abspielwunsch(item: aktuell, plan: plan,
-                                      startAt: aktuell.fortsetzenAb ?? 0)
+            play = PlayRequest(item: current, plan: plan,
+                                      startAt: current.resumeFrom ?? 0)
         }
     }
 
-    /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
-    /// damit die Reihenfolge aus den Einstellungen gilt.
+    /// One fixed row: the same layout as before, but fetchable individually so the
+    /// order from Settings applies.
     @ViewBuilder
-    private func feste(_ reihe: Startreihe) -> some View {
-        switch reihe {
-        case .weiterschauen:
-            if !stand.weiterschauen.isEmpty {
-                Reihe(model: model, titel: "Weiterschauen",
-                      items: stand.weiterschauen, quer: true, restzeit: true, direkt: starte)
+    private func pinned(_ rail: StartRail) -> some View {
+        switch rail {
+        case .continueWatching:
+            if !state.continueWatching.isEmpty {
+                Rail(model: model, title: "Weiterschauen",
+                      items: state.continueWatching, landscape: true, remainingTime: true, direct: launch)
             }
-        case .naechsteFolge:
-            if !stand.naechsteFolge.isEmpty {
-                // Ohne 'direkt': eine noch nicht angefangene Folge will
-                // man erst ansehen, nicht sofort starten. Nur
-                // 'Weiterschauen' springt direkt in die Wiedergabe.
-                Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge)
+        case .nextEpisode:
+            if !state.nextEpisode.isEmpty {
+                // Without 'direkt': an episode not yet started should be looked at first, not
+                // started immediately. Only 'Weiterschauen' jumps straight into playback.
+                Rail(model: model, title: "Nächste Folge", items: state.nextEpisode)
             }
-        // Hier führt der Tipp auf die Seite: was man noch nicht
-        // angefangen hat, will man erst ansehen.
-        case .neueFilme:
-            if !stand.neueFilme.isEmpty {
-                Reihe(model: model, titel: "Zuletzt hinzugefügte Filme",
-                      items: stand.neueFilme, neuzugang: true)
+        // Here the tap leads to the page: what you have not started you want to look at
+        // first.
+        case .newMovies:
+            if !state.newMovies.isEmpty {
+                Rail(model: model, title: "Zuletzt hinzugefügte Filme",
+                      items: state.newMovies, newAccess: true)
             }
-        case .neueSerien:
-            if !stand.neueSerien.isEmpty {
-                Reihe(model: model, titel: "Zuletzt hinzugefügte Serien",
-                      items: stand.neueSerien, neuzugang: true)
+        case .newSeries:
+            if !state.newSeries.isEmpty {
+                Rail(model: model, title: "Zuletzt hinzugefügte Serien",
+                      items: state.newSeries, newAccess: true)
             }
-        case .neuzugaenge:
-            if !stand.zuletzt.isEmpty {
-                Reihe(model: model, titel: "Zuletzt hinzugefügt",
-                      items: stand.zuletzt, neuzugang: true)
+        case .newArrivals:
+            if !state.recent.isEmpty {
+                Rail(model: model, title: "Zuletzt hinzugefügt",
+                      items: state.recent, newAccess: true)
             }
         }
     }
 
-    /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
-    /// Ecke wie ein Knopf, nicht rund: rund ist, was ein Bild ist.
-    private var gattungschips: some View {
+    /// Your genres as chips, the same ones that would otherwise be rows.
+    /// Corner like a button, not round: round is what an image is.
+    private var genreChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(model.startGenres, id: \.self) { name in
                     NavigationLink(value: GenreRoute(name: name)) {
-                        // Vom Server, also nicht übersetzt.
+                        // From the server, so not translated.
                         Text(verbatim: name)
-                            // `kachel` ist 13 Medium — hier stand die Zahl.
-                            .font(Stil.kachel)
-                            .foregroundStyle(Stil.schrift)
+                            // `tile` is 13 medium; the number stood here.
+                            .font(Theme.tile)
+                            .foregroundStyle(Theme.font)
                             .padding(.horizontal, 14)
-                            // `minHeight`: eine feste Hoehe schnitte den
-                            // Genrenamen ab, sobald die Systemschrift waechst.
+                            // `minHeight`: a fixed height would clip the genre name once the system font
+                            // grows.
                             .frame(minHeight: 34)
-                            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                     }
-                    .buttonStyle(Stil.Druckknopf())
+                    .buttonStyle(Theme.PressButton())
                 }
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
         }
     }
 
-    private func laden() async {
-        Kontowechselflug.notiz("startseite: laden (konto \(model.kontowechsel))")
-        let intervall = Kontowechselflug.zeichen.beginInterval("startseiteLaden")
+    private func load() async {
+        AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
+        let interval = AccountSwitchTransition.symbolText.beginInterval("startseiteLaden")
         let a = CACurrentMediaTime()
-        await stand.laden(model)
-        Kontowechselflug.zeichen.endInterval("startseiteLaden", intervall)
-        Kontowechselflug.notiz("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
+        await state.load(model)
+        AccountSwitchTransition.symbolText.endInterval("startseiteLaden", interval)
+        AccountSwitchTransition.note("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
     }
 
-    private var bibliotheken: [Startseite.Bibliotheksreihe] {
-        stand.bibliotheksreihen(fuer: model.startBibliotheken)
+    private var libraries: [Home.LibraryRail] {
+        state.libraryRails(for: model.startLibraries)
     }
 
-    private var festeReihen: [Startreihe] {
-        model.startReihen.filter {
-            !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+    private var fixedRails: [StartRail] {
+        model.startRails.filter {
+            !model.startOut.contains($0) && $0.fits(disconnected: model.newAccessDisconnected)
         }
     }
 
-    /// Erst bauen (unsichtbar), im nächsten Durchgang zeigen — sonst
-    /// stünden neu eingefügte Reihen sofort an ihrem Ziel, ohne Staffel.
-    private func einblenden() {
-        // Freigabe und Ende des Ladens können beide hierher führen.
-        guard !aufbau else { return }
-        Kontowechselflug.notiz("wechsel 6: reihen werden gebaut")
-        aufbau = true
+    /// Build first (invisible), show in the next pass; otherwise newly inserted rows
+    /// would stand at their destination immediately, without the stagger.
+    private func reveal() {
+        // Release and end of loading can both lead here.
+        guard !structure else { return }
+        AccountSwitchTransition.note("wechsel 6: reihen werden gebaut")
+        structure = true
         Task { @MainActor in
-            // Ein Bild Luft, damit die Reihen einmal unsichtbar stehen.
+            // One frame of air so the rows stand invisible once.
             try? await Task.sleep(for: .milliseconds(20))
-            Kontowechselflug.notiz("wechsel 7: reihen kommen gestaffelt")
-            wechsel = false
-            aufbau = false
+            AccountSwitchTransition.note("wechsel 7: reihen kommen gestaffelt")
+            change = false
+            structure = false
         }
     }
 }
 
-/// Eine waagerecht scrollende Reihe.
-private struct Reihe: View {
-    @Environment(\.breit) private var breit
+/// A horizontally scrolling row.
+private struct Rail: View {
+    @Environment(\.wide) private var wide
     let model: AppModel
-    let titel: LocalizedStringKey
-    /// Statt `titel`, wenn die Überschrift vom Server kommt — ein Genre wird
-    /// nicht übersetzt.
+    let title: LocalizedStringKey
+    /// Instead of `title`, when the heading comes from the server; a genre is not
+    /// translated.
     var name: String? = nil
     let items: [Item]
-    /// Gesetzt heißt: die Überschrift führt auf die Seite dahinter.
-    var ziel: SammlungRoute? = nil
-    /// Waagerechte Kacheln statt hochkant — nur für „Weiterschauen".
-    var quer = false
-    /// Zeigt statt der Folgennummer, *was* neu dazugekommen ist.
-    var neuzugang = false
-    /// Zeigt unter der Kachel, wie lange es noch geht — für „Weiterschauen".
-    var restzeit = false
-    /// Gesetzt heißt: Tippen startet sofort, statt auf die Seite zu führen.
-    var direkt: ((Item) -> Void)? = nil
-    /// Die Kachel, die gerade startet: gedaempft, mit Lader.
-    var laedt: String? = nil
-    // Nach „gesehen/ungesehen" zieht die Startseite selbst nach: sie hoert auf
-    // `seitenAuffrischen` (`nachholen` oben). Ein eigener Ruf hier lud sie
-    // ein zweites Mal.
+    /// Set means: the heading leads to the page behind it.
+    var target: CollectionRoute? = nil
+    /// Landscape tiles instead of portrait, only for "Continue Watching".
+    var landscape = false
+    /// Shows *what* was newly added instead of the episode number.
+    var newAccess = false
+    /// Shows below the tile how long it still runs, for "Continue Watching".
+    var remainingTime = false
+    /// Set means: tapping starts immediately instead of leading to the page.
+    var direct: ((Item) -> Void)? = nil
+    /// The tile that is starting: dimmed, with a spinner.
+    var loads: String? = nil
+    // After "watched/unwatched" the home page refreshes itself: it listens to
+    // `pagesRefresh` (`nachholen` above). A separate call here loaded it a
+    // second time.
 
-    /// **Die Hoehe steht fest, sie wird nicht gemessen.**
+    /// **The height is fixed, not measured.**
     ///
-    /// Titelzeile (20 Punkt, rund 24 Zeilenhoehe) · 12 Abstand · Bildhoehe ·
-    /// 7 Abstand · Textblock (13 und 12 Punkt mit 1 dazwischen, rund 32).
-    /// Keiner der Werte waechst mit der Systemschrift — die Kachel bleibt
-    /// fest, so steht es in BRAND 2.
+    /// Title line (20 pt, about 24 line height) · 12 spacing · image height · 7
+    /// spacing · text block (13 and 12 pt with 1 between, about 32). None of the
+    /// values grow with the system font; the tile stays fixed.
     ///
-    /// Sie steht hier, damit `LazyVStack` nicht schaetzen muss. Seine
-    /// Schaetzung war der Grund, warum die letzte Reihe zu spaet erschien und
-    /// beim Hochscrollen wieder verschwand.
-    private var reihenhoehe: CGFloat {
-        let bild = quer ? Stil.reihenQuerHoehe(breit: breit)
-                        : Stil.reihenHoehe(breit: breit)
-        return 24 + 12 + bild + 7 + 32
+    /// It is set here so `LazyVStack` does not have to estimate. Its estimate was the
+    /// reason the last row appeared too late and vanished again when scrolling up.
+    private var railsHeightValue: CGFloat {
+        let image = landscape ? Theme.railsLandscapeHeight(wide: wide)
+                        : Theme.railsHeight(wide: wide)
+        return 24 + 12 + image + 7 + 32
     }
 
     var body: some View {
-        // 12, nicht 11: dieselbe Rolle (Rubrik ueber einer Reihe) hatte auf
-        // der Detailseite 12 und hier 11 — beides neben der Rasterleiter.
+        // 12, not 11: the same role (section label above a row) used 12 on the detail
+        // page and 11 here, both next to the grid scale.
         VStack(alignment: .leading, spacing: 12) {
-            // **Derselbe Rand wie die Kacheln darunter.** Der Baustein setzt
-            // seit dem Herausloesen keinen eigenen mehr — auf tvOS gibt es
-            // `randAbstand` nicht. Er muss hier `rand(breit:)` lesen, sonst
-            // steht die Ueberschrift auf dem iPad schmaler als ihre Reihe.
-            // **Ein Baustein, nicht sein Nachbau.** Hier stand der
-            // Serverfall als eigene `Text`-Kette — mit Sperrung −0,3, während
-            // `Reihentitel` −0,24 trägt. Dieselbe Stufe, zwei Werte, und der
-            // Baustein kann `name` seit seinem Herauslösen selbst.
+            // **The same margin as the tiles below.** Since extraction the component sets
+            // none of its own; tvOS has no `edgeSpacing`. It must read `rand(wide:)` here,
+            // or the heading is narrower than its row on iPad.
+            // **One component, not a copy of it.** The server case used to be its own
+            // `Text` chain with tracking −0.3, while `RailTitle` uses −0.24. Same level,
+            // two values, and the component has been able to handle `name` itself since its
+            // extraction.
             Group {
-                if let ziel {
-                    NavigationLink(value: ziel) { Reihentitel(text: titel, name: name) }
-                        .buttonStyle(Stil.Druckknopf())
+                if let target {
+                    NavigationLink(value: target) { RailTitle(text: title, name: name) }
+                        .buttonStyle(Theme.PressButton())
                 } else {
-                    Reihentitel(text: titel, name: name)
+                    RailTitle(text: title, name: name)
                 }
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.horizontal, Theme.margin(wide: wide))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                // Oben ausrichten: ohne das zentriert der Stapel, und eine
-                // Kachel mit nur einer Textzeile — ein Film ohne Folgenkürzel
-                // — sitzt tiefer als die Serien daneben.
-                // **`LazyHStack`, nicht `HStack`.** Eine Reihe kann zwanzig
-                // Plakate tragen, sichtbar sind drei. Sie alle entstehen zu
-                // lassen kostete im Protokoll ueber sechzig Bilder in einer
-                // Sekunde, jedes zwischen 650 KB und 1,7 MB.
-                LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                // Align top: without it the stack centers, and a tile with only one text line
+                // (a movie without an episode code) sits lower than the series beside it.
+                // **`LazyHStack`, not `HStack`.** A row can hold twenty posters, three are
+                // visible. Creating them all cost over sixty images in one second in the log,
+                // each between 650 KB and 1.7 MB.
+                LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
                     ForEach(items) { item in
-                        if let direkt {
-                            Button { direkt(item) } label: {
-                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
-                                    .opacity(laedt == item.id ? 0.5 : 1)
+                        if let direct {
+                            Button { direct(item) } label: {
+                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime)
+                                    .opacity(loads == item.id ? 0.5 : 1)
                                     .overlay {
-                                        if laedt == item.id {
-                                            ProgressView().tint(Stil.schrift)
+                                        if loads == item.id {
+                                            ProgressView().tint(Theme.font)
                                         }
                                     }
                             }
-                            .buttonStyle(Stil.Druckknopf())
-                            // Zur Serie kommt man weiterhin — nur nicht mehr
-                            // im Weg der Wiedergabe: „Zur Übersicht" steht im
-                            // Kachelmenü, dazu alles, was jede Kachel kann.
-                            .kachelmenue(item, model: model, weiterschauen: true, quer: quer)
+                            .buttonStyle(Theme.PressButton())
+                            // The series is still reachable, just no longer on the playback path: "Go to
+                            // overview" is in the tile menu, along with everything every tile can do.
+                            .tileMenu(item, model: model, continueWatching: true, landscape: landscape)
                         } else {
                             NavigationLink(value: item) {
-                                Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang, restzeit: restzeit)
+                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime)
                             }
-                            .buttonStyle(Stil.Druckknopf())
-                            .kachelmenue(item, model: model, quer: quer)
+                            .buttonStyle(Theme.PressButton())
+                            .tileMenu(item, model: model, landscape: landscape)
                         }
                     }
                 }
-                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
             .scrollIndicators(.hidden)
         }
-        // Damit `LazyVStack` nicht schaetzen muss — Begruendung an
-        // `reihenhoehe`. Oben ausgerichtet, damit eine Kachel ohne
-        // Unterzeile nicht in der Mitte haengt.
-        .frame(height: reihenhoehe, alignment: .top)
+        // So `LazyVStack` does not have to estimate; the reasoning is at `railsHeightValue`.
+        // Aligned top so a tile without a subtitle does not hang in the middle.
+        .frame(height: railsHeightValue, alignment: .top)
     }
 }
 
-private struct Kachel: View {
-    @Environment(\.breit) private var breit
+private struct Tile: View {
+    @Environment(\.wide) private var wide
     let model: AppModel
     let item: Item
-    var quer = false
-    var neuzugang = false
-    var restzeit = false
+    var landscape = false
+    var newAccess = false
+    var remainingTime = false
 
-    /// Waagerecht 16:9, so breit wie zwei Poster nebeneinander — sonst wirkt
-    /// die Reihe leer.
-    private var breite: CGFloat {
-        quer ? Stil.reihenQuerBreite(breit: breit) : Stil.reihenBreite(breit: breit)
+    /// Horizontal 16:9, as wide as two posters side by side; otherwise the row looks
+    /// empty.
+    private var width: CGFloat {
+        landscape ? Theme.railsLandscapeWidth(wide: wide) : Theme.railsWidth(wide: wide)
     }
-    private var hoehe: CGFloat {
-        quer ? Stil.reihenQuerHoehe(breit: breit) : Stil.reihenHoehe(breit: breit)
+    private var height: CGFloat {
+        landscape ? Theme.railsLandscapeHeight(wide: wide) : Theme.railsHeight(wide: wide)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Bild(url: quer ? model.querbildURL(for: item)
-                           : model.imageURL(for: item, maxHeight: 500, hochkant: true),
-                 breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel,
-                 fortschritt: fortschritt) {
-                // Fehlt dem Titel ein waagerechtes Bild, tritt das Poster ein
-                // — beschnitten, aber immer noch das Cover und kein Standbild.
-                Bild(url: model.imageURL(for: item, maxHeight: 500, hochkant: true),
-                     breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel) {
-                    // **Und wenn auch das fehlt, ein Zeichen statt Leere.**
+            Picture(url: landscape ? model.landscapeImageURL(for: item)
+                           : model.imageURL(for: item, maxHeight: 500, portrait: true),
+                 width: width, height: height, corner: Theme.cornerTile,
+                 progress: progress) {
+                // If the title has no landscape image, the poster steps in: cropped, but still
+                // the cover and not a still.
+                Picture(url: model.imageURL(for: item, maxHeight: 500, portrait: true),
+                     width: width, height: height, corner: Theme.cornerTile) {
+                    // **And if that is missing too, a symbol instead of emptiness.**
                     //
-                    // Eine leere Flaeche sieht aus wie ein Fehler in der App,
-                    // und genau so wurde sie gemeldet. Ein Zeichen sagt: hier
-                    // gehoert ein Bild hin, der Server hat keins.
-                    Stil.flaeche.overlay {
-                        Image(systemName: item.kachelzeichen)
+                    // A blank surface looks like a bug in the app, and was reported exactly that
+                    // way. A symbol says: an image belongs here, the server has none.
+                    Theme.area.overlay {
+                        Image(systemName: item.tileCharacter)
                             .font(.system(size: 22))
-                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .foregroundStyle(Theme.fontVeryQuiet)
                     }
                 }
             }
             #if DEBUG
-            // Nur im Debug-Bau: in der ausgelieferten Fassung waere das eine
-            // gebaute Adresse je Kachel, fuer nichts.
+            // Debug build only: in the shipped version this would be a built address per
+            // tile, for nothing.
             .onAppear {
-                guard quer, model.querbildURL(for: item) == nil else { return }
-                Protokoll.schreib("[Bild] \(item.seriesName ?? item.name): kein Querbild — "
+                guard landscape, model.landscapeImageURL(for: item) == nil else { return }
+                AppLog.writeOut("[Bild] \(item.seriesName ?? item.name): kein Querbild — "
                     + "eigen=\(item.imageTags?.keys.sorted().joined(separator: ",") ?? "-") "
                     + "Serienposter=\(item.seriesPrimaryImageTag != nil) "
                     + "Serienhintergrund=\(item.parentBackdropImageTags?.count ?? 0) "
@@ -620,102 +586,99 @@ private struct Kachel: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.seriesName ?? item.name)
-                    .font(Stil.kachel)
-                    .foregroundStyle(Stil.schrift)
+                    .font(Theme.tile)
+                    .foregroundStyle(Theme.font)
                     .lineLimit(1)
-                if let kuerzel = unterzeile {
-                    Text(kuerzel)
-                        .font(Stil.klein)
+                if let abbreviation = subline {
+                    Text(abbreviation)
+                        .font(Theme.small)
                         .monospacedDigit()
-                        .foregroundStyle(Stil.schriftLeise)
+                        .foregroundStyle(Theme.fontQuiet)
                         .lineLimit(1)
                 }
             }
-            .frame(width: breite, alignment: .leading)
+            .frame(width: width, alignment: .leading)
         }
-        // Eine Aussage je Kachel statt dreier Bruchstücke — und der
-        // Fortschritt kommt mit. Er ist eine Zeichnung im Bild und fiel für
-        // VoiceOver bisher ganz heraus; der tvOS-Chat hat es dort gefunden
-        // und uns geprüft. Erst ab einem Prozent: „null Prozent gesehen" ist
-        // keine Auskunft.
+        // One announcement per tile instead of three fragments, and progress is
+        // included. It is a drawing in the image and was missing entirely for
+        // VoiceOver. Only from one percent: "zero percent watched" is no information.
         //
-        // Die Ansage kommt aus `Item.kachelansage` (Titel, Jahr bzw. Staffel
-        // und Folge), der Zustand aus `kachelzustand` — gleich auf allen
-        // Apple-Plattformen.
+        // The announcement comes from `Item.tileAnnouncement` (title, year or season and
+        // episode), the state from `tileState`, identical on all Apple platforms.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: item.kachelansage))
-        .accessibilityValue(Text(verbatim: item.kachelzustand))
+        .accessibilityLabel(Text(verbatim: item.tileAnnouncement))
+        .accessibilityValue(Text(verbatim: item.tileState))
     }
 
-    private var fortschritt: Double? {
-        guard let prozent = item.userData?.playedPercentage, prozent > 0 else { return nil }
-        return prozent / 100
+    private var progress: Double? {
+        guard let percent = item.userData?.playedPercentage, percent > 0 else { return nil }
+        return percent / 100
     }
 
-    /// Die leise Zeile unter dem Namen. Bei „Weiterschauen" mit der Restzeit
-    /// — „S2 · F5 · noch 12 Min." (Entwurf D): das Bild bleibt frei, die
-    /// Angabe steht, wo das Kürzel ohnehin stand.
-    private var unterzeile: String? {
-        if restzeit, let zeile = item.weiterschauenzeile { return zeile }
-        return neuzugang ? item.neuzugangszeile : item.folgenkuerzel
+    /// The quiet line under the name. For "Continue Watching" with the remaining
+    /// time, "S2 · E5 · 12 min left": the image stays free, the detail sits where
+    /// the code stood anyway.
+    private var subline: String? {
+        if remainingTime, let row = item.continueWatchingRow { return row }
+        return newAccess ? item.newArrivalsRow : item.episodeCode
     }
 }
 
 
-/// **Wie weit die Startseite gescrollt ist — ausserhalb der Seite.**
+/// **How far the home page has scrolled, outside the page.**
 ///
-/// Als `@State` in `HomeView` machte jeder Scrollschritt die ganze Seite neu.
-/// Als beobachtetes Objekt werden nur die Ansichten neu gebaut, die `wert`
-/// tatsaechlich lesen: der Kopf.
+/// As `@State` in `HomeView` every scroll step rebuilt the whole page. As an
+/// observed object, only the views that actually read `value` are rebuilt: the
+/// header.
 @Observable
-final class Scrollweg {
-    var wert: CGFloat = 0
+final class ScrollDistance {
+    var value: CGFloat = 0
 
-    /// **Nur schreiben, wenn es jemand sieht.** Der Detailkopf aendert sich
-    /// zwischen 150 und 220 Punkt; darueber hinaus und bei Bruchteilen eines
-    /// Punkts bleibt der Wert stehen, und niemand wird neu gebaut. Die Grenzen
-    /// selbst werden immer erreicht, damit der Kopf nie halb stehen bleibt.
-    func setzen(_ neu: CGFloat, bis: CGFloat = 240) {
-        let geklemmt = min(max(neu, 0), bis)
-        guard geklemmt != wert else { return }
-        if abs(geklemmt - wert) >= 0.5 || geklemmt == 0 || geklemmt == bis {
-            wert = geklemmt
+    /// **Only write when someone sees it.** The detail header varies between 150 and
+    /// 220 pt; beyond that and for fractions of a point the value stays put and
+    /// nobody is rebuilt. The bounds themselves are always reached so the header
+    /// never stops half-way.
+    func setDown(_ new: CGFloat, until: CGFloat = 240) {
+        let clamped = min(max(new, 0), until)
+        guard clamped != value else { return }
+        if abs(clamped - value) >= 0.5 || clamped == 0 || clamped == until {
+            value = clamped
         }
     }
 }
 
-/// Der Detailkopf, der den Scrollweg selbst liest — damit nicht die ganze
-/// Film- oder Serienseite es tut.
-struct Detailkopfleser<Rechts: View>: View {
-    let titel: String
-    let weg: Scrollweg
-    let zurueck: () -> Void
-    /// Was rechts in der Leiste steht — auf den meisten Seiten nichts.
-    @ViewBuilder var rechts: () -> Rechts
+/// The detail header, which reads the scroll distance itself so the whole movie
+/// or series page does not.
+struct DetailHeaderReader<Right: View>: View {
+    let title: String
+    let distance: ScrollDistance
+    let back: () -> Void
+    /// What sits on the right in the bar; on most pages nothing.
+    @ViewBuilder var right: () -> Right
 
     var body: some View {
-        Detailkopf(titel: titel, versatz: weg.wert, zurueck: zurueck,
-                   rechts: AnyView(rechts()))
+        DetailHeader(title: title, offset: distance.value, back: back,
+                   right: AnyView(right()))
     }
 }
 
-extension Detailkopfleser where Rechts == EmptyView {
-    init(titel: String, weg: Scrollweg, zurueck: @escaping () -> Void) {
-        self.init(titel: titel, weg: weg, zurueck: zurueck) { EmptyView() }
+extension DetailHeaderReader where Right == EmptyView {
+    init(title: String, distance: ScrollDistance, back: @escaping () -> Void) {
+        self.init(title: title, distance: distance, back: back) { EmptyView() }
     }
 }
 
-/// Der Kopf der Startseite, der den Scrollweg selbst liest — damit nicht
-/// `HomeView` es tut.
-private struct Kopfleser<Inhalt: View>: View {
-    let weg: Scrollweg
-    @ViewBuilder var inhalt: () -> Inhalt
+/// The home page header, which reads the scroll distance itself so `HomeView`
+/// does not.
+private struct HeaderReader<ContentBody: View>: View {
+    let distance: ScrollDistance
+    @ViewBuilder var content: () -> ContentBody
 
     var body: some View {
-        // **Dieselbe Kante wie auf Filme und Serien.** Mit `versatz` legt
-        // `Unschaerfekopf` den vollen Grund unter die Kopfzeile und blendet
-        // beim Scrollen die dünne Linie darunter ein — vorher trug die
-        // Startseite als einzige Seite einen weichen, farbigen Verlauf.
-        Unschaerfekopf(versatz: weg.wert, inhalt: inhalt)
+        // **The same edge as on Movies and Series.** With `offset`, `BlurHeader`
+        // puts the full background under the header and fades in the thin line below it
+        // when scrolling; before, the home page was the only one with a soft colored
+        // gradient.
+        BlurHeader(offset: distance.value, content: content)
     }
 }

@@ -1,7 +1,7 @@
 <?php
-// Router fuer die lokale Vorschau: dieselben Regeln wie Website/blog/.htaccess,
-// damit /blog/ hier so antwortet wie auf dem Webspace. PHPs eingebauter Server
-// kennt .htaccess nicht. Statische Dateien lassen wir ihm (return false).
+// Router for the local preview: same rules as Website/blog/.htaccess, so /blog/
+// answers here like it does on the web host. PHP's built-in server ignores
+// .htaccess. Static files are left to it (return false).
 $pfad   = rawurldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
 $wurzel = $_SERVER['DOCUMENT_ROOT'];
 $blog   = $wurzel . '/blog';

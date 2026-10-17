@@ -2,338 +2,319 @@ import JellyfinKit
 import Observation
 import SwiftUI
 
-/// Der Seitenstapel je Bereich — **selbst geführt statt `NavigationStack`.**
+/// The per-section page stack, **managed by hand instead of `NavigationStack`.**
 ///
-/// Der Grund ist nicht Geschmack. `NavigationStack` hat auf dem Mac dreimal
-/// etwas mitgebracht, das wir wieder abstellen mussten: einen Zurückpfeil in
-/// der Fensterampel, einen Werkzeugleisten-Grund über dem Bild, und einen
-/// Sicherheitsrand, der mal ankam und mal nicht. Was er dafür liefern sollte —
-/// eine Bewegung beim Öffnen und Schließen — liefert er hier gar nicht.
+/// Not a matter of taste. On the Mac `NavigationStack` brought three things we had
+/// to switch off again: a back arrow in the window controls, a toolbar background
+/// over the image, and a safe-area inset that appeared only sometimes. The
+/// open/close animation it was supposed to provide does not happen here anyway.
 ///
-/// Ein eigener Stapel ist ein Feld und zwei Methoden. Dafür gilt die Regel aus
-/// `Stil` wörtlich: **tiefer gehen schiebt von rechts, zurück schiebt nach
-/// rechts hinaus.**
+/// A custom stack is one array and two methods. It follows the rule from `Theme`
+/// literally: **going deeper slides in from the right, going back slides out to the
+/// right.**
 @MainActor
 @Observable
 final class Navigator {
-    /// Was auf welchem Bereich liegt. Wer zwischen Filmen und Serien
-    /// wechselt, findet zurück, wo er war.
-    private var stapel: [Bereich: [Seitenziel]] = [:]
+    /// What lies on which section. Switching between Movies and Shows returns to where
+    /// you were.
+    private var stack: [Region: [PagesTarget]] = [:]
 
-    func seiten(_ bereich: Bereich) -> [Seitenziel] { stapel[bereich] ?? [] }
+    func pages(_ section: Region) -> [PagesTarget] { stack[section] ?? [] }
 
-    func oeffne(_ ziel: Seitenziel, in bereich: Bereich) {
-        // **Ohne Animation anlegen.** Die Seite soll erst dastehen und
-        // ausgelegt sein; die Bewegung startet `HauptView` ein Einzelbild
-        // später über `gezeigteTiefe`.
-        // Liegt das Ziel schon im Stapel, gilt seine Kennung nur einmal:
-        // dann zurück auf diese Seite statt zweimal anhängen.
-        if let stelle = stapel[bereich]?.firstIndex(where: { $0.id == ziel.id }) {
-            zurueck(in: bereich, bis: stelle + 1)
+    func openIt(_ target: PagesTarget, in section: Region) {
+        // **Pushed without animation.** The page should be in place and laid out first;
+        // `MainView` starts the motion one frame later via `shownDeep`.
+        // If the target is already on the stack, its id counts only once: go back to that
+        // page instead of appending it twice.
+        if let spot = stack[section]?.firstIndex(where: { $0.id == target.id }) {
+            back(in: section, until: spot + 1)
             return
         }
-        stapel[bereich, default: []].append(ziel)
+        stack[section, default: []].append(target)
     }
 
-    /// Alles weg — **G4**: ein Stapel gehört zu einem Konto.
+    /// Remove everything (a stack belongs to one account).
     ///
-    /// Ohne Anweisung von aussen wäre das ein Sprung; die Seiten fahren
-    /// deshalb nach rechts hinaus wie beim Zurückgehen, nur alle auf einmal.
-    /// Es bleibt bei **einer** Bewegung, weil `HauptView` den Mitgang im
-    /// selben Zug zurückzieht.
-    /// **Ausgenommen ist die Profilseite** — sie zeigt den Bund, nicht ein
-    /// Konto, und sie ist die Seite, auf der gewechselt wird. Fiele sie mit,
-    /// müsste man sie zwischen zwei Wechseln jedes Mal neu öffnen; der
-    /// Streifen steht aber genau dafür da, mehrmals umzuschalten. Steht so
-    /// in G4.
-    func alleLeeren() {
-        guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
-        withAnimation(Stil.zeitSeitenschub) {
-            for (bereich, seiten) in stapel {
-                // **`contains`, nicht `last`.** Wer vom Profil aus einen
-                // Server hinzufuegt, steht beim Wechsel auf der
-                // Aufnahmeseite — die faellt mit, das Profil darunter bleibt.
-                // Mit `last` fiel es mit ihr, und man landete auf „Start",
-                // ohne den Server zu sehen, den man gerade aufgenommen hat.
-                stapel[bereich] = seiten.contains(.profil) ? [.profil] : []
+    /// Without an explicit animation this would be a jump, so the pages slide out to the
+    /// right as when going back, all at once. It stays a **single** motion because
+    /// `MainView` pulls back the accompanying content in the same step.
+    /// **The profile page is excluded:** it shows the bundle, not one account, and it is
+    /// the page where switching happens. If it went too, it would have to be reopened
+    /// between two switches, but the strip exists precisely for switching repeatedly.
+    func emptyAll() {
+        guard stack.contains(where: { !$0.value.isEmpty }) else { return }
+        withAnimation(Theme.timePagesPush) {
+            for (section, pages) in stack {
+                // **`contains`, not `last`.** Adding a server from the profile leaves the user on
+                // the onboarding page at switch time; that page is removed, the profile beneath
+                // stays. With `last` the profile went too and the user landed on "Start" without
+                // seeing the server just added.
+                stack[section] = pages.contains(.profile) ? [.profile] : []
             }
         }
     }
 
-    /// **Alles weg, auch die Profilseite** — der Kontowechsel aus der
-    /// Profilseite (Entwurf D, wie am iPhone): die Seite fährt wie beim
-    /// Zurückgehen nach rechts hinaus, und das Profilbild fliegt in die
-    /// Seitenleiste (``Kontowechselflug``). Die Ausnahme aus G4 gilt für
-    /// jeden anderen Wechsel weiter — etwa die Anmeldung auf einem neuen
-    /// Server, nach der man den Server im Profil sehen will.
-    func allesLeeren() {
-        guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
-        // Mit reduzierter Bewegung nur die Blende — wie das Standbild am
-        // iPhone, das dann ausblendet statt wegzufahren.
-        withAnimation(Stil.bewegungReduziert ? Stil.blendeReduziert : Stil.zeitSeitenschub) {
-            for bereich in stapel.keys { stapel[bereich] = [] }
+    /// **Remove everything, including the profile page:** the account switch from the
+    /// profile page (design D, as on iPhone). The page slides out to the right as when
+    /// going back, and the profile picture flies into the sidebar (`AccountSwitchTransition`).
+    /// The exception from the account-stack rule still applies to every other switch, e.g. signing in on a
+    /// new server, after which the user wants to see that server in the profile.
+    func clearEverything() {
+        guard stack.contains(where: { !$0.value.isEmpty }) else { return }
+        // With reduced motion only the fade, like the still image on iPhone, which fades
+        // instead of sliding away.
+        withAnimation(Theme.motionReduced ? Theme.fadeReduced : Theme.timePagesPush) {
+            for section in stack.keys { stack[section] = [] }
         }
     }
 
-    /// **Die Pruefung gehoert in die Animation, nicht davor.**
+    /// **The check belongs inside the animation, not before it.**
     ///
-    /// Sie stand davor, und die App stuerzte ab, sobald man einen zweiten
-    /// Server hinzufuegte: die Anmeldung dort zaehlt `kontowechsel` hoch,
-    /// `HauptView` raeumt darauf mit `alleLeeren()` alle Stapel — und
-    /// SwiftUI arbeitet diese Beobachtung innerhalb von `withAnimation` ab.
-    /// Zwischen dem `guard` und dem `removeLast` war der Stapel also leer,
-    /// und `removeLast` auf einem leeren Feld ist kein Fehlschlag, sondern
-    /// ein Abbruch.
-    func zurueck(in bereich: Bereich) {
-        withAnimation(Stil.zeitSeitenschub) {
-            guard !(stapel[bereich] ?? []).isEmpty else { return }
-            stapel[bereich]?.removeLast()
+    /// It used to sit before it, and the app crashed when a second server was added:
+    /// signing in there bumps `accountSwitch`, `MainView` reacts with `emptyAll()` to
+    /// clear all stacks, and SwiftUI processes that observation inside `withAnimation`.
+    /// Between the `guard` and the `removeLast` the stack was empty, and `removeLast` on
+    /// an empty array traps.
+    func back(in section: Region) {
+        withAnimation(Theme.timePagesPush) {
+            guard !(stack[section] ?? []).isEmpty else { return }
+            stack[section]?.removeLast()
         }
     }
 
-    /// **Zurueck, aber nur von genau dieser Seite.**
+    /// **Go back, but only from exactly this page.**
     ///
-    /// Eine Unterseite, die sich selbst schliesst, weiss nicht, ob sie
-    /// ueberhaupt noch liegt: eine Anmeldung raeumt den Stapel, ein
-    /// Kontowechsel ebenso. Wer dann blind `zurueck` ruft, nimmt die Seite
-    /// darunter mit — beim Server-Hinzufuegen war das die Profilseite, auf
-    /// der man den neuen Server gerade sehen wollte.
-    func schliessen(_ ziel: Seitenziel, in bereich: Bereich) {
-        withAnimation(Stil.zeitSeitenschub) {
-            guard stapel[bereich]?.last == ziel else { return }
-            stapel[bereich]?.removeLast()
+    /// A subpage that closes itself does not know whether it is still on the stack: a
+    /// sign-in clears the stack, and so does an account switch. A blind `back` call
+    /// would then also remove the page below, which when adding a server was the
+    /// profile page where the user wanted to see the new server.
+    func close(_ target: PagesTarget, in section: Region) {
+        withAnimation(Theme.timePagesPush) {
+            guard stack[section]?.last == target else { return }
+            stack[section]?.removeLast()
         }
     }
 
-    /// Zurueck, bis noch `tiefe` Seiten liegen — in **einer** Bewegung.
-    func zurueck(in bereich: Bereich, bis tiefe: Int) {
-        withAnimation(Stil.zeitSeitenschub) {
-            guard let seiten = stapel[bereich], seiten.count > tiefe else { return }
-            stapel[bereich] = Array(seiten.prefix(tiefe))
+    /// Go back until only `depth` pages remain, in **one** motion.
+    func back(in section: Region, until depth: Int) {
+        withAnimation(Theme.timePagesPush) {
+            guard let pages = stack[section], pages.count > depth else { return }
+            stack[section] = Array(pages.prefix(depth))
         }
     }
 
-    /// Liegt auf diesem Stapel der Kontozweig — siehe `Seitenziel.imKontozweig`?
-    func imKonto(_ bereich: Bereich) -> Bool {
-        seiten(bereich).contains { $0.imKontozweig }
+    /// Whether the account branch lies on this stack (see `PagesTarget.inAccountBranch`).
+    func inAccount(_ section: Region) -> Bool {
+        pages(section).contains { $0.inAccountBranch }
     }
 
-    /// Nimmt den Kontozweig vom Stapel; was darunter lag, bleibt liegen.
+    /// Removes the account branch; whatever lay beneath stays.
     ///
-    /// Mit Bewegung ist das ein gewoehnliches Zurueck. Ohne, wenn der
-    /// Bereich gerade nicht zu sehen ist oder seine Wurzel getauscht wird —
-    /// dann muss `HauptView` die gezeigte Tiefe selbst nachziehen.
-    func kontozweigSchliessen(in bereich: Bereich, animiert: Bool) {
-        let seiten = seiten(bereich)
-        guard let ab = seiten.firstIndex(where: { $0.imKontozweig }) else { return }
-        if animiert {
-            zurueck(in: bereich, bis: ab)
+    /// With animation this is an ordinary back. Without it, when the section is not
+    /// visible or its root is being replaced, `MainView` has to update the shown depth
+    /// itself.
+    func closeAccountBranch(in section: Region, animated: Bool) {
+        let pages = pages(section)
+        guard let since = pages.firstIndex(where: { $0.inAccountBranch }) else { return }
+        if animated {
+            back(in: section, until: since)
         } else {
-            stapel[bereich] = Array(seiten.prefix(ab))
+            stack[section] = Array(pages.prefix(since))
         }
     }
 }
 
-/// Wohin eine Seite führen kann.
+/// Where a page can lead.
 ///
-/// Eigener Typ statt `any Hashable`: der Stapel muss vergleichbar sein, damit
-/// SwiftUI den Wechsel als solchen erkennt — und ein Aufzählungstyp sagt beim
-/// Lesen, welche Ziele es überhaupt gibt.
-enum Seitenziel: Hashable, Identifiable {
-    case titel(Item)
-    /// **Eine Bibliothek als eigene Seite.**
+/// A dedicated type instead of `any Hashable`: the stack must be comparable so
+/// SwiftUI recognizes the change as such, and an enum shows on reading which
+/// destinations exist.
+enum PagesTarget: Hashable, Identifiable {
+    case title(Item)
+    /// **A library as its own page.**
     ///
-    /// **Nicht mehr in Gebrauch.** Seit dem 23.09.2026 stehen die übrigen
-    /// Bibliotheken im Titelmenü von Filme und Serien, nicht mehr in der
-    /// Seitenleiste; der Fall bleibt nur stehen, damit ein alter,
-    /// wiederhergestellter Stapel nicht bricht.
-    case bibliothek(Item)
-    /// **Eine Sammlung** — aus dem Titelmenü („Sammlungen") oder aus „Teil
-    /// der Sammlung" auf der Filmseite. Anders als eine Bibliothek eine
-    /// Unterseite mit Pfeil, wie auf dem iPhone. `art`: ihre Filme oder ihre
-    /// Serien; `nil`: alles, was in ihr steht.
-    case sammlung(Item, art: String?)
-    /// **Eine geladene Serie** — aus den Downloads, ohne Server: alles kommt
-    /// von der Platte.
-    case downloadserie(String, titel: String)
-    /// **Nicht mehr in Gebrauch.** Die Merkliste ist seit dem 06.09.2026 ein
-    /// eigener Bereich in der Leiste; der Fall bleibt nur stehen, damit ein
-    /// alter, wiederhergestellter Stapel nicht bricht.
+    /// **No longer used.** The other libraries are in the title menu of
+    /// Movies and Shows instead of the sidebar; the case stays only so an old restored
+    /// stack does not break.
+    case library(Item)
+    /// **A collection:** from the title menu ("Sammlungen") or from "Teil der Sammlung"
+    /// on the movie page. Unlike a library, a subpage with back arrow, as on iPhone.
+    /// `art`: its movies or its shows; `nil`: everything in it.
+    case collection(Item, art: String?)
+    /// **A downloaded series:** from Downloads, no server; everything comes from disk.
+    case downloadSeries(String, title: String)
+    /// **No longer used.** The watchlist has been its own section in the sidebar since
+    /// the watchlist moved there; the case stays only so an old restored stack does not break.
     ///
-    /// Vorher: eine Seite aus der
-    /// Leiste. Auf dem iPhone haengt sie am Zeichen oben rechts.
-    case merkliste
-    /// Seerr anbinden — eine Zugabe, deshalb hinter den Einstellungen.
+    /// Formerly a page from the sidebar. On iPhone it hangs off the icon at the top
+    /// right.
+    case watchlist
+    /// Connect Seerr: an extra, hence behind the settings.
     case seerr
-    /// Trakt verbinden — wie Seerr hinter den Einstellungen.
+    /// Connect Trakt: behind the settings like Seerr.
     case trakt
-    /// Ein Titel, den der eigene Server nicht hat — aus der Suche.
-    case seerrTitel(Seerrtreffer)
-    /// Eine Person aus der Besetzung — was es von ihr gibt.
-    case person(Person, herkunft: String?)
-    /// Alle Titel eines Genres, aus den Chips der Startseite.
-    case gattung(String)
-    case profil
-    case einstellungen
-    case wiedergabe
-    /// Wie die App aussieht und was auf der Startseite steht.
-    case darstellung
-    /// Open-Source-Lizenzen: die Liste, ein Baustein (nach Kennung) und Quelltext samt Angebot.
-    case lizenzen
-    case lizenz(String)
-    case lizenzangebot
-    /// Ein Genre für die Startseite dazunehmen.
-    case genrewahl
-    /// Eine Bibliothek oder Sammlung als eigene Startreihe dazunehmen.
-    case bibliothekswahl
+    /// A title the own server does not have, coming from search.
+    case seerrTitle(SeerrHit)
+    /// A person from the cast: what exists of them.
+    case person(Person, origin: String?)
+    /// All titles of a genre, from the home page chips.
+    case genre(String)
+    case profile
+    case settings
+    case playback
+    /// How the app looks and what the home page shows.
+    case presentation
+    /// Open-source licenses: the list, one component (by id), and source code with offer.
+    case licenses
+    case license(String)
+    case licenseOffering
+    /// Add a genre to the home page.
+    case genreSelection
+    /// Add a library or collection as its own home row.
+    case librarySelection
     case quickConnect
-    case kontoHinzufuegen
-    /// **Ein zweiter Jellyfin.** Mit Adresse, wenn das Konto auf einem
-    /// Server angelegt wird, den es im Bund schon gibt — dann steht die
-    /// Adresse fest und wird nur noch angezeigt.
-    case serverHinzufuegen(URL?)
+    case accountAdd
+    /// **A second Jellyfin.** With an address when the account is created on a server
+    /// that already exists in the bundle; the address is then fixed and only displayed.
+    case serverAdd(URL?)
 
     var id: String {
         switch self {
-        case let .titel(item):  "titel-\(item.id)"
-        case let .bibliothek(b): "bibliothek-\(b.id)"
-        case let .sammlung(s, art): "sammlung-\(s.id)-\(art ?? "")"
-        case let .downloadserie(id, _): "downloadserie-\(id)"
-        case .merkliste:        "merkliste"
+        case let .title(item):  "titel-\(item.id)"
+        case let .library(b): "bibliothek-\(b.id)"
+        case let .collection(s, art): "sammlung-\(s.id)-\(art ?? "")"
+        case let .downloadSeries(id, _): "downloadserie-\(id)"
+        case .watchlist:        "merkliste"
         case .seerr:            "seerr"
         case .trakt:            "trakt"
-        case let .seerrTitel(t): "seerr-\(t.art)-\(t.id)"
+        case let .seerrTitle(t): "seerr-\(t.art)-\(t.id)"
         case let .person(p, _): "person-\(p.id)"
-        case let .gattung(name): "gattung-\(name)"
-        case .profil:           "profil"
-        case .einstellungen:    "einstellungen"
-        case .wiedergabe:       "wiedergabe"
-        case .darstellung:      "darstellung"
-        case .lizenzen:         "lizenzen"
-        case let .lizenz(id):   "lizenz-\(id)"
-        case .lizenzangebot:    "lizenzangebot"
-        case .genrewahl:        "genrewahl"
-        case .bibliothekswahl:  "bibliothekswahl"
+        case let .genre(name): "gattung-\(name)"
+        case .profile:           "profil"
+        case .settings:    "einstellungen"
+        case .playback:       "wiedergabe"
+        case .presentation:      "darstellung"
+        case .licenses:         "lizenzen"
+        case let .license(id):   "lizenz-\(id)"
+        case .licenseOffering:    "lizenzangebot"
+        case .genreSelection:        "genrewahl"
+        case .librarySelection:  "bibliothekswahl"
         case .quickConnect:     "quickconnect"
-        case .kontoHinzufuegen: "kontohinzufuegen"
-        case let .serverHinzufuegen(url): "serverneu-\(url?.absoluteString ?? "")"
+        case .accountAdd: "kontohinzufuegen"
+        case let .serverAdd(url): "serverneu-\(url?.absoluteString ?? "")"
         }
     }
 
-    /// **Gehoert die Seite zum Konto statt zum Bereich?**
+    /// **Does the page belong to the account rather than the section?**
     ///
-    /// Das Profil wird aus der Leiste geoeffnet und liegt auf dem Stapel des
-    /// Bereichs, der gerade offen ist — gehoert aber zu keinem. Dasselbe gilt
-    /// fuer alles, was von dort aus aufgeht. Solange so eine Seite liegt,
-    /// traegt unten das Konto die Auswahl, und ein Klick auf einen Bereich
-    /// nimmt sie wieder weg.
-    var imKontozweig: Bool {
+    /// The profile is opened from the sidebar and lies on the stack of the currently open
+    /// section, but belongs to none. The same goes for everything opened from there.
+    /// While such a page is shown, the account carries the selection at the bottom, and
+    /// a click on a section removes it again.
+    var inAccountBranch: Bool {
         switch self {
-        case .profil, .einstellungen, .wiedergabe, .seerr, .trakt, .darstellung,
-             .lizenzen, .lizenz, .lizenzangebot, .genrewahl, .bibliothekswahl, .quickConnect, .kontoHinzufuegen, .serverHinzufuegen: true
-        // **Die Personenseite gehoert zum Bereich, nicht zum Konto.** Man
-        // kommt aus einem Titel dorthin und will von dort weiter in den
-        // naechsten — sie liegt im selben Zweig wie die Seite, die sie
-        // geoeffnet hat. Dasselbe gilt fuer ein Genre.
-        case .titel, .bibliothek, .sammlung, .downloadserie, .merkliste, .seerrTitel, .person, .gattung: false
+        case .profile, .settings, .playback, .seerr, .trakt, .presentation,
+             .licenses, .license, .licenseOffering, .genreSelection, .librarySelection, .quickConnect, .accountAdd, .serverAdd: true
+        // **The person page belongs to the section, not the account.** It is reached from a
+        // title and the user wants to continue from there to the next one, so it lies in
+        // the same branch as the page that opened it. The same goes for a genre.
+        case .title, .library, .collection, .downloadSeries, .watchlist, .seerrTitle, .person, .genre: false
         }
     }
 
-    static func == (a: Seitenziel, b: Seitenziel) -> Bool { a.id == b.id }
+    static func == (a: PagesTarget, b: PagesTarget) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
 
-/// Welcher Bereich gerade sichtbar ist.
+/// Which section is currently visible.
 ///
-/// Über die Umgebung, weil jede Kachel tief im Baum wissen muss, auf welchen
-/// Stapel sie legt — und ein durchgereichter Wert hätte durch jede Ansicht
-/// dazwischen gemusst, die ihn selbst gar nicht braucht.
+/// Passed through the environment because every tile deep in the tree must know which
+/// stack to push onto, and a passed-down value would have had to go through every view
+/// in between that does not need it.
 extension EnvironmentValues {
-    @Entry var bereich: Bereich = .start
+    @Entry var section: Region = .start
 }
 
-/// **Während eine Seite hereinfährt, wird nichts ausgetauscht.**
+/// **While a page slides in, nothing is swapped.**
 ///
-/// Die Fahrt ist ein `.offset`, und den rechnet SwiftUI in jedem Einzelbild
-/// auf dem Hauptlauf. Kam in dieser Zeit eine Antwort vom Server — der volle
-/// Titel, Staffeln und Folgen, Extras und Ähnliches, der Plan, der Bildton —,
-/// baute SwiftUI im selben Lauf die halbe Seite neu aus, und die Fahrt verlor
-/// Bilder: ein, zwei Zentimeter herein, kurz stehen, dann weiter. Genau das
-/// Stocken in der ersten Sekunde nach dem Klick.
+/// The slide is an `.offset`, which SwiftUI evaluates on the main actor every frame.
+/// If a server response arrived during that time (full title, seasons and episodes,
+/// extras and similar, the plan, the image tint), SwiftUI rebuilt half the page in the
+/// same pass and the slide dropped frames: an inch or two in, a short stall, then on.
+/// That was the stutter in the first second after the click.
 ///
-/// Also warten die Antworten, bis die Seite steht (Linux: `nachDemSchub`).
-/// Abgerufen wird trotzdem sofort; nur das Einsetzen wartet, höchstens die
-/// Dauer einer Fahrt. Wer auf eine stehende Seite zurückkehrt, wartet nicht.
+/// So responses wait until the page is settled (Linux: `postPush`). The fetch
+/// still starts immediately; only applying the result waits, at most one slide
+/// duration. Returning to a page that is already settled does not wait.
 @MainActor
-enum Einfahrt {
-    private static var ende = ContinuousClock.now
+enum InTravel {
+    private static var end = ContinuousClock.now
 
-    /// Ruft `HauptView`, wenn eine neue Seite losfährt.
-    static func beginnt() {
-        // Ein Einzelbild Luft: das letzte Bild der Fahrt gehört noch ihr.
-        ende = .now + .milliseconds(Int(Stil.dauerSeitenschub * 1000) + 30)
+    /// Called by `MainView` when a new page starts sliding in.
+    static func begins() {
+        // One frame of slack: the last frame of the slide still belongs to it.
+        end = .now + .milliseconds(Int(Theme.durationPagesPush * 1000) + 30)
     }
 
-    /// Kehrt zurück, sobald keine Seite mehr fährt.
-    static func abwarten() async {
-        guard ende > .now else { return }
-        try? await Task.sleep(until: ende, clock: .continuous)
+    /// Returns as soon as no page is sliding.
+    static func waitFor() async {
+        guard end > .now else { return }
+        try? await Task.sleep(until: end, clock: .continuous)
     }
 }
 
-/// **Wiedergabepläne, vorab geholt** — für den Beleg „Direct Play" im Kopf
-/// der Detailseite. Beim Überfahren einer Kachel (nach der Frist der
-/// `Kachelhuelle`) holt `vorholen` den Plan schon; liegt er beim Öffnen vor,
-/// steht der Beleg sofort da, statt hinten nachzukommen. Der Kopf fragt
-/// trotzdem frisch nach und zieht nach, falls sich etwas geändert hat.
+/// **Playback plans, fetched ahead** for the "Direct Play" badge in the detail page
+/// header. Hovering a tile (after the `TileWrapper` delay) makes `prefetch` fetch the
+/// plan already; if it is present on open, the badge shows immediately instead of
+/// arriving late. The header still asks fresh and updates if something changed.
 ///
-/// Bei einer Serie ist es der Plan der Folge, die als Nächstes liefe — wie
-/// im Kopf (`standInSerie`). Linux/Windows: `App.planAuftrag`.
+/// For a series it is the plan of the episode that would play next, as in the header
+/// (`stateInSeries`). Linux/Windows: `App.planJob`.
 @MainActor
-enum Planvorrat {
-    private static var gemerkt: [String: PlaybackPlan] = [:]
-    private static var laufend: [String: Task<PlaybackPlan?, Never>] = [:]
+enum PlanPreAdvice {
+    private static var remembered: [String: PlaybackPlan] = [:]
+    private static var ongoing: [String: Task<PlaybackPlan?, Never>] = [:]
 
-    /// Wovon ein Plan abhängt: Direct-Play-Schalter, Bitratengrenze, Konto.
-    /// Ändert sich eines, gelten die gemerkten Pläne nicht mehr — sonst zeigte
-    /// der Kopf kurz „Direct Play", wo der neue Plan umwandelt.
-    private static var schluessel = ""
+    /// What a plan depends on: Direct Play switch, bitrate limit, account. If one
+    /// changes, the stored plans no longer apply; otherwise the header would briefly show
+    /// "Direct Play" where the new plan transcodes.
+    private static var key = ""
 
-    private static func abgleichen(_ model: AppModel) {
-        let neu = "\(model.immerDirectPlay)|\(model.bitratenGrenze)|\(model.kontowechsel)"
-        guard neu != schluessel else { return }
-        schluessel = neu
-        gemerkt.removeAll()
-        laufend.values.forEach { $0.cancel() }
-        laufend.removeAll()
+    private static func reconcileWith(_ model: AppModel) {
+        let new = "\(model.alwaysDirectPlay)|\(model.bitratesLimit)|\(model.accountSwitch)"
+        guard new != key else { return }
+        key = new
+        remembered.removeAll()
+        ongoing.values.forEach { $0.cancel() }
+        ongoing.removeAll()
     }
 
-    static func plan(_ id: String, mit model: AppModel) -> PlaybackPlan? {
-        abgleichen(model)
-        return gemerkt[id]
+    static func plan(_ id: String, with model: AppModel) -> PlaybackPlan? {
+        reconcileWith(model)
+        return remembered[id]
     }
 
-    static func merken(_ id: String, _ plan: PlaybackPlan?) {
-        gemerkt[id] = plan
+    static func remember(_ id: String, _ plan: PlaybackPlan?) {
+        remembered[id] = plan
     }
 
-    /// `PlaybackInfo` ist ein POST, bei dem der Server die Datei anfasst —
-    /// je Titel einer, auch wenn Überfahren und Öffnen zusammenfallen.
-    static func vorholen(_ item: Item, mit model: AppModel) {
-        abgleichen(model)
+    /// `PlaybackInfo` is a POST in which the server touches the file, so one per title,
+    /// even when hover and open coincide.
+    static func prefetch(_ item: Item, with model: AppModel) {
+        reconcileWith(model)
         guard item.type == "Movie" || item.type == "Series",
-              gemerkt[item.id] == nil, laufend[item.id] == nil else { return }
+              remembered[item.id] == nil, ongoing[item.id] == nil else { return }
         let id = item.id
-        let serie = item.type == "Series"
-        laufend[id] = Task { @MainActor in
-            let ziel: String?
-            if serie { ziel = await model.standInSerie(item)?.id } else { ziel = id }
-            guard let ziel else { laufend[id] = nil; return nil }
-            let plan = await model.plan(for: ziel, still: true)
-            // Abgebrochen (Einstellung oder Konto gewechselt): der Plan gilt nicht mehr.
+        let series = item.type == "Series"
+        ongoing[id] = Task { @MainActor in
+            let target: String?
+            if series { target = await model.stateInSeries(item)?.id } else { target = id }
+            guard let target else { ongoing[id] = nil; return nil }
+            let plan = await model.plan(for: target, still: true)
+            // Cancelled (setting or account changed): the plan no longer applies.
             guard !Task.isCancelled else { return nil }
-            if let plan { gemerkt[id] = plan }
-            laufend[id] = nil
+            if let plan { remembered[id] = plan }
+            ongoing[id] = nil
             return plan
         }
     }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- From Android 12 the system shows its own splash with the app icon before the app. The
+         in-app launch curtain with the logo would follow, giving two splashes in a row. As on
+         Apple: this is only the background, the logo comes from the Lottie animation. -->
+    <style name="Swiftly" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/grund</item>
+        <item name="android:colorBackground">@color/grund</item>
+        <item name="android:windowSplashScreenBackground">@color/grund</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/grund</item>
+    </style>
+</resources>

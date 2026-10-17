@@ -9,7 +9,7 @@ cd swiftly-player
 # seeking inside MKV files served over HTTP reads from the start of the file.
 # The fix is in Werkzeuge/vlckit-patches/ and must be applied to a VLCKit
 # build for seeking to work. See Documentation/VLCKit.md.
-Werkzeuge/vlckit-holen.sh
+Werkzeuge/vlckit-fetch.sh
 
 # The .xcodeproj is generated, not checked in.
 brew install xcodegen && xcodegen generate

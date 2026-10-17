@@ -1,663 +1,643 @@
-import CBildbruecke
+import CImageBridge
 import CGtk
 import Foundation
 import CVLC
 import JellyfinKit
 
-/// **Swiftly auf Linux.**
+/// **Swiftly on Linux.**
 ///
-/// Anmeldung, gemerkte Sitzung, Startseite mit echten Postern — und dahinter
-/// derselbe `JellyfinClient`, den iPhone, iPad, Apple TV und Mac benutzen.
-/// Kein nachgebauter Client, keine zweite Wahrheit.
+/// Sign-in, remembered session and a home screen with real posters, all on
+/// the same `JellyfinClient` that iPhone, iPad, Apple TV and Mac use.
 ///
-/// Was hier neu ist, ist ausschließlich die Oberfläche. Alles, was entscheidet
-/// — welche Adresse gilt, was der Server bekommt, wann fortgesetzt wird —
-/// liegt in `JellyfinKit` und ist auf allen fünf Plattformen dieselbe Datei.
-/// **`@unchecked Sendable` mit demselben Grund wie ``Zeigerkiste``.**
+/// Only the UI is new here. Everything that decides something (which address
+/// applies, what the server receives, when playback resumes) lives in
+/// `JellyfinKit` and is the same file on all five platforms.
 ///
-/// Swift kann nicht wissen, dass GTK alles auf einem einzigen Faden abarbeitet
-/// — für den Übersetzer ist diese Klasse voller roher Zeiger, die überall
-/// gleichzeitig angefasst werden könnten. Die Zusicherung gilt, weil jeder
-/// Zugriff aus einer Task über ``aufHauptfaden`` zurückkommt und damit wieder
-/// auf demselben Faden landet. Wer hier eine Methode ergänzt, die aus einer
-/// Task heraus direkt an die Oberfläche geht, bricht sie.
+/// **`@unchecked Sendable`, for the same reason as ``Zeigerkiste``.**
+///
+/// Swift cannot know that GTK runs everything on a single thread, so for the
+/// compiler this class is full of raw pointers that might be touched anywhere
+/// at once. The guarantee holds because every access from a task returns via
+/// ``onMainThread`` and so lands on that thread again. A method added here
+/// that touches the UI directly from a task breaks it.
 final class App: @unchecked Sendable {
 
-    // Fenster und die zwei Seiten darin.
-    var fenster: Widget!
-    var seiten: Widget!          // GtkStack
-    private var anmeldeseite: Widget!
-    private var startseite: Widget!
+    // Window and its two pages.
+    var window: Widget!
+    var pages: Widget!          // GtkStack
+    private var loginPage: Widget!
+    private var home: Widget!
 
-    // Anmeldung, zwei Schritte
-    private var anmeldeschritte: Widget!     // GtkStack: server -> konto
-    private var serverfeld: Widget!
-    /// „Erweitert" unter der Adresse — eigene Header (Issue #4).
-    private var anmeldeleser: Kopfzeilenleser?
-    private var verbindeknopf: Widget!
-    private var serverstand: Widget!
-    private var serverzeile: Widget!
-    private var fassungszeile: Widget!
+    // Sign-in, two steps
+    private var loginStep: Widget!     // GtkStack: server -> account
+    private var serverField: Widget!
+    /// "Advanced" under the address: custom headers (issue #4).
+    private var loginReader: HeaderRowReader?
+    private var connectButton: Widget!
+    private var serverState: Widget!
+    private var serverRow: Widget!
+    private var versionRow: Widget!
     private var serverURL: URL?
-    private var benutzerfeld: Widget!
-    private var passwortfeld: Widget!
-    private var kontenreihe: Widget!
-    private var schnellknopf: Widget!
-    /// Der Client des Servers, mit dem gerade angemeldet wird.
-    private var anmeldeclient: JellyfinClient?
-    private var anmeldeknopf: Widget!
-    private var anmeldestand: Widget!
-    private var meldetGerade = false
-    private var zurueckknopf: Widget!
+    private var userField: Widget!
+    private var passwordField: Widget!
+    private var accountsRail: Widget!
+    private var fastButton: Widget!
+    /// The client of the server currently being signed in to.
+    private var loginClient: JellyfinClient?
+    private var loginButton: Widget!
+    private var loginState: Widget!
+    private var reportCurrent = false
+    private var backButton: Widget!
 
-    // MARK: Weiteres Konto — Zustand der Unterseite
+    // MARK: Add another account: page state
 
-    /// Umgeschaltet auf den Code-Weg. Der Vorgang laeuft erst dann an — sonst
-    /// zoege jeder Besuch der Seite einen Code beim Server, den niemand
-    /// braucht. Wortgleich zu `perCode` auf dem Mac.
-    var kontoPerCode = false
-    var kontoCode = ""
-    var kontoFehler = ""
-    var kontoCodelauf: Task<Void, Never>?
-    /// Das Warten auf die Quick-Connect-Freigabe auf der Anmeldeseite.
-    private var schnelllauf: Task<Void, Never>?
-    /// Die Felder der Seite. **Als Felder der Klasse, nicht als Argumente über
-    /// die Fadengrenze** — ein `Widget` ist ein roher Zeiger und damit nicht
-    /// `Sendable`; angefasst wird es ohnehin nur auf GTKs Hauptfaden.
-    var kontoKnopf: Widget!
-    var kontoStandfeld: Widget!
-    var kontoCodefeld: Widget!
+    /// Switched to the code flow. It only starts then; otherwise every visit to
+    /// the page would request a code from the server that nobody needs. Matches
+    /// `perCode` on the Mac.
+    var accountPerCode = false
+    var accountCode = ""
+    var accountError = ""
+    var accountCodeRun: Task<Void, Never>?
+    /// The wait for the Quick Connect approval on the sign-in page.
+    private var fastRun: Task<Void, Never>?
+    /// The page's widgets. **Fields of the class, not arguments across the
+    /// thread boundary**: a `Widget` is a raw pointer and so not `Sendable`;
+    /// it is only touched on GTK's main thread anyway.
+    var accountButton: Widget!
+    var accountStateField: Widget!
+    var accountCodeField: Widget!
 
-    // Startseite
-    var bereich: Bereich = .start
-    var reihenstapel: Widget!
-    /// Die gewählten Genres, wenn sie als Chips über den Reihen stehen.
-    private var gattungschips: [String] = []
-    /// Was zuletzt auf der Startseite stand — das Fernsteuerpult braucht
-    /// einen Titel, den es oeffnen kann.
-    var letzteStartreihe: [Item] = []
-    /// Vom Fernsteuerpult gesetzt: den Reiter der offenen Serienseite wechseln.
-    var reiterWaehlen: ((Reiter) -> Void)?
-    /// Der zuletzt **voll** geladene Titel der offenen Detailseite. Auf dem
-    /// Seitenstapel liegt der magere Listeneintrag; der traegt keine
-    /// Besetzung. Nur fuer das ``Fernsteuerpult``.
-    var letzterVollerTitel: Item?
-    /// Serien, die beim Ueberfahren einer Folgenkachel schon geholt wurden —
-    /// siehe ``serieVorholen(_:)``.
-    var vollspeicher: [String: Item] = [:]
-    var vorholend: Set<String> = []
-    /// **Wiedergabepläne, einmal geholt** — für den Beleg „Direct Play" in
-    /// der Angabenzeile (``planAuftrag(_:)``). Der Auftrag ist geteilt: Beleg
-    /// und Dateiauszug warten auf denselben Abruf, nicht auf zwei.
-    var planauftraege: [String: Task<PlaybackPlan?, Never>] = [:]
-    /// Was schon beantwortet ist — damit eine neu gebaute Zeile den Beleg im
-    /// ersten Bild trägt statt ihn nachzureichen.
-    var planfertig: [String: PlaybackPlan] = [:]
-    /// Die Kachel, über der der Zeiger gerade steht (Vorholen mit Frist).
-    var planWunsch: String?
-    /// Die Folgen der offenen Staffel und der Chip „Staffel laden" darueber.
-    var staffelfolgen: [Item] = []
-    var staffelladeknopf: Widget?
-    // MARK: Stromwacht (siehe `Spieler.stromPruefen`)
-    var stromStehtSeit: Date?
-    var stromLetzteStelle: Double = -1
-    var stromGelesen: UInt64 = 0
-    var stromPufferWuchs = Date()
-    /// Wann zuletzt gesprungen wurde — die Wacht setzt danach aus.
-    var letzterSprung = Date.distantPast
-    // MARK: Tonwacht und Ruhezustand (siehe `Spieler.tonPruefen`)
-    var tonVerlorenZuletzt: UInt64?
-    var tonVerlustSeit: Date?
-    var tonNeuVersucht = Date.distantPast
-    var zuletztAufgewacht = Date.distantPast
-    /// Wie oft der Strom dieses Titels schon neu aufgebaut wurde, weil VLC
-    /// mittendrin aufhoerte — siehe ``stromAbgerissen(fehler:)``.
-    var abrisse = 0
-    /// Die Kontozeile unten in der Seitenleiste — sie traegt die
-    /// Hervorhebung, solange eine Unterseite offen ist.
-    private var profilzeile: Widget?
-    /// Den Reiter der offenen Serienseite umschalten — ueber den Stapel,
-    /// nicht ueber einen Neubau.
-    var reiterZeigen: ((Reiter) -> Void)?
-    var kopfzeile: Widget!
+    // Home
+    var section: Region = .start
+    var railsStack: Widget!
+    /// The selected genres, when shown as chips above the rows.
+    private var genreChips: [String] = []
+    /// What was last on the home screen; the remote control needs a title it
+    /// can open.
+    var lastStartRail: [Item] = []
+    /// Set by the remote control: switches the tab of the open series page.
+    var tabSelect: ((PageTab) -> Void)?
+    /// The last **fully** loaded title of the open detail page. The page stack
+    /// holds only the sparse list entry, which has no cast. Used only by
+    /// ``Fernsteuerpult``.
+    var lastFullTitle: Item?
+    /// Series already fetched while hovering an episode tile; see
+    /// ``seriesPrefetch(_:)``.
+    var fullCache: [String: Item] = [:]
+    var prefetching: Set<String> = []
+    /// **Playback plans, fetched once**, for the "Direct Play" badge in the info
+    /// row (``planJob(_:)``). The task is shared: badge and file excerpt
+    /// wait on the same request, not on two.
+    var planJobs: [String: Task<PlaybackPlan?, Never>] = [:]
+    /// What is already answered, so a freshly built row shows the badge in the
+    /// first frame instead of adding it later.
+    var planReady: [String: PlaybackPlan] = [:]
+    /// The tile the pointer is currently over (prefetch with a deadline).
+    var planRequest: String?
+    /// The episodes of the open season and the "Load season" chip above them.
+    var seasonEpisodes: [Item] = []
+    var seasonLoadButton: Widget?
+    // MARK: Stream watchdog (see `Spieler.streamCheck`)
+    var streamStandsSince: Date?
+    var streamLastPoint: Double = -1
+    var streamRead: UInt64 = 0
+    var streamBufferGrew = Date()
+    /// When the last seek happened; the watchdog pauses after it.
+    var lastJump = Date.distantPast
+    // MARK: Audio watchdog and idle inhibit (see `Spieler.audioCheck`)
+    var audioLostLast: UInt64?
+    var audioLossSince: Date?
+    var audioNewTried = Date.distantPast
+    var lastWoke = Date.distantPast
+    /// How often this title's stream was rebuilt because VLC stopped midway;
+    /// see ``streamTornDown(error:)``.
+    var teardowns = 0
+    /// The account row at the bottom of the sidebar; it carries the highlight
+    /// while a subpage is open.
+    private var profileRow: Widget?
+    /// Switch the tab of the open series page via the stack, not by rebuilding.
+    var tabShow: ((PageTab) -> Void)?
+    var headerLine: Widget!
 
-    /// Die Kreise unten in der Leiste. Ein ``GtkFixed``, weil sie sich
-    /// ueberlappen — GTK kennt keine negativen Raender.
-    var profilkreise: Widget!
+    /// The circles at the bottom of the bar. A ``GtkFixed``, because they
+    /// overlap and GTK has no negative margins.
+    var profileCircle: Widget!
 
     var client: JellyfinClient?
-    var adressen: Bildadresse?
-    /// Läuft nur beim Start und blendet danach weg.
-    var startanimation: Startanimation?
-    var startbild: Widget!
+    var addresses: ImageAddress?
+    /// Runs only at startup, then fades out.
+    var startAnimation: StartAnimation?
+    var startImage: Widget!
 
-    /// Groesse und Maximiert fuer den naechsten Start. **Nicht im Vollbild**
-    /// — dann stuende nach dem Film die Bildschirmgroesse als Fenstermass
-    /// da; es gilt, was vorher war.
-    /// **Womit GTK das Hauptfenster zeichnet — eine Zeile bei jedem Start.**
+    /// Size and maximized state for the next start. **Not in fullscreen**:
+    /// otherwise the screen size would be stored as the window size after a movie;
+    /// the previous value stays.
     ///
-    /// `GskCairoRenderer` heisst: auf der CPU. Bei einem 4K-Schirm ist dann
-    /// jedes Bild beim Scrollen acht Millionen Pixel Software. Die Zeile im
-    /// Player (``Abspieler``) kam erst mit dem ersten Titel; wer ueber
-    /// Ruckeln im Raster schreibt, hat oft noch keinen gespielt.
+    /// **Which renderer GTK draws the main window with: one log line per start.**
     ///
-    /// Dazu, ob ein GL-Kontext zustande kommt und mit welchem Treiber — oder
-    /// mit welchem Fehler nicht. Das ist dieselbe Pruefung, an der GTK selbst
-    /// entscheidet, ob es auf Cairo zurueckfaellt.
-    private func zeichenwerkMelden() {
-        var zeile = "[Start] Zeichenwerk "
-        let natur = gtk_widget_get_native(fenster)
-        if let natur, let werk = gtk_native_get_renderer(natur),
-           let name = g_type_name_from_instance(unsafeBitCast(werk, to: UnsafeMutablePointer<GTypeInstance>.self)) {
-            zeile += String(cString: name)
+    /// `GskCairoRenderer` means CPU rendering. On a 4K screen every scrolled frame
+    /// is eight million pixels in software. The player's line (``Player``) only
+    /// appears with the first title, so a report of janky grids often comes from
+    /// someone who has not played anything yet.
+    ///
+    /// Also logs whether a GL context can be created and with which driver, or
+    /// with which error it fails. This is the same check GTK itself uses to decide
+    /// whether to fall back to Cairo.
+    private func characterItemReport() {
+        var row = "[Start] Zeichenwerk "
+        let nature = gtk_widget_get_native(window)
+        if let nature, let mediaWork = gtk_native_get_renderer(nature),
+           let name = g_type_name_from_instance(unsafeBitCast(mediaWork, to: UnsafeMutablePointer<GTypeInstance>.self)) {
+            row += String(cString: name)
         } else {
-            zeile += "unbekannt"
+            row += "unbekannt"
         }
-        if let wunsch = ProcessInfo.processInfo.environment["GSK_RENDERER"] {
-            zeile += " (GSK_RENDERER=\(wunsch))"
+        if let wish = ProcessInfo.processInfo.environment["GSK_RENDERER"] {
+            row += " (GSK_RENDERER=\(wish))"
         }
-        var fehler: UnsafeMutablePointer<GError>?
-        if let anzeige = gdk_display_get_default(), gdk_display_prepare_gl(anzeige, &fehler) != 0,
-           let natur, let flaeche = gtk_native_get_surface(natur),
-           let kontext = gdk_surface_create_gl_context(flaeche, &fehler) {
-            if gdk_gl_context_realize(kontext, &fehler) != 0 {
-                gdk_gl_context_make_current(kontext)
-                var gross: Int32 = 0, klein: Int32 = 0
-                gdk_gl_context_get_version(kontext, &gross, &klein)
-                let art = gdk_gl_context_get_api(kontext) == GDK_GL_API_GLES ? "GLES" : "GL"
-                zeile += ", \(art) \(gross).\(klein): " + String(cString: hdrbild_gl_auskunft())
+        var error: UnsafeMutablePointer<GError>?
+        if let display = gdk_display_get_default(), gdk_display_prepare_gl(display, &error) != 0,
+           let nature, let area = gtk_native_get_surface(nature),
+           let context = gdk_surface_create_gl_context(area, &error) {
+            if gdk_gl_context_realize(context, &error) != 0 {
+                gdk_gl_context_make_current(context)
+                var large: Int32 = 0, small: Int32 = 0
+                gdk_gl_context_get_version(context, &large, &small)
+                let art = gdk_gl_context_get_api(context) == GDK_GL_API_GLES ? "GLES" : "GL"
+                row += ", \(art) \(large).\(small): " + String(cString: hdr_image_unstretch_info())
                 gdk_gl_context_clear_current()
             }
-            g_object_unref(UnsafeMutableRawPointer(kontext))
+            g_object_unref(UnsafeMutableRawPointer(context))
         }
-        if let f = fehler {
-            zeile += ", GL nicht verfuegbar: " + String(cString: f.pointee.message)
+        if let f = error {
+            row += ", GL nicht verfuegbar: " + String(cString: f.pointee.message)
             g_error_free(f)
         }
-        Protokoll.schreib(zeile)
+        AppLog.writeOut(row)
     }
 
-    /// Die Flaeche des ersten Schirms in Fenstermass.
-    private func ersterSchirm() -> (breite: Int32, hoehe: Int32)? {
-        guard let anzeige = gdk_display_get_default(),
-              let liste = gdk_display_get_monitors(anzeige),
-              g_list_model_get_n_items(liste) > 0,
-              let roh = g_list_model_get_item(liste, 0) else { return nil }
-        var flaeche = GdkRectangle()
-        gdk_monitor_get_geometry(OpaquePointer(roh), &flaeche)
-        g_object_unref(roh)
-        return (flaeche.width, flaeche.height)
+    /// The first screen's area, in window units.
+    private func firstScreen() -> (width: Int32, height: Int32)? {
+        guard let display = gdk_display_get_default(),
+              let list = gdk_display_get_monitors(display),
+              g_list_model_get_n_items(list) > 0,
+              let raw = g_list_model_get_item(list, 0) else { return nil }
+        var area = GdkRectangle()
+        gdk_monitor_get_geometry(OpaquePointer(raw), &area)
+        g_object_unref(raw)
+        return (area.width, area.height)
     }
 
-    /// **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
-    /// plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
-    /// Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
-    /// In Punkten der Oberflaeche, also mit dem ganzen Faktor — beim Start
-    /// und jedes Mal, wenn der Nutzer die Groesse verstellt.
-    private func fensterMindestmassSetzen() {
-        let schirm = ersterSchirm()
+    /// **Below 900 x 560 the grid no longer fits**: sidebar plus two tile
+    /// columns plus margins. Same limit as on the Mac; without it the window could
+    /// be dragged to postage-stamp size. In UI points (including the full scale
+    /// factor), applied at startup and whenever the user changes the size.
+    private func windowMinMetricSet() {
+        let screen = firstScreen()
         gtk_widget_set_size_request(
-            fenster,
-            Skalierung.fenstermass(Stil.fensterMinBreite, hoechstens: schirm?.breite),
-            Skalierung.fenstermass(Stil.fensterMinHoehe, hoechstens: schirm?.hoehe))
+            window,
+            Scaling.windowMetric(Theme.windowMinWidth, atMost: screen?.width),
+            Scaling.windowMetric(Theme.windowMinHeight, atMost: screen?.height))
     }
 
-    /// **Die Groesse der Oberflaeche aendern, ohne Neustart.**
+    /// **Change the UI scale without a restart.**
     ///
-    /// Stehende Huellen lesen den Faktor beim Auslegen und rechnen einfach
-    /// neu. Wo beim Start keine entstand — der Faktor war 1, unter Linux der
-    /// Normalfall —, wird sie jetzt eingesetzt: um den Fensterinhalt, um die
-    /// Titelzeile und um das GL-Feld des Players. Tafeln entstehen bei jedem
-    /// Oeffnen neu und fragen dann selbst.
-    func oberflaecheSkalieren(_ anteil: Double) {
-        guard Skalierung.nutzerSetzen(anteil) else { return }
-        wahlen.oberflaeche = Skalierung.nutzeranteil
-        wahlen.sichern()
-        let f = alsFenster(fenster)
-        if Skalierung.faktor != 1 {
-            if let decke = fensterdecke, !Skalierung.istGehuellt(decke) {
-                g_object_ref(decke)
+    /// Existing wrappers read the factor when laying out and simply recompute.
+    /// Where none was created at startup (factor 1, the normal case on Linux),
+    /// one is inserted now: around the window content, around the title bar and
+    /// around the player's GL area. Panels are rebuilt on every open and query
+    /// the factor themselves.
+    func scaleSurface(_ share: Double) {
+        guard Scaling.userSet(share) else { return }
+        selection.surface = Scaling.userShare
+        selection.secure()
+        let f = asWindow(window)
+        if Scaling.factor != 1 {
+            if let cover = windowCover, !Scaling.isWrapped(cover) {
+                g_object_ref(cover)
                 gtk_window_set_child(f, nil)
-                gtk_window_set_child(f, Skalierung.gehuellt(decke))
-                g_object_unref(decke)
+                gtk_window_set_child(f, Scaling.wrapped(cover))
+                g_object_unref(cover)
             }
-            if let kopf = kopfzeile, !Skalierung.istGehuellt(kopf) {
-                // Erst ein Platzhalter: `gtk_window_set_titlebar(nil)` naehme
-                // dem Fenster die eigene Titelzeile ganz und baute es um.
-                g_object_ref(kopf)
+            if let header = headerLine, !Scaling.isWrapped(header) {
+                // A placeholder first: `gtk_window_set_titlebar(nil)` would remove the
+                // window's own title bar entirely and rebuild it.
+                g_object_ref(header)
                 gtk_window_set_titlebar(f, gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0))
-                gtk_window_set_titlebar(f, Skalierung.gehuellt(kopf))
-                g_object_unref(kopf)
+                gtk_window_set_titlebar(f, Scaling.wrapped(header))
+                g_object_unref(header)
             }
-            abspieler.glFeldEntzerren()
+            mediaPlayer.unstretchGLArea()
         }
-        Skalierung.neuAuslegen()
-        fensterMindestmassSetzen()
-        Stil.ausserhalbLaden()
-        Protokoll.schreib(String(format: "[Darstellung] Groesse der Oberflaeche %d %%, Faktor %.2f",
+        Scaling.newLayOut()
+        windowMinMetricSet()
+        Theme.outsideLoad()
+        AppLog.writeOut(String(format: "[Darstellung] Groesse der Oberflaeche %d %%, Faktor %.2f",
                                  locale: Locale(identifier: "en_US_POSIX"),
-                                 Int((Skalierung.nutzeranteil * 100).rounded()), Skalierung.faktor))
+                                 Int((Scaling.userShare * 100).rounded()), Scaling.factor))
     }
 
-    func fensterstandMerken() {
-        let f = alsFenster(fenster)
+    func windowStateRemember() {
+        let f = asWindow(window)
         guard gtk_window_is_fullscreen(f) == 0 else { return }
-        let maximiert = gtk_window_is_maximized(f) != 0
-        var breite: Int32 = 0, hoehe: Int32 = 0
-        // Die Vorgabegroesse folgt in GTK4 dem Ziehen, aber nicht dem
-        // Maximieren — also das Mass, zu dem das Fenster zurueckkehrt.
-        gtk_window_get_default_size(f, &breite, &hoehe)
-        wahlen.fensterMaximiert = maximiert
-        // In Punkten, nicht in Fenstermass — siehe ``Skalierung``.
-        let punktBreite = Skalierung.punkte(breite), punktHoehe = Skalierung.punkte(hoehe)
-        if punktBreite >= Skalierung.mindestpunkte(Stil.fensterMinBreite),
-           punktHoehe >= Skalierung.mindestpunkte(Stil.fensterMinHoehe) {
-            wahlen.fensterBreite = punktBreite
-            wahlen.fensterHoehe = punktHoehe
+        let maximized = gtk_window_is_maximized(f) != 0
+        var width: Int32 = 0, height: Int32 = 0
+        // In GTK4 the default size follows resizing but not maximizing, so this is
+        // the size the window returns to.
+        gtk_window_get_default_size(f, &width, &height)
+        selection.windowMaximized = maximized
+        // In UI points, not window units; see ``Skalierung``.
+        let pointWidth = Scaling.points(width), pointHeight = Scaling.points(height)
+        if pointWidth >= Scaling.minPoints(Theme.windowMinWidth),
+           pointHeight >= Scaling.minPoints(Theme.windowMinHeight) {
+            selection.windowWidth = pointWidth
+            selection.windowHeight = pointHeight
         }
-        wahlen.sichern()
+        selection.secure()
     }
 
-    // MARK: - Aufbau
+    // MARK: - Setup
 
-    func aufbauen(anwendung: UnsafeMutablePointer<GtkApplication>!) {
-        fenster = gtk_application_window_new(anwendung)
-        // **Was unter dem Zeiger steht.** In der Leiste las man „SwiftlyLinux
-        // Swiftly": das erste kommt vom Programmnamen, den GLib aus der
-        // Binärdatei nimmt, das zweite vom Fenstertitel. Der Anwendungsname
-        // heisst jetzt so wie die App, und der Titel trägt den Zusatz.
-        Zeichenwerk.einrichten()
-        // Der Seerr-Zugang steht vor der ersten Ansicht: die Profilseite
-        // zeigt daneben „Verbunden" oder „Nicht verbunden".
-        // **Vor allem anderen**: hinter einem Vorposten braucht schon der
-        // erste Abruf die eigenen Header (Issue #4).
-        Speicher.koepfeLaden()
-        seerrLaden()
+    func buildUp(hostApp: UnsafeMutablePointer<GtkApplication>!) {
+        window = gtk_application_window_new(hostApp)
+        // **What the pointer hover shows.** The panel used to read "SwiftlyLinux
+        // Swiftly": the first part is the program name GLib takes from the binary,
+        // the second the window title. The application name now matches the app and
+        // the title carries the suffix.
+        CharacterItem.setUp()
+        // The Seerr connection is set up before the first view: the profile page
+        // shows "Verbunden" or "Nicht verbunden" next to it.
+        // **Before everything else**: behind a front proxy even the first request
+        // needs the custom headers (issue #4).
+        Cache.headersLoad()
+        seerrLoad()
         g_set_application_name("Swiftly")
         g_set_prgname("swiftly")
-        gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
-        gtk_window_set_icon_name(alsFenster(fenster), Zeichenwerk.kennung)
-        // 1440 x 900 wie `Sources/macOS/SwiftlyApp.swift:59`. Hier standen
-        // 1100 x 760 — kein Grund aus Abschnitt F, nur eine nie abgeglichene
-        // Zahl. Das Mindestmass darunter stimmt und bleibt.
+        gtk_window_set_title(asWindow(window), "for Jellyfin")
+        gtk_window_set_icon_name(asWindow(window), CharacterItem.identifier)
+        // 1440 x 900, as in `Sources/macOS/SwiftlyApp.swift`. The minimum size below
+        // is correct and stays.
         //
-        // **Das Fenster zu schliessen beendet hier die App, auf dem Mac
-        // nicht.** Der Mac bleibt geladen (`applicationShouldTerminate-
-        // AfterLastWindowClosed = false`) und holt sich das Fenster mit
-        // Befehl-0 zurueck — das ist die Sitte dort, wo eine App im Dock
-        // steht. Unter Wayland gibt es kein Dock und kein Gegenstueck dazu;
-        // ein Programm ohne Fenster, das weiterlaeuft, waere hier ein
-        // Programm, das man nicht mehr los wird. **Bewusst nicht angeglichen**
-        // — die Plattform entscheidet, so wie sie auch entscheidet, wo die
-        // Fensterampel sitzt.
-        // **Wie beim letzten Schliessen, sonst die Vorgabe** (UX-Audit
-        // 27.09.). Vorher begann jeder Start bei 1440 x 900, egal wie gross
-        // man das Fenster gezogen hatte. Die Bildschirmpruefung darunter
-        // gilt fuer beide: ein gemerktes Mass von einem groesseren Schirm
-        // passt auf dem kleineren nicht.
-        let breite = Skalierung.fenstergroesse(
-            wahlen.fensterBreite >= Skalierung.mindestpunkte(Stil.fensterMinBreite) ? wahlen.fensterBreite : 1440)
-        let hoehe = Skalierung.fenstergroesse(
-            wahlen.fensterHoehe >= Skalierung.mindestpunkte(Stil.fensterMinHoehe) ? wahlen.fensterHoehe : 900)
-        gtk_window_set_default_size(alsFenster(fenster), breite, hoehe)
-        if wahlen.fensterMaximiert { gtk_window_maximize(alsFenster(fenster)) }
-        // **Passt es nicht, dann maximiert.** Windows kuerzt eine Vorgabe, die
-        // groesser als der Bildschirm ist, nicht — auf 1280 x 800 stand das
-        // Fenster unten hinter der Taskleiste und rechts ueber den Rand.
-        if let schirm = ersterSchirm(),
-           schirm.breite < breite + 40 || schirm.hoehe < hoehe + 80 {
-            gtk_window_maximize(alsFenster(fenster))
+        // **Closing the window quits the app here, unlike on the Mac.** The Mac stays
+        // loaded (`applicationShouldTerminateAfterLastWindowClosed = false`) and
+        // reopens the window with Cmd-0, which is the convention where an app sits in
+        // the Dock. Wayland has no Dock and no counterpart; a program without a window
+        // that keeps running would be one the user cannot get rid of. **Deliberately
+        // not aligned**: the platform decides, just as it decides where the window
+        // buttons sit.
+        // **Last closed size, otherwise the default.** The check against the screen
+        // below applies to both: a stored size from a larger screen does not fit a
+        // smaller one.
+        let width = Scaling.windowSize(
+            selection.windowWidth >= Scaling.minPoints(Theme.windowMinWidth) ? selection.windowWidth : 1440)
+        let height = Scaling.windowSize(
+            selection.windowHeight >= Scaling.minPoints(Theme.windowMinHeight) ? selection.windowHeight : 900)
+        gtk_window_set_default_size(asWindow(window), width, height)
+        if selection.windowMaximized { gtk_window_maximize(asWindow(window)) }
+        // **If it does not fit, maximize.** Windows does not shrink a default size
+        // that exceeds the screen: on 1280 x 800 the window ended up behind the
+        // taskbar and past the right edge.
+        if let screen = firstScreen(),
+           screen.width < width + 40 || screen.height < height + 80 {
+            gtk_window_maximize(asWindow(window))
         }
-        fensterMindestmassSetzen()
+        windowMinMetricSet()
 
-        seiten = gtk_stack_new()
-        // Keine Kreuzblende — der Wechsel läuft über ``stapelWechseln``.
-        gtk_stack_set_transition_type(OpaquePointer(seiten), GTK_STACK_TRANSITION_TYPE_NONE)
-        gtk_widget_set_vexpand(seiten, 1)
+        pages = gtk_stack_new()
+        // No cross-fade: the switch goes through ``switchStack``.
+        gtk_stack_set_transition_type(OpaquePointer(pages), GTK_STACK_TRANSITION_TYPE_NONE)
+        gtk_widget_set_vexpand(pages, 1)
 
-        anmeldeseite = anmeldungBauen()
-        startseite = startseiteBauen()
-        gtk_stack_add_named(OpaquePointer(seiten), anmeldeseite, "anmeldung")
-        gtk_stack_add_named(OpaquePointer(seiten), startseite, "start")
+        loginPage = loginBuild()
+        home = homePageBuild()
+        gtk_stack_add_named(OpaquePointer(pages), loginPage, "anmeldung")
+        gtk_stack_add_named(OpaquePointer(pages), home, "start")
 
-        kopfzeile = gtk_header_bar_new()
-        gtk_window_set_titlebar(alsFenster(fenster), Skalierung.gehuellt(kopfzeile))
-        // **Der Zeiger bleibt auch ueber der Titelzeile sichtbar, solange er
-        // sich bewegt.** Im Player haengt die Bewegungserkennung am Bild
-        // (`ueber`); die Titelzeile liegt ausserhalb. Beim Verlassen des
-        // Bildes nach oben wurde der Zeiger ausgeblendet (`steuerungVerbergen`)
-        // und kam ueber den Fensterknoepfen nicht zurueck — das Fenster
-        // liess sich bei laufender Wiedergabe kaum anfassen.
-        beiBewegung(kopfzeile) { [weak self] in
-            guard let self, self.laufenderTitel != nil, self.spielerSteuerung != nil else { return }
-            self.steuerungZeigen(durch: .nebenbei)
+        headerLine = gtk_header_bar_new()
+        gtk_window_set_titlebar(asWindow(window), Scaling.wrapped(headerLine))
+        // **The pointer stays visible over the title bar while it moves.** In the
+        // player, motion detection is attached to the picture (`ueber`); the title bar
+        // is outside it. Leaving the picture upward used to hide the pointer
+        // (`controlsHide`) and it did not return over the window buttons, so the
+        // window was hard to grab during playback.
+        onMotion(headerLine) { [weak self] in
+            guard let self, self.runningTitle != nil, self.playerControls != nil else { return }
+            self.controlsShow(through: .beside)
         }
-        let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
-        anhaengen(inhalt, seiten)
+        let content = stack(GTK_ORIENTATION_VERTICAL)
+        append(content, pages)
 
-        // **Die Startanimation liegt *über* der Oberfläche, nicht neben ihr.**
+        // **The start animation sits *over* the UI, not beside it.**
         //
-        // Der erste Anlauf gab ihr eine eigene Stapelseite. Das ist auch so
-        // nicht richtig — ein `GtkStack` legt nur sein sichtbares Kind aus,
-        // die Hauptansicht bekäme also nie eine Grösse. Als Überzug stellt
-        // sich die Frage nicht: darunter wird die ganze Zeit normal
-        // ausgelegt, und die Animation deckt es nur zu.
+        // A separate stack page does not work either: a `GtkStack` only lays out its
+        // visible child, so the main view would never get a size. As an overlay the
+        // question does not arise: the UI is laid out normally underneath and the
+        // animation just covers it.
         //
-        // **Das schwarze Fenster kam aber von woanders**, und das hat mich
-        // fünf Anläufe gekostet: die App stürzte beim zweiten Bild ab, an
-        // einer Cairo-Zusicherung. Nicht die Übergabe war kaputt, es gab
-        // hinterher schlicht keinen Prozess mehr. Siehe ``Startanimation``.
-        let decke: Widget! = gtk_overlay_new()
-        gtk_overlay_set_child(OpaquePointer(decke), inhalt)
-        // `SWIFTLY_START=0` schaltet sie ab — zum Messen, was sie kostet.
+        // **The black window had another cause**: the app crashed on the second frame
+        // on a Cairo assertion, so no process was left. The handover was not broken.
+        // See ``StartAnimation``.
+        let cover: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(cover), content)
+        // `SWIFTLY_START=0` turns it off, to measure its cost.
         if ProcessInfo.processInfo.environment["SWIFTLY_START"] != "0",
-           let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
-            startanimation = lauf
-            let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            gtk_widget_add_css_class(grund, "swiftly-startgrund")
-            anhaengen(grund, lauf.anzeige)
-            startbild = grund
-            gtk_overlay_add_overlay(OpaquePointer(decke), grund)
-            // **Spätestens dann geht es weiter, egal was die Animation
-            // macht** — dieselbe Frist wie auf Apple (3,5 s).
+           let run = StartAnimation(done: { [weak self] in self?.startImageDistance() }) {
+            startAnimation = run
+            let reason = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+            gtk_widget_add_css_class(reason, "swiftly-startgrund")
+            append(reason, run.display)
+            startImage = reason
+            gtk_overlay_add_overlay(OpaquePointer(cover), reason)
+            // **It continues after this deadline at the latest, whatever the animation
+            // does.** Same deadline as on Apple (3.5 s).
             //
-            // `[self]`, nicht `[weak self]`: die App lebt in einer globalen
-            // Referenz bis zum Ende, und ein schwacher Verweis wäre in der
-            // verschachtelten Sendable-Hülle ohnehin nicht zu fassen.
+            // `[self]`, not `[weak self]`: the app lives in a global reference until the
+            // end, and a weak reference could not be captured in the nested Sendable
+            // closure anyway.
             Task.detached { [self] in
                 try? await Task.sleep(nanoseconds: 3_500_000_000)
-                aufHauptfaden { self.startanimation?.abschliessen() }
+                onMainThread { self.startAnimation?.complete() }
             }
         }
-        gtk_window_set_child(alsFenster(fenster), Skalierung.gehuellt(decke))
-        fensterdecke = decke
+        gtk_window_set_child(asWindow(window), Scaling.wrapped(cover))
+        windowCover = cover
 
-        tastenEinrichten()
-        beiEigenschaft(UnsafeMutableRawPointer(fenster), "notify::fullscreened") { [weak self] in
-            guard let self, self.laufenderTitel != nil else { return }
-            self.vollbildAnzeigen(voll: gtk_window_is_fullscreen(alsFenster(self.fenster)) != 0)
+        keysSetUp()
+        onProperty(UnsafeMutableRawPointer(window), "notify::fullscreened") { [weak self] in
+            guard let self, self.runningTitle != nil else { return }
+            self.fullscreenShow(full: gtk_window_is_fullscreen(asWindow(self.window)) != 0)
         }
-        g_signal_connect_data(UnsafeMutableRawPointer(fenster), "close-request",
-                              unsafeBitCast(schliessenGewuenscht, to: GCallback.self),
+        g_signal_connect_data(UnsafeMutableRawPointer(window), "close-request",
+                              unsafeBitCast(closeRequested, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
-        // **Die Medientasten der Tastatur.** Unter Linux gibt es dafür kein
-        // Rahmenwerk, sondern einen Standard auf dem Sitzungsbus; siehe
-        // ``Medienleiste``.
-        // `[self]`, nicht `[weak self]`: die App lebt in einer globalen
-        // Referenz, und ein schwacher Verweis waere in der verschachtelten
-        // Sendable-Huelle ohnehin nicht zu fassen.
-        medienleiste = Medienleiste { [self] griff in
-            aufHauptfaden { self.medienGriff(griff) }
+        // **The keyboard media keys.** Linux has no framework for them, only a
+        // standard on the session bus; see ``MediaBar``.
+        // `[self]`, not `[weak self]`: the app lives in a global reference, and a weak
+        // reference could not be captured in the nested Sendable closure anyway.
+        mediaBar = MediaBar { [self] grip in
+            onMainThread { self.mediaHandle(grip) }
         }
-        VLCFassung.text = String(cString: libvlc_get_version())
-        // **D8: die Startseite holt ihre Reihen neu, wenn die App in den
-        // Vordergrund kommt** — mit Frist, damit ein Wechsel hin und her nicht
-        // jedes Mal lädt. Die Frist steht im Paket, nicht hier.
-        beiEigenschaft(UnsafeMutableRawPointer(fenster), "notify::is-active") { [weak self] in
+        VLCVersion.text = String(cString: libvlc_get_version())
+        // **The home screen reloads its rows when the app returns to the
+        // foreground**, with a deadline so that switching back and forth does not
+        // reload every time. The deadline is defined in the package, not here.
+        onProperty(UnsafeMutableRawPointer(window), "notify::is-active") { [weak self] in
             guard let self, self.client != nil,
-                  gtk_window_is_active(alsFenster(self.fenster)) != 0 else { return }
-            if Auffrischung.faelligBeiRueckkehr(zuletzt: self.zuletztGeladen,
-                                                jetzt: Date()) {
-                self.startseiteLaden()
+                  gtk_window_is_active(asWindow(self.window)) != 0 else { return }
+            if Refresh.dueReturn(recent: self.lastLoaded,
+                                                now: Date()) {
+                self.homeLoad()
             }
         }
-        // **Der zuletzt benutzte Server steht schon im Feld.** Nach dem
-        // Abmelden war es leer, und man tippte die Adresse von Hand.
-        let abgelegt = Speicher.bundLesen()
-        Startstufe.melden("einstellungen")
-        if abgelegt == nil, let merk = Speicher.gemerkterServer() {
-            gtk_editable_set_text(OpaquePointer(serverfeld), merk.serverURL.absoluteString)
-            serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
+        // **The last used server is already in the field.** After signing out it was
+        // empty and the address had to be typed again.
+        let stored = Cache.readBundle()
+        StartLevel.report("einstellungen")
+        if stored == nil, let memo = Cache.rememberedServer() {
+            gtk_editable_set_text(OpaquePointer(serverField), memo.serverURL.absoluteString)
+            serverStateShow(memo.serverName.map { String(format: translated("Zuletzt: %@"), $0) } ?? "")
         }
-        gtk_window_present(alsFenster(fenster))
-        zeichenwerkMelden()
-        Startstufe.melden("bereit")
-        // **Den Abspieler jetzt anlegen, nicht beim ersten Tippen.**
+        gtk_window_present(asWindow(window))
+        characterItemReport()
+        StartLevel.report("bereit")
+        // **Create the player now, not on the first tap.**
         //
-        // Er ist ein `lazy var`; wer ihn zuerst anfasst, bezahlt seinen
-        // Konstruktor. Beim ersten Druck auf „Abspielen" war das der
-        // Zuschauer — im Protokoll eines Testers dreizehn Sekunden, in denen
-        // das Fenster stand. Der Kern laedt seitdem nebenlaeufig, aber
-        // angestossen werden muss er trotzdem, und hier ist der richtige
-        // Zeitpunkt: das Fenster steht, und bis jemand einen Titel waehlt,
-        // vergehen ohnehin Sekunden.
-        _ = abspieler
-        // **Erst jetzt gibt es eine Fensterfläche.** Vorher hat das Fenster
-        // kein Gegenstück im Fenstersystem, und ohne das lassen sich die
-        // Medientasten nicht anmelden. Auf Linux tut die Zeile nichts — dort
-        // erledigt das der Sitzungsbus.
-        medienleiste?.anFenster(fenster)
-        // Die Animation fährt selbst los, sobald ihre Fläche aufgelegt ist —
-        // siehe ``Startanimation/losfahren()``. Von hier aus wäre es zu früh.
+        // It is a `lazy var`; whoever touches it first pays for its constructor. On
+        // the first press of "Abspielen" that was the viewer: thirteen seconds in a
+        // tester's log during which the window froze. The core now loads
+        // concurrently, but it still has to be triggered, and here is the right
+        // moment: the window is up, and it takes seconds until someone picks a title.
+        _ = mediaPlayer
+        // **Only now is there a window surface.** Before that the window has no
+        // counterpart in the window system, and without one the media keys cannot be
+        // registered. On Linux this line does nothing; the session bus handles it.
+        mediaBar?.anWindow(window)
+        // The animation starts itself once its surface is attached; see
+        // ``Startanimation/losfahren()``. Starting from here would be too early.
 
-        // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
-        // **Der Bund, nicht die einzelne Sitzung** — sonst stuende nach einem
-        // Neustart nur noch ein Konto im Streifen.
-        if let ablage = abgelegt {
-            Startstufe.melden("server")
-            bund = ablage.bund
-            sitzungEinsetzen(ablage.bund.aktives, servername: ablage.servername)
+        // Remembered session: go straight to the home screen without asking.
+        // **The bundle, not the single session**, otherwise only one account would
+        // remain in the strip after a restart.
+        if let store = stored {
+            StartLevel.report("server")
+            bundle = store.bundle
+            sessionInSet(store.bundle.activeOne, serverName: store.serverName)
         }
     }
 
-    /// Die Animation ist durch: die Decke blendet weg, darunter steht alles
-    /// längst fertig.
-    private func startbildWeg() {
-        guard startanimation != nil, let bild = startbild else {
+    /// The animation is done: the cover fades out, everything underneath has
+    /// long been ready.
+    private func startImageDistance() {
+        guard startAnimation != nil, let image = startImage else {
             return
         }
-        startanimation = nil
-        gtk_widget_set_can_target(bild, 0)
-        sanft(auf: bild, von: 1, nach: 0) { gtk_widget_set_opacity(bild, $0) }
-        // **Das Verschwinden darf nicht am Bildtakt hängen.**
+        startAnimation = nil
+        gtk_widget_set_can_target(image, 0)
+        gentle(on: image, from: 1, to: 0) { gtk_widget_set_opacity(image, $0) }
+        // **Disappearing must not depend on the frame clock.**
         //
-        // `sanft` blendet über `gtk_widget_add_tick_callback` — und genau der
-        // sprang hier schon einmal nicht an. Springt er wieder nicht an,
-        // bleibt die Deckkraft auf eins und der schwarze Deckel liegen: die
-        // App startet dann in ein schwarzes Fenster. Der Wecker nimmt ihn
-        // hinterher in jedem Fall weg. Blendet es weich, sieht man ihn nicht;
-        // blendet es nicht, ist er trotzdem fort.
-        // Der Zeiger geht über eine Fadengrenze, also in die Kiste.
-        let kiste = gehalten(bild)
+        // `gentle` fades via `gtk_widget_add_tick_callback`, and that has failed to
+        // fire here before. If it fails again, opacity stays at one and the black
+        // cover stays: the app would start into a black window. The timer removes it
+        // afterwards in every case. If the fade works, it is not visible; if not,
+        // the cover is gone anyway.
+        // The pointer crosses a thread boundary, so it goes into the box.
+        let container = held(image)
         Task.detached {
             try? await Task.sleep(nanoseconds: 340_000_000)
-            aufHauptfaden {
-                defer { losgelassen(kiste) }
-                gtk_widget_set_opacity(kiste.widget, 0)
-                gtk_widget_set_visible(kiste.widget, 0)
+            onMainThread {
+                defer { letGo(container) }
+                gtk_widget_set_opacity(container.widget, 0)
+                gtk_widget_set_visible(container.widget, 0)
             }
         }
-        // **Die Decke bleibt hängen, sie wird nicht abgeräumt.** Ein Widget
-        // wegzunehmen, während sein Bildtakt noch aussteht, ist die vierte
-        // Falle. Unsichtbar und ohne Treffer kostet es nichts, und die
-        // Animation gibt ihren Speicher selbst frei, sobald der Takt sich
-        // abmeldet.
+        // **The cover stays attached instead of being removed.** Removing a widget
+        // while its tick callback is still pending is the fourth trap. Invisible and
+        // without hit testing it costs nothing, and the animation frees its memory
+        // itself once the callback unregisters.
     }
 
-    // MARK: - Anmeldung
+    // MARK: - Sign-in
 
-    private func anmeldungBauen() -> Widget! {
-        // **Zwei Schritte, wie auf allen anderen Plattformen.** Erst die
-        // Adresse und verbinden, dann das Konto. Der Mac führt dafür
-        // `AppModel.Phase` — disconnected, needsLogin(serverName:version:),
-        // ready —, und dieselbe Reihenfolge gilt hier. Ein eigener Ablauf pro
-        // Plattform wäre genau die Abweichung, die `VERHALTEN.md` verbietet:
-        // verschieden sein dürfen Eingabeart und Fenstergröße, nicht der Weg.
-        anmeldeschritte = gtk_stack_new()
-        gtk_stack_set_transition_type(OpaquePointer(anmeldeschritte),
+    private func loginBuild() -> Widget! {
+        // **Two steps, as on all other platforms.** First the address and connect,
+        // then the account. The Mac drives this with `AppModel.Phase` (disconnected,
+        // needsLogin(serverName:version:), ready), and the same order applies here.
+        // A separate flow per platform would be exactly the kind of deviation to avoid:
+        // input method and window size may differ, the path may not.
+        loginStep = gtk_stack_new()
+        gtk_stack_set_transition_type(OpaquePointer(loginStep),
                                       GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT)
-        gtk_stack_add_named(OpaquePointer(anmeldeschritte), serverSchrittBauen(), "server")
-        gtk_stack_add_named(OpaquePointer(anmeldeschritte), kontoSchrittBauen(), "konto")
-        return anmeldeschritte
+        gtk_stack_add_named(OpaquePointer(loginStep), serverStepBuild(), "server")
+        gtk_stack_add_named(OpaquePointer(loginStep), accountStepBuild(), "konto")
+        return loginStep
     }
 
-    /// Schritt eins: wo steht der Server?
+    /// Step one: where is the server?
     ///
-    /// **Die Abstände sind abgeschrieben, nicht abgeschätzt.** Sie stehen in
-    /// `Sources/macOS/RootView.swift` als `.padding(.top, …)` an genau diesen
-    /// Stellen: Marke, 40 Luft, Frage, 24, Feld, 24, Knopf. Ein `GtkBox` mit
-    /// `abstand` würde sie alle gleich machen — deshalb steht der Abstand
-    /// hier bei jedem Kind einzeln als oberer Rand.
-    private func serverSchrittBauen() -> Widget! {
-        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
-        gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
+    /// **The spacings are copied, not estimated.** They appear in
+    /// `Sources/macOS/RootView.swift` as `.padding(.top, ...)` at exactly these
+    /// places: logo, 40 gap, question, 24, field, 24, button. A `GtkBox` with a
+    /// uniform spacing would make them all equal, so each child gets its own top
+    /// margin here.
+    private func serverStepBuild() -> Widget! {
+        let center = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_valign(center, GTK_ALIGN_CENTER)
+        gtk_widget_set_halign(center, GTK_ALIGN_CENTER)
 
-        anhaengen(mitte, Stil.wortmarke(hoehe: 44))
+        append(center, Theme.wordmark(height: 44))
 
-        let frage = beschriftung(uebersetzt("Wo steht dein Jellyfin-Server?"),
-                                 stil: "swiftly-koerper")
-        gtk_widget_add_css_class(frage, "dim-label")
-        gtk_widget_set_margin_top(frage, 40)
-        anhaengen(mitte, frage)
+        let question = label(translated("Wo steht dein Jellyfin-Server?"),
+                                 style: "swiftly-koerper")
+        gtk_widget_add_css_class(question, "dim-label")
+        gtk_widget_set_margin_top(question, 40)
+        append(center, question)
 
-        // Die Weltkugel im Feld — auf dem Mac steht dort `Image("globe")`.
-        serverfeld = eingabezeile(symbol: "network-server-symbolic", platzhalter: "tv.beispiel.de")
-        gtk_widget_set_margin_top(serverfeld, 24)
-        anhaengen(mitte, serverfeld)
+        // The globe in the field; on the Mac that is `Image("globe")`.
+        serverField = inputRow(symbol: "network-server-symbolic", placeholder: "tv.beispiel.de")
+        gtk_widget_set_margin_top(serverField, 24)
+        append(center, serverField)
 
-        let (erweitert, leser) = erweitertBauen(vorhanden: [])
-        gtk_widget_set_size_request(erweitert, Int32(Stil.anmeldeBreite), -1)
-        gtk_widget_set_halign(erweitert, GTK_ALIGN_CENTER)
-        anmeldeleser = leser
-        anhaengen(mitte, erweitert)
+        let (advanced, reader) = advancedBuild(available: [])
+        gtk_widget_set_size_request(advanced, Int32(Theme.loginWidth), -1)
+        gtk_widget_set_halign(advanced, GTK_ALIGN_CENTER)
+        loginReader = reader
+        append(center, advanced)
 
-        serverstand = meldezeile()
-        anhaengen(mitte, serverstand)
+        serverState = reportRow()
+        append(center, serverState)
 
-        verbindeknopf = hauptknopf(uebersetzt("Verbinden"))
-        gtk_widget_set_margin_top(verbindeknopf, 24)
-        gtk_widget_set_sensitive(verbindeknopf, 0)
-        anhaengen(mitte, verbindeknopf)
+        connectButton = primaryButton(translated("Verbinden"))
+        gtk_widget_set_margin_top(connectButton, 24)
+        gtk_widget_set_sensitive(connectButton, 0)
+        append(center, connectButton)
 
-        beiSignal(verbindeknopf, "clicked") { [weak self] in self?.verbinden() }
-        beiSignal(serverfeld, "activate") { [weak self] in self?.verbinden() }
-        // Der Mac blendet den Knopf aus, solange das Feld leer ist
-        // (`.disabled(adresse.isEmpty)`). Dasselbe hier, nur muss GTK bei
-        // jeder Änderung gefragt werden statt einmal beim Auswerten.
-        beiSignal(serverfeld, "changed") { [weak self] in
+        signal(connectButton, "clicked") { [weak self] in self?.linkUp() }
+        signal(serverField, "activate") { [weak self] in self?.linkUp() }
+        // The Mac disables the button while the field is empty
+        // (`.disabled(address.isEmpty)`). Same here, except GTK has to be asked on
+        // every change instead of once on evaluation.
+        signal(serverField, "changed") { [weak self] in
             guard let self else { return }
-            gtk_widget_set_sensitive(self.verbindeknopf,
-                                     self.text(self.serverfeld).isEmpty ? 0 : 1)
+            gtk_widget_set_sensitive(self.connectButton,
+                                     self.text(self.serverField).isEmpty ? 0 : 1)
         }
-        return mitte
+        return center
     }
 
-    /// Schritt zwei: welches Konto?
+    /// Step two: which account?
     ///
-    /// Marke, 34, Servername, 4, Fassung, 28, Benutzer, 10, Passwort, 24,
-    /// Knopf — aus `AnmeldeView` auf dem Mac.
-    /// Holt die öffentlichen Konten und prüft, ob der Server Quick Connect
-    /// anbietet. Beides ist eine Auskunft des Servers, keine Einstellung.
-    private func kontenHolen(_ c: JellyfinClient) {
-        anmeldeclient = c
+    /// Logo, 34, server name, 4, version, 28, user, 10, password, 24, button;
+    /// taken from `SignInView` on the Mac.
+    /// Fetches the public accounts and checks whether the server offers Quick
+    /// Connect. Both are server information, not settings.
+    private func accountsFetch(_ c: JellyfinClient) {
+        loginClient = c
         Task.detached { [self] in
-            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
-            let konten = nebenher { try? await c.oeffentlicheBenutzer() }
-            let schnell = nebenher { await c.quickConnectVerfuegbar() }
-            let liste = await konten.value ?? []
-            let moeglich = await schnell.value
-            // **Die Adresse vor dem Hauptfaden holen.** `benutzerbild` gehört
-            // dem Client-Actor; im Aufbau der Kachel wäre es ein Zugriff von
-            // aussen.
-            var gesammelt: [(OeffentlicherBenutzer, URL?)] = []
-            for benutzer in liste.prefix(6) {
-                gesammelt.append((benutzer, await c.benutzerbild(benutzer, kante: 128)))
+            // Separate tasks instead of `async let`; see ``nebenher(_:)``.
+            let accounts = besideFrom { try? await c.publicUser() }
+            let fast = besideFrom { await c.quickConnectAddBar() }
+            let list = await accounts.value ?? []
+            let possible = await fast.value
+            // **Fetch the address before the main thread.** `userImage` belongs to
+            // the client actor; building the tile would access it from outside.
+            var collected: [(PublicUser, URL?)] = []
+            for user in list.prefix(6) {
+                collected.append((user, await c.userImage(user, border: 128)))
             }
-            let bilder = gesammelt
-            aufHauptfaden {
-                gtk_widget_set_visible(self.schnellknopf, moeglich ? 1 : 0)
-                leeren(self.kontenreihe)
-                gtk_widget_set_visible(self.kontenreihe, liste.isEmpty ? 0 : 1)
-                for (benutzer, bild) in bilder {
-                    anhaengen(self.kontenreihe, self.kontenkachel(benutzer, bild: bild))
+            let images = collected
+            onMainThread {
+                gtk_widget_set_visible(self.fastButton, possible ? 1 : 0)
+                wipe(self.accountsRail)
+                gtk_widget_set_visible(self.accountsRail, list.isEmpty ? 0 : 1)
+                for (user, image) in images {
+                    append(self.accountsRail, self.accountsTile(user, image: image))
                 }
-                // **Bei genau einem Konto steht der Name schon da.** Dann
-                // fehlt nur noch das Passwort.
-                if liste.count == 1 {
-                    gtk_editable_set_text(OpaquePointer(self.benutzerfeld), liste[0].name)
+                // **With exactly one account the name is already filled in.** Only the
+                // password is missing then.
+                if list.count == 1 {
+                    gtk_editable_set_text(OpaquePointer(self.userField), list[0].name)
                 }
             }
         }
     }
 
-    /// Ein Konto als Bild mit Namen darunter.
-    private func kontenkachel(_ benutzer: OeffentlicherBenutzer,
-                              bild url: URL?) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-kachel")
-        let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        let (kaefig, bild) = gerahmtesBild(breite: 64, hoehe: 64, stil: "swiftly-rund")
+    /// One account as a picture with its name below.
+    private func accountsTile(_ user: PublicUser,
+                              image url: URL?) -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-kachel")
+        let pillar = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
+        let (cage, image) = framedImage(width: 64, height: 64, style: "swiftly-rund")
         if let url {
-            bildLaden(bild, url: url, schluessel: "konto-\(benutzer.id)", sofort: true)
+            imageLoad(image, url: url, key: "konto-\(user.id)", immediate: true)
         } else {
-            zeichenLegen(kaefig, serie: false)
+            characterPut(cage, series: false)
         }
-        anhaengen(saeule, kaefig)
-        let name = beschriftung(benutzer.name, stil: "swiftly-zweitzeile")
+        append(pillar, cage)
+        let name = label(user.name, style: "swiftly-zweitzeile")
         gtk_widget_set_halign(name, GTK_ALIGN_CENTER)
-        anhaengen(saeule, name)
-        gtk_button_set_child(alsKnopf(knopf), saeule)
-        beiSignal(knopf, "clicked") { [weak self] in
+        append(pillar, name)
+        gtk_button_set_child(asButton(button), pillar)
+        signal(button, "clicked") { [weak self] in
             guard let self else { return }
-            gtk_editable_set_text(OpaquePointer(self.benutzerfeld), benutzer.name)
-            gtk_widget_grab_focus(self.passwortfeld)
+            gtk_editable_set_text(OpaquePointer(self.userField), user.name)
+            gtk_widget_grab_focus(self.passwordField)
         }
-        return knopf
+        return button
     }
 
-    /// **Anmelden mit einem Code, ohne Passwort.**
+    /// **Sign in with a code, without a password.**
     ///
-    /// Der Server nennt einen sechsstelligen Code; wer ihn auf einem schon
-    /// angemeldeten Gerät freigibt, meldet dieses hier an. Der Vorgang läuft,
-    /// bis er freigegeben oder abgebrochen wird.
-    private func schnellanmeldung() {
-        guard let c = anmeldeclient else { return }
-        schnelllauf?.cancel()
-        // **Gehalten und beim Verlassen abgebrochen** (Zurück, Abmelden,
-        // andere Anmeldung). Vorher lief `Task.detached` fünf Minuten weiter,
-        // und eine späte Freigabe meldete einen plötzlich an.
-        schnelllauf = Task.detached { [self] in
-            let vorgang: Anmeldecode
-            do { vorgang = try await c.quickConnectStarten() } catch {
-                // Den Grund nennen — etwa „Quick Connect abgeschaltet" —,
-                // nicht pauschal „kein Code".
+    /// The server gives a six-digit code; whoever approves it on an already
+    /// signed-in device signs this one in. The flow runs until approved or
+    /// cancelled.
+    private func fastLogin() {
+        guard let c = loginClient else { return }
+        fastRun?.cancel()
+        // **Held, and cancelled on leaving** (back, sign out, other sign-in).
+        // Previously a `Task.detached` kept running for five minutes, and a late
+        // approval signed the user in unexpectedly.
+        fastRun = Task.detached { [self] in
+            let preGait: LoginCode
+            do { preGait = try await c.quickConnectStart() } catch {
+                // Name the reason, e.g. "Quick Connect abgeschaltet", rather than a generic
+                // "no code".
                 if Task.isCancelled { return }
-                let text = lesbarerFehler(error)
-                aufHauptfaden { self.anmeldestandZeigen(text) }
+                let text = readableError(error)
+                onMainThread { self.loginStateShow(text) }
                 return
             }
             if Task.isCancelled { return }
-            aufHauptfaden {
-                self.anmeldestandZeigen(String(format: uebersetzt("Code %@ — auf einem angemeldeten Gerät freigeben"), vorgang.code))
+            onMainThread {
+                self.loginStateShow(String(format: translated("Code %@ — auf einem angemeldeten Gerät freigeben"), preGait.code))
             }
-            // Frist, Takt und der Umgang mit Netzfehlern: ``Quickconnectwarten``
-            // im Paket, wie auf Apple und Android.
-            for await ereignis in c.quickConnectWarten(vorgang) {
+            // Deadline, interval and handling of network errors: ``Quickconnectwarten``
+            // in the package, as on Apple and Android.
+            for await event in c.quickConnectWait(preGait) {
                 if Task.isCancelled { return }
-                switch ereignis {
+                switch event {
                 case .rest: continue
-                case let .ende(letzte):
-                    let text = Quickconnectfrist.schlusstext(letzte: letzte)
-                    aufHauptfaden { self.anmeldestandZeigen(text) }
+                case let .end(last):
+                    let text = QuickConnectDeadline.endText(last: last)
+                    onMainThread { self.loginStateShow(text) }
                     return
-                case .freigegeben:
+                case .released:
                     do {
-                        let sitzung = try await c.anmeldenMitQuickConnect(vorgang)
+                        let session = try await c.signInWithQuickConnect(preGait)
                         if Task.isCancelled { return }
-                        aufHauptfaden {
-                            // Adresse, Name und Kennung stehen jetzt alle in der
-                            // Sitzung selbst — `serverURL` wird hier nicht mehr
-                            // gebraucht.
-                            let servername = gtk_label_get_text(OpaquePointer(self.serverzeile))
+                        onMainThread {
+                            // Address, name and ID are now all in the session itself; `serverURL` is no
+                            // longer needed here.
+                            let serverName = gtk_label_get_text(OpaquePointer(self.serverRow))
                                 .map { String(cString: $0) }
-                            self.anmeldestandZeigen("")
-                            self.sitzungAufnehmen(sitzung, servername: servername)
+                            self.loginStateShow("")
+                            self.sessionRecord(session, serverName: serverName)
                         }
                     } catch {
-                        let text = lesbarerFehler(error)
-                        aufHauptfaden { self.anmeldestandZeigen(text) }
+                        let text = readableError(error)
+                        onMainThread { self.loginStateShow(text) }
                     }
                     return
                 }
@@ -665,589 +645,571 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func kontoSchrittBauen() -> Widget! {
-        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
-        gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
+    private func accountStepBuild() -> Widget! {
+        let center = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_valign(center, GTK_ALIGN_CENTER)
+        gtk_widget_set_halign(center, GTK_ALIGN_CENTER)
 
-        anhaengen(mitte, Stil.wortmarke(hoehe: 44))
+        append(center, Theme.wordmark(height: 44))
 
-        serverzeile = beschriftung("", stil: "swiftly-titel")
-        gtk_widget_set_margin_top(serverzeile, 34)
-        anhaengen(mitte, serverzeile)
+        serverRow = label("", style: "swiftly-titel")
+        gtk_widget_set_margin_top(serverRow, 34)
+        append(center, serverRow)
 
-        fassungszeile = beschriftung("", stil: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(fassungszeile, "swiftly-leise")
-        gtk_widget_set_margin_top(fassungszeile, 4)
-        anhaengen(mitte, fassungszeile)
+        versionRow = label("", style: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(versionRow, "swiftly-leise")
+        gtk_widget_set_margin_top(versionRow, 4)
+        append(center, versionRow)
 
-        // **„Wer schaut?"** — die öffentlichen Konten des Servers, mit Bild.
-        // Der Mac holt sie und wählt bei genau einem den Namen vor
-        // (`Shared/RootView.swift:217`); hier stand nur ein leeres Textfeld,
-        // in das man seinen Namen zeichengenau tippen musste.
-        kontenreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
-        gtk_widget_set_halign(kontenreihe, GTK_ALIGN_CENTER)
-        gtk_widget_set_margin_top(kontenreihe, 26)
-        gtk_widget_set_visible(kontenreihe, 0)
-        anhaengen(mitte, kontenreihe)
+        // **"Who is watching?"**: the server's public accounts, with pictures.
+        // The Mac fetches them and preselects the name when there is exactly one
+        // (`Shared/RootView.swift`); here there was only an empty text field in which
+        // the name had to be typed exactly.
+        accountsRail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
+        gtk_widget_set_halign(accountsRail, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_top(accountsRail, 26)
+        gtk_widget_set_visible(accountsRail, 0)
+        append(center, accountsRail)
 
-        benutzerfeld = eingabezeile(symbol: "avatar-default-symbolic",
-                                    platzhalter: uebersetzt("Benutzername"))
-        gtk_widget_set_margin_top(benutzerfeld, 28)
-        anhaengen(mitte, benutzerfeld)
+        userField = inputRow(symbol: "avatar-default-symbolic",
+                                    placeholder: translated("Benutzername"))
+        gtk_widget_set_margin_top(userField, 28)
+        append(center, userField)
 
-        passwortfeld = eingabezeile(symbol: "channel-secure-symbolic",
-                                    platzhalter: uebersetzt("Passwort"), geheim: true)
-        gtk_widget_set_margin_top(passwortfeld, 10)
-        anhaengen(mitte, passwortfeld)
+        passwordField = inputRow(symbol: "channel-secure-symbolic",
+                                    placeholder: translated("Passwort"), secret: true)
+        gtk_widget_set_margin_top(passwordField, 10)
+        append(center, passwordField)
 
-        anmeldestand = meldezeile()
-        anhaengen(mitte, anmeldestand)
+        loginState = reportRow()
+        append(center, loginState)
 
-        anmeldeknopf = hauptknopf(uebersetzt("Anmelden"))
-        gtk_widget_set_margin_top(anmeldeknopf, 24)
-        gtk_widget_set_sensitive(anmeldeknopf, 0)
-        anhaengen(mitte, anmeldeknopf)
+        loginButton = primaryButton(translated("Anmelden"))
+        gtk_widget_set_margin_top(loginButton, 24)
+        gtk_widget_set_sensitive(loginButton, 0)
+        append(center, loginButton)
 
-        // Der Mac kommt über die Fensterampel zurueck; hier braucht es einen
-        // Weg im Bild, sonst sitzt man auf dem falschen Server fest.
-        // **Quick Connect als Anmeldeweg.** Bisher gab es hier nur die
-        // Gegenrichtung — einen fremden Code freigeben. Wer sich anmelden
-        // will, ohne sein Passwort zu tippen, konnte es nicht.
-        schnellknopf = gtk_button_new_with_label(uebersetzt("Mit Code anmelden"))
-        gtk_widget_add_css_class(schnellknopf, "swiftly-flach")
-        gtk_widget_set_margin_top(schnellknopf, 10)
-        gtk_widget_set_halign(schnellknopf, GTK_ALIGN_CENTER)
-        gtk_widget_set_visible(schnellknopf, 0)
-        beiSignal(schnellknopf, "clicked") { [weak self] in self?.schnellanmeldung() }
-        anhaengen(mitte, schnellknopf)
+        // The Mac returns via the window buttons; here the UI needs a way back,
+        // otherwise the user is stuck on the wrong server.
+        // **Quick Connect as a sign-in method.** Until now this page could only do the
+        // opposite direction (approving someone else's code). Signing in without
+        // typing a password was not possible.
+        fastButton = gtk_button_new_with_label(translated("Mit Code anmelden"))
+        gtk_widget_add_css_class(fastButton, "swiftly-flach")
+        gtk_widget_set_margin_top(fastButton, 10)
+        gtk_widget_set_halign(fastButton, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(fastButton, 0)
+        signal(fastButton, "clicked") { [weak self] in self?.fastLogin() }
+        append(center, fastButton)
 
-        zurueckknopf = gtk_button_new_with_label(uebersetzt("Anderer Server"))
-        gtk_widget_add_css_class(zurueckknopf, "swiftly-flach")
-        gtk_widget_set_margin_top(zurueckknopf, 14)
-        gtk_widget_set_halign(zurueckknopf, GTK_ALIGN_CENTER)
-        anhaengen(mitte, zurueckknopf)
+        backButton = gtk_button_new_with_label(translated("Anderer Server"))
+        gtk_widget_add_css_class(backButton, "swiftly-flach")
+        gtk_widget_set_margin_top(backButton, 14)
+        gtk_widget_set_halign(backButton, GTK_ALIGN_CENTER)
+        append(center, backButton)
 
-        beiSignal(anmeldeknopf, "clicked") { [weak self] in self?.anmelden() }
-        beiSignal(passwortfeld, "activate") { [weak self] in self?.anmelden() }
-        beiSignal(benutzerfeld, "activate") { [weak self] in
+        signal(loginButton, "clicked") { [weak self] in self?.signIn() }
+        signal(passwordField, "activate") { [weak self] in self?.signIn() }
+        signal(userField, "activate") { [weak self] in
             guard let self else { return }
-            gtk_widget_grab_focus(self.passwortfeld)
+            gtk_widget_grab_focus(self.passwordField)
         }
-        beiSignal(benutzerfeld, "changed") { [weak self] in
+        signal(userField, "changed") { [weak self] in
             guard let self else { return }
-            gtk_widget_set_sensitive(self.anmeldeknopf,
-                                     self.text(self.benutzerfeld).isEmpty ? 0 : 1)
+            gtk_widget_set_sensitive(self.loginButton,
+                                     self.text(self.userField).isEmpty ? 0 : 1)
         }
-        beiSignal(zurueckknopf, "clicked") { [weak self] in
+        signal(backButton, "clicked") { [weak self] in
             guard let self else { return }
-            self.schnelllauf?.cancel()
-            self.schnelllauf = nil
-            gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
+            self.fastRun?.cancel()
+            self.fastRun = nil
+            gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "server")
         }
-        return mitte
+        return center
     }
 
-    /// Die Fehlerzeile unter den Feldern: 12 Zeilenschrift in `warnung`,
-    /// mittig, auf Blockbreite umbrechend. Sie steht immer da und ist leer,
-    /// solange nichts schiefging — sonst würde der Knopf beim ersten Fehler
-    /// nach unten springen.
-    private func meldezeile() -> Widget! {
-        let l = beschriftung("", stil: "swiftly-zweitzeile", umbruch: true)
+    /// The error line below the fields: 12-point text in `warning`, centered,
+    /// wrapping at block width. It is always present and empty while nothing is
+    /// wrong, otherwise the button would jump down on the first error.
+    private func reportRow() -> Widget! {
+        let l = label("", style: "swiftly-zweitzeile", wrap: true)
         gtk_widget_add_css_class(l, "swiftly-warnung")
-        gtk_widget_set_size_request(l, Int32(Stil.anmeldeBreite), -1)
+        gtk_widget_set_size_request(l, Int32(Theme.loginWidth), -1)
         gtk_widget_set_margin_top(l, 12)
         gtk_widget_set_visible(l, 0)
         return l
     }
 
-    func text(_ feld: Widget!) -> String {
-        gtk_editable_get_text(OpaquePointer(feld)).map { String(cString: $0) } ?? ""
+    func text(_ inputField: Widget!) -> String {
+        gtk_editable_get_text(OpaquePointer(inputField)).map { String(cString: $0) } ?? ""
     }
 
-    /// **Eine leere Beschriftung ist nicht null hoch.** GTK gibt ihr trotzdem
-    /// eine Zeile, und mit dem oberen Rand stünde der Knopf dauerhaft 29
-    /// Punkt zu tief — auf dem Mac erscheint der Fehlerblock erst, wenn es
-    /// einen gibt. Also aus- und einblenden statt Text leeren.
-    private func meldung(_ zeile: Widget!, _ s: String) {
-        gtk_label_set_text(OpaquePointer(zeile), s)
-        gtk_widget_set_visible(zeile, s.isEmpty ? 0 : 1)
+    /// **An empty label is not zero tall.** GTK still gives it a line, and with
+    /// the top margin the button would sit 29 points too low permanently. On the
+    /// Mac the error block only appears when there is an error. So show and hide
+    /// instead of clearing the text.
+    private func message(_ row: Widget!, _ s: String) {
+        gtk_label_set_text(OpaquePointer(row), s)
+        gtk_widget_set_visible(row, s.isEmpty ? 0 : 1)
     }
 
-    private func serverstandZeigen(_ s: String) { meldung(serverstand, s) }
+    private func serverStateShow(_ s: String) { message(serverState, s) }
 
-    private func anmeldestandZeigen(_ s: String) { meldung(anmeldestand, s) }
+    private func loginStateShow(_ s: String) { message(loginState, s) }
 
-    // MARK: Schritt eins — verbinden
+    // MARK: Step one: connect
 
-    private func verbinden() {
-        guard !meldetGerade else { return }
-        let eingabe = text(serverfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !eingabe.isEmpty else { serverstandZeigen(uebersetzt("Trag erst eine Adresse ein.")); return }
+    private func linkUp() {
+        guard !reportCurrent else { return }
+        let typedInput = text(serverField).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typedInput.isEmpty else { serverStateShow(translated("Trag erst eine Adresse ein.")); return }
 
-        // Dieselbe Regel wie überall: ohne Schema bekommt eine Adresse
-        // `https` vorgesetzt, außer sie sieht nach Heimnetz aus.
-        guard let url = AppModelURLNormalizer.normalize(eingabe) else {
-            serverstandZeigen(uebersetzt("Mit dieser Adresse kann ich nichts anfangen."))
+        // Same rule as everywhere: an address without a scheme gets `https`
+        // prepended, unless it looks like a home network.
+        guard let url = AppModelURLNormalizer.normalize(typedInput) else {
+            serverStateShow(translated("Mit dieser Adresse kann ich nichts anfangen."))
             return
         }
 
-        meldetGerade = true
-        gtk_widget_set_sensitive(verbindeknopf, 0)
-        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinde…"))
-        serverstandZeigen(String(format: uebersetzt("Frage %@ …"), url.absoluteString))
-        // Leer heisst: was fuer diese Adresse schon eingetragen ist, bleibt.
-        let koepfe = anmeldeleser?.koepfe() ?? []
-        let vorher = Eigenkoepfe.eingetragen(fuer: url)
-        if !koepfe.isEmpty { Eigenkoepfe.setzen(koepfe, fuer: url) }
+        reportCurrent = true
+        gtk_widget_set_sensitive(connectButton, 0)
+        gtk_button_set_label(asButton(connectButton), translated("Verbinde…"))
+        serverStateShow(String(format: translated("Frage %@ …"), url.absoluteString))
+        // Empty means: whatever is already stored for this address stays.
+        let headers = loginReader?.headers() ?? []
+        let before = OwnHeaders.registered(for: url)
+        if !headers.isEmpty { OwnHeaders.setDown(headers, for: url) }
 
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name,
-                                   clientVersion: Geraet.fassung)
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name,
+                                   clientVersion: Device.version)
             do {
-                // Kurze Frist wie auf Apple, siehe `Adresspruefung`.
-                let info = try await c.erreichbarkeitPruefen()
-                // Erst jetzt ablegen: fuer eine Adresse, unter der nichts
-                // antwortet, bleibt nichts liegen.
-                if !koepfe.isEmpty { Speicher.koepfeSichern(koepfe, fuer: url) }
-                let name = info.serverName ?? url.host() ?? uebersetzt("Server")
-                let fassung = info.version ?? "?"
-                aufHauptfaden {
-                    self.verbindenFertig()
-                    // **Die Antwort gehoert zur Adresse, die gefragt wurde.**
-                    // Steht inzwischen eine andere im Feld, bleibt sie liegen —
-                    // sonst ginge es mit dem alten Server weiter.
-                    guard self.text(self.serverfeld)
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == eingabe else { return }
+                // Short deadline as on Apple; see `AddressCheck`.
+                let info = try await c.checkReachability()
+                // Store only now: an address that does not answer leaves nothing behind.
+                if !headers.isEmpty { Cache.headersSafe(headers, for: url) }
+                let name = info.serverName ?? url.host() ?? translated("Server")
+                let version = info.version ?? "?"
+                onMainThread {
+                    self.connectReady()
+                    // **The response belongs to the address that was asked.** If a different
+                    // one is in the field by now, it is dropped, otherwise the flow would go on
+                    // with the old server.
+                    guard self.text(self.serverField)
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
                     self.serverURL = url
-                    // **Sie wurde geholt und weggeworfen.** `serverfassung`
-                    // stand in den Einstellungen und im Profil und war immer
-                    // leer, weil niemand sie je gesetzt hat.
-                    self.serverfassung = fassung
-                    Speicher.serverMerken(.init(serverURL: url, servername: name,
-                                                fassung: fassung))
-                    gtk_label_set_text(OpaquePointer(self.serverzeile), name)
-                    gtk_label_set_text(OpaquePointer(self.fassungszeile), "Jellyfin \(fassung)")
-                    self.serverstandZeigen("")
-                    gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "konto")
-                    gtk_widget_grab_focus(self.benutzerfeld)
-                    self.kontenHolen(c)
+                    // **It was fetched and thrown away.** `serverVersion` was used in the
+                    // settings and the profile but was always empty because nothing ever set it.
+                    self.serverVersion = version
+                    Cache.serverRemember(.init(serverURL: url, serverName: name,
+                                                version: version))
+                    gtk_label_set_text(OpaquePointer(self.serverRow), name)
+                    gtk_label_set_text(OpaquePointer(self.versionRow), "Jellyfin \(version)")
+                    self.serverStateShow("")
+                    gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "konto")
+                    gtk_widget_grab_focus(self.userField)
+                    self.accountsFetch(c)
                 }
             } catch {
-                if !koepfe.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
-                aufHauptfaden {
-                    self.verbindenFertig()
-                    guard self.text(self.serverfeld)
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == eingabe else { return }
-                    self.serverstandZeigen(lesbarerFehler(error))
+                if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
+                onMainThread {
+                    self.connectReady()
+                    guard self.text(self.serverField)
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
+                    self.serverStateShow(readableError(error))
                 }
             }
         }
     }
 
-    private func verbindenFertig() {
-        meldetGerade = false
-        gtk_widget_set_sensitive(verbindeknopf, 1)
-        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinden"))
+    private func connectReady() {
+        reportCurrent = false
+        gtk_widget_set_sensitive(connectButton, 1)
+        gtk_button_set_label(asButton(connectButton), translated("Verbinden"))
     }
 
-    // MARK: Schritt zwei — anmelden
+    // MARK: Step two: sign in
 
-    private func anmelden() {
-        guard !meldetGerade, let url = serverURL else { return }
-        let benutzer = text(benutzerfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        let passwort = text(passwortfeld)
-        guard !benutzer.isEmpty else { anmeldestandZeigen(uebersetzt("Trag einen Benutzernamen ein.")); return }
+    private func signIn() {
+        guard !reportCurrent, let url = serverURL else { return }
+        let user = text(userField).trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = text(passwordField)
+        guard !user.isEmpty else { loginStateShow(translated("Trag einen Benutzernamen ein.")); return }
 
-        meldetGerade = true
-        gtk_widget_set_sensitive(anmeldeknopf, 0)
-        gtk_button_set_label(alsKnopf(anmeldeknopf), uebersetzt("Melde an …"))
-        anmeldestandZeigen("")
+        reportCurrent = true
+        gtk_widget_set_sensitive(loginButton, 0)
+        gtk_button_set_label(asButton(loginButton), translated("Melde an …"))
+        loginStateShow("")
 
-        let servername = gtk_label_get_text(OpaquePointer(serverzeile)).map { String(cString: $0) }
+        let serverName = gtk_label_get_text(OpaquePointer(serverRow)).map { String(cString: $0) }
 
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name,
-                                   clientVersion: Geraet.fassung)
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name,
+                                   clientVersion: Device.version)
             do {
-                let sitzung = try await c.authenticate(username: benutzer, password: passwort)
-                aufHauptfaden {
-                    self.anmeldungFertig()
-                    gtk_editable_set_text(OpaquePointer(self.passwortfeld), "")
-                    // Sichern macht ``sitzungAufnehmen(_:servername:)`` selbst —
-                    // es muss den Bund kennen, bevor etwas auf die Platte geht.
-                    self.sitzungAufnehmen(sitzung, servername: servername)
+                let session = try await c.authenticate(username: user, password: password)
+                onMainThread {
+                    self.loginReady()
+                    gtk_editable_set_text(OpaquePointer(self.passwordField), "")
+                    // ``sessionRecord(_:serverName:)`` handles saving itself; it has to know
+                    // the bundle before anything is written to disk.
+                    self.sessionRecord(session, serverName: serverName)
                 }
             } catch {
-                aufHauptfaden {
-                    self.anmeldungFertig()
-                    self.anmeldestandZeigen(lesbarerFehler(error))
+                onMainThread {
+                    self.loginReady()
+                    self.loginStateShow(readableError(error))
                 }
             }
         }
     }
 
-    private func anmeldungFertig() {
-        meldetGerade = false
-        gtk_widget_set_sensitive(anmeldeknopf, 1)
-        gtk_button_set_label(alsKnopf(anmeldeknopf), uebersetzt("Anmelden"))
+    private func loginReady() {
+        reportCurrent = false
+        gtk_widget_set_sensitive(loginButton, 1)
+        gtk_button_set_label(asButton(loginButton), translated("Anmelden"))
     }
 
-    // MARK: - Mehrere Konten auf demselben Server
+    // MARK: - Multiple accounts on the same server
 
-    /// Die Konten dieses Servers und welches gerade gilt.
+    /// This server's accounts and which one is active.
     ///
-    /// **Der Bund liegt hier, nicht in der Ansicht.** Alle Regeln, die daran
-    /// hängen — dasselbe Konto zweimal, welches nach dem Entfernen gilt, eine
-    /// alte Einzelsitzung von früher — stehen in ``Kontenbund`` im Paket und
-    /// sind dort mit 14 Tests abgedeckt. Hier steht nur, was Linux davon
-    /// sichtbar macht.
-    var bund: Kontenbund?
+    /// **The bundle lives here, not in the view.** All rules attached to it (same
+    /// account twice, which one applies after removal, an old single session) are
+    /// in ``Kontenbund`` in the package, covered by 14 tests. Only what Linux
+    /// exposes of it is here.
+    var bundle: AccountBundle?
 
-    /// Steigt bei jedem Wechsel. Wer beim Neuzeichnen vergleichen muss, ob
-    /// seine Daten noch zum angemeldeten Konto gehören, vergleicht diesen Wert.
+    /// Increments on every switch. Code that has to check on redraw whether its
+    /// data still belongs to the signed-in account compares this value.
     ///
-    /// **Auf Apple hängt daran ein `onChange`.** Das gibt es hier nicht — die
-    /// Oberfläche ist imperativ, also ruft ``aufraeumenNachWechsel()`` direkt
-    /// auf, was neu muss. Der Zähler bleibt trotzdem: eine Aufgabe, die vor
-    /// dem Wechsel losgeschickt wurde und danach zurückkommt, erkennt an ihm,
-    /// dass ihre Antwort zum vorigen Konto gehört.
-    var kontowechsel = 0
+    /// **On Apple an `onChange` hangs on it.** That does not exist here: the UI is
+    /// imperative, so ``cleanUpPostSwitch()`` is called directly for whatever
+    /// needs to reload. The counter stays anyway: a task started before the switch
+    /// that returns afterwards uses it to see its answer belongs to the previous
+    /// account.
+    var accountSwitch = 0
 
-    /// Je Bibliotheksraster die Wache, die weit Weggescrolltes entlaedt.
-    var kachelwachen: [UnsafeMutableRawPointer: Kachelbildwache] = [:]
+    /// One guard per library grid that unloads content scrolled far away.
+    var tileGuard: [UnsafeMutableRawPointer: TileImageGuard] = [:]
 
-    /// Nimmt eine frische Sitzung an — nach Anmeldung oder Quick Connect.
+    /// Accepts a fresh session after sign-in or Quick Connect.
     ///
-    /// Gibt zurück, ob es ein **Kontowechsel** war, also ob schon jemand
-    /// angemeldet war. Wortgleich zu `AppModel.sitzungUebernehmen(_:)`.
+    /// Returns whether it was an **account switch**, i.e. whether someone was
+    /// already signed in. Matches `AppModel.sessionAdopt(_:)`.
     @discardableResult
-    func sitzungAufnehmen(_ sitzung: Session, servername: String?) -> Bool {
-        // **Ob es ein Wechsel war, sagt das Paket**, nicht diese Seite. Beide
-        // Seiten leiteten es vorher aus `bund != nil` her — und die Regel, dass
-        // ein anderer Server *kein* Wechsel ist, sondern ein Neuanfang, stand
-        // damit zweimal da.
-        // Angemeldet ist angemeldet — ein noch wartender Code darf danach
-        // nicht ein zweites Mal anmelden.
-        schnelllauf?.cancel()
-        schnelllauf = nil
-        let (neuer, warAngemeldet) = Kontenbund.aufnehmen(sitzung, in: bund)
-        if warAngemeldet { playerZuVorWechsel() }
-        bund = neuer
-        bundSichern(servername: servername)
-        if warAngemeldet { aufraeumenNachWechsel() }
-        sitzungEinsetzen(sitzung, servername: servername)
-        return warAngemeldet
+    func sessionRecord(_ session: Session, serverName: String?) -> Bool {
+        // **Whether it was a switch is decided by the package**, not this page. Both
+        // platforms used to derive it from `bundle != nil`, so the rule that another
+        // server is *not* a switch but a fresh start existed twice.
+        // Signed in is signed in: a still-waiting code must not sign in a second time.
+        fastRun?.cancel()
+        fastRun = nil
+        let (newer, wasSignedIn) = AccountBundle.record(session, in: bundle)
+        if wasSignedIn { playerPreSwitch() }
+        bundle = newer
+        saveBundle(serverName: serverName)
+        if wasSignedIn { cleanUpPostSwitch() }
+        sessionInSet(session, serverName: serverName)
+        return wasSignedIn
     }
 
-    /// Auf ein anderes Konto desselben Servers umschalten.
+    /// Switch to another account on the same server.
     ///
-    /// **Kein neues Passwort.** Beide Merkmale liegen in `konten.json`; der
-    /// Wechsel tauscht nur, welches gilt.
-    /// **Die Kennung ist der `kontoschluessel`, nicht die `userID`.** Sobald
-    /// zwei Server im Bund liegen, kann dieselbe Benutzerkennung auf beiden
-    /// vorkommen; ein Vergleich auf `userID` traefe dann das falsche Konto
-    /// oder gar keins. `Kontenbund.konto(_:)` prueft zuerst den vollen
-    /// Schluessel und faellt nur zur Sicherheit auf die Benutzerkennung
-    /// zurueck — damit bleiben aeltere Aufrufer lesbar.
-    func kontoWechseln(zu kennung: String, imProfilBleiben: Bool = true) {
-        guard var neu = bund, neu.aktiveKennung != kennung,
-              neu.konto(kennung) != nil else { return }
-        playerZuVorWechsel()
-        neu.wechseln(zu: kennung)
-        bund = neu
-        let name = servername.isEmpty ? nil : servername
-        // **Wer im Profil umschaltet, bleibt im Profil** — wie auf dem Mac.
-        // Ring und Punkt wandern dann sichtbar zum anderen Kreis, und genau
-        // das ist die Rueckmeldung, um die es im Entwurf geht: „verbunden ist,
-        // was Akzentring und Punkt traegt, und das aendert sich beim Klicken".
-        // Wer stattdessen auf die Startseite geworfen wuerde, saehe die
-        // Antwort auf seinen eigenen Klick nie.
-        // Der Flug (``kontoWechselnMitFlug``) fuehrt dagegen auf die Seite
-        // des Bereichs, wie am iPhone (Entwurf D).
-        let warImProfil = imProfilBleiben && offeneUnterseite == .profil
-        bundSichern(servername: name)
-        aufraeumenNachWechsel()
-        sitzungEinsetzen(neu.aktives, servername: name)
-        // **Erst danach.** Die Seite liest `benutzerID` und `adressen`, und
-        // die stellt ``sitzungEinsetzen(_:servername:)``; davor gebaut zeigte
-        // sie den Namen des Kontos, von dem man gerade weggegangen ist.
-        if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
+    /// **No new password.** Both credentials are in `konten.json`; the switch only
+    /// changes which one applies.
+    /// **The identifier is the `accountKey`, not the `userID`.** Once two
+    /// servers are in the bundle, the same user ID can occur on both; comparing
+    /// `userID` would hit the wrong account or none. `AccountBundle.account(_:)` checks
+    /// the full key first and falls back to the user ID only as a safety net, so
+    /// older callers stay readable.
+    func switchAccount(toward identifier: String, inProfileRemain: Bool = true) {
+        guard var new = bundle, new.activeId != identifier,
+              new.account(identifier) != nil else { return }
+        playerPreSwitch()
+        new.switchTo(toward: identifier)
+        bundle = new
+        let name = serverName.isEmpty ? nil : serverName
+        // **Whoever switches in the profile stays in the profile**, as on the Mac.
+        // Ring and dot visibly move to the other circle, and that is the feedback the
+        // design is about: "connected is what carries the accent ring and dot, and that
+        // changes on click". Throwing the user to the home screen would hide the
+        // answer to their own click.
+        // The flight (``accountSwitchWithTransition``) instead leads to the section's page,
+        // as on the iPhone.
+        let wasProfile = inProfileRemain && openSubpage == .profile
+        saveBundle(serverName: name)
+        cleanUpPostSwitch()
+        sessionInSet(new.activeOne, serverName: name)
+        // **Only afterwards.** The page reads `userIdentifier` and `addresses`, which
+        // ``sessionInSet(_:serverName:)`` sets; built earlier it showed the name of
+        // the account just left.
+        if wasProfile { subpageOpen(.profile, push: .without) }
     }
 
-    /// **Ein laufender Player geht vor jedem Kontowechsel zu** — auch beim
-    /// Abmelden und bei einer neuen Anmeldung ueber ein bestehendes Konto.
+    /// **A running player closes before every account switch**, including sign-out
+    /// and a new sign-in over an existing account.
     ///
-    /// Er lief sonst mit dem Titel und dem Merkmal des vorigen Kontos weiter,
-    /// waehrend die Oberflaeche schon das neue zeigte, und seine
-    /// Zwischenmeldungen gingen ueber den ausgetauschten Client an ein Konto,
-    /// in dem der Titel vielleicht gar nicht liegt. Muss **vor** dem Tausch
-    /// stehen: ``spielerSchliessen(melden:fensterZurueck:)`` greift Client
-    /// und Benutzerkennung sofort, der Stopp geht also noch ans alte Konto.
-    private func playerZuVorWechsel() {
-        guard laufenderTitel != nil else { return }
-        Protokoll.schreib("[Konto] Wechsel bei offenem Player, erst schliessen")
-        spielerSchliessen()
+    /// Otherwise it keeps running with the previous account's title and credential
+    /// while the UI already shows the new one, and its progress reports go through
+    /// the swapped client to an account that may not contain the title. Must come
+    /// **before** the swap: ``playerClose(report:windowBack:)`` grabs
+    /// client and user ID immediately, so the stop still goes to the old account.
+    private func playerPreSwitch() {
+        guard runningTitle != nil else { return }
+        AppLog.writeOut("[Konto] Wechsel bei offenem Player, erst schliessen")
+        playerClose()
     }
 
-    /// Was nach jedem Kontowechsel neu muss — ausser dem Client selbst.
+    /// What has to be redone after every account switch, apart from the client.
     ///
-    /// **Hier wird nicht abgemeldet.** `abmelden()` schickt ein
-    /// `Sessions/Logout` und zieht das Merkmal ein — richtig beim Abmelden,
-    /// verheerend beim Umschalten: das Konto, von dem man weggeht, waere
-    /// danach unbrauchbar, und der Weg zurueck endet in „Anmeldung
-    /// abgelehnt". Der alte Client wird einfach fallen gelassen.
+    /// **No sign-out here.** `signOff()` sends `Sessions/Logout` and revokes the
+    /// credential: right for signing out, disastrous for switching, since the
+    /// account being left would become unusable and the way back would end in
+    /// "sign-in rejected". The old client is simply dropped.
     ///
-    /// **Und die Reihen werden nicht geleert.** Auf Apple hat genau das zwei
-    /// Runden gekostet: wer erst leert und dann laedt, haengt jede Kachel kurz
-    /// aus, und `AsyncImage` bricht dann seinen Abruf ab. Hier ersetzt
-    /// ``reihenZeigen(_:)`` ohnehin erst, wenn die neuen Reihen da sind —
-    /// diese Funktion fasst den Reihenstapel deshalb gar nicht an.
-    private func aufraeumenNachWechsel() {
-        kontowechsel += 1
-        // **Die Fernsteuerung gehoert dazu, und das sieht man ihr nicht an.**
-        // Sie laeuft sonst mit dem Merkmal des vorigen Kontos weiter, und das
-        // iPhone saehe die Linux-Sitzung dann unter dem falschen Namen.
-        Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
-        fernsteuerung = nil
-        uebernahmelauf?.cancel()
-        uebernahmelauf = nil
-        uebernahmeangebote = []
-        // Raus aus der Gruppe, samt Streifen und Angeboten des vorigen Kontos.
-        gemeinsamBeenden()
-        // Detailseiten und geladene Bereiche gehoeren zum vorigen Konto.
-        // Ohne das zeigten Filme und Serien nach dem Wechsel dauerhaft die
-        // Titel des vorigen Kontos: `geladen` wurde bisher nur beim Abmelden
-        // geleert, und ein Bereich laedt genau einmal.
-        seitenstapel.removeAll()
-        geladen.removeAll()
-        offeneUnterseite = nil
-        // **Und eine offene Bibliotheksseite.** Sie zeigt eine Sammlung des
-        // vorigen Kontos; auf dem Mac setzt `BibliothekView` sie beim
-        // Kontowechsel auf `nil` zurueck (`:187-190`). Hier wurde sie nur
-        // beim Bereichswechsel geleert, und wer im Konto wechselte, sah die
-        // fremde Sammlung stehenbleiben.
-        offeneSammlung = nil
-        angebotWartende = []
-        // **Alter Inhalt sofort weg** (Mac `kontowechselblende`): die Raster von
-        // Filme, Serien, Merkliste und Genre, die Startreihen und die Suche
-        // gehoeren dem vorigen Konto. Was nicht im Bild ist, zeigte beim
-        // Zurueckkehren sonst kurz den alten Stand, bevor der neue kommt.
-        // Der neue Inhalt kommt gestaffelt (``rasterAntwort``).
-        for was in Array(rasterFeld.keys) {
-            rasterAuftrag[was, default: 0] += 1
-            rasterLaedt.remove(was)
-            rasterLaderZeigen(was, false)
-            rasterItems[was] = []
-            rasterQuelle[was] = nil
-            rasterSieb[was] = nil
-            rasterRoh[was] = nil
-            if let raster = rasterFeld[was] { rasterFuellen(raster, []) }
-            if let zahl = zahlFeld[was] { gtk_widget_set_visible(zahl, 0) }
-            if let feld = leerFeld[was] { leeren(feld); gtk_widget_set_visible(feld, 0) }
-            rasterStaffeln.insert(was)
+    /// **And the rows are not cleared.** On Apple that cost two rounds: clearing
+    /// first and loading later detaches every tile, and `AsyncImage` then cancels
+    /// its fetch. Here ``railsShow(_:)`` replaces rows only once the new ones
+    /// are there, so this function does not touch the row stack at all.
+    private func cleanUpPostSwitch() {
+        accountSwitch += 1
+        // **Remote control belongs here, and it is not obvious.** Otherwise it keeps
+        // running with the previous account's credential, and the iPhone would see the
+        // Linux session under the wrong name.
+        Task.detached { [remoteControl] in await remoteControl?.finish() }
+        remoteControl = nil
+        takeoverRun?.cancel()
+        takeoverRun = nil
+        takeoverOfferings = []
+        // Leave the group, along with the previous account's strip and offers.
+        sharedEnd()
+        // Detail pages and loaded sections belong to the previous account. Without
+        // this, movies and series kept showing the previous account's titles after
+        // a switch: `loaded` was only cleared on sign-out, and a section loads
+        // exactly once.
+        pagesStack.removeAll()
+        loaded.removeAll()
+        openSubpage = nil
+        // **And an open library page.** It shows a collection of the previous
+        // account; on the Mac `LibraryView` resets it to `nil` on an account
+        // switch. Here it was only cleared on a section change, so the other
+        // account's collection stayed visible.
+        openCollection = nil
+        offeringWaiting = []
+        // **Remove old content immediately** (Mac `accountSwitchFade`): the grids
+        // of movies, series, watchlist and genre, the home rows and the search belong
+        // to the previous account. Whatever is off-screen would otherwise briefly show
+        // the old state on return before the new one arrives. New content arrives
+        // staggered (``gridResponse``).
+        for was in Array(gridField.keys) {
+            gridJob[was, default: 0] += 1
+            gridLoads.remove(was)
+            gridLoaderShow(was, false)
+            gridItems[was] = []
+            gridSource[was] = nil
+            gridFilter[was] = nil
+            gridRaw[was] = nil
+            if let grid = gridField[was] { gridFill(grid, []) }
+            if let figure = numberField[was] { gtk_widget_set_visible(figure, 0) }
+            if let inputField = emptyField[was] { wipe(inputField); gtk_widget_set_visible(inputField, 0) }
+            gridSeasons.insert(was)
         }
-        if let r = reihenstapel { leeren(r) }
-        suchergebnisseVerwerfen()
-        // Sammlungen und Anteile gehoeren dem vorigen Konto.
-        sammlungsverzeichnis = nil
-        bibliotheksanteile = [:]
-        angebotFuer = nil
-        // **Der Bereich bleibt, der Stapel geht** (G4). Wer aus „Filme" heraus
-        // umschaltet, steht danach auf der Wurzel von „Filme", nicht auf der
-        // Startseite — der Stapel gehoerte dem vorigen Konto, der Bereich
-        // nicht.
+        if let r = railsStack { wipe(r) }
+        discardSearchResults()
+        // Collections and shares belong to the previous account.
+        collectionDirectory = nil
+        libraryShares = [:]
+        offeringFor = nil
+        // **The section stays, the stack goes.** Switching from "Filme" leaves the
+        // user on the root of "Filme", not on the home screen: the stack belonged to
+        // the previous account, the section did not.
         //
-        // **Er gilt hier schon als geladen, obwohl nichts geladen ist.**
-        // ``zeige(_:)`` wuerde sonst gleich hier ``startseiteLaden()`` rufen —
-        // und zwar mit dem **alten** Client, denn der neue steht erst nach
-        // `setSession` bereit. Zwei Ladungen liefen dann um die Wette, und wer
-        // gewinnt, entschied die Antwortzeit des Servers. Geladen wird gleich
-        // in ``sitzungEinsetzen(_:servername:)``, mit dem richtigen Client.
-        geladen.insert(bereich)
-        zeige(bereich)
-        geladen.removeAll()
+        // **It counts as loaded here although nothing is loaded.** ``show(_:)``
+        // would otherwise call ``homeLoad()`` right here, with the **old**
+        // client, since the new one is only ready after `setSession`. Two loads would
+        // race, and the server's response time would decide the winner. Loading
+        // happens in ``sessionInSet(_:serverName:)`` with the right client.
+        loaded.insert(section)
+        show(section)
+        loaded.removeAll()
     }
 
-    // MARK: Weiteres Konto
+    // MARK: Add another account
 
-    /// Meldet ein weiteres Konto mit Name und Passwort an.
+    /// Signs in another account with name and password.
     ///
-    /// **Die Seite schliesst sich selbst — aber nur, wenn es geklappt hat.**
-    /// Bei einem Fehler bleibt sie stehen und zeigt ihn; sie hier zu
-    /// schliessen hiesse, die Meldung zu verschlucken.
-    /// **Antwortet dort ein Jellyfin?**
+    /// **The page closes itself, but only on success.** On an error it stays and
+    /// shows it; closing it here would swallow the message.
+    /// **Does a Jellyfin answer there?**
     ///
-    /// `/System/Info/Public` braucht keine Anmeldung — derselbe Endpunkt, den
-    /// die erste Anmeldung nimmt. Erst wenn er antwortet, gibt es ein
-    /// Formular; sonst tippt man Name und Passwort in eine Adresse, die es
-    /// nicht gibt.
-    func serverPruefen(_ eingabe: String) {
-        let roh = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !roh.isEmpty, let url = AppModelURLNormalizer.normalize(roh) else {
-            serverAufnahmeFehlerZeigen(uebersetzt("Diese Adresse ergibt keinen Server."))
+    /// `/System/Info/Public` needs no sign-in and is the same endpoint the first
+    /// sign-in uses. Only once it answers is there a form; otherwise name and
+    /// password would be typed for an address that does not exist.
+    func serverCheck(_ typedInput: String) {
+        let raw = typedInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let url = AppModelURLNormalizer.normalize(raw) else {
+            serverOnboardingErrorShow(translated("Diese Adresse ergibt keinen Server."))
             return
         }
-        gtk_widget_set_sensitive(serverAufnahmeKnopf, 0)
-        hauptknopfBeschriften(serverAufnahmeKnopf, uebersetzt("Prüfe …"))
-        let koepfe = serverAufnahmeKoepfe
-        serverAufnahmeKoepfe = []
-        let vorher = Eigenkoepfe.eingetragen(fuer: url)
-        if !koepfe.isEmpty { Eigenkoepfe.setzen(koepfe, fuer: url) }
+        gtk_widget_set_sensitive(serverOnboardingButton, 0)
+        primaryButtonLabel(serverOnboardingButton, translated("Prüfe …"))
+        let headers = serverOnboardingHeaders
+        serverOnboardingHeaders = []
+        let before = OwnHeaders.registered(for: url)
+        if !headers.isEmpty { OwnHeaders.setDown(headers, for: url) }
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name, clientVersion: Geraet.fassung)
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name, clientVersion: Device.version)
             do {
-                let auskunft = try await c.erreichbarkeitPruefen()
-                if !koepfe.isEmpty { Speicher.koepfeSichern(koepfe, fuer: url) }
-                aufHauptfaden {
-                    self.serverAufnahmeURL = url
-                    var stuecke: [String] = []
-                    if let n = auskunft.serverName, !n.isEmpty { stuecke.append(n) }
-                    if let v = auskunft.version, !v.isEmpty { stuecke.append("Jellyfin \(v)") }
-                    if stuecke.isEmpty { stuecke.append(url.host() ?? url.absoluteString) }
-                    self.serverAufnahmeGeprueft = stuecke.joined(separator: " · ")
-                    self.serverAufnahmeFehler = ""
-                    self.unterseiteOeffnen(.serverAufnahme, schub: .ohne)
+                let inquiry = try await c.checkReachability()
+                if !headers.isEmpty { Cache.headersSafe(headers, for: url) }
+                onMainThread {
+                    self.serverOnboardingURL = url
+                    var pieces: [String] = []
+                    if let n = inquiry.serverName, !n.isEmpty { pieces.append(n) }
+                    if let v = inquiry.version, !v.isEmpty { pieces.append("Jellyfin \(v)") }
+                    if pieces.isEmpty { pieces.append(url.host() ?? url.absoluteString) }
+                    self.serverOnboardingChecked = pieces.joined(separator: " · ")
+                    self.serverOnboardingError = ""
+                    self.subpageOpen(.serverOnboarding, push: .without)
                 }
             } catch {
-                if !koepfe.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
-                aufHauptfaden {
-                    gtk_widget_set_sensitive(self.serverAufnahmeKnopf, 1)
-                    hauptknopfBeschriften(self.serverAufnahmeKnopf, uebersetzt("Weiter"))
-                    self.serverAufnahmeFehlerZeigen(lesbarerFehler(error))
+                if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
+                onMainThread {
+                    gtk_widget_set_sensitive(self.serverOnboardingButton, 1)
+                    primaryButtonLabel(self.serverOnboardingButton, translated("Weiter"))
+                    self.serverOnboardingErrorShow(readableError(error))
                 }
             }
         }
     }
 
-    func serverAufnahmeFehlerZeigen(_ text: String) {
-        serverAufnahmeFehler = text
-        guard serverAufnahmeStand != nil else { return }
-        gtk_label_set_text(OpaquePointer(serverAufnahmeStand), text)
-        gtk_widget_set_visible(serverAufnahmeStand, text.isEmpty ? 0 : 1)
+    func serverOnboardingErrorShow(_ text: String) {
+        serverOnboardingError = text
+        guard serverOnboardingState != nil else { return }
+        gtk_label_set_text(OpaquePointer(serverOnboardingState), text)
+        gtk_widget_set_visible(serverOnboardingState, text.isEmpty ? 0 : 1)
     }
 
-    /// Anmeldung an einem **anderen** Server als dem verbundenen.
+    /// Sign-in to a **different** server than the connected one.
     ///
-    /// **`sitzungAufnehmen` traegt das schon.** `Kontenbund.aufnehmen` prueft
-    /// seit dem 11.09.2026 nicht mehr, ob die Sitzung zum selben Server
-    /// gehoert — ein Bund haelt beliebig viele. Hier ist also nichts
-    /// Besonderes zu tun ausser der eigenen Adresse.
-    func amNeuenServerAnmelden(benutzer: String, passwort: String) {
-        let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let url = serverAufnahmeURL else { return }
-        gtk_widget_set_sensitive(serverAufnahmeKnopf, 0)
-        hauptknopfBeschriften(serverAufnahmeKnopf, uebersetzt("Melde an …"))
-        serverAufnahmeFehlerZeigen("")
+    /// **`sessionRecord` already handles this.** `AccountBundle.record` no
+    /// longer checks whether the session belongs to the same server: a bundle can
+    /// hold any number. Nothing special is needed here except the address itself.
+    func atNewServerSignIn(user: String, password: String) {
+        let name = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let url = serverOnboardingURL else { return }
+        gtk_widget_set_sensitive(serverOnboardingButton, 0)
+        primaryButtonLabel(serverOnboardingButton, translated("Melde an …"))
+        serverOnboardingErrorShow("")
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name, clientVersion: Geraet.fassung)
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name, clientVersion: Device.version)
             do {
-                let sitzung = try await c.authenticate(username: name, password: passwort)
-                let auskunft = try? await c.publicSystemInfo()
-                aufHauptfaden {
-                    self.serverAufnahmeFehler = ""
-                    self.kontoPerCode = false
-                    self.sitzungAufnehmen(sitzung, servername: auskunft?.serverName)
-                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                let session = try await c.authenticate(username: name, password: password)
+                let inquiry = try? await c.publicSystemInfo()
+                onMainThread {
+                    self.serverOnboardingError = ""
+                    self.accountPerCode = false
+                    self.sessionRecord(session, serverName: inquiry?.serverName)
+                    self.subpageOpen(.profile, push: .without)
                 }
             } catch {
-                aufHauptfaden {
-                    gtk_widget_set_sensitive(self.serverAufnahmeKnopf, 1)
-                    hauptknopfBeschriften(self.serverAufnahmeKnopf, uebersetzt("Anmelden"))
-                    self.serverAufnahmeFehlerZeigen(lesbarerFehler(error))
+                onMainThread {
+                    gtk_widget_set_sensitive(self.serverOnboardingButton, 1)
+                    primaryButtonLabel(self.serverOnboardingButton, translated("Anmelden"))
+                    self.serverOnboardingErrorShow(readableError(error))
                 }
             }
         }
     }
 
-    func kontoAnmelden(benutzer: String, passwort: String) {
-        let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let url = bund?.serverURL else { return }
-        gtk_widget_set_sensitive(kontoKnopf, 0)
-        hauptknopfBeschriften(kontoKnopf, uebersetzt("Melde an …"))
-        gtk_widget_set_visible(kontoStandfeld, 0)
+    func accountSignIn(user: String, password: String) {
+        let name = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let url = bundle?.serverURL else { return }
+        gtk_widget_set_sensitive(accountButton, 0)
+        primaryButtonLabel(accountButton, translated("Melde an …"))
+        gtk_widget_set_visible(accountStateField, 0)
 
-        let servername = self.servername.isEmpty ? nil : self.servername
+        let serverName = self.serverName.isEmpty ? nil : self.serverName
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name,
-                                   clientVersion: Geraet.fassung)
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name,
+                                   clientVersion: Device.version)
             do {
-                let sitzung = try await c.authenticate(username: name, password: passwort)
-                aufHauptfaden {
-                    self.kontoFehler = ""
-                    self.kontoPerCode = false
-                    self.sitzungAufnehmen(sitzung, servername: servername)
-                    // Zurueck aufs Profil — dort steht der Streifen, in dem
-                    // das neue Konto jetzt mit Ring und Punkt steht. Das ist
-                    // die Antwort auf „Hinzufuegen".
-                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                let session = try await c.authenticate(username: name, password: password)
+                onMainThread {
+                    self.accountError = ""
+                    self.accountPerCode = false
+                    self.sessionRecord(session, serverName: serverName)
+                    // Back to the profile, where the strip shows the new account with ring and
+                    // dot. That is the answer to "Add".
+                    self.subpageOpen(.profile, push: .without)
                 }
             } catch {
-                aufHauptfaden {
-                    gtk_widget_set_sensitive(self.kontoKnopf, 1)
-                    hauptknopfBeschriften(self.kontoKnopf, uebersetzt("Hinzufügen"))
-                    self.kontoFehlerZeigen(lesbarerFehler(error))
+                onMainThread {
+                    gtk_widget_set_sensitive(self.accountButton, 1)
+                    primaryButtonLabel(self.accountButton, translated("Hinzufügen"))
+                    self.accountErrorShow(readableError(error))
                 }
             }
         }
     }
 
-    /// Holt einen Quick-Connect-Code und wartet, bis er freigegeben wird.
-    func kontoCodeHolen() {
-        guard let url = bund?.serverURL else { return }
-        let servername = self.servername.isEmpty ? nil : self.servername
-        kontoCodelauf = Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
-                                   deviceName: Geraet.name,
-                                   clientVersion: Geraet.fassung)
-            let vorgang: Anmeldecode
-            do { vorgang = try await c.quickConnectStarten() } catch {
+    /// Fetches a Quick Connect code and waits until it is approved.
+    func accountCodeFetch() {
+        guard let url = bundle?.serverURL else { return }
+        let serverName = self.serverName.isEmpty ? nil : self.serverName
+        accountCodeRun = Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
+                                   deviceName: Device.name,
+                                   clientVersion: Device.version)
+            let preGait: LoginCode
+            do { preGait = try await c.quickConnectStart() } catch {
                 if Task.isCancelled { return }
-                let text = lesbarerFehler(error)
-                aufHauptfaden { self.kontoFehlerZeigen(text) }
+                let text = readableError(error)
+                onMainThread { self.accountErrorShow(text) }
                 return
             }
             if Task.isCancelled { return }
-            aufHauptfaden {
-                self.kontoCode = vorgang.code
-                gtk_label_set_text(OpaquePointer(self.kontoCodefeld), vorgang.code)
+            onMainThread {
+                self.accountCode = preGait.code
+                gtk_label_set_text(OpaquePointer(self.accountCodeField), preGait.code)
             }
-            // Frist, Takt, Netzfehler: ``Quickconnectwarten`` im Paket. Die
-            // Restzeit kommt sekundenweise, nicht im Takt der Abfrage.
-            for await ereignis in c.quickConnectWarten(vorgang) {
+            // Deadline, interval, network errors: ``Quickconnectwarten`` in the package.
+            // The remaining time arrives every second, not at the poll interval.
+            for await event in c.quickConnectWait(preGait) {
                 if Task.isCancelled { return }
-                switch ereignis {
-                case let .rest(sekunden):
-                    aufHauptfaden { self.kontoRestZeigen(sekunden) }
-                case let .ende(letzte):
-                    let text = Quickconnectfrist.schlusstext(letzte: letzte)
-                    aufHauptfaden {
-                        self.kontoRestZeigen(nil)
-                        self.kontoFehlerZeigen(text)
+                switch event {
+                case let .rest(seconds):
+                    onMainThread { self.accountRemainingShow(seconds) }
+                case let .end(last):
+                    let text = QuickConnectDeadline.endText(last: last)
+                    onMainThread {
+                        self.accountRemainingShow(nil)
+                        self.accountErrorShow(text)
                     }
                     return
-                case .freigegeben:
+                case .released:
                     do {
-                        let sitzung = try await c.anmeldenMitQuickConnect(vorgang)
+                        let session = try await c.signInWithQuickConnect(preGait)
                         if Task.isCancelled { return }
-                        aufHauptfaden {
-                            self.kontoCode = ""
-                            self.kontoFehler = ""
-                            self.kontoPerCode = false
-                            self.kontoCodelauf = nil
-                            self.sitzungAufnehmen(sitzung, servername: servername)
-                            self.unterseiteOeffnen(.profil, schub: .ohne)
+                        onMainThread {
+                            self.accountCode = ""
+                            self.accountError = ""
+                            self.accountPerCode = false
+                            self.accountCodeRun = nil
+                            self.sessionRecord(session, serverName: serverName)
+                            self.subpageOpen(.profile, push: .without)
                         }
                     } catch {
-                        let text = lesbarerFehler(error)
-                        aufHauptfaden {
-                            self.kontoRestZeigen(nil)
-                            self.kontoFehlerZeigen(text)
+                        let text = readableError(error)
+                        onMainThread {
+                            self.accountRemainingShow(nil)
+                            self.accountErrorShow(text)
                         }
                     }
                     return
@@ -1256,2868 +1218,2592 @@ final class App: @unchecked Sendable {
         }
     }
 
-    /// „Läuft ab in 4:58" — `nil` blendet die Zeile aus.
-    private func kontoRestZeigen(_ sekunden: Int?) {
-        guard let feld = kontoRestfeld else { return }
-        guard let sekunden, sekunden > 0 else {
-            gtk_widget_set_visible(feld, 0)
+    /// "Läuft ab in 4:58"; `nil` hides the line.
+    private func accountRemainingShow(_ seconds: Int?) {
+        guard let inputField = accountRemainingField else { return }
+        guard let seconds, seconds > 0 else {
+            gtk_widget_set_visible(inputField, 0)
             return
         }
-        // Derselbe Schlüssel wie auf Apple: die Sekunden kommen zweistellig
-        // als fertiger Text, der Katalog kennt nur Minuten und Rest.
-        let text = String(format: uebersetzt("Läuft ab in %lld:%@"),
-                          sekunden / 60, String(format: "%02d", sekunden % 60))
-        gtk_label_set_text(OpaquePointer(feld), text)
-        gtk_widget_set_visible(feld, 1)
+        // Same key as on Apple: seconds arrive as a finished two-digit text, the
+        // catalog only knows minutes and rest.
+        let text = String(format: translated("Läuft ab in %lld:%@"),
+                          seconds / 60, String(format: "%02d", seconds % 60))
+        gtk_label_set_text(OpaquePointer(inputField), text)
+        gtk_widget_set_visible(inputField, 1)
     }
 
-    /// Eine Meldung in die Zeile unter den Feldern — **nicht** dorthin, wo der
-    /// Code steht. Die beiden auseinanderzuhalten ist der halbe Grund, warum
-    /// diese Seite eine eigene ist.
-    private func kontoFehlerZeigen(_ text: String) {
-        kontoFehler = text
-        guard let feld = kontoStandfeld else { return }
-        gtk_label_set_text(OpaquePointer(feld), text)
-        gtk_widget_set_visible(feld, text.isEmpty ? 0 : 1)
+    /// A message in the line below the fields, **not** where the code is. Keeping
+    /// the two apart is half the reason this page is separate.
+    private func accountErrorShow(_ text: String) {
+        accountError = text
+        guard let inputField = accountStateField else { return }
+        gtk_label_set_text(OpaquePointer(inputField), text)
+        gtk_widget_set_visible(inputField, text.isEmpty ? 0 : 1)
     }
 
-    private func bundSichern(servername: String?) {
-        guard let bund else { return }
-        Speicher.bundSchreiben(.init(bund: bund, servername: servername))
+    private func saveBundle(serverName: String?) {
+        guard let bundle else { return }
+        Cache.writeBundle(.init(bundle: bundle, serverName: serverName))
     }
 
-    /// Setzt eine Sitzung in Betrieb: Client, Bildadressen, Anzeige, Laden.
-    private func sitzungEinsetzen(_ sitzung: Session, servername: String?) {
-        let serverURL = sitzung.serverURL
-        let token = sitzung.accessToken
-        let benutzerID = sitzung.userID
-        let benutzername = sitzung.userName
-        // **Mit Fassung.** Ohne `clientVersion` greift der Standard
-        // `Fassungsnummer.ausDemBuendel` — ein Buendel gibt es hier nicht, und
-        // im Jellyfin-Dashboard stand „Swiftly Player unbekannt". Das ist der
-        // Weg bei jedem Start mit gespeicherter Sitzung.
+    /// Puts a session into service: client, image addresses, display, loading.
+    private func sessionInSet(_ session: Session, serverName: String?) {
+        let serverURL = session.serverURL
+        let token = session.accessToken
+        let userIdentifier = session.userID
+        let username = session.userName
+        // **With version.** Without `clientVersion` the default
+        // `Fassungsnummer.outBundle` applies; there is no bundle here, and the
+        // Jellyfin dashboard showed "Swiftly Player unbekannt". This is the path on
+        // every start with a stored session.
         let c = JellyfinClient(baseURL: serverURL,
-                               deviceID: Geraet.kennung,
-                               deviceName: Geraet.name,
-                               clientVersion: Geraet.fassung)
-        Protokoll.schreib("[Sitzung] Client-Fassung \(Geraet.fassung)")
+                               deviceID: Device.identifier,
+                               deviceName: Device.name,
+                               clientVersion: Device.version)
+        AppLog.writeOut("[Sitzung] Client-Fassung \(Device.version)")
         fflush(nil)
-        adressen = Bildadresse(basis: serverURL, token: token)
-        self.benutzerID = benutzerID
-        // **Direct Play und Bitratengrenze gehören zum Server** (wie
-        // `AppModel.serverSchluessel` auf Apple) — ein Server wandelt
-        // vielleicht um, der andere nicht.
-        wahlen.aktiverServer = serverURL.absoluteString
-        // Die Vorgabe des vorigen Kontos gilt nicht fuer dieses.
-        naechsteAutomatischKonto = nil
-        downloadrecht = .unbekannt
-        umwandelnErlaubt = true
-        downloadqualitaetWaehlbar = true
-        // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
-        // Server tragen dieselben Kennungen; ohne das Konto kaeme der
-        // Fortschritt des einen an den Titel des anderen.
-        downloads.beiAenderung = { [weak self] in
-            guard let self, self.bereich == .downloads else { return }
-            self.downloadseiteFuellen()
+        addresses = ImageAddress(base: serverURL, token: token)
+        self.userIdentifier = userIdentifier
+        // **Direct Play and the bitrate limit belong to the server** (like
+        // `AppModel.serverKey` on Apple): one server may transcode, another
+        // not.
+        selection.activeServer = serverURL.absoluteString
+        // The previous account's default does not apply to this one.
+        nextAutomaticAccount = nil
+        downloadPermission = .unknown
+        convertAllowed = true
+        downloadQualitySelectable = true
+        // **Downloads belong to the account.** Two accounts on one server carry the
+        // same IDs; without the account, one's progress would show on the other's
+        // title.
+        downloads.change = { [weak self] in
+            guard let self, self.section == .downloads else { return }
+            self.downloadsPageFill()
         }
-        sitzungAnzeigen(benutzername: benutzername, servername: servername)
-        stapelWechseln(seiten, zu: "start")
+        sessionShow(username: username, serverName: serverName)
+        switchStack(pages, toward: "start")
 
-        // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
-        // deshalb nur mit `await`; erst danach darf geladen werden.
+        // **`JellyfinClient` is an actor.** Setting the session therefore needs
+        // `await`; only afterwards may loading start.
         Task.detached { [self] in
-            await c.setSession(sitzung)
-            aufHauptfaden {
+            await c.setSession(session)
+            onMainThread {
                 self.client = c
-                self.downloads.anmelden(client: c, konto: benutzerID)
-                self.kontovorgabenHolen(c)
-                // **H6/H9: was der Server inzwischen sagt.** Auf Apple laeuft
-                // derselbe Abgleich bei jedem Erscheinen der Hauptansicht.
-                self.downloads.nachziehen()
-                self.geladen = [.start]
-                self.startseiteLaden()
-                self.bibliothekenLaden()
-                // **Und der Bereich, auf dem man steht, falls es nicht die
-                // Startseite ist.** Nach einem Kontowechsel bleibt der Bereich
-                // stehen (G4) — ohne diese Zeile stuende dort die Liste des
-                // vorigen Kontos, denn `geladen` kennt nur `.start`, und
-                // niemand fragt nach.
-                if self.bereich != .start { self.zeige(self.bereich) }
-                // **Erst hier, nicht früher.** `client` wird oben noch nicht
-                // gesetzt — es geht über den Akteur und ist erst nach
-                // `setSession` da. Alles, was mit `guard let client` beginnt,
-                // stieg vorher stumm wieder aus: die Fernsteuerung meldete
-                // ihre Fähigkeiten nie, und deshalb sah das iPhone die
-                // Linux-Sitzung nicht als bedienbar. Der Übernahmetakt fiel
-                // nicht auf, weil er ohnehin alle zehn Sekunden fragt und
-                // sich damit selbst heilte.
-                self.serverstandHolen()
-                self.fernsteuerungStarten()
-                self.uebernahmetaktStarten()
-                self.gemeinsamStarten()
+                self.downloads.signIn(client: c, account: userIdentifier)
+                self.accountPreGiftFetch(c)
+                // **What the server says by now.** On Apple the same reconciliation runs
+                // every time the main view appears.
+                self.downloads.follow()
+                self.loaded = [.start]
+                self.homeLoad()
+                self.librariesLoad()
+                // **And the section the user is on, if it is not the home screen.** After
+                // an account switch the section stays, and without this line it would show
+                // the previous account's list, since `loaded` only knows `.start` and nobody
+                // asks.
+                if self.section != .start { self.show(self.section) }
+                // **Only here, not earlier.** `client` is not set above; it goes through the
+                // actor and is only there after `setSession`. Everything starting with
+                // `guard let client` used to exit silently: the remote control never reported
+                // its capabilities, so the iPhone did not see the Linux session as
+                // controllable. The takeover poll did not notice because it asks every ten
+                // seconds anyway and healed itself.
+                self.serverStateFetch()
+                self.remoteControlStart()
+                self.takeoverTickStart()
+                self.sharedStart()
             }
         }
     }
 
-    // MARK: - Das Fenster nach der Anmeldung
+    // MARK: - The window after sign-in
 
-    private var titelzeile: Widget!
-    var inhalt: Widget!            // GtkStack: start / filme / serien / suche
-    /// Die Bühne: ein `GtkFixed`, auf dem die Listenebene und die beiden
-    /// Detailebenen übereinanderliegen. Sie schneidet ab, was hinausragt.
-    var buehne: Widget!
-    /// Welche Ebene gerade obenauf liegt.
-    var obenAuf: Widget!
-    /// Die zuletzt gemeldete Grösse der Bühne.
-    var buehnenBreite: Int32 = -1
-    var buehnenHoehe: Int32 = -1
-    /// **Nach Bereich, nicht nach Platz in der Liste.** Vorher lag hier ein
-    /// Feld parallel zu `Bereich.allCases`; sobald die Leiste in zwei Gruppen
-    /// zerfaellt und eine davon nur manchmal da ist, stimmt der Platz nicht
-    /// mehr mit der Aufzaehlung ueberein — und dann faerbt sich die falsche
-    /// Zeile ein. Derselbe Umbau wie bei den Rasterseiten.
-    private var bereichsknoepfe: [Bereich: Widget] = [:]
-    /// Die Rubrik „Meins" und ihre Zeilen — sie wird neu gefuellt, wenn der
-    /// Downloadschalter umgelegt wird.
-    private var meinsliste: Widget!
-    /// **Welche Sammlung gerade als Unterseite offen ist** — `nil`, wenn
-    /// keine. `art` sagt, ob ihre Filme oder ihre Serien gemeint sind
-    /// (Mac `Sammlungsseite`).
-    var offeneSammlung: (item: Item, art: String?)?
-    /// Woher die Sammlung geoeffnet wurde — dorthin fuehrt der Pfeil, und
-    /// diese Zeile der Leiste bleibt hervorgehoben, wie auf dem Mac, wo die
-    /// Sammlung im Stapel ihres Bereichs liegt.
-    var sammlungHerkunft: Bereich = .filme
-    /// **Filter und Sortierung einer Sammlung werden nicht gemerkt** (Mac
-    /// `MacSammlung.swift`): eine Sammlung ist kein Ort, an den man
-    /// zurueckkehrt, sondern ein Blick in eine Reihe. Voreingestellt nach
-    /// Jahr, aufsteigend (``Regalquelle/richtung(_:)``).
-    var sammlungSortierung: Sortierung = .erscheinung
-    var sammlungFilter: Bibliotheksfilter = .alle
-    /// Der Titel der Sammlungsseite. Er wechselt mit jeder Sammlung; die
-    /// Bereichsseiten tragen ihren Titel fest.
-    private var sammlungstitel: Widget!
-    /// Der Titel der Genre-Seite. Er trägt den **unübersetzten** Namen vom
-    /// Server (E7).
-    private var gattungstitel: Widget!
-    /// Je Rasterseite die Zeile mit dem Servernamen (E15).
-    private var serverzeilen: [Bereich: Widget] = [:]
-    /// Welches Genre gerade offen ist.
-    var offeneGattung: String?
-    /// Welche Gattung die Merkliste zeigt (E25).
-    /// **Gesichert, nicht nur gemerkt.** Sie war ein reiner Speicherwert und
-    /// stand nach jedem Start wieder auf „Filme & Serien"; auf dem Mac liegt
-    /// sie in `UserDefaults` (`Merklistenmodell.swift:24-25`).
-    var merkgattung: Merkgattung {
-        get { Merkgattung(rawValue: wahlen.merkgattung) ?? .alle }
-        set { wahlen.merkgattung = newValue.rawValue; wahlen.sichern() }
+    private var titleLine: Widget!
+    var content: Widget!            // GtkStack: start / movies / series / search
+    /// The stage: a `GtkFixed` on which the list layer and the two detail layers
+    /// lie on top of each other. It clips whatever overhangs.
+    var stage: Widget!
+    /// Which layer is currently on top.
+    var onTop: Widget!
+    /// The stage size reported last.
+    var stageWidth: Int32 = -1
+    var stageHeight: Int32 = -1
+    /// **By section, not by position in the list.** This used to be an array
+    /// parallel to `Region.allCases`; once the bar splits into two groups and one
+    /// of them is only sometimes present, positions no longer match the enum and
+    /// the wrong row gets highlighted. Same rework as for the grid pages.
+    private var sectionButtons: [Region: Widget] = [:]
+    /// The "Meins" group and its rows; rebuilt when the downloads switch is
+    /// toggled.
+    private var myList: Widget!
+    /// **Which collection is currently open as a subpage**, `nil` if none. `art`
+    /// says whether its movies or its series are meant (Mac `CollectionDetailPage`).
+    var openCollection: (item: Item, art: String?)?
+    /// Where the collection was opened from. The back arrow leads there, and that
+    /// sidebar row stays highlighted, as on the Mac where the collection lies in
+    /// its section's stack.
+    var collectionOrigin: Region = .movies
+    /// **Filter and sort of a collection are not remembered** (Mac
+    /// `MacCollection.swift`): a collection is not a place to return to but a view
+    /// into a row. Defaults to year, ascending (``Regalquelle/richtung(_:)``).
+    var collectionSorting: Sorting = .erscheinung
+    var collectionFilter: LibraryFilter = .all
+    /// The title of the collection page. It changes with every collection; the
+    /// section pages have a fixed title.
+    private var collectionTitle: Widget!
+    /// The title of the genre page. It carries the **untranslated** name from the
+    /// server.
+    private var genreTitle: Widget!
+    /// The server-name line per grid page.
+    private var serverRows: [Region: Widget] = [:]
+    /// Which genre is currently open.
+    var openGenre: String?
+    /// Which kind the watchlist shows.
+    /// **Persisted, not just remembered.** It was a plain in-memory value and reset
+    /// to "Filme & Serien" on every start; on the Mac it lives in `UserDefaults`
+    /// (`WatchlistModel.swift`).
+    var savedGenre: RememberGenre {
+        get { RememberGenre(rawValue: selection.savedGenre) ?? .all }
+        set { selection.savedGenre = newValue.rawValue; selection.secure() }
     }
-    private var profilbild: Widget!
-    private var profilname: Widget!
-    private var profilserver: Widget!
-    /// **Die Rasterseiten liegen in Woerterbuechern, nicht in Paaren.**
+    private var profileImage: Widget!
+    private var profileName: Widget!
+    private var profileServer: Widget!
+    /// **The grid pages live in dictionaries, not pairs.**
     ///
-    /// Vorher stand ueberall `was == .filme ? filme… : serien…` — an acht
-    /// Stellen. Mit einem dritten Bereich (Merkliste) waere daraus ueberall
-    /// eine Dreierkette geworden, und jede vergessene Stelle haette still
-    /// die falsche Seite gefuellt. Ein Woerterbuch kennt keinen Sonderfall.
-    private var rasterFeld: [Bereich: Widget] = [:]
-    private var zahlFeld: [Bereich: Widget] = [:]
-    var suchfeld: Widget!
-    /// „Zuletzt gesucht" — steht, solange das Feld leer ist.
-    private var suchverlaufblock: Widget!
-    /// Ob die beiden Bloecke der Suche leer sind — „Nichts gefunden" gilt nur,
-    /// wenn **beide** es sind.
-    var eigeneTrefferLeer = true
-    var seerrTrefferLeer = true
-    private var suchhinweis: Widget!
-    private var suchverlaufliste: Widget!
-    var suchraster: Widget!
-    var suchleer: Widget!
-    /// Statt „Nichts gefunden", wenn der Server gar nicht geantwortet hat.
-    var suchstoerung: Widget!
-    var geladen: Set<Bereich> = []
-    /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
-    /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
-    /// findet zurück, wo er war.
-    private var filter: [Bereich: Bibliotheksfilter] {
+    /// Previously there was `was == .movies ? movies... : seriesList...` in eight
+    /// places. With a third section (watchlist) each would have become a
+    /// three-way chain, and every forgotten spot would silently have filled the
+    /// wrong page. A dictionary has no special case.
+    private var gridField: [Region: Widget] = [:]
+    private var numberField: [Region: Widget] = [:]
+    var searchField: Widget!
+    /// "Zuletzt gesucht": shown while the field is empty.
+    private var searchHistoryBlock: Widget!
+    /// Whether both search blocks are empty; "Nichts gefunden" only applies if
+    /// **both** are.
+    var ownHitEmpty = true
+    var seerrHitEmpty = true
+    private var searchHint: Widget!
+    private var searchHistoryList: Widget!
+    var searchGrid: Widget!
+    var searchEmpty: Widget!
+    /// Shown instead of "Nichts gefunden" when the server did not answer at all.
+    var searchDisturbance: Widget!
+    var loaded: Set<Region> = []
+    /// Filter and sort, separate per section. On the Mac each section keeps its
+    /// own state, so switching between movies and series returns to where the user
+    /// was.
+    private var filter: [Region: LibraryFilter] {
         get {
-            var d: [Bereich: Bibliotheksfilter] = [:]
-            for (k, v) in wahlen.filterJeOrt {
-                if let b = Bereich.allCases.first(where: { $0.kennung == k }),
-                   let f = Bibliotheksfilter(rawValue: v) { d[b] = f }
+            var d: [Region: LibraryFilter] = [:]
+            for (k, v) in selection.filterPerPlace {
+                if let b = Region.allCases.first(where: { $0.identifier == k }),
+                   let f = LibraryFilter(rawValue: v) { d[b] = f }
             }
             return d
         }
         set { }
     }
-    /// **Die Merkliste startet auf „Zuletzt", nicht auf A–Z.** Das ist die
-    /// Reihenfolge, in der man eine Merkliste liest — was zuletzt gemerkt
-    /// wurde, steht oben. Auf Apple ist es die Vorgabe von
-    /// `Merklistenmodell.sortierung`; hier stand sie nirgends, also griff
-    /// `?? .name`.
-    /// Was gerade gilt — gelesen aus ``Wahlen``, geschrieben ueber
-    /// ``sortierungSetzen(_:_:)``. Die Merkliste startet auf „Zuletzt": das
-    /// ist die Reihenfolge, in der man eine Merkliste liest.
-    private var sortierung: [Bereich: Sortierung] {
+    /// **The watchlist starts on "Zuletzt", not A-Z.** That is the order a
+    /// watchlist is read in: the most recently added is on top. On Apple it is the
+    /// default of `WatchlistModel.sorting`; here it was defined nowhere, so
+    /// `?? .name` applied.
+    /// What currently applies, read from ``Wahlen`` and written via
+    /// ``sortingSet(_:_:)``.
+    private var sorting: [Region: Sorting] {
         get {
-            var d: [Bereich: Sortierung] = [.merkliste: .neueste]
-            for (k, v) in wahlen.sortierungJeOrt {
-                if let b = Bereich.allCases.first(where: { $0.kennung == k }),
-                   let s = Sortierung(rawValue: v) { d[b] = s }
+            var d: [Region: Sorting] = [.watchlist: .latest]
+            for (k, v) in selection.sortingPerPlace {
+                if let b = Region.allCases.first(where: { $0.identifier == k }),
+                   let s = Sorting(rawValue: v) { d[b] = s }
             }
             return d
         }
         set { }
     }
 
-    /// **Unter welchem Namen Filter und Sortierung eines Ortes liegen.**
+    /// **The name under which a place's filter and sort are stored.**
     ///
-    /// Ein Genre haelt seinen Stand ueber den Namen. **Eine Sammlung merkt
-    /// nichts** (``sammlungSortierung``); der Schluessel steht nur, damit es
-    /// ueberhaupt einen gibt.
-    private func ortschluessel(_ was: Bereich) -> String {
+    /// A genre keeps its state by name. **A collection remembers nothing**
+    /// (``collectionSorting``); the key exists only so there is one.
+    private func placeKey(_ was: Region) -> String {
         switch was {
-        case .sammlung:   return "sammlung"
-        case .gattung:    return "gattung:" + (offeneGattung ?? "")
-        default:          return was.kennung
+        case .collection:   return "sammlung"
+        case .genre:    return "gattung:" + (openGenre ?? "")
+        default:          return was.identifier
         }
     }
 
-    /// Was an diesem Ort gilt. **Die Merkliste startet auf „Zuletzt"** — das
-    /// ist die Reihenfolge, in der man eine Merkliste liest.
-    func sortierungVon(_ was: Bereich) -> Sortierung {
-        if was == .sammlung { return sammlungSortierung }
-        if let roh = wahlen.sortierungJeOrt[ortschluessel(was)],
-           let s = Sortierung(rawValue: roh) { return s }
-        return was == .merkliste ? .neueste : .name
+    /// What applies at this place. **The watchlist starts on "Zuletzt"**, the
+    /// order a watchlist is read in.
+    func sortingFrom(_ was: Region) -> Sorting {
+        if was == .collection { return collectionSorting }
+        if let raw = selection.sortingPerPlace[placeKey(was)],
+           let s = Sorting(rawValue: raw) { return s }
+        return was == .watchlist ? .latest : .name
     }
 
-    func filterVon(_ was: Bereich) -> Bibliotheksfilter {
-        if was == .sammlung { return sammlungFilter }
-        if let roh = wahlen.filterJeOrt[ortschluessel(was)],
-           let f = Bibliotheksfilter(rawValue: roh) { return f }
-        return .alle
+    func filterFrom(_ was: Region) -> LibraryFilter {
+        if was == .collection { return collectionFilter }
+        if let raw = selection.filterPerPlace[placeKey(was)],
+           let f = LibraryFilter(rawValue: raw) { return f }
+        return .all
     }
 
-    private func sortierungSetzen(_ was: Bereich, _ neu: Sortierung) {
-        if was == .sammlung { sammlungSortierung = neu; return }
-        wahlen.sortierungJeOrt[ortschluessel(was)] = neu.rawValue
-        wahlen.sichern()
+    private func sortingSet(_ was: Region, _ new: Sorting) {
+        if was == .collection { collectionSorting = new; return }
+        selection.sortingPerPlace[placeKey(was)] = new.rawValue
+        selection.secure()
     }
 
-    private func filterSetzen(_ was: Bereich, _ neu: Bibliotheksfilter) {
-        if was == .sammlung { sammlungFilter = neu; return }
-        wahlen.filterJeOrt[ortschluessel(was)] = neu.rawValue
-        wahlen.sichern()
+    private func filterSet(_ was: Region, _ new: LibraryFilter) {
+        if was == .collection { collectionFilter = new; return }
+        selection.filterPerPlace[placeKey(was)] = new.rawValue
+        selection.secure()
     }
-    private var chipzeilen: [Bereich: Widget] = [:]
-    /// Der Ersatzinhalt einer Rasterseite, die nichts hergibt — nur dort, wo
-    /// der Mac einen hat.
-    private var leerFeld: [Bereich: Widget] = [:]
-    /// Der kleine Titel in der `Bestandsleiste` je Bereich — er wechselt mit,
-    /// wenn eine Bibliothek oder ein Genre einen anderen Namen bringt.
-    var leistentitel: [Bereich: Widget] = [:]
+    private var chipRows: [Region: Widget] = [:]
+    /// The placeholder content of a grid page with nothing to show, only where
+    /// the Mac has one.
+    private var emptyField: [Region: Widget] = [:]
+    /// The small title in the `Bestandsleiste` per section; it changes when a
+    /// library or genre brings a different name.
+    var barTitle: [Region: Widget] = [:]
 
-    /// Zeichen, Ueberschrift und Erklaerung des Leerzustands, wortgleich vom
-    /// Mac. `nil` heisst: dort steht keiner.
-    private func leertext(_ was: Bereich) -> (String, String, String?)? {
+    /// Symbol, heading and explanation of the empty state, matching the Mac
+    /// word for word. `nil` means there is none.
+    private func emptyText(_ was: Region) -> (String, String, String?)? {
         switch was {
-        // `MerklisteView.swift:117-125`
-        case .merkliste:
-            return ("bookmark-new-symbolic", uebersetzt("Noch nichts gemerkt"),
-                    uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."))
-        // `GenreView.swift:56-60`
-        case .gattung:
-            return ("tag-symbolic", uebersetzt("Nichts in diesem Genre"),
-                    uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."))
+        // Mirrors the empty state in `WatchlistView.swift`.
+        case .watchlist:
+            return ("bookmark-new-symbolic", translated("Noch nichts gemerkt"),
+                    translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."))
+        // Mirrors the empty state in `GenreView.swift`.
+        case .genre:
+            return ("tag-symbolic", translated("Nichts in diesem Genre"),
+                    translated("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."))
         default: return nil
         }
     }
-    var benutzerID = ""
-    var suchtakt = 0
+    var userIdentifier = ""
+    var searchTick = 0
 
-    // MARK: Seitenstapel
+    // MARK: Page stacks
     //
-    /// **Je Bereich ein eigener Stapel**, wie `Navigator` auf dem Mac: wer
-    /// zwischen Filmen und Serien wechselt, findet zurück, wo er war.
-    var seitenstapel: [Bereich: [Item]] = [:]
-    /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
-    /// über eine Folge führte (A8).
-    var startStaffel: String?
-    /// Die Staffel**nummer**, über die man kam — zweiter Weg neben der
-    /// Kennung. Am Gerät gemessen liefert der Server an einer Folge nicht
-    /// immer eine `SeasonId`; dann greift der Kennungsvergleich ins Leere
-    /// und nur die Nummer trägt noch (A10).
-    var startStaffelNummer: Int?
-    /// Die Rolle, über die man auf eine Personenseite kam, und der Titel, in
-    /// dem sie gespielt wurde.
+    /// **One stack per section**, like `Navigator` on the Mac: switching between
+    /// movies and series returns to where the user was.
+    var pagesStack: [Region: [Item]] = [:]
+    /// The season a series page opens with; set when the path led through an
+    /// episode.
+    var startSeason: String?
+    /// The season **number** the user came through, a second route next to the
+    /// ID. Measured on a device: the server does not always deliver a `SeasonId`
+    /// for an episode; then the ID comparison misses and only the number remains.
+    var startSeasonNumber: Int?
+    /// The role through which a person page was reached, and the title it was
+    /// played in.
     ///
-    /// **Beiwerk neben dem Stapel, wie `startStaffel`.** Auf Apple trägt
-    /// `PersonRoute` beides mit; hier hält der Stapel `Item`, und eine Rolle
-    /// steht in keinem Item — sie gehört zur *Verbindung* zwischen Titel und
-    /// Person, nicht zur Person. Den Stapel dafür auf eine Aufzählung von
-    /// Zielen umzubauen wäre ein Umbau an jeder Seite, für zwei Zeichenketten.
-    /// Stand der Serveraufnahme — Adresse, geprüfter Name, Fehler.
-    var serverAufnahmeAdresse = ""
-    var serverAufnahmeGeprueft: String?
-    var serverAufnahmeFehler = ""
-    var serverAufnahmeVorgegeben = false
-    var serverAufnahmeStand: Widget!
-    var serverAufnahmeKnopf: Widget!
-    /// „Erweitert" beim Hinzufügen eines Servers — eigene Header (Issue #4).
-    var serverAufnahmeKoepfe: [Eigenkopf] = []
-    /// Die geprüfte Adresse, an der angemeldet wird.
-    var serverAufnahmeURL: URL?
+    /// **Side data next to the stack, like `startSeason`.** On Apple `PersonRoute`
+    /// carries both; here the stack holds `Item`, and a role is in no item: it
+    /// belongs to the *link* between title and person, not to the person.
+    /// Rebuilding the stack around an enum of destinations would touch every page,
+    /// for two strings.
+    /// Server onboarding state: address, checked name, error.
+    var serverOnboardingAddress = ""
+    var serverOnboardingChecked: String?
+    var serverOnboardingError = ""
+    var serverOnboardingPreGiven = false
+    var serverOnboardingState: Widget!
+    var serverOnboardingButton: Widget!
+    /// "Advanced" when adding a server: custom headers (issue #4).
+    var serverOnboardingHeaders: [OwnHeader] = []
+    /// The checked address that is being signed in to.
+    var serverOnboardingURL: URL?
 
-    var personRolle: String?
-    var personHerkunft: String?
-    /// Wohin der Hauptknopf der offenen Detailseite zeigt, und welche Staffel
-    /// dort gewählt ist. Die Mehr-Liste braucht beides — ohne sie liesse sich
-    /// „Folge von vorn" und „Staffel als gesehen" nicht anbieten.
-    var offenesZiel: Spielziel?
-    /// **Sehstand an Ort und Stelle auffrischen** (nach dem Player). Jede
-    /// Folgenzeile und der Hauptknopf legen hier ab, wie sie sich neu
-    /// zeichnen; die Marke verhindert, dass das Abraeumen einer alten Seite
-    /// den Eintrag der neuen loescht.
-    var sehstandZeilen: [String: (marke: Int, auffrischen: (Item) -> Void)] = [:]
-    var kopfAuffrischen: (marke: Int, tun: () -> Void)?
-    var sehstandMarken = 0
-    /// Die Scrollflaeche der offenen Detailseite — fuers Protokoll, damit sich
-    /// belegen laesst, dass sie nach dem Player stehen bleibt.
+    var personRole: String?
+    var personOrigin: String?
+    /// Where the main button of the open detail page points, and which season is
+    /// selected there. The more-list needs both, otherwise "Folge von vorn" and
+    /// "Staffel als gesehen" could not be offered.
+    var openTarget: PlayTarget?
+    /// **Refresh watch state in place** (after the player). Each episode row and
+    /// the main button register here how to redraw; the marker prevents clearing
+    /// an old page from deleting the new page's entry.
+    var watchStateRows: [String: (mark: Int, refresh: (Item) -> Void)] = [:]
+    var headerRefresh: (mark: Int, perform: () -> Void)?
+    var watchStateMarks = 0
+    /// The scroll area of the open detail page, for logging, so it can be shown
+    /// that it stays put after the player.
     var detailScroller: Widget?
-    func naechsteSehstandMarke() -> Int { sehstandMarken += 1; return sehstandMarken }
-    var offeneStaffel: Item?
-    /// Die Hinweiszeile der Detailseite.
-    var hinweisfeld: Widget!
-    /// Der Platz des Belegs auf der gerade gebauten Filmseite. Wird beim
-    /// Bauen gesetzt und sofort ausgelesen — der Abruf haelt ihn selbst.
-    var belegraum: Widget!
-    /// Der Unterbau der mageren ersten Fassung einer Detailseite, noch nicht
-    /// angestossen. Siehe ``titelNachladen``.
-    var magererUnterbau: (() -> Void)?
-    /// Der oberste Ueberzug des Fensters — dort liegt der Discord-Hinweis.
-    var fensterdecke: Widget?
-    /// Der laufende Kontowechsel mit Flug (``Kontoflug``), sonst `nil`.
-    var kontoflug: Kontoflug?
-    /// Die laufende Übergabe „Hier weiterschauen" als Karte
-    /// (``Uebergabelauf``), sonst `nil`.
-    var uebergabe: Uebergabelauf?
-    /// **Wer gerade übernimmt** — kommt als Hinweis kurz vor dem Stopp
-    /// (``JellyfinClient/uebergabeHinweis(an:geraet:)``). Mit frischem Hinweis
-    /// geht das Bild beim Stopp als Karte ab, sonst schließt der Player wie
-    /// immer (Apple `AppModel.uebergabeZiel`).
-    var uebergabeZiel: (name: String, zeit: Date)?
-    /// Die Startseite war beim Tausch noch nicht geladen — ihre Reihen
-    /// kommen trotzdem gestaffelt, sobald sie da sind.
-    var kontoflugStaffelNachzuegler = false
-    /// Laufende ``stapelWechseln`` je Stapel — der jüngste gewinnt.
-    var stapelwechsel: [UnsafeMutableRawPointer: Int] = [:]
-    var stapelwechselZaehler = 0
-    /// Der laufende schrittweise Aufbau einer Folgenliste — ein neuer
-    /// (andere Staffel, andere Seite) beendet den alten.
-    var folgenaufbau = 0
-    var discordkarte: Widget?
-    var discordHinweisFaellig = false
-    /// Welcher Titel zuletzt gezaehlt wurde (``fertigZaehlen``).
-    var gezaehlterTitel: String?
-    var hinweistakt = 0
-    /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
-    /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie
-    /// ebenfalls quer dazu.
-    var offeneUnterseite: Unterseite? { didSet { bereichszeilenMalen() } }
-    var offeneListe: Werteauswahl?
-    var wahlen = Wahlen.lesen()
+    func nextWatchStateMark() -> Int { watchStateMarks += 1; return watchStateMarks }
+    var openSeason: Item?
+    /// The hint line of the detail page.
+    var hintField: Widget!
+    /// The slot for the badge on the movie page being built. Set while building
+    /// and read right away; the request holds it itself.
+    var occupiedRoom: Widget!
+    /// The pending work behind the sparse first version of a detail page, not
+    /// yet started. See ``titleLoadMore``.
+    var likesBase: (() -> Void)?
+    /// The topmost overlay of the window, where the Discord hint sits.
+    var windowCover: Widget?
+    /// The running account switch with flight (``Kontoflug``), otherwise `nil`.
+    var accountTransition: AccountTransition?
+    /// The running "Hier weiterschauen" handover as a card (``Uebergabelauf``),
+    /// otherwise `nil`.
+    var handoff: HandoffRun?
+    /// **Who is taking over.** Arrives as a hint shortly before the stop
+    /// (``JellyfinClient/handoffHint(an:geraet:)``). With a fresh hint the
+    /// picture leaves as a card on stop; otherwise the player closes as usual
+    /// (Apple `AppModel.handoffTarget`).
+    var handoffTarget: (name: String, time: Date)?
+    /// The home screen was not loaded yet at the swap; its rows still arrive
+    /// staggered once they are there.
+    var accountTransitionSeasonPostGl = false
+    /// Running ``switchStack`` per stack; the newest wins.
+    var stackSwitch: [UnsafeMutableRawPointer: Int] = [:]
+    var stackSwitchCounter = 0
+    /// The running step-by-step build of an episode list; a new one (other
+    /// season, other page) ends the old one.
+    var episodesLayout = 0
+    var discordCard: Widget?
+    var discordHintDue = false
+    /// Which title was counted last (``readyCount``).
+    var countedTitle: String?
+    var hintTick = 0
+    /// Which subpage is open (profile, Quick Connect, ...), `nil` if none. They do
+    /// not live in the section stack: on the Mac they also lie across it.
+    var openSubpage: Subpage? { didSet { sectionRowsDraw() } }
+    var openList: ValuesSelection?
+    var selection = Choices.read()
 
-    /// **H1.** Kurzform fuer `wahlen.downloadsAn` — die Leiste und die
-    /// Detailseite fragen oft danach.
-    var downloadsAn: Bool { wahlen.downloadsAn }
+    /// Shorthand for `selection.downloadsAn`; the bar and the detail page ask for it
+    /// often.
+    var downloadsAn: Bool { selection.downloadsAn }
 
-    /// **Ob ein Ladeknopf erscheint** — der Schalter *und* das Recht am
-    /// Konto, entschieden im Paket (`Downloadrecht`, wie
-    /// `AppModel.downloadKnopfZeigen` auf Apple).
+    /// **Whether a download button appears**: the switch *and* the account's
+    /// right, decided in the package (`DownloadPermission`, like
+    /// `AppModel.downloadButtonShow` on Apple).
     ///
-    /// Die Leiste und die Zeile in den Einstellungen bleiben bei
-    /// `downloadsAn`: was auf der Platte liegt, muss erreichbar bleiben,
-    /// auch wenn das Konto heute nichts mehr laden darf.
-    var downloadKnopfZeigen: Bool {
-        Downloadrecht.anbieten(recht: downloadrecht, funktionAn: downloadsAn)
+    /// The bar and the settings row stay on `downloadsAn`: what is on disk must
+    /// remain reachable even if the account may no longer download.
+    var downloadButtonShow: Bool {
+        DownloadPermission.offer(rights: downloadPermission, functionOn: downloadsAn)
     }
 
-    /// Was auf dieser Maschine liegt. Die Regeln stehen im Paket, der
-    /// Ladevorgang in `Downloadverwaltung`; hier haengt nur die Oberflaeche
-    /// daran.
-    let downloads = Downloadverwaltung()
+    /// What is stored on this machine. The rules are in the package, the download
+    /// process in `DownloadManager`; only the UI hooks into it here.
+    let downloads = DownloadManager()
 
-    // MARK: Downloadseite — Widgets und Zustand
-    var downloadliste: Widget!
-    var downloadbelegung: Widget!
-    var downloadentfernen: Widget!
-    var downloadbearbeitenknopf: Widget!
-    var downloadleer: Widget!
-    var downloadbearbeiten = false
-    var downloadgewaehlt: Set<String> = []
+    // MARK: Downloads page: widgets and state
+    var list: Widget!
+    var downloadAllocation: Widget!
+    var downloadRemove: Widget!
+    var downloadEditButton: Widget!
+    var downloadEmpty: Widget!
+    var downloadEdit = false
+    var downloadSelected: Set<String> = []
 
-    // MARK: Seerr-Titelseite
+    // MARK: Seerr title page
     var seerrBlock: Widget!
-    var seerrAngaben: Widget!
-    var seerrHandlung: Widget!
-    var seerrKnopfreihe: Widget!
-    /// Welche Staffeln angefragt werden sollen. Leer heisst: noch keine
-    /// gewaehlt — und dann fragt der Knopf auch keine an.
-    var seerrGewaehlteStaffeln: Set<Int> = []
-    /// **Der erste Druck fragt nach, der zweite schickt.** Nur bei einem
-    /// Film — bei einer Serie ist die Staffelauswahl die zweite Stufe.
-    /// Wird beim Oeffnen einer Seerr-Seite zurueckgesetzt.
-    var seerrBestaetigt = false
-    /// Ob die Staffelliste einer Seerr-Serie aufgeklappt ist — der erste
-    /// Druck auf den Hauptknopf oeffnet sie, der zweite fragt an.
-    var seerrStaffelnOffen = false
-    var seerrStaffelaufklapp: Widget?
-    /// Der Stand der Anfrage auf der offenen Seerr-Seite — wie `laeuft`,
-    /// `angefragt` und `fehler` in `SeerrKachelUndSeite.swift`. Wird beim
-    /// Oeffnen einer Seerr-Seite zurueckgesetzt.
-    var seerrLaeuft = false
-    var seerrAngefragt = false
-    /// Der Stand des Titels, wie ihn der Server zuletzt gemeldet hat
-    /// (`Seerrdetail.stand`); `nil`, solange nur der Suchtreffer vorliegt.
-    var seerrStand: Seerrstand?
-    var seerrFehler: String?
-    /// H10: die Nachfrage vor dem Abschalten, in den Einstellungen.
-    var downloadabschaltfrage: Widget!
-    var benutzername = ""
-    /// Der Name des Servers. **Er steht auch im Kopf jeder Rasterseite**
-    /// (E15) — deshalb malen die Seiten nach, sobald er sich ändert.
-    var servername = "" { didSet { if servername != oldValue { serverzeilenMalen() } } }
-    var serverfassung = ""
-    /// Was im Raster schon steht, und wie viel der Server insgesamt hat —
-    /// für das Nachladen beim Blättern.
-    var rasterItems: [Bereich: [Item]] = [:]
-    var rasterGesamt: [Bereich: Int] = [:]
-    var rasterLaedt: Set<Bereich> = []
-    var rasterAuftrag: [Bereich: Int] = [:]
-    var laderFeld: [Bereich: Widget] = [:]
-    /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
-    /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
-    var fernsteuerung: Fernsteuerung?
-    /// Gemeinsam schauen — einer für die ganze App, siehe ``Gemeinsamstand``.
-    let gemeinsam = Gemeinsamstand()
-    /// Medientasten und die Wiedergabekachel der Arbeitsumgebung.
-    var medienleiste: Medienleiste?
-    var uebernahmezeile: Widget!
-    private var uebernahmetitel: Widget!
-    /// Bis wann ein Fehler in der Uebernahmezeile stehen bleibt (N7).
-    private var uebernahmefehlerBis = Date.distantPast
-    private var uebernahmezeichen: Widget!
-    /// Was die Zeile oben sagt: „Hier weiterschauen", „Gemeinsam schauen"
-    /// oder, bei mehr als einem Angebot, „Läuft gerade".
-    private var uebernahmeoben: Widget!
-    /// Der Zähler, sobald mehr als ein Angebot da ist (Entwurf A).
-    private var uebernahmezaehler: Widget!
-    private var uebernahmeangebote: [Fremdsitzung] = []
-    private var uebernahmelauf: Task<Void, Never>?
-    /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
-    var abschnitte: [Abschnitt] = [] {
-        // Die Kerben am Zeitregler stehen an ihren Grenzen.
-        didSet { if let k = spielerKerben { gtk_widget_queue_draw(k) } }
+    var seerrDetails: Widget!
+    var seerrAction: Widget!
+    var seerrButtonRail: Widget!
+    /// Which seasons are to be requested. Empty means none selected yet, and then
+    /// the button requests none.
+    var seerrSelectedSeasons: Set<Int> = []
+    /// **The first press asks, the second sends.** Only for a movie; for a series
+    /// the season selection is the second stage. Reset when a Seerr page opens.
+    var seerrConfirmed = false
+    /// Whether the season list of a Seerr series is expanded: the first press on
+    /// the main button opens it, the second sends the request.
+    var seerrSeasonsOpen = false
+    var seerrSeasonExpand: Widget?
+    /// The request state on the open Seerr page, like `running`, `requested` and
+    /// `error` in `SeerrTileAndPage.swift`. Reset when a Seerr page opens.
+    var seerrRuns = false
+    var seerrRequested = false
+    /// The title's state as the server last reported it (`SeerrDetail.state`);
+    /// `nil` while only the search hit exists.
+    var seerrState: SeerrState?
+    var seerrError: String?
+    /// The confirmation before switching off, in the settings.
+    var downloadDisablePrompt: Widget!
+    var username = ""
+    /// The server name. **It is also in the header of every grid page**, so the
+    /// pages redraw when it changes.
+    var serverName = "" { didSet { if serverName != oldValue { serverRowsDraw() } } }
+    var serverVersion = ""
+    /// What is already in the grid and how many the server has in total, for
+    /// loading more while scrolling.
+    var gridItems: [Region: [Item]] = [:]
+    var gridTotal: [Region: Int] = [:]
+    var gridLoads: Set<Region> = []
+    var gridJob: [Region: Int] = [:]
+    var loaderField: [Region: Widget] = [:]
+    /// Remote control over Jellyfin's socket. Without it the server reports
+    /// `SupportsRemoteControl: false` and hides the dashboard's buttons.
+    var remoteControl: RemoteControl?
+    /// Watch together: one for the whole app; see ``Gemeinsamstand``.
+    let gemeinsam = SharedState()
+    /// Media keys and the desktop's playback tile.
+    var mediaBar: MediaBar?
+    var takeoverRow: Widget!
+    private var takeoverTitle: Widget!
+    /// Until when an error stays in the takeover row.
+    private var takeoverErrorUntil = Date.distantPast
+    private var takeoverCharacter: Widget!
+    /// What the row above says: "Hier weiterschauen", "Gemeinsam schauen" or,
+    /// with more than one offer, "Läuft gerade".
+    private var takeoverTop: Widget!
+    /// The counter, once there is more than one offer.
+    private var takeoverCounter: Widget!
+    private var takeoverOfferings: [RemoteSession] = []
+    private var takeoverRun: Task<Void, Never>?
+    /// Intro and outro markers of the running title, from the server.
+    var sections: [Segment] = [] {
+        // The notches on the time slider sit at their boundaries.
+        didSet { if let k = playerNotches { gtk_widget_queue_draw(k) } }
     }
-    /// **Die Kapitel der laufenden Fassung**, schon bereinigt
-    /// (``Kapitelleiste/brauchbar(_:)``) — leer, wenn die Datei keine hat.
-    /// Mit Kapiteln malt die Ueberlagerung der Leiste die Stuecke selbst, und
-    /// die Spur des Reglers wird durchsichtig (`swiftly-regler-kapitel`).
-    var spielerKapitel: [Kapitel] = [] {
+    /// **The running version's chapters**, already cleaned up
+    /// (``Kapitelleiste/brauchbar(_:)``); empty if the file has none.
+    /// With chapters, the bar overlay draws the segments itself and the slider
+    /// track becomes transparent (`swiftly-regler-kapitel`).
+    var playerChapter: [Chapter] = [] {
         didSet {
-            if let r = spielerRegler {
-                if spielerKapitel.isEmpty { gtk_widget_remove_css_class(r, "swiftly-regler-kapitel") }
+            if let r = playerSlider {
+                if playerChapter.isEmpty { gtk_widget_remove_css_class(r, "swiftly-regler-kapitel") }
                 else { gtk_widget_add_css_class(r, "swiftly-regler-kapitel") }
             }
-            if let k = spielerKerben { gtk_widget_queue_draw(k) }
+            if let k = playerNotches { gtk_widget_queue_draw(k) }
         }
     }
-    var jetzigesAngebot: Knopfangebot = .keiner
-    /// **„Intro überspringen" und „Nächste Folge" über dem Bild**, ohne dass
-    /// die Steuerung aufgehen muss (Stufe 3). Was wann steht, sagt das Paket.
-    /// **Die Karte wartet, solange die Steuerung bewusst offen ist** (iOS
-    /// 26.09.2026, `karteWartetBeiSteuerung`): sie geht weg, der Countdown
-    /// hält an, und mit dem Schließen kommt sie zurück — abgesagt wird nur
-    /// über X oder Escape.
-    var angebotsebene: Angebotsebene = {
-        var e = Angebotsebene()
-        e.karteWartetBeiSteuerung = true
+    var currentOffering: ButtonOffering = .nobody
+    /// **"Intro überspringen" and "Nächste Folge" over the picture**, without the
+    /// controls having to open. The package decides what appears when.
+    /// **The card waits while the controls are deliberately open**
+    /// (`cardWaitsControls`): it disappears, the countdown pauses, and it
+    /// returns when they close. It is only dismissed via X or Escape.
+    var offeringLayer: OfferingLayer = {
+        var e = OfferingLayer()
+        e.cardWaitsControls = true
         return e
     }()
-    /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: kommt bei
-    /// jeder Anmeldung frisch, ein anderes Konto hat eine andere.
-    var naechsteAutomatischKonto: Bool?
-    /// `Policy.EnableContentDownloading` des Kontos, aus derselben Antwort.
-    /// `.unbekannt` heisst erlaubt — ein Netzfehler nimmt nichts weg.
-    var downloadrecht: Downloadrecht = .unbekannt
-    /// `Policy.EnableVideoPlaybackTranscoding` des Kontos, aus derselben
-    /// Antwort. Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im
-    /// Player, wie `AppModel.umwandelnErlaubt` auf Apple.
-    var umwandelnErlaubt = true
-    /// Ob beim Laden eine kleinere Qualitaet waehlbar ist — Bild- und
-    /// Tonrecht, entschieden im Paket (`Downloadqualitaet.waehlbar`).
-    var downloadqualitaetWaehlbar = true
-    /// **Der Folgenwechsel des offenen Players** — der Ablauf aus dem Paket,
-    /// derselbe wie auf iOS, tvOS und macOS (Audit 16.09.2026, T2-H1/M3).
-    /// Er haelt den Riegel (ein Wechsel zur Zeit), und `schliessen` bricht
-    /// einen laufenden ab. Jedes Oeffnen bekommt einen frischen: ein alter
-    /// Wechsel, dessen Player zu ist, erkennt sich daran, dass er nicht mehr
-    /// hier steht.
-    var folgenwechsel = Folgenwechsel()
-    /// Was nach der Endmeldung des Players geschehen soll — gesetzt nur,
-    /// wenn das Fenster waehrend der Wiedergabe zugeht. Siehe
-    /// ``fensterSchliessenGewuenscht()``.
-    var nachDemStopp: (() -> Void)?
-    var schliesstNachStopp = false
-    /// **Die naechste Folge, vorab geholt** (T2-H2). Nur wenn sie da ist,
-    /// gibt es den Knopf, die Medientaste und das Weiterschalten — vorher
-    /// galt jede Folge als eine mit Nachfolger, auch das Finale.
-    var vorgeholteFolge: Item?
-    /// Plan und Dateianfang der nächsten Folge, in den letzten Minuten geholt
-    /// (``Folgenvorbereitung``, iOS `vorbereitung`).
-    let vorbereitung = Folgenvorbereitung()
-    /// **Die eine Reihe fuer Start, Fortschritt und Stopp** — dieselbe wie
-    /// `AppModel.meldungen` auf Apple (Audit 16.09.2026, Stufe 2). Reihenfolge,
-    /// Zusammenfassen, 6 s Frist je Meldung und die Stoppsperre je PlaySession
-    /// stehen im Paket; hier steht nur, was gesendet wird. Die eigene
-    /// `Stoppsperre` aus `bafc898` ist darin aufgegangen.
-    let meldungen = Meldewarteschlange<Meldeinhalt> { meldung in
-        let inhalt = meldung.nutzlast
-        let client = inhalt.client, titel = inhalt.titel, plan = inhalt.plan
+    /// The account's `EnableNextEpisodeAutoPlay`. Not stored: fetched fresh at
+    /// every sign-in, since another account has another value.
+    var nextAutomaticAccount: Bool?
+    /// The account's `Policy.EnableContentDownloading`, from the same response.
+    /// `.unknown` means allowed: a network error takes nothing away.
+    var downloadPermission: DownloadPermission = .unknown
+    /// The account's `Policy.EnableVideoPlaybackTranscoding`, from the same
+    /// response. Without an answer: allowed, so the quality choice stays in the
+    /// player, like `AppModel.convertAllowed` on Apple.
+    var convertAllowed = true
+    /// Whether a lower quality can be chosen when downloading: video and audio
+    /// permission, decided in the package (`DownloadQuality.waehlbar`).
+    var downloadQualitySelectable = true
+    /// **The open player's episode switching**: the flow from the package, the
+    /// same as on iOS, tvOS and macOS. It holds the latch (one switch at a time),
+    /// and `close` cancels a running one. Every open gets a fresh one: an old
+    /// switch whose player is closed recognizes itself by no longer being stored
+    /// here.
+    var episodesSwitch = EpisodeSwitch()
+    /// What should happen after the player's end report; set only if the window
+    /// closes during playback. See ``windowCloseRequested()``.
+    var postStop: (() -> Void)?
+    var closesPostStop = false
+    /// **The next episode, fetched ahead.** Only when it exists are the button,
+    /// the media key and the advance available; before, every episode counted as
+    /// having a successor, including the finale.
+    var prefetchedEpisode: Item?
+    /// Plan and file head of the next episode, fetched in the last minutes
+    /// (``EpisodePreparation``, iOS `preparation`).
+    let preparation = EpisodePreparation()
+    /// **The one queue for start, progress and stop**, the same as
+    /// `AppModel.messages` on Apple. Ordering, coalescing, a 6 s deadline per
+    /// report and the stop lock per PlaySession are in the package; here only
+    /// what is sent is defined. The former own `StopLock` was absorbed into it.
+    let messages = ReportQueue<ReportContent> { message in
+        let content = message.payload
+        let client = content.client, title = content.title, plan = content.plan
         #if DEBUG
-        // Fernsteuerpult `meldungen:haengen`: ein Server, der nicht antwortet.
-        if Meldeprobe.haengen { try await Task.sleep(nanoseconds: 60_000_000_000) }
+        // Remote control `messages:hanging`: a server that does not answer.
+        if ReportProbe.hanging { try await Task.sleep(nanoseconds: 60_000_000_000) }
         #endif
-        switch meldung.art {
+        switch message.art {
         case .start:
-            // **Die Faehigkeiten vor jedem Start** (T2-N3), wie Apple und
-            // Android: nach einem Neustart des Servers war das Geraet sonst bis
-            // zum Neustart der App nicht steuerbar. Scheitert es, geht der
-            // Start trotzdem — ausser die Frist hat abgebrochen.
-            do { try await client.faehigkeitenMelden() } catch {
+            // **The capabilities before every start**, like Apple and Android: after a
+            // server restart the device was otherwise not controllable until the app was
+            // restarted. If it fails, the start proceeds anyway, unless the deadline
+            // cancelled it.
+            do { try await client.reportCapabilities() } catch {
                 try Task.checkCancellation()
-                Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet")
+                AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet")
             }
-            try await client.reportStart(itemID: titel.id, plan: plan, ticks: inhalt.ticks,
-                                         spuren: inhalt.spuren)
-            Protokoll.schreib("[Melden] Start \(inhalt.ticks / 10_000_000) s \(titel.id) session \(plan.playSessionID ?? "nil")"
-                  + " Spuren \(inhalt.spurtext)")
-        case let .fortschritt(pausiert):
-            try await client.reportProgress(itemID: titel.id, plan: plan,
-                                            positionTicks: inhalt.ticks, paused: pausiert,
-                                            spuren: inhalt.spuren)
-            Protokoll.schreib("[Melden] Progress \(inhalt.ticks / 10_000_000) s pausiert \(pausiert) \(titel.id)"
-                  + " Spuren \(inhalt.spurtext)")
-        case .stopp:
-            try await client.reportStopped(itemID: titel.id, plan: plan,
-                                           positionTicks: inhalt.ticks)
+            try await client.reportStart(itemID: title.id, plan: plan, ticks: content.ticks,
+                                         tracks: content.tracks)
+            AppLog.writeOut("[Melden] Start \(content.ticks / 10_000_000) s \(title.id) session \(plan.playSessionID ?? "nil")"
+                  + " Spuren \(content.trackText)")
+        case let .progress(paused):
+            try await client.reportProgress(itemID: title.id, plan: plan,
+                                            positionTicks: content.ticks, paused: paused,
+                                            tracks: content.tracks)
+            AppLog.writeOut("[Melden] Progress \(content.ticks / 10_000_000) s pausiert \(paused) \(title.id)"
+                  + " Spuren \(content.trackText)")
+        case .stop:
+            try await client.reportStopped(itemID: title.id, plan: plan,
+                                           positionTicks: content.ticks)
         }
         fflush(nil)
     }
-    /// Was dem Server gerade als laufend bekannt ist — gesetzt mit dem Start,
-    /// geloescht mit dem Stopp. Pause, Weiter und Sprung melden daran, ohne
-    /// den Player zu fragen; vor dem Start und nach dem Stopp gibt es nichts.
-    var meldetitel: (client: JellyfinClient, titel: Item, plan: PlaybackPlan)?
-    /// Was zuletzt als Laufzustand hinausging — libVLCs Ereignis meldet so
-    /// nur einmal je Wechsel.
-    var gemeldetPausiert = false
-    /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
-    /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
-    /// Klick gelöst — sonst hängen sie sich am Knopf auf.
-    var offeneTafel: Widget?
+    /// What the server currently knows as playing; set at start, cleared at stop.
+    /// Pause, resume and seek report from it without asking the player; before
+    /// start and after stop there is nothing.
+    var reportTitle: (client: JellyfinClient, title: Item, plan: PlaybackPlan)?
+    /// The last playback state reported; libVLC's event reports a change only
+    /// once.
+    var reportedPaused = false
+    /// Whether the user has already chosen something on the open detail page.
+    /// The panel most recently opened by the More button. It is detached on the
+    /// next click, otherwise they would pile up on the button.
+    var openPanel: Widget?
 
-    /// **Eine Tafel oeffnen und sie richtig merken.**
+    /// **Open a panel and track it correctly.**
     ///
-    /// Die vorige kommt weg — sonst hinge nach dem dritten Klick die dritte
-    /// Tafel am Knopf und die beiden davor daneben. Und die neue vergisst
-    /// sich selbst, sobald GTK sie abraeumt: `tafelAn` haengt sie beim
-    /// Zerstoeren des Ankers ab, und ein Feld, das dann noch auf sie zeigt,
-    /// ist ein Zeiger auf freigegebenen Speicher. Der naechste Klick auf
-    /// „Mehr" war damit ein Absturz — im Kern nachgelesen, nicht vermutet.
+    /// The previous one is removed, otherwise after the third click the third panel
+    /// would hang on the button with the two earlier ones beside it. And the new
+    /// one forgets itself as soon as GTK tears it down: `panelAn` detaches it when
+    /// the anchor is destroyed, and a field still pointing at it would be a pointer
+    /// to freed memory. The next click on "Mehr" used to crash; confirmed in the
+    /// core, not guessed.
     ///
-    /// Dieselbe Klasse Fehler wie bei den Zeichenflaechen, die sich selbst
-    /// halten muessen: wer ein GTK-Objekt in einem Swift-Feld merkt, muss
-    /// auf sein Ende hoeren.
-    func tafelOeffnen(an knopf: Widget!, stil: String = "swiftly-mehr",
-                      buendig: GtkAlign = GTK_ALIGN_START) -> Widget! {
-        tafelSchliessen()
-        let tafel = tafelAn(knopf, stil: stil, buendig: buendig)
-        offeneTafel = tafel
-        beiSignal(tafel, "destroy") { [weak self] in self?.offeneTafel = nil }
-        return tafel
+    /// Same class of bug as the drawing areas that must keep themselves alive:
+    /// anyone storing a GTK object in a Swift field must listen for its end.
+    func panelOpen(an button: Widget!, style: String = "swiftly-mehr",
+                      flush: GtkAlign = GTK_ALIGN_START) -> Widget! {
+        panelClose()
+        let panel = panelAn(button, style: style, flush: flush)
+        openPanel = panel
+        signal(panel, "destroy") { [weak self] in self?.openPanel = nil }
+        return panel
     }
 
-    func tafelSchliessen() {
-        guard let alt = offeneTafel else { return }
-        offeneTafel = nil
+    func panelClose() {
+        guard let alt = openPanel else { return }
+        openPanel = nil
         gtk_widget_unparent(alt)
     }
-    var detailBeruehrt = false
-    /// Was zuletzt bei „Verbindung prüfen" herauskam.
-    var pruefergebnis = ""
-    /// „Läuft ab in 4:58" unter dem Quick-Connect-Code.
-    var kontoRestfeld: Widget!
-    /// **Staffeln und Folgen, einmal geholt.**
+    var detailTouched = false
+    /// The last result of "Verbindung prüfen".
+    var checkResult = ""
+    /// "Läuft ab in 4:58" below the Quick Connect code.
+    var accountRemainingField: Widget!
+    /// **Seasons and episodes, fetched once.**
     ///
-    /// Der Mac hat dafür `Seriencache`: wer eine Serienseite verlässt und
-    /// zurückkommt, sieht sie sofort stehen. Auf Linux wurde jedes Mal neu
-    /// geholt, mit „Lade …" davor — bei einer Serie, die man mehrmals am
-    /// Abend öffnet, ist das jedes Mal dieselbe Wartezeit.
-    var staffelspeicher: [String: [Item]] = [:]
-    var folgenspeicher: [String: [Item]] = [:]
+    /// The Mac has `Seriencache` for this: leaving a series page and coming back
+    /// shows it immediately. On Linux everything was fetched again with "Lade ..."
+    /// first, the same wait every time for a series opened repeatedly.
+    var seasonCache: [String: [Item]] = [:]
+    var episodeStore: [String: [Item]] = [:]
 
-    /// **Was hier liegt, traegt auch den Sehstand.**
+    /// **What is stored here also carries the watch state.**
     ///
-    /// Die gemerkten Folgen tragen `userData` — also Haken und Fortschritt.
-    /// Wer eine Folge abhakt, aendert den Stand beim Server; was hier liegt,
-    /// weiss nichts davon, und beim naechsten Oeffnen der Staffel steht sie
-    /// wieder offen da.
+    /// The remembered episodes carry `userData`, i.e. check mark and progress.
+    /// Marking an episode changes the state on the server; what is stored here
+    /// knows nothing of it, and the next time the season opens it is unwatched
+    /// again.
     ///
-    /// Am 12.09.2026 auf dem iPhone gemeldet und dort gleich behoben
-    /// (`Sources/Shared/AppModel.swift`): eine ganze Staffel abgehakt,
-    /// zurueck, wieder hinein — alles wieder ungesehen. Derselbe Speicher,
-    /// dieselbe Falle, nur in GTK.
+    /// The same bug was fixed on iPhone (`Sources/Shared/AppModel.swift`): a whole
+    /// season marked, back, in again, and everything was unwatched. Same store,
+    /// same trap, only in GTK.
     ///
-    /// **Wegwerfen statt nachtragen.** Den Haken im gemerkten `Item` zu
-    /// aendern hiesse, `Item` und `UserItemData` neu zu bauen; der Speicher
-    /// ist dafuer da, dass der Rueckweg nicht leer ist, nicht dafuer, die
-    /// Wahrheit ueber den Sehstand zu halten.
-    func sehstandVergessen(_ item: Item) {
-        let serie = item.seriesId ?? item.id
-        for staffel in staffelspeicher[serie] ?? [] { folgenspeicher[staffel.id] = nil }
-        staffelspeicher[serie] = nil
-        // Die Staffel selbst, und die Staffel, in der eine Folge steht —
-        // beide koennen gemerkt sein, ohne dass die Serie es ist.
-        folgenspeicher[item.id] = nil
-        if let staffel = item.seasonId { folgenspeicher[staffel] = nil }
-        // Wer den Sehstand aendert, aendert auch, was die Listen zeigen.
-        listenAuffrischen()
+    /// **Discard instead of patching.** Changing the check mark in the stored
+    /// `Item` would mean rebuilding `Item` and `UserItemData`; the store is there
+    /// so the way back is not empty, not to hold the truth about watch state.
+    func watchStateForget(_ item: Item) {
+        let series = item.seriesId ?? item.id
+        for season in seasonCache[series] ?? [] { episodeStore[season.id] = nil }
+        seasonCache[series] = nil
+        // The season itself and the season an episode is in: both can be stored
+        // without the series being stored.
+        episodeStore[item.id] = nil
+        if let season = item.seasonId { episodeStore[season] = nil }
+        // Changing the watch state also changes what the lists show.
+        listenRefresh()
     }
 
-    /// **Listen frischen nach Sehstand und Merkliste auf** (Mac: `listenAuffrischen`).
-    /// Nach Wiedergabe, „Als gesehen" oder Merkliste stuenden Haken und Balken in
-    /// Filme, Serien, Merkliste und Genre sonst alt da. Was im Bild ist, holt
-    /// sofort neu — **so viel, wie schon dasteht** (bis 300), sonst schrumpfte
-    /// die Liste auf die erste Seite; der Rest gilt als ungeladen und holt beim
-    /// naechsten Besuch.
-    func listenAuffrischen() {
-        for was in [Bereich.filme, .serien, .merkliste, .gattung] {
-            guard geladen.contains(was), rasterFeld[was] != nil, !rasterLaedt.contains(was) else { continue }
-            if bereich == was {
-                rasterLaden(was, umfang: min(300, max(100, (rasterItems[was] ?? []).count)))
+    /// **Lists refresh after watch state and watchlist changes** (Mac:
+    /// `listenRefresh`). After playback, "Als gesehen" or watchlist changes,
+    /// check marks and bars in movies, series, watchlist and genre would otherwise
+    /// be stale. What is on screen reloads immediately, **as many as already
+    /// shown** (up to 300), otherwise the list would shrink to the first page; the
+    /// rest counts as unloaded and loads on the next visit.
+    func listenRefresh() {
+        for was in [Region.movies, .seriesList, .watchlist, .genre] {
+            guard loaded.contains(was), gridField[was] != nil, !gridLoads.contains(was) else { continue }
+            if section == was {
+                gridLoad(was, reach: min(300, max(100, (gridItems[was] ?? []).count)))
             } else {
-                geladen.remove(was)
+                loaded.remove(was)
             }
         }
-        // Und eine stehende Suche: ihre Kacheln tragen Haken und Balken auch.
-        if bereich == .suche, suchfeld != nil,
-           Anzeigeregeln.suchbegriffTaugt(text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)) {
-            suchtakt += 1
-            suchen(suchtakt)
+        // And an active search: its tiles carry check marks and bars too.
+        if section == .search, searchField != nil,
+           DisplayRules.searchTermFits(text(searchField).trimmingCharacters(in: .whitespacesAndNewlines)) {
+            searchTick += 1
+            searching(searchTick)
         }
     }
 
-    // MARK: Spieler
-    /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
-    /// an, und ``App`` entsteht als globale Referenz — also **bevor**
-    /// `g_application_run` GTK hochgefahren hat. Ein Widget vor `gtk_init`
-    /// ist ein Absturz in libgtk, ohne eine Zeile eigenen Codes im Rückweg.
-    lazy var abspieler: Abspieler = {
-        let neu = Abspieler()
-        // Pause und Weiter gehen ueber VLCs Ereignis an den Server (T2-N1).
-        neu.laufzustand = { [weak self] laeuft in
+    // MARK: Player
+    /// **Only on the first playback.** The player creates a `GtkPicture`, and
+    /// ``App`` is a global reference created **before** `g_application_run`
+    /// initializes GTK. A widget before `gtk_init` crashes inside libgtk, with no
+    /// line of our own code in the backtrace.
+    lazy var mediaPlayer: Player = {
+        let new = Player()
+        // Pause and resume reach the server via VLC's event.
+        new.runState = { [weak self] running in
             guard let self else { return }
-            // Waehrend der Wiedergabe kein Bildschirmschoner, bei Pause wieder.
-            // Nur mit offenem Player: ein „laeuft", das erst nach dem
-            // Schliessen ankommt, hielte den Schirm sonst bis zum naechsten
-            // Film wach.
-            Wachhalter.setzen(laeuft && self.laufenderTitel != nil, fenster: self.fenster)
-            self.laufzustandGemeldet(laeuft: laeuft)
+            // No screensaver during playback, allowed again on pause. Only with an open
+            // player: a "playing" that arrives only after closing would otherwise keep
+            // the screen awake until the next movie.
+            GuardHolder.setDown(running && self.runningTitle != nil, window: self.window)
+            self.runStateReported(running: running)
         }
-        neu.abgerissen = { [weak self] fehler in self?.stromAbgerissen(fehler: fehler) }
-        return neu
+        new.tornDown = { [weak self] error in self?.streamTornDown(error: error) }
+        return new
     }()
     #if os(Windows)
-    /// Wo die Aktualisierungszeile in den Einstellungen gerade steht.
-    /// Nur Windows — auf Linux macht das die Paketquelle.
-    enum Aktualisierungslage {
-        case unbekannt
-        case sucht
-        case aktuell
-        case neu(Aktualisierung.Stand)
-        case laedt
-        case schiefgegangen(String)
+    /// Where the update row in the settings currently stands. Windows only; on
+    /// Linux the package source handles it.
+    enum UpdateStatus {
+        case unknown
+        case hunts
+        case current
+        case new(Update.Snapshot)
+        case loads
+        case wentWrong(String)
     }
-    var aktualisierungslage: Aktualisierungslage = .unbekannt
-    /// Der Kasten, in dem die Zeile steht — sie wird bei jedem Zustand neu
-    /// gebaut, und dafuer braucht es ihren Platz.
-    var aktualisierungsraum: Widget?
+    var updateStatus: UpdateStatus = .unknown
+    /// The box holding the row; it is rebuilt on every state change and needs
+    /// its place.
+    var updateSpace: Widget?
     #endif
-    var laufenderTitel: Item?
-    var laufenderPlan: PlaybackPlan?
-    /// Der nächste Plan kommt aus einer Qualitätswahl — für den Hinweis.
-    var qualitaetGewechselt = false
-    /// Ton, Untertitel und nachgeladene Dateien des laufenden Titels — ``Spurlage``.
-    let spurlage = Spurlage()
-    var spielstand = Wiedergabetakt.Stand()
-    var seitOeffnen = Date()
-    var spielertakt: guint = 0
-    var steuerungstakt = 0
-    var spielerSteuerung: Widget!
-    var spielerZeit: Widget!
-    var spielerRest: Widget!
-    var spielerRegler: Widget!
-    /// Die Kerben über dem Zeitregler (``kerbenMalen``), solange er steht.
-    var spielerKerben: Widget?
-    /// Die Laufzeit, mit der die Kerben zuletzt gemalt wurden.
-    var kerbenDauer: Double = 0
-    /// Zaehlt die Spielerseiten. Siehe ``spielerOeffnen(_:ab:)``.
-    var spielerZaehler = 0
-    var spielerAbspielzeichen: Playerzeichen?
-    var spielerWeiter: Angebotsknopf?
-    /// Derselbe Knopf als eigene Ebene über dem Bild, bei zugeklappter Steuerung.
-    var spielerAngebot: Angebotsknopf?
-    /// **Die Karte der nächsten Folge** (Variante C, ``Folgenkartenansicht``)
-    /// und der Schleier darunter, der das Bild abdunkelt, solange sie steht.
-    var spielerKarte: Folgenkartenansicht?
-    var spielerKartenschleier: Widget?
-    var spielerSpurknopf: Widget!
-    /// Hält das gemalte Reglerzeichen des Wiedergabe-Chips am Leben, solange
-    /// die Spielerseite steht.
-    var spielerReglerzeichen: Reglerzeichen?
-    var spielerVollknopf: Widget!
-    var spielerLadeschirm: Widget!
-    /// Ob gerade am Zeitregler gezogen wird.
-    var amRegler = false
-    /// Wechselt jeden Aufruf: `takten` zieht abwechselnd nur die Zeit nach
-    /// und rechnet den ganzen Takt.
-    var nurZeitTakt = false
-    /// Zaehlt die vollen Takte, solange auf das erste Bild gewartet wird.
-    var startwarten = 0
-    /// Wann der Wiedergabetakt zuletzt lief — fuer die Luecken-Wache.
-    var letzterTakt: ContinuousClock.Instant?
-    /// Die Füllung der Karte „Nächste Folge" als durchgehende Bewegung.
-    var angebotsuhr = Fuellungsuhr()
-    var spielerWarnung: Widget!
-    var spielerWarntext: Widget!
-    /// Die beiden Kreispfeile. Sie tragen die Sprungweite als Zahl und
-    /// müssen sie nachziehen, wenn sie sich in den Einstellungen ändert.
-    var spielerZurueckZeichen: Playerzeichen?
-    var spielerVorZeichen: Playerzeichen?
-    /// Die Sprunganzeige am Bildrand.
-    var spielerSprungLinks: Sprungmarke?
-    var spielerSprungRechts: Sprungmarke?
-    var sprungtakt = 0
-    /// Was die Sprungmarke gerade zusammenzählt — Richtung und Sekunden
-    /// (iOS `sprungAnzeige`).
-    var sprungsumme: (zurueck: Bool, sekunden: Int)?
-    var spielerRahmen: Widget!
-    /// Eine der drei Ebenen über dem Bild — Audio & Untertitel, Einstellungen,
-    /// Folgen — oder `nil`, wenn keine offen ist. Wörtlich `offeneEbene` auf
-    /// dem Mac (`PlayerScreen.swift`), nur als GTK-Widget statt als Zustand:
-    /// hier wird bei jedem Öffnen neu gebaut, es gibt kein Umschalten ohne
-    /// Neubau (GTK kennt SwiftUIs `switch` über den Inhalt nicht).
-    var offeneEbene: Widget!
-    var offeneEbeneArt: Playerebene?
-    /// **Der Titel, unabhängig von der Steuerung** (Mac: `stehenderTitel`).
+    var runningTitle: Item?
+    var runningPlan: PlaybackPlan?
+    /// The next plan comes from a quality choice, for the hint.
+    var qualitySwitched = false
+    /// Audio, subtitles and sideloaded files of the running title; see
+    /// ``Spurlage``.
+    let trackStatus = TrackStatus()
+    var playState = PlaybackTick.Snapshot()
+    var sinceOpen = Date()
+    var playerTick: guint = 0
+    var controlsTick = 0
+    var playerControls: Widget!
+    var playerTime: Widget!
+    var playerRemaining: Widget!
+    var playerSlider: Widget!
+    /// The notches above the time slider (``notchesDraw``) while it exists.
+    var playerNotches: Widget?
+    /// The duration the notches were last drawn with.
+    var notchesDuration: Double = 0
+    /// Counts the player pages; see ``playerOpen(_:since:)``.
+    var playerCounter = 0
+    var playerPlayMarker: PlayerCharacter?
+    var playerNext: OfferingButton?
+    /// The same button as a separate layer over the picture, while the controls
+    /// are collapsed.
+    var playerOffering: OfferingButton?
+    /// **The next-episode card** (variant C, ``EpisodeCardsView``) and the
+    /// scrim below it that darkens the picture while it is shown.
+    var playerCard: EpisodeCardsView?
+    var playerCardsScrim: Widget?
+    var playerTrackButton: Widget!
+    /// Keeps the drawn slider glyph of the playback chip alive while the player
+    /// page exists.
+    var playerSliderCharacter: SliderCharacter?
+    var playerFullButton: Widget!
+    var playerLoadingScreen: Widget!
+    /// Whether the time slider is currently being dragged.
+    var atSlider = false
+    /// Alternates on every call: `clockOut` alternately only updates the time and
+    /// computes the full tick.
+    var onlyTimeTick = false
+    /// Counts the full ticks while waiting for the first frame.
+    var startWait = 0
+    /// When the playback tick last ran, for the gap watchdog.
+    var lastTick: ContinuousClock.Instant?
+    /// The fill of the "Nächste Folge" card as a continuous motion.
+    var offeringClock = FillClock()
+    var playerWarning: Widget!
+    var playerWarnText: Widget!
+    /// The two circular arrows. They show the skip distance as a number and must
+    /// update it when it changes in the settings.
+    var playerBackCharacter: PlayerCharacter?
+    var playerPreCharacter: PlayerCharacter?
+    /// The skip indicator at the edge of the picture.
+    var playerJumpLeft: JumpMark?
+    var playerJumpRight: JumpMark?
+    var jumpTick = 0
+    /// What the skip marker currently sums up: direction and seconds (iOS
+    /// `jumpDisplay`).
+    var jumpSum: (back: Bool, seconds: Int)?
+    var playerFrame: Widget!
+    /// One of the three layers over the picture (audio & subtitles, settings,
+    /// episodes), or `nil` if none is open. Literally `openLayer` on the Mac
+    /// (`PlayerScreen.swift`), but as a GTK widget instead of state: it is rebuilt
+    /// on every open, and there is no switching without rebuilding (GTK has no
+    /// equivalent of SwiftUI's `switch` over content).
+    var openLayer: Widget!
+    var openLayerArt: PlayerLayer?
+    /// **The title, independent of the controls** (Mac: `stateTitle`).
     ///
-    /// Anders als auf dem Mac kein zweites, sich überlagerndes Widget: ein
-    /// einziges, das nie abgeräumt wird, solange der Player offen ist — genau
-    /// das verhindert das Flackern beim Öffnen der Folgenebene, ohne dass es
-    /// zwei Kopien geben muss.
-    var spielerTitelstand: Widget!
-    var spielerTitelzeile: Widget!
-    /// Der unsichtbare Titel im Kopf der Steuerung, der der Metazeile ihren
-    /// Platz unter dem stehenden Titel gibt.
-    var spielerTitelplatz: Widget!
-    /// Unter dem Titel: die Metazeile („Staffel 1 · Folge 3"), oder — wenn die
-    /// Folgenebene offen ist — die Staffelwahl an ihrer Stelle.
-    var spielerMetazeile: Widget!
-    var spielerStaffelwahl: Widget!
-    /// Die Folgenliste der offenen Folgenebene und ihr Scroller — als
-    /// Feld, nicht als lokale Variable: ein `Task.detached`, das später
-    /// zurückkommt, darf kein GTK-Widget in seinem Abschluss tragen (Swift 6
-    /// verlangt `Sendable`, und ein `Widget` ist es nicht). Über `self` (das
-    /// als `@unchecked Sendable` gilt) geht derselbe Weg unfallfrei.
-    var spielerFolgenListe: Widget!
-    var spielerFolgenScroller: Widget!
-    /// Das Zeichen im Vollbild-Symbolknopf — getauscht, wenn sich der
-    /// Vollbildstand ändert (``vollbildUmschalten()``).
-    var spielerVollbildbild: Playerzeichen?
-    /// Ob das Fenster schon vor dem Player im Vollbild stand — siehe
-    /// ``spielerSchliessen(melden:fensterZurueck:)``.
-    var vollbildVorDemPlayer = false
-    /// Ob die Steuerung gerade gezeigt sein soll — der Zustand, nicht die
-    /// Deckkraft: die ist während einer Blende ein Zwischenwert.
-    var steuerungOffen = false
-    /// Die drei Knöpfe der Mitte und die Symbolreihe oben rechts — beim
-    /// Ziehen am Regler weichen beide der Vorschau (Mac: `amRegler`).
-    var spielerMitte: Widget!
-    var spielerSymbolreihe: Widget!
-    /// Der Lautstärkeregler ganz links in der Symbolreihe; `lautstaerkeZieht`
-    /// hält die Steuerung im Bild, solange jemand am Griff zieht.
-    var spielerLautstaerke: Lautstaerkeregler?
-    var lautstaerkeZieht = false
-    var lautstaerkeUhr = 0
-    /// Das Rad hat den Wert verstellt, gesichert ist er noch nicht.
-    var lautstaerkeRadOffen = false
-    /// Der Knopf, der eine Ebene geöffnet hat — dorthin geht der Fokus
-    /// zurück, wenn sie schliesst.
-    var spielerEbenenknoepfe: [Playerebene: Widget] = [:]
-    /// Die Folge, zu der die Folgenliste scrollt, sobald sie ausgelegt ist.
-    var spielerFolgenZiel: Widget!
-    /// Das X der offenen Ebene — bekommt beim Öffnen den Fokus.
-    var spielerEbenenX: Widget!
-    /// Die Staffel, deren Folgen gerade geladen werden; eine spätere Antwort
-    /// für eine andere Staffel wird verworfen.
-    var spielerFolgenStaffel: String?
-    /// Trickplay-Vorschau am Zeitregler — `nil`, solange kein Server-Blatt
-    /// geladen ist oder der Zeiger nicht über der Leiste steht.
-    var spielerTrickplay: Trickplaybilder?
-    var spielerVorschau: Widget!
-    var spielerVorschaubild: Widget!
-    var spielerVorschauzeit: Widget!
-    /// Der Kapitelname vor der Zeit in der Vorschau; leer und verborgen ohne Kapitel.
-    var spielerVorschauname: Widget!
-    var spielerVorschauhuelle: Widget!
-    /// Das Technikschild ueber dem Film — `nil`, wenn es aus ist.
-    var technikschild: Widget!
-    /// Der letzte Stand der Zaehler; die naechste Messung rechnet daraus.
-    var technikzaehler: Zaehlwerk?
-    /// Seerr — Zugang und Client, `nil` solange nichts eingerichtet ist.
-    var seerrzugang: Seerrzugang?
-    var seerrclient: SeerrClient?
-    /// Ob die gespeicherte Seerr-Sitzung noch traegt. `nil` heisst „noch
-    /// nicht nachgesehen"; zurueckgesetzt beim Trennen und beim Verbinden.
-    var seerrGilt: Bool?
-    /// Die Seerr-Treffer der Suche — Ueberschrift und Raster darunter.
-    var seerrUeberschrift: Widget!
-    /// Die Zeile aus Überschrift und Zählmarke — sie wird als Ganzes
-    /// ein- und ausgeblendet, nicht nur die Überschrift.
-    var seerrKopfzeile: Widget!
-    /// Wie viele Treffer Seerr hat (E27).
-    var seerrZahl: Widget!
-    var seerrRaster: Widget!
-    var schlafminuten: Int?
-    var schlaftakt = 0
+    /// Unlike the Mac, not a second overlapping widget: a single one that is never
+    /// removed while the player is open. That prevents flicker when the episode
+    /// layer opens, without needing two copies.
+    var playerTitleState: Widget!
+    var playerTitleRow: Widget!
+    /// The invisible title in the controls' header that reserves the meta line's
+    /// place under the standing title.
+    var playerTitleSpace: Widget!
+    /// Under the title: the meta line ("Staffel 1 · Folge 3"), or, when the
+    /// episode layer is open, the season picker in its place.
+    var playerMetaRow: Widget!
+    var playerSeasonSelection: Widget!
+    /// The episode list of the open episode layer and its scroller, as a field
+    /// and not a local variable: a `Task.detached` that returns later must not
+    /// carry a GTK widget in its closure (Swift 6 requires `Sendable`, and a
+    /// `Widget` is not). Going via `self` (which counts as `@unchecked Sendable`)
+    /// takes the same path safely.
+    var playerEpisodesList: Widget!
+    var playerEpisodesScroller: Widget!
+    /// The glyph in the fullscreen icon button, swapped when the fullscreen state
+    /// changes (``fullscreenToggle()``).
+    var playerFullscreenImage: PlayerCharacter?
+    /// Whether the window was already fullscreen before the player; see
+    /// ``playerClose(report:windowBack:)``.
+    var fullscreenPrePlayer = false
+    /// Whether the controls should currently be shown: the state, not the
+    /// opacity, which is an intermediate value during a fade.
+    var controlsOpen = false
+    /// The three buttons in the middle and the icon row at the top right; both
+    /// make way for the preview while the slider is dragged (Mac: `atSlider`).
+    var playerCenter: Widget!
+    var playerIconRail: Widget!
+    /// The volume slider at the far left of the icon row; `volumePulls`
+    /// keeps the controls visible while someone drags the handle.
+    var playerVolume: VolumeSlider?
+    var volumePulls = false
+    var volumeClock = 0
+    /// The wheel has changed the value; it is not saved yet.
+    var volumeWheelOpen = false
+    /// The button that opened a layer; focus returns to it when the layer closes.
+    var playerLayersButtons: [PlayerLayer: Widget] = [:]
+    /// The episode the episode list scrolls to once it is laid out.
+    var playerEpisodesTarget: Widget!
+    /// The X of the open layer; it gets focus on open.
+    var playerLayersX: Widget!
+    /// The season whose episodes are being loaded; a later response for another
+    /// season is discarded.
+    var playerEpisodesSeason: String?
+    /// Trickplay preview at the time slider: `nil` while no server sheet is
+    /// loaded or the pointer is not over the bar.
+    var playerTrickplay: TrickplayImages?
+    var playerPreview: Widget!
+    var playerPreviewImage: Widget!
+    var playerPreviewTime: Widget!
+    /// The chapter name before the time in the preview; empty and hidden without
+    /// chapters.
+    var playerPreviewName: Widget!
+    var playerPreviewWrapper: Widget!
+    /// The technical overlay over the movie, `nil` when off.
+    var techBadge: Widget!
+    /// The last state of the counters; the next measurement computes from it.
+    var techCounter: Counter?
+    /// Seerr: credentials and client, `nil` while nothing is set up.
+    var seerrAccess: SeerrAccess?
+    var seerrClient: SeerrClient?
+    /// Whether the stored Seerr session still works. `nil` means not checked yet;
+    /// reset on disconnect and on connect.
+    var seerrApplies: Bool?
+    /// The Seerr results of the search: heading and grid below.
+    var seerrHeading: Widget!
+    /// The row of heading and count badge; shown and hidden as a whole, not just
+    /// the heading.
+    var seerrHeaderRow: Widget!
+    /// How many results Seerr has.
+    var seerrNumber: Widget!
+    var seerrGrid: Widget!
+    var sleepMinutes: Int?
+    var sleepTick = 0
 
-    // MARK: Bibliotheken (D9)
-    /// Was der Server an Bibliotheken hat. **Ab zwei derselben Gattung** wird
-    /// zwischen ihnen gewählt; bei einer erscheint kein Umschalter.
-    var sichten: [Item] = []
-    var gewaehlteBibliothek: [Bereich: String] {
+    // MARK: Libraries
+    /// The libraries the server has. **From two of the same kind** the user
+    /// chooses between them; with one there is no switcher.
+    var review: [Item] = []
+    var selectedLibrary: [Region: String] {
         get {
-            var d: [Bereich: String] = [:]
-            for (k, v) in wahlen.bibliothekJeGattung {
-                if let b = Bereich.allCases.first(where: { $0.kennung == k }) { d[b] = v }
+            var d: [Region: String] = [:]
+            for (k, v) in selection.libraryPerGenre {
+                if let b = Region.allCases.first(where: { $0.identifier == k }) { d[b] = v }
             }
             return d
         }
         set {
-            for (b, v) in newValue { wahlen.bibliothekJeGattung[b.kennung] = v }
-            wahlen.sichern()
+            for (b, v) in newValue { selection.libraryPerGenre[b.identifier] = v }
+            selection.secure()
         }
     }
-    // MARK: Titelmenue: Alle, Sammlungen, Bibliotheken (Mac 8ca6269a)
-    /// Knopf, Titel und Winkel des Titelmenues je Bereich.
-    var titelwahl: [Bereich: (knopf: Widget, titel: Widget, winkel: Widget)] = [:]
-    /// Die Sammlungen des Kontos — `nil`, solange nicht gefragt.
-    var sammlungsverzeichnis: Sammlungsverzeichnis?
-    /// Filme und Serien je gemischter Bibliothek.
-    var bibliotheksanteile: [String: Bibliotheksanteil] = [:]
-    /// Fuer welches Konto und welche Bibliotheken beides gilt.
-    var angebotFuer: String?
-    var angebotLaeuft: String?
-    var angebotZeit: Date?
-    /// Wer auf das laufende Laden wartet — die Reihe „Teil der Sammlung".
-    var angebotWartende: [() -> Void] = []
-    /// Woraus eine Rasterseite zuletzt gelesen hat — wechselt es mit dem
-    /// Angebot, wird neu geladen.
-    var rasterQuelle: [Bereich: String] = [:]
-    /// Nach einem Kontowechsel: Raster, deren neuer Inhalt gestaffelt kommt.
-    var rasterStaffeln: Set<Bereich> = []
-    /// **Aus mehreren Bibliotheken wird gesiebt** (``Titelsieb``): je Titel
-    /// einmal. Dazu, wie weit die rohen Seiten des Servers schon gelesen sind.
-    var rasterSieb: [Bereich: Titelsieb] = [:]
-    var rasterRoh: [Bereich: (versatz: Int, gesamt: Int)] = [:]
-    /// Wann die Startseite zuletzt geladen hat — für D8.
-    var zuletztGeladen: Date?
-    /// **Die Detailseite hat zwei Scheiben, nicht eine.**
+    // MARK: Title menu: All, collections, libraries (Mac)
+    /// Button, title and arrow of the title menu per section.
+    var titleSelection: [Region: (button: Widget, title: Widget, angle: Widget)] = [:]
+    /// The account's collections; `nil` until requested.
+    var collectionDirectory: CollectionDirectory?
+    /// Movies and series per mixed library.
+    var libraryShares: [String: LibraryShare] = [:]
+    /// For which account and which libraries both apply.
+    var offeringFor: String?
+    var offeringRuns: String?
+    var offeringTime: Date?
+    /// Who is waiting for the running load: the "Teil der Sammlung" row.
+    var offeringWaiting: [() -> Void] = []
+    /// What a grid page last read from; if that changes with the offer, it
+    /// reloads.
+    var gridSource: [Region: String] = [:]
+    /// After an account switch: grids whose new content arrives staggered.
+    var gridSeasons: Set<Region> = []
+    /// **Several libraries are filtered** (``TitleFilter``): each title once. Also
+    /// how far the server's raw pages have been read.
+    var gridFilter: [Region: TitleFilter] = [:]
+    var gridRaw: [Region: (offset: Int, total: Int)] = [:]
+    /// When the home screen last loaded, for reloading on return to the
+    /// foreground.
+    var lastLoaded: Date?
+    /// **The detail page has two panes, not one.**
     ///
-    /// Ein `GtkStack` bewegt sich zwischen *verschiedenen* Kindern. Wer
-    /// dasselbe Kind leert und neu füllt, bekommt keine Bewegung — und genau
-    /// so stand es hier: von der Startseite auf einen Film schob es, von
-    /// einem Film auf die Serie dahinter nicht. Zwei Scheiben, abwechselnd
-    /// gefüllt, machen aus jedem Schritt einen Wechsel.
-    var detailscheiben: [Widget] = []
-    var detailscheibe = 0
-    var detailhuelle: Widget! { detailscheiben[detailscheibe] }
-    /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
-    /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
-    var detailkopfTitel: Widget!
-    var detailkopfLeiste: Widget!
-    var detailkopfVerlauf: Widget!
+    /// A `GtkStack` animates between *different* children. Clearing and refilling
+    /// the same child gives no motion, and that is how it was: it slid from the
+    /// home screen to a movie, but not from a movie to the series behind it. Two
+    /// panes, filled alternately, turn every step into a switch.
+    var detailDiscs: [Widget] = []
+    var detailDisc = 0
+    var detailWrapper: Widget! { detailDiscs[detailDisc] }
+    /// Needed while scrolling to fade the title into the header bar; the same
+    /// calculation as `DetailHeader.staerke` on the Mac.
+    var detailHeaderTitle: Widget!
+    var detailHeaderBar: Widget!
+    var detailHeaderHistory: Widget!
 
-    /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
+    /// **Sidebar left, content right**, the Mac's layout.
     ///
-    /// Auf dem Mac liegt die Seitenleiste über die volle Fensterhöhe, die
-    /// Fensterampel schwebt darüber, und `Stil.ampelHoehe` hält ihr oben 40
-    /// Punkt frei. Unter Wayland gehört die Titelzeile dem Fenster und nicht
-    /// uns; die Leiste beginnt deshalb unter einer schmalen Kopfzeile, die
-    /// dieselbe Farbe trägt wie die Leiste. Das ist die eine Abweichung, die
-    /// sich nicht wegräumen lässt, ohne die Fensterknöpfe zu verlieren.
-    private func startseiteBauen() -> Widget! {
-        let quer = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
-        anhaengen(quer, seitenleisteBauen())
+    /// On the Mac the sidebar spans the full window height, the window buttons
+    /// float above it, and `Theme.signalHeight` keeps 40 points free at its top. On
+    /// Wayland the title bar belongs to the window, not to us; the sidebar
+    /// therefore starts below a narrow header row in the sidebar's color. This is
+    /// the one deviation that cannot be removed without losing the window buttons.
+    private func homePageBuild() -> Widget! {
+        let landscape = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
+        append(landscape, sidebarBuild())
 
-        inhalt = gtk_stack_new()
-        // **Keine Kreuzblende.** `GtkStack` kann nur überblenden — beide
-        // Seiten gleichzeitig halb. Der Bereichswechsel läuft deshalb über
-        // ``stapelWechseln``: erst weg, dann da.
-        gtk_stack_set_transition_type(OpaquePointer(inhalt), GTK_STACK_TRANSITION_TYPE_NONE)
-        gtk_widget_set_hexpand(inhalt, 1)
-        gtk_widget_set_vexpand(inhalt, 1)
+        content = gtk_stack_new()
+        // **No cross-fade.** `GtkStack` can only cross-fade, with both sides half
+        // visible at once. Section changes therefore go through ``switchStack``:
+        // first out, then in.
+        gtk_stack_set_transition_type(OpaquePointer(content), GTK_STACK_TRANSITION_TYPE_NONE)
+        gtk_widget_set_hexpand(content, 1)
+        gtk_widget_set_vexpand(content, 1)
 
-        gtk_stack_add_named(OpaquePointer(inhalt), startbereichBauen(), "start")
-        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
-        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
-        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
-        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.sammlung), "sammlung")
-        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.gattung), "gattung")
-        gtk_stack_add_named(OpaquePointer(inhalt), downloadseiteBauen(), "downloads")
-        gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
+        gtk_stack_add_named(OpaquePointer(content), startSectionBuild(), "start")
+        gtk_stack_add_named(OpaquePointer(content), gridPageBuild(.movies), "filme")
+        gtk_stack_add_named(OpaquePointer(content), gridPageBuild(.seriesList), "serien")
+        gtk_stack_add_named(OpaquePointer(content), gridPageBuild(.watchlist), "merkliste")
+        gtk_stack_add_named(OpaquePointer(content), gridPageBuild(.collection), "sammlung")
+        gtk_stack_add_named(OpaquePointer(content), gridPageBuild(.genre), "gattung")
+        gtk_stack_add_named(OpaquePointer(content), downloadsPageBuild(), "downloads")
+        gtk_stack_add_named(OpaquePointer(content), searchBuild(), "suche")
 
-        // **Die Detailseite legt sich auf, sie tritt nicht daneben.**
+        // **The detail page slides over, it does not move beside.**
         //
-        // Ein `GtkStack` schiebt beim Wechsel *beide* Kinder um die volle
-        // Breite — das sieht aus, als lägen die Seiten nebeneinander. Der Mac
-        // schiebt die neue Seite über die alte, und die darunter wandert nur
-        // ein knappes Drittel mit. Dafür braucht es eine eigene Bühne.
+        // A `GtkStack` slides *both* children by the full width on a switch, which
+        // looks as if the pages lay side by side. The Mac slides the new page over
+        // the old one, and the one underneath moves only about a third. That needs
+        // its own stage.
         //
-        // `GtkFixed` ist die einzige GTK-Kiste, die ihre Kinder frei
-        // verschiebt, und `gtk_fixed_move` ändert dabei nur den Vorsatz,
-        // nicht die Grösse — die Seite wird also nicht bei jedem Bild neu
-        // umbrochen.
-        buehne = gtk_fixed_new()
-        gtk_widget_set_overflow(buehne, GTK_OVERFLOW_HIDDEN)
-        gtk_fixed_put(alsFest(buehne), inhalt, 0, 0)
+        // `GtkFixed` is the only GTK container that moves its children freely, and
+        // `gtk_fixed_move` only changes the offset, not the size, so the page is not
+        // re-wrapped on every frame.
+        stage = gtk_fixed_new()
+        gtk_widget_set_overflow(stage, GTK_OVERFLOW_HIDDEN)
+        gtk_fixed_put(asFixed(stage), content, 0, 0)
         for _ in 0..<2 {
-            let scheibe: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            gtk_widget_add_css_class(scheibe, "swiftly-scheibe")
-            detailscheiben.append(scheibe)
-            gtk_fixed_put(alsFest(buehne), scheibe, 0, 0)
-            gtk_widget_set_visible(scheibe, 0)
+            let disc: Widget! = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+            gtk_widget_add_css_class(disc, "swiftly-scheibe")
+            detailDiscs.append(disc)
+            gtk_fixed_put(asFixed(stage), disc, 0, 0)
+            gtk_widget_set_visible(disc, 0)
         }
-        obenAuf = inhalt
+        onTop = content
 
-        // **Ein `GtkFixed` gibt seinen Kindern die Wunschgrösse, nicht die
-        // eigene** (Falle 1). Eine Seite ist innen ein Scroller und wünscht
-        // sich fast nichts — sie fiele in sich zusammen. Also muss ihr jemand
-        // die Grösse sagen, und dafür muss sie erst einmal jemand kennen.
+        // **A `GtkFixed` gives its children their preferred size, not its own**
+        // (trap 1). A page is a scroller inside and prefers almost nothing, so it
+        // would collapse. Someone has to tell it the size, and someone has to know it
+        // first.
         //
-        // Die Zeichenfläche ist dieser Jemand: als **Hauptkind** einer
-        // Überlagerung bekommt sie immer die volle Fläche, und ihr Signal
-        // `resize` nennt sie. Gemalt wird darauf nichts.
-        let masz: Widget! = gtk_drawing_area_new()
-        gtk_widget_add_css_class(masz, "swiftly-blank")
-        gtk_widget_set_hexpand(masz, 1)
-        gtk_widget_set_vexpand(masz, 1)
-        beiGroesse(masz) { [weak self] breite, hoehe in
+        // The drawing area is that someone: as the **main child** of an overlay it
+        // always gets the full area, and its `resize` signal reports it. Nothing is
+        // drawn on it.
+        let sizeInfo: Widget! = gtk_drawing_area_new()
+        gtk_widget_add_css_class(sizeInfo, "swiftly-blank")
+        gtk_widget_set_hexpand(sizeInfo, 1)
+        gtk_widget_set_vexpand(sizeInfo, 1)
+        onSize(sizeInfo) { [weak self] width, height in
             guard let self else { return }
-            // **Nur wenn sich wirklich etwas geändert hat.**
+            // **Only when something actually changed.**
             //
-            // `gtk_widget_set_size_request` meldet eine neue Auslegung an —
-            // auch dann, wenn derselbe Wert noch einmal gesetzt wird. Die
-            // neue Auslegung teilt der Zeichenfläche wieder eine Grösse zu,
-            // die meldet wieder, und das geht im Bildtakt weiter: **eine
-            // Schleife, die sich selbst füttert.** Gemessen: 92 % Dauerlast,
-            // schon auf dem Anmeldebildschirm, und ein Fenster, das nicht
-            // mehr zum Zeichnen kam.
-            guard breite != self.buehnenBreite || hoehe != self.buehnenHoehe else { return }
-            self.buehnenBreite = breite
-            self.buehnenHoehe = hoehe
-            // **Nicht mitten in der Auslegung.** Eine Anforderung aus dem
-            // `resize` heraus ging beim Vergroessern manchmal verloren, und
-            // der neue Streifen blieb schwarz.
-            aufHauptfaden {
-                guard self.buehnenBreite == breite, self.buehnenHoehe == hoehe else { return }
-                for ebene in [self.inhalt!] + self.detailscheiben {
-                    gtk_widget_set_size_request(ebene, breite, hoehe)
+            // `gtk_widget_set_size_request` queues a new layout even when the same value
+            // is set again. The new layout assigns the drawing area a size again, it
+            // reports again, and this continues every frame: **a loop that feeds itself.**
+            // Measured: 92% constant load already on the sign-in screen, and a window that
+            // no longer got to draw.
+            guard width != self.stageWidth || height != self.stageHeight else { return }
+            self.stageWidth = width
+            self.stageHeight = height
+            // **Not in the middle of layout.** A request from inside `resize` was
+            // sometimes lost when growing, and the new strip stayed black.
+            onMainThread {
+                guard self.stageWidth == width, self.stageHeight == height else { return }
+                for layer in [self.content!] + self.detailDiscs {
+                    gtk_widget_set_size_request(layer, width, height)
                 }
-                gtk_widget_queue_resize(self.buehne)
+                gtk_widget_queue_resize(self.stage)
             }
         }
 
-        let rahmen: Widget! = gtk_overlay_new()
-        gtk_widget_set_hexpand(rahmen, 1)
-        gtk_widget_set_vexpand(rahmen, 1)
-        gtk_overlay_set_child(OpaquePointer(rahmen), masz)
-        gtk_overlay_add_overlay(OpaquePointer(rahmen), buehne)
-        anhaengen(quer, rahmen)
+        let frameRect: Widget! = gtk_overlay_new()
+        gtk_widget_set_hexpand(frameRect, 1)
+        gtk_widget_set_vexpand(frameRect, 1)
+        gtk_overlay_set_child(OpaquePointer(frameRect), sizeInfo)
+        gtk_overlay_add_overlay(OpaquePointer(frameRect), stage)
+        append(landscape, frameRect)
 
-        titelzeile = beschriftung("", stil: "swiftly-zweitzeile")
-        return quer
+        titleLine = label("", style: "swiftly-zweitzeile")
+        return landscape
     }
 
-    // MARK: Tastenkürzel
+    // MARK: Keyboard shortcuts
 
-    /// **Dieselben Kürzel wie auf dem Mac**, nur mit Strg statt Befehl:
-    /// 1 Start, 2 Filme, 3 Serien, F Suche. Sie stehen in
-    /// `Sources/macOS/SwiftlyApp.swift` als `Kommandoknopf`.
+    /// **The same shortcuts as on the Mac**, with Ctrl instead of Cmd: 1 Home,
+    /// 2 Movies, 3 Series, F Search. They are defined in
+    /// `Sources/macOS/SwiftlyApp.swift` as `CommandButton`.
     ///
-    /// Auf dem Mac hängen sie in der Menüleiste; die gibt es hier nicht, also
-    /// horcht das Fenster selbst. `GtkShortcutController` wäre der gehobene
-    /// Weg, verlangt aber Aktionen mit Namen — für vier Tasten ist ein
-    /// Tastenhorcher weniger Apparat.
-    private func tastenEinrichten() {
-        let horcher = gtk_event_controller_key_new()
-        // **Erfassungsphase, nicht Blasenphase.**
+    /// On the Mac they hang in the menu bar; there is none here, so the window
+    /// listens itself. `GtkShortcutController` would be the proper way but needs
+    /// named actions; for four keys a key listener is less machinery.
+    private func keysSetUp() {
+        let watcher = gtk_event_controller_key_new()
+        // **Capture phase, not bubble phase.**
         //
-        // In der Blasenphase bekommt erst das fokussierte Widget die Taste.
-        // Beim Öffnen des Players liegt der Fokus auf dem ersten Knopf oben —
-        // und die Leertaste drückt ihn, statt anzuhalten. Wer vorher irgendwo
-        // hingeklickt hatte, sah den Fehler nicht.
+        // In the bubble phase the focused widget gets the key first. When the player
+        // opens, focus is on the first button at the top, and the space bar presses it
+        // instead of pausing. Anyone who had clicked somewhere before did not see the
+        // bug.
         //
-        // Dieselbe Falle wie beim Scrollen, dort mit demselben Mittel gelöst.
-        // Ungelesene Tasten reicht der Rückruf weiter, es geht also nichts
-        // verloren — im Suchfeld tippt es sich weiter wie zuvor.
-        gtk_event_controller_set_propagation_phase(horcher, GTK_PHASE_CAPTURE)
-        g_signal_connect_data(UnsafeMutableRawPointer(horcher), "key-pressed",
-                              unsafeBitCast(tasteGedrueckt, to: GCallback.self),
+        // The same trap as with scrolling, solved the same way. The callback passes
+        // unhandled keys on, so nothing is lost: typing in the search field works as
+        // before.
+        gtk_event_controller_set_propagation_phase(watcher, GTK_PHASE_CAPTURE)
+        g_signal_connect_data(UnsafeMutableRawPointer(watcher), "key-pressed",
+                              unsafeBitCast(keyPressed, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
-        gtk_widget_add_controller(fenster, horcher)
+        gtk_widget_add_controller(window, watcher)
     }
 
-    /// Wahr heißt: verbraucht, nicht weiterreichen.
-    func taste(_ wert: UInt32, strg: Bool) -> Bool {
-        // **Die Kürzel unter den Knöpfen müssen stimmen.**
+    /// True means consumed, do not pass on.
+    func keyButton(_ value: UInt32, ctrl: Bool) -> Bool {
+        // **The shortcuts under the buttons must be right.**
         //
-        // Unter den drei Knöpfen des Players stehen „←", „Leertaste" und „→"
-        // — sie standen dort, ohne dass eine dieser Tasten etwas tat. Ein
-        // Hinweis, der nicht stimmt, ist schlimmer als keiner.
+        // Under the player's three buttons stand "←", "Leertaste" and "→", and they
+        // stood there without any of those keys doing anything. A hint that is wrong
+        // is worse than none.
         //
-        // Dieselben vier wie auf dem Mac (`PlayerScreen` 242–247), ohne
-        // Zusatztaste: Leertaste hält an, die Pfeile springen, F schaltet das
-        // Vollbild, Escape verlässt erst das Vollbild und dann den Player.
-        if laufenderTitel != nil, !strg {
-            switch wert {
-            // **Bei offener Ebene gehören die Tasten ihr** — dieselbe Regel
-            // wie auf dem Mac (`PlayerScreen.fluchttaste`-Umgebung): Space und
-            // Pfeile sollen nicht die Wiedergabe steuern, während eine
-            // Vollbild-Ebene offen ist. Escape bleibt davon unberührt, siehe
-            // unten.
-            case 0x020 where offeneEbene == nil:           // Leertaste
-                abspielenUmschalten()
+        // The same four as on the Mac (`PlayerScreen`), without a modifier: space
+        // pauses, the arrows seek, F toggles fullscreen, Escape leaves fullscreen first
+        // and then the player.
+        if runningTitle != nil, !ctrl {
+            switch value {
+            // **With a layer open the keys belong to it**, the same rule as on the Mac
+            // (`PlayerScreen.escapeKey` environment): space and arrows must not control
+            // playback while a fullscreen layer is open. Escape is unaffected; see below.
+            case 0x020 where openLayer == nil:           // Space
+                playToggle()
                 return true
-            case 0xFF51 where offeneEbene == nil:          // Pfeil links
-                springe(um: -Double(wahlen.zurueckSekunden))
-                spielerZurueckZeichen?.stupsen()
-                sprungZeigen(true)
-                steuerungZeigen()
+            case 0xFF51 where openLayer == nil:          // Left arrow
+                vault(um: -Double(selection.backSeconds))
+                playerBackCharacter?.nudge()
+                jumpShow(true)
+                controlsShow()
                 return true
-            case 0xFF53 where offeneEbene == nil:          // Pfeil rechts
-                springe(um: Double(wahlen.vorSekunden))
-                spielerVorZeichen?.stupsen()
-                sprungZeigen(false)
-                steuerungZeigen()
+            case 0xFF53 where openLayer == nil:          // Right arrow
+                vault(um: Double(selection.forwardSeconds))
+                playerPreCharacter?.nudge()
+                jumpShow(false)
+                controlsShow()
                 return true
-            // **Verzoegerung wie in VLC und auf dem Mac:** G/H Untertitel,
-            // J/K Ton, je 50 ms. Nicht bei offener Ebene — dort steht die
-            // Zeile selbst, und ihre Anzeige wuesste vom Tastendruck nichts.
+            // **Delay as in VLC and on the Mac:** G/H subtitles, J/K audio, 50 ms each.
+            // Not with a layer open: the row itself is shown there, and its display would
+            // not know about the key press.
             case 0x067, 0x047, 0x068, 0x048,               // g G h H
                  0x06A, 0x04A, 0x06B, 0x04B:               // j J k K
-                guard offeneEbene == nil else { return false }
-                let klein = wert | 0x20
-                verzoegern(untertitel: klein == 0x067 || klein == 0x068,
-                           klein == 0x067 || klein == 0x06A ? -1 : 1)
+                guard openLayer == nil else { return false }
+                let small = value | 0x20
+                postpone(subtitle: small == 0x067 || small == 0x068,
+                           small == 0x067 || small == 0x06A ? -1 : 1)
                 return true
             case 0xFFC8, 0x066, 0x046:                     // F11, f, F
-                // **F wie auf dem Mac** (`PlayerScreen`, `.keyboardShortcut("f")`)
-                // — ohne Zusatztaste und auch bei offener Ebene, dort hat es
-                // keine andere Bedeutung. F11 ist der Weg, den GTK-Nutzer kennen.
-                vollbildUmschalten()
+                // **F as on the Mac** (`PlayerScreen`, `.keyboardShortcut("f")`), without a
+                // modifier and also with a layer open, where it has no other meaning. F11 is
+                // the way GTK users know.
+                fullscreenToggle()
                 return true
-            // **M wie in jedem Player** schaltet den Ton — ohne Taste gab es
-            // hier gar keinen Weg dazu.
-            case 0x06D where offeneEbene == nil, 0x04D where offeneEbene == nil:
-                stummUmschalten()
-                lautstaerkeKurzZeigen()
+            // **M as in every player** toggles mute; without a key there was no way
+            // to do it.
+            case 0x06D where openLayer == nil, 0x04D where openLayer == nil:
+                mutedToggle()
+                volumeShortShow()
                 return true
-            // **Lautstärke wie am Mac:** Pfeil hoch und runter ±5 %.
-            case 0xFF52 where offeneEbene == nil:          // Pfeil hoch
-                lautstaerkeStufe(0.05)
+            // **Volume as on the Mac:** up and down arrows, +/-5%.
+            case 0xFF52 where openLayer == nil:          // Up arrow
+                volumeLevel(0.05)
                 return true
-            case 0xFF54 where offeneEbene == nil:          // Pfeil runter
-                lautstaerkeStufe(-0.05)
+            case 0xFF54 where openLayer == nil:          // Down arrow
+                volumeLevel(-0.05)
                 return true
-            case 0xFF0D, 0xFF8D:                           // Eingabe, Ziffernblock
-                // **Steht die Einblendung da, löst Eingabe sie aus** — ohne
-                // Fokus, wie am Mac (`PlayerScreen`, `.keyboardShortcut(.return)`).
-                // Sonst geht die Taste weiter an den fokussierten Knopf.
-                guard angebotImBild else { return false }
-                angebotAusfuehren()
+            case 0xFF0D, 0xFF8D:                           // Enter, numeric keypad
+                // **While the overlay is shown, Enter triggers it**, without focus, as on
+                // the Mac (`PlayerScreen`, `.keyboardShortcut(.return)`). Otherwise the key
+                // goes on to the focused button.
+                guard offeringImage else { return false }
+                offeringRun()
                 return true
             case 0xFF1B:                                   // Escape
-                // **Erst die Tafel, dann die Einblendung, dann das Vollbild,
-                // dann der Player.** Der Mac prueft die offene Spurwahl vor
-                // allem anderen (`PlayerScreen.fluchttaste()`); die
-                // Einblendung schliesst nur sich, der Film laeuft weiter.
-                if offeneEbene != nil {
-                    ebeneSchliessen()
-                } else if angebotImBild {
-                    angebotsebene.schliessen()
-                    angebotNachfuehren()
-                    Protokoll.schreib("[Angebot] geschlossen (Escape), weiter abgesagt: \(angebotsebene.weiterAbgesagt)")
+                // **First the panel, then the overlay, then fullscreen, then the player.**
+                // The Mac checks the open track picker before anything else
+                // (`PlayerScreen.escapeKey()`); the overlay closes only itself and the movie
+                // keeps playing.
+                if openLayer != nil {
+                    layerClose()
+                } else if offeringImage {
+                    offeringLayer.close()
+                    offeringUpdate()
+                    AppLog.writeOut("[Angebot] geschlossen (Escape), weiter abgesagt: \(offeringLayer.nextCancelled)")
                     fflush(nil)
-                } else if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
-                    gtk_window_unfullscreen(alsFenster(fenster))
+                } else if gtk_window_is_fullscreen(asWindow(window)) != 0 {
+                    gtk_window_unfullscreen(asWindow(window))
                 } else {
-                    spielerSchliessen()
+                    playerClose()
                 }
                 return true
             default: break
             }
         }
-        guard strg else { return false }
-        // GDKs Tastenwerte sind die ASCII-Zeichen; eigene Namen dafür gibt es
-        // in Swift nicht, weil sie in GDK Makros sind.
-        switch wert {
-        case 0x031: zeige(.start)                          // 1
-        case 0x032: zeige(.filme)                          // 2
-        case 0x033: zeige(.serien)                         // 3
+        guard ctrl else { return false }
+        // GDK's key values are the ASCII characters; Swift has no names for them
+        // because in GDK they are macros.
+        switch value {
+        case 0x031: show(.start)                          // 1
+        case 0x032: show(.movies)                          // 2
+        case 0x033: show(.seriesList)                         // 3
         case 0x066, 0x046:                                 // f / F
-            zeige(.suche)
-            gtk_widget_grab_focus(suchfeld)
+            show(.search)
+            gtk_widget_grab_focus(searchField)
         case 0x05B:                                        // [
-            // **Zurück** — der Mac hat es als Cmd+[ im Menü „Gehe zu"
-            // (`SwiftlyApp.swift:46`). Ohne das kommt man von einer
-            // Unterseite nur über den Pfeil zurück.
-            zurueck()
-        // **Die beiden Kürzel, die jede Desktop-App hat** (UX-Audit 27.09.,
-        // GNOME HIG): Strg+, öffnet die Einstellungen wie Befehl-, auf dem
-        // Mac, Strg+Q beendet. Nicht im Player — dort läge die Seite hinter
-        // dem Film.
-        case 0x02C where laufenderTitel == nil && client != nil: // ,
-            unterseiteOeffnen(.einstellungen)
+            // **Back**: the Mac has it as Cmd+[ in the "Gehe zu" menu
+            // (`SwiftlyApp.swift`). Without it, the arrow is the only way back from a
+            // subpage.
+            back()
+        // **The two shortcuts every desktop app has** (GNOME HIG): Ctrl+, opens the
+        // settings like Cmd+, on the Mac, Ctrl+Q quits. Not in the player, where the
+        // page would lie behind the movie.
+        case 0x02C where runningTitle == nil && client != nil: // ,
+            subpageOpen(.settings)
         case 0x071, 0x051:                                 // q / Q
-            // Über `close-request`, nicht hart beendet: ein laufender Film
-            // meldet so noch seine Stelle, und das Fenstermass wird gemerkt.
-            gtk_window_close(alsFenster(fenster))
+            // Via `close-request`, not a hard exit: a running movie still reports its
+            // position, and the window size is stored.
+            gtk_window_close(asWindow(window))
         default: return false
         }
         return true
     }
 
-    // MARK: Kopfzeile
+    // MARK: Header bar
 
-    /// **Die Kopfzeile bleibt leer.**
+    /// **The header bar stays empty.**
     ///
-    /// Servername und „Abmelden" standen hier, solange es keine Seitenleiste
-    /// gab. Auf dem Mac steht beides unten links im Konto, und dorthin ist es
-    /// jetzt gewandert. Die Leiste selbst muss bleiben: unter Wayland hängen
-    /// die Fensterknöpfe daran, und ohne sie liesse sich das Fenster nicht
-    /// mehr schliessen.
-    private func kopfzeileFuellen() {
-        gtk_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
-        kopfzeileZeigen(false)
+    /// Server name and "Abmelden" were here while there was no sidebar. On the Mac
+    /// both are at the bottom left in the account row, and they moved there. The
+    /// bar itself must stay: on Wayland the window buttons hang on it, and without
+    /// it the window could no longer be closed.
+    private func headerRowFill() {
+        gtk_header_bar_set_title_widget(OpaquePointer(headerLine), titleLine)
+        headerRowShow(false)
     }
 
-    private func kopfzeileZeigen(_ sichtbar: Bool) {
-        gtk_widget_set_visible(titelzeile, sichtbar ? 1 : 0)
+    private func headerRowShow(_ visible: Bool) {
+        gtk_widget_set_visible(titleLine, visible ? 1 : 0)
     }
 
-    // MARK: Seitenleiste
+    // MARK: Sidebar
 
-    private func seitenleisteBauen() -> Widget! {
-        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_add_css_class(leiste, "swiftly-seitenleiste")
-        gtk_widget_set_size_request(leiste, Int32(Stil.seitenleisteBreite), -1)
-        gtk_widget_set_hexpand(leiste, 0)
+    private func sidebarBuild() -> Widget! {
+        let bar = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_add_css_class(bar, "swiftly-seitenleiste")
+        gtk_widget_set_size_request(bar, Int32(Theme.sidebarWidth), -1)
+        gtk_widget_set_hexpand(bar, 0)
 
-        // Marke: 28 hoch, 20 seitlich, 18 Luft darunter — HauptView.swift.
-        let marke = Stil.wortmarke(hoehe: 28, links: true)
-        gtk_widget_set_margin_start(marke, 20)
-        gtk_widget_set_margin_end(marke, 20)
-        gtk_widget_set_margin_top(marke, 14)
-        gtk_widget_set_margin_bottom(marke, 18)
-        anhaengen(leiste, marke)
+        // Logo: 28 high, 20 on the sides, 18 below; from MainView.swift.
+        let mark = Theme.wordmark(height: 28, left: true)
+        gtk_widget_set_margin_start(mark, 20)
+        gtk_widget_set_margin_end(mark, 20)
+        gtk_widget_set_margin_top(mark, 14)
+        gtk_widget_set_margin_bottom(mark, 18)
+        append(bar, mark)
 
-        // Die vier Bereiche, 2 Abstand, 12 seitlich.
-        let bereiche = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-        gtk_widget_set_margin_start(bereiche, 12)
-        gtk_widget_set_margin_end(bereiche, 12)
-        for fall in Bereich.obenGruppe { anhaengen(bereiche, bereichszeile(fall)) }
-        anhaengen(leiste, bereiche)
+        // The four sections, 2 spacing, 12 on the sides.
+        let areas = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+        gtk_widget_set_margin_start(areas, 12)
+        gtk_widget_set_margin_end(areas, 12)
+        for fall in Region.topGroup { append(areas, sectionRow(fall)) }
+        append(bar, areas)
 
-        // **Darunter, was mir gehoert.** Die Begruendung steht bei
-        // `Bereich.meinsGruppe`; die Masse sind die der Bibliotheksrubrik,
-        // weil es dieselbe Sorte Zwischenueberschrift ist.
-        let meinsrubrik = rubrik(uebersetzt("Meins"))
-        gtk_widget_set_margin_top(meinsrubrik, 26)
-        gtk_widget_set_margin_bottom(meinsrubrik, 8)
-        gtk_widget_set_margin_start(meinsrubrik, 12)
-        gtk_widget_set_margin_end(meinsrubrik, 12)
-        anhaengen(leiste, meinsrubrik)
+        // **Below that, what belongs to the user.** The reasoning is at
+        // `Region.mineGroup`; the measurements are those of the library group,
+        // since it is the same kind of subheading.
+        let mineCategory = category(translated("Meins"))
+        gtk_widget_set_margin_top(mineCategory, 26)
+        gtk_widget_set_margin_bottom(mineCategory, 8)
+        gtk_widget_set_margin_start(mineCategory, 12)
+        gtk_widget_set_margin_end(mineCategory, 12)
+        append(bar, mineCategory)
 
-        meinsliste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-        gtk_widget_set_margin_start(meinsliste, 12)
-        gtk_widget_set_margin_end(meinsliste, 12)
-        anhaengen(leiste, meinsliste)
-        meinsFuellen()
+        myList = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+        gtk_widget_set_margin_start(myList, 12)
+        gtk_widget_set_margin_end(myList, 12)
+        append(bar, myList)
+        mineFill()
 
-        // **Keine Rubrik „Bibliotheken" mehr** (Mac 8ca6269a). Die uebrigen
-        // Bibliotheken oeffneten sich hier als eigene Wurzel; jetzt stehen sie
-        // im Titelmenue von Filme und Serien — ein Weg statt zwei, und einer,
-        // der den Bereich nicht verlaesst.
+        // **No "Bibliotheken" group any more** (Mac). The other libraries used to
+        // open here as their own root; now they are in the title menu of Movies and
+        // Series: one path instead of two, and one that does not leave the section.
 
-        anhaengen(leiste, luft())
-        // **Was auf einem anderen Gerät läuft, steht neben dem Konto.**
+        append(bar, padding())
+        // **What is playing on another device sits next to the account.**
         //
-        // Genau dort, wo man ohnehin hinsieht — dieselbe Stelle wie das
-        // Abzeichen auf iPhone und Fernseher, nur in der Form dieser Leiste
-        // (`macOS/HauptView.swift:473`). Sichtbar wird sie nur, wenn es
-        // wirklich etwas zu übernehmen gibt.
-        uebernahmezeile = uebernahmezeileBauen()
-        gtk_widget_set_visible(uebernahmezeile, 0)
-        anhaengen(leiste, uebernahmezeile)
-        anhaengen(leiste, trennlinie())
-        anhaengen(leiste, profilzeileBauen())
-        return leiste
+        // Exactly where the user already looks, the same place as the badge on iPhone
+        // and TV, in the form of this sidebar (`macOS/MainView.swift`). It only
+        // becomes visible when there is actually something to take over.
+        takeoverRow = takeoverRowBuild()
+        gtk_widget_set_visible(takeoverRow, 0)
+        append(bar, takeoverRow)
+        append(bar, divider())
+        append(bar, profileRowBuild())
+        return bar
     }
 
-    /// Eine Zeile in der Leiste, gemerkt unter ihrem Bereich.
-    private func bereichszeile(_ fall: Bereich) -> Widget! {
-        let zeile = seitenleistenzeile(symbol: fall.symbol,
-                                       text: fall.beschriftung,
-                                       aktiv: fall == bereich)
-        // **Das Kuerzel steht am Kurzhinweis.**
+    /// A row in the bar, stored under its section.
+    private func sectionRow(_ fall: Region) -> Widget! {
+        let row = sidebarRow(symbol: fall.symbol,
+                                       text: fall.label,
+                                       active: fall == section)
+        // **The shortcut sits on the tooltip.**
         //
-        // Auf dem Mac stehen alle fuenf sichtbar in der Menueleiste unter
-        // „Gehe zu" (`SwiftlyApp.swift:102-110`). Die gibt es hier nicht —
-        // ein Wayland-Fenster hat keine —, und die Kuerzel selbst
-        // funktionierten, waren aber nirgends abzulesen. Ein Kurzhinweis ist
-        // der Ort, an dem eine Oberflaeche ohne Menue so etwas sagt.
-        if let kuerzel = fall.kuerzel {
-            gtk_widget_set_tooltip_text(zeile, "\(fall.beschriftung)   \(kuerzel)")
+        // On the Mac all five are visible in the menu bar under "Gehe zu"
+        // (`SwiftlyApp.swift`). That does not exist here (a Wayland window has none),
+        // and the shortcuts worked but could be read nowhere. A tooltip is where a UI
+        // without a menu says such things.
+        if let abbreviation = fall.abbreviation {
+            gtk_widget_set_tooltip_text(row, "\(fall.label)   \(abbreviation)")
         }
-        beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
-        bereichsknoepfe[fall] = zeile
-        return zeile
+        signal(row, "clicked") { [weak self] in self?.show(fall) }
+        sectionButtons[fall] = row
+        return row
     }
 
-    /// **Die Rubrik „Meins" wird neu gebaut, wenn der Schalter umgeht.**
-    /// H1: ohne Downloads gibt es die Zeile nicht — und wer sie ausschaltet,
-    /// waehrend er darauf steht, soll nicht auf einer Seite stehenbleiben,
-    /// die es nicht mehr gibt.
-    func meinsFuellen() {
-        guard meinsliste != nil else { return }
-        leeren(meinsliste)
-        for fall in Bereich.meinsGruppe(downloads: downloadsAn) {
-            anhaengen(meinsliste, bereichszeile(fall))
+    /// **The "Meins" group is rebuilt when the switch is toggled.**
+    /// Without downloads the row does not exist, and whoever turns it off while
+    /// standing on it must not stay on a page that no longer exists.
+    func mineFill() {
+        guard myList != nil else { return }
+        wipe(myList)
+        for fall in Region.mineGroup(downloads: downloadsAn) {
+            append(myList, sectionRow(fall))
         }
         if !downloadsAn {
-            bereichsknoepfe[.downloads] = nil
-            if bereich == .downloads { zeige(.start) }
+            sectionButtons[.downloads] = nil
+            if section == .downloads { show(.start) }
         }
     }
 
-    /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
-    /// Name 14 halbfett, Server 11 sehr leise.
-    /// Die Zeile „Hier weiterschauen".
+    /// Who is signed in, and where. At the bottom of the sidebar: 40 high, picture
+    /// 26, name 14 semibold, server 11 very quiet.
+    /// The "Hier weiterschauen" row.
     ///
-    /// **Mass für Mass vom Mac** (`Macbausteine.Uebernahmezeile`): 40 hoch,
-    /// Eine Kapsel wie das Abzeichen am Fernseher: 14 innen, Zeichen 20 breit
-    /// und Titel im Akzent, darunter Titel und Folge in 11 auf sehr leiser
-    /// Schrift. Akzent zu 18 % über `grund`, schwebend Weiß 6 % darüber.
+    /// **Measured exactly from the Mac** (`Macbausteine.Uebernahmezeile`): 40 high,
+    /// a capsule like the badge on the TV: 14 inside, glyph 20 wide and title in
+    /// the accent, below it title and episode in 11 on very quiet text. Accent at
+    /// 18% over `reason`, floating white 6% on top.
     ///
-    /// Zuerst stand hier der Titel oben und „läuft auf iPhone" darunter. Das
-    /// sagt, **was** läuft — der Mac sagt, **was man tun kann**, und stellt
-    /// den Titel darunter. Bei einem Angebot ist das die richtige Reihenfolge.
-    private func uebernahmezeileBauen() -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-uebernahme")
-        // **Ein Abstand zu allen Seiten, an denen es klebt** (Mac
-        // `abzeichenRand`). Unten stand 4 gegen 12 an den Seiten. Die Karte
-        // wächst aus der Mitte dieser Zeile (``uebergabeStarten``) und zieht
-        // damit von selbst mit.
-        gtk_widget_set_margin_start(knopf, Stil.abzeichenRand)
-        gtk_widget_set_margin_end(knopf, Stil.abzeichenRand)
-        gtk_widget_set_margin_bottom(knopf, Stil.abzeichenRand)
+    /// The title used to be on top with "läuft auf iPhone" below. That says
+    /// **what** is playing; the Mac says **what can be done** and puts the title
+    /// below. With one offer that is the right order.
+    private func takeoverRowBuild() -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-uebernahme")
+        // **One inset on every side the badge touches** (macOS `abzeichenRand`). The bottom used to be 4 against 12 at the sides.
+        // The card grows from the middle of this row (`handoffStart`) and follows it automatically.
+        gtk_widget_set_margin_start(button, Theme.badgeEdge)
+        gtk_widget_set_margin_end(button, Theme.badgeEdge)
+        gtk_widget_set_margin_bottom(button, Theme.badgeEdge)
 
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        uebernahmezeichen = gtk_image_new_from_icon_name("phone-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(uebernahmezeichen), 13)
-        gtk_widget_set_size_request(uebernahmezeichen, 20, -1)
-        anhaengen(reihe, uebernahmezeichen)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
+        takeoverCharacter = gtk_image_new_from_icon_name("phone-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(takeoverCharacter), 13)
+        gtk_widget_set_size_request(takeoverCharacter, 20, -1)
+        append(rail, takeoverCharacter)
 
-        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
+        let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 1)
         gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
-        let oben = beschriftung(uebersetzt("Hier weiterschauen"), stil: "swiftly-kacheltitel")
-        gtk_label_set_xalign(OpaquePointer(oben), 0)
-        gtk_label_set_ellipsize(OpaquePointer(oben), PANGO_ELLIPSIZE_END)
-        gtk_label_set_max_width_chars(OpaquePointer(oben), 1)
-        anhaengen(text, oben)
-        uebernahmeoben = oben
-        uebernahmetitel = beschriftung("", stil: "swiftly-uebernahmezeile")
-        gtk_label_set_xalign(OpaquePointer(uebernahmetitel), 0)
-        gtk_label_set_ellipsize(OpaquePointer(uebernahmetitel), PANGO_ELLIPSIZE_END)
-        gtk_label_set_max_width_chars(OpaquePointer(uebernahmetitel), 1)
-        anhaengen(text, uebernahmetitel)
+        let top = label(translated("Hier weiterschauen"), style: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(top), 0)
+        gtk_label_set_ellipsize(OpaquePointer(top), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(top), 1)
+        append(text, top)
+        takeoverTop = top
+        takeoverTitle = label("", style: "swiftly-uebernahmezeile")
+        gtk_label_set_xalign(OpaquePointer(takeoverTitle), 0)
+        gtk_label_set_ellipsize(OpaquePointer(takeoverTitle), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(takeoverTitle), 1)
+        append(text, takeoverTitle)
         gtk_widget_set_hexpand(text, 1)
-        anhaengen(reihe, text)
+        append(rail, text)
 
-        // **Ein Abzeichen für alles, was gerade woanders läuft** (Entwurf A,
-        // iOS `Angebotsabzeichen`): läuft woanders etwas **und** gibt es eine
-        // Gruppe, steht ein Zähler daran — keine zweite Zeile daneben.
-        let zaehler = beschriftung("", stil: "swiftly-zaehler")
-        gtk_widget_set_valign(zaehler, GTK_ALIGN_CENTER)
-        gtk_widget_set_visible(zaehler, 0)
-        anhaengen(reihe, zaehler)
-        uebernahmezaehler = zaehler
+        // **One badge for everything playing elsewhere** (iOS `OfferingBadge`): if something plays elsewhere **and** there is a group, a counter sits on it. No second row next to it.
+        let counter = label("", style: "swiftly-zaehler")
+        gtk_widget_set_valign(counter, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(counter, 0)
+        append(rail, counter)
+        takeoverCounter = counter
 
-        gtk_button_set_child(alsKnopf(knopf), reihe)
-        beiSignal(knopf, "clicked") { [weak self] in self?.uebernahmeGedrueckt() }
-        beschriften(knopf, uebersetzt("Wiedergabe übernehmen"))
-        return knopf
+        gtk_button_set_child(asButton(button), rail)
+        signal(button, "clicked") { [weak self] in self?.takeoverPressed() }
+        caption(button, translated("Wiedergabe übernehmen"))
+        return button
     }
 
-    /// **Welches Zeichen zu welchem Gerät.** Die Entscheidung, *welches*
-    /// Gerät es ist, liegt im Paket — hier steht nur, wie Adwaita es nennt.
-    func geraetezeichen(_ art: Fremdsitzung.Geraeteart) -> String {
+    /// **Which icon for which device.** Which device it is is decided in the package; here only Adwaita's icon name is chosen.
+    func devicesCharacter(_ art: RemoteSession.DevicesKind) -> String {
         switch art {
-        case .telefon:   "phone-symbolic"
+        case .phone:   "phone-symbolic"
         case .tablet:    "tablet-symbolic"
-        case .rechner:   "computer-symbolic"
-        case .fernseher: "video-display-symbolic"
-        case .unbekannt: "media-playback-start-symbolic"
+        case .computer:   "computer-symbolic"
+        case .tv: "video-display-symbolic"
+        case .unknown: "media-playback-start-symbolic"
         }
     }
 
-    /// **Fragt regelmässig, was anderswo läuft.**
+    /// **Polls regularly for what is playing elsewhere.**
     ///
-    /// Ein Takt statt eines einmaligen Blicks: die andere Sitzung fängt an,
-    /// während diese App schon offen ist, und ein Angebot, das erst nach dem
-    /// nächsten Start erscheint, ist keins.
+    /// A timer rather than a single look: the other session may start while this app is already open, and an offer that only appears after the next launch is no offer.
     ///
-    /// **Fünf Sekunden, nicht zehn.** Hier standen zehn, mit genau der
-    /// Begründung, die auf Apple am 10.09.2026 verworfen wurde: „der Server
-    /// meldet den Fortschritt ohnehin in dem Takt". Das stimmt für die
-    /// Stelle — nur wird hier nicht nach einem neuen Sekundenstand gesucht,
-    /// sondern nach einer Sitzung, die es vorher **gar nicht gab**, und die
-    /// meldet sich sofort. Die ganze Wartezeit entstand allein an dieser
-    /// Zahl (`Sources/Shared/Uebernahmemodell.swift:46-60`).
-    func uebernahmetaktStarten() {
-        uebernahmelauf?.cancel()
-        uebernahmelauf = Task.detached { [self] in
+    /// **Five seconds, not ten.** This looks for a session that did **not exist** before, and such a session reports immediately, so the wait came entirely from this number (`Sources/Shared/TakeoverModel.swift:46-60`).
+    func takeoverTickStart() {
+        takeoverRun?.cancel()
+        takeoverRun = Task.detached { [self] in
             while !Task.isCancelled {
-                await self.uebernahmeFragen()
+                await self.takeoverAsk()
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
     }
 
-    private func uebernahmeFragen() async {
-        guard let client, !benutzerID.isEmpty else { return }
-        // **Still nach aussen, laut im Protokoll.** Gefragt wird im Takt;
-        // eine Meldung auf der Startseite waere Laerm. Der Unterschied
-        // zwischen „nichts laeuft" und „die Frage kam nicht an" muss aber
-        // irgendwo stehen — genau daran ist die Uebernahme am 10.09.2026
-        // stundenlang vorbeigesucht worden, weil `fremdsitzungen()` jeden
-        // Fehlschlag als leere Liste zurueckgab.
-        let sitzungen: [Fremdsitzung]
+    private func takeoverAsk() async {
+        guard let client, !userIdentifier.isEmpty else { return }
+        // **Quiet outside, loud in the log.** Polling is periodic, so a message on the home page would be noise. But the difference between "nothing is playing" and "the query failed" must be visible somewhere: `remoteSession()` used to return every failure as an empty list, which made the handover hard to debug.
+        let sessions: [RemoteSession]
         do {
-            sitzungen = try await client.fremdsitzungen()
+            sessions = try await client.remoteSession()
         } catch {
-            Spur.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
+            TrackSupport.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
             return
         }
-        let angebote = Uebernahme.angebote(aus: sitzungen,
-                                           eigeneGeraeteID: Geraet.kennung,
-                                           eigeneBenutzerID: benutzerID)
-        aufHauptfaden {
-            self.uebernahmeangebote = angebote
-            self.uebernahmeZeigen()
+        let offerings = Takeover.offerings(from: sessions,
+                                           ownDevicesIdentifier: Device.identifier,
+                                           ownUserIdentifier: userIdentifier)
+        onMainThread {
+            self.takeoverOfferings = offerings
+            self.takeoverShow()
         }
     }
 
-    func uebernahmeZeigen() {
-        guard let zeile = uebernahmezeile else { return }
-        // **Nicht, während hier selbst etwas läuft.** Dann wäre das Angebot
-        // eine Einladung, sich selbst zu unterbrechen.
-        // Ein Fehler steht ein paar Sekunden in der Zeile; der naechste
-        // Takt soll ihn nicht sofort ueberschreiben (N7).
-        guard Date() >= uebernahmefehlerBis else { return }
-        let geraete = uebernahmeangebote.filter { $0.laeuft != nil }
-        let gruppen = gemeinsamAngebote
-        let anzahl = geraete.count + gruppen.count
-        guard laufenderTitel == nil, anzahl > 0 else {
-            gtk_widget_set_visible(zeile, 0)
+    func takeoverShow() {
+        guard let row = takeoverRow else { return }
+        // **Not while something plays here.** Otherwise the offer would invite the user to interrupt themselves.
+        // An error stays in the row for a few seconds; the next poll must not overwrite it immediately.
+        guard Date() >= takeoverErrorUntil else { return }
+        let devices = takeoverOfferings.filter { $0.running != nil }
+        let groups = sharedOfferings
+        let count = devices.count + groups.count
+        guard runningTitle == nil, count > 0 else {
+            gtk_widget_set_visible(row, 0)
             return
         }
-        // Wortlaut und Zeichen wie `Angebotsabzeichen` auf iOS.
-        let oben = anzahl > 1 ? uebersetzt("Läuft gerade")
-            : geraete.isEmpty ? uebersetzt("Gemeinsam schauen") : uebersetzt("Hier weiterschauen")
-        gtk_label_set_text(OpaquePointer(uebernahmeoben), oben)
-        gtk_label_set_text(OpaquePointer(uebernahmetitel),
-                           (geraete.map(\.titelzeile) + gruppen.map(\.name)).joined(separator: ", "))
-        gtk_image_set_from_icon_name(OpaquePointer(uebernahmezeichen),
-                                     geraete.first.map { geraetezeichen($0.geraeteart) }
+        // Wording and icon as in `OfferingBadge` on iOS.
+        let top = count > 1 ? translated("Läuft gerade")
+            : devices.isEmpty ? translated("Gemeinsam schauen") : translated("Hier weiterschauen")
+        gtk_label_set_text(OpaquePointer(takeoverTop), top)
+        gtk_label_set_text(OpaquePointer(takeoverTitle),
+                           (devices.map(\.titleLine) + groups.map(\.name)).joined(separator: ", "))
+        gtk_image_set_from_icon_name(OpaquePointer(takeoverCharacter),
+                                     devices.first.map { devicesCharacter($0.devicesKind) }
                                          ?? "system-users-symbolic")
-        gtk_label_set_text(OpaquePointer(uebernahmezaehler), "\(anzahl)")
-        gtk_widget_set_visible(uebernahmezaehler, anzahl > 1 ? 1 : 0)
-        beschriften(zeile, oben)
-        gtk_widget_set_visible(zeile, 1)
+        gtk_label_set_text(OpaquePointer(takeoverCounter), "\(count)")
+        gtk_widget_set_visible(takeoverCounter, count > 1 ? 1 : 0)
+        caption(row, top)
+        gtk_widget_set_visible(row, 1)
     }
 
-    /// **Erst drüben beenden, dann hier starten** — und den Fehler nicht
-    /// schlucken. Läuft es dort weiter, während hier dasselbe beginnt, stehen
-    /// zwei Tonspuren im Raum und niemand versteht, warum.
+    /// **End there first, then start here**, and do not swallow the error. If it keeps playing there while the same starts here, two audio tracks play and nobody knows why.
     ///
-    /// **Beenden, nicht anhalten.** Pausiert bleibt die Verbindung offen, die
-    /// Sitzung steht weiter in der Übersicht, und auf dem anderen Gerät liegt
-    /// der Player noch über allem. Die Stelle ist vorher gelesen, sie geht
-    /// dabei nicht verloren.
+    /// **End, do not pause.** Paused, the connection stays open, the session stays listed, and the player still covers the other device. The position is read beforehand, so it is not lost.
     ///
-    /// **Bei mehreren Geraeten wird gefragt, nicht geraten** (N7). Vorher nahm
-    /// die Zeile immer das erste; wie der Mac (`HauptView.abzeichenGedrueckt`,
-    /// `Uebernahmeauswahl`) steht die Auswahl dort, wo geklickt wurde.
-    private func uebernahmeGedrueckt() {
-        let angebote = uebernahmeangebote.filter { $0.laeuft != nil }
-        // **Mit Gruppen**: eine allein öffnet gleich „Beitreten", sonst fragt
-        // die Tafel mit beidem (iOS `Angebotsabzeichen.antippen`).
-        let gruppen = gemeinsamAngebote
-        if let g = gruppen.first {
-            if angebote.isEmpty, gruppen.count == 1 {
-                gemeinsamBeitretenZeigen(g, an: uebernahmezeile)
+    /// **With several devices, ask instead of guessing.** The choice appears where the click happened, as on macOS (`MainView.badgePressed`, `Uebernahmeauswahl`).
+    private func takeoverPressed() {
+        let offerings = takeoverOfferings.filter { $0.running != nil }
+        // **With groups**: a single one opens "Beitreten" directly, otherwise the panel offers both (iOS `OfferingBadge.tapOn`).
+        let groups = sharedOfferings
+        if let g = groups.first {
+            if offerings.isEmpty, groups.count == 1 {
+                sharedJoinShow(g, an: takeoverRow)
             } else {
-                gemeinsamAuswahlZeigen(geraete: angebote, gruppen: gruppen, an: uebernahmezeile)
+                sharedSelectionShow(devices: offerings, groups: groups, an: takeoverRow)
             }
             return
         }
-        if angebote.count > 1 {
-            uebernahmeauswahlZeigen(angebote)
-        } else if let eine = angebote.first {
-            uebernehmen(eine)
+        if offerings.count > 1 {
+            takeoverSelectionShow(offerings)
+        } else if let a = offerings.first {
+            adopt(a)
         }
     }
 
     #if DEBUG
-    /// Fernsteuerpult `uebernahme` — siehe dort.
-    func uebernahmeprobe(_ wahl: Int?) {
-        let folge = letzteStartreihe.first
-        uebernahmeangebote = ["Probe-Telefon", "Probe-Fernseher"].enumerated().map { i, name in
-            Fremdsitzung(id: "probe-\(i)", geraeteID: "probe-\(i)", geraetename: name,
-                         programm: "Swiftly", nimmtBefehle: true, laeuft: folge,
-                         stand: nil)
+    /// Remote-control desk `takeover`, see there.
+    func takeoverProbe(_ choice: Int?) {
+        let episode = lastStartRail.first
+        takeoverOfferings = ["Probe-Telefon", "Probe-Fernseher"].enumerated().map { i, name in
+            RemoteSession(id: "probe-\(i)", devicesIdentifier: "probe-\(i)", deviceName: name,
+                         program: "Swiftly", takesCommands: true, running: episode,
+                         state: nil)
         }
-        uebernahmefehlerBis = .distantPast
-        uebernahmeZeigen()
-        if let wahl, uebernahmeangebote.indices.contains(wahl - 1) {
-            uebernehmen(uebernahmeangebote[wahl - 1])
+        takeoverErrorUntil = .distantPast
+        takeoverShow()
+        if let choice, takeoverOfferings.indices.contains(choice - 1) {
+            adopt(takeoverOfferings[choice - 1])
         } else {
-            uebernahmeGedrueckt()
+            takeoverPressed()
         }
     }
     #endif
 
-    private func uebernahmeauswahlZeigen(_ angebote: [Fremdsitzung]) {
-        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-        gtk_widget_set_size_request(liste, 300, -1)
-        let kopf = beschriftung(uebersetzt("Wo weiterschauen?"), stil: "swiftly-kacheltitel")
-        gtk_label_set_xalign(OpaquePointer(kopf), 0)
-        gtk_widget_set_margin_start(kopf, 10)
-        gtk_widget_set_margin_top(kopf, 6)
-        anhaengen(liste, kopf)
-        let hinweis = beschriftung(
-            uebersetzt("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter."),
-            stil: "swiftly-uebernahmezeile", umbruch: true)
-        gtk_label_set_xalign(OpaquePointer(hinweis), 0)
-        gtk_widget_set_margin_start(hinweis, 10)
-        gtk_widget_set_margin_end(hinweis, 10)
-        gtk_widget_set_margin_bottom(hinweis, 6)
-        anhaengen(liste, hinweis)
+    private func takeoverSelectionShow(_ offerings: [RemoteSession]) {
+        let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+        gtk_widget_set_size_request(list, 300, -1)
+        let header = label(translated("Wo weiterschauen?"), style: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(header), 0)
+        gtk_widget_set_margin_start(header, 10)
+        gtk_widget_set_margin_top(header, 6)
+        append(list, header)
+        let hint = label(
+            translated("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter."),
+            style: "swiftly-uebernahmezeile", wrap: true)
+        gtk_label_set_xalign(OpaquePointer(hint), 0)
+        gtk_widget_set_margin_start(hint, 10)
+        gtk_widget_set_margin_end(hint, 10)
+        gtk_widget_set_margin_bottom(hint, 6)
+        append(list, hint)
 
-        let tafel = tafelOeffnen(an: uebernahmezeile)
-        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
-        for sitzung in angebote {
-            let geraet = sitzung.geraetename ?? uebersetzt("Gerät")
-            let stelle = Spielzeit.text(sitzung.stand?.stelle ?? 0)
-            anhaengen(liste, handlungszeile(geraetezeichen(sitzung.geraeteart),
-                                            "\(geraet) · \(sitzung.titelzeile) · \(stelle)") {
+        let panel = panelOpen(an: takeoverRow)
+        gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
+        for session in offerings {
+            let device = session.deviceName ?? translated("Gerät")
+            let spot = PlayTime.text(session.state?.spot ?? 0)
+            append(list, actionRow(devicesCharacter(session.devicesKind),
+                                            "\(device) · \(session.titleLine) · \(spot)") {
                 [weak self] in
-                gtk_popover_popdown(alsTafel(tafel))
-                self?.uebernehmen(sitzung)
+                gtk_popover_popdown(asPanel(panel))
+                self?.adopt(session)
             })
         }
-        Protokoll.schreib("[Uebernahme] Auswahl mit \(angebote.count) Geraeten")
+        AppLog.writeOut("[Uebernahme] Auswahl mit \(offerings.count) Geraeten")
         fflush(nil)
-        gtk_popover_popup(alsTafel(tafel))
+        gtk_popover_popup(asPanel(panel))
     }
 
-    /// **Die Karte wächst sofort aus der Zeile** (Entwurf B, wie am Mac);
-    /// der Player geht ohne Blende unter ihr auf (``uebergabeStarten(titel:)``).
-    /// **Erst der Hinweis, dann der Stopp** — nur so weiß der Abgeber, dass
-    /// sein Stopp eine Übergabe ist. Danach wartet die Zeile höchstens
-    /// anderthalb Sekunden auf die Stelle, die der Abgeber beim Stopp meldet
-    /// (Apple `Uebernahmemodell.wunsch`).
-    func uebernehmen(_ sitzung: Fremdsitzung) {
-        guard let client, let titel = sitzung.laeuft else { return }
-        uebergabeStarten(titel: titel)
-        gtk_widget_set_visible(uebernahmezeile, 0)
+    /// **The card grows out of the row immediately**, as on macOS; the player opens beneath it without a fade (`handoffStart(title:)`).
+    /// **Notice first, then stop**: this tells the sender that its stop is a handover. Then the row waits at most 1.5 seconds for the position the sender reports on stopping (Apple `TakeoverModel.wish`).
+    func adopt(_ session: RemoteSession) {
+        guard let client, let title = session.running else { return }
+        handoffStart(title: title)
+        gtk_widget_set_visible(takeoverRow, 0)
         Task.detached { [self] in
-            let vorher = (try? await client.item(id: titel.id))?.userData?.playbackPositionTicks
-            let frisch = (try? await client.fremdsitzungen())?.first { $0.id == sitzung.id }?.stand?.stelle
-            let sitzungsstelle = frisch ?? sitzung.stand?.stelle ?? 0
-            if Uebernahme.nimmtHinweis(sitzung) {
-                do { try await client.uebergabeHinweis(an: sitzung.id, geraet: App.uebergabeName) }
-                catch { Protokoll.schreib("[Uebergabe] Hinweis nicht gesendet: \(error)") }
+            let before = (try? await client.item(id: title.id))?.userData?.playbackPositionTicks
+            let freshValue = (try? await client.remoteSession())?.first { $0.id == session.id }?.state?.spot
+            let sessionPoint = freshValue ?? session.state?.spot ?? 0
+            if Takeover.takesHint(session) {
+                do { try await client.handoffHint(an: session.id, device: App.handoffName) }
+                catch { AppLog.writeOut("[Uebergabe] Hinweis nicht gesendet: \(error)") }
             }
-            do { try await client.fremdbefehl(.beenden, an: sitzung.id) }
+            do { try await client.foreignCommand(.finish, an: session.id) }
             catch {
-                let text = lesbarerFehler(error)
-                Protokoll.schreib("[Uebernahme] Beenden auf \(sitzung.geraetename ?? sitzung.id) gescheitert: \(text)")
+                let text = readableError(error)
+                AppLog.writeOut("[Uebernahme] Beenden auf \(session.deviceName ?? session.id) gescheitert: \(text)")
                 fflush(nil)
-                aufHauptfaden {
-                    self.uebergabeAbbrechen("Stopp abgelehnt")
-                    // **Dort, wo geklickt wurde** (N7). Vorher ging der Satz in
-                    // ein Feld des Anmeldeschirms, das hier niemand sieht.
-                    self.uebernahmeangebote = []
-                    self.uebernahmefehlerBis = Date().addingTimeInterval(6)
-                    gtk_label_set_text(OpaquePointer(self.uebernahmetitel), text)
-                    gtk_widget_set_visible(self.uebernahmezeile, 1)
+                onMainThread {
+                    self.handoffCancel("Stopp abgelehnt")
+                    // **Where the click happened.** The message used to go into a field on the login screen that nobody sees here.
+                    self.takeoverOfferings = []
+                    self.takeoverErrorUntil = Date().addingTimeInterval(6)
+                    gtk_label_set_text(OpaquePointer(self.takeoverTitle), text)
+                    gtk_widget_set_visible(self.takeoverRow, 1)
                 }
                 return
             }
-            // In Schritten von 100 ms: jeder verschlafene Schritt verzögert den Start.
-            var nachher: Int64?
+            // In steps of 100 ms: each oversleeping step delays the start.
+            var afterwards: Int64?
             for _ in 0 ..< 15 {
                 try? await Task.sleep(nanoseconds: 100_000_000)
-                let jetzt = (try? await client.item(id: titel.id))?.userData?.playbackPositionTicks
-                if jetzt != vorher { nachher = jetzt; break }
+                let now = (try? await client.item(id: title.id))?.userData?.playbackPositionTicks
+                if now != before { afterwards = now; break }
             }
-            let ab = Uebernahme.startstelle(sitzung: sitzungsstelle, gespeichertVorher: vorher,
-                                            gespeichertNachher: nachher)
-            Protokoll.schreib("[Uebernahme] Sitzung \(Int(sitzungsstelle)) s, nach Stopp "
-                + "\(nachher.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(ab)) s")
-            aufHauptfaden {
-                self.uebernahmeangebote = []
-                self.uebergabeSpielerKommt(titel.id)
-                self.starte(titel, ab: ab)
+            let since = Takeover.startPoint(session: sessionPoint, savedBefore: before,
+                                            savedAfterwards: afterwards)
+            AppLog.writeOut("[Uebernahme] Sitzung \(Int(sessionPoint)) s, nach Stopp "
+                + "\(afterwards.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(since)) s")
+            onMainThread {
+                self.takeoverOfferings = []
+                self.handoffPlayerComes(title.id)
+                self.launch(title, since: since)
             }
         }
     }
 
-    private func profilzeileBauen() -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-profil")
-        // **Sie traegt die Hervorhebung, solange eine Unterseite offen ist.**
-        // Auf dem Mac bekommt `Profilzeile` dafuer `aktiv: imKonto`
-        // (`HauptView.swift:831`) und faerbt Namen und Flaeche im Akzent.
-        // Hier nahm `bereichszeilenMalen` allen Bereichszeilen die
-        // Hervorhebung, sobald eine Unterseite offen war, gab sie aber
-        // nirgends weiter: dann leuchtete gar nichts mehr.
-        profilzeile = knopf
-        raender(knopf, 12)
+    private func profileRowBuild() -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-profil")
+        // **It carries the highlight while a subpage is open.** On macOS `ProfileRow` gets `active: inAccount` and colours name and surface with the accent. Here `bereichszeilenMalen` removed the highlight from all area rows once a subpage was open but passed it on nowhere, so nothing was highlighted.
+        profileRow = button
+        edges(button, 12)
 
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
 
-        // **Die Zone traegt bei mehreren Konten mehrere Kreise** und wird
-        // deshalb bei jeder Anmeldung neu gefuellt, statt ein festes Bild zu
-        // halten. ``profilkreiseAuffrischen()`` baut sie.
-        profilkreise = gtk_fixed_new()
-        gtk_widget_set_valign(profilkreise, GTK_ALIGN_CENTER)
-        anhaengen(reihe, profilkreise)
+        // **With several accounts the zone holds several circles**, so it is refilled on every login instead of keeping a fixed image. `profileCircleRefresh()` builds it.
+        profileCircle = gtk_fixed_new()
+        gtk_widget_set_valign(profileCircle, GTK_ALIGN_CENTER)
+        append(rail, profileCircle)
 
-        let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
-        gtk_widget_set_valign(namen, GTK_ALIGN_CENTER)
-        gtk_widget_set_hexpand(namen, 1)
-        profilname = beschriftung("—", stil: "swiftly-kacheltitel")
-        gtk_label_set_xalign(OpaquePointer(profilname), 0)
-        gtk_label_set_ellipsize(OpaquePointer(profilname), PANGO_ELLIPSIZE_END)
-        anhaengen(namen, profilname)
-        profilserver = beschriftung("", stil: "swiftly-rubrik")
-        gtk_widget_add_css_class(profilserver, "swiftly-leise")
-        gtk_label_set_xalign(OpaquePointer(profilserver), 0)
-        gtk_label_set_ellipsize(OpaquePointer(profilserver), PANGO_ELLIPSIZE_END)
-        anhaengen(namen, profilserver)
-        anhaengen(reihe, namen)
+        let names = stack(GTK_ORIENTATION_VERTICAL, spacing: 1)
+        gtk_widget_set_valign(names, GTK_ALIGN_CENTER)
+        gtk_widget_set_hexpand(names, 1)
+        profileName = label("—", style: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(profileName), 0)
+        gtk_label_set_ellipsize(OpaquePointer(profileName), PANGO_ELLIPSIZE_END)
+        append(names, profileName)
+        profileServer = label("", style: "swiftly-rubrik")
+        gtk_widget_add_css_class(profileServer, "swiftly-leise")
+        gtk_label_set_xalign(OpaquePointer(profileServer), 0)
+        gtk_label_set_ellipsize(OpaquePointer(profileServer), PANGO_ELLIPSIZE_END)
+        append(names, profileServer)
+        append(rail, names)
 
-        gtk_button_set_child(alsKnopf(knopf), reihe)
-        // Auf dem Mac führt die Zeile aufs Profil; „Abmelden" liegt dort eine
-        // Ebene tiefer.
-        beiSignal(knopf, "clicked") { [weak self] in self?.unterseiteOeffnen(.profil) }
-        return knopf
+        gtk_button_set_child(asButton(button), rail)
+        // On macOS the row leads to the profile; "Abmelden" is one level deeper there.
+        signal(button, "clicked") { [weak self] in self?.subpageOpen(.profile) }
+        return button
     }
 
-    /// Wie eine Seite den Platz wechselt.
+    /// How a page changes place.
     ///
-    /// Auf dem Mac ist das `Stil.zeitSeitenschub` — `easeInOut`, 0,45 s —
-    /// mit der Regel „tiefer gehen schiebt von rechts, zurück schiebt nach
-    /// rechts hinaus". Ein Bereichswechsel dagegen blendet über („Fade
-    /// Through"), weil er nicht tiefer führt, sondern daneben.
-    /// **`blende` ist der Bereichswechsel**, `tiefer`/`zurueck` das Blaettern
-    /// in Titeln, `ohne` der Neubau an Ort und Stelle.
+    /// On macOS this is `Theme.timePagesPush`: `easeInOut`, 0.45 s, with the rule that going deeper pushes in from the right and going back pushes out to the right. An area switch instead cross-fades ("fade through"), because it does not go deeper but sideways. **`fade` is the area switch**, `deeper`/`back` is paging through titles, `without` is rebuilding in place.
     ///
-    /// Sie ist dazugekommen, weil derselbe Klick zwei Verhalten hatte: wer
-    /// auf einen Bereich ohne gemerkte Detailseite ging, sah die Kreuzblende
-    /// des Stapels; wer auf einen mit gemerkter Seite ging, bekam
-    /// `schieben(.ohne)` — also gar nichts. Filme und Serien schalteten
-    /// deshalb hart um und die Merkliste blendete ein.
-    enum Schub { case tiefer, zurueck, ohne, blende }
+    /// It exists because the same click had two behaviours: an area without a remembered detail page got the stack's cross-fade, one with a remembered page got `shove(.without)`, i.e. nothing.
+    enum Push { case deeper, back, without, fade }
 
-    /// Legt eine Ebene obenauf und schiebt sie dabei herein.
+    /// Puts a layer on top and pushes it in.
     ///
-    /// Der Mac nimmt `Stil.zeitSeitenschub` — `easeInOut`, 0,45 s. Die neue
-    /// Seite legt sich über die alte; die alte wandert **ein knappes Drittel**
-    /// nach links mit und bleibt liegen. Zurück läuft es rückwärts: die obere
-    /// Seite schiebt sich nach rechts hinaus und gibt die darunter frei.
+    /// As on macOS: `Theme.timePagesPush`, `easeInOut`, 0.45 s. The new page covers the old one; the old one moves **a little under a third** to the left and stays. Going back runs in reverse: the top page slides out to the right and reveals the one beneath.
     ///
-    /// Wer wen überdeckt, entscheidet die Reihenfolge im `GtkFixed` — beim
-    /// Vorwärtsschub muss die neue Ebene oben liegen, beim Zurückschub die
-    /// alte, weil sie diejenige ist, die sich bewegt.
-    func schieben(zu ziel: Widget!, richtung gewuenscht: Schub) {
-        // **Bei reduzierter Bewegung schiebt nichts** — die Seite blendet
-        // kurz über, wie auf Apple, wo „Bewegung reduzieren" jede Fahrt durch
-        // eine Blende ersetzt. Die Blende unten fragt die Einstellung selbst
-        // und nimmt dann `Stil.zeitReduziert`.
-        let richtung: Schub = bewegungReduziert() && (gewuenscht == .tiefer || gewuenscht == .zurueck)
-            ? .blende : gewuenscht
-        let alt: Widget! = obenAuf
-        obenAuf = ziel
-        gtk_widget_set_visible(ziel, 1)
-        guard alt != ziel else { return }
+    /// The order in the `GtkFixed` decides which covers which: when pushing forward the new layer must be on top, when pushing back the old one, because it is the one that moves.
+    func shove(toward target: Widget!, bearing wished: Push) {
+        // **With reduced motion nothing slides**; the page briefly cross-fades, as on Apple, where "Reduce Motion" replaces every transition with a fade. The fade below reads the setting itself and then uses `Theme.timeReduced`.
+        let bearing: Push = motionReduced() && (wished == .deeper || wished == .back)
+            ? .fade : wished
+        let alt: Widget! = onTop
+        onTop = target
+        gtk_widget_set_visible(target, 1)
+        guard alt != target else { return }
 
-        let fest = alsFest(buehne)
-        let breite = Double(gtk_widget_get_width(buehne))
+        let fixed = asFixed(stage)
+        let width = Double(gtk_widget_get_width(stage))
 
-        // **Erst hinaus, dann herein — nie beide zugleich.** Hier stand eine
-        // Überblendung: 0,20 s hinaus und 0,26 s herein ab 0,04 s, in der
-        // Mitte zwei halbe Seiten übereinander. Jetzt geht die alte kurz mit
-        // `easeIn`, und erst wenn sie weg ist, kommt die neue mit `easeOut`
-        // (`Blendzeiten.seitenwechsel`, gleich am Mac).
-        if richtung == .blende {
-            gtk_fixed_move(fest, ziel, 0, 0)
-            gtk_widget_insert_before(ziel, buehne, nil)
-            gtk_widget_set_opacity(ziel, 0)
-            // Bei reduzierter Bewegung kurz und linear (Mac
-            // `Stil.linearReduziert`) — ebenfalls nacheinander.
-            let reduziert = bewegungReduziert()
-            let gesamt = reduziert ? 2 * Stil.zeitReduziert : Blendzeiten.seiteGesamt
-            laufen(auf: buehne, dauer: gesamt, linear: true) { e in
-                if reduziert {
+        // **Out first, then in, never both at once.** The old page leaves briefly with `easeIn`, and only when it is gone does the new one arrive with `easeOut` (`FadeTimes.pagesSwitch`, same as macOS). A cross-fade would show two half-visible pages on top of each other in the middle.
+        if bearing == .fade {
+            gtk_fixed_move(fixed, target, 0, 0)
+            gtk_widget_insert_before(target, stage, nil)
+            gtk_widget_set_opacity(target, 0)
+            // With reduced motion short and linear (macOS `Theme.linearReduced`), likewise one after the other.
+            let reduced = motionReduced()
+            let total = reduced ? 2 * Theme.timeReduced : FadeTimes.pageTotal
+            runningCount(on: stage, duration: total, linear: true) { e in
+                if reduced {
                     gtk_widget_set_opacity(alt, max(0, 1 - 2 * e))
-                    gtk_widget_set_opacity(ziel, max(0, 2 * e - 1))
+                    gtk_widget_set_opacity(target, max(0, 2 * e - 1))
                 } else {
-                    let d = Blendzeiten.seitenwechsel(e * gesamt)
+                    let d = FadeTimes.pagesSwitch(e * total)
                     gtk_widget_set_opacity(alt, d.alt)
-                    gtk_widget_set_opacity(ziel, d.neu)
+                    gtk_widget_set_opacity(target, d.new)
                 }
-            } fertig: {
-                gtk_widget_set_opacity(ziel, 1)
+            } done: {
+                gtk_widget_set_opacity(target, 1)
                 gtk_widget_set_opacity(alt, 1)
                 gtk_widget_set_visible(alt, 0)
             }
             return
         }
 
-        guard richtung != .ohne, breite > 1 else {
-            gtk_fixed_move(fest, ziel, 0, 0)
+        guard bearing != .without, width > 1 else {
+            gtk_fixed_move(fixed, target, 0, 0)
             gtk_widget_set_visible(alt, 0)
             return
         }
 
-        gtk_widget_insert_before(richtung == .tiefer ? ziel : alt, buehne, nil)
-        Schubsperre.beginnen()
-        let teiler = Skalierung.geraetepunkte(buehne)
-        // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen: eine
-        // Kante auf einem halben Punkt wird geglättet und säumt.
-        func rasten(_ x: Double) -> Double { (x * teiler).rounded() / teiler }
+        gtk_widget_insert_before(bearing == .deeper ? target : alt, stage, nil)
+        PushLock.begin()
+        let divider = Scaling.devicesPoints(stage)
+        // Rounded to whole device points, for the same reason as when scrolling: an edge on a half point is smoothed and shows a fringe.
+        func latch(_ x: Double) -> Double { (x * divider).rounded() / divider }
 
-        laufen(auf: buehne, dauer: Stil.zeitSeitenschub) { e in
-            if richtung == .tiefer {
-                gtk_fixed_move(fest, ziel, rasten(breite * (1 - e)), 0)
-                gtk_fixed_move(fest, alt, rasten(-breite * Stil.schubMitgabe * e), 0)
-                gtk_widget_set_opacity(alt, 1 - Stil.schubSchleier * e)
+        runningCount(on: stage, duration: Theme.timePagesPush) { e in
+            if bearing == .deeper {
+                gtk_fixed_move(fixed, target, latch(width * (1 - e)), 0)
+                gtk_fixed_move(fixed, alt, latch(-width * Theme.pushWithGift * e), 0)
+                gtk_widget_set_opacity(alt, 1 - Theme.pushScrim * e)
             } else {
-                gtk_fixed_move(fest, alt, rasten(breite * e), 0)
-                gtk_fixed_move(fest, ziel, rasten(-breite * Stil.schubMitgabe * (1 - e)), 0)
-                gtk_widget_set_opacity(ziel, 1 - Stil.schubSchleier * (1 - e))
+                gtk_fixed_move(fixed, alt, latch(width * e), 0)
+                gtk_fixed_move(fixed, target, latch(-width * Theme.pushWithGift * (1 - e)), 0)
+                gtk_widget_set_opacity(target, 1 - Theme.pushScrim * (1 - e))
             }
-        } fertig: {
-            gtk_fixed_move(fest, ziel, 0, 0)
-            gtk_fixed_move(fest, alt, 0, 0)
-            gtk_widget_set_opacity(ziel, 1)
+        } done: {
+            gtk_fixed_move(fixed, target, 0, 0)
+            gtk_fixed_move(fixed, alt, 0, 0)
+            gtk_widget_set_opacity(target, 1)
             gtk_widget_set_opacity(alt, 1)
             gtk_widget_set_visible(alt, 0)
-            Schubsperre.beenden()
+            PushLock.finish()
         }
     }
 
-    /// Zeigt einen Bereich — im Stapel nacheinander geblendet, auf der Bühne
-    /// geschoben.
+    /// Shows an area: faded in sequence in the stack, pushed on the stage.
     ///
-    /// Steht der Stapel schon obenauf, wechselt er an Ort und Stelle
-    /// (``stapelWechseln``). Liegt eine Detailseite darüber, blendet
-    /// ``schieben(zu:richtung:)`` sie weg und den Stapel her; der Stapel
-    /// selbst steht dann schon auf dem neuen Bereich.
-    func bereichZeigen(_ kennung: String, schub: Schub) {
-        if obenAuf == inhalt, schub == .blende {
-            stapelWechseln(inhalt, zu: kennung)
+    /// If the stack is already on top, it switches in place (`switchStack`). If a detail page lies above, `shove(toward:bearing:)` fades it out and the stack in; the stack itself already stands on the new area.
+    func sectionShow(_ identifier: String, push: Push) {
+        if onTop == content, push == .fade {
+            switchStack(content, toward: identifier)
             return
         }
-        stapelWechselAbbrechen(inhalt)
-        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), kennung)
-        schieben(zu: inhalt, richtung: schub)
+        stackSwitchCancel(content)
+        gtk_stack_set_visible_child_name(OpaquePointer(content), identifier)
+        shove(toward: content, bearing: push)
     }
 
-    /// **Ein Stapel wechselt nacheinander, nicht überblendet** — erst geht
-    /// die alte Seite (`easeIn`), dann kommt die neue (`easeOut`), mit den
-    /// Zeiten aus `Blendzeiten`, gleich am Mac.
+    /// **A stack switches in sequence, not cross-faded**: first the old page leaves (`easeIn`), then the new one arrives (`easeOut`), with the times from `FadeTimes`, same as macOS.
     ///
-    /// Der Tausch hängt an einer Frist, nicht am Ende der Blende: der
-    /// Bildtakt steht, wenn das Fenster nicht zeichnet, und die Seite soll
-    /// trotzdem wechseln. Ein zweiter Wechsel mitten im ersten gewinnt.
-    func stapelWechseln(_ stapelW: Widget!, zu kennung: String) {
-        guard let stapelW else { return }
-        let st = OpaquePointer(stapelW)
+    /// The swap hangs on a deadline, not on the end of the fade: the frame clock stops when the window is not drawing, and the page should switch anyway. A second switch in the middle of the first wins.
+    func switchStack(_ stackW: Widget!, toward identifier: String) {
+        guard let stackW else { return }
+        let st = OpaquePointer(stackW)
         gtk_stack_set_transition_type(st, GTK_STACK_TRANSITION_TYPE_NONE)
-        let schluessel = UnsafeMutableRawPointer(stapelW)
-        let laeuft = stapelwechsel[schluessel] != nil
-        if !laeuft, let jetzt = gtk_stack_get_visible_child_name(st),
-           String(cString: jetzt) == kennung { return }
-        guard gtk_widget_get_mapped(stapelW) != 0 else {
-            stapelWechselAbbrechen(stapelW)
-            gtk_stack_set_visible_child_name(st, kennung)
+        let key = UnsafeMutableRawPointer(stackW)
+        let running = stackSwitch[key] != nil
+        if !running, let now = gtk_stack_get_visible_child_name(st),
+           String(cString: now) == identifier { return }
+        guard gtk_widget_get_mapped(stackW) != 0 else {
+            stackSwitchCancel(stackW)
+            gtk_stack_set_visible_child_name(st, identifier)
             return
         }
-        stapelwechselZaehler += 1
-        let nummer = stapelwechselZaehler
-        stapelwechsel[schluessel] = nummer
-        let reduziert = bewegungReduziert()
-        let hinaus = reduziert ? Stil.zeitReduziert : Blendzeiten.seiteHinaus
-        blenden(stapelW, auf: 0, dauer: hinaus, kennlinie: .easeIn)
-        let kiste = gehalten(stapelW)
-        nachFrist(hinaus) { [weak self] in
-            defer { losgelassen(kiste) }
-            guard let self, self.stapelwechsel[schluessel] == nummer, let w = kiste.widget else { return }
-            self.stapelwechsel[schluessel] = nil
-            gtk_stack_set_visible_child_name(OpaquePointer(w), kennung)
-            blenden(w, auf: 1, dauer: Blendzeiten.seiteHerein, kennlinie: .easeOut)
+        stackSwitchCounter += 1
+        let number = stackSwitchCounter
+        stackSwitch[key] = number
+        let reduced = motionReduced()
+        let out = reduced ? Theme.timeReduced : FadeTimes.pageToOut
+        crossfade(stackW, on: 0, duration: out, curve: .easeIn)
+        let container = held(stackW)
+        postDeadline(out) { [weak self] in
+            defer { letGo(container) }
+            guard let self, self.stackSwitch[key] == number, let w = container.widget else { return }
+            self.stackSwitch[key] = nil
+            gtk_stack_set_visible_child_name(OpaquePointer(w), identifier)
+            crossfade(w, on: 1, duration: FadeTimes.pageFromIn, curve: .easeOut)
         }
     }
 
-    /// Ein laufender ``stapelWechseln`` gilt nicht mehr — wer den Stapel
-    /// jetzt selbst umstellt, soll ihn nicht eine Frist später überschrieben
-    /// bekommen.
-    func stapelWechselAbbrechen(_ stapelW: Widget!) {
-        guard let stapelW else { return }
-        let schluessel = UnsafeMutableRawPointer(stapelW)
-        guard stapelwechsel.removeValue(forKey: schluessel) != nil else { return }
-        blenden(stapelW, auf: 1, dauer: 0)
+    /// A running `switchStack` no longer applies: whoever changes the stack themselves now must not have it overwritten a deadline later.
+    func stackSwitchCancel(_ stackW: Widget!) {
+        guard let stackW else { return }
+        let key = UnsafeMutableRawPointer(stackW)
+        guard stackSwitch.removeValue(forKey: key) != nil else { return }
+        crossfade(stackW, on: 1, duration: 0)
     }
 
-    /// Nimmt die freie Detailscheibe und leert sie.
-    func naechsteScheibe() -> Widget! {
-        detailscheibe = 1 - detailscheibe
-        leeren(detailhuelle)
-        return detailhuelle
+    /// Takes the free detail pane and empties it.
+    func nextDisc() -> Widget! {
+        detailDisc = 1 - detailDisc
+        wipe(detailWrapper)
+        return detailWrapper
     }
 
-    /// Schaltet den Bereich um und färbt die Zeilen nach.
+    /// Switches the area and recolours the rows.
     ///
-    /// **Ein Klick auf den offenen Bereich fuehrt auf dessen Wurzel.**
-    /// Vorher passierte nichts: `zeige(.start)` setzte `bereich` auf den Wert,
-    /// den es schon hatte, sah oben auf dem Stapel eine Detailseite und zeigte
-    /// genau die wieder. Wer aus einem Titel heraus auf „Start" klickte, blieb
-    /// im Titel — und hatte keinen Weg zurueck ausser dem Pfeil. Auf dem Mac
-    /// ist derselbe Fall in `bereichWaehlen` behoben.
+    /// **A click on the open area leads to its root.** `show(.start)` used to set `section` to the value it already had, saw a detail page on top of the stack and showed that again, so clicking "Start" from inside a title stayed in the title. macOS fixes the same case in `sectionSelect`.
     ///
-    /// Ein Klick auf einen **anderen** Bereich laesst dessen Stapel stehen:
-    /// wer zwischen Filmen und Serien wechselt, findet zurueck, wo er war.
-    func zeige(_ neu: Bereich) {
-        let schonHier = bereich == neu && offeneUnterseite == nil
-        // **Und er schliesst eine offene Unterseite.** Profil, Einstellungen
-        // und Wiedergabe liegen ueber dem Bereich, nicht daneben.
-        let ausUnterseite = offeneUnterseite != nil
-        offeneUnterseite = nil
-        if schonHier { seitenstapel[neu] = [] }
+    /// A click on a **different** area leaves its stack alone: switching between movies and series returns to where the user was.
+    func show(_ new: Region) {
+        let alreadyHere = section == new && openSubpage == nil
+        // **It also closes an open subpage.** Profile, settings and playback lie above the area, not beside it.
+        let outSubpage = openSubpage != nil
+        openSubpage = nil
+        if alreadyHere { pagesStack[new] = [] }
 
-        // **Ein Bereich schliesst die offene Sammlung** — sie liegt auf dem
-        // Mac im Stapel ihres Bereichs und geht mit ihm.
-        if neu != .sammlung { offeneSammlung = nil }
-        _ = ausUnterseite
-        bereich = neu
-        bereichszeilenMalen()
-        // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
-        // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
-        // **Ein Bereichswechsel blendet — beide Wege.** Vorher blendete nur
-        // der eine, weil der andere ueber `schieben(.ohne)` lief.
-        // [Download-Übernahme, Mac cc4e6e75] Die Seite einer geladenen Serie
-        // liegt als Marke auf dem Stapel der Downloads; `detailZeigen` hielte
-        // sie für einen Titel vom Server (`Downloadserienseite.swift`).
-        if let oben = seitenstapel[neu]?.last, oben.type == App.downloadserienArt {
-            downloadserieZeigen(oben, schub: .blende)
-        } else if let oben = seitenstapel[neu]?.last {
-            detailZeigen(oben, schub: .blende)
+        // **An area closes the open collection**; on macOS it lives in the stack of its area and goes with it.
+        if new != .collection { openCollection = nil }
+        _ = outSubpage
+        section = new
+        sectionRowsDraw()
+        // **The stack decides what is shown.** If this area has a detail page on top, it comes back, not the list.
+        // **An area switch fades, on both paths.** Only one path used to, because the other went through `shove(.without)`.
+        // The page of a downloaded series sits as a marker on the downloads stack; `detailShow` would take it for a server title (`DownloadSeriesOverviewPage.swift`).
+        if let top = pagesStack[new]?.last, top.type == App.downloadSeriesArt {
+            downloadSeriesShow(top, push: .fade)
+        } else if let top = pagesStack[new]?.last {
+            detailShow(top, push: .fade)
         } else {
-            bereichZeigen(neu.kennung, schub: .blende)
+            sectionShow(new.identifier, push: .fade)
         }
-        // **Wer auf „Suche" geht, will tippen.** Der Mac setzt den Fokus beim
-        // Erscheinen der Seite; hier ging es nur über Strg+F.
-        if neu == .suche { gtk_widget_grab_focus(suchfeld); suchverlaufZeigen() }
-        // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
-        // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
-        // nur beim ersten Mal.
-        guard !geladen.contains(neu) else { return }
-        geladen.insert(neu)
-        switch neu {
-        case .start:  startseiteLaden()
-        case .filme:  rasterLaden(.filme)
-        case .serien: rasterLaden(.serien)
-        case .merkliste: rasterLaden(.merkliste)
-        // Die Downloadliste steht auf der Platte; sie wird nicht geholt,
-        // sondern gezeigt.
-        case .downloads: downloadseiteFuellen()
-        case .sammlung: rasterLaden(.sammlung)
-        case .gattung: rasterLaden(.gattung)
-        case .suche:  break
+        // **Whoever goes to "Suche" wants to type.** macOS sets the focus when the page appears; here it only worked via Ctrl+F.
+        if new == .search { gtk_widget_grab_focus(searchField); searchHistoryShow() }
+        // **Each area loads once.** On macOS the state of each area is kept, so switching between movies and series only waits the first time.
+        guard !loaded.contains(new) else { return }
+        loaded.insert(new)
+        switch new {
+        case .start:  homeLoad()
+        case .movies:  gridLoad(.movies)
+        case .seriesList: gridLoad(.seriesList)
+        case .watchlist: gridLoad(.watchlist)
+        // The download list lives on disk; it is shown, not fetched.
+        case .downloads: downloadsPageFill()
+        case .collection: gridLoad(.collection)
+        case .genre: gridLoad(.genre)
+        case .search:  break
         }
     }
 
-    // MARK: Inhaltsseiten
+    // MARK: Content pages
 
-    /// Der gemeinsame Rahmen jeder Seite: oben 52, seitlich 24 — `inhaltOben`
-    /// und `randAbstand` vom Mac.
-    private func seitenrahmen(_ kind: Widget!) -> Widget! {
-        let scroller = seitenscroller()
-        gtk_widget_set_margin_top(kind, Int32(Stil.inhaltOben))
-        gtk_widget_set_margin_start(kind, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(kind, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_bottom(kind, Int32(Stil.randAbstand))
+    /// The common frame of every page: 52 at the top, 24 at the sides (`contentTop` and `edgeSpacing` from macOS).
+    private func pagesFrame(_ kind: Widget!) -> Widget! {
+        let scroller = pagesScroller()
+        gtk_widget_set_margin_top(kind, Int32(Theme.contentTop))
+        gtk_widget_set_margin_start(kind, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(kind, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_bottom(kind, Int32(Theme.edgeSpacing))
         gtk_scrolled_window_set_child(OpaquePointer(scroller), kind)
         return scroller
     }
 
-    /// **Die Haarlinie, die beim Scrollen einblendet** (E15).
+    /// **The hairline that fades in on scroll.**
     ///
-    /// Sie fehlte auf den Rasterseiten als einzigen — die Serienseite hat sie
-    /// seit langem (`Serienseite.swift:61`). Ohne sie laeuft der Inhalt beim
-    /// Blaettern ohne Kante unter dem Kopf durch, und man sieht nicht, dass
-    /// oben noch etwas steht.
+    /// The grid pages were the only ones without it; the series page has it (`SeriesPage.swift:61`). Without it, content scrolls under the header with no edge and the user cannot see there is more above.
     ///
-    /// Sie liegt als Ueberzug **ueber** dem Scroller, nicht darin: im Inhalt
-    /// wanderte sie mit.
-    private func mitKopflinie(_ scroller: Widget!) -> Widget! {
-        let ueber: Widget! = gtk_overlay_new()
-        gtk_overlay_set_child(OpaquePointer(ueber), scroller)
+    /// It is an overlay **above** the scroller, not inside it; inside the content it would scroll along.
+    private func withHeaderLine(_ scroller: Widget!) -> Widget! {
+        let over: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(over), scroller)
 
-        let linie: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
-        gtk_widget_add_css_class(linie, "swiftly-trennlinie")
-        gtk_widget_set_size_request(linie, -1, 1)
-        gtk_widget_set_valign(linie, GTK_ALIGN_START)
-        gtk_widget_set_opacity(linie, 0)
-        gtk_widget_set_can_target(linie, 0)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), linie)
+        let line: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(line, "swiftly-trennlinie")
+        gtk_widget_set_size_request(line, -1, 1)
+        gtk_widget_set_valign(line, GTK_ALIGN_START)
+        gtk_widget_set_opacity(line, 0)
+        gtk_widget_set_can_target(line, 0)
+        gtk_overlay_add_overlay(OpaquePointer(over), line)
 
-        guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
-        else { return ueber }
-        // Ueber die ersten 24 Punkt einblenden — dieselbe kurze Strecke wie
-        // beim Detailkopf, damit es nicht als Bewegung auffaellt.
-        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "value-changed") {
-            let wert = gtk_adjustment_get_value(anpassung)
-            gtk_widget_set_opacity(linie, min(max(wert / 24, 0), 1))
+        guard let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+        else { return over }
+        // Fades in over the first 24 points, the same short distance as the detail header, so it does not read as movement.
+        signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") {
+            let value = gtk_adjustment_get_value(adjustment)
+            gtk_widget_set_opacity(line, min(max(value / 24, 0), 1))
         }
-        return ueber
+        return over
     }
 
-    /// **Die Leiste, die beim Scrollen kommt — auf einer Bestandsseite**
-    /// (`Bestandsleiste` auf dem Mac, 7202b872 und 8d3151ca).
+    /// **The bar that appears on scroll, on a library page** (`Bestandsleiste` on macOS).
     ///
-    /// Der grosse Titel scrollt mit dem Inhalt weg, der kleine blendet in
-    /// einer 40 hohen Leiste ein — die beiden sind nie zugleich zu sehen.
-    /// Dahinter kommt erst mit dem Scrollweg der Grund und unten die
-    /// Haarlinie; im Ruhezustand liegt dort nichts (Mac c584bd70).
+    /// The large title scrolls away with the content, the small one fades into a 40-high bar; the two are never visible together. The background appears only with the scroll distance, then the hairline; at rest nothing is there.
     ///
-    /// **Sie haengt an einer Deckkraft, nie an einer Hoehe** (BAUTEILE 10,
-    /// erste Falle): die Leiste bleibt gleich hoch und liegt als Ueberzug
-    /// ueber dem Scroller, gemessen wird nur, wie stark sie zu sehen ist. Eine
-    /// Auslegung kann daraus nicht zurueckschlagen. Dasselbe gilt fuer die
-    /// Wertreihe: sie blendet ueber 44 Punkt weg (`wertreihenWeg`), ihre Hoehe
-    /// bleibt stehen.
+    /// **It hangs on opacity, never on height:** the bar keeps its height and lies as an overlay above the scroller, only its visibility is measured. A layout cannot feed back from that. The same applies to the value row: it fades out over 44 points (`valueRailsDistance`), its height stays.
     ///
-    /// **Der Rueckweg steht in der Leiste** und blendet nicht ein — ein
-    /// Ausweg, der erst ab einem Scrollweg da ist, ist keiner.
-    func bestandsleiste(_ scroller: Widget!, titel: String, zurueck: (() -> Void)? = nil,
-                        wertreihe: Widget? = nil) -> (huelle: Widget, titel: Widget) {
-        let ueber: Widget! = gtk_overlay_new()
-        gtk_overlay_set_child(OpaquePointer(ueber), scroller)
+    /// **The back button lives in the bar** and does not fade in; an exit that only exists after some scrolling is none.
+    func stateBar(_ scroller: Widget!, title: String, back: (() -> Void)? = nil,
+                        valueSeries: Widget? = nil) -> (wrapper: Widget, title: Widget) {
+        let over: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(over), scroller)
 
-        let grund: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
-        gtk_widget_add_css_class(grund, "swiftly-bestandsgrund")
-        gtk_widget_set_size_request(grund, -1, Int32(Stil.kopfleisteHoehe))
-        gtk_widget_set_valign(grund, GTK_ALIGN_START)
-        gtk_widget_set_opacity(grund, 0)
-        gtk_widget_set_can_target(grund, 0)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), grund)
+        let reason: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(reason, "swiftly-bestandsgrund")
+        gtk_widget_set_size_request(reason, -1, Int32(Theme.headerBarHeight))
+        gtk_widget_set_valign(reason, GTK_ALIGN_START)
+        gtk_widget_set_opacity(reason, 0)
+        gtk_widget_set_can_target(reason, 0)
+        gtk_overlay_add_overlay(OpaquePointer(over), reason)
 
-        let klein = beschriftung(titel, stil: "swiftly-leistentitel")
-        gtk_label_set_xalign(OpaquePointer(klein), 0)
-        gtk_label_set_ellipsize(OpaquePointer(klein), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_size_request(klein, -1, Int32(Stil.kopfleisteHoehe))
-        gtk_widget_set_valign(klein, GTK_ALIGN_START)
-        gtk_widget_set_halign(klein, GTK_ALIGN_FILL)
-        // Mit Pfeil: 16 + 40 + 4, wie `HStack(spacing: 4)` mit dem um 8
-        // eingerueckten `Rueckpfeil`.
-        gtk_widget_set_margin_start(klein, Int32(zurueck == nil ? Stil.randAbstand
-                                                                : Stil.randAbstand - 8 + 44))
-        gtk_widget_set_margin_end(klein, Int32(Stil.randAbstand))
-        gtk_widget_set_opacity(klein, 0)
-        gtk_widget_set_can_target(klein, 0)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), klein)
+        let small = label(title, style: "swiftly-leistentitel")
+        gtk_label_set_xalign(OpaquePointer(small), 0)
+        gtk_label_set_ellipsize(OpaquePointer(small), PANGO_ELLIPSIZE_END)
+        gtk_widget_set_size_request(small, -1, Int32(Theme.headerBarHeight))
+        gtk_widget_set_valign(small, GTK_ALIGN_START)
+        gtk_widget_set_halign(small, GTK_ALIGN_FILL)
+        // With arrow: 16 + 40 + 4, like `HStack(spacing: 4)` with the `BackArrow` inset by 8.
+        gtk_widget_set_margin_start(small, Int32(back == nil ? Theme.edgeSpacing
+                                                                : Theme.edgeSpacing - 8 + 44))
+        gtk_widget_set_margin_end(small, Int32(Theme.edgeSpacing))
+        gtk_widget_set_opacity(small, 0)
+        gtk_widget_set_can_target(small, 0)
+        gtk_overlay_add_overlay(OpaquePointer(over), small)
 
-        if let zurueck {
-            let pfeil: Widget! = gtk_button_new()
-            gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
-            beschriften(pfeil, uebersetzt("Zurück"))
-            gtk_button_set_child(alsKnopf(pfeil),
+        if let back {
+            let arrow: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(arrow, "swiftly-zurueck")
+            caption(arrow, translated("Zurück"))
+            gtk_button_set_child(asButton(arrow),
                                  gtk_image_new_from_icon_name("go-previous-symbolic"))
-            gtk_widget_set_size_request(pfeil, 40, 40)
-            gtk_widget_set_halign(pfeil, GTK_ALIGN_START)
-            gtk_widget_set_valign(pfeil, GTK_ALIGN_START)
-            gtk_widget_set_margin_start(pfeil, Int32(Stil.randAbstand - 8))
-            beiSignal(pfeil, "clicked", zurueck)
-            gtk_overlay_add_overlay(OpaquePointer(ueber), pfeil)
+            gtk_widget_set_size_request(arrow, 40, 40)
+            gtk_widget_set_halign(arrow, GTK_ALIGN_START)
+            gtk_widget_set_valign(arrow, GTK_ALIGN_START)
+            gtk_widget_set_margin_start(arrow, Int32(Theme.edgeSpacing - 8))
+            signal(arrow, "clicked", back)
+            gtk_overlay_add_overlay(OpaquePointer(over), arrow)
         }
 
-        guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
-        else { return (ueber, klein!) }
-        // **Ab wo — hergeleitet, nicht geschaetzt.** Der grosse Titel (28 Bold,
-        // rund 33 hoch) beginnt `inhaltOben` unter der Oberkante; seine
-        // Unterkante erreicht die der Leiste bei `inhaltOben + 33 − 40`.
-        // Ueber die naechsten 26 Punkt blendet die Leiste ein.
-        let ab = Double(max(Stil.inhaltOben + 33 - Stil.kopfleisteHoehe, 0))
-        let reihe = wertreihe.map { gehalten($0) }
-        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "value-changed") {
-            let wert = gtk_adjustment_get_value(anpassung)
-            let staerke = min(max((wert - ab) / 26, 0), 1)
-            gtk_widget_set_opacity(grund, staerke)
-            gtk_widget_set_opacity(klein, staerke)
-            if let w = reihe?.widget {
-                let da = 1 - min(max(wert / Stil.wertreihenWeg, 0), 1)
-                gtk_widget_set_opacity(w, da)
-                gtk_widget_set_can_target(w, da > 0.05 ? 1 : 0)
+        guard let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+        else { return (over, small!) }
+        // **Start point, derived rather than guessed.** The large title (28 bold, about 33 high) starts `contentTop` below the top edge; its bottom edge reaches the bar's at `contentTop + 33 − 40`. The bar fades in over the next 26 points.
+        let since = Double(max(Theme.contentTop + 33 - Theme.headerBarHeight, 0))
+        let rail = valueSeries.map { held($0) }
+        signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") {
+            let value = gtk_adjustment_get_value(adjustment)
+            let strength = min(max((value - since) / 26, 0), 1)
+            gtk_widget_set_opacity(reason, strength)
+            gtk_widget_set_opacity(small, strength)
+            if let w = rail?.widget {
+                let present = 1 - min(max(value / Theme.valueRailsDistance, 0), 1)
+                gtk_widget_set_opacity(w, present)
+                gtk_widget_set_can_target(w, present > 0.05 ? 1 : 0)
             }
         }
-        if let reihe { beiSignal(ueber, "destroy") { losgelassen(reihe) } }
-        return (ueber, klein!)
+        if let rail { signal(over, "destroy") { letGo(rail) } }
+        return (over, small!)
     }
 
-    /// **Ein Wahlknopf statt einer Chipreihe** (`Wahlknopf`, Mac 7202b872).
+    /// **A picker button instead of a chip row** (`Wahlknopf`, macOS).
     ///
-    /// Rückmeldung vom 22.09.: „einen Alle-Knopf und einen A-bis-Z-Knopf, da drueckt
-    /// man drauf, dann kommt ein Pop-up". Der Knopf traegt den **gewaehlten
-    /// Wert**; was zur Wahl steht, steht in der Tafel darunter. Offen traegt
-    /// er den Winkel nach oben und die angehobene Flaeche.
+    /// The button shows the **chosen value**; the options are in the panel below. When open it shows the rotated chevron and the raised surface.
     ///
-    /// **Hoechstens einer offen** (ca75ca0c): die Tafel ist ein
-    /// selbstschliessender `GtkPopover` — ein Klick daneben, auch auf den
-    /// Nachbarknopf, schliesst sie und tut sonst nichts. Genau das Verhalten
-    /// der `Wahlaufsicht`.
-    func wahlknopf(zeichen: Widget, wert: String,
-                   eintraege: [(text: String, gewaehlt: Bool, tun: () -> Void)]) -> Widget! {
-        let winkel: Widget! = gtk_image_new_from_icon_name("pan-up-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(winkel), 12)
-        gtk_widget_set_visible(winkel, 0)
-        let zeichenfach = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
-        anhaengen(zeichenfach, zeichen)
-        anhaengen(zeichenfach, winkel)
-        let knopf = chip(wert, zeichnung: zeichenfach)
-        beiSignal(knopf, "clicked") { [weak self] in
+    /// **At most one open at a time:** the panel is a self-closing `GtkPopover`, so a click elsewhere, even on the neighbouring button, closes it and does nothing else. This is the behaviour of `SelectionSupervision`.
+    func selectionButton(symbolText: Widget, value: String,
+                   entries: [(text: String, selected: Bool, perform: () -> Void)]) -> Widget! {
+        let angle: Widget! = gtk_image_new_from_icon_name("pan-up-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(angle), 12)
+        gtk_widget_set_visible(angle, 0)
+        let characterCompartment = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
+        append(characterCompartment, symbolText)
+        append(characterCompartment, angle)
+        let button = chip(value, drawing: characterCompartment)
+        signal(button, "clicked") { [weak self] in
             guard let self else { return }
-            let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            gtk_widget_set_size_request(liste, 220, -1)
-            let tafel = self.tafelOeffnen(an: knopf)
-            gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
-            for e in eintraege {
-                anhaengen(liste, self.wahlzeile(e.text, gewaehlt: e.gewaehlt, tafel: tafel, tun: e.tun))
+            let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+            gtk_widget_set_size_request(list, 220, -1)
+            let panel = self.panelOpen(an: button)
+            gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
+            for e in entries {
+                append(list, self.selectionRow(e.text, selected: e.selected, panel: panel, perform: e.perform))
             }
-            gtk_widget_add_css_class(knopf, "swiftly-aktiv")
-            gtk_widget_set_visible(zeichen, 0)
-            gtk_widget_set_visible(winkel, 1)
-            let k = gehalten(knopf), z = gehalten(zeichen), w = gehalten(winkel)
-            beiSignal(tafel, "closed") {
+            gtk_widget_add_css_class(button, "swiftly-aktiv")
+            gtk_widget_set_visible(symbolText, 0)
+            gtk_widget_set_visible(angle, 1)
+            let k = held(button), z = held(symbolText), w = held(angle)
+            signal(panel, "closed") {
                 gtk_widget_remove_css_class(k.widget, "swiftly-aktiv")
                 gtk_widget_set_visible(z.widget, 1)
                 gtk_widget_set_visible(w.widget, 0)
-                losgelassen(k); losgelassen(z); losgelassen(w)
+                letGo(k); letGo(z); letGo(w)
             }
-            gtk_popover_popup(alsTafel(tafel))
+            gtk_popover_popup(asPanel(panel))
         }
-        return knopf
+        return button
     }
 
-    /// Eine Zeile in einer Wahltafel. **Gewaehlt heisst Weiss, nicht
-    /// Akzent** (BRAND 1) — `Wahltafelzeile` auf dem Mac.
-    private func wahlzeile(_ text: String, gewaehlt: Bool, tafel: Widget!,
-                           tun: @escaping () -> Void) -> Widget! {
-        let zeile: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(zeile, "swiftly-handlung")
-        gtk_widget_add_css_class(zeile, "swiftly-wahlzeile")
-        if gewaehlt { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
-        bedienhilfe(zeile, gewaehlt: gewaehlt)
-        let r = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let l = beschriftung(text, stil: "swiftly-koerper")
+    /// One row in a picker panel. **Chosen means white, not accent** (`Wahltafelzeile` on macOS).
+    private func selectionRow(_ text: String, selected: Bool, panel: Widget!,
+                           perform: @escaping () -> Void) -> Widget! {
+        let row: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(row, "swiftly-handlung")
+        gtk_widget_add_css_class(row, "swiftly-wahlzeile")
+        if selected { gtk_widget_add_css_class(row, "swiftly-aktiv") }
+        help(row, selected: selected)
+        let r = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        let l = label(text, style: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_widget_set_hexpand(l, 1)
-        anhaengen(r, l)
-        if gewaehlt {
-            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(haken), 14)
-            anhaengen(r, haken)
+        append(r, l)
+        if selected {
+            let checkmark: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(checkmark), 14)
+            append(r, checkmark)
         }
-        gtk_button_set_child(alsKnopf(zeile), r)
-        let t = gehalten(tafel)
-        beiSignal(zeile, "clicked") {
-            if let tafel = t.widget { gtk_popover_popdown(alsTafel(tafel)) }
-            tun()
+        gtk_button_set_child(asButton(row), r)
+        let t = held(panel)
+        signal(row, "clicked") {
+            if let panel = t.widget { gtk_popover_popdown(asPanel(panel)) }
+            perform()
         }
-        beiSignal(zeile, "destroy") { losgelassen(t) }
-        return zeile
+        signal(row, "destroy") { letGo(t) }
+        return row
     }
 
-    // MARK: Titelmenue (Mac 8ca6269a)
+    // MARK: Title menu
 
-    /// **Der Seitentitel als Menue** — Filme ▾ und Serien ▾, wie auf dem Mac
-    /// (`Titelwahl` in `Macbausteine.swift`).
+    /// **The page title as a menu**: Filme ▾ and Serien ▾, as on macOS (`Titelwahl` in `MacComponents.swift`).
     ///
-    /// Ab zwei Eintraegen im ``Bereichsangebot`` wird der Titel zum Knopf:
-    /// oben „Alle", darunter „Sammlungen", nach einem Strich die
-    /// Bibliotheken. Damit entfaellt die Rubrik „Bibliotheken" in der
-    /// Seitenleiste. Die Tafel klappt am Ort auf wie jeder Wahlknopf, und
-    /// hoechstens eine ist offen.
-    private func titelwahlEinbauen(_ was: Bereich, titel: Widget!) {
-        guard let spalte = gtk_widget_get_parent(titel) else { return }
-        g_object_ref(UnsafeMutableRawPointer(titel))
-        gtk_box_remove(alsBox(spalte), titel)
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-titelwahl")
-        gtk_widget_set_halign(knopf, GTK_ALIGN_START)
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
-        anhaengen(reihe, titel)
-        g_object_unref(UnsafeMutableRawPointer(titel))
-        // `chevron.down`, 15 halbfett; leise, unter dem Zeiger und offen weiss.
-        let winkel: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(winkel), 15)
-        gtk_widget_set_valign(winkel, GTK_ALIGN_CENTER)
-        gtk_widget_set_visible(winkel, 0)
-        anhaengen(reihe, winkel)
-        gtk_button_set_child(alsKnopf(knopf), reihe)
-        gtk_widget_set_can_target(knopf, 0)
-        gtk_box_prepend(alsBox(spalte), knopf)
-        beiSignal(knopf, "clicked") { [weak self] in self?.titelwahlOeffnen(was) }
-        titelwahl[was] = (knopf, titel, winkel)
-        beiSignal(knopf, "destroy") { [weak self] in self?.titelwahl[was] = nil }
+    /// With two or more entries in the `SectionOffering`, the title becomes a button: "Alle" on top, then "Sammlungen", then after a divider the libraries. This removes the "Bibliotheken" section from the sidebar. The panel opens in place like any picker button, and at most one is open.
+    private func titleSelectionInBuild(_ was: Region, title: Widget!) {
+        guard let column = gtk_widget_get_parent(title) else { return }
+        g_object_ref(UnsafeMutableRawPointer(title))
+        gtk_box_remove(asBox(column), title)
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-titelwahl")
+        gtk_widget_set_halign(button, GTK_ALIGN_START)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
+        append(rail, title)
+        g_object_unref(UnsafeMutableRawPointer(title))
+        // `chevron.down`, 15 semibold; quiet, white when hovered or open.
+        let angle: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(angle), 15)
+        gtk_widget_set_valign(angle, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(angle, 0)
+        append(rail, angle)
+        gtk_button_set_child(asButton(button), rail)
+        gtk_widget_set_can_target(button, 0)
+        gtk_box_prepend(asBox(column), button)
+        signal(button, "clicked") { [weak self] in self?.titleSelectionOpen(was) }
+        titleSelection[was] = (button, title, angle)
+        signal(button, "destroy") { [weak self] in self?.titleSelection[was] = nil }
     }
 
-    /// Titel und Winkel nach dem Angebot. **„Alle" heisst einfach „Filme"**:
-    /// der Titel sagt, wo man ist; „Alle Filme" steht nur im Menue.
-    func titelwahlMalen(_ was: Bereich) {
-        guard let t = titelwahl[was] else { return }
-        let an = angebot(was)
-        let w = bereichswahl(was)
-        let text = w == .alle ? was.beschriftung : wahlbeschriftung(w, was, an)
-        gtk_label_set_text(OpaquePointer(t.titel), text)
-        if let klein = leistentitel[was] { gtk_label_set_text(OpaquePointer(klein), text) }
-        gtk_widget_set_visible(t.winkel, an.istMenue ? 1 : 0)
-        gtk_widget_set_can_target(t.knopf, an.istMenue ? 1 : 0)
+    /// Title and chevron follow the offer. **"Alle" is simply called "Filme"**: the title says where the user is; "Alle Filme" appears only in the menu.
+    func titleSelectionDraw(_ was: Region) {
+        guard let t = titleSelection[was] else { return }
+        let an = offering(was)
+        let w = sectionSelection(was)
+        let text = w == .all ? was.label : selectionLabel(w, was, an)
+        gtk_label_set_text(OpaquePointer(t.title), text)
+        if let small = barTitle[was] { gtk_label_set_text(OpaquePointer(small), text) }
+        gtk_widget_set_visible(t.angle, an.isMenu ? 1 : 0)
+        gtk_widget_set_can_target(t.button, an.isMenu ? 1 : 0)
     }
 
-    private func wahlbeschriftung(_ w: Bereichswahl, _ was: Bereich,
-                                  _ an: Bereichsangebot) -> String {
+    private func selectionLabel(_ w: SectionSelection, _ was: Region,
+                                  _ an: SectionOffering) -> String {
         switch w {
-        case .alle:
-            return was == .serien ? uebersetzt("Alle Serien") : uebersetzt("Alle Filme")
-        case .sammlungen:
-            return uebersetzt("Sammlungen")
-        case .bibliothek(let id):
-            // Der Name kommt vom Server und wird nicht uebersetzt.
-            return an.bibliothek(id)?.name ?? ""
+        case .all:
+            return was == .seriesList ? translated("Alle Serien") : translated("Alle Filme")
+        case .collections:
+            return translated("Sammlungen")
+        case .library(let id):
+            // The name comes from the server and is not translated.
+            return an.library(id)?.name ?? ""
         }
     }
 
-    private func titelwahlOeffnen(_ was: Bereich) {
-        guard let t = titelwahl[was] else { return }
-        let an = angebot(was)
-        guard an.istMenue else { return }
-        let jetzt = bereichswahl(was)
-        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(liste, 260, -1)
-        let tafel = tafelOeffnen(an: t.knopf)
-        gtk_popover_set_child(alsTafel(tafel), Skalierung.gehuellt(liste))
-        for eintrag in an.eintraege {
-            // Vor der ersten Bibliothek: Strich und Rubrik, wie `Wahltafel`.
-            if eintrag == an.ersteBibliothek {
-                let strich = trennlinie()
-                gtk_widget_set_margin_top(strich, 4)
-                gtk_widget_set_margin_bottom(strich, 4)
-                anhaengen(liste, strich)
-                let ueber = rubrik(uebersetzt("Bibliotheken"))
-                gtk_widget_set_margin_start(ueber, 12)
-                gtk_widget_set_margin_top(ueber, 4)
-                gtk_widget_set_margin_bottom(ueber, 4)
-                anhaengen(liste, ueber)
+    private func titleSelectionOpen(_ was: Region) {
+        guard let t = titleSelection[was] else { return }
+        let an = offering(was)
+        guard an.isMenu else { return }
+        let now = sectionSelection(was)
+        let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_size_request(list, 260, -1)
+        let panel = panelOpen(an: t.button)
+        gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
+        for entryRecord in an.entries {
+            // Before the first library: divider and heading, like `SelectionPanel`.
+            if entryRecord == an.firstLibrary {
+                let stroke = divider()
+                gtk_widget_set_margin_top(stroke, 4)
+                gtk_widget_set_margin_bottom(stroke, 4)
+                append(list, stroke)
+                let over = category(translated("Bibliotheken"))
+                gtk_widget_set_margin_start(over, 12)
+                gtk_widget_set_margin_top(over, 4)
+                gtk_widget_set_margin_bottom(over, 4)
+                append(list, over)
             }
-            anhaengen(liste, wahlzeile(wahlbeschriftung(eintrag, was, an),
-                                       gewaehlt: eintrag == jetzt, tafel: tafel) { [weak self] in
-                guard let self, eintrag != self.bereichswahl(was) else { return }
-                self.bereichWaehlen(eintrag, was)
-                self.titelwahlMalen(was)
-                self.chipsFuellen(was)
-                self.rasterLaden(was)
+            append(list, selectionRow(selectionLabel(entryRecord, was, an),
+                                       selected: entryRecord == now, panel: panel) { [weak self] in
+                guard let self, entryRecord != self.sectionSelection(was) else { return }
+                self.sectionSelect(entryRecord, was)
+                self.titleSelectionDraw(was)
+                self.chipsFill(was)
+                self.gridLoad(was)
             })
         }
-        gtk_widget_add_css_class(t.knopf, "swiftly-aktiv")
-        gtk_image_set_from_icon_name(OpaquePointer(t.winkel), "pan-up-symbolic")
-        let k = gehalten(t.knopf), w = gehalten(t.winkel)
-        beiSignal(tafel, "closed") {
+        gtk_widget_add_css_class(t.button, "swiftly-aktiv")
+        gtk_image_set_from_icon_name(OpaquePointer(t.angle), "pan-up-symbolic")
+        let k = held(t.button), w = held(t.angle)
+        signal(panel, "closed") {
             gtk_widget_remove_css_class(k.widget, "swiftly-aktiv")
             gtk_image_set_from_icon_name(OpaquePointer(w.widget), "pan-down-symbolic")
-            losgelassen(k); losgelassen(w)
+            letGo(k); letGo(w)
         }
-        gtk_popover_popup(alsTafel(tafel))
+        gtk_popover_popup(asPanel(panel))
     }
 
-    /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
+    /// A page heading with the count on the right, "Filme … 7".
     /// - Parameters:
-    ///   - mitServer: Ob die Serverzeile unter dem Titel steht. **Nur die
-    ///     Bibliotheksseiten** — `BibliothekView.swift:61-80` hat sie, die
-    ///     Merkliste (`MerklisteView.swift:42-49`) und die Genreseite
-    ///     (`GenreView.swift:29`, ein blanker `Unterseitenkopf`) nicht.
-    ///   - mitZahl: Ob rechts die Zaehlmarke steht. Die Genreseite hat keine.
-    private func seitenkopf(_ titel: String, zahl: inout Widget!,
-                            titelfeld: inout Widget!,
-                            serverfeld: inout Widget!,
-                            zurueck: (() -> Void)? = nil,
-                            mitServer: Bool = true,
-                            mitZahl: Bool = true) -> Widget! {
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
-        if let zurueck {
-            let pfeil: Widget! = gtk_button_new()
-            gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
-            beschriften(pfeil, uebersetzt("Zurück"))
-            gtk_button_set_child(alsKnopf(pfeil),
+    ///   - mitServer: Whether the server line appears under the title. **Only the library pages** have it; the watchlist (`WatchlistView.swift:42-49`) and the genre page (`GenreView.swift:29`, a plain `SubpageHeader`) do not.
+    ///   - mitZahl: Whether the count badge appears on the right. The genre page has none.
+    private func pageHeader(_ title: String, figure: inout Widget!,
+                            titleField: inout Widget!,
+                            serverField: inout Widget!,
+                            back: (() -> Void)? = nil,
+                            withServer: Bool = true,
+                            withNumber: Bool = true) -> Widget! {
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+        if let back {
+            let arrow: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(arrow, "swiftly-zurueck")
+            caption(arrow, translated("Zurück"))
+            gtk_button_set_child(asButton(arrow),
                                  gtk_image_new_from_icon_name("go-previous-symbolic"))
-            gtk_widget_set_valign(pfeil, GTK_ALIGN_CENTER)
-            beiSignal(pfeil, "clicked", zurueck)
-            anhaengen(reihe, pfeil)
+            gtk_widget_set_valign(arrow, GTK_ALIGN_CENTER)
+            signal(arrow, "clicked", back)
+            append(rail, arrow)
         }
-        let spalte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
-        gtk_widget_set_hexpand(spalte, 1)
-        let t = beschriftung(titel, stil: "swiftly-titel-gross")
-        titelfeld = t
+        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 3)
+        gtk_widget_set_hexpand(column, 1)
+        let t = label(title, style: "swiftly-titel-gross")
+        titleField = t
         gtk_label_set_xalign(OpaquePointer(t), 0)
-        anhaengen(spalte, t)
+        append(column, t)
 
-        // **Wo bin ich hier eigentlich?** (E15) Der Servername stand auf
-        // keiner Seite; bei mehreren Konten mit gleich benannten Bibliotheken
-        // ist er der einzige Unterschied. Er steht nur da, wenn es einen gibt
-        // — eine leere zweite Zeile waere eine Luecke ohne Aussage.
-        let sv = beschriftung(servername, stil: "swiftly-zaehlmarke")
+        // **Where am I?** The server name was on no page; with several accounts and identically named libraries it is the only difference. It is shown only if there is one, since an empty second line would be a gap with no meaning.
+        let sv = label(serverName, style: "swiftly-zaehlmarke")
         gtk_label_set_xalign(OpaquePointer(sv), 0)
         gtk_label_set_ellipsize(OpaquePointer(sv), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_visible(sv, (mitServer && !servername.isEmpty) ? 1 : 0)
-        serverfeld = mitServer ? sv : nil
-        anhaengen(spalte, sv)
-        anhaengen(reihe, spalte)
+        gtk_widget_set_visible(sv, (withServer && !serverName.isEmpty) ? 1 : 0)
+        serverField = withServer ? sv : nil
+        append(column, sv)
+        append(rail, column)
 
-        // **Erst ab eins.** Der Mac zeigt die Zahl nur bei `gesamt > 0`
-        // (`BibliothekView.swift:80`, `MerklisteView.swift:48`); hier stand
-        // bei leerem Ergebnis eine „0" neben der Ueberschrift.
-        zahl = beschriftung("", stil: "swiftly-zaehlmarke")
-        gtk_widget_set_valign(zahl, GTK_ALIGN_CENTER)
-        gtk_widget_set_visible(zahl, 0)
-        if mitZahl { anhaengen(reihe, zahl) }
-        return reihe
+        // **Only from one.** macOS shows the count only for `total > 0` (`LibraryView.swift:80`, `WatchlistView.swift:48`); here an empty result showed a "0" next to the heading.
+        figure = label("", style: "swiftly-zaehlmarke")
+        gtk_widget_set_valign(figure, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(figure, 0)
+        if withNumber { append(rail, figure) }
+        return rail
     }
 
-    /// **Die Startseite bekommt seitlich keinen Rand.**
+    /// **The home page gets no side inset.**
     ///
-    /// Der Grund war der Rand hier — er schneidet die waagerechte
-    /// Blätterfläche mit ab.
+    /// The page inset would cut off the horizontal scroll area.
     ///
-    /// Auf dem Mac trägt nicht die Seite den Rand, sondern die Reihe **innen**
-    /// (`Blätterreihe.rand`): die Kacheln beginnen unter der Überschrift und
-    /// blättern trotzdem bis an die Fensterkante. Genau so hier.
-    private func startbereichBauen() -> Widget! {
-        // **Die Startseite hat einen Titel** (Mac 8c904f43): „Filme, Serien,
-        // Suche, Merkliste, Downloads haben alle eine Ueberschrift, nur die
-        // Startseite nicht." In derselben Groesse, an derselben Stelle, mit
-        // derselben `Bestandsleiste` beim Scrollen.
-        let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
-        // **Derselbe Scroller wie überall** — `EXTERNAL`, keine Systemleiste.
-        let scroller = seitenscroller()
-        // Der obere Abstand steckt im Stilblatt als `padding` (`inhaltOben`).
-        gtk_widget_add_css_class(seite, "swiftly-startschein")
-        // **Ueber die volle Breite.** Ohne das behaelt der Stapel nach einem
-        // Zurueck die Breite, die er beim Hereinfahren hatte.
-        gtk_widget_set_hexpand(seite, 1)
-        gtk_widget_set_halign(seite, GTK_ALIGN_FILL)
-        gtk_widget_set_margin_bottom(seite, 40)
+    /// On macOS the row carries the inset **inside** (`Blätterreihe.rand`): the tiles start under the heading and still scroll to the window edge. Same here.
+    private func startSectionBuild() -> Widget! {
+        // **The home page has a title** (like macOS): movies, series, search, watchlist and downloads all have a heading, only the home page lacked one. Same size, same place, same `Bestandsleiste` when scrolling.
+        let page = stack(GTK_ORIENTATION_VERTICAL, spacing: Int32(Theme.railsSpacing))
+        // **The same scroller as everywhere**: `EXTERNAL`, no system scrollbar.
+        let scroller = pagesScroller()
+        // The top spacing lives in the stylesheet as `padding` (`contentTop`).
+        gtk_widget_add_css_class(page, "swiftly-startschein")
+        // **Full width.** Without it the stack keeps the width it had when sliding in after a back.
+        gtk_widget_set_hexpand(page, 1)
+        gtk_widget_set_halign(page, GTK_ALIGN_FILL)
+        gtk_widget_set_margin_bottom(page, 40)
 
-        let titel = beschriftung(uebersetzt("Startseite"), stil: "swiftly-titel-gross")
-        gtk_label_set_xalign(OpaquePointer(titel), 0)
-        gtk_widget_set_margin_start(titel, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(titel, Int32(Stil.randAbstand))
-        anhaengen(seite, titel)
+        let title = label(translated("Startseite"), style: "swiftly-titel-gross")
+        gtk_label_set_xalign(OpaquePointer(title), 0)
+        gtk_widget_set_margin_start(title, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(title, Int32(Theme.edgeSpacing))
+        append(page, title)
 
-        // **Die Seite traegt keinen seitlichen Rand** — die Reihe innen
-        // (`Blätterreihe.rand`), damit die Kacheln bis an die Fensterkante
-        // blaettern.
-        reihenstapel = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
-        gtk_widget_set_hexpand(reihenstapel, 1)
-        anhaengen(seite, reihenstapel)
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), seite)
-        return bestandsleiste(scroller, titel: uebersetzt("Startseite")).huelle
+        // **The page has no side inset**; the row carries it inside (`Blätterreihe.rand`) so the tiles scroll to the window edge.
+        railsStack = stack(GTK_ORIENTATION_VERTICAL, spacing: Int32(Theme.railsSpacing))
+        gtk_widget_set_hexpand(railsStack, 1)
+        append(page, railsStack)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), page)
+        return stateBar(scroller, title: translated("Startseite")).wrapper
     }
 
-    private func rasterseiteBauen(_ was: Bereich) -> Widget! {
-        // **Die Abstaende der Vorlage** (`BibliothekView`): Titel, 14 Luft,
-        // die Wertreihe, 22 Luft, das Raster.
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        var zahl: Widget!
-        var titel: Widget!
-        var serverzeile: Widget!
-        // **Eine Genreseite ist keine Wurzel** und traegt deshalb einen
-        // Zurueckpfeil im Inhalt, wie jede Unterseite
-        // (`Sources/macOS/GenreView.swift:29`, `Unterseitenkopf`). Filme,
-        // Serien, Merkliste und die Bibliothek stehen in der Leiste und
-        // tragen die `Bestandsleiste`.
-        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl, titelfeld: &titel,
-                                    serverfeld: &serverzeile,
-                                    zurueck: was == .gattung ? { [weak self] in
-                                        self?.zeige(.start)
+    private func gridPageBuild(_ was: Region) -> Widget! {
+        // **Spacing of the original** (`LibraryView`): title, 14 gap, the value row, 22 gap, the grid.
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        var figure: Widget!
+        var title: Widget!
+        var serverRow: Widget!
+        // **A genre page is not a root** and therefore carries a back arrow in the content, like any subpage (`Sources/macOS/GenreView.swift:29`, `SubpageHeader`). Movies, series, watchlist and library are in the bar and carry the `Bestandsleiste`.
+        append(block, pageHeader(was.label, figure: &figure, titleField: &title,
+                                    serverField: &serverRow,
+                                    back: was == .genre ? { [weak self] in
+                                        self?.show(.start)
                                     } : nil,
-                                    mitServer: was != .gattung && was != .merkliste
-                                        && was != .sammlung,
-                                    mitZahl: was != .gattung))
-        // Nur diese Seiten wechseln ihren Titel.
-        if was == .sammlung { sammlungstitel = titel }
-        if was == .filme || was == .serien { titelwahlEinbauen(was, titel: titel) }
-        if was == .gattung { gattungstitel = titel }
-        // `nil`, wo die Seite keine traegt — sonst faerbte
-        // `serverzeilenMalen` sie doch wieder ein.
-        serverzeilen[was] = serverzeile
+                                    withServer: was != .genre && was != .watchlist
+                                        && was != .collection,
+                                    withNumber: was != .genre))
+        // Only these pages change their title.
+        if was == .collection { collectionTitle = title }
+        if was == .movies || was == .seriesList { titleSelectionInBuild(was, title: title) }
+        if was == .genre { genreTitle = title }
+        // `nil` where the page has none; otherwise `serverRowsDraw` would colour it anyway.
+        serverRows[was] = serverRow
 
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        gtk_widget_set_margin_top(zeile, 14)
-        chipzeilen[was] = zeile
-        anhaengen(block, zeile)
-        chipsFuellen(was)
+        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_top(row, 14)
+        chipRows[was] = row
+        append(block, row)
+        chipsFill(was)
 
-        // **Kein „Lade …" als Fliesstext** (E17): ein Platzhalter in der
-        // Form dessen, was kommt.
-        let lader = rasterPlatzhalter(anzahl: 6, rand: 0)
-        gtk_widget_set_halign(lader, GTK_ALIGN_START)
-        gtk_widget_set_margin_top(lader, 22)
-        gtk_widget_set_visible(lader, 0)
-        anhaengen(block, lader)
+        // **No "Lade …" as body text**: a placeholder in the shape of what is coming.
+        let loader = gridPlaceholder(count: 6, margin: 0)
+        gtk_widget_set_halign(loader, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(loader, 22)
+        gtk_widget_set_visible(loader, 0)
+        append(block, loader)
 
-        let raster = rasterBauen()
-        gtk_widget_set_margin_top(raster, was == .gattung ? 20 : 22)
-        anhaengen(block, raster)
+        let grid = gridBuild()
+        gtk_widget_set_margin_top(grid, was == .genre ? 20 : 22)
+        append(block, grid)
 
-        // **Leer oder gestoert — nie nichts** (Mac 6d7f6478). Filme, Serien
-        // und die Bibliothek hatten hier gar keinen Zustand: lud die Seite
-        // nichts, stand dort nichts. Was hineinkommt, entscheidet
-        // ``rasterZustandZeigen(_:gestoert:)`` nach der Antwort.
-        let zustand = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_visible(zustand, 0)
-        anhaengen(block, zustand)
-        leerFeld[was] = zustand
-        rasterFeld[was] = raster
-        // Ein neues Raster ist leer — sonst glaubte `rasterLaden`, es stuende schon etwas da.
-        rasterItems[was] = []
-        zahlFeld[was] = zahl
-        laderFeld[was] = lader
+        // **Empty or failed, never nothing.** Movies, series and the library had no state at all here: if the page loaded nothing, nothing was shown. `gridStateShow(_:disrupted:)` decides after the response what appears.
+        let condition = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_visible(condition, 0)
+        append(block, condition)
+        emptyField[was] = condition
+        gridField[was] = grid
+        // A new grid is empty; otherwise `gridLoad` would think something was already there.
+        gridItems[was] = []
+        numberField[was] = figure
+        loaderField[was] = loader
 
-        let rahmen = seitenrahmen(block)
-        // Weit Weggescrolltes gibt seine Bilder her (``Kachelbildwache``).
-        let wache = Kachelbildwache(scroller: rahmen)
-        let rasterzeiger = UnsafeMutableRawPointer(raster!)
-        kachelwachen[rasterzeiger] = wache
-        beiSignal(raster, "destroy") { [weak self] in self?.kachelwachen[rasterzeiger] = nil }
-        // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
-        // bringt die Kante mit, also wieder ein eigener Rückruf, Falle 2).
-        // **Eine Genreseite laedt einmal.** Der Mac holt dort genau 200 und
-        // blaettert nicht nach (`GenreView.swift:69-72`).
-        if was != .gattung {
-            randMelden(rahmen) { [weak self] in self?.rasterNachladen(was) }
+        let frameRect = pagesFrame(block)
+        // Tiles scrolled far away release their images (`TileImageGuard`).
+        let sentry = TileImageGuard(scroller: frameRect)
+        let gridPointer = UnsafeMutableRawPointer(grid!)
+        tileGuard[gridPointer] = sentry
+        signal(grid, "destroy") { [weak self] in self?.tileGuard[gridPointer] = nil }
+        // **More is loaded at the bottom edge** (`edge-reached`; the signal carries the edge, so again a dedicated callback).
+        // **A genre page loads once.** macOS fetches exactly 200 there and does not page (`GenreView.swift:69-72`).
+        if was != .genre {
+            edgeReport(frameRect) { [weak self] in self?.gridLoadMore(was) }
         }
-        // Die Genreseite traegt den `Unterseitenkopf` mit dem Pfeil im
-        // Inhalt, wie auf dem Mac — keine Bestandsleiste.
-        if was == .gattung { return mitKopflinie(rahmen) }
-        // **Die Sammlung ist eine Unterseite:** der Pfeil steht in der Leiste,
-        // wie auf dem Mac (`Bestandsleiste.zurueck`), und blendet nicht ein.
-        let leiste = bestandsleiste(rahmen, titel: was.beschriftung,
-                                    zurueck: was == .sammlung ? { [weak self] in
-                                        self?.sammlungSchliessen()
+        // The genre page carries the `SubpageHeader` with the arrow in the content, as on macOS; no `Bestandsleiste`.
+        if was == .genre { return withHeaderLine(frameRect) }
+        // **The collection is a subpage:** the arrow is in the bar, as on macOS (`Bestandsleiste.back`), and does not fade in.
+        let bar = stateBar(frameRect, title: was.label,
+                                    back: was == .collection ? { [weak self] in
+                                        self?.collectionClose()
                                     } : nil,
-                                    wertreihe: zeile)
-        leistentitel[was] = leiste.titel
-        return leiste.huelle
+                                    valueSeries: row)
+        barTitle[was] = bar.title
+        return bar.wrapper
     }
 
-    /// **Leer oder gestoert** — nach der Antwort, woertlich nach
-    /// `BibliothekView`, `MerklisteView` und `GenreView` auf dem Mac.
-    private func rasterZustandZeigen(_ was: Bereich, gestoert: Bool, leer: Bool) {
-        guard let feld = leerFeld[was] else { return }
-        leeren(feld)
-        guard leer else { gtk_widget_set_visible(feld, 0); return }
-        let neuLaden: () -> Void = { [weak self] in self?.rasterLaden(was) }
-        if gestoert {
-            anhaengen(feld, stoerzustand(oben: 80, erneut: neuLaden))
+    /// **Empty or failed**, after the response, taken literally from `LibraryView`, `WatchlistView` and `GenreView` on macOS.
+    private func gridStateShow(_ was: Region, disrupted: Bool, empty: Bool) {
+        guard let inputField = emptyField[was] else { return }
+        wipe(inputField)
+        guard empty else { gtk_widget_set_visible(inputField, 0); return }
+        let newLoad: () -> Void = { [weak self] in self?.gridLoad(was) }
+        if disrupted {
+            append(inputField, disturbState(top: 80, retry: newLoad))
         } else {
             switch was {
-            case .merkliste:
-                let merk = Merkzeichen(gefuellt: false, mass: 44)
-                beiSignal(merk.anzeige, "destroy") { _ = merk }
-                anhaengen(feld, leerzustand("", uebersetzt("Noch nichts gemerkt"),
-                                            uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."),
-                                            oben: 80, zeichnung: merk.anzeige))
-            case .gattung:
-                anhaengen(feld, leerzustand("tag-symbolic", uebersetzt("Nichts in diesem Genre"),
-                                            uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),
-                                            oben: 80))
+            case .watchlist:
+                let memo = RememberCharacter(filled: false, mass: 44)
+                signal(memo.display, "destroy") { _ = memo }
+                append(inputField, emptyState("", translated("Noch nichts gemerkt"),
+                                            translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."),
+                                            top: 80, drawing: memo.display))
+            case .genre:
+                append(inputField, emptyState("tag-symbolic", translated("Nichts in diesem Genre"),
+                                            translated("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),
+                                            top: 80))
             default:
-                let filter = filterVon(was)
-                if filter == .alle {
-                    anhaengen(feld, leerzustand("mail-inbox-symbolic", uebersetzt("Hier ist noch nichts"),
-                                                was == .sammlung
-                                                    ? uebersetzt("Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
-                                                    : uebersetzt("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
-                                                oben: 80,
-                                                stillerKnopf: (uebersetzt("Aktualisieren"), neuLaden)))
+                let filter = filterFrom(was)
+                if filter == .all {
+                    append(inputField, emptyState("mail-inbox-symbolic", translated("Hier ist noch nichts"),
+                                                was == .collection
+                                                    ? translated("Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
+                                                    : translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
+                                                top: 80,
+                                                quietButton: (translated("Aktualisieren"), newLoad)))
                 } else {
-                    let zeichen = Filterzeichen(mass: 44)
-                    anhaengen(feld, leerzustand("", uebersetzt("Nichts gefunden"),
-                                                String(format: uebersetzt("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter."),
-                                                       filter.beschriftung),
-                                                oben: 80,
-                                                stillerKnopf: (uebersetzt("Filter zurücksetzen"), { [weak self] in
+                    let symbolText = FilterCharacter(mass: 44)
+                    append(inputField, emptyState("", translated("Nichts gefunden"),
+                                                String(format: translated("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter."),
+                                                       filter.label),
+                                                top: 80,
+                                                quietButton: (translated("Filter zurücksetzen"), { [weak self] in
                                                     guard let self else { return }
-                                                    self.filterSetzen(was, .alle)
-                                                    self.chipsFuellen(was)
-                                                    self.rasterLaden(was)
+                                                    self.filterSet(was, .all)
+                                                    self.chipsFill(was)
+                                                    self.gridLoad(was)
                                                 }),
-                                                zeichnung: zeichen.anzeige))
-                    beiSignal(zeichen.anzeige, "destroy") { _ = zeichen }
+                                                drawing: symbolText.display))
+                    signal(symbolText.display, "destroy") { _ = symbolText }
                 }
             }
         }
-        gtk_widget_set_visible(feld, 1)
+        gtk_widget_set_visible(inputField, 1)
     }
 
-    /// **Filter links, Sortierung rechts** — die Anordnung des Macs.
+    /// **Filter on the left, sort on the right**, as on macOS.
     ///
-    /// Beide Listen kommen aus `JellyfinKit.Bibliotheksfilter` und
-    /// `Sortierung`. Dort steht auch, was sie beim Server bedeuten, und dass
-    /// „Ungesehen" bewusst den eigenen Schalter braucht statt Jellyfins
-    /// `Filters=IsUnplayed` — das arbeitet bei Serien auf Folgenebene.
-    /// Die Bibliotheken einer Gattung.
-    func bibliotheken(fuer was: Bereich) -> [Item] {
-        // **Die Merkliste hat keine.** Sie geht ueber alle Bibliotheken und
-        // siebt beim Server auf `IsFavorite`; eine Bibliothekswahl waere dort
-        // eine Einschraenkung, die es auf dem Mac auch nicht gibt.
+    /// Both lists come from `JellyfinKit.LibraryFilter` and `Sorting`. That is also where their server meaning is documented, and why "Ungesehen" deliberately has its own switch instead of Jellyfin's `Filters=IsUnplayed`, which works per episode for series.
+    /// The libraries of one kind.
+    func libraries(for was: Region) -> [Item] {
+        // **The watchlist has none.** It spans all libraries and filters on `IsFavorite` at the server; a library choice would be a restriction that macOS does not have either.
         switch was {
-        case .filme:  return sichten.filter { $0.collectionType == "movies" }
-        case .serien: return sichten.filter { $0.collectionType == "tvshows" }
+        case .movies:  return review.filter { $0.collectionType == "movies" }
+        case .seriesList: return review.filter { $0.collectionType == "tvshows" }
         default:      return []
         }
     }
 
-    func chipsFuellen(_ was: Bereich) {
-        guard let zeile = chipzeilen[was] else { return }
-        leeren(zeile)
-        // **Eine Genreseite hat keine Chips.** Der Mac zeigt dort weder
-        // Filter noch Sortierung (`Sources/macOS/GenreView.swift`): die
-        // Reihenfolge steht fest auf „zuletzt hinzugefuegt", weil man ein
-        // Genre antippt, um zu sehen, was neu ist. Hier hingen beide Reihen
-        // dran — der Sortierchip leuchtete auf und tat nichts, weil
-        // `rasterLaden` fuer Genres ohnehin `DateCreated` erzwingt, und der
-        // Filterchip tat etwas, das es beim Vorbild gar nicht gibt.
-        if was == .gattung {
-            gtk_widget_set_visible(zeile, 0)
+    func chipsFill(_ was: Region) {
+        guard let row = chipRows[was] else { return }
+        wipe(row)
+        // **A genre page has no chips.** macOS shows neither filter nor sort there (`Sources/macOS/GenreView.swift`): the order is fixed to "recently added", since one taps a genre to see what is new. Both rows used to hang here: the sort chip lit up and did nothing because `gridLoad` forces `DateCreated` for genres anyway, and the filter chip did something the original does not.
+        if was == .genre {
+            gtk_widget_set_visible(row, 0)
             return
         }
-        gtk_widget_set_visible(zeile, 1)
-        let jetztFilter = filterVon(was)
-        let jetztSort = sortierungVon(was)
+        gtk_widget_set_visible(row, 1)
+        let nowFilter = filterFrom(was)
+        let nowSort = sortingFrom(was)
 
-        // **Die Bibliothekswahl steht hier nicht.** Sie stand einmal als
-        // Chips vorn; seit dem 23.09.2026 ist sie das Titelmenue darueber, das
-        // die Ueberschrift gleich mitnimmt (Mac `BibliothekView`).
+        // **The library choice is not here.** It used to be chips up front; now it is the title menu above, which also takes the heading along (macOS `LibraryView`).
 
-        // **Die Merkliste waehlt die Gattung, nicht den Zustand** (E25).
-        // Der Server siebt dort schon auf `IsFavorite`; ein Zustandsfilter
-        // daneben stuende da und taete nichts. Stattdessen die Gattungspille
-        // — sie fehlte auf Linux ganz, und damit gab es keinen Weg, Filme und
-        // Serien zu trennen.
-        // **Zwei Wahlknoepfe statt einer Chipreihe** (Mac 7202b872). Die
-        // Merkliste waehlt die Gattung statt des Zustands (E25) — der Server
-        // siebt dort schon auf `IsFavorite`.
-        let sortieren = Sortierung.allCases.map { fall in
-            (text: fall.beschriftung, gewaehlt: fall == jetztSort, tun: { [weak self] () -> Void in
-                guard let self, fall != self.sortierungVon(was) else { return }
-                self.sortierungSetzen(was, fall)
-                self.chipsFuellen(was)
-                self.rasterLaden(was)
+        // **The watchlist chooses the kind, not the state.** The server already filters on `IsFavorite`, so a state filter would do nothing there. Instead the kind pill, which was missing on Linux entirely, leaving no way to separate movies and series.
+        // **Two picker buttons instead of a chip row.**
+        let sortUp = Sorting.allCases.map { fall in
+            (text: fall.label, selected: fall == nowSort, perform: { [weak self] () -> Void in
+                guard let self, fall != self.sortingFrom(was) else { return }
+                self.sortingSet(was, fall)
+                self.chipsFill(was)
+                self.gridLoad(was)
             })
         }
-        if was == .merkliste {
-            let raster: Widget! = gtk_image_new_from_icon_name("view-grid-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(raster), 12)
-            anhaengen(zeile, wahlknopf(zeichen: raster, wert: merkgattung.beschriftung,
-                                       eintraege: Merkgattung.allCases.map { fall in
-                (text: fall.beschriftung, gewaehlt: fall == merkgattung, tun: { [weak self] () -> Void in
-                    guard let self, fall != self.merkgattung else { return }
-                    self.merkgattung = fall
-                    self.chipsFuellen(was)
-                    self.rasterLaden(was)
+        if was == .watchlist {
+            let grid: Widget! = gtk_image_new_from_icon_name("view-grid-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(grid), 12)
+            append(row, selectionButton(symbolText: grid, value: savedGenre.label,
+                                       entries: RememberGenre.allCases.map { fall in
+                (text: fall.label, selected: fall == savedGenre, perform: { [weak self] () -> Void in
+                    guard let self, fall != self.savedGenre else { return }
+                    self.savedGenre = fall
+                    self.chipsFill(was)
+                    self.gridLoad(was)
                 })
             }))
         } else {
-            let trichter = Filterzeichen()
-            beiSignal(trichter.anzeige, "destroy") { _ = trichter }
-            anhaengen(zeile, wahlknopf(zeichen: trichter.anzeige, wert: jetztFilter.beschriftung,
-                                       eintraege: filterliste(was).map { fall in
-                (text: fall.beschriftung, gewaehlt: fall == jetztFilter, tun: { [weak self] () -> Void in
-                    guard let self, fall != self.filterVon(was) else { return }
-                    self.filterSetzen(was, fall)
-                    self.chipsFuellen(was)
-                    self.rasterLaden(was)
+            let funnel = FilterCharacter()
+            signal(funnel.display, "destroy") { _ = funnel }
+            append(row, selectionButton(symbolText: funnel.display, value: nowFilter.label,
+                                       entries: filterList(was).map { fall in
+                (text: fall.label, selected: fall == nowFilter, perform: { [weak self] () -> Void in
+                    guard let self, fall != self.filterFrom(was) else { return }
+                    self.filterSet(was, fall)
+                    self.chipsFill(was)
+                    self.gridLoad(was)
                 })
             }))
         }
-        // Das Zeichen der gewählten Sortierung, nicht dieselben Pfeile für
-        // alle (Mac `Sortierung.symbol`).
-        let pfeile: Widget! = zeichenbild(jetztSort.zeichennamen)
-        gtk_image_set_pixel_size(OpaquePointer(pfeile), 12)
-        anhaengen(zeile, wahlknopf(zeichen: pfeile, wert: jetztSort.beschriftung,
-                                   eintraege: sortieren))
-        // **Bei „Sammlungen" bleibt die Zeile stehen, nur leer** (Mac
-        // `BibliothekView`): die Liste der Sammlungen muss man weder filtern
-        // noch umsortieren. Fiele die Zeile weg, spraenge das Raster beim
-        // Wechsel um ihre Hoehe.
-        let leer = (was == .filme || was == .serien) && bereichswahl(was) == .sammlungen
-        var kind = gtk_widget_get_first_child(zeile)
+        // The icon of the chosen sort order, not the same arrows for all (macOS `Sorting.symbol`).
+        let arrows: Widget! = characterImage(nowSort.characterNames)
+        gtk_image_set_pixel_size(OpaquePointer(arrows), 12)
+        append(row, selectionButton(symbolText: arrows, value: nowSort.label,
+                                   entries: sortUp))
+        // **For "Sammlungen" the row stays, just empty** (macOS `LibraryView`): the list of collections needs neither filtering nor sorting. If the row disappeared, the grid would jump by its height on switching.
+        let empty = (was == .movies || was == .seriesList) && sectionSelection(was) == .collections
+        var kind = gtk_widget_get_first_child(row)
         while let k = kind {
-            gtk_widget_set_opacity(k, leer ? 0 : 1)
-            gtk_widget_set_can_target(k, leer ? 0 : 1)
+            gtk_widget_set_opacity(k, empty ? 0 : 1)
+            gtk_widget_set_can_target(k, empty ? 0 : 1)
             kind = gtk_widget_get_next_sibling(k)
         }
     }
 
-    /// Welche Filter zur Wahl stehen — bei den Serien einer Sammlung derselbe
-    /// Satz wie auf dem Mac (`Sammlungsseite`).
-    private func filterliste(_ was: Bereich) -> [Bibliotheksfilter] {
-        if was == .sammlung, offeneSammlung?.art == "tvshows" {
-            return [.alle, .angefangen, .merkliste]
+    /// Which filters are offered; for the series of a collection the same set as macOS (`CollectionDetailPage`).
+    private func filterList(_ was: Region) -> [LibraryFilter] {
+        if was == .collection, openCollection?.art == "tvshows" {
+            return [.all, .begun, .watchlist]
         }
-        return Bibliotheksfilter.allCases
+        return LibraryFilter.allCases
     }
 
-    // MARK: Sammlungen im Raster (Mac `BibliothekView.sammlungskacheln`)
+    // MARK: Collections in the grid (macOS `LibraryView.collectionTiles`)
 
-    /// **Sammlungen im selben Raster, mit derselben Kachel.** Unter dem Namen
-    /// steht statt des Jahres, wie viele Filme bzw. Serien darin sind. Ohne
-    /// eigenes Bild steht ein Mosaik aus den ersten Plakaten da.
-    private func sammlungenZeigen(_ was: Bereich) {
-        rasterAuftrag[was, default: 0] += 1
-        rasterLaedt.remove(was)
-        rasterLaderZeigen(was, false)
-        rasterSieb[was] = nil
-        rasterRoh[was] = nil
-        rasterItems[was] = []
-        guard let raster = rasterFeld[was], let zahl = zahlFeld[was] else { return }
-        rasterFuellen(raster, [])
-        let gattung = art(was)
-        let liste = sammlungsverzeichnis?.sammlungen(art: gattung) ?? []
-        for eintrag in liste {
-            gtk_flow_box_insert(OpaquePointer(raster), sammlungskachel(eintrag, art: gattung), -1)
+    /// **Collections in the same grid, with the same tile.** Under the name, instead of the year, is how many movies or series it holds. Without its own image, a mosaic of the first posters is shown.
+    private func collectionsShow(_ was: Region) {
+        gridJob[was, default: 0] += 1
+        gridLoads.remove(was)
+        gridLoaderShow(was, false)
+        gridFilter[was] = nil
+        gridRaw[was] = nil
+        gridItems[was] = []
+        guard let grid = gridField[was], let figure = numberField[was] else { return }
+        gridFill(grid, [])
+        let genre = art(was)
+        let list = collectionDirectory?.collections(art: genre) ?? []
+        for entryRecord in list {
+            gtk_flow_box_insert(OpaquePointer(grid), collectionTile(entryRecord, art: genre), -1)
         }
-        gtk_label_set_text(OpaquePointer(zahl), String(liste.count))
-        gtk_widget_set_visible(zahl, liste.isEmpty ? 0 : 1)
-        // „Sammlungen" gibt es im Menue nur, wenn es welche gibt — kein
-        // Laden, kein Leer.
-        rasterZustandZeigen(was, gestoert: false, leer: false)
+        gtk_label_set_text(OpaquePointer(figure), String(list.count))
+        gtk_widget_set_visible(figure, list.isEmpty ? 0 : 1)
+        // "Sammlungen" appears in the menu only if there are any; no loading, no empty state.
+        gridStateShow(was, disrupted: false, empty: false)
     }
 
-    private func sammlungskachel(_ sammlung: Sammlung, art gattung: String) -> Widget! {
-        let item = sammlung.item
-        let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
-                                           hoehe: Stil.kachelHoehe,
-                                           stil: "swiftly-plakat")
+    private func collectionTile(_ collection: ItemCollection, art genre: String) -> Widget! {
+        let item = collection.item
+        let (cage, image) = framedImage(width: Theme.tileWidth,
+                                           height: Theme.tileHeight,
+                                           style: "swiftly-plakat")
         if item.imageTags?["Primary"] != nil,
-           let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
-                                                              maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }) {
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: Skalierung.bildkante(Stil.kachelHoehe))
+           let address = addresses.flatMap({ ImageSelection.portrait(item, addresses: $0,
+                                                              maxHeight: Scaling.requestEdge(Theme.tileHeight)) }) {
+            imageLoad(image, url: address, key: ImageKey.of(address),
+                      border: Scaling.imageEdge(Theme.tileHeight))
         } else {
-            mosaikLegen(kaefig, sammlung: sammlung, art: gattung)
+            mosaicPut(cage, collection: collection, art: genre)
         }
-        let n = sammlung.anzahl(art: gattung)
-        let unten = gattung == "tvshows"
-            ? zahlwort(n, eins: uebersetzt("1 Serie"), viele: uebersetzt("%lld Serien"))
-            : zahlwort(n, eins: uebersetzt("1 Film"), viele: uebersetzt("%lld Filme"))
-        let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
-                                  oben: item.name, unten: unten) { [weak self] in
-            self?.sammlungOeffnen(item, art: gattung)
+        let n = collection.count(art: genre)
+        let bottom = genre == "tvshows"
+            ? numberWord(n, one: translated("1 Serie"), many: translated("%lld Serien"))
+            : numberWord(n, one: translated("1 Film"), many: translated("%lld Filme"))
+        let tile = tileWrapper(image: cage, width: Theme.tileWidth,
+                                  top: item.name, bottom: bottom) { [weak self] in
+            self?.collectionOpen(item, art: genre)
         }
-        gtk_widget_set_halign(kachel, GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
-        return kachel
+        gtk_widget_set_halign(tile, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(tile, GTK_ALIGN_START)
+        return tile
     }
 
-    /// **Ersatzplakat einer Sammlung ohne eigenes Bild** — ein Mosaik aus den
-    /// Plakaten ihrer ersten Titel (Mac `Sammlungsmosaik`). Ein Titel fuellt
-    /// das Feld, zwei stehen nebeneinander, ab drei ein 2×2-Mosaik, mit 2
-    /// Punkt Fuge. Die Plakate kommen klein (260 Punkt Hoehe). Bis sie da
-    /// sind, steht das Zeichen auf der Flaeche.
-    private func mosaikLegen(_ kaefig: Widget!, sammlung: Sammlung, art gattung: String) {
-        zeichenLegen(kaefig, serie: gattung == "tvshows")
+    /// **Fallback poster of a collection without its own image**: a mosaic of the posters of its first titles (macOS `Sammlungsmosaik`). One title fills the field, two sit side by side, from three a 2×2 mosaic, with a 2-point gap. The posters are fetched small (260 points high). Until they arrive, the icon is shown on the surface.
+    private func mosaicPut(_ cage: Widget!, collection: ItemCollection, art genre: String) {
+        characterPut(cage, series: genre == "tvshows")
         guard let client else { return }
-        let quelle = Regalquelle(eltern: sammlung.id, art: gattung, sammlung: true)
-        let kiste = gehalten(kaefig)
+        let source = ShelfSource(parent: collection.id, art: genre, collection: true)
+        let container = held(cage)
         Task.detached { [self] in
-            let titel = (try? await client.items(parentID: quelle.eltern, limit: 4,
-                                                 sortBy: Sortierung.erscheinung.feld,
-                                                 sortOrder: quelle.richtung(.erscheinung),
-                                                 recursive: quelle.rekursiv,
-                                                 includeItemTypes: quelle.typen).items) ?? []
-            aufHauptfaden {
-                defer { losgelassen(kiste) }
-                guard let kaefig = kiste.widget, !titel.isEmpty else { return }
-                let reihen: [[Item]] = titel.count > 2
-                    ? [Array(titel.prefix(2)), Array(titel[2...].prefix(2))] : [titel]
-                let breite = Stil.kachelBreite, hoehe = Stil.kachelHoehe
-                let reihenHoehe = (hoehe - (reihen.count - 1) * 2) / reihen.count
-                let mosaik = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-                gtk_widget_add_css_class(mosaik, "swiftly-mosaik")
-                gtk_widget_set_can_target(mosaik, 0)
-                for reihe in reihen {
-                    let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 2)
-                    let feldbreite = (breite - (reihe.count - 1) * 2) / reihe.count
-                    for eintrag in reihe {
-                        let (feld, bild) = gerahmtesBild(breite: feldbreite, hoehe: reihenHoehe,
-                                                         stil: "swiftly-mosaikfeld")
-                        if let adresse = self.adressen.flatMap({
-                            Bildwahl.hochkant(eintrag, adressen: $0, maxHoehe: 260) }) {
-                            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                                      kante: 260)
+            let title = (try? await client.items(parentID: source.parent, limit: 4,
+                                                 sortBy: Sorting.erscheinung.inputField,
+                                                 sortOrder: source.bearing(.erscheinung),
+                                                 recursive: source.recursive,
+                                                 includeItemTypes: source.types).items) ?? []
+            onMainThread {
+                defer { letGo(container) }
+                guard let cage = container.widget, !title.isEmpty else { return }
+                let rails: [[Item]] = title.count > 2
+                    ? [Array(title.prefix(2)), Array(title[2...].prefix(2))] : [title]
+                let width = Theme.tileWidth, height = Theme.tileHeight
+                let railsHeight = (height - (rails.count - 1) * 2) / rails.count
+                let mosaic = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+                gtk_widget_add_css_class(mosaic, "swiftly-mosaik")
+                gtk_widget_set_can_target(mosaic, 0)
+                for rail in rails {
+                    let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 2)
+                    let fieldWidth = (width - (rail.count - 1) * 2) / rail.count
+                    for entryRecord in rail {
+                        let (inputField, image) = framedImage(width: fieldWidth, height: railsHeight,
+                                                         style: "swiftly-mosaikfeld")
+                        if let address = self.addresses.flatMap({
+                            ImageSelection.portrait(entryRecord, addresses: $0, maxHeight: 260) }) {
+                            imageLoad(image, url: address, key: ImageKey.of(address),
+                                      border: 260)
                         } else {
-                            zeichenLegen(feld, serie: gattung == "tvshows")
+                            characterPut(inputField, series: genre == "tvshows")
                         }
-                        anhaengen(zeile, feld)
+                        append(row, inputField)
                     }
-                    anhaengen(mosaik, zeile)
+                    append(mosaic, row)
                 }
-                gtk_overlay_add_overlay(OpaquePointer(kaefig), mosaik)
+                gtk_overlay_add_overlay(OpaquePointer(cage), mosaic)
             }
         }
     }
 
-    private func sucheBauen() -> Widget! {
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
-        var unbenutzt: Widget!
-        var unbenutztertitel: Widget!
-        var unbenutzteserverzeile: Widget!
-        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt,
-                                    titelfeld: &unbenutztertitel,
-                                    serverfeld: &unbenutzteserverzeile))
+    private func searchBuild() -> Widget! {
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 20)
+        var unused: Widget!
+        var unusedTitle: Widget!
+        var unusedServerRow: Widget!
+        append(block, pageHeader(translated("Suche"), figure: &unused,
+                                    titleField: &unusedTitle,
+                                    serverField: &unusedServerRow))
 
-        // **„Titel, Serie, Person", nicht „Suchen".** Der Platzhalter sagt
-        // auf dem Mac, **wonach** man suchen kann (`SucheView.swift:100`);
-        // „Suchen" wiederholt nur die Überschrift darüber.
-        suchfeld = eingabezeile(symbol: "system-search-symbolic",
-                                platzhalter: uebersetzt("Titel, Serie, Person"))
-        // **420 breit, nicht über die ganze Seite** — `SucheView.swift:102`
-        // deckelt mit `frame(maxWidth: 420)`. Ein Feld über 1200 Punkt sieht
-        // aus, als erwarte es einen Satz.
-        gtk_widget_set_size_request(suchfeld, 420, Int32(Stil.feldHoehe))
-        gtk_widget_set_halign(suchfeld, GTK_ALIGN_START)
-        gtk_widget_set_hexpand(suchfeld, 0)
-        anhaengen(block, suchfeld)
+        // **"Titel, Serie, Person", not "Suchen".** The placeholder says **what** can be searched for (`SearchView.swift:100`); "Suchen" would only repeat the heading above.
+        searchField = inputRow(symbol: "system-search-symbolic",
+                                placeholder: translated("Titel, Serie, Person"))
+        // **420 wide, not across the page**: `SearchView.swift:102` caps it with `frame(maxWidth: 420)`. A field 1200 points wide looks like it expects a sentence.
+        gtk_widget_set_size_request(searchField, 420, Int32(Theme.fieldHeight))
+        gtk_widget_set_halign(searchField, GTK_ALIGN_START)
+        gtk_widget_set_hexpand(searchField, 0)
+        append(block, searchField)
 
-        // **„Zuletzt gesucht" — dieselbe Liste wie auf iPhone, Fernseher und
-        // Mac.** Die Logik liegt als ``Suchverlauf`` im Paket und war hier nie
-        // angeschlossen: bei leerem Feld stand auf Linux gar nichts.
-        let (verlaufAussen, verlaufRaum) = zeilengruppe()
-        suchverlaufblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        let verlaufkopf = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        gtk_widget_set_margin_top(verlaufkopf, 26)
-        gtk_widget_set_margin_bottom(verlaufkopf, 8)
-        let verlauftitel = rubrik(uebersetzt("Zuletzt gesucht"))
-        gtk_widget_set_hexpand(verlauftitel, 1)
-        anhaengen(verlaufkopf, verlauftitel)
-        let verlaufWeg: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(verlaufWeg, "swiftly-blank")
-        gtk_button_set_child(alsKnopf(verlaufWeg),
-                             beschriftung(uebersetzt("Löschen"), stil: "swiftly-zaehlmarke"))
-        beiSignal(verlaufWeg, "clicked") { [weak self] in
-            self?.suchverlaufSetzen("")
-            self?.wahlen.sichern()
-            self?.suchverlaufZeigen()
+        // **"Zuletzt gesucht", the same list as on iPhone, TV and macOS.** The logic is `SearchHistory` in the package and had never been connected here: with an empty field Linux showed nothing.
+        let (historyOuter, historySpace) = rowsGroup()
+        searchHistoryBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        let historyHeader = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_top(historyHeader, 26)
+        gtk_widget_set_margin_bottom(historyHeader, 8)
+        let historyTitle = category(translated("Zuletzt gesucht"))
+        gtk_widget_set_hexpand(historyTitle, 1)
+        append(historyHeader, historyTitle)
+        let historyDistance: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(historyDistance, "swiftly-blank")
+        gtk_button_set_child(asButton(historyDistance),
+                             label(translated("Löschen"), style: "swiftly-zaehlmarke"))
+        signal(historyDistance, "clicked") { [weak self] in
+            self?.searchHistorySet("")
+            self?.selection.secure()
+            self?.searchHistoryShow()
         }
-        anhaengen(verlaufkopf, verlaufWeg)
-        anhaengen(suchverlaufblock, verlaufkopf)
-        anhaengen(suchverlaufblock, verlaufAussen)
-        suchverlaufliste = verlaufRaum
-        // 700 breit und links — `SucheView.swift:83`
-        // (`frame(maxWidth: Stil.lesebreite, alignment: .leading)`). Ohne den
-        // Deckel lief die Karte über die ganze Fensterbreite, und eine
-        // Wortliste von zwölfhundert Punkt Breite liest sich nicht.
-        gtk_widget_set_size_request(suchverlaufblock, Int32(Stil.lesebreite), -1)
-        gtk_widget_set_halign(suchverlaufblock, GTK_ALIGN_START)
-        anhaengen(block, suchverlaufblock)
+        append(historyHeader, historyDistance)
+        append(searchHistoryBlock, historyHeader)
+        append(searchHistoryBlock, historyOuter)
+        searchHistoryList = historySpace
+        // 700 wide and left-aligned (`SearchView.swift:83`, `frame(maxWidth: Theme.readWidth, alignment: .leading)`). Without the cap the card ran across the whole window, and a word list 1200 points wide is hard to read.
+        gtk_widget_set_size_request(searchHistoryBlock, Int32(Theme.readWidth), -1)
+        gtk_widget_set_halign(searchHistoryBlock, GTK_ALIGN_START)
+        append(block, searchHistoryBlock)
 
-        // **Solange nichts dasteht, sagt die Seite, wonach man suchen kann.**
-        // Auf dem Mac steht das statt der Verlaufsliste, wenn es keinen
-        // Verlauf gibt (`SucheView.swift:109`); auf Linux blieb die Seite
-        // unter dem Feld einfach leer.
-        suchhinweis = leerzustand("system-search-symbolic",
-                                  uebersetzt("Filme, Serien und Folgen durchsuchen"), nil)
-        gtk_widget_set_visible(suchhinweis, 0)
-        anhaengen(block, suchhinweis)
+        // **While nothing else is shown, the page says what can be searched for.** On macOS this replaces the history list when there is no history (`SearchView.swift:109`); on Linux the page stayed empty under the field.
+        searchHint = emptyState("system-search-symbolic",
+                                  translated("Filme, Serien und Folgen durchsuchen"), nil)
+        gtk_widget_set_visible(searchHint, 0)
+        append(block, searchHint)
 
-        suchraster = rasterBauen()
-        anhaengen(block, suchraster)
-        // **Leer ist eine Auskunft.** Ohne sie steht die Seite still da, und
-        // man weiss nicht, ob gesucht wurde oder nichts da ist.
-        suchleer = leerzustand("mail-inbox-symbolic", uebersetzt("Nichts gefunden"), nil)
-        gtk_widget_set_visible(suchleer, 0)
-        anhaengen(block, suchleer)
-        // **Gestoert ist nicht leer** (UX-Audit 27.09., Mac `SucheView`
-        // `gestoert`). Hier stand `try?` — ein Netzfehler sah aus wie „Nichts
-        // gefunden". Gefuellt wird erst im Fehlerfall, damit die Adresse
-        // die des gerade angemeldeten Servers ist.
-        suchstoerung = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_visible(suchstoerung, 0)
-        anhaengen(block, suchstoerung)
+        searchGrid = gridBuild()
+        append(block, searchGrid)
+        // **Empty is information.** Without it the page just sits there, and the user cannot tell whether a search ran or nothing exists.
+        searchEmpty = emptyState("mail-inbox-symbolic", translated("Nichts gefunden"), nil)
+        gtk_widget_set_visible(searchEmpty, 0)
+        append(block, searchEmpty)
+        // **Failed is not empty** (macOS `SearchView` `disrupted`). This used `try?`, so a network error looked like "Nichts gefunden". It is filled only on error, so the address is that of the currently logged-in server.
+        searchDisturbance = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_visible(searchDisturbance, 0)
+        append(block, searchDisturbance)
 
-        // **Was der Server nicht hat, steht darunter — nicht dazwischen.**
+        // **What the server does not have is shown below, not mixed in.**
         //
-        // Woertlich die Anordnung der Apple-Fassung: erst die eigene
-        // Bibliothek, dann eine eigene Ueberschrift und darunter, was Seerr
-        // kennt. Vermischt waere nicht zu sehen, was man ansehen kann und was
-        // man erst anfordern muss.
-        // **Beide Blöcke der Suche tragen rechts die Zählmarke** (E27). Hier
-        // stand nur die Überschrift; wie viele Treffer Seerr hat, sagte nichts.
-        let seerrzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        gtk_widget_set_margin_top(seerrzeile, 12)
-        gtk_widget_set_visible(seerrzeile, 0)
-        // **Eine Rubrik, keine Reihenueberschrift.** Auf dem Mac steht dort
-        // 13 halbfett in Versalien mit 0,5 Sperrung, in `schriftSehrLeise`
-        // (`SucheView.swift:143`) — hier stand `swiftly-reihe`, also 20 Punkt
-        // wie ueber einer Startseitenreihe. Das machte den Seerr-Block
-        // gewichtiger als die eigenen Treffer darueber, die gar keine
-        // Ueberschrift haben.
-        seerrUeberschrift = rubrik(uebersetzt("Kann angefragt werden"))
-        gtk_label_set_xalign(OpaquePointer(seerrUeberschrift), 0)
-        gtk_widget_set_hexpand(seerrUeberschrift, 1)
-        anhaengen(seerrzeile, seerrUeberschrift)
-        seerrZahl = beschriftung("", stil: "swiftly-zaehlmarke")
-        gtk_widget_set_valign(seerrZahl, GTK_ALIGN_CENTER)
-        anhaengen(seerrzeile, seerrZahl)
-        seerrKopfzeile = seerrzeile
-        anhaengen(block, seerrzeile)
+        // Same layout as the Apple version: the own library first, then a separate heading and below it what Seerr knows. Mixed together, it would not be visible what can be watched and what must first be requested.
+        // **Both search blocks carry the count badge on the right.** Only the heading used to be there; how many hits Seerr has was not shown.
+        let seerrRow = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_top(seerrRow, 12)
+        gtk_widget_set_visible(seerrRow, 0)
+        // **A section heading, not a row heading.** On macOS this is 13 semibold uppercase with 0.5 tracking in `schriftSehrLeise` (`SearchView.swift:143`); here it was `swiftly-reihe`, 20 points like above a home row. That made the Seerr block heavier than the own results above, which have no heading.
+        seerrHeading = category(translated("Kann angefragt werden"))
+        gtk_label_set_xalign(OpaquePointer(seerrHeading), 0)
+        gtk_widget_set_hexpand(seerrHeading, 1)
+        append(seerrRow, seerrHeading)
+        seerrNumber = label("", style: "swiftly-zaehlmarke")
+        gtk_widget_set_valign(seerrNumber, GTK_ALIGN_CENTER)
+        append(seerrRow, seerrNumber)
+        seerrHeaderRow = seerrRow
+        append(block, seerrRow)
 
-        seerrRaster = rasterBauen()
-        gtk_widget_set_visible(seerrRaster, 0)
-        anhaengen(block, seerrRaster)
-        // Die Eingabetaste sucht sofort — und wird dabei selbst zur juengsten
-        // Suche, sonst verwirft sie der Takt der noch laufenden Wartezeit.
-        beiSignal(suchfeld, "activate") { [weak self] in
+        seerrGrid = gridBuild()
+        gtk_widget_set_visible(seerrGrid, 0)
+        append(block, seerrGrid)
+        // The Enter key searches immediately and becomes the latest search itself; otherwise the timer of the still-running wait would discard it.
+        signal(searchField, "activate") { [weak self] in
             guard let self else { return }
-            self.suchtakt += 1
-            // **Nur hier wird gemerkt.** Siehe ``suchen(_:merken:)``.
-            self.suchen(self.suchtakt, merken: true)
+            self.searchTick += 1
+            // **Remembered only here.** See `searching(_:merken:)`.
+            self.searching(self.searchTick, remember: true)
         }
-        beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
-        return seitenrahmen(block)
+        signal(searchField, "changed") { [weak self] in self?.searchTriggered() }
+        return pagesFrame(block)
     }
 
-    /// **Eine Scrollfläche ohne Leiste, dafür mit weichem Lauf.**
+    /// **A scroll area without a bar, but with smooth scrolling.**
     ///
-    /// Die senkrechte Leiste braucht niemand — gescrollt wird am Rad, und ein
-    /// Balken über dem Inhalt ist dasselbe Ärgernis wie der waagerechte in
-    /// den Reihen. `EXTERNAL` heisst: scrollen ja, Leiste nein.
+    /// Nobody needs the vertical bar; scrolling is done with the wheel, and a bar over the content is the same nuisance as the horizontal one in the rows. `EXTERNAL` means: scroll yes, bar no.
     ///
-    /// Das weiche Laufen macht ``weichesScrollen``; GTK springt am Rad sonst
-    /// von Rastpunkt zu Rastpunkt.
-    func seitenscroller() -> Widget! {
+    /// `softScroll` provides the smooth motion; otherwise GTK jumps from detent to detent on the wheel.
+    func pagesScroller() -> Widget! {
         let scroller = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
         gtk_widget_set_hexpand(scroller, 1)
         gtk_widget_set_vexpand(scroller, 1)
-        weichesScrollen(scroller)
+        softScroll(scroller)
         return scroller
     }
 
-    /// Zeigt oder verbirgt die Ladeanzeige über einem Raster.
+    /// Shows or hides the loading indicator over a grid.
     ///
-    /// Beim Wechsel von Filter, Sortierung oder Bibliothek stand das alte
-    /// Raster still da, bis das neue eintraf — es sah aus, als hätte der
-    /// Klick nichts getan.
-    func rasterLaderZeigen(_ was: Bereich, _ an: Bool) {
-        guard let lader = laderFeld[was] else { return }
-        gtk_widget_set_visible(lader, an ? 1 : 0)
+    /// When filter, sort or library changed, the old grid stayed until the new one arrived, so it looked as if the click had done nothing.
+    func gridLoaderShow(_ was: Region, _ an: Bool) {
+        guard let loader = loaderField[was] else { return }
+        gtk_widget_set_visible(loader, an ? 1 : 0)
     }
 
-    /// **Leer ist eine Auskunft, kein leerer Kasten** — die Anatomie von
-    /// `Leerzustand` auf dem Mac (cb153e7f): Kreis 78 auf `flaeche`, Zeichen
-    /// 44 in `schriftLeise`, 22 Luft, Kopfzeile 20 Semifett, 7 Luft, Text 15
-    /// in `schriftLeise` auf hoechstens 262 Breite, und zwei wahlweise
-    /// Knoepfe: der Hauptknopf „Erneut versuchen" und ein stiller im Akzent.
+    /// **Empty is information, not an empty box**: the anatomy of `Leerzustand` on macOS: circle 78 on `area`, icon 44 in `schriftLeise`, 22 gap, heading 20 semibold, 7 gap, text 15 in `schriftLeise` at most 262 wide, and two optional buttons: the main button "Erneut versuchen" and a quiet one in the accent colour.
     ///
-    /// **Ein Knopf nur, wenn es etwas zu tun gibt** (BAUTEILE 6). Bei
-    /// „Nichts gemerkt" oder „Nichts gefunden" ist der Ausweg die Liste oder
-    /// der Rueckweg, keine Attrappe.
-    func leerzustand(_ symbol: String, _ titel: String, _ text: String?,
-                     oben: Int = 100,
-                     hauptknopf haupt: (String, () -> Void)? = nil,
-                     stillerKnopf still: (String, () -> Void)? = nil,
-                     zeichnung: Widget? = nil) -> Widget! {
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    /// **A button only if there is something to do.** For "Nichts gemerkt" or "Nichts gefunden" the way out is the list or the back button, not a dummy.
+    func emptyState(_ symbol: String, _ title: String, _ text: String?,
+                     top: Int = 100,
+                     primaryButton main: (String, () -> Void)? = nil,
+                     quietButton still: (String, () -> Void)? = nil,
+                     drawing: Widget? = nil) -> Widget! {
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
-        gtk_widget_set_margin_top(block, Int32(oben))
+        gtk_widget_set_margin_top(block, Int32(top))
         gtk_widget_set_margin_start(block, 34)
         gtk_widget_set_margin_end(block, 34)
 
-        let kreis = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_add_css_class(kreis, "swiftly-leerkreis")
-        gtk_widget_set_size_request(kreis, 78, 78)
-        gtk_widget_set_halign(kreis, GTK_ALIGN_CENTER)
-        // Ein gemaltes Zeichen, wo der Zeichensatz nichts Passendes hat.
-        let bild: Widget! = zeichnung ?? gtk_image_new_from_icon_name(symbol)
-        if zeichnung == nil { gtk_image_set_pixel_size(OpaquePointer(bild), 44) }
-        gtk_widget_set_halign(bild, GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(bild, GTK_ALIGN_CENTER)
-        gtk_widget_set_vexpand(bild, 1)
-        anhaengen(kreis, bild)
-        // **Der Kreis dehnt sich nicht.** `vexpand` am Zeichen zentriert es
-        // im Kreis, stieg aber ohne diese Zeile bis zum Kreis auf — der nahm
-        // dann jede freie Höhe der Seite und wurde zur langen Kapsel (headless
-        // gemessen: 78 × 460 statt 78 × 78). Hier endet die Weitergabe.
-        gtk_widget_set_vexpand(kreis, 0)
-        gtk_widget_set_hexpand(kreis, 0)
-        gtk_widget_set_valign(kreis, GTK_ALIGN_START)
-        anhaengen(block, kreis)
+        let circle = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_add_css_class(circle, "swiftly-leerkreis")
+        gtk_widget_set_size_request(circle, 78, 78)
+        gtk_widget_set_halign(circle, GTK_ALIGN_CENTER)
+        // A drawn icon where the icon font has nothing suitable.
+        let image: Widget! = drawing ?? gtk_image_new_from_icon_name(symbol)
+        if drawing == nil { gtk_image_set_pixel_size(OpaquePointer(image), 44) }
+        gtk_widget_set_halign(image, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(image, GTK_ALIGN_CENTER)
+        gtk_widget_set_vexpand(image, 1)
+        append(circle, image)
+        // **The circle does not stretch.** `vexpand` on the icon centres it in the circle, but without this line it propagated up to the circle, which then took any free height of the page and became a long capsule (measured headless: 78 × 460 instead of 78 × 78). The propagation ends here.
+        gtk_widget_set_vexpand(circle, 0)
+        gtk_widget_set_hexpand(circle, 0)
+        gtk_widget_set_valign(circle, GTK_ALIGN_START)
+        append(block, circle)
 
-        let t = beschriftung(titel, stil: "swiftly-reihe", umbruch: true)
+        let t = label(title, style: "swiftly-reihe", wrap: true)
         gtk_widget_set_halign(t, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_top(t, 22)
-        anhaengen(block, t)
-        // **Ohne Unterzeile keine leere Zeile.** Ein leeres Feld darunter
-        // waere ein Loch.
+        append(block, t)
+        // **No empty line without a subline.** An empty field below would be a hole.
         if let text {
-            let u = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
+            let u = label(text, style: "swiftly-koerper", wrap: true)
             gtk_widget_add_css_class(u, "dim-label")
             gtk_label_set_justify(OpaquePointer(u), GTK_JUSTIFY_CENTER)
             gtk_label_set_max_width_chars(OpaquePointer(u), 1)
             gtk_widget_set_size_request(u, 262, -1)
             gtk_widget_set_halign(u, GTK_ALIGN_CENTER)
             gtk_widget_set_margin_top(u, 7)
-            anhaengen(block, u)
+            append(block, u)
         }
-        if let (wort, tun) = haupt {
-            let k = hauptknopf(wort, symbol: "view-refresh-symbolic")
-            gtk_widget_set_size_request(k, -1, Int32(Stil.hauptknopfHoehe))
+        if let (word, perform) = main {
+            let k = primaryButton(word, symbol: "view-refresh-symbolic")
+            gtk_widget_set_size_request(k, -1, Int32(Theme.primaryButtonHeight))
             gtk_widget_set_margin_top(k, 24)
-            beiSignal(k, "clicked", tun)
-            anhaengen(block, k)
+            signal(k, "clicked", perform)
+            append(block, k)
         }
-        if let (wort, tun) = still {
-            let k = stillerKnopf(wort, tun)
-            gtk_widget_set_margin_top(k, haupt == nil ? 24 : 16)
-            anhaengen(block, k)
+        if let (word, perform) = still {
+            let k = quietButton(word, perform)
+            gtk_widget_set_margin_top(k, main == nil ? 24 : 16)
+            append(block, k)
         }
         return block
     }
 
-    /// Der stille Knopf: 15 Medium im Akzent, 44 hoch, ohne Flaeche — die
-    /// zweite Handlung eines Leer- oder Stoerzustands.
-    func stillerKnopf(_ wort: String, _ tun: @escaping () -> Void) -> Widget! {
-        let k: Widget! = gtk_button_new_with_label(wort)
+    /// The quiet button: 15 medium in the accent colour, 44 high, no surface; the second action of an empty or failed state.
+    func quietButton(_ word: String, _ perform: @escaping () -> Void) -> Widget! {
+        let k: Widget! = gtk_button_new_with_label(word)
         gtk_widget_add_css_class(k, "swiftly-still")
         gtk_widget_set_halign(k, GTK_ALIGN_CENTER)
-        beiSignal(k, "clicked", tun)
+        signal(k, "clicked", perform)
         return k
     }
 
-    /// **Die Serveradresse im Stoertext** — wie `model.serverAdresse` auf
-    /// Apple; ohne Sitzung „Der Server".
-    var serveradresseText: String {
-        client?.baseURL.host ?? uebersetzt("Der Server")
+    /// **The server address in the error text**, like `model.serverAddress` on Apple; without a session "Der Server".
+    var serverAddressText: String {
+        client?.baseURL.host ?? translated("Der Server")
     }
 
-    /// **Gestoert ist nicht leer** (Mac 6d7f6478, 4fffc63c). Eine ganze
-    /// Seite, deren Abruf gescheitert ist: dieselbe Serverformel wie ueberall,
-    /// woertlich aus `HomeView.swift`.
-    func stoerzustand(oben: Int = 120, erneut: @escaping () -> Void) -> Widget! {
-        leerzustand("network-offline-symbolic", uebersetzt("Server ist abgetaucht"),
-                    String(format: uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
-                           serveradresseText),
-                    oben: oben,
-                    hauptknopf: (uebersetzt("Erneut versuchen"), erneut))
+    /// **Failed is not empty.** A whole page whose request failed: the same server wording as everywhere, taken literally from `HomeView.swift`.
+    func disturbState(top: Int = 120, retry: @escaping () -> Void) -> Widget! {
+        emptyState("network-offline-symbolic", translated("Server ist abgetaucht"),
+                    String(format: translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
+                           serverAddressText),
+                    top: top,
+                    primaryButton: (translated("Erneut versuchen"), retry))
     }
 
-    /// **Ein gestoerter Abschnitt innerhalb einer Seite** — `Stoerhinweis`
-    /// auf dem Mac: Zeichen 30, Kopfzeile 20, Text 15 in `schriftSehrLeise`,
-    /// darunter „Erneut versuchen" als Chip.
-    func stoerhinweis(oben: Int = 40, adresse: String? = nil,
-                      erneut: (() -> Void)?) -> Widget! {
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    /// **A failed section within a page**: `DisturbHint` on macOS: icon 30, heading 20, text 15 in `schriftSehrLeise`, below it "Erneut versuchen" as a chip.
+    func disturbHint(top: Int = 40, address: String? = nil,
+                      retry: (() -> Void)?) -> Widget! {
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
         gtk_widget_set_hexpand(block, 1)
-        gtk_widget_set_margin_top(block, Int32(oben))
-        let bild: Widget! = gtk_image_new_from_icon_name("network-offline-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(bild), 30)
-        gtk_widget_add_css_class(bild, "dim-label")
-        anhaengen(block, bild)
-        let t = beschriftung(uebersetzt("Server ist abgetaucht"), stil: "swiftly-reihe")
+        gtk_widget_set_margin_top(block, Int32(top))
+        let image: Widget! = gtk_image_new_from_icon_name("network-offline-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(image), 30)
+        gtk_widget_add_css_class(image, "dim-label")
+        append(block, image)
+        let t = label(translated("Server ist abgetaucht"), style: "swiftly-reihe")
         gtk_widget_set_margin_top(t, 14)
-        anhaengen(block, t)
-        let u = beschriftung(String(format: uebersetzt("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
-                                    adresse ?? serveradresseText),
-                             stil: "swiftly-koerper", umbruch: true)
+        append(block, t)
+        let u = label(String(format: translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
+                                    address ?? serverAddressText),
+                             style: "swiftly-koerper", wrap: true)
         gtk_widget_add_css_class(u, "swiftly-leise")
         gtk_label_set_max_width_chars(OpaquePointer(u), 1)
         gtk_widget_set_size_request(u, 262, -1)
         gtk_widget_set_halign(u, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_top(u, 6)
-        anhaengen(block, u)
-        if let erneut {
-            // **Ein Knopf aus unserem Satz, kein nackter Text** (LISTE
-            // 20.09.). Der stille Knopf stand hier ohne Flaeche und ohne Rand
-            // links und rechts und sah nicht nach Knopf aus; der Chip ist der
-            // Standardknopf fuer eine Nebenhandlung.
-            let k = chip(uebersetzt("Erneut versuchen"), symbol: "view-refresh-symbolic")
+        append(block, u)
+        if let retry {
+            // **A button from the shared set, not bare text.** The quiet button had no surface and no side border here and did not look like a button; the chip is the standard button for a secondary action.
+            let k = chip(translated("Erneut versuchen"), symbol: "view-refresh-symbolic")
             gtk_widget_set_halign(k, GTK_ALIGN_CENTER)
             gtk_widget_set_margin_top(k, 14)
-            beiSignal(k, "clicked", erneut)
-            anhaengen(block, k)
+            signal(k, "clicked", retry)
+            append(block, k)
         }
         return block
     }
 
-    /// Ein leerer Abschnitt *innerhalb* einer Seite — `Leerhinweis`: eine
-    /// Zeile 15 in `schriftSehrLeise`, mittig, 40 darueber.
-    func leerhinweis(_ text: String) -> Widget! {
-        let l = beschriftung(text, stil: "swiftly-koerper")
+    /// An empty section *within* a page, `EmptyHint`: one line 15 in `schriftSehrLeise`, centred, 40 above.
+    func emptyHint(_ text: String) -> Widget! {
+        let l = label(text, style: "swiftly-koerper")
         gtk_widget_add_css_class(l, "swiftly-leise")
         gtk_widget_set_halign(l, GTK_ALIGN_CENTER)
         gtk_widget_set_hexpand(l, 1)
@@ -4125,525 +3811,442 @@ final class App: @unchecked Sendable {
         return l
     }
 
-    /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
-    /// Mac ein `LazyVGrid` mit fester Spaltenbreite tut.
-    func rasterBauen() -> Widget! {
-        let raster: Widget! = gtk_flow_box_new()
-        gtk_flow_box_set_selection_mode(OpaquePointer(raster), GTK_SELECTION_NONE)
-        gtk_flow_box_set_homogeneous(OpaquePointer(raster), 1)
-        gtk_flow_box_set_column_spacing(OpaquePointer(raster), UInt32(Stil.kachelAbstand))
-        gtk_flow_box_set_row_spacing(OpaquePointer(raster), UInt32(Stil.reihenAbstand))
-        gtk_flow_box_set_min_children_per_line(OpaquePointer(raster), 2)
-        gtk_flow_box_set_max_children_per_line(OpaquePointer(raster), 10)
-        gtk_widget_set_valign(raster, GTK_ALIGN_START)
-        return raster
+    /// A wrapping grid. GTK's `GtkFlowBox` does exactly what a `LazyVGrid` with fixed column width does on macOS.
+    func gridBuild() -> Widget! {
+        let grid: Widget! = gtk_flow_box_new()
+        gtk_flow_box_set_selection_mode(OpaquePointer(grid), GTK_SELECTION_NONE)
+        gtk_flow_box_set_homogeneous(OpaquePointer(grid), 1)
+        gtk_flow_box_set_column_spacing(OpaquePointer(grid), UInt32(Theme.tileSpacing))
+        gtk_flow_box_set_row_spacing(OpaquePointer(grid), UInt32(Theme.railsSpacing))
+        gtk_flow_box_set_min_children_per_line(OpaquePointer(grid), 2)
+        gtk_flow_box_set_max_children_per_line(OpaquePointer(grid), 10)
+        gtk_widget_set_valign(grid, GTK_ALIGN_START)
+        return grid
     }
 
-    /// - Parameter auskunft: Ob die Zweitzeile die reiche Trefferauskunft
-    ///   traegt („Serie · 3 Staffeln", „Breaking Bad · S1 E4 · 52 Min.")
-    ///   statt der blossen Jahreszahl. **Nur die Suche.** Der Mac setzt sie
-    ///   dort (`SucheView.swift:117`) und in der Bibliothek nicht
-    ///   (`BibliothekView.swift:136`).
-    func rasterFuellen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
-        rasterLeeren(raster)
-        rasterAnhaengen(raster, items, auskunft: auskunft)
+    /// - Parameter auskunft: Whether the second line carries the full result info ("Serie · 3 Staffeln", "Breaking Bad · S1 E4 · 52 Min.") instead of just the year. **Search only.** macOS sets it there (`SearchView.swift:117`) and not in the library (`LibraryView.swift:136`).
+    func gridFill(_ grid: Widget!, _ items: [Item], inquiry: Bool = false) {
+        gridEmpty(grid)
+        gridAppend(grid, items, inquiry: inquiry)
     }
 
-    /// Kacheln hinten an ein Raster haengen, ohne das Stehende anzufassen.
-    func rasterAnhaengen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
-        let wache = raster.flatMap { kachelwachen[UnsafeMutableRawPointer($0)] }
+    /// Appends tiles to a grid without touching the existing ones.
+    func gridAppend(_ grid: Widget!, _ items: [Item], inquiry: Bool = false) {
+        let sentry = grid.flatMap { tileGuard[UnsafeMutableRawPointer($0)] }
         for item in items {
-            gtk_flow_box_insert(OpaquePointer(raster),
-                                rasterkachel(item, auskunft: auskunft, wache: wache), -1)
+            gtk_flow_box_insert(OpaquePointer(grid),
+                                gridTile(item, inquiry: inquiry, sentry: sentry), -1)
         }
     }
 
-    /// Wie viele Kacheln im Raster stehen. Die FlowBox zaehlt nicht selbst;
-    /// gesucht wird deshalb die erste leere Stelle, halbierend.
-    func rasterAnzahl(_ raster: Widget!) -> Int {
-        let box = OpaquePointer(raster)
-        var oben = 1
-        while gtk_flow_box_get_child_at_index(box, Int32(oben - 1)) != nil { oben *= 2 }
-        var unten = oben / 2   // hier steht sicher etwas (oder es ist 0)
-        while unten < oben {
-            let mitte = (unten + oben + 1) / 2
-            if gtk_flow_box_get_child_at_index(box, Int32(mitte - 1)) != nil { unten = mitte }
-            else { oben = mitte - 1 }
+    /// How many tiles are in the grid. The FlowBox does not count itself, so the first empty slot is searched by bisection.
+    func gridCount(_ grid: Widget!) -> Int {
+        let box = OpaquePointer(grid)
+        var top = 1
+        while gtk_flow_box_get_child_at_index(box, Int32(top - 1)) != nil { top *= 2 }
+        var bottom = top / 2   // something is surely there (or it is 0)
+        while bottom < top {
+            let center = (bottom + top + 1) / 2
+            if gtk_flow_box_get_child_at_index(box, Int32(center - 1)) != nil { bottom = center }
+            else { top = center - 1 }
         }
-        return unten
+        return bottom
     }
 
-    /// **Ein Raster wird über die FlowBox geleert, nie mit ``leeren(_:)``.**
+    /// **A grid is emptied through the FlowBox, never with `leeren(_:)`.**
     ///
-    /// `leeren` hängt die Kinder mit `gtk_widget_unparent` ab — die FlowBox
-    /// führt daneben aber eine eigene Liste ihrer Kinder, und die erfährt
-    /// davon nichts. Die Seerr-Treffer wurden so geleert: ab der zweiten
-    /// Suche hingen neue Kacheln hinter Einträgen, die es nicht mehr gab,
-    /// und das Raster blieb leer, während die Zählmarke daneben „3" sagte.
-    func rasterLeeren(_ raster: Widget!) {
-        // **Dieselbe Bauart, die die App schon einmal aufgehängt hat.** Die
-        // Schleife hing am Vorhandensein eines Kindes statt am Fortschritt:
-        // schlägt `gtk_flow_box_remove` fehl — der Zeiger wird dafür blind
-        // gecastet —, liefert `get_child_at_index` dasselbe Kind wieder, und
-        // es geht ewig weiter. In ``leeren(_:)`` war genau das der Grund für
-        // einen vollen Kern und ein Protokoll mit 58 MB je Sekunde.
-        while let kind = gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) {
-            gtk_flow_box_remove(OpaquePointer(raster),
+    /// `leeren` detaches children with `gtk_widget_unparent`, but the FlowBox keeps its own list of children and does not learn of it. The Seerr results were emptied that way: from the second search on, new tiles hung behind entries that no longer existed, and the grid stayed empty while the badge next to it said "3".
+    func gridEmpty(_ grid: Widget!) {
+        // **The same construction that once hung the app.** The loop depended on a child existing rather than on progress: if `gtk_flow_box_remove` fails (the pointer is cast blindly for it), `get_child_at_index` returns the same child again and it goes on forever. In `leeren(_:)` that caused a full core and a log of 58 MB per second.
+        while let kind = gtk_flow_box_get_child_at_index(OpaquePointer(grid), 0) {
+            gtk_flow_box_remove(OpaquePointer(grid),
                                 unsafeBitCast(kind, to: Widget.self))
-            guard gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) != kind
+            guard gtk_flow_box_get_child_at_index(OpaquePointer(grid), 0) != kind
             else { break }
         }
     }
 
-    // MARK: Laden
+    // MARK: Loading
 
-    /// **Ohne die taucht die Sitzung im Dashboard auf, laesst sich aber nicht
-    /// bedienen.** Es fehlen zwei Dinge, nicht eins: die Faehigkeitsmeldung,
-    /// mit der der Server ueberhaupt erst Knoepfe anzeigt, und der Socket, ueber
-    /// den die Befehle dann ankommen. Beides liegt im Paket und wurde von
-    /// Linux nie benutzt — die Fassung war von aussen nicht steuerbar und
-    /// nicht uebernehmbar.
-    func fernsteuerungStarten() {
+    /// **Without this the session shows up in the dashboard but cannot be controlled.** Two things are missing: the capabilities message, without which the server shows no buttons at all, and the socket over which the commands arrive. Both live in the package and Linux never used them, so the client could be neither remote-controlled nor taken over.
+    func remoteControlStart() {
         guard let client else { return }
-        let sitzung = gemeinsamSitzung
+        let session = sharedSession
         Task.detached {
-            try? await client.faehigkeitenMelden()
-            guard let fern = try? await client.fernsteuerung() else { return }
-            aufHauptfaden { self.fernsteuerung = fern }
-            // **Gemeinsam schauen kommt über denselben Kanal.** Direkt in die
-            // Sitzung, nicht über den GTK-Faden: `annehmen` ist dafür gebaut,
-            // und die Reihenfolge der Nachrichten hält die Sitzung selbst.
-            await fern.syncPlayHoeren { sitzung.annehmen($0) }
-            // **Der Hinweis vor einem Stopp**: ein anderes Gerät übernimmt.
-            // Mit ihm geht das Bild beim Stopp als Karte ab
-            // (``uebergabeAbgeben(an:)``), ohne ihn schließt der Player wie
-            // bei einem Stopp aus dem Dashboard (Apple `AppModel.fernStarten`).
-            await fern.uebergabeHoeren { name in
-                aufHauptfaden {
-                    self.uebergabeZiel = (name, Date())
-                    Protokoll.schreib("[Uebergabe] Hinweis: übernimmt \(name)")
+            try? await client.reportCapabilities()
+            guard let far = try? await client.remoteControl() else { return }
+            onMainThread { self.remoteControl = far }
+            // **Watching together arrives over the same channel.** Straight into the session, not via the GTK thread: `accept` is built for that, and the session itself keeps the order of messages.
+            await far.syncPlayHear { session.accept($0) }
+            // **The notice before a stop**: another device is taking over. With it, the picture leaves as a card on stop (`handoffHandIn(an:)`); without it the player closes as for a stop from the dashboard (Apple `AppModel.remoteStart`).
+            await far.handoffHear { name in
+                onMainThread {
+                    self.handoffTarget = (name, Date())
+                    AppLog.writeOut("[Uebergabe] Hinweis: übernimmt \(name)")
                 }
             }
-            await fern.starten { befehl in
-                aufHauptfaden { self.fernbefehlAusfuehren(befehl) }
+            await far.start { command in
+                onMainThread { self.remoteCommandRun(command) }
             }
         }
     }
 
-    /// Was die Medientaste auslöst. Dieselben Griffe wie am Knopf.
-    func medienGriff(_ griff: Medienleiste.Griff) {
-        switch griff {
-        case .vorholen:
-            gtk_window_present(alsFenster(fenster)); return
-        case .schliessen:
-            // Ueber `close-request`, damit ein laufender Film seine
-            // Endmeldung noch abschickt (``fensterSchliessenGewuenscht()``).
-            gtk_window_close(alsFenster(fenster)); return
-        case .schlaeft:
-            ruhezustandBeginnt(); return
-        case .aufgewacht:
-            aufgewacht(); return
+    /// What the media key triggers. The same actions as the button.
+    func mediaHandle(_ grip: MediaBar.Handle) {
+        switch grip {
+        case .prefetch:
+            gtk_window_present(asWindow(window)); return
+        case .close:
+            // Via `close-request`, so a running film still sends its final report (`windowCloseRequested()`).
+            gtk_window_close(asWindow(window)); return
+        case .sleeps:
+            idleStateStart(); return
+        case .woke:
+            woke(); return
         default: break
         }
-        guard laufenderTitel != nil else { return }
-        // **In der Gruppe eine Bitte**, wie die Wiedergabezentrale auf iOS
-        // (`PlayerScreen.zentraleEinrichten`); keine nächste Folge.
-        if inGruppe {
-            switch griff {
-            case .abspielen:  gemeinsamBitteUmschalten(laeuftGerade: false)
-            case .anhalten:   gemeinsamBitteUmschalten(laeuftGerade: true)
-            case .umschalten: gemeinsamBitteUmschalten(laeuftGerade: spielstand.laeuft)
-            case .beenden:    spielerSchliessen()
+        guard runningTitle != nil else { return }
+        // **In a group, a request**, like the playback centre on iOS (`PlayerScreen.zentraleEinrichten`); no next episode.
+        if inGroup {
+            switch grip {
+            case .play:  sharedBitToggle(runningCurrently: false)
+            case .halt:   sharedBitToggle(runningCurrently: true)
+            case .toggle: sharedBitToggle(runningCurrently: playState.running)
+            case .finish:    playerClose()
             default:          break
             }
             return
         }
-        // Fenster und Ruhezustand sind oben schon erledigt.
-        switch griff {
-        case .abspielen:  weiterspielen()
-        case .anhalten:   abspieler.anhalten()
-        case .umschalten: if abspieler.laeuft { abspieler.anhalten() } else { weiterspielen() }
-        case .beenden:    spielerSchliessen(); return
-        case .weiter:     naechsteFolge(); return
+        // Window and idle inhibition are already handled above.
+        switch grip {
+        case .play:  resumePlaying()
+        case .halt:   mediaPlayer.halt()
+        case .toggle: if mediaPlayer.running { mediaPlayer.halt() } else { resumePlaying() }
+        case .finish:    playerClose(); return
+        case .proceed:     nextEpisode(); return
         default:          break
         }
-        spielstand.laeuft = abspieler.laeuft
-        spielerAbspielzeichen?.setzen(spielstand.laeuft)
-        medienstandMelden()
-        steuerungZeigen()
+        playState.running = mediaPlayer.running
+        playerPlayMarker?.setDown(playState.running)
+        mediaStateReport()
+        controlsShow()
     }
 
-    /// Sagt der Umgebung, was läuft. **Nach jeder Änderung** — D-Bus fragt
-    /// nicht von selbst nach, und wer nichts meldet, dessen Kachel steht für
-    /// immer auf „Pausiert".
-    func medienstandMelden() {
-        guard let titel = laufenderTitel else {
-            medienleiste?.standMelden(laeuft: false, titel: "", untertitel: "",
-                                      dauer: 0, stelle: 0)
+    /// Tells the environment what is playing. **After every change**: D-Bus does not ask on its own, and a player that reports nothing stays on "Paused" forever.
+    func mediaStateReport() {
+        guard let title = runningTitle else {
+            mediaBar?.reportStatus(running: false, title: "", subtitle: "",
+                                      duration: 0, spot: 0)
             return
         }
-        // **Mit Plakat.** Der Mac legt es als `MPMediaItemPropertyArtwork` in
-        // die Wiedergabezentrale (`Sources/Shared/Wiedergabezentrale.swift:210`);
-        // MPRIS kennt dafuer `mpris:artUrl`, und die Kachel in der
-        // Systemleiste stand hier ohne Bild da. **Die Adresse, nicht die
-        // Bytes** — jede Umgebung holt das Bild selbst, und die Adresse hat
-        // kein Zugangsmerkmal (G3, `Bildschluessel`).
-        let plakat = adressen.flatMap {
-            Bildwahl.hochkant(titel, adressen: $0, maxHoehe: 600)
+        // **With poster.** macOS puts it into the playback centre as `MPMediaItemPropertyArtwork` (`Sources/Shared/PlaybackHub.swift:210`); MPRIS has `mpris:artUrl` for it, and the tile in the system bar had no image. **The address, not the bytes**: each environment fetches the image itself, and the address carries no access token (`ImageKey`).
+        let poster = addresses.flatMap {
+            ImageSelection.portrait(title, addresses: $0, maxHeight: 600)
         }
-        medienleiste?.standMelden(laeuft: spielstand.laeuft,
-                                  titel: titel.name,
-                                  untertitel: titel.kontextzeile ?? titel.seriesName ?? "",
-                                  dauer: spielstand.dauer,
-                                  stelle: spielstand.position,
-                                  bild: plakat?.absoluteString ?? "")
-        // „Weiter" ist nur aktiv, wenn es eine naechste Folge gibt — die
-        // vorab geholte, nicht „ist eine Folge" (T2-H2).
-        medienleiste?.naechsteMelden(vorgeholteFolge != nil)
+        mediaBar?.reportStatus(running: playState.running,
+                                  title: title.name,
+                                  subtitle: title.contextLine ?? title.seriesName ?? "",
+                                  duration: playState.duration,
+                                  spot: playState.position,
+                                  image: poster?.absoluteString ?? "")
+        // "Next" is active only if there is a next episode: the prefetched one, not merely "is an episode".
+        mediaBar?.nextReport(prefetchedEpisode != nil)
     }
 
-    /// Was ein anderes Geraet hier ausloest. Dieselben Griffe wie am Knopf.
-    func fernbefehlAusfuehren(_ befehl: Fernbefehl) {
-        guard laufenderTitel != nil else {
-            // Ohne laufenden Titel gibt es nichts zu steuern; „stopp" waere
-            // sonst ein Schliessen ins Leere.
+    /// What another device triggers here. The same actions as the button.
+    func remoteCommandRun(_ command: RemoteCommand) {
+        guard runningTitle != nil else {
+            // Without a running title there is nothing to control; "stopp" would otherwise close nothing.
             return
         }
-        // **In der Gruppe gehen Pause, Weiter und Springen als Bitte** —
-        // wörtlich `PlayerScreen.ausfuehren` auf iOS. Stopp schliesst, und
-        // das heisst verlassen.
-        if inGruppe {
-            let laeuft = spielstand.laeuft
-            switch befehl {
-            case .pause:      if laeuft { gemeinsamBitteUmschalten(laeuftGerade: true) }
-            case .weiter:     if !laeuft { gemeinsamBitteUmschalten(laeuftGerade: false) }
-            case .umschalten: gemeinsamBitteUmschalten(laeuftGerade: laeuft)
-            case .stopp:      spielerSchliessen(); return
-            case let .springenAuf(stelle): springe(auf: stelle)
-            case .vor:        springe(um: Double(wahlen.vorSekunden))
-            case .zurueck:    springe(um: -Double(wahlen.zurueckSekunden))
-            case .naechste, .vorige: break
+        // **In a group, pause, next and seek go out as a request**, literally `PlayerScreen.ausfuehren` on iOS. Stop closes, which means leaving.
+        if inGroup {
+            let running = playState.running
+            switch command {
+            case .pause:      if running { sharedBitToggle(runningCurrently: true) }
+            case .proceed:     if !running { sharedBitToggle(runningCurrently: false) }
+            case .toggle: sharedBitToggle(runningCurrently: running)
+            case .stop:      playerClose(); return
+            case let .jumpOn(spot): vault(on: spot)
+            case .forward:        vault(um: Double(selection.forwardSeconds))
+            case .back:    vault(um: -Double(selection.backSeconds))
+            case .next, .previous: break
             }
-            steuerungZeigen()
+            controlsShow()
             return
         }
-        switch befehl {
-        case .pause:    abspieler.anhalten()
-        case .weiter:   weiterspielen()
-        case .umschalten: if abspieler.laeuft { abspieler.anhalten() } else { weiterspielen() }
-        // **Ein anderes Gerät übernimmt** (Hinweis kam kurz vorher): das Bild
-        // geht als Karte ab. Sonst — Dashboard, andere App — wie immer.
-        case .stopp:
-            if let ziel = uebergabeZielNehmen() { uebergabeAbgeben(an: ziel) }
-            else { spielerSchliessen() }
-        // Ueber `springe`: Stand und Sprungriegel mit (T2-N2), Meldung sofort.
-        case let .springenAuf(stelle): springe(auf: stelle)
-        case .vor:      springe(um: Double(wahlen.vorSekunden))
-        case .zurueck:  springe(um: -Double(wahlen.zurueckSekunden))
-        case .naechste: naechsteFolge()
-        case .vorige:   break
+        switch command {
+        case .pause:    mediaPlayer.halt()
+        case .proceed:   resumePlaying()
+        case .toggle: if mediaPlayer.running { mediaPlayer.halt() } else { resumePlaying() }
+        // **Another device takes over** (the notice came shortly before): the picture leaves as a card. Otherwise (dashboard, other app) as usual.
+        case .stop:
+            if let target = handoffTargetTake() { handoffHandIn(an: target) }
+            else { playerClose() }
+        // Via `springe`: with position and seek guard, report immediately.
+        case let .jumpOn(spot): vault(on: spot)
+        case .forward:      vault(um: Double(selection.forwardSeconds))
+        case .back:  vault(um: -Double(selection.backSeconds))
+        case .next: nextEpisode()
+        case .previous:   break
         }
-        if befehl != .stopp {
-            spielstand.laeuft = abspieler.laeuft
-            spielerAbspielzeichen?.setzen(spielstand.laeuft)
-            steuerungZeigen()
+        if command != .stop {
+            playState.running = mediaPlayer.running
+            playerPlayMarker?.setDown(playState.running)
+            controlsShow()
         }
     }
 
-    /// Der Name des übernehmenden Geräts, wenn der letzte Hinweis frisch ist
-    /// — und nur einmal: der Hinweis gilt für genau diesen Stopp.
-    func uebergabeZielNehmen() -> String? {
-        guard let ziel = uebergabeZiel else { return nil }
-        uebergabeZiel = nil
-        return Uebernahme.istUebergabe(hinweisVor: Date().timeIntervalSince(ziel.zeit)) ? ziel.name : nil
+    /// The name of the taking-over device if the last notice is fresh, and only once: the notice applies to exactly this stop.
+    func handoffTargetTake() -> String? {
+        guard let target = handoffTarget else { return nil }
+        handoffTarget = nil
+        return Takeover.isHandoff(hintPre: Date().timeIntervalSince(target.time)) ? target.name : nil
     }
 
-    /// **Eine abgelaufene Anmeldung fiel bisher gar nicht auf.**
+    /// **An expired login went unnoticed.**
     ///
-    /// Der Server antwortet dann mit 401, und weil hier überall `try?` steht,
-    /// kam einfach nichts zurück: leere Startseite, leeres Raster, und der
-    /// Nutzer sucht den Fehler bei sich. Der Mac fällt auf den
-    /// Anmeldebildschirm zurück und sagt, warum
-    /// (`Shared/AppModel.swift:789`).
-    func sitzungPruefen(_ fehler: any Error) {
-        guard let j = fehler as? JellyfinError, case let .http(status, _) = j,
+    /// The server answers 401, and since `try?` is used everywhere here, nothing came back: empty home page, empty grid, and the user looks for the fault on their side. macOS falls back to the login screen and says why (`Shared/AppModel.swift:789`).
+    func sessionCheck(_ error: any Error) {
+        guard let j = error as? JellyfinError, case let .http(status, _) = j,
               status == 401 else { return }
-        abmelden()
-        anmeldestandZeigen(uebersetzt("Die Anmeldung gilt nicht mehr. Bitte neu anmelden."))
+        signOff()
+        loginStateShow(translated("Die Anmeldung gilt nicht mehr. Bitte neu anmelden."))
     }
 
-    /// Meldet das **aktive** Konto ab.
+    /// Signs out the **active** account.
     ///
-    /// **Bleibt eines übrig, schaltet die App darauf um**, statt zur
-    /// Serveranmeldung zurückzufallen — alle Konten auf einmal zu entfernen
-    /// wäre eine zweite Bedeutung für denselben Knopf. Welches danach gilt,
-    /// entscheidet ``Kontenbund/entfernt(_:)`` im Paket.
-    func abmelden() {
-        playerZuVorWechsel()
-        if let alter = bund, let rest = alter.entfernt(alter.aktiveKennung) {
-            bund = rest
-            let name = servername.isEmpty ? nil : servername
-            let warImProfil = offeneUnterseite == .profil
-            bundSichern(servername: name)
-            aufraeumenNachWechsel()
-            sitzungEinsetzen(rest.aktives, servername: name)
-            // Auch hier im Profil bleiben: dass ein Konto aus dem Streifen
-            // verschwunden ist, ist die Antwort auf den Knopf.
-            if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
+    /// **If one remains, the app switches to it** instead of falling back to the server login; removing all accounts at once would be a second meaning for the same button. Which one applies afterwards is decided by `AccountBundle/entfernt(_:)` in the package.
+    func signOff() {
+        playerPreSwitch()
+        if let older = bundle, let rest = older.removed(older.activeId) {
+            bundle = rest
+            let name = serverName.isEmpty ? nil : serverName
+            let wasProfile = openSubpage == .profile
+            saveBundle(serverName: name)
+            cleanUpPostSwitch()
+            sessionInSet(rest.activeOne, serverName: name)
+            // Stay in the profile here as well: that an account vanished from the strip is the answer to the button.
+            if wasProfile { subpageOpen(.profile, push: .without) }
             return
         }
-        bund = nil
-        Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
-        fernsteuerung = nil
-        uebernahmelauf?.cancel()
-        uebernahmelauf = nil
-        uebernahmeangebote = []
-        // Raus aus der Gruppe, samt Streifen und Angeboten des vorigen Kontos.
-        gemeinsamBeenden()
-        Speicher.loeschen()
+        bundle = nil
+        Task.detached { [remoteControl] in await remoteControl?.finish() }
+        remoteControl = nil
+        takeoverRun?.cancel()
+        takeoverRun = nil
+        takeoverOfferings = []
+        // Leave the group, including the strip and offers of the previous account.
+        sharedEnd()
+        Cache.erase()
         client = nil
-        adressen = nil
-        geladen.removeAll()
-        seitenstapel.removeAll()
-        offeneUnterseite = nil
-        leeren(reihenstapel)
-        gtk_editable_set_text(OpaquePointer(passwortfeld), "")
-        schnelllauf?.cancel()
-        schnelllauf = nil
-        anmeldestandZeigen("")
-        serverstandZeigen("")
-        kopfzeileZeigen(false)
-        gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "server")
-        stapelWechseln(seiten, zu: "anmeldung")
+        addresses = nil
+        loaded.removeAll()
+        pagesStack.removeAll()
+        openSubpage = nil
+        wipe(railsStack)
+        gtk_editable_set_text(OpaquePointer(passwordField), "")
+        fastRun?.cancel()
+        fastRun = nil
+        loginStateShow("")
+        serverStateShow("")
+        headerRowShow(false)
+        gtk_stack_set_visible_child_name(OpaquePointer(loginStep), "server")
+        switchStack(pages, toward: "anmeldung")
     }
 
-    /// Name, Server und Bild unten in der Leiste, dazu die Bibliotheken.
-    /// Holt Namen und Fassung des Servers nach — beim Start aus einer
-    /// gemerkten Sitzung hat sie niemand gefragt.
-    private func serverstandHolen() {
+    /// Name, server and picture at the bottom of the sidebar, plus the libraries. Fetches the server's name and version afterwards; when starting from a saved session nobody has asked.
+    private func serverStateFetch() {
         guard let client else { return }
         Task.detached { [self] in
             guard let info = try? await client.publicSystemInfo() else { return }
-            aufHauptfaden {
-                self.serverfassung = info.version ?? ""
+            onMainThread {
+                self.serverVersion = info.version ?? ""
                 if let name = info.serverName, !name.isEmpty {
-                    self.servername = name
-                    gtk_label_set_text(OpaquePointer(self.profilserver), name)
+                    self.serverName = name
+                    gtk_label_set_text(OpaquePointer(self.profileServer), name)
                 }
             }
         }
     }
 
-    private func sitzungAnzeigen(benutzername: String, servername: String?) {
-        self.benutzername = benutzername
-        self.servername = servername ?? ""
-        gtk_label_set_text(OpaquePointer(profilname), benutzername)
-        gtk_label_set_text(OpaquePointer(profilserver), servername ?? "")
-        profilkreiseAuffrischen()
+    private func sessionShow(username: String, serverName: String?) {
+        self.username = username
+        self.serverName = serverName ?? ""
+        gtk_label_set_text(OpaquePointer(profileName), username)
+        gtk_label_set_text(OpaquePointer(profileServer), serverName ?? "")
+        profileCircleRefresh()
     }
 
-    /// Die Kreise unten in der Leiste — der aktive vorn, die anderen dahinter.
+    /// The circles at the bottom of the sidebar: the active one in front, the others behind.
     ///
-    /// **Warum sie hier stehen und nicht nur im Profil.** Der Streifen im
-    /// Profil beantwortet die Frage „mit welchem Konto bin ich hier?" erst,
-    /// nachdem man ihn geoeffnet hat. Zwei Kreise unten in der Leiste sagen
-    /// es beilaeufig — und genau so steht es im abgenommenen Entwurf.
+    /// **Why they are here and not only in the profile.** The strip in the profile answers "which account am I in?" only after opening it. Two circles at the bottom of the sidebar say it in passing, as in the approved design.
     ///
-    /// **Hoechstens drei.** Der Platz ist eine Zeile in einer 220 breiten
-    /// Leiste; wer sechs Konten haette, saehe sonst nur noch Kreise und
-    /// keinen Namen mehr.
-    private func profilkreiseAuffrischen() {
-        guard let profilkreise else { return }
-        leeren(profilkreise)
+    /// **At most three.** The space is one row in a 220-wide sidebar; with six accounts only circles and no name would be left.
+    private func profileCircleRefresh() {
+        guard let profileCircle else { return }
+        wipe(profileCircle)
 
-        // **26, nicht 30.** Die Zeile war auf 26 gebaut — mit 30 stand das
-        // Bild groesser da als sein Platz, und GTK schnitt es unten und links
-        // an: „der Kreis ist kein richtiger Kreis". Die Groesse aus dem
-        // Entwurf (96/72) gilt fuer den Streifen im Profil, nicht fuer die
-        // Fusszeile; hier zaehlt, dass die Zeile ihre Hoehe behaelt.
-        let kante = 26, versatz = 17, hoechstens = 3
-        // **Der Ring braucht seinen eigenen Platz.** Er liegt als Schatten
-        // *ausserhalb* des Kreises; ohne Zuschlag schnitt die Zone ihn unten
-        // ab Zwei Punkte ringsum, das ist die staerkste der beiden
-        // Ringstaerken (1,5 aktiv, 2 daneben), aufgerundet.
+        // **26, not 30.** The row was built for 26; with 30 the image was larger than its space and GTK clipped it at the bottom and left, so the circle was not round. The size from the design (96/72) applies to the strip in the profile, not the footer; here the row must keep its height.
+        let border = 26, offset = 17, atMost = 3
+        // **The ring needs its own space.** It is a shadow *outside* the circle; without an allowance the zone clipped it at the bottom. Two points all around, the stronger of the two ring widths (1.5 active, 2 beside), rounded up.
         let ring = 2
-        // Der aktive vorn, danach die anderen in ihrer Reihenfolge.
-        var reihenfolge: [Session] = []
-        if let bund {
-            reihenfolge = [bund.aktives] + bund.konten.filter { $0.kontoschluessel != bund.aktives.kontoschluessel }
-        } else if !benutzerID.isEmpty {
-            reihenfolge = []
+        // The active one in front, then the others in their order.
+        var railsEpisode: [Session] = []
+        if let bundle {
+            railsEpisode = [bundle.activeOne] + bundle.accounts.filter { $0.accountKey != bundle.activeOne.accountKey }
+        } else if !userIdentifier.isEmpty {
+            railsEpisode = []
         }
-        let sichtbar = Array(reihenfolge.prefix(hoechstens))
-        let breite = (sichtbar.isEmpty ? kante : kante + versatz * (sichtbar.count - 1))
-        gtk_widget_set_size_request(profilkreise,
-                                    Int32(breite + 2 * ring), Int32(kante + 2 * ring))
+        let visible = Array(railsEpisode.prefix(atMost))
+        let width = (visible.isEmpty ? border : border + offset * (visible.count - 1))
+        gtk_widget_set_size_request(profileCircle,
+                                    Int32(width + 2 * ring), Int32(border + 2 * ring))
 
-        guard !sichtbar.isEmpty else {
-            // Kein Bund: das eine Bild wie bisher.
-            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
-                                      kante: kante, stil: "swiftly-profilbild",
-                                      schriftstil: "swiftly-zeichen26")
-            profilbild = teile.bild
-            gtk_fixed_put(alsFest(profilkreise), teile.huelle, Double(ring), Double(ring))
-            profilbildLaden(teile,
-                            url: benutzerID.isEmpty ? nil
-                                                    : adressen?.benutzer(benutzerID, kante: 60),
-                            schluessel: "leiste-\(benutzerID)")
+        guard !visible.isEmpty else {
+            // No account group: the single image as before.
+            let parts = profileCharacter(name: username.isEmpty ? "?" : username,
+                                      border: border, style: "swiftly-profilbild",
+                                      fontStyle: "swiftly-zeichen26")
+            profileImage = parts.image
+            gtk_fixed_put(asFixed(profileCircle), parts.wrapper, Double(ring), Double(ring))
+            profileImageLoad(parts,
+                            url: userIdentifier.isEmpty ? nil
+                                                    : addresses?.user(userIdentifier, border: 60),
+                            key: "leiste-\(userIdentifier)")
             return
         }
 
-        // **Von hinten nach vorn.** In einem ``GtkFixed`` liegt obenauf, was
-        // zuletzt dazukommt; der aktive Kreis muss die anderen ueberdecken,
-        // damit sein Akzentring nicht angeschnitten wird.
-        for (i, konto) in sichtbar.enumerated().reversed() {
-            // Ein einzelnes Konto sieht aus wie eh und je — ohne Ring. Der
-            // Ring beantwortet die Frage „welches von mehreren"; bei einem
-            // gibt es die Frage nicht.
-            let stil = sichtbar.count == 1 ? "swiftly-profilbild"
+        // **Back to front.** In a `GtkFixed` the last added is on top; the active circle must cover the others so its accent ring is not clipped.
+        for (i, account) in visible.enumerated().reversed() {
+            // A single account looks as it always did, without a ring. The ring answers "which of several"; with one there is no such question.
+            let style = visible.count == 1 ? "swiftly-profilbild"
                      : (i == 0 ? "swiftly-profilbild-aktiv" : "swiftly-profilbild-daneben")
-            let teile = profilzeichen(name: konto.userName, kante: kante, stil: stil,
-                                      schriftstil: "swiftly-zeichen26")
-            if i == 0 { profilbild = teile.bild } else { gtk_widget_set_opacity(teile.huelle, 0.55) }
-            gtk_fixed_put(alsFest(profilkreise), teile.huelle,
-                          Double(ring + i * versatz), Double(ring))
-            profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 60),
-                            schluessel: "leiste-\(konto.userID)")
+            let parts = profileCharacter(name: account.userName, border: border, style: style,
+                                      fontStyle: "swiftly-zeichen26")
+            if i == 0 { profileImage = parts.image } else { gtk_widget_set_opacity(parts.wrapper, 0.55) }
+            gtk_fixed_put(asFixed(profileCircle), parts.wrapper,
+                          Double(ring + i * offset), Double(ring))
+            profileImageLoad(parts, url: addresses?.user(account.userID, border: 60),
+                            key: "leiste-\(account.userID)")
         }
     }
 
-    private func bibliothekenLaden() {
+    private func librariesLoad() {
         guard let client else { return }
-        let stand = kontowechsel
+        let state = accountSwitch
         Task.detached { [self] in
-            let sichten = (try? await client.userViews()) ?? []
-            aufHauptfaden {
-                // Dieselbe Eintrittskarte wie bei der Startseite: die
-                // Bibliotheken des vorigen Kontos gehoeren nicht in die Leiste
-                // des neuen.
-                guard self.kontowechsel == stand else { return }
-                self.bibliothekenZeigen(sichten)
+            let review = (try? await client.userViews()) ?? []
+            onMainThread {
+                // The same entry guard as for the home page: the libraries of the previous account do not belong in the sidebar of the new one.
+                guard self.accountSwitch == state else { return }
+                self.librariesShow(review)
             }
         }
     }
 
-    private func bibliothekenZeigen(_ sichten: [Item]) {
-        self.sichten = sichten
-        // Mit den Bibliotheken steht fest, was die Titel anbieten — und ob
-        // „Alle" aus einer oder aus mehreren liest.
-        angebotAngekommen()
+    private func librariesShow(_ review: [Item]) {
+        self.review = review
+        // With the libraries known, it is settled what the titles offer, and whether "Alle" reads from one or from several.
+        offeringArrived()
     }
 
-    /// `movies` oder `tvshows` — der Bereich als Gattung des Pakets.
-    func art(_ was: Bereich) -> String { was == .serien ? "tvshows" : "movies" }
+    /// `movies` or `tvshows`: the area as a kind of the package.
+    func art(_ was: Region) -> String { was == .seriesList ? "tvshows" : "movies" }
 
-    private var angebotsschluessel: String {
-        "\(kontowechsel)|" + sichten.map(\.id).joined(separator: ",")
+    private var offeringKey: String {
+        "\(accountSwitch)|" + review.map(\.id).joined(separator: ",")
     }
 
-    /// Was der Titel dieses Bereichs zur Wahl anbietet — die Regel steht im
-    /// Paket (``Bereichsangebot``). **Was einem anderen Konto gehoert,
-    /// zaehlt nicht**; bis das neue geladen ist, steht nur da, was die
-    /// Bibliotheken allein hergeben.
-    func angebot(_ was: Bereich) -> Bereichsangebot {
-        let gilt = angebotFuer == angebotsschluessel
-        return Bereichsangebot.bilden(art: art(was), views: sichten,
-                                      anteile: gilt ? bibliotheksanteile : [:],
-                                      verzeichnis: gilt ? sammlungsverzeichnis : nil)
+    /// What the title of this area offers to choose; the rule is in the package (`SectionOffering`). **What belongs to another account does not count**; until the new one is loaded, only what the libraries alone provide is shown.
+    func offering(_ was: Region) -> SectionOffering {
+        let applies = offeringFor == offeringKey
+        return SectionOffering.compose(art: art(was), views: review,
+                                      shares: applies ? libraryShares : [:],
+                                      directory: applies ? collectionDirectory : nil)
     }
 
-    /// Die gemerkte Wahl dieses Bereichs, geprueft gegen das Angebot. Sie
-    /// liegt unter demselben Namen wie bisher die Bibliothek — wer eine von
-    /// zwei Filmbibliotheken gewaehlt hatte, landet weiter dort.
-    func bereichswahl(_ was: Bereich) -> Bereichswahl {
-        angebot(was).wahl(gemerkt: wahlen.bibliothekJeGattung[was.kennung])
+    /// The remembered choice of this area, checked against the offer. It is stored under the same name as the library choice before, so whoever had chosen one of two movie libraries stays there.
+    func sectionSelection(_ was: Region) -> SectionSelection {
+        offering(was).choice(remembered: selection.libraryPerGenre[was.identifier])
     }
 
-    func bereichWaehlen(_ wahl: Bereichswahl, _ was: Bereich) {
-        wahlen.bibliothekJeGattung[was.kennung] = wahl.merkwert
-        wahlen.sichern()
+    func sectionSelect(_ choice: SectionSelection, _ was: Region) {
+        selection.libraryPerGenre[was.identifier] = choice.rememberValue
+        selection.secure()
     }
 
-    /// **Sammlungen und Anteile gemischter Bibliotheken — nur auf Zuruf**,
-    /// wenn eine Seite sie braucht, und ein Stand gilt eine Minute (Mac
-    /// `AppModel.angebotLaden()`): wer auf dem Server eine Sammlung anlegt,
-    /// sieht sie beim naechsten Oeffnen, nicht erst nach einem Neustart.
-    func angebotLaden(dann: (() -> Void)? = nil) {
-        guard let client, !sichten.isEmpty else { dann?(); return }
-        let fuer = angebotsschluessel
-        let frisch = angebotZeit.map { Date().timeIntervalSince($0) < 60 } ?? false
-        guard angebotFuer != fuer || !frisch else { dann?(); return }
-        if let dann { angebotWartende.append(dann) }
-        guard angebotLaeuft != fuer else { return }
-        angebotLaeuft = fuer
-        let stand = sichten
+    /// **Collections and shares of mixed libraries are loaded on demand only**, when a page needs them, and a result is valid for one minute (macOS `AppModel.offeringLoad()`): a collection created on the server appears on the next open, not only after a restart.
+    func offeringLoad(then: (() -> Void)? = nil) {
+        guard let client, !review.isEmpty else { then?(); return }
+        let of = offeringKey
+        let freshValue = offeringTime.map { Date().timeIntervalSince($0) < 60 } ?? false
+        guard offeringFor != of || !freshValue else { then?(); return }
+        if let then { offeringWaiting.append(then) }
+        guard offeringRuns != of else { return }
+        offeringRuns = of
+        let state = review
         Task.detached { [self] in
-            // Eigene Aufgaben statt `async let` (siehe ``nebenher(_:)``).
-            let anteile = nebenher { await client.bibliotheksanteile(views: stand) }
-            let verzeichnis = nebenher { () async -> Sammlungsverzeichnis? in
-                let mitVerborgenen = (try? await client.userViews(verborgene: true)) ?? stand
-                if Sammlungsverzeichnis.ausgeblendet(sichtbar: stand, mitVerborgenen: mitVerborgenen) {
-                    return .leer
+            // Separate tasks instead of `async let` (see `besideFrom(_:)`).
+            let shares = besideFrom { await client.libraryShares(views: state) }
+            let directory = besideFrom { () async -> CollectionDirectory? in
+                let withHidden = (try? await client.userViews(hidden: true)) ?? state
+                if CollectionDirectory.hidden(visible: state, withHidden: withHidden) {
+                    return .empty
                 }
-                return try? await client.sammlungsverzeichnis(ansichten: mitVerborgenen)
+                return try? await client.collectionDirectory(viewList: withHidden)
             }
-            let neueAnteile = await anteile.value
-            let neuesVerzeichnis = await verzeichnis.value
-            aufHauptfaden {
-                if self.angebotLaeuft == fuer { self.angebotLaeuft = nil }
-                // Inzwischen das Konto gewechselt: das Ergebnis gehoert
-                // niemandem mehr.
-                guard fuer == self.angebotsschluessel else { return }
-                self.bibliotheksanteile = neueAnteile
-                // **Gescheitert ist nicht leer.** Ohne Antwort bleibt der
-                // Stand ungueltig, und die naechste Seite fragt noch einmal.
-                if let neuesVerzeichnis {
-                    self.sammlungsverzeichnis = neuesVerzeichnis
-                    self.angebotFuer = fuer
-                    self.angebotZeit = Date()
+            let newShares = await shares.value
+            let newDirectory = await directory.value
+            onMainThread {
+                if self.offeringRuns == of { self.offeringRuns = nil }
+                // The account changed meanwhile: the result belongs to no one any more.
+                guard of == self.offeringKey else { return }
+                self.libraryShares = newShares
+                // **Failed is not empty.** Without an answer the state stays invalid, and the next page asks again.
+                if let newDirectory {
+                    self.collectionDirectory = newDirectory
+                    self.offeringFor = of
+                    self.offeringTime = Date()
                 }
-                self.angebotAngekommen()
-                let wartende = self.angebotWartende
-                self.angebotWartende = []
-                for w in wartende { w() }
+                self.offeringArrived()
+                let waitingOnes = self.offeringWaiting
+                self.offeringWaiting = []
+                for w in waitingOnes { w() }
             }
         }
     }
 
-    /// **Sammlungen und gemischte Bibliotheken kommen nach.** Aendert sich
-    /// damit, was „Alle" liest oder was gewaehlt sein darf, wird neu geladen
-    /// — ueber die Quelle, nicht ueber die Anzahl.
-    func angebotAngekommen() {
-        for was in [Bereich.filme, .serien] {
-            titelwahlMalen(was)
-            guard geladen.contains(was), let alt = rasterQuelle[was] else { continue }
-            if alt != quellschluessel(was) {
-                chipsFuellen(was)
-                rasterLaden(was)
+    /// **Collections and mixed libraries arrive later.** If that changes what "Alle" reads or what may be chosen, it reloads, keyed on the source, not on the count.
+    func offeringArrived() {
+        for was in [Region.movies, .seriesList] {
+            titleSelectionDraw(was)
+            guard loaded.contains(was), let alt = gridSource[was] else { continue }
+            if alt != sourceKey(was) {
+                chipsFill(was)
+                gridLoad(was)
             }
         }
     }
 
-    /// Woraus die Rasterseite dieses Bereichs liest. `nil`: in diesem
-    /// Bereich gibt es nichts — oder er zeigt die Sammlungen.
-    func regalquelle(_ was: Bereich) -> Regalquelle? {
+    /// What the grid page of this area reads from. `nil`: this area has nothing, or it shows the collections.
+    func shelfSource(_ was: Region) -> ShelfSource? {
         switch was {
-        case .sammlung:
-            guard let s = offeneSammlung else { return nil }
-            return Regalquelle(eltern: s.item.id, art: s.art, sammlung: true)
-        case .filme, .serien:
-            let an = angebot(was)
-            switch bereichswahl(was) {
-            case .alle:
-                // Aus einer Bibliothek wie vor dem Umbau; aus mehreren
-                // gesiebt, je Titel einmal (``Titelsieb``).
-                return an.hatBestand
-                    ? Regalquelle(eltern: an.alleAus, art: art(was),
-                                  nurAus: an.alleAus == nil ? an.alleQuellen : [])
+        case .collection:
+            guard let s = openCollection else { return nil }
+            return ShelfSource(parent: s.item.id, art: s.art, collection: true)
+        case .movies, .seriesList:
+            let an = offering(was)
+            switch sectionSelection(was) {
+            case .all:
+                // From one library as before; from several, filtered to one entry per title (`TitleFilter`).
+                return an.hasInventory
+                    ? ShelfSource(parent: an.allOut, art: art(was),
+                                  onlyOut: an.allOut == nil ? an.allSources : [])
                     : nil
-            case .bibliothek(let id):
-                return Regalquelle(eltern: id, art: art(was))
-            case .sammlungen:
+            case .library(let id):
+                return ShelfSource(parent: id, art: art(was))
+            case .collections:
                 return nil
             }
         default:
@@ -4651,1231 +4254,988 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func quellschluessel(_ was: Bereich) -> String {
-        if (was == .filme || was == .serien), bereichswahl(was) == .sammlungen {
-            return "sammlungen|" + (sammlungsverzeichnis?.sammlungen(art: art(was))
+    private func sourceKey(_ was: Region) -> String {
+        if (was == .movies || was == .seriesList), sectionSelection(was) == .collections {
+            return "sammlungen|" + (collectionDirectory?.collections(art: art(was))
                 .map(\.id).joined(separator: ",") ?? "")
         }
-        return regalquelle(was)?.schluessel ?? "-"
+        return shelfSource(was)?.key ?? "-"
     }
 
-    /// **Eine Sammlung als Unterseite oeffnen** (Mac `Sammlungsseite`).
+    /// **Open a collection as a subpage** (macOS `CollectionDetailPage`).
     ///
-    /// Pfeil, Name, Filter und Sortierung, Raster — die Rasterseite mit einer
-    /// Sammlung als Quelle. Voreingestellt nach Jahr, aufsteigend; Filter und
-    /// Sortierung fangen jedes Mal von vorn an.
+    /// Arrow, name, filter and sort, grid: the grid page with a collection as the source. Default sort by year, ascending; filter and sort start fresh each time.
     ///
-    /// `art` ist `nil` für eine Sammlung, die als Kachel in einer Liste
-    /// stand (siehe ``oeffne(_:)``): dann ohne Gattung, also alles darin.
-    func sammlungOeffnen(_ sammlung: Item, art: String?) {
-        // Aus einer Sammlung heraus bleibt der Rueckweg der urspruengliche.
-        if bereich != .sammlung { sammlungHerkunft = bereich }
-        offeneSammlung = (sammlung, art)
-        sammlungSortierung = .erscheinung
-        sammlungFilter = .alle
-        if let klein = leistentitel[.sammlung] {
-            gtk_label_set_text(OpaquePointer(klein), sammlung.name)
+    /// `art` is `nil` for a collection that was a tile in a list (see `openIt(_:)`): then no kind, so everything in it.
+    func collectionOpen(_ collection: Item, art: String?) {
+        // From within a collection the way back stays the original one.
+        if section != .collection { collectionOrigin = section }
+        openCollection = (collection, art)
+        collectionSorting = .erscheinung
+        collectionFilter = .all
+        if let small = barTitle[.collection] {
+            gtk_label_set_text(OpaquePointer(small), collection.name)
         }
-        if sammlungstitel != nil {
-            gtk_label_set_text(OpaquePointer(sammlungstitel), sammlung.name)
+        if collectionTitle != nil {
+            gtk_label_set_text(OpaquePointer(collectionTitle), collection.name)
         }
-        // **Neu laden, nicht das Alte zeigen** — sonst stuenden unter der
-        // zweiten Sammlung die Titel der ersten.
-        geladen.remove(.sammlung)
-        seitenstapel[.sammlung] = []
-        rasterItems[.sammlung] = []
-        if let raster = rasterFeld[.sammlung] { rasterFuellen(raster, []) }
-        chipsFuellen(.sammlung)
-        zeige(.sammlung)
+        // **Reload, do not show the old one**; otherwise the titles of the first collection would appear under the second.
+        loaded.remove(.collection)
+        pagesStack[.collection] = []
+        gridItems[.collection] = []
+        if let grid = gridField[.collection] { gridFill(grid, []) }
+        chipsFill(.collection)
+        show(.collection)
     }
 
-    /// Der Pfeil der Sammlungsseite: zurueck, woher sie kam.
-    func sammlungSchliessen() {
-        zeige(sammlungHerkunft)
+    /// The collection page's arrow: back to where it came from.
+    func collectionClose() {
+        show(collectionOrigin)
     }
 
-    /// **Ein Genre als eigene Seite** — dasselbe Raster wie Bibliothek,
-    /// Merkliste und Suche, mit dem Genrenamen als Titel.
+    /// **A genre as its own page**: the same grid as library, watchlist and search, with the genre name as the title.
     ///
-    /// Sortiert nach „zuletzt hinzugefügt": wer ein Genre antippt, sucht
-    /// meist, was neu ist. Die Regel steht als `titel(gattung:)` im Paket.
-    func gattungOeffnen(_ name: String) {
-        offeneGattung = name
-        if let klein = leistentitel[.gattung] {
-            gtk_label_set_text(OpaquePointer(klein), name)
+    /// Sorted by "recently added": whoever taps a genre usually looks for what is new. The rule is `title(genre:)` in the package.
+    func genreOpen(_ name: String) {
+        openGenre = name
+        if let small = barTitle[.genre] {
+            gtk_label_set_text(OpaquePointer(small), name)
         }
-        if gattungstitel != nil {
-            gtk_label_set_text(OpaquePointer(gattungstitel), name)
+        if genreTitle != nil {
+            gtk_label_set_text(OpaquePointer(genreTitle), name)
         }
-        geladen.remove(.gattung)
-        seitenstapel[.gattung] = []
-        zeige(.gattung)
+        loaded.remove(.genre)
+        pagesStack[.genre] = []
+        show(.genre)
     }
 
-    /// **Welche Leistenzeile hervorgehoben ist.**
+    /// **Which sidebar row is highlighted.**
     ///
-    /// Nicht nur „welcher Bereich" — auch, ob ueberhaupt einer dran ist. Steht
-    /// eine Unterseite offen (Profil, Einstellungen, Wiedergabe) oder eine
-    /// Bibliothek, gehoert die Hervorhebung keiner Bereichszeile: sonst
-    /// leuchtet „Start", waehrend rechts das Profil steht. Auf dem Mac steht
-    /// dieselbe Bedingung an der Zeile selbst
-    /// (`bereich == fall && !bibliothekOffen && !imKonto`).
-    /// Traegt den Servernamen in alle Seitenkoepfe nach (E15) — er kommt
-    /// erst mit `publicSystemInfo`, die Seiten stehen da schon.
-    func serverzeilenMalen() {
-        for (_, zeile) in serverzeilen {
-            gtk_label_set_text(OpaquePointer(zeile), servername)
-            gtk_widget_set_visible(zeile, servername.isEmpty ? 0 : 1)
+    /// Not only which area, but whether any is. If a subpage (profile, settings, playback) or a library is open, the highlight belongs to no area row; otherwise "Start" lights up while the profile is shown. On macOS the same condition sits on the row itself (`section == fall && !bibliothekOffen && !inAccount`).
+    /// Also carries the server name into all page headers; it arrives only with `publicSystemInfo`, by which time the pages already exist.
+    func serverRowsDraw() {
+        for (_, row) in serverRows {
+            gtk_label_set_text(OpaquePointer(row), serverName)
+            gtk_widget_set_visible(row, serverName.isEmpty ? 0 : 1)
         }
     }
 
-    func bereichszeilenMalen() {
-        let keiner = offeneUnterseite != nil
-        // Die Sammlung liegt im Bereich, aus dem sie kam — dessen Zeile bleibt.
-        let aktiv = bereich == .sammlung ? sammlungHerkunft : bereich
-        for (fall, knopf) in bereichsknoepfe {
-            let an = !keiner && fall == aktiv
-            if an { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
-            else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
-            bedienhilfe(knopf, gewaehlt: an)
+    func sectionRowsDraw() {
+        let nobody = openSubpage != nil
+        // The collection lies in the area it came from; that area's row stays.
+        let active = section == .collection ? collectionOrigin : section
+        for (fall, button) in sectionButtons {
+            let an = !nobody && fall == active
+            if an { gtk_widget_add_css_class(button, "swiftly-aktiv") }
+            else { gtk_widget_remove_css_class(button, "swiftly-aktiv") }
+            help(button, selected: an)
         }
-        if let profilzeile {
-            if offeneUnterseite != nil { gtk_widget_add_css_class(profilzeile, "swiftly-aktiv") }
-            else { gtk_widget_remove_css_class(profilzeile, "swiftly-aktiv") }
+        if let profileRow {
+            if openSubpage != nil { gtk_widget_add_css_class(profileRow, "swiftly-aktiv") }
+            else { gtk_widget_remove_css_class(profileRow, "swiftly-aktiv") }
         }
     }
 
-    func startseiteLaden() {
+    func homeLoad() {
         guard let client else { return }
-        zuletztGeladen = Date()
-        // **H8: was der Server noch nicht weiss, geht jetzt raus.** Nicht in
-        // einem eigenen Takt — hier ist der Server nachweislich da, weil
-        // gleich darunter Reihen von ihm geholt werden. Dieselbe Stelle wie
-        // auf dem Mac, nur dass die dort an der Verbindungspruefung haengt.
-        let konto = benutzerID
-        Task.detached { await Nachmeldezettel.abschicken(client, konto: konto) }
-        // **Wessen Antwort ist das gleich?** Der Wechsel laesst den alten
-        // Client fallen, aber eine Abfrage, die schon unterwegs ist, kommt
-        // trotzdem zurueck — und wuerde die Reihen des neuen Kontos mit denen
-        // des alten ueberschreiben. Der Zaehler ist die Eintrittskarte: passt
-        // er beim Auflegen nicht mehr, gehoert die Antwort zu niemandem.
-        let stand = kontowechsel
-        // **„Lade …" nur beim ersten Mal.** Beim Nachladen (D8, und beim
-        // Schliessen des Players) steht schon alles da; es wegzuwerfen und
-        // durch ein Wort zu ersetzen, sah aus, als sei die App neu gestartet
-        // — dabei ändert sich meist nur ein Fortschrittsbalken. Ersetzt wird
-        // erst, wenn die neuen Reihen da sind.
-        if gtk_widget_get_first_child(reihenstapel) == nil {
-            // **Kein Ladering, kein „Lade …"** (E17): die Reihen stehen in
-            // ihrer Form da und lösen sich auf, wenn die Daten kommen.
-            anhaengen(reihenstapel, reihenPlatzhalter(rand: Stil.randAbstand))
+        lastLoaded = Date()
+        // **What the server does not know yet is sent now.** Not on a timer of its own: here the server is demonstrably reachable, because rows are fetched from it right below. The same place as on macOS, where it hangs on the connection check.
+        let account = userIdentifier
+        Task.detached { await PostReportSlip.submit(client, account: account) }
+        // **Whose answer is this?** Switching drops the old client, but a request already in flight still comes back and would overwrite the new account's rows with the old one's. The counter is the entry guard: if it no longer matches when the answer arrives, the answer belongs to no one.
+        let state = accountSwitch
+        // **"Lade …" only the first time.** On a reload (return to foreground, closing the player) everything is already there; throwing it away and replacing it with a word looked like an app restart, although usually only a progress bar changes. It is replaced only when the new rows are there.
+        if gtk_widget_get_first_child(railsStack) == nil {
+            // **No spinner, no "Lade …":** the rows stand in their final shape and dissolve when the data arrives.
+            append(railsStack, railsPlaceholder(margin: Theme.edgeSpacing))
         }
 
-        // Die Wahl vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
-        let getrennt = wahlen.neuzugaengeGetrennt
-        let reihenfolge = wahlen.startReihen
-        let ausgeblendet = wahlen.startAus
-        let gattungen = wahlen.startGenres
-        let alsChips = wahlen.genreChips
-        let bibliotheksWahl = wahlen.startBibliotheken
+        // Read the choice before the thread: `selection` belongs to the main thread.
+        let disconnected = selection.newArrivalsDisconnected
+        let railsEpisode = selection.startRails
+        let hidden = selection.startOut
+        let genres = selection.startGenres
+        let asChips = selection.genreChips
+        let librarySelection = selection.startLibraries
         Task.detached { [self] in
-            // **Hier wird der Fehler gelesen, nicht verschluckt.** Die
-            // Startseite lädt bei jedem Wechsel in den Vordergrund (D8) und
-            // ist damit die Stelle, an der eine abgelaufene Anmeldung als
-            // Erstes auffällt — vorher kam einfach nichts zurück, und die
-            // Seite blieb leer.
+            // **The error is read here, not swallowed.** The home page reloads on every return to the foreground and is therefore where an expired login is noticed first; before, nothing came back and the page stayed empty.
             //
-            // **Nur fuer das Konto, das noch aktiv ist.** Die Startseite laedt
-            // oft zweimal kurz hintereinander (Rueckkehr ins Fenster, Player
-            // zu). Kamen beide mit 401 zurueck, meldete die erste das Konto
-            // ab und schaltete aufs naechste um — und die zweite, die noch zum
-            // alten gehoerte, meldete **das naechste** gleich mit ab.
+            // **Only for the account that is still active.** The home page often loads twice in quick succession (window return, player closed). If both came back with 401, the first signed the account out and switched to the next, and the second, which still belonged to the old one, signed out **the next** one as well.
             do { _ = try await client.resumeItems(limit: 1) }
             catch {
-                aufHauptfaden {
-                    guard self.kontowechsel == stand, self.client === client else { return }
-                    self.sitzungPruefen(error)
+                onMainThread {
+                    guard self.accountSwitch == state, self.client === client else { return }
+                    self.sessionCheck(error)
                 }
             }
-            // **Nur eine Bibliothek, die es gibt** — gemerkt sein kann seit dem
-            // Titelmenue auch „alle" oder „sammlungen" (Mac
-            // `AppModel.gewaehlteBibliothek(art:)`).
-            let filmBib = bibliotheken(fuer: .filme).first { $0.id == gewaehlteBibliothek[.filme] }?.id
-                ?? bibliotheken(fuer: .filme).first?.id
-            let serienBib = bibliotheken(fuer: .serien).first { $0.id == gewaehlteBibliothek[.serien] }?.id
-                ?? bibliotheken(fuer: .serien).first?.id
-            // **Eine Regel fuer alle Plattformen** — `Startseitenlader` im Paket.
+            // **Only a library that exists**: since the title menu, "alle" or "sammlungen" can also be stored (macOS `AppModel.selectedLibrary(art:)`).
+            let filmBib = libraries(for: .movies).first { $0.id == selectedLibrary[.movies] }?.id
+                ?? libraries(for: .movies).first?.id
+            let seriesBib = libraries(for: .seriesList).first { $0.id == selectedLibrary[.seriesList] }?.id
+                ?? libraries(for: .seriesList).first?.id
+            // **One rule for all platforms**: `HomeLoader` in the package.
             //
-            // Hier stand bis zum 15.09.2026 eine eigene Abschrift von
-            // `Startseitenmodell.laden`, und sie war schon auseinandergelaufen: „Nächste
-            // Folge" behielt die Titel, die schon in „Weiterschauen" standen. Jetzt holt
-            // das Paket die Reihen fuer Apple, Linux/Windows und Android gleich; hier
-            // wird nur noch angeordnet und angezeigt.
-            let startseite = await Startseitenlader.laden(von: client, .init(
-                getrennt: getrennt, filmBibliothek: filmBib, serienBibliothek: serienBib,
-                gattungen: alsChips ? nil : gattungen))
-            // **Die Bibliotheksreihen laufen nebenher**, alle zugleich und ein
-            // Abruf je Reihe (`Startseitenlader.bibliotheksreihen`); eine, die
-            // es nicht mehr gibt oder die leer ist, fällt still weg.
-            let bibliotheken = bibliotheksWahl.isEmpty ? [] :
-                await Startseitenlader.bibliotheksreihen(von: client, wahl: bibliotheksWahl)
-            let inhalt: [Startreihe: (Reihenart, [Item])] = [
-                .weiterschauen: (.weiterschauen, startseite.weiterschauen ?? []),
-                .naechsteFolge: (.naechste, startseite.naechsteFolge ?? []),
-                .neuzugaenge:   (.neu, startseite.zuletzt ?? []),
-                .neueFilme:     (.neu, startseite.neueFilme ?? []),
-                .neueSerien:    (.neu, startseite.neueSerien ?? []),
+            // This used to be a separate copy of `HomeModel.load`, and it had already drifted: "Nächste Folge" kept the titles already in "Weiterschauen". Now the package fetches the rows the same way for Apple, Linux/Windows and Android; here they are only arranged and displayed.
+            let home = await HomeLoader.load(from: client, .init(
+                disconnected: disconnected, filmLibrary: filmBib, seriesLibrary: seriesBib,
+                genres: asChips ? nil : genres))
+            // **The library rows run in parallel**, all at once with one request per row (`HomeLoader.libraryRails`); one that no longer exists or is empty silently drops out.
+            let libraries = librarySelection.isEmpty ? [] :
+                await HomeLoader.libraryRails(from: client, choice: librarySelection)
+            let content: [StartRail: (RailsKind, [Item])] = [
+                .continueWatching: (.continueWatching, home.continueWatching ?? []),
+                .nextEpisode: (.next, home.nextEpisode ?? []),
+                .newArrivals:   (.new, home.recent ?? []),
+                .newMovies:     (.new, home.newMovies ?? []),
+                .newSeries:    (.new, home.newSeries ?? []),
             ]
-            var gesammelt: [Startreihenzeile] = Startreihenfolge
-                .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
+            var collected: [StartRailsRow] = StartRailsEpisode
+                .visible(stored: railsEpisode, from: Set(hidden), disconnected: disconnected)
                 .compactMap { r in
-                    guard let (art, items) = inhalt[r], !items.isEmpty else { return nil }
-                    return (uebersetzt(r.reihentitel), art, items, nil)
+                    guard let (art, items) = content[r], !items.isEmpty else { return nil }
+                    return (translated(r.railsTitle), art, items, nil)
                 }
-            // Zwischen den festen Reihen und den Genres, wie auf Apple. Der
-            // Kopf öffnet die Bibliothek oder Sammlung.
-            gesammelt += bibliotheken.map { r in
-                (r.name, .neu, r.items,
-                 bibliotheksWahl.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name))
+            // Between the fixed rows and the genres, as on Apple. The header opens the library or collection.
+            collected += libraries.map { r in
+                (r.name, .new, r.items,
+                 librarySelection.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name))
             }
-            gesammelt += startseite.gattungsreihen.map { ($0.name, .neu, $0.items, nil) }
-            let reihen = gesammelt
+            collected += home.genreRails.map { ($0.name, .new, $0.items, nil) }
+            let rails = collected
 
-            aufHauptfaden {
-                guard self.kontowechsel == stand else { return }
-                self.gattungschipsZeigen(alsChips ? gattungen : [])
-                self.reihenZeigen(reihen, gestoert: startseite.gestoert)
+            onMainThread {
+                guard self.accountSwitch == state else { return }
+                self.genreChipsShow(asChips ? genres : [])
+                self.railsShow(rails, disrupted: home.disrupted)
             }
         }
     }
 
-    /// Filme und Serien. **Mit Gattung und rekursiv**, aus demselben Grund,
-    /// der in `JellyfinClient.items` steht: sonst kommen bei einer
-    /// Serienbibliothek die virtuellen Ordner statt der Serien.
-    /// **Nachladen beim Blättern**, statt einmal 500 zu holen.
+    /// Movies and series. **With kind and recursive**, for the reason given in `JellyfinClient.items`: otherwise a series library returns the virtual folders instead of the series.
+    /// **Load more while paging** instead of fetching 500 once.
     ///
-    /// Fünfhundert war die Zahl, bei der es „reicht schon" hiess — bei einer
-    /// grösseren Sammlung fehlt der Rest schlicht. Der Mac zieht die nächste
-    /// Seite, sobald die drittletzte Reihe sichtbar wird
-    /// (`Bibliotheksmodell.swift:82`); hier hängt es am unteren Rand des
-    /// Scrollers, was dasselbe bedeutet und in GTK ein Signal ist, das es
-    /// ohnehin gibt.
-    private func rasterNachladen(_ was: Bereich) {
-        guard !rasterLaedt.contains(was) else { return }
-        let schon = (rasterItems[was] ?? []).count
-        guard schon > 0 else { return }
-        // Gesiebt zaehlt, wie weit die rohen Seiten gelesen sind.
-        if rasterSieb[was] != nil, let roh = rasterRoh[was] {
-            guard roh.versatz < roh.gesamt else { return }
+    /// 500 was a number at which it was assumed to be enough; with a larger collection the rest is simply missing. macOS pulls the next page when the third-to-last row becomes visible (`LibraryModel.swift:82`); here it hangs on the bottom edge of the scroller, which means the same and is a signal GTK provides anyway.
+    private func gridLoadMore(_ was: Region) {
+        guard !gridLoads.contains(was) else { return }
+        let already = (gridItems[was] ?? []).count
+        guard already > 0 else { return }
+        // For filtered lists, this counts how far the raw pages have been read.
+        if gridFilter[was] != nil, let raw = gridRaw[was] {
+            guard raw.offset < raw.total else { return }
         } else {
-            guard Listenregeln.nochMehrDa(geladen: schon, gesamt: rasterGesamt[was] ?? 0)
+            guard ListRules.stillMorePresent(loaded: already, total: gridTotal[was] ?? 0)
             else { return }
         }
-        rasterLaden(was, ab: schon)
+        gridLoad(was, since: already)
     }
 
-    private func rasterLaden(_ was: Bereich, ab: Int = 0, umfang: Int? = nil) {
+    private func gridLoad(_ was: Region, since: Int = 0, reach: Int? = nil) {
         guard let client else { return }
-        // **Filme und Serien fragen nach Sammlungen und gemischten
-        // Bibliotheken** — nebenher, die Seite wartet nicht darauf
-        // (`BibliothekView.laden()` auf dem Mac).
-        if ab == 0, was == .filme || was == .serien {
-            angebotLaden()
-            titelwahlMalen(was)
-            rasterQuelle[was] = quellschluessel(was)
-            // **„Sammlungen" laedt nichts** — die Liste steht im Verzeichnis.
-            if bereichswahl(was) == .sammlungen {
-                sammlungenZeigen(was)
+        // **Movies and series ask for collections and mixed libraries** in parallel; the page does not wait for it (`LibraryView.load()` on macOS).
+        if since == 0, was == .movies || was == .seriesList {
+            offeringLoad()
+            titleSelectionDraw(was)
+            gridSource[was] = sourceKey(was)
+            // **"Sammlungen" loads nothing**: the list is in the directory.
+            if sectionSelection(was) == .collections {
+                collectionsShow(was)
                 return
             }
         }
-        rasterLaedt.insert(was)
-        // **Die alten Kacheln bleiben stehen, bis die neuen da sind.** Hier
-        // wurde erst geleert und der Platzhalter gezeigt — unter dem noch
-        // stehenden Raster, und bei jedem Klick auf einen Chip.
-        rasterAuftrag[was, default: 0] += 1
-        let auftrag = rasterAuftrag[was] ?? 0
-        if ab == 0, (rasterItems[was] ?? []).isEmpty {
-            rasterLaderZeigen(was, true)
+        gridLoads.insert(was)
+        // **The old tiles stay until the new ones are there.** Here the grid was emptied first and the placeholder shown, below the still-standing grid, and on every click on a chip.
+        gridJob[was, default: 0] += 1
+        let job = gridJob[was] ?? 0
+        if since == 0, (gridItems[was] ?? []).isEmpty {
+            gridLoaderShow(was, true)
         }
-        let f = filterVon(was)
-        let sort = sortierungVon(was)
-        let stand = kontowechsel
+        let f = filterFrom(was)
+        let sort = sortingFrom(was)
+        let state = accountSwitch
 
-        // **Filme, Serien und Sammlung lesen aus einer ``Regalquelle``** —
-        // Bibliothek, „Alle" quer ueber die Bibliotheken oder eine Sammlung.
-        // Die Unterschiede (Gattung, rekursiv, Richtung) stehen im Paket,
-        // damit Mac, Fernseher, Android und Linux dieselben Abfragen stellen.
-        if was == .filme || was == .serien || was == .sammlung {
-            guard let quelle = regalquelle(was) else {
-                // Zwei Faelle sehen hier gleich aus: ein Server ohne
-                // Bibliothek dieser Gattung, und einer, der gar nicht
-                // geantwortet hat. Unterscheidbar daran, ob ueberhaupt
-                // Bibliotheken bekannt sind.
-                rasterLaedt.remove(was)
-                rasterLaderZeigen(was, false)
-                rasterItems[was] = []
-                if let raster = rasterFeld[was] { rasterFuellen(raster, []) }
-                if let zahl = zahlFeld[was] { gtk_widget_set_visible(zahl, 0) }
-                rasterZustandZeigen(was, gestoert: sichten.isEmpty, leer: true)
+        // **Movies, series and collection read from a `ShelfSource`**: a library, "Alle" across the libraries, or a collection. The differences (kind, recursive, direction) are in the package so macOS, TV, Android and Linux issue the same queries.
+        if was == .movies || was == .seriesList || was == .collection {
+            guard let source = shelfSource(was) else {
+                // Two cases look the same here: a server without a library of this kind, and one that did not answer at all. They differ in whether any libraries are known.
+                gridLoads.remove(was)
+                gridLoaderShow(was, false)
+                gridItems[was] = []
+                if let grid = gridField[was] { gridFill(grid, []) }
+                if let figure = numberField[was] { gtk_widget_set_visible(figure, 0) }
+                gridStateShow(was, disrupted: review.isEmpty, empty: true)
                 return
             }
-            if quelle.siebt {
-                gesiebtLaden(was, quelle: quelle, ab: ab, auftrag: auftrag, filter: f,
-                             sortierung: sort, stand: stand, client: client)
+            if source.isFiltering {
+                filteredLoad(was, source: source, since: since, job: job, filter: f,
+                             sorting: sort, state: state, client: client)
                 return
             }
-            rasterSieb[was] = nil
-            rasterRoh[was] = nil
+            gridFilter[was] = nil
+            gridRaw[was] = nil
             Task.detached { [self] in
-                let antwort = try? await client.items(parentID: quelle.eltern,
-                                                      limit: umfang ?? 100,
-                                                      startIndex: ab,
-                                                      sortBy: sort.feld,
-                                                      sortOrder: quelle.richtung(sort),
+                let answer = try? await client.items(parentID: source.parent,
+                                                      limit: reach ?? 100,
+                                                      startIndex: since,
+                                                      sortBy: sort.inputField,
+                                                      sortOrder: source.bearing(sort),
                                                       filters: f.jellyfinFilter,
-                                                      istGesehen: f.istGesehen,
-                                                      recursive: quelle.rekursiv,
-                                                      includeItemTypes: quelle.typen)
-                aufHauptfaden {
-                    self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
-                                       items: antwort?.items ?? [],
-                                       gesamt: antwort.map { $0.totalRecordCount },
-                                       gestoert: antwort == nil)
+                                                      isWatched: f.isWatched,
+                                                      recursive: source.recursive,
+                                                      includeItemTypes: source.types)
+                onMainThread {
+                    self.gridResponse(was, since: since, job: job, state: state,
+                                       items: answer?.items ?? [],
+                                       total: answer.map { $0.totalRecordCount },
+                                       disrupted: answer == nil)
                 }
             }
             return
         }
 
-        // **Die Merkliste ist keine Bibliothek, sondern ein Filter.** Sie
-        // fragt beide Gattungen ab und laesst den Server auf `IsFavorite`
-        // sieben — woertlich `AppModel.gemerkte(art:sortierung:ab:)` vom Mac.
-        let gattungen: [String]
+        // **The watchlist is not a library but a filter.** It queries both kinds and lets the server filter on `IsFavorite`, taken literally from `AppModel.remembered(art:sorting:since:)` on macOS.
+        let genres: [String]
         switch was {
-        // Was die Pille sagt (E25) — vorher stand hier fest Film und Serie,
-        // und die Trennung war serverseitig gar nicht moeglich.
-        case .merkliste: gattungen = merkgattung.typen
-        default:      gattungen = ["Movie", "Series"]
+        // What the pill says: movie and series used to be fixed here, and separating them was not possible on the server side.
+        case .watchlist: genres = savedGenre.types
+        default:      genres = ["Movie", "Series"]
         }
-        // **Ein Genre geht ueber alle Bibliotheken**, wie die Merkliste — es
-        // ist kein Ort, sondern eine Eigenschaft. Und es sortiert nach
-        // „zuletzt hinzugefuegt", nicht nach dem gewaehlten Feld: wer ein
-        // Genre antippt, sucht meist, was neu ist.
-        let genre = was == .gattung ? offeneGattung : nil
+        // **A genre spans all libraries**, like the watchlist: it is a property, not a place. And it sorts by "recently added", not by the chosen field: whoever taps a genre usually looks for what is new.
+        let genre = was == .genre ? openGenre : nil
         Task.detached { [self] in
-            // **Die Merkliste je Werk einmal** (`JellyfinClient.gemerkteWerke`),
-            // gezaehlt in Werken — `ab` bleibt die Zahl der geladenen Kacheln.
-            let antwort: ItemsResponse?
-            if was == .merkliste {
-                antwort = try? await client.gemerkteWerke(typen: gattungen, sortBy: sort.feld,
-                                                          sortOrder: sort.richtung,
-                                                          startIndex: ab, limit: umfang ?? 100)
+            // **The watchlist once per work** (`JellyfinClient.rememberedItems`), counted in works; `since` remains the number of loaded tiles.
+            let answer: ItemsResponse?
+            if was == .watchlist {
+                answer = try? await client.rememberedItems(types: genres, sortBy: sort.inputField,
+                                                          sortOrder: sort.bearing,
+                                                          startIndex: since, limit: reach ?? 100)
             } else {
-                antwort = try? await client.items(parentID: nil,
-                                                  // 200 auf einen Schlag fuer
-                                                  // ein Genre, sonst 100 je
-                                                  // Seite — `GenreView.swift:70`.
-                                                  limit: umfang ?? (genre != nil ? 200 : 100),
-                                                  startIndex: ab,
-                                                  sortBy: genre != nil ? "DateCreated" : sort.feld,
+                answer = try? await client.items(parentID: nil,
+                                                  // 200 at once for a genre, otherwise 100 per page (`GenreView.swift:70`).
+                                                  limit: reach ?? (genre != nil ? 200 : 100),
+                                                  startIndex: since,
+                                                  sortBy: genre != nil ? "DateCreated" : sort.inputField,
                                                   sortOrder: genre != nil ? "Descending"
-                                                                          : sort.richtung,
+                                                                          : sort.bearing,
                                                   filters: f.jellyfinFilter,
-                                                  istGesehen: f.istGesehen,
+                                                  isWatched: f.isWatched,
                                                   recursive: true,
-                                                  includeItemTypes: gattungen,
-                                                  gattungen: genre.map { [$0] } ?? [])
+                                                  includeItemTypes: genres,
+                                                  genres: genre.map { [$0] } ?? [])
             }
-            aufHauptfaden {
-                self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
-                                   items: antwort?.items ?? [],
-                                   gesamt: antwort.map { $0.totalRecordCount },
-                                   gestoert: antwort == nil)
+            onMainThread {
+                self.gridResponse(was, since: since, job: job, state: state,
+                                   items: answer?.items ?? [],
+                                   total: answer.map { $0.totalRecordCount },
+                                   disrupted: answer == nil)
             }
         }
     }
 
-    /// Eine Antwort ins Raster — auf dem Hauptfaden.
-    private func rasterAntwort(_ was: Bereich, ab: Int, auftrag: Int, stand: Int,
-                               items: [Item], gesamt: Int?, gestoert: Bool,
-                               schonGesiebt: Bool = false) {
-        // Auch hier: eine Antwort des vorigen Kontos wird weggeworfen, statt
-        // an seine Titel angehaengt zu werden.
-        guard kontowechsel == stand else { return }
-        // Eine spaetere Wahl hat diese Antwort ueberholt.
-        guard rasterAuftrag[was] == auftrag else { return }
-        rasterLaedt.remove(was)
-        rasterLaderZeigen(was, false)
-        guard let raster = rasterFeld[was], let zahl = zahlFeld[was] else { return }
-        // **Entdoppelt anhaengen** (`Listenregeln.anhaengen`). Der Server kann
-        // zwischen zwei Seiten etwas hinzufuegen; dann rutscht ein Titel eine
-        // Stelle nach hinten und kaeme in der naechsten Seite ein zweites Mal.
-        // Auf GTK stuende die Kachel einfach zweimal im Raster.
-        let vorher = rasterItems[was] ?? []
-        if !gestoert || ab == 0 {
-            rasterItems[was] = ab == 0 ? items : Listenregeln.anhaengen(
-                items, an: vorher)
+    /// An answer into the grid, on the main thread.
+    private func gridResponse(_ was: Region, since: Int, job: Int, state: Int,
+                               items: [Item], total: Int?, disrupted: Bool,
+                               alreadyFiltered: Bool = false) {
+        // Here too: an answer of the previous account is discarded instead of being appended to its titles.
+        guard accountSwitch == state else { return }
+        // A later choice has overtaken this answer.
+        guard gridJob[was] == job else { return }
+        gridLoads.remove(was)
+        gridLoaderShow(was, false)
+        guard let grid = gridField[was], let figure = numberField[was] else { return }
+        // **Append deduplicated** (`ListRules.append`). The server may add something between two pages; then a title shifts back one place and would appear a second time on the next page. On GTK the tile would simply be in the grid twice.
+        let before = gridItems[was] ?? []
+        if !disrupted || since == 0 {
+            gridItems[was] = since == 0 ? items : ListRules.append(
+                items, an: before)
         }
-        // **Ein gescheitertes Nachladen laesst die Gesamtzahl stehen.** Sonst
-        // galt die Liste danach als vollstaendig, und weder der Rand noch
-        // „Erneut versuchen" holten je die naechste Seite.
-        let nachladenGestoert = gestoert && ab > 0
-        let zahlwert = nachladenGestoert
-            ? (rasterGesamt[was] ?? (rasterItems[was] ?? []).count)
-            : (gesamt ?? (rasterItems[was] ?? []).count)
-        rasterGesamt[was] = zahlwert
-        // **Nachladen haengt nur an.** Vorher baute jede Seite alle Kacheln
-        // neu — bei 300 Titeln 300 Kacheln samt Bildern, nur um 100 dazuzutun,
-        // und die Bilder blinkten dabei neu ein. `anhaengen` laesst den
-        // vorderen Teil stehen, also genuegt der Rest.
-        let jetzt = rasterItems[was] ?? []
-        if ab > 0, rasterAnzahl(raster) == vorher.count,
-           jetzt.count >= vorher.count, jetzt.prefix(vorher.count).map(\.id) == vorher.map(\.id) {
-            rasterAnhaengen(raster, Array(jetzt.dropFirst(vorher.count)))
+        // **A failed reload keeps the total count.** Otherwise the list would count as complete afterwards, and neither the edge nor "Erneut versuchen" would ever fetch the next page.
+        let loadMoreDisturbed = disrupted && since > 0
+        let numberValue = loadMoreDisturbed
+            ? (gridTotal[was] ?? (gridItems[was] ?? []).count)
+            : (total ?? (gridItems[was] ?? []).count)
+        gridTotal[was] = numberValue
+        // **Reloading only appends.** Before, every page rebuilt all tiles: with 300 titles, 300 tiles with images just to add 100, and the images flickered in again. `append` leaves the front part alone, so the rest is enough.
+        let now = gridItems[was] ?? []
+        if since > 0, gridCount(grid) == before.count,
+           now.count >= before.count, now.prefix(before.count).map(\.id) == before.map(\.id) {
+            gridAppend(grid, Array(now.dropFirst(before.count)))
         } else {
-            rasterFuellen(raster, jetzt)
+            gridFill(grid, now)
         }
-        gtk_label_set_text(OpaquePointer(zahl), String(zahlwert))
-        gtk_widget_set_visible(zahl, zahlwert > 0 ? 1 : 0)
-        // **Nach einem Kontowechsel kommt der neue Inhalt gestaffelt** — wie
-        // die Reihen der Startseite (Mac: `Kontowechselteil`, Index 1).
-        if ab == 0, rasterStaffeln.remove(was) != nil, !(rasterItems[was] ?? []).isEmpty {
-            reiheAuftreten(raster, nummer: 1)
+        gtk_label_set_text(OpaquePointer(figure), String(numberValue))
+        gtk_widget_set_visible(figure, numberValue > 0 ? 1 : 0)
+        // **After an account switch the new content arrives staggered**, like the home page rows (macOS: `AccountSwitchPart`, index 1).
+        if since == 0, gridSeasons.remove(was) != nil, !(gridItems[was] ?? []).isEmpty {
+            railOccur(grid, number: 1)
         }
-        // **Gestoert ist nicht leer** — ein gescheiterter Abruf sagt „Server
-        // ist abgetaucht", nicht „hier ist nichts".
-        let nichts = (rasterItems[was] ?? []).isEmpty
-        rasterZustandZeigen(was, gestoert: gestoert && nichts, leer: nichts)
-        // **Und ein gescheitertes Nachladen sagt es auch** (UX-Audit 27.09.).
-        // Vorher endete das Raster einfach, als waere die Bibliothek zu Ende.
-        // Unter den Kacheln, nicht statt ihrer — was steht, bleibt stehen.
-        if nachladenGestoert, !nichts, let feld = leerFeld[was] {
-            leeren(feld)
-            anhaengen(feld, stoerhinweis(oben: 24) { [weak self] in self?.rasterNachladen(was) })
-            gtk_widget_set_visible(feld, 1)
+        // **Failed is not empty**: a failed request says "Server ist abgetaucht", not "hier ist nichts".
+        let nothing = (gridItems[was] ?? []).isEmpty
+        gridStateShow(was, disrupted: disrupted && nothing, empty: nothing)
+        // **A failed reload says so too.** Before, the grid just ended as if the library were complete. It appears under the tiles, not instead of them; what is there stays.
+        if loadMoreDisturbed, !nothing, let inputField = emptyField[was] {
+            wipe(inputField)
+            append(inputField, disturbHint(top: 24) { [weak self] in self?.gridLoadMore(was) })
+            gtk_widget_set_visible(inputField, 1)
         }
     }
 
-    /// **Aus mehreren Bibliotheken, je Titel einmal** (Mac
-    /// `Bibliotheksmodell.gesiebtLaden`/`fuellen`).
+    /// **From several libraries, one entry per title** (macOS `LibraryModel.filteredLoad`/`fill`).
     ///
-    /// Erst die Kennungen der gewaehlten Bibliotheken, mit denselben Filtern
-    /// (``Titelsieb``) — daraus steht auch die Anzahl fest. Dann Seiten ohne
-    /// `ParentId`, bis etwas stehen bleibt: eine Seite kann fast ganz aus
-    /// Doppeln bestehen, und dann erschiene keine neue Kachel, an der das
-    /// naechste Nachladen haengen koennte.
-    private func gesiebtLaden(_ was: Bereich, quelle: Regalquelle, ab: Int, auftrag: Int,
-                              filter f: Bibliotheksfilter, sortierung sort: Sortierung,
-                              stand: Int, client: JellyfinClient) {
-        let seitengroesse = 60
-        let altesSieb = ab == 0 ? nil : rasterSieb[was]
-        let start = ab == 0 ? 0 : (rasterRoh[was]?.versatz ?? 0)
+    /// First the IDs of the chosen libraries, with the same filters (`TitleFilter`), which also fixes the count. Then pages without `ParentId` until something remains: a page can consist almost entirely of duplicates, and then no new tile would appear that the next reload could hang on.
+    private func filteredLoad(_ was: Region, source: ShelfSource, since: Int, job: Int,
+                              filter f: LibraryFilter, sorting sort: Sorting,
+                              state: Int, client: JellyfinClient) {
+        let pagesSize = 60
+        let oldFilter = since == 0 ? nil : gridFilter[was]
+        let start = since == 0 ? 0 : (gridRaw[was]?.offset ?? 0)
         Task.detached { [self] in
-            var sieb: Titelsieb
-            if let altesSieb {
-                sieb = altesSieb
+            var filterRef: TitleFilter
+            if let oldFilter {
+                filterRef = oldFilter
             } else {
-                let listen = try? await client.titelsieb(quelle, filters: f.jellyfinFilter,
-                                                          istGesehen: f.istGesehen)
+                let listen = try? await client.titleFilter(source, filters: f.jellyfinFilter,
+                                                          isWatched: f.isWatched)
                 guard let listen else {
-                    aufHauptfaden {
-                        self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
-                                           items: [], gesamt: nil, gestoert: true)
+                    onMainThread {
+                        self.gridResponse(was, since: since, job: job, state: state,
+                                           items: [], total: nil, disrupted: true)
                     }
                     return
                 }
-                sieb = listen
+                filterRef = listen
             }
-            var neu: [Item] = []
-            var versatz = start
-            var roh = 0
-            var gescheitert = false
+            var new: [Item] = []
+            var offset = start
+            var raw = 0
+            var failed = false
             repeat {
-                guard let seite = try? await client.items(parentID: nil,
-                                                          limit: seitengroesse,
-                                                          startIndex: versatz,
-                                                          sortBy: sort.feld,
-                                                          sortOrder: quelle.richtung(sort),
+                guard let page = try? await client.items(parentID: nil,
+                                                          limit: pagesSize,
+                                                          startIndex: offset,
+                                                          sortBy: sort.inputField,
+                                                          sortOrder: source.bearing(sort),
                                                           filters: f.jellyfinFilter,
-                                                          istGesehen: f.istGesehen,
-                                                          recursive: quelle.rekursiv,
-                                                          includeItemTypes: quelle.typen)
-                else { gescheitert = true; break }
-                neu += sieb.sieben(seite.items)
-                versatz += seite.items.count
-                roh = seite.totalRecordCount
-                if seite.items.isEmpty { break }
-            } while neu.count < seitengroesse / 2 && versatz < roh
-            let fertigesSieb = sieb
-            let (neu_, versatz_, roh_, gescheitert_) = (neu, versatz, roh, gescheitert)
-            aufHauptfaden {
-                let (neu, versatz, roh, gescheitert) = (neu_, versatz_, roh_, gescheitert_)
-                guard self.kontowechsel == stand, self.rasterAuftrag[was] == auftrag else { return }
-                if !gescheitert {
-                    self.rasterSieb[was] = fertigesSieb
-                    self.rasterRoh[was] = (versatz, roh)
+                                                          isWatched: f.isWatched,
+                                                          recursive: source.recursive,
+                                                          includeItemTypes: source.types)
+                else { failed = true; break }
+                new += filterRef.seven(page.items)
+                offset += page.items.count
+                raw = page.totalRecordCount
+                if page.items.isEmpty { break }
+            } while new.count < pagesSize / 2 && offset < raw
+            let readyFilter = filterRef
+            let (new_, offset_, raw_, failed_) = (new, offset, raw, failed)
+            onMainThread {
+                let (new, offset, raw, failed) = (new_, offset_, raw_, failed_)
+                guard self.accountSwitch == state, self.gridJob[was] == job else { return }
+                if !failed {
+                    self.gridFilter[was] = readyFilter
+                    self.gridRaw[was] = (offset, raw)
                 }
-                self.rasterAntwort(was, ab: ab, auftrag: auftrag, stand: stand,
-                                   items: neu, gesamt: fertigesSieb.gesamt,
-                                   gestoert: gescheitert && neu.isEmpty)
+                self.gridResponse(was, since: since, job: job, state: state,
+                                   items: new, total: readyFilter.total,
+                                   disrupted: failed && new.isEmpty)
             }
         }
     }
 
-    /// **Gesucht wird beim Tippen, nicht auf Enter.**
+    /// **Searches while typing, not on Enter.**
     ///
-    /// Auf dem Mac hängt die Suche an `.task(id: begriff)`: ab zwei Zeichen
-    /// wartet sie 280 ms und bricht ab, sobald weitergetippt wird. Ein
-    /// Tastendruck als Auslöser wäre eine Abweichung ohne Grund — Eingabeart
-    /// und Entfernung sind hier dieselben wie dort.
+    /// On macOS the search hangs on `.task(id: term)`: from two characters it waits 280 ms and cancels as soon as typing continues. A keypress as trigger would be a deviation without reason; input type and distance are the same as there.
     ///
-    /// GTK hat kein `Task.isCancelled` für Signale, also zählt ein Takt mit:
-    /// nach der Wartezeit sucht nur, wer noch der jüngste ist. Der Vergleich
-    /// läuft über ``aufHauptfaden`` und damit auf demselben Faden, auf dem
-    /// auch hochgezählt wird — sonst wäre es ein Wettlauf.
-    private func sucheAngestossen() {
-        suchtakt += 1
-        let meins = suchtakt
-        let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
-            rasterFuellen(suchraster, [])
-            gtk_widget_set_visible(suchleer, 0)
-            gtk_widget_set_visible(suchstoerung, 0)
-            seerrTrefferZeigen([])
-            // Feld leer heisst: „Zuletzt gesucht" kommt zurueck.
-            suchverlaufZeigen()
+    /// GTK has no `Task.isCancelled` for signals, so a counter is kept: after the wait only the latest one searches. The comparison runs through `onMainThread`, on the same thread that increments, otherwise it would be a race.
+    private func searchTriggered() {
+        searchTick += 1
+        let mine = searchTick
+        let term = text(searchField).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard DisplayRules.searchTermFits(term) else {
+            gridFill(searchGrid, [])
+            gtk_widget_set_visible(searchEmpty, 0)
+            gtk_widget_set_visible(searchDisturbance, 0)
+            seerrHitShow([])
+            // Empty field means "Zuletzt gesucht" comes back.
+            searchHistoryShow()
             return
         }
         Task.detached { [self] in
-            // 300 ms — `Sources/macOS/SucheView.swift:188`. Hier standen 280,
-            // und der Kommentar darueber nannte sie sogar als Mac-Wert.
+            // 300 ms, as in `Sources/macOS/SearchView.swift:188`.
             try? await Task.sleep(nanoseconds: 300_000_000)
-            aufHauptfaden {
-                guard self.suchtakt == meins else { return }
-                self.suchen(meins)
+            onMainThread {
+                guard self.searchTick == mine else { return }
+                self.searching(mine)
             }
         }
     }
 
-    /// **Der eigene Server zuerst, Seerr danach — in zwei Schritten.**
+    /// **Own server first, Seerr afterwards, in two steps.**
     ///
-    /// Beides in einem Zug abzuwarten hiesse, die eigene Bibliothek so lange
-    /// leer zu lassen, wie ein fremder Dienst braucht. Seerr steht auf einem
-    /// anderen Rechner und kann Sekunden brauchen oder gar nicht antworten;
-    /// die eigenen Treffer sind in Millisekunden da und werden sofort
-    /// gezeigt. Die Zeile darunter kommt nach, wenn sie kommt.
+    /// Waiting for both at once would leave the own library empty for as long as a foreign service needs. Seerr runs on another machine and may take seconds or not answer; the own results arrive in milliseconds and are shown at once. The row below follows when it arrives.
     ///
-    /// **Der Takt wird auch nach dem Warten geprueft**, nicht nur davor. Beim
-    /// eigenen Server war das lange folgenlos, weil er schneller antwortet,
-    /// als jemand tippt. Seerr ist es nicht: ohne die Pruefung malt die
-    /// Antwort auf „Herr" die Treffer unter „Herr der Ringe".
-    /// Baut „Zuletzt gesucht" neu und blendet den Block aus, wenn er leer ist
-    /// oder gerade gesucht wird.
-    private var suchverlaufSchluessel: String {
-        Suchverlauf.schluessel(konto: bund?.aktives.kontoschluessel)
+    /// **The counter is also checked after the wait**, not only before. For the own server this had no effect for a long time because it answers faster than anyone types. Seerr does not: without the check, the answer for "Herr" paints its results under "Herr der Ringe".
+    /// Rebuilds "Zuletzt gesucht" and hides the block when it is empty or a search is running.
+    private var searchHistoryKey: String {
+        SearchHistory.key(account: bundle?.activeOne.accountKey)
     }
 
-    /// „Zuletzt gesucht" des aktiven Kontos. Fehlt ihm ein Eintrag, erbt es
-    /// einmal den gemeinsamen von früher (wie am Mac).
-    func suchverlaufLesen() -> String {
-        let schluessel = suchverlaufSchluessel
-        if let roh = wahlen.suchverlaufJeKonto[schluessel] { return roh }
-        guard schluessel != Suchverlauf.schluessel else { return wahlen.suchverlauf }
-        wahlen.suchverlaufJeKonto[schluessel] = wahlen.suchverlauf
-        return wahlen.suchverlauf
+    /// "Zuletzt gesucht" of the active account. If it has no entry, it inherits the former shared one once (as on macOS).
+    func searchHistoryRead() -> String {
+        let key = searchHistoryKey
+        if let raw = selection.searchHistoryPerAccount[key] { return raw }
+        guard key != SearchHistory.key else { return selection.searchHistory }
+        selection.searchHistoryPerAccount[key] = selection.searchHistory
+        return selection.searchHistory
     }
 
-    func suchverlaufSetzen(_ neu: String) {
-        let schluessel = suchverlaufSchluessel
-        if schluessel == Suchverlauf.schluessel { wahlen.suchverlauf = neu }
-        wahlen.suchverlaufJeKonto[schluessel] = neu
+    func searchHistorySet(_ new: String) {
+        let key = searchHistoryKey
+        if key == SearchHistory.key { selection.searchHistory = new }
+        selection.searchHistoryPerAccount[key] = new
     }
 
-    /// Begriff, Treffer und Störung gehören dem vorigen Konto (Mac: `onChange`
-    /// von `kontowechsel` in `SucheView`).
-    func suchergebnisseVerwerfen() {
-        guard suchraster != nil else { return }
-        suchtakt += 1
-        if suchfeld != nil { gtk_editable_set_text(OpaquePointer(suchfeld), "") }
-        rasterFuellen(suchraster, [])
-        eigeneTrefferLeer = false
-        seerrTrefferZeigen([])
-        if suchleer != nil { gtk_widget_set_visible(suchleer, 0) }
-        if suchstoerung != nil { leeren(suchstoerung); gtk_widget_set_visible(suchstoerung, 0) }
-        suchverlaufZeigen()
+    /// Term, results and failure belong to the previous account (macOS: `onChange` of `accountSwitch` in `SearchView`).
+    func discardSearchResults() {
+        guard searchGrid != nil else { return }
+        searchTick += 1
+        if searchField != nil { gtk_editable_set_text(OpaquePointer(searchField), "") }
+        gridFill(searchGrid, [])
+        ownHitEmpty = false
+        seerrHitShow([])
+        if searchEmpty != nil { gtk_widget_set_visible(searchEmpty, 0) }
+        if searchDisturbance != nil { wipe(searchDisturbance); gtk_widget_set_visible(searchDisturbance, 0) }
+        searchHistoryShow()
     }
 
-    func suchverlaufZeigen() {
-        guard suchverlaufliste != nil else { return }
-        let worte = Suchverlauf.liste(suchverlaufLesen())
-        let feldLeer = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        gtk_widget_set_visible(suchverlaufblock, (feldLeer && !worte.isEmpty) ? 1 : 0)
-        if suchhinweis != nil {
-            gtk_widget_set_visible(suchhinweis, (feldLeer && worte.isEmpty) ? 1 : 0)
+    func searchHistoryShow() {
+        guard searchHistoryList != nil else { return }
+        let phrases = SearchHistory.list(searchHistoryRead())
+        let fieldEmpty = text(searchField).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        gtk_widget_set_visible(searchHistoryBlock, (fieldEmpty && !phrases.isEmpty) ? 1 : 0)
+        if searchHint != nil {
+            gtk_widget_set_visible(searchHint, (fieldEmpty && phrases.isEmpty) ? 1 : 0)
         }
-        leeren(suchverlaufliste)
-        for (stelle, wort) in worte.enumerated() {
-            if stelle > 0 {
-                let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
-                gtk_widget_add_css_class(strich, "swiftly-trennlinie")
-                gtk_widget_set_size_request(strich, -1, 1)
-                gtk_widget_set_margin_start(strich, 48)
-                anhaengen(suchverlaufliste, strich)
+        wipe(searchHistoryList)
+        for (spot, word) in phrases.enumerated() {
+            if spot > 0 {
+                let stroke: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+                gtk_widget_add_css_class(stroke, "swiftly-trennlinie")
+                gtk_widget_set_size_request(stroke, -1, 1)
+                gtk_widget_set_margin_start(stroke, 48)
+                append(searchHistoryList, stroke)
             }
-            let zeile = wertezeile(symbol: "document-open-recent-symbolic", titel: wort) {
+            let row = valuesRow(symbol: "document-open-recent-symbolic", title: word) {
                 [weak self] in
                 guard let self else { return }
-                gtk_editable_set_text(OpaquePointer(self.suchfeld), wort)
-                self.suchtakt += 1
-                self.suchen(self.suchtakt)
+                gtk_editable_set_text(OpaquePointer(self.searchField), word)
+                self.searchTick += 1
+                self.searching(self.searchTick)
             }
-            anhaengen(suchverlaufliste, zeile)
+            append(searchHistoryList, row)
         }
     }
 
-    /// - Parameter merken: Ob der Begriff in „Zuletzt gesucht" landet.
+    /// - Parameter merken: Whether the term lands in "Zuletzt gesucht".
     ///
-    ///   **Nur beim Abschicken, nicht beim Tippen.** Der Aufruf stand
-    ///   unbedingt hier drin, und diese Funktion haengt auch am Taktgeber
-    ///   nach jeder Tippause: wer „Ga", „Gam", „Game" eingibt, hatte danach
-    ///   drei Eintraege im Verlauf. Auf dem Mac haengt `merken` allein am
-    ///   `abschluss` des Feldes (`SucheView.swift:101`) — genau derselbe
-    ///   Fehler ist dort schon einmal behoben worden.
-    private func suchen(_ meins: Int, merken: Bool = false) {
+    ///   **Only on submit, not while typing.** The call used to be unconditional here, and this function is also called by the timer after every typing pause: typing "Ga", "Gam", "Game" left three history entries. On macOS `merken` hangs only on the field's `completion` (`SearchView.swift:101`).
+    private func searching(_ mine: Int, remember: Bool = false) {
         guard let client else { return }
-        let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        // **Die Schwelle kommt aus dem Paket** (A7): `Anzeigeregeln`
-        // verlangt zwei Zeichen, getrimmt. Hier stand `!begriff.isEmpty` —
-        // ein einzelner Buchstabe loeste damit eine Serveranfrage aus, auf
-        // dem Mac nicht. Der Taktgeber prueft es zwar auch, aber Enter und
-        // ein Klick auf einen Verlaufseintrag laufen an ihm vorbei.
-        guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
-            rasterFuellen(suchraster, [])
-            suchverlaufZeigen()
+        let term = text(searchField).trimmingCharacters(in: .whitespacesAndNewlines)
+        // **The threshold comes from the package**: `DisplayRules` requires two characters, trimmed. This used `!term.isEmpty`, so a single letter triggered a server request, unlike on macOS. The timer checks it too, but Enter and a click on a history entry bypass it.
+        guard DisplayRules.searchTermFits(term) else {
+            gridFill(searchGrid, [])
+            searchHistoryShow()
             return
         }
-        if merken {
-            suchverlaufSetzen(Suchverlauf.merken(begriff, in: suchverlaufLesen()))
-            wahlen.sichern()
+        if remember {
+            searchHistorySet(SearchHistory.remember(term, in: searchHistoryRead()))
+            selection.secure()
         }
-        suchverlaufZeigen()
-        let seerr = seerrclient
+        searchHistoryShow()
+        let seerr = seerrClient
         Task.detached { [self] in
-            let antwort = try? await client.suche(begriff)
-            let treffer = Listenregeln.ohneDoppelte(antwort ?? [])
-            aufHauptfaden {
-                guard self.suchtakt == meins else { return }
-                self.rasterFuellen(self.suchraster, treffer, auskunft: true)
-                self.suchstoerungZeigen(antwort == nil, meins: meins)
-                // **Beide leer, nicht nur die Bibliothek.** Stuende hier nur
-                // `treffer.isEmpty`, gewaenne dieser Zweig, sobald der eigene
-                // Server nichts hat — und „Nichts gefunden" stuende ueber den
-                // Seerr-Treffern, also genau ueber dem Fall, fuer den die
-                // ganze Anbindung gebaut ist. Der Seerr-Teil antwortet
-                // spaeter und blendet dann nach.
-                // Gestoert zaehlt nicht als leer — sonst setzte der
-                // Seerr-Teil „Nichts gefunden" ueber die Stoerung.
-                self.eigeneTrefferLeer = antwort != nil && treffer.isEmpty
-                gtk_widget_set_visible(self.suchleer,
-                                       self.eigeneTrefferLeer && self.seerrTrefferLeer ? 1 : 0)
-                self.seerrTrefferZeigen([])
+            let answer = try? await client.search(term)
+            let hit = ListRules.withoutDouble(answer ?? [])
+            onMainThread {
+                guard self.searchTick == mine else { return }
+                self.gridFill(self.searchGrid, hit, inquiry: true)
+                self.searchDisturbanceShow(answer == nil, mine: mine)
+                // **Both empty, not only the library.** With only `hit.isEmpty`, this branch would win as soon as the own server has nothing, and "Nichts gefunden" would stand above the Seerr results, exactly the case the integration exists for. The Seerr part answers later and fades in.
+                // Failed does not count as empty; otherwise the Seerr part would put "Nichts gefunden" above the failure.
+                self.ownHitEmpty = answer != nil && hit.isEmpty
+                gtk_widget_set_visible(self.searchEmpty,
+                                       self.ownHitEmpty && self.seerrHitEmpty ? 1 : 0)
+                self.seerrHitShow([])
             }
             guard let seerr else { return }
-            let fremde = await seerr.suchen(begriff)
-            aufHauptfaden {
-                guard self.suchtakt == meins else { return }
-                self.seerrTrefferZeigen(fremde)
-                // Gefunden ist gefunden, auch wenn es woanders liegt — wie
-                // auf dem Mac verdraengen Seerr-Treffer auch die Stoerung.
-                if !fremde.isEmpty {
-                    gtk_widget_set_visible(self.suchleer, 0)
-                    gtk_widget_set_visible(self.suchstoerung, 0)
+            let foreignOnes = await seerr.searching(term)
+            onMainThread {
+                guard self.searchTick == mine else { return }
+                self.seerrHitShow(foreignOnes)
+                // Found is found, even if it is elsewhere; as on macOS, Seerr results also displace the failure.
+                if !foreignOnes.isEmpty {
+                    gtk_widget_set_visible(self.searchEmpty, 0)
+                    gtk_widget_set_visible(self.searchDisturbance, 0)
                 }
             }
         }
     }
 
-    private func suchstoerungZeigen(_ gestoert: Bool, meins: Int) {
-        leeren(suchstoerung)
-        gtk_widget_set_visible(suchstoerung, gestoert ? 1 : 0)
-        guard gestoert else { return }
-        anhaengen(suchstoerung, stoerzustand { [weak self] in
-            guard let self, self.suchtakt == meins else { return }
-            self.suchen(meins)
+    private func searchDisturbanceShow(_ disrupted: Bool, mine: Int) {
+        wipe(searchDisturbance)
+        gtk_widget_set_visible(searchDisturbance, disrupted ? 1 : 0)
+        guard disrupted else { return }
+        append(searchDisturbance, disturbState { [weak self] in
+            guard let self, self.searchTick == mine else { return }
+            self.searching(mine)
         })
     }
 
-    /// **Genres als Chips, ganz oben** — ein Einstieg, kein Inhalt: ein Klick
-    /// öffnet das Genre.
+    /// **Genres as chips, at the very top**: an entry point, not content; a click opens the genre.
     ///
-    /// **Eckig, nicht rund.** Ecke wie ein Knopf; rund ist, was ein Bild ist
-    /// (E26). Die Namen kommen vom Server und laufen deshalb nie durch die
-    /// Übersetzung (E7).
-    private func gattungschipsZeigen(_ namen: [String]) {
-        gattungschips = namen
+    /// **Rectangular, not round.** Corner like a button; round is for images. The names come from the server and therefore never pass through translation.
+    private func genreChipsShow(_ names: [String]) {
+        genreChips = names
     }
 
-    private func gattungschipzeile() -> Widget! {
+    private func genreChipRow() -> Widget! {
         let scroller = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        gtk_widget_set_margin_start(reihe, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(reihe, Int32(Stil.randAbstand))
-        for name in gattungschips {
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_start(rail, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(rail, Int32(Theme.edgeSpacing))
+        for name in genreChips {
             let chip: Widget! = gtk_button_new_with_label(name)
             gtk_widget_add_css_class(chip, "swiftly-gattungschip")
-            beiSignal(chip, "clicked") { [weak self] in self?.gattungOeffnen(name) }
-            anhaengen(reihe, chip)
+            signal(chip, "clicked") { [weak self] in self?.genreOpen(name) }
+            append(rail, chip)
         }
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
-        gtk_widget_set_margin_top(reihe, 4)
-        gtk_widget_set_margin_bottom(reihe, 4)
-        // 34 hoch und 120 je Stueck — `Blätterreihe(breiteJeStueck: 120,
-        // bildHoehe: 34)` auf dem Mac. **Feste Hoehe 42** (4 + 34 + 4), aus
-        // demselben Grund wie bei der Reihe.
-        let flaeche = blaetterflaeche(scroller, bildHoehe: 34, stueck: 120)
-        gtk_widget_set_size_request(flaeche, -1, 42)
-        gtk_widget_set_vexpand(flaeche, 0)
-        return flaeche
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), rail)
+        gtk_widget_set_margin_top(rail, 4)
+        gtk_widget_set_margin_bottom(rail, 4)
+        // 34 high and 120 each: `Blätterreihe(widthJePiece: 120, imageHeight: 34)` on macOS. **Fixed height 42** (4 + 34 + 4), for the same reason as for the row.
+        let area = sheetsArea(scroller, imageHeight: 34, piece: 120)
+        gtk_widget_set_size_request(area, -1, 42)
+        gtk_widget_set_vexpand(area, 0)
+        return area
     }
 
-    func reihenZeigen(_ reihen: [Startreihenzeile], gestoert: Bool = false,
-                      gestaffelt: Bool = false) {
-        // **Waehrend das Profilbild fliegt, warten die Reihen** (Entwurf D,
-        // iOS „wechsel 5"): sie kommen erst nach dem Tausch, gestaffelt.
-        if let flug = kontoflug, flug.reihenHalten {
-            flug.wartendeReihen = (reihen, gestoert)
+    func railsShow(_ rails: [StartRailsRow], disrupted: Bool = false,
+                      staggered: Bool = false) {
+        // **While the profile picture flies, the rows wait** (iOS "wechsel 5"): they arrive only after the swap, staggered.
+        if let transition = accountTransition, transition.holdRails {
+            transition.waitingRails = (rails, disrupted)
             return
         }
-        let gestaffelt = gestaffelt || kontoflugStaffelNachzuegler
-        kontoflugStaffelNachzuegler = false
-        letzteStartreihe = reihen.first?.2 ?? []
-        leeren(reihenstapel)
-        // **Die Chips kommen mit** — als erste im Takt, wie am Mac
-        // (`gattungschips.reihenauftritt(0, …)`). Vorher standen sie nach dem
-        // Kontowechsel schlagartig da, während die Reihen darunter einflogen.
-        var takt = 0
-        if !gattungschips.isEmpty {
-            let chips = gattungschipzeile()
-            anhaengen(reihenstapel, chips)
-            if gestaffelt { reiheAuftreten(chips, nummer: 0) }
-            takt = 1
+        let staggered = staggered || accountTransitionSeasonPostGl
+        accountTransitionSeasonPostGl = false
+        lastStartRail = rails.first?.2 ?? []
+        wipe(railsStack)
+        // **The chips come along** as the first in the sequence, as on macOS (`genreChips.railEntrance(0, …)`). Before, after an account switch they appeared abruptly while the rows below flew in.
+        var tick = 0
+        if !genreChips.isEmpty {
+            let chips = genreChipRow()
+            append(railsStack, chips)
+            if staggered { railOccur(chips, number: 0) }
+            tick = 1
         }
-        // **Gestoert ist nicht leer** (Mac 6d7f6478): ein Server, der nicht
-        // antwortet, bekommt die Serverformel und „Erneut versuchen" — nicht
-        // „Hier ist noch nichts". Eine falsche Diagnose schickt einen zum
-        // Server statt zum Netz.
-        if reihen.isEmpty, gestoert {
-            anhaengen(reihenstapel, stoerzustand(oben: 120) { [weak self] in
-                self?.startseiteLaden()
+        // **Failed is not empty**: a server that does not answer gets the server wording and "Erneut versuchen", not "Hier ist noch nichts". A wrong diagnosis sends the user to the server instead of the network.
+        if rails.isEmpty, disrupted {
+            append(railsStack, disturbState(top: 120) { [weak self] in
+                self?.homeLoad()
             })
             return
         }
-        guard !reihen.isEmpty else {
-            anhaengen(reihenstapel,
-                      leerzustand("mail-inbox-symbolic", uebersetzt("Hier ist noch nichts"),
-                                  uebersetzt("Sobald der Server Titel hat, stehen sie hier."),
-                                  oben: 120))
+        guard !rails.isEmpty else {
+            append(railsStack,
+                      emptyState("mail-inbox-symbolic", translated("Hier ist noch nichts"),
+                                  translated("Sobald der Server Titel hat, stehen sie hier."),
+                                  top: 120))
             return
         }
-        for (i, (titel, art, titelListe, kopf)) in reihen.enumerated() {
-            let reihe = reiheBauen(titel: titel, art: art, items: titelListe,
-                                   kopf: kopf.map { eintrag in
-                                       { [weak self] in self?.sammlungOeffnen(eintrag, art: nil) }
+        for (i, (title, art, titleList, header)) in rails.enumerated() {
+            let rail = railBuild(title: title, art: art, items: titleList,
+                                   header: header.map { entryRecord in
+                                       { [weak self] in self?.collectionOpen(entryRecord, art: nil) }
                                    })
-            anhaengen(reihenstapel, reihe)
-            if gestaffelt { reiheAuftreten(reihe, nummer: i + takt) }
+            append(railsStack, rail)
+            if staggered { railOccur(rail, number: i + tick) }
         }
     }
 
-    /// Eine waagerecht blätternde Reihe. Überschrift 20 halbfett, darunter 10
-    /// Luft — `Stil.reihe`.
+    /// A horizontally paging row. Heading 20 semibold, 10 gap below (`Theme.rail`).
     ///
-    /// **Keine Scrollleiste, sondern zwei Pfeile.** Sie erscheinen, wenn der
-    /// Zeiger über der Reihe steht, und nur auf der Seite, zu der es noch
-    /// etwas zu sehen gibt. So macht es `Blätterreihe` auf dem Mac; die
-    /// Leiste, die GTK von sich aus einblendet, lag über den Titeln.
+    /// **No scrollbar but two arrows.** They appear when the pointer is over the row, and only on the side where there is more to see. This is how `Blätterreihe` does it on macOS; the bar GTK shows by itself covered the titles.
     ///
-    /// Die Pfeile sitzen auf halber **Bildhöhe**, nicht auf halber Reihenhöhe:
-    /// unter jedem Bild stehen noch zwei Textzeilen, und mittig über allem
-    /// säßen sie rund 45 Punkt zu tief. Die Rechnung `4 + bildHoehe / 2 − 17`
-    /// steht wörtlich so auf dem Mac — 4 ist der senkrechte Rand der Reihe,
-    /// 17 die halbe Knopfhöhe.
-    /// - Parameter rand: Der seitliche Rand. **Null, wenn der Aufrufer schon
-    ///   einen setzt** — sonst stehen die Kacheln 48 Punkt eingerückt unter
-    ///   einer Überschrift, die bei 24 beginnt. Steht wörtlich so an
-    ///   `Blätterreihe` auf dem Mac; genau daran ist es hier aufgefallen.
-    func reiheBauen(titel: String, art: Reihenart, items: [Item],
-                    rand: Int = Stil.randAbstand, kopf: (() -> Void)? = nil) -> Widget! {
-        let quer = art == .weiterschauen
-        return reiheBauen(titel: titel,
-                          bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe,
-                          stueck: (quer ? Stil.querBreite : Stil.kachelBreite)
-                                  + Stil.kachelAbstand,
-                          rand: rand, kopf: kopf,
-                          kacheln: items.map { kachelBauen($0, art: art) })
+    /// The arrows sit at half **image height**, not half row height: under each image are two text lines, and centred over everything they would sit about 45 points too low. The formula `4 + imageHeight / 2 − 17` is taken literally from macOS: 4 is the row's vertical inset, 17 half the button height.
+    /// - Parameter rand: The side inset. **Zero if the caller already sets one**, otherwise the tiles sit 48 points in under a heading that starts at 24. Same as `Blätterreihe` on macOS.
+    func railBuild(title: String, art: RailsKind, items: [Item],
+                    margin: Int = Theme.edgeSpacing, header: (() -> Void)? = nil) -> Widget! {
+        let landscape = art == .continueWatching
+        return railBuild(title: title,
+                          imageHeight: landscape ? Theme.landscapeHeight : Theme.tileHeight,
+                          piece: (landscape ? Theme.landscapeWidth : Theme.tileWidth)
+                                  + Theme.tileSpacing,
+                          margin: margin, header: header,
+                          tiles: items.map { tileBuild($0, art: art) })
     }
 
-    /// **Dieselbe Reihe, nur nicht aus `Item`.**
+    /// **The same row, just not from `Item`.**
     ///
-    /// Ueberschrift, waagerechtes Blaettern, die beiden Pfeile beim
-    /// Schweben, das sanfte Springen um drei Kacheln — das haengt an nichts,
-    /// was ein Serverobjekt waere. Herausgezogen, als die Seerr-Seite
-    /// Besetzung und Aehnliches zeigen sollte: eine zweite Fassung davon
-    /// waere die kopierte Funktion, gegen die die Regel steht, und sie waere
-    /// prompt auseinandergelaufen.
-    func reiheBauen(titel: String, bildHoehe: Int, stueck: Int,
-                    rand: Int = Stil.randAbstand, kopf: (() -> Void)? = nil,
-                    kacheln: [Widget?]) -> Widget! {
-        // 12, nicht 10: dieselbe Rolle traegt auf der Detailseite 12 (Mac
-        // `Reihe`).
-        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
-        // **Die Reihenhoehe steht fest, sie wird nicht der Auslegung
-        // ueberlassen** (Mac 663f1a1b, `Reihe.reihenhoehe`): Titelzeile 24,
-        // 12 Abstand, 4 Rand, Bildhoehe, 8 Abstand, Textblock 32, 4 Rand. So
-        // steht unter „Weiterschauen" dieselbe Luft wie unter jeder anderen
-        // Reihe — nicht die eines Hochformat-Covers, das es dort nicht gibt —,
-        // und eine Kachel ohne Unterzeile macht die Reihe nicht niedriger.
-        // Oben ausgerichtet, damit nichts in der Mitte haengt.
-        gtk_widget_set_size_request(block, -1, Int32(24 + 12 + 4 + bildHoehe + 8 + 32 + 4))
+    /// Heading, horizontal paging, the two arrows on hover, the smooth jump by three tiles: none of that depends on anything being a server object. Extracted when the Seerr page needed to show cast and similar; a second version would be the copied function the rules forbid, and the two would have drifted apart.
+    func railBuild(title: String, imageHeight: Int, piece: Int,
+                    margin: Int = Theme.edgeSpacing, header: (() -> Void)? = nil,
+                    tiles: [Widget?]) -> Widget! {
+        // 12, not 10: the same role has 12 on the detail page (macOS `Rail`).
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 12)
+        // **The row height is fixed, not left to layout** (macOS `Rail.railsHeightValue`): title line 24, 12 gap, 4 inset, image height, 8 gap, text block 32, 4 inset. So "Weiterschauen" has the same space below as every other row, not that of a portrait cover that does not exist there, and a tile without a subline does not make the row shorter. Top-aligned, so nothing hangs in the middle.
+        gtk_widget_set_size_request(block, -1, Int32(24 + 12 + 4 + imageHeight + 8 + 32 + 4))
         gtk_widget_set_valign(block, GTK_ALIGN_START)
         gtk_widget_set_vexpand(block, 0)
 
-        let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
-        gtk_label_set_xalign(OpaquePointer(ueberschrift), 0)
-        gtk_widget_set_halign(ueberschrift, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(ueberschrift, Int32(rand))
-        gtk_widget_set_margin_end(ueberschrift, Int32(rand))
-        if let kopf {
-            // **Der Kopf ist ein Knopf, wenn die Reihe eine Seite hat**
-            // (Bibliotheksreihe): Rand und Ausrichtung wandern an den Knopf.
-            gtk_widget_set_margin_start(ueberschrift, 0)
-            gtk_widget_set_margin_end(ueberschrift, 0)
-            let knopf: Widget! = gtk_button_new()
-            gtk_widget_add_css_class(knopf, "swiftly-reihenkopf")
-            gtk_button_set_child(alsKnopf(knopf), ueberschrift)
-            gtk_widget_set_halign(knopf, GTK_ALIGN_START)
-            gtk_widget_set_margin_start(knopf, Int32(rand))
-            gtk_widget_set_margin_end(knopf, Int32(rand))
-            beiSignal(knopf, "clicked", kopf)
-            anhaengen(block, knopf)
+        let heading = label(title, style: "swiftly-reihe")
+        gtk_label_set_xalign(OpaquePointer(heading), 0)
+        gtk_widget_set_halign(heading, GTK_ALIGN_START)
+        gtk_widget_set_margin_start(heading, Int32(margin))
+        gtk_widget_set_margin_end(heading, Int32(margin))
+        if let header {
+            // **The header is a button if the row has a page** (library row): inset and alignment move to the button.
+            gtk_widget_set_margin_start(heading, 0)
+            gtk_widget_set_margin_end(heading, 0)
+            let button: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(button, "swiftly-reihenkopf")
+            gtk_button_set_child(asButton(button), heading)
+            gtk_widget_set_halign(button, GTK_ALIGN_START)
+            gtk_widget_set_margin_start(button, Int32(margin))
+            gtk_widget_set_margin_end(button, Int32(margin))
+            signal(button, "clicked", header)
+            append(block, button)
         } else {
-            anhaengen(block, ueberschrift)
+            append(block, heading)
         }
 
         let scroller = gtk_scrolled_window_new()
-        // `EXTERNAL` heisst: blättern ja, Leiste nein.
+        // `EXTERNAL` means: paging yes, bar no.
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
 
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
-        gtk_widget_set_margin_start(reihe, Int32(rand))
-        gtk_widget_set_margin_end(reihe, Int32(rand))
-        // Vier Punkt Luft, damit die wachsende Kachel oben nicht abgeschnitten
-        // wird — dieselben vier wie auf dem Mac.
-        gtk_widget_set_margin_top(reihe, 4)
-        gtk_widget_set_margin_bottom(reihe, 4)
-        for k in kacheln { anhaengen(reihe, k) }
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: Int32(Theme.tileSpacing))
+        gtk_widget_set_margin_start(rail, Int32(margin))
+        gtk_widget_set_margin_end(rail, Int32(margin))
+        // Four points of space so the growing tile is not clipped at the top; the same four as on macOS.
+        gtk_widget_set_margin_top(rail, 4)
+        gtk_widget_set_margin_bottom(rail, 4)
+        for k in tiles { append(rail, k) }
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), rail)
 
-        let ueber = blaetterflaeche(scroller, bildHoehe: bildHoehe, stueck: stueck)
+        let over = sheetsArea(scroller, imageHeight: imageHeight, piece: piece)
 
-        anhaengen(block, ueber)
+        append(block, over)
         return block
     }
 
-    /// **Die Blätterpfeile über einer waagerechten Fläche.**
+    /// **The paging arrows over a horizontal surface.**
     ///
-    /// Sie standen fest in ``reiheBauen(titel:bildHoehe:stueck:rand:kacheln:)``
-    /// und damit **nur** dort — die Genrechips oben auf der Startseite waren
-    /// ein nackter Scroller ohne Pfeile, als einzige waagerechte Reihe der
-    /// App. Auf dem Mac baut `Blätterreihe` beide (`HomeView.swift:248`).
-    private func blaetterflaeche(_ scroller: Widget!, bildHoehe: Int,
-                                 stueck: Int) -> Widget! {
-        let ueber: Widget! = gtk_overlay_new()
-        gtk_overlay_set_child(OpaquePointer(ueber), scroller)
+    /// They used to be built into `railBuild(title:imageHeight:piece:rand:tiles:)` and therefore existed **only** there; the genre chips at the top of the home page were a bare scroller without arrows, the only horizontal row in the app. On macOS `Blätterreihe` builds both (`HomeView.swift:248`).
+    private func sheetsArea(_ scroller: Widget!, imageHeight: Int,
+                                 piece: Int) -> Widget! {
+        let over: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(over), scroller)
 
-        let links = pfeilknopf("go-previous-symbolic", oben: bildHoehe, rechts: false)
-        let rechts = pfeilknopf("go-next-symbolic", oben: bildHoehe, rechts: true)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), links)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), rechts)
+        let left = arrowButton("go-previous-symbolic", top: imageHeight, right: false)
+        let right = arrowButton("go-next-symbolic", top: imageHeight, right: true)
+        gtk_overlay_add_overlay(OpaquePointer(over), left)
+        gtk_overlay_add_overlay(OpaquePointer(over), right)
 
-        // Den Typ dieser Anpassung benennt niemand — er wird nur gereicht.
-        // Ausgepackt gleich hier: sie ist bei einem Scroller nie null, und der
-        // Übersetzer hat gefragt.
-        let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
-        var schwebt = false
+        // Nobody names the type of this adjustment, it is only passed on. Unwrapped right here: it is never null for a scroller, and the translator asked.
+        let adjustment = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
+        var hovers = false
 
-        // **Einblenden, nicht erscheinen.** Auf dem Mac liegt eine
-        // `.transition(.opacity)` an den Pfeilen. Hier stand
-        // `gtk_widget_set_opacity` — und das ist die Deckung des *Widgets*,
-        // nicht die des Stilblatts: der `transition: opacity` dort griff nie,
-        // die Pfeile waren schlagartig da. Jetzt schaltet eine Klasse die
-        // CSS-Deckung, und die blendet (`Blendzeiten.pfeile`, `easeInOut`).
-        // `can_target` sorgt dafür, dass ein unsichtbarer Pfeil auch keinen
-        // Klick schluckt.
-        func zeigen(_ knopf: Widget!, _ ja: Bool) {
-            if ja { gtk_widget_add_css_class(knopf, "swiftly-da") }
-            else { gtk_widget_remove_css_class(knopf, "swiftly-da") }
-            gtk_widget_set_can_target(knopf, ja ? 1 : 0)
+        // **Fade in, do not appear.** On macOS an `.transition(.opacity)` is on the arrows. Here `gtk_widget_set_opacity` was used, which is the opacity of the *widget*, not of the stylesheet: the `transition: opacity` there never applied and the arrows were abruptly there. Now a class toggles the CSS opacity, which fades (`FadeTimes.arrows`, `easeInOut`). `can_target` makes sure an invisible arrow does not swallow a click.
+        func showItem(_ button: Widget!, _ yes: Bool) {
+            if yes { gtk_widget_add_css_class(button, "swiftly-da") }
+            else { gtk_widget_remove_css_class(button, "swiftly-da") }
+            gtk_widget_set_can_target(button, yes ? 1 : 0)
         }
-        func nachfuehren() {
-            let wert = gtk_adjustment_get_value(anpassung)
-            let seite = gtk_adjustment_get_page_size(anpassung)
-            let ganz = gtk_adjustment_get_upper(anpassung)
-            zeigen(links, schwebt && wert > 1)
-            zeigen(rechts, schwebt && wert + seite < ganz - 1)
+        func bringUpToDate() {
+            let value = gtk_adjustment_get_value(adjustment)
+            let page = gtk_adjustment_get_page_size(adjustment)
+            let whole = gtk_adjustment_get_upper(adjustment)
+            showItem(left, hovers && value > 1)
+            showItem(right, hovers && value + page < whole - 1)
         }
 
-        func blaettern(_ richtung: Double) {
-            let wert = gtk_adjustment_get_value(anpassung)
-            let seite = gtk_adjustment_get_page_size(anpassung)
-            let ganz = gtk_adjustment_get_upper(anpassung)
-            // Drei Kacheln je Griff — `schrittweite` auf dem Mac.
-            let weite = Double(stueck) * 3
-            let ziel = max(0, min(ganz - seite, wert + richtung * weite))
-            sanft(auf: scroller, von: wert, nach: ziel) {
-                gtk_adjustment_set_value(anpassung, $0)
+        func turnPages(_ bearing: Double) {
+            let value = gtk_adjustment_get_value(adjustment)
+            let page = gtk_adjustment_get_page_size(adjustment)
+            let whole = gtk_adjustment_get_upper(adjustment)
+            // Three tiles per step: `stepRange` on macOS.
+            let range = Double(piece) * 3
+            let target = max(0, min(whole - page, value + bearing * range))
+            gentle(on: scroller, from: value, to: target) {
+                gtk_adjustment_set_value(adjustment, $0)
             }
         }
 
-        beiSignal(links, "clicked") { blaettern(-1) }
-        beiSignal(rechts, "clicked") { blaettern(1) }
-        // **Nicht `edge-reached`.** Das Signal bringt die erreichte Kante mit
-        // und verschiebt damit die Nutzdaten — daran ist die App gestorben.
-        // `value-changed` an der Anpassung hat die schlichte Form und ist
-        // ohnehin das Richtige: es meldet jede Bewegung, nicht nur die ans
-        // Ende, also stimmen die Pfeile auch mitten im Blättern.
-        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "value-changed") { nachfuehren() }
-        beiZeiger(ueber, herein: { schwebt = true; nachfuehren() },
-                         hinaus: { schwebt = false; nachfuehren() })
-        nachfuehren()
-        return ueber
+        signal(left, "clicked") { turnPages(-1) }
+        signal(right, "clicked") { turnPages(1) }
+        // **Not `edge-reached`.** The signal carries the reached edge and thereby shifts the payload; the app crashed because of it. `value-changed` on the adjustment has the plain form and is the right one anyway: it reports every movement, not only at the end, so the arrows are correct mid-scroll.
+        signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") { bringUpToDate() }
+        onPointer(over, inward: { hovers = true; bringUpToDate() },
+                         out: { hovers = false; bringUpToDate() })
+        bringUpToDate()
+        return over
     }
 
-    /// Ein Blätterpfeil, oben auf halber Bildhöhe.
-    private func pfeilknopf(_ symbol: String, oben bildHoehe: Int, rechts: Bool) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-pfeil")
-        beschriften(knopf, rechts ? uebersetzt("Weiterblättern") : uebersetzt("Zurückblättern"))
-        // **Kein Tabulatorhalt.** Der Pfeil ist unsichtbar, bis der Zeiger
-        // über der Reihe steht; wer mit Tab durch die Kacheln geht, landete
-        // sonst auf einem Knopf, den er nicht sieht. Die Reihe scrollt ohnehin
-        // von selbst zur fokussierten Kachel.
-        gtk_widget_set_focusable(knopf, 0)
-        gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
-        gtk_widget_set_halign(knopf, rechts ? GTK_ALIGN_END : GTK_ALIGN_START)
-        gtk_widget_set_valign(knopf, GTK_ALIGN_START)
-        gtk_widget_set_margin_top(knopf, Int32(4 + bildHoehe / 2 - 17))
-        // Unsichtbar über das Stilblatt (`button.swiftly-pfeil`), nicht über
-        // die Widget-Deckung — sonst blendet nichts.
-        gtk_widget_set_can_target(knopf, 0)
-        return knopf
+    /// A paging arrow, at the top at half image height.
+    private func arrowButton(_ symbol: String, top imageHeight: Int, right: Bool) -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-pfeil")
+        caption(button, right ? translated("Weiterblättern") : translated("Zurückblättern"))
+        // **Not a tab stop.** The arrow is invisible until the pointer is over the row; with Tab through the tiles the focus would land on a button the user cannot see. The row scrolls to the focused tile by itself anyway.
+        gtk_widget_set_focusable(button, 0)
+        gtk_button_set_child(asButton(button), gtk_image_new_from_icon_name(symbol))
+        gtk_widget_set_halign(button, right ? GTK_ALIGN_END : GTK_ALIGN_START)
+        gtk_widget_set_valign(button, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(button, Int32(4 + imageHeight / 2 - 17))
+        // Invisible via the stylesheet (`button.swiftly-pfeil`), not via widget opacity, otherwise nothing fades.
+        gtk_widget_set_can_target(button, 0)
+        return button
     }
 
-    /// **Eine Kachel, drei Bedeutungen.** Was oben steht, was darunter, und
-    /// welches Bild — das entscheidet die Reihe, nicht die Kachel.
+    /// **One tile, three meanings.** What is on top, what below, and which image: the row decides, not the tile.
     ///
-    /// Die Zuordnung ist aus `Sources/macOS/HomeView.swift` abgeschrieben:
+    /// The mapping is copied from `Sources/macOS/HomeView.swift`:
     ///
-    /// | Reihe | Bild | Titel | Zweitzeile |
+    /// | Row | Image | Title | Second line |
     /// |---|---|---|---|
-    /// | Weiterschauen | quer, 280 × 158 | Serie | `weiterschauenzeile` (sonst `kontextzeile`) |
-    /// | Nächste Folge | Plakat der Serie | Serie | `folgenkuerzel` |
-    /// | Zuletzt hinzugefügt | Plakat | eigener Name | `neuzugangszeile` |
+    /// | Weiterschauen | landscape, 280 × 158 | series | `continueWatchingRow` (else `contextLine`) |
+    /// | Nächste Folge | series poster | series | `episodeCode` |
+    /// | Zuletzt hinzugefügt | poster | own name | `newArrivalsRow` |
     ///
-    /// Bei einer Folge steht oben der **Serienname**, nicht der Folgentitel.
-    /// Andersherum war es hier zuerst, und dann steht unter einem Standbild
-    /// „Lilien in der Wüste", wo auf dem Mac „The Mentalist" steht.
-    private func kachelBauen(_ item: Item, art: Reihenart) -> Widget! {
-        let quer = art == .weiterschauen
-        let breite = quer ? Stil.querBreite : Stil.kachelBreite
-        let hoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
+    /// For an episode the **series name** is on top, not the episode title. It was the other way round at first, which shows "Lilien in der Wüste" under a still where macOS shows "The Mentalist".
+    private func tileBuild(_ item: Item, art: RailsKind) -> Widget! {
+        let landscape = art == .continueWatching
+        let width = landscape ? Theme.landscapeWidth : Theme.tileWidth
+        let height = landscape ? Theme.landscapeHeight : Theme.tileHeight
 
-        let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe,
-                                           stil: "swiftly-plakat")
-        // **Welches Bild, entscheidet `Bildwahl` im Paket.** Bei einer Folge
-        // hochkant das Plakat der Serie, quer der Hintergrund der Serie mit
-        // vier Rückfällen dahinter. Die Begründung zu jeder Stufe steht dort,
-        // mit Tests.
+        let (cage, image) = framedImage(width: width, height: height,
+                                           style: "swiftly-plakat")
+        // **Which image is decided by `ImageSelection`** in the package. For an episode, portrait uses the series poster, landscape the series backdrop with four fallbacks behind it. The reasoning for each step is there, with tests.
         //
-        // Und darunter liegt noch eine Stufe, die aus
-        // `Sources/Shared/HomeView.swift` stammt: **fehlt das Querbild ganz,
-        // tritt das Plakat ein** — beschnitten, aber immer noch das Cover und
-        // kein Standbild.
-        let hoch = adressen.flatMap {
-            Bildwahl.hochkant(item, adressen: $0, maxHoehe: Skalierung.anfragekante(hoehe))
+        // Below that is one more step from `Sources/Shared/HomeView.swift`: **if the landscape image is missing entirely, the poster steps in**; cropped, but still the cover and not a still frame.
+        let up = addresses.flatMap {
+            ImageSelection.portrait(item, addresses: $0, maxHeight: Scaling.requestEdge(height))
         }
-        let adresse: URL? = quer
-            ? (adressen.flatMap { Bildwahl.quer(item, adressen: $0, breite: Skalierung.anfragekante(breite))?.url } ?? hoch)
-            : hoch
-        if let adresse {
-            // Doppelte Kachelkante — oder unter der Huelle genau die
-            // Geraetepunkte, siehe ``Skalierung/bildkante(_:)``.
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: Skalierung.bildkante(max(breite, hoehe)),
-                      ersatzSerie: item.seriesId != nil || item.type == "Series")
+        let address: URL? = landscape
+            ? (addresses.flatMap { ImageSelection.landscape(item, addresses: $0, width: Scaling.requestEdge(width))?.url } ?? up)
+            : up
+        if let address {
+            // Double tile edge, or under the shell exactly the device points, see `Skalierung/imageEdge(_:)`.
+            imageLoad(image, url: address, key: ImageKey.of(address),
+                      border: Scaling.imageEdge(max(width, height)),
+                      fallbackSeries: item.seriesId != nil || item.type == "Series")
         } else {
-            zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
+            characterPut(cage, series: item.seriesId != nil || item.type == "Series")
         }
 
-        let (oben, unten): (String, String?) = switch art {
-        // **Mit der Restzeit** (iOS fbe14aa0, Entwurf D): „S2 · F5 · noch
-        // 12 Min.", beim Film „noch 1 Std. 4 Min." — an der Stelle der
-        // leisen Zeile, das Bild bleibt frei. Ohne Stand die gewohnte Zeile.
-        case .weiterschauen: (item.seriesName ?? item.name, item.weiterschauenzeile ?? item.kontextzeile)
-        case .naechste:      (item.seriesName ?? item.name, item.folgenkuerzel)
-        case .neu:           (item.name, item.neuzugangszeile)
+        let (top, bottom): (String, String?) = switch art {
+        // **With the remaining time**: "S2 · F5 · noch 12 Min.", for a movie "noch 1 Std. 4 Min.", in place of the quiet line; the image stays free. Without a position, the usual line.
+        case .continueWatching: (item.seriesName ?? item.name, item.continueWatchingRow ?? item.contextLine)
+        case .next:      (item.seriesName ?? item.name, item.episodeCode)
+        case .new:           (item.name, item.newArrivalsRow)
         }
 
-        // Der Fortschrittsbalken liegt **in** der Bildhülle, unten, wie auf
-        // dem Mac — auf jeder Kachel mit gesehenem Anteil, quer wie
-        // hochkant, und nur, wenn „Fortschritt auf Kacheln" an ist (M8,
-        // `macOS/Macbausteine.swift`, `Bildflaeche`). Hier stand vorher, der
-        // Mac zeichne ihn auf der Querkachel immer; das stimmt nicht mehr.
-        if wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
-            balkenLegen(kaefig, breite: breite, anteil: anteil)
+        // The progress bar lies **inside** the image shell, at the bottom, as on macOS: on every tile with a watched portion, landscape or portrait, and only if "Fortschritt auf Kacheln" is on (`macOS/MacComponents.swift`, `ImageArea`).
+        if selection.progressOnTiles, let share = item.watchedShare {
+            barPut(cage, width: width, share: share)
         }
-        // **Die Plakette gehört auf jede hochkante Kachel** (E16) — Haken,
-        // offene Folgen oder Staffelzahl. Auf der Querkachel nicht: dort steht
-        // der Balken, und beides zusammen wäre zweimal dieselbe Auskunft.
-        if !quer { kachelmarkeLegen(kaefig, item: item) }
-        // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).
-        // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
-        // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
-        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten,
-                            name: kachelname(item, oben: oben, unten: unten),
-                            menue: Kachelmenueangabe(
-                                item: item, quer: quer, bild: adresse, kante: Skalierung.bildkante(max(breite, hoehe)),
-                                weiterschauen: art == .weiterschauen,
-                                uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil),
-                            vorholen: { [weak self] in
-                                self?.serieVorholen(item)
-                                self?.planVorholenBald(item)
+        // **The badge belongs on every portrait tile**: check mark, open episodes or season count. Not on the landscape tile: there the bar is shown, and both together would be the same information twice.
+        if !landscape { tileMarkPut(cage, item: item) }
+        // **Only "Weiterschauen" jumps straight into playback.** "Nächste Folge" and "Zuletzt hinzugefügt" open the overview; what has not been started is first looked at.
+        return tileWrapper(image: cage, width: width, top: top, bottom: bottom,
+                            name: tileName(item, top: top, bottom: bottom),
+                            menu: TileMenuDetail(
+                                item: item, landscape: landscape, image: address, border: Scaling.imageEdge(max(width, height)),
+                                continueWatching: art == .continueWatching,
+                                overview: landscape ? { [weak self] in self?.openIt(item) } : nil),
+                            prefetch: { [weak self] in
+                                self?.seriesPrefetch(item)
+                                self?.planPrefetchBald(item)
                             }) {
             [weak self] in
             guard let self else { return }
-            if quer { self.starte(item) } else { self.oeffne(item) }
+            if landscape { self.launch(item) } else { self.openIt(item) }
         }
     }
 
-    /// **Die Serie zu einer Folge schon holen, bevor jemand klickt.**
+    /// **Fetch the series for an episode before anyone clicks.**
     ///
-    /// Auf dem Schreibtisch liegt der Zeiger immer erst auf der Kachel; der
-    /// Mac nutzt das (`Serienspeicher.vorholen`, Begruendung in
-    /// `Sources/Shared/Serienspeicher.swift:100-124`). Auf Linux fehlte es,
-    /// und ein Klick auf eine Weiterschauen-Kachel stand bis zu zwei
-    /// nacheinander laufende Abrufe lang still.
+    /// On a desktop the pointer is always on the tile before clicking; macOS uses this (`SeriesCache.prefetch`, reasoning in `Sources/Shared/SeriesCache.swift:100-124`). Linux lacked it, and a click on a Weiterschauen tile was unresponsive for up to two sequential requests.
     ///
-    /// **Hoechstens einer je Serie, und nur einmal.** `serienspeicher` haelt,
-    /// was schon da ist; `serienlauf` verhindert, dass ein zweites Ueberfahren
-    /// denselben Abruf noch einmal startet.
-    private func serieVorholen(_ item: Item) {
-        guard item.type == "Episode", let serie = item.seriesId, let client else { return }
-        guard vollspeicher[serie] == nil, !vorholend.contains(serie) else { return }
-        vorholend.insert(serie)
+    /// **At most one per series, and only once.** `serienspeicher` holds what is already there; `serienlauf` prevents a second hover from starting the same request again.
+    private func seriesPrefetch(_ item: Item) {
+        guard item.type == "Episode", let series = item.seriesId, let client else { return }
+        guard fullCache[series] == nil, !prefetching.contains(series) else { return }
+        prefetching.insert(series)
         Task.detached { [self] in
-            let geholt = try? await client.item(id: serie)
-            aufHauptfaden {
-                self.vorholend.remove(serie)
-                if let geholt { self.vollspeicher[serie] = geholt }
+            let fetched = try? await client.item(id: series)
+            onMainThread {
+                self.prefetching.remove(series)
+                if let fetched { self.fullCache[series] = fetched }
             }
         }
     }
 
-    /// Eine Kachel im Raster — Plakat, Name, Jahr.
+    /// A tile in the grid: poster, name, year.
     ///
-    /// **Sie behält ihre Breite.** Eine `GtkFlowBox` dehnt ihre Kinder über
-    /// die Zeile; wer das Fenster zog, sah die Plakate mitwachsen und in
-    /// krummen Massen stehen, während sie auf der Startseite fest bei 150
-    /// bleiben. Der Mac legt dort ein `LazyVGrid` mit **fester** Spaltenweite
-    /// an — der Platz, der übrig bleibt, geht in den Abstand, nicht in die
-    /// Kachel. Mittig ausgerichtet kommt genau das heraus.
-    private func rasterkachel(_ item: Item, auskunft: Bool = false,
-                              wache: Kachelbildwache? = nil) -> Widget! {
-        let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
-                                           hoehe: Stil.kachelHoehe,
-                                           stil: "swiftly-plakat")
-        if let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
-                                                              maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }) {
-            bildLaden(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                      kante: Skalierung.bildkante(Stil.kachelHoehe),
-                      ersatzSerie: item.seriesId != nil || item.type == "Series")
-            wache?.aufnehmen(bild, url: adresse, schluessel: Bildschluessel.fuer(adresse),
-                             kante: Skalierung.bildkante(Stil.kachelHoehe))
+    /// **It keeps its width.** A `GtkFlowBox` stretches its children across the row; resizing the window made the posters grow to odd sizes, while on the home page they stay at 150. macOS uses a `LazyVGrid` with a **fixed** column width: leftover space goes into the gap, not the tile. Centre alignment gives exactly that.
+    private func gridTile(_ item: Item, inquiry: Bool = false,
+                              sentry: TileImageGuard? = nil) -> Widget! {
+        let (cage, image) = framedImage(width: Theme.tileWidth,
+                                           height: Theme.tileHeight,
+                                           style: "swiftly-plakat")
+        if let address = addresses.flatMap({ ImageSelection.portrait(item, addresses: $0,
+                                                              maxHeight: Scaling.requestEdge(Theme.tileHeight)) }) {
+            imageLoad(image, url: address, key: ImageKey.of(address),
+                      border: Scaling.imageEdge(Theme.tileHeight),
+                      fallbackSeries: item.seriesId != nil || item.type == "Series")
+            sentry?.record(image, url: address, key: ImageKey.of(address),
+                             border: Scaling.imageEdge(Theme.tileHeight))
         } else {
-            zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
+            characterPut(cage, series: item.seriesId != nil || item.type == "Series")
         }
-        // **Die Plakette fehlte hier ganz** (E16): im Suchraster und in jedem
-        // Bibliotheksraster stand keine Auskunft, ob ein Titel gesehen ist
-        // oder wie viele Folgen offen sind.
-        kachelmarkeLegen(kaefig, item: item)
-        // Angefangene Titel in Bibliothek, Genre und Suche (M8), wie der Mac.
-        if wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
-            balkenLegen(kaefig, breite: Stil.kachelBreite, anteil: anteil)
+        // **The badge was missing here entirely**: the search grid and every library grid showed no information about whether a title is watched or how many episodes are open.
+        tileMarkPut(cage, item: item)
+        // Started titles in library, genre and search, as on macOS.
+        if selection.progressOnTiles, let share = item.watchedShare {
+            barPut(cage, width: Theme.tileWidth, share: share)
         }
-        // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
-        // keiner startet (A7b).
-        let unten: String? = auskunft ? item.trefferauskunft : item.productionYear.map(String.init)
-        let adresse = adressen.flatMap { Bildwahl.hochkant(item, adressen: $0,
-                                                           maxHoehe: Skalierung.anfragekante(Stil.kachelHoehe)) }
-        let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
-                                  oben: item.name, unten: unten,
-                                  name: kachelname(item, oben: item.name, unten: unten),
-                                  menue: Kachelmenueangabe(item: item, bild: adresse,
-                                                           kante: Skalierung.bildkante(Stil.kachelHoehe)),
-                                  vorholen: { [weak self] in self?.planVorholenBald(item) }) {
-            [weak self] in self?.oeffne(item)
+        // Every search hit and every tile in the grid leads to the page; none starts playback.
+        let bottom: String? = inquiry ? item.hitInfo : item.productionYear.map(String.init)
+        let address = addresses.flatMap { ImageSelection.portrait(item, addresses: $0,
+                                                           maxHeight: Scaling.requestEdge(Theme.tileHeight)) }
+        let tile = tileWrapper(image: cage, width: Theme.tileWidth,
+                                  top: item.name, bottom: bottom,
+                                  name: tileName(item, top: item.name, bottom: bottom),
+                                  menu: TileMenuDetail(item: item, image: address,
+                                                           border: Scaling.imageEdge(Theme.tileHeight)),
+                                  prefetch: { [weak self] in self?.planPrefetchBald(item) }) {
+            [weak self] in self?.openIt(item)
         }
-        gtk_widget_set_halign(kachel, GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
-        return kachel
+        gtk_widget_set_halign(tile, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(tile, GTK_ALIGN_START)
+        return tile
     }
 
-    /// **Die Hülle jeder Kachel — und sie ist ein Knopf.**
+    /// **The shell of every tile, and it is a button.**
     ///
-    /// Nicht wegen des Klicks (den gibt es hier noch gar nicht), sondern weil
-    /// GTK den Zustand `:hover` nur auf Bedienelementen führt. Auf einer
-    /// schlichten Box griffe die Vergrößerung im Stilblatt nie.
+    /// Not for the click, but because GTK keeps the `:hover` state only on controls. On a plain box the enlargement in the stylesheet would never apply.
     ///
-    /// Die Abstände stehen in `Macbausteine.Posterkachel`: **8** zwischen Bild
-    /// und Text, **1** zwischen Titel und Zweitzeile. Hier standen zuerst
-    /// beide auf 8, und der Abstand darunter war doppelt so groß wie auf dem
-    /// Mac Eine Kachel: Bild, Titel, Zweitzeile — und der Rechtsklickweg zur
-    /// Übersicht (A6).
+    /// The spacing is in `Macbausteine.PosterCell`: **8** between image and text, **1** between title and second line. Both were 8 at first, and the gap below was twice as large as on macOS. One tile: image, title, second line, and the right-click path to the overview.
     ///
-    /// **Wozu er da ist:** „Weiterschauen" springt sofort in die Wiedergabe
-    /// (A1). Wer *erst nachsehen* will, worum es geht, hat sonst keinen Weg
-    /// zur Seite. Auf dem Mac steht dafür `.contextMenu` (`Macbausteine`), auf
-    /// dem Telefon das lange Drücken; hier die rechte Taste.
+    /// **What it is for:** "Weiterschauen" jumps straight into playback. Whoever wants to *look first* has no other way to the page. macOS uses `.contextMenu` (`Macbausteine`), the phone a long press; here the right button.
     ///
-    /// `uebersicht` ist `nil`, wo die Kachel ohnehin schon dorthin führt — ein
-    /// Menü mit dem einen Eintrag, den der Klick auch tut, ist keiner.
-    /// - Parameter vorholen: Was geschieht, sobald der Zeiger die Kachel
-    ///   erreicht — siehe unten.
-    func kachelhuelle(bild: Widget!, breite: Int, oben: String, unten: String?,
+    /// `overview` is `nil` where the tile already leads there; a menu with the one entry the click also does is no menu.
+    /// - Parameter vorholen: What happens as soon as the pointer reaches the tile, see below.
+    func tileWrapper(image: Widget!, width: Int, top: String, bottom: String?,
                       name: String? = nil,
-                      menue: Kachelmenueangabe? = nil,
-                      vorholen: (() -> Void)? = nil,
-                      auswahl: @escaping () -> Void) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-kachel")
-        gtk_widget_set_valign(knopf, GTK_ALIGN_START)
+                      menu: TileMenuDetail? = nil,
+                      prefetch: (() -> Void)? = nil,
+                      pick: @escaping () -> Void) -> Widget! {
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-kachel")
+        gtk_widget_set_valign(button, GTK_ALIGN_START)
 
-        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        gtk_widget_set_size_request(kachel, Int32(breite), -1)
-        anhaengen(kachel, bild)
+        let tile = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
+        gtk_widget_set_size_request(tile, Int32(width), -1)
+        append(tile, image)
 
-        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
-        anhaengen(text, kacheltitel(oben, stil: "swiftly-kacheltitel"))
-        if let unten, !unten.isEmpty {
-            let zweite = kacheltitel(unten, stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(zweite, "dim-label")
-            anhaengen(text, zweite)
+        let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 1)
+        append(text, tileTitle(top, style: "swiftly-kacheltitel"))
+        if let bottom, !bottom.isEmpty {
+            let second = tileTitle(bottom, style: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(second, "dim-label")
+            append(text, second)
         }
-        anhaengen(kachel, text)
+        append(tile, text)
 
-        gtk_button_set_child(alsKnopf(knopf), kachel)
-        // **Ein Name für die ganze Kachel** — sonst liest die Bedienhilfe
-        // Titel und Zweitzeile als lose Stücke und den Balken gar nicht.
-        beschriften(knopf, name ?? [oben, unten].compactMap { $0 }
+        gtk_button_set_child(asButton(button), tile)
+        // **One name for the whole tile**, otherwise assistive technology reads title and second line as loose pieces and the bar not at all.
+        caption(button, name ?? [top, bottom].compactMap { $0 }
                                     .filter { !$0.isEmpty }.joined(separator: ", "))
-        beiSignal(knopf, "clicked", auswahl)
-        if let vorholen {
-            // **Vorholen beim Ueberfahren.** Auf dem Schreibtisch liegt der
-            // Zeiger immer erst auf der Kachel, bevor geklickt wird — der Mac
-            // nutzt das (`Macbausteine.swift:237-241`, Begruendung in
-            // `Serienspeicher.swift:100-124`) und holt die Serie zur Folge
-            // schon vor. Hier fehlte es ganz: ein Klick auf eine
-            // Weiterschauen-Kachel blieb bis zu zwei nacheinander laufende
-            // Abrufe lang ohne jede Reaktion.
-            beiZeiger(knopf, herein: vorholen, hinaus: { [weak self] in self?.planWunsch = nil })
+        signal(button, "clicked", pick)
+        if let prefetch {
+            // **Prefetch on hover.** On a desktop the pointer is always on the tile before clicking; macOS uses this (`MacComponents.swift:237-241`, reasoning in `SeriesCache.swift:100-124`) and fetches the series for the episode in advance. It was missing here: a click on a Weiterschauen tile had no reaction for up to two sequential requests.
+            onPointer(button, inward: prefetch, out: { [weak self] in self?.planRequest = nil })
         }
 
-        // **Rechtsklick: das Menü mit Vorschau** (``Kachelmenueangabe``,
-        // iOS-Langdruck 1.0.5). Hier stand nur „Übersicht öffnen" auf der
-        // Querkachel; das steht jetzt als „Zur Übersicht" darin.
-        if let menue { kachelmenueAnlegen(knopf, menue) }
-        return knopf
+        // **Right click: the menu with preview** (`TileMenuDetail`, like the iOS long press). Here only "Übersicht öffnen" existed on the landscape tile; it is now inside as "Zur Übersicht".
+        if let menu { tileMenuCreate(button, menu) }
+        return button
     }
 
-    /// **Eine Beschriftung zieht die Kachel sonst auf ihre Textlänge.**
+    /// **A label otherwise stretches the tile to its text length.**
     ///
-    /// `gtk_label_set_ellipsize` senkt nur die *Mindest*breite; gewünscht
-    /// bleibt die volle Zeile. In der Reihe „Weiterschauen" stand deshalb
-    /// eine Kachel von 363 Punkt neben lauter 150ern — sie trug den längsten
-    /// Titel. `max_width_chars` deckelt auch den Wunsch; die Kachel richtet
-    /// sich danach allein nach dem Bild und ihrem eigenen `size_request`.
-    private func kacheltitel(_ text: String, stil: String) -> Widget! {
-        let l = beschriftung(text, stil: stil)
+    /// `gtk_label_set_ellipsize` only lowers the *minimum* width; the preferred width stays the full line. In the "Weiterschauen" row a 363-point tile stood next to 150s because it carried the longest title. `max_width_chars` caps the preference too; the tile then depends only on the image and its own `size_request`.
+    private func tileTitle(_ text: String, style: String) -> Widget! {
+        let l = label(text, style: style)
         gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(l), 1)
         gtk_label_set_xalign(OpaquePointer(l), 0)
         return l
     }
 
-    func kopfzeileEinrichten() { kopfzeileFuellen() }
+    func headerRowSetUp() { headerRowFill() }
 }
 
-/// Der Tastenhorcher. Wie jeder C-Rückruf kann er nichts einfangen — die App
-/// kommt als Zeiger mit, so wie in ``Auftrag``.
-nonisolated(unsafe) private let tasteGedrueckt: @convention(c) (
+/// The key handler. Like any C callback it cannot capture anything; the app comes along as a pointer, as in `WorkItem`.
+nonisolated(unsafe) private let keyPressed: @convention(c) (
     UnsafeMutableRawPointer?, UInt32, UInt32, GdkModifierType, gpointer?
-) -> gboolean = { _, wert, _, zustand, daten in
-    guard let daten else { return 0 }
-    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
-    let strg = (zustand.rawValue & GDK_CONTROL_MASK.rawValue) != 0
-    return app.taste(wert, strg: strg) ? 1 : 0
+) -> gboolean = { _, value, _, condition, data in
+    guard let data else { return 0 }
+    let app = Unmanaged<App>.fromOpaque(data).takeUnretainedValue()
+    let ctrl = (condition.rawValue & GDK_CONTROL_MASK.rawValue) != 0
+    return app.keyButton(value, ctrl: ctrl) ? 1 : 0
 }
 
-/// Das Fenster soll zugehen. Wahr heisst: noch nicht, die App erledigt es
-/// selbst. Wie ``tasteGedrueckt`` kommt die App als Zeiger mit.
-nonisolated(unsafe) private let schliessenGewuenscht: @convention(c) (
+/// The window should close. True means: not yet, the app handles it itself. Like `keyPressed`, the app comes along as a pointer.
+nonisolated(unsafe) private let closeRequested: @convention(c) (
     UnsafeMutableRawPointer?, gpointer?
-) -> gboolean = { _, daten in
-    guard let daten else { return 0 }
-    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
-    app.fensterstandMerken()
-    return app.fensterSchliessenGewuenscht() ? 1 : 0
+) -> gboolean = { _, data in
+    guard let data else { return 0 }
+    let app = Unmanaged<App>.fromOpaque(data).takeUnretainedValue()
+    app.windowStateRemember()
+    return app.windowCloseRequested() ? 1 : 0
 }
 
-/// Wie sich diese App beim Server vorstellt.
+/// How this app introduces itself to the server.
 ///
-/// Die Kennung muss über Neustarts gleich bleiben — Jellyfin führt darüber
-/// die Geräteliste und die Übernahme der Wiedergabe von einem anderen Gerät.
-enum Geraet {
-    /// **Die Fassung, mit der sich diese App beim Server meldet.**
+/// The ID must stay the same across restarts; Jellyfin uses it for the device list and for handing over playback from another device.
+enum Device {
+    /// **The version this app reports to the server.**
     ///
-    /// Auf den Apple-Fassungen liest `JellyfinKit.Fassungsnummer` sie aus dem
-    /// Buendel. Hier gibt es keins — Foundation liefert dann „unbekannt", und
-    /// das stuende in Jellyfins Geraeteliste und in jedem Fehlerbericht, den
-    /// jemand von dort abschreibt.
+    /// On the Apple versions `JellyfinKit.Fassungsnummer` reads it from the bundle. There is none here, so Foundation returns "unbekannt", and that would appear in Jellyfin's device list and in every error report copied from there.
     ///
-    /// **Nicht neu getippt, sondern aus ``Fassung``.** Ich hatte die Zahl
-    /// hier ein zweites Mal hingeschrieben und es beim Bauen gemerkt — es
-    /// gibt sie laengst, mit demselben Kommentar darueber, dass sie an genau
-    /// zwei Orten stehen darf. Ein dritter waere der Anfang des
-    /// Auseinanderlaufens gewesen, und zwar an der Stelle, die das gerade
-    /// verhindern sollte.
-    static var fassung: String { "\(Fassung.nummer) (\(Fassung.bau))" }
+    /// **Not retyped but taken from `Version`.** The number exists already, with a comment above it saying it may live in exactly two places. A third would start the drift this is meant to prevent.
+    static var version: String { "\(Version.number) (\(Version.build))" }
 
     static let name: String = {
-        let rechner = ProcessInfo.processInfo.hostName
-        return String(format: uebersetzt("Swiftly auf %@"), rechner)
+        let computer = ProcessInfo.processInfo.hostName
+        return String(format: translated("Swiftly auf %@"), computer)
     }()
 
-    static let kennung: String = {
-        let ordner = URL(fileURLWithPath: NSHomeDirectory())
+    static let identifier: String = {
+        let folder = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".config/swiftly")
-        let datei = ordner.appendingPathComponent("geraet.txt")
-        if let vorhanden = try? String(contentsOf: datei, encoding: .utf8),
-           !vorhanden.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return vorhanden.trimmingCharacters(in: .whitespacesAndNewlines)
+        let file = folder.appendingPathComponent("geraet.txt")
+        if let available = try? String(contentsOf: file, encoding: .utf8),
+           !available.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return available.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let neu = UUID().uuidString
-        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
-        try? neu.write(to: datei, atomically: true, encoding: .utf8)
-        return neu
+        let new = UUID().uuidString
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? new.write(to: file, atomically: true, encoding: .utf8)
+        return new
     }()
 }

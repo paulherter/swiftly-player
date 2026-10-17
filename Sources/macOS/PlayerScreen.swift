@@ -3,600 +3,572 @@ import CoreGraphics
 import JellyfinKit
 import SwiftUI
 
-/// Der Player im Fenster.
+/// The player inside the window.
 ///
-/// **Wörtlich die neue Gestaltung von iOS** (`Sources/iOS/PlayerScreen.swift`,
-/// `PlayerEbenen.swift`), nur an Maus, Tastatur und Fenster angepasst:
-/// - Die Steuerung erscheint, wenn der Zeiger sich bewegt, nicht auf Tippen.
-/// - Gespult wird mit den Pfeiltasten, nicht mit Doppeltipp-Dritteln.
-/// - Statt Bild-im-Bild gibt es das kleine Fenster (`Fensterhalter`). Das ist
-///   keine Wahl, sondern ein Befund: VLC gibt auf macOS keine
-///   `AVSampleBufferDisplayLayer` heraus.
-/// - Ein eigener Knopf für Vollbild, weil ein Fenster eins kennt und ein
-///   Telefon nicht.
+/// Mirrors the iOS player (`Sources/iOS/PlayerScreen.swift`, `PlayerLayers.swift`),
+/// adapted to mouse, keyboard and window:
+/// - Controls appear when the pointer moves, not on tap.
+/// - Seeking uses the arrow keys instead of double-tap zones.
+/// - Instead of Picture in Picture there is a small window (`WindowHolder`).
+///   This is not a choice: VLC does not expose an `AVSampleBufferDisplayLayer`
+///   on macOS.
+/// - A dedicated full-screen button, because a window has full screen and a
+///   phone does not.
 struct PlayerScreen: View {
     let model: AppModel
-    let anfang: Abspielwunsch
-    let schliessen: () -> Void
+    let beginning: PlayRequest
+    let close: () -> Void
 
-    /// Titel und Plan wandern beim Folgenwechsel weiter — der Player bleibt
-    /// stehen, nur was er spielt, ändert sich.
-    @State private var titel: Item
+    /// Title and plan carry over on episode change; the player stays put and only
+    /// what it plays changes.
+    @State private var title: Item
     @State private var plan: PlaybackPlan
-    @State private var naechsteFolge: Item?
-    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
-    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
-    /// Die Kapitel der Datei — sie teilen die Leiste. Leer: ein Stück.
-    @State private var kapitel: [Kapitel] = []
-    /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne dass die
-    /// Steuerung aufgehen muss. Was wann gilt, steht in `Angebotsebene`.
-    /// Die Karte der nächsten Folge wartet, solange die Steuerung bewusst
-    /// offen ist (Klick ins Bild) — abgebrochen wird am X oder mit Esc
-    /// (``Folgenkartenansicht``), wie am iPhone.
-    @State private var ebene: Angebotsebene = {
-        var e = Angebotsebene()
-        e.karteWartetBeiSteuerung = true
+    @State private var nextEpisode: Item?
+    /// Intro, recap, outro. Empty if the server knows nothing.
+    @State private var sections: [JellyfinKit.Segment] = []
+    /// The file's chapters; they split the scrubber. Empty means one segment.
+    @State private var chapter: [Chapter] = []
+    /// "Skip intro" and "Next episode" above the picture, without the controls having
+    /// to open. `OfferingLayer` decides what applies when. The next-episode card waits
+    /// while the controls are deliberately open (click on the picture); it is
+    /// dismissed with the X or Esc (``EpisodeCardsView``), as on iPhone.
+    @State private var layer: OfferingLayer = {
+        var e = OfferingLayer()
+        e.cardWaitsControls = true
         return e
     }()
-    /// Spiegelt den Riegel von `folgenwechsel` für die Ansicht.
-    @State private var wechselt = false
-    @State private var folgenwechsel = Folgenwechsel()
-    /// Plan und Dateianfang der nächsten Folge, in den letzten Minuten geholt
-    /// — dieselbe Vorbereitung wie am iPhone (``Vorpuffer``).
-    @State private var vorbereitung = Folgenvorbereitung()
-    /// **Die Karte der nächsten Folge** (``Folgenkarte``, Variante C):
-    /// solange sie ins Bild zoomt, gehalten — mit Folge und Countdownstand von
-    /// eben, damit nichts blitzt, wenn der Wechsel das Angebot wegnimmt.
-    @State private var kartenwechsel: Kartenwechsel?
-    @State private var kartenfolge: Item?
-    @State private var kartenuhr: Fuellungsuhr?
-    @State private var kartenzoom: Double = 0
-    @State private var kartenbild: Double = 1
-    /// Welcher Titel schon als zu Ende geschaut gezählt ist. `beenden` und
-    /// das Verschwinden kommen beide — gezählt wird einmal.
-    @State private var gezaehlt: String?
-    @State private var hinweis: String?
-    /// Der nächste Plan kommt aus einer Qualitätswahl — für den Hinweis.
-    @State private var qualitaetGewechselt = false
-    @State private var flaeche: VLCPlayerView?
-    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
-    @AppStorage("technikschild") private var technikschild = false
-    @State private var spielwerte: Spielwerte?
-    @State private var stand: Wiedergabetakt.Stand
+    /// Mirrors the latch of `episodesSwitch` for the view.
+    @State private var switches = false
+    @State private var episodesSwitch = EpisodeSwitch()
+    /// Plan and file start of the next episode, fetched in the last minutes. Same
+    /// preparation as on iPhone (``Prebuffer``).
+    @State private var preparation = EpisodePreparation()
+    /// **The next-episode card** (``EpisodeCard``, variant C): held while it zooms
+    /// into the picture, with the episode and countdown state from just before, so
+    /// nothing flashes when the switch removes the offer.
+    @State private var cardsSwitch: CardsSwitch?
+    @State private var cardsEpisode: Item?
+    @State private var cardsClock: FillClock?
+    @State private var cardsZoom: Double = 0
+    @State private var cardImage: Double = 1
+    /// Which title is already counted as watched to the end. `finish` and the
+    /// disappearance both fire, so the count happens only once.
+    @State private var counted: String?
+    @State private var hint: String?
+    /// The next plan comes from a quality choice; used for the hint.
+    @State private var qualitySwitched = false
+    @State private var area: VLCPlayerView?
+    /// Counts only while the badge is on; see `TechBadge`.
+    @AppStorage("technikschild") private var techBadge = false
+    @State private var playValues: PlayValues?
+    @State private var state: PlaybackTick.Snapshot
 
-    /// **Was der Knopf zeigt, bis der Takt nachkommt.**
+    /// **What the button shows until the tick catches up.**
     ///
-    /// `stand.laeuft` kommt aus dem Takt, und der schlägt alle 500 ms
-    /// (`Wiedergabetakt.taktlaenge`). Der Knopf hing daran — er sprang also
-    /// erst bis zu einer halben Sekunde nach dem Klick um. Zusammen mit dem
-    /// Bild, das seinerseits einen Moment nachzieht, wirkt das, als reagiere
-    /// der Player gar nicht.
+    /// `state.running` comes from the tick, which fires every 500 ms
+    /// (`PlaybackTick.tickLength`). The button used to depend on it, so it flipped
+    /// up to half a second after the click. Together with the picture lagging
+    /// slightly, the player looked unresponsive.
     ///
-    /// Gesetzt wird er von `VLCPlayerView.laeuftGemeldet`, also in dem
-    /// Moment, in dem VLC selbst umschaltet — gemessen 17 bis 25 ms nach dem
-    /// Druck. Damit sind Knopf und Bild gleichzeitig still.
-    @State private var laeuftAnzeige: Bool?
+    /// It is set by `VLCPlayerView.runsReported`, i.e. at the moment VLC itself
+    /// switches (measured 17 to 25 ms after the press). Button and picture
+    /// therefore stop together.
+    @State private var runsDisplay: Bool?
 
-    private var laeuftJetzt: Bool { laeuftAnzeige ?? stand.laeuft }
-    @State private var amRegler = false
-    /// Lautstärke 0 bis 1, gilt über Titel hinweg; `davor` merkt den Wert für „Ton an".
-    @AppStorage("playerLautstaerke") private var lautstaerke = 1.0
-    @AppStorage("playerLautstaerkeDavor") private var lautstaerkeDavor = 1.0
-    @State private var lautstaerkeZieht = false
-    @State private var lautstaerkeKurz = false
-    @State private var lautstaerkeUhr: Task<Void, Never>?
-    /// Welche der drei Ebenen offen ist — Audio & Untertitel, Folgen,
-    /// Einstellungen. `nil` heißt: keine.
-    @State private var offeneEbene: Playerebene?
-    /// Wo der Zeiger zuletzt stand. Ohne diesen Vergleich stellt jeder
-    /// Neuzeichenvorgang den Wecker zurück — und die Schleife zeichnet alle
-    /// 500 ms neu, der Wecker läuft also nie ab.
-    @State private var zeigerZuletzt: CGPoint?
-    /// Nur für die Blende — `stand.erstesBildDa` sagt, *ob*, dieses Merkmal
-    /// sorgt dafür, dass das Wegnehmen weich läuft.
-    @State private var schirmWeg = false
-    /// Wie auf iOS: Sprünge setzen `stand.sprung` über `gesprungen(auf:)`,
-    /// und der Takt hält die Zielstelle, bis VLC dort ist (Bug 17.09.2026).
-    /// Welcher Sprung gerade quittiert wird — Richtung und Weite.
+    private var runsNow: Bool { runsDisplay ?? state.running }
+    @State private var atSlider = false
+    /// Volume 0 to 1, kept across titles; `davor` remembers the value for unmuting.
+    @AppStorage("playerLautstaerke") private var volume = 1.0
+    @AppStorage("playerLautstaerkeDavor") private var volumePrior = 1.0
+    @State private var volumePulls = false
+    @State private var volumeShort = false
+    @State private var volumeClock: Task<Void, Never>?
+    /// Which of the three layers is open: audio and subtitles, episodes, settings.
+    /// `nil` means none.
+    @State private var openLayer: PlayerLayer?
+    /// Where the pointer was last. Without this comparison every redraw resets the
+    /// timer, and the loop redraws every 500 ms, so the timer would never expire.
+    @State private var pointerLast: CGPoint?
+    /// Only for the fade: `state.firstImagePresent` says *whether*; this flag makes the
+    /// removal fade smoothly.
+    @State private var screenDistance = false
+    /// As on iOS: seeks set `state.sprung` via `jumped(on:)`, and the tick holds
+    /// the target position until VLC has arrived. This is the seek currently being
+    /// acknowledged (direction and distance).
     ///
-    /// Die iPhone- und iPad-Fassung zeigen beim Springen eine Marke am Rand
-    /// (`Sprungmarke`). Auf dem Mac fehlte sie: dort hat man Knöpfe und
-    /// Pfeiltasten, aber auch dann will man sehen, **dass** gesprungen wurde
-    /// und wie weit — sonst wirkt eine Taste ohne Wirkung, bis das Bild
-    /// nachzieht.
-    @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
-    @State private var sprungTakt = 0
-    /// **Die Videofläche beim Schliessen zuerst ausblenden.**
+    /// iPhone and iPad show a marker at the edge when seeking (`Sprungmarke`). On the
+    /// Mac there are buttons and arrow keys, but one still wants to see **that** a
+    /// seek happened and how far; otherwise a key looks dead until the picture
+    /// catches up.
+    @State private var jumpDisplay: (bearing: Int, seconds: Int)?
+    @State private var jumpTick = 0
+    /// **Hide the video surface first when closing.**
     ///
-    /// Der Videoausgang ist auf dem Mac ein `VLCOpenGLVideoView`. Der
-    /// Kommentar bei `Videoflaeche` sagt schon, was das bedeutet: eine
-    /// OpenGL-Ansicht zeichnet in ihre **eigene** Fläche und liegt über
-    /// allem, was im SwiftUI-Stapel nach ihr kommt — die Reihenfolge im
-    /// `ZStack` entscheidet nichts.
+    /// On the Mac the video output is a `VLCOpenGLVideoView`. An OpenGL view draws
+    /// into its **own** surface and sits above everything later in the SwiftUI
+    /// stack, so the order in the `ZStack` does not matter (see the comment at
+    /// `MacVideoSurface`).
     ///
-    /// Für die Schliessbewegung heisst das: die SwiftUI-Ebenen fahren
-    /// ordentlich nach unten, die OpenGL-Fläche bleibt aber liegen, bis
-    /// SwiftUI die Ansicht wirklich abräumt. Genau das sieht man — „darunter
-    /// ist dann einfach nur eine schwarze Ebene, die nach ein paar Sekunden
-    /// wieder weg ist".
+    /// For the close animation that means the SwiftUI layers slide down properly,
+    /// but the OpenGL surface stays in place until SwiftUI actually removes the view,
+    /// showing up as a black layer that disappears after a few seconds.
     ///
-    /// `isHidden` wirkt auf AppKit-Ebene und damit sofort. Also erst
-    /// ausblenden, dann fahren.
-    @State private var flaecheAus = false
-    /// Je Richtung ein eigener Zähler — sonst spielt der Effekt am falschen
-    /// Knopf, wenn man abwechselnd vor und zurück springt.
-    @State private var taktZurueck = 0
-    @State private var taktVor = 0
-    @State private var schlafminuten: Int?
-    @State private var schlafAufgabe: Task<Void, Never>?
-    @State private var seitStart = Date()
-    @State private var steuerungDa = true
-    /// Das Bild geht gerade als Karte an ein anderes Gerät.
-    @State private var abgabeLaeuft = false
-    /// Die Füllung der Karte als durchgehende Bewegung (`Fuellungsuhr`).
-    @State private var fuellungsuhr = Fuellungsuhr()
-    @State private var halter = Fensterhalter()
-    @State private var zentrale = Wiedergabezentrale()
-    @State private var ruheAufgabe: Task<Void, Never>?
-    /// Je Titel einmal nachsehen, ob der Server Vorschaubilder hat — dasselbe
-    /// Paket wie auf iOS (`Sources/Shared/Trickplaybilder.swift`).
-    @State private var trickplay = Trickplaybilder()
+    /// `isHidden` acts at the AppKit level and thus immediately. So hide first, then
+    /// animate.
+    @State private var areaOut = false
+    /// One counter per direction; otherwise the effect plays on the wrong button when
+    /// alternating between forward and back seeks.
+    @State private var tickBack = 0
+    @State private var tickPre = 0
+    @State private var sleepMinutes: Int?
+    @State private var sleepTask: Task<Void, Never>?
+    @State private var sinceStart = Date()
+    @State private var controlsPresent = true
+    /// The picture is currently being handed off as a card to another device.
+    @State private var handoverRuns = false
+    /// The card's fill as one continuous motion (`FillClock`).
+    @State private var fillClock = FillClock()
+    @State private var holder = WindowHolder()
+    @State private var hub = PlaybackHub()
+    @State private var idleTask: Task<Void, Never>?
+    /// Check once per title whether the server has thumbnails; same package as on iOS
+    /// (`Sources/Shared/TrickplayImages.swift`).
+    @State private var trickplay = TrickplayImages()
 
-    /// **Gemeinsam schauen.** Gesetzt beim Öffnen, wenn der Titel der ist,
-    /// den die Gruppe schaut. Die Gruppe selbst hält ``Gemeinsammodell``.
-    @State private var gemeinsamAn = false
-    @State private var bruecke = Gemeinsamspieler()
-    private var gemeinsam: Gemeinsammodell { .geteilt }
-    /// Läuft dieser Player gerade in einer Gruppe? Dann gehen Anhalten,
-    /// Weiter und Springen als Bitte an den Server, nicht an VLC — von
-    /// Knöpfen, Leertaste, Pfeiltasten, Medientasten und Fernbefehlen gleich.
-    private var inGruppe: Bool { gemeinsamAn && gemeinsam.gruppe != nil }
+    /// **Watch together.** Set on open when the title is the one the group is
+    /// watching. The group itself is held by ``SharedModel``.
+    @State private var sharedAn = false
+    @State private var bridge = SharedPlayer()
+    private var gemeinsam: SharedModel { .shared }
+    /// Is this player currently in a group? Then pause, resume and seeking go to the
+    /// server as requests instead of to VLC, whether they come from buttons, space,
+    /// arrow keys, media keys or remote commands.
+    private var inGroup: Bool { sharedAn && gemeinsam.group != nil }
 
-    init(model: AppModel, wunsch: Abspielwunsch, schliessen: @escaping () -> Void) {
+    init(model: AppModel, wish: PlayRequest, close: @escaping () -> Void) {
         self.model = model
-        self.anfang = wunsch
-        self.schliessen = schliessen
-        _titel = State(initialValue: wunsch.item)
-        _plan = State(initialValue: wunsch.plan)
-        // **Die Uhr fängt an der Fortsetzungsstelle an, nicht bei null.**
+        self.beginning = wish
+        self.close = close
+        _title = State(initialValue: wish.item)
+        _plan = State(initialValue: wish.plan)
+        // **The clock starts at the resume position, not at zero.**
         //
-        // `Stand()` beginnt bei 0, und diese Null wird zweieinhalb Sekunden
-        // lang gerechnet, bis VLC eingesteuert hat. Sie zu verdecken genügt
-        // nicht: der Zeitregler wäre in dieser Zeit an eine Null gebunden —
-        // ein Zug daran spränge gegen 0 statt gegen die echte Stelle —, und
-        // `Folgenende.knopfZeigen` bekäme sie ebenfalls, was bei einer zu
-        // 97 % gesehenen Folge den Unterschied macht.
+        // `Snapshot()` starts at 0, and that zero would be in effect for about 2.5 seconds
+        // until VLC has settled. Hiding it is not enough: the scrubber would be bound to
+        // a zero during that time, so dragging it would jump relative to 0 instead of
+        // the real position. `EpisodeEnd.buttonShow` would also receive it, which makes
+        // a difference for an episode that is 97% watched.
         //
-        // Die iPhone-Fassung tut dasselbe (`_position = State(initialValue: startAt)`).
-        _stand = State(initialValue: .init(position: wunsch.startAt))
+        // The iPhone version does the same (`_position = State(initialValue: startAt)`).
+        _state = State(initialValue: .init(position: wish.startAt))
     }
 
-    /// Formatfuellend statt ganzes Bild -- dieselbe Wahl wie die Geste auf
-    /// dem iPhone und die Karte am Fernseher, unter demselben Schluessel.
-    @AppStorage("bildfuellend") private var bildfuellend = false
-    /// Verhindert, dass ein einziges Zusammenziehen mehrfach umschaltet.
-    @State private var zoomSchonGeschaltet = false
+    /// Fill the frame instead of showing the whole picture; same choice as the
+    /// gesture on iPhone and the card on tvOS, under the same key.
+    @AppStorage("bildfuellend") private var fillFrame = false
+    /// Prevents a single pinch from toggling several times.
+    @State private var zoomAlreadySwitched = false
 
-    private var mass: Playermass { Playermass() }
+    private var mass: PlayerMetric { PlayerMetric() }
 
     var body: some View {
         ZStack {
             Color.black
 
-            Videoflaeche(url: anfang.plan.url, startAt: anfang.startAt,
-                         container: anfang.plan.container,
-                         verdeckt: !schirmWeg || flaecheAus,
-                         puffer: model.pufferstufe,
-                         untertitel: model.untertiteldateien(anfang.plan),
-                         softwareDekoder: anfang.plan.softwareDekoder,
-                         spuren: spurwunsch(titel, anfang.plan)) { neu in
-                flaeche = neu
-                neu.lautstaerkeSetzen(Int((lautstaerke * 100).rounded()))
-                // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
-                // nicht am Klick — siehe `laeuftAnzeige`.
-                // Dem Server im selben Moment (T1-N1) — `model` hier
-                // festgehalten, der Rueckruf lebt laenger als diese Ansicht.
-                let melder = model
-                neu.laeuftGemeldet = { [weak neu] laeuft in
-                    laeuftAnzeige = laeuft
-                    melder.laufzustandGemeldet(laeuft: laeuft, sekunden: neu?.positionSeconds ?? 0)
+            MacVideoSurface(url: beginning.plan.url, startAt: beginning.startAt,
+                         container: beginning.plan.container,
+                         covered: !screenDistance || areaOut,
+                         buffer: model.bufferLevel,
+                         subtitle: model.subtitleFiles(beginning.plan),
+                         softwareDecoder: beginning.plan.softwareDecoder,
+                         tracks: trackRequest(title, beginning.plan)) { new in
+                area = new
+                new.volumeSet(Int((volume * 100).rounded()))
+                // The button follows VLC's own report, not the tick and not the click; see
+                // `runsDisplay`. The server is told at the same moment. `model` is
+                // captured here because the callback outlives this view.
+                let reporter = model
+                new.runsReported = { [weak new] running in
+                    runsDisplay = running
+                    reporter.runStateReported(running: running, seconds: new?.positionSeconds ?? 0)
                 }
-                neu.sprungGemeldet = { ziel in melder.sprungGemeldet(ziel: ziel) }
-                neu.spurenGemeldet = { spuren in melder.spurenGewaehlt(spuren) }
-                // Was einmal gewaehlt wurde, gilt auch fuer die naechste
-                // Folge -- derselbe Schluessel wie die Geste auf dem iPhone
-                // und die Karte am Fernseher.
-                neu.bildfuellend(bildfuellend)
+                new.jumpReported = { target in reporter.jumpReported(target: target) }
+                new.tracksReported = { tracks in reporter.tracksSelected(tracks) }
+                // Whatever was chosen once also applies to the next episode; same key as the
+                // gesture on iPhone and the card on tvOS.
+                new.fillFrame(fillFrame)
             }
             .ignoresSafeArea()
-            // Ohne das nimmt die Animation der Steuerung die Videofläche mit
-            // — sie wuchs bei jedem Einblenden sichtbar von klein auf groß.
-            // Eine Narbe der iPhone-Fassung, die mit Bild-im-Bild nichts zu
-            // tun hat und uns genauso trifft.
+            // Without this, the controls' animation drags the video surface along, and it
+            // visibly grew from small to large on every fade-in. A flaw inherited from the
+            // iPhone version, unrelated to Picture in Picture, and it affects the Mac too.
             .transaction { $0.animation = nil }
-            // **Zusammenziehen am Trackpad wechselt das Bildformat.**
+            // **Pinching on the trackpad toggles the aspect mode.**
             //
-            // Dasselbe wie die Geste auf dem iPhone, nur mit zwei Fingern auf
-            // dem Trackpad; am Fernseher steht dafuer eine Karte im Blatt.
-            // Zwei Zustaende -- ganzes Bild mit Balken, oder formatfuellend
-            // mit Beschnitt. Ein dritter waere nur eine Streckung.
+            // Same as the gesture on iPhone, with two fingers on the trackpad; on tvOS a
+            // card in the sheet does this. Two states: whole picture with bars, or fill with
+            // cropping. A third would only be a stretch.
             //
-            // Der Riegel ist noetig, weil `onChanged` waehrend einer Geste
-            // dutzendfach feuert: ohne ihn haette ein einziges Auseinander-
-            // ziehen zwischen beiden Zustaenden geflackert.
+            // The latch is needed because `onChanged` fires dozens of times during a
+            // gesture; without it a single spread would flicker between the two states.
             .simultaneousGesture(
                 MagnifyGesture(minimumScaleDelta: 0.05)
-                    .onChanged { wert in
-                        guard !zoomSchonGeschaltet else { return }
-                        if wert.magnification > 1.15, !bildfuellend {
-                            zoomSchonGeschaltet = true
-                            bildfuellend = true
-                            flaeche?.bildfuellend(true)
-                        } else if wert.magnification < 0.85, bildfuellend {
-                            zoomSchonGeschaltet = true
-                            bildfuellend = false
-                            flaeche?.bildfuellend(false)
+                    .onChanged { value in
+                        guard !zoomAlreadySwitched else { return }
+                        if value.magnification > 1.15, !fillFrame {
+                            zoomAlreadySwitched = true
+                            fillFrame = true
+                            area?.fillFrame(true)
+                        } else if value.magnification < 0.85, fillFrame {
+                            zoomAlreadySwitched = true
+                            fillFrame = false
+                            area?.fillFrame(false)
                         }
                     }
-                    .onEnded { _ in zoomSchonGeschaltet = false }
+                    .onEnded { _ in zoomAlreadySwitched = false }
             )
-            // **Klick ins Bild** holt die Steuerung bewusst — das sagt eine
-            // laufende Karte „Nächste Folge" ab, anders als die Zeigerbewegung.
-            .simultaneousGesture(TapGesture().onEnded { steuerungZeigen() })
-            // **Doppelklick ins Bild: Vollbild** (QuickTime, IINA, VLC). Der
-            // Einzelklick zeigt nur die Steuerung und schaltet nichts um,
-            // läuft also beim Doppelklick harmlos zweimal mit.
-            .simultaneousGesture(TapGesture(count: 2).onEnded { halter.vollbildUmschalten() })
+            // **A click on the picture** deliberately brings up the controls, which also
+            // dismisses a running "Next episode" card, unlike pointer movement.
+            .simultaneousGesture(TapGesture().onEnded { controlsShow() })
+            // **Double-click on the picture: full screen** (as in QuickTime, IINA, VLC). A
+            // single click only shows the controls and toggles nothing, so it harmlessly
+            // runs twice during a double-click.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { holder.fullscreenToggle() })
 
-            // **Deckend**, nicht nur ein Rädchen. Vorher stand hier ein
-            // durchsichtiger `Lader()`, und das Video lief die ganze Zeit
-            // sichtbar darunter — man sah VLC an den Anfang gehen und von
-            // dort an die gemerkte Stelle steuern.
-            // Zoomt die Karte ins Bild, deckt sie den Wechsel — kein
-            // Ladeschirm darüber (wie iOS).
-            if !schirmWeg, kartenwechsel == nil { startschleier }
-            // Waehrend des Wechsels laeuft die alte Folge weiter; der Ring
-            // sagt, dass der Klick angekommen ist.
-            if schirmWeg, wechselt, kartenwechsel == nil { Lader() }
+            // **Opaque**, not just a spinner. Previously a transparent `Loader()` was used
+            // and the video played visibly underneath: VLC could be seen starting at the
+            // beginning and then seeking to the remembered position.
+            // When the card zooms into the picture it covers the switch, with no loading
+            // screen on top (as on iOS).
+            if !screenDistance, cardsSwitch == nil { startScrim }
+            // During the switch the old episode keeps playing; the ring shows that the click
+            // arrived.
+            if screenDistance, switches, cardsSwitch == nil { Loader() }
 
-            // Die Sprungmarke steht **unabhängig von der Steuerung**: wer mit
-            // den Pfeiltasten springt, hat sie meist gar nicht offen.
-            if schirmWeg, let sprungAnzeige {
+            // The seek marker is shown **independently of the controls**: anyone seeking
+            // with the arrow keys usually has them closed.
+            if screenDistance, let jumpDisplay {
                 HStack(spacing: 0) {
-                    if sprungAnzeige.richtung > 0 { Spacer() }
-                    Sprungmarke(richtung: sprungAnzeige.richtung,
-                                sekunden: sprungAnzeige.sekunden)
-                        // Ohne eigene Kennung baut SwiftUI die Ansicht bei
-                        // zwei Sprüngen hintereinander nicht neu — die
-                        // Drehung bliebe aus.
-                        .id(sprungTakt)
-                    if sprungAnzeige.richtung < 0 { Spacer() }
+                    if jumpDisplay.bearing > 0 { Spacer() }
+                    JumpMark(bearing: jumpDisplay.bearing,
+                                seconds: jumpDisplay.seconds)
+                        // Without its own identity SwiftUI does not rebuild the view for two seeks in a
+                        // row, and the rotation would not play.
+                        .id(jumpTick)
+                    if jumpDisplay.bearing < 0 { Spacer() }
                 }
                 .padding(.horizontal, 44)
                 .allowsHitTesting(false)
                 .transition(.opacity)
             }
 
-            // **Was in der Gruppe passiert, kurz oben** — damit niemand
-            // rätselt, warum der Film steht.
-            if inGruppe, let ereignis = gemeinsam.ereignis {
-                Gruppenereignis(symbol: ereignis.symbol, text: ereignis.text)
-                    .padding(.top, mass.oben + mass.knopf + 8)
+            // **What happens in the group, briefly at the top**, so nobody wonders why the
+            // film is paused.
+            if inGroup, let event = gemeinsam.event {
+                GroupsEvent(symbol: event.symbol, text: event.text)
+                    .padding(.top, mass.top + mass.button + 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .allowsHitTesting(false)
                     .transition(.opacity)
-                    .id(ereignis.id)
+                    .id(event.id)
                     .zIndex(4)
             }
-            // Was bei der Gruppe schiefging — unten über der Leiste.
-            Gemeinsamfehler()
-                .padding(.bottom, mass.unten + mass.leiste + mass.ueberLeiste)
+            // What went wrong with the group, at the bottom above the scrubber.
+            SharedError()
+                .padding(.bottom, mass.bottom + mass.bar + mass.overBar)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .zIndex(7)
 
-            if schirmWeg {
-                // **Flache Abdunklung, kein Verlauf** — wörtlich `Playerschleier`
-                // von iOS (Sources/iOS/PlayerScreen.swift): rgba(11,11,13,.42),
-                // ohne Verlauf, wie im Entwurf.
-                // Steht die Karte der nächsten Folge, dunkelt er das Bild
-                // ebenso ab, und sie liegt davor (wie iOS).
-                Stil.grund.opacity(0.42)
+            if screenDistance {
+                // **Flat dimming, no gradient.** Same as iOS `Playerschleier`
+                // (Sources/iOS/PlayerScreen.swift): rgba(11,11,13,.42), no gradient, as in the
+                // design. While the next-episode card is up it dims the picture the same way,
+                // and the card sits in front (as on iOS).
+                Theme.reason.opacity(0.42)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                    .opacity(abgedunkelt ? 1 : 0)
-                    .animation(abgedunkelt ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
-                               value: abgedunkelt)
+                    .opacity(dimmed ? 1 : 0)
+                    .animation(dimmed ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                               value: dimmed)
             }
 
-            // **Über dem Schleier, unter der Steuerung** — siehe
-            // ``Folgenkartenansicht``, warum sie über der Leiste steht.
-            kartenebene
+            // **Above the scrim, below the controls.** See ``EpisodeCardsView`` for why it
+            // sits above the scrubber.
+            cardsLayer
 
-            // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt
-            // keine Klicks. **Direkt auf dem Film** (22.09.2026): über
-            // der Abdunklung, unter Titel, Knöpfen und Leiste und damit auch
-            // unter den Ebenen. **Es gleitet mit der Steuerung** (22.09.2026): offen unter der Titelzeile, zu an den oberen Rand,
-            // wo sie stand. Bewegung statt Blende, dieselbe Kurve wie die
-            // Steuerung; mit reduzierter Bewegung springt es. Ausserhalb von
-            // `schirmWeg`, damit es wie bisher schon beim Laden steht.
-            if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche)
-                    .padding(.leading, mass.seite)
-                    .padding(.top, mass.oben + mass.knopf + Stil.kachelAbstand)
-                    .offset(y: steuerungDa && offeneEbene == nil ? 0 : -(mass.knopf + Stil.kachelAbstand))
-                    .animation(Stil.bewegungReduziert ? nil
-                               : steuerungDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
-                               value: steuerungDa && offeneEbene == nil)
+            // **The tech badge.** Information, not a control: it takes no clicks.
+            // **Directly on the film**: above the dimming, below title, buttons and
+            // scrubber, and therefore also below the layers.
+            // **It slides with the controls**: open below the title row, closed at the top
+            // edge where it used to sit. Motion rather than a fade, same curve as the
+            // controls; with reduced motion it jumps. Outside `screenDistance`, so it is already
+            // visible while loading.
+            if techBadge {
+                TechBadge(plan: plan, values: playValues, area: area)
+                    .padding(.leading, mass.page)
+                    .padding(.top, mass.top + mass.button + Theme.tileSpacing)
+                    .offset(y: controlsPresent && openLayer == nil ? 0 : -(mass.button + Theme.tileSpacing))
+                    .animation(Theme.motionReduced ? nil
+                               : controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                               value: controlsPresent && openLayer == nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
 
-            if schirmWeg {
+            if screenDistance {
                 Group {
-                    mittelsteuerung
-                        .opacity(amRegler ? 0 : 1)
-                        .allowsHitTesting(!amRegler)
+                    centerControls
+                        .opacity(atSlider ? 0 : 1)
+                        .allowsHitTesting(!atSlider)
                     VStack(spacing: 0) {
-                        kopf
+                        header
                         Spacer(minLength: 0)
-                        fuss
+                        footer
                     }
                 }
-                .opacity(steuerungDa && offeneEbene == nil ? 1 : 0)
-                .allowsHitTesting(steuerungDa && offeneEbene == nil)
-                .animation(steuerungDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
-                           value: steuerungDa)
+                .opacity(controlsPresent && openLayer == nil ? 1 : 0)
+                .allowsHitTesting(controlsPresent && openLayer == nil)
+                .animation(controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                           value: controlsPresent)
             }
 
-            // **Die Überspringen-Pille — an derselben Stelle, ob die
-            // Steuerung offen ist oder nicht** (wie iOS, 17.09.2026); der
-            // Fuß hält ihr nur den Platz frei. Überspringen steht sechs
-            // Sekunden von selbst, danach nur mit der Steuerung
-            // (`Angebotsebene.knopfdauer`) — auch mit der, die der Zeiger holt.
+            // **The skip pill sits in the same place whether or not the controls are open**
+            // (as on iOS). The footer only reserves its space. Skip stays for six seconds on
+            // its own, afterwards only with the controls (`OfferingLayer.buttonDuration`),
+            // including the ones the pointer brings up.
             //
-            // **Weich weg, nicht zack weg** — wie auf dem iPhone (c9298dd5):
-            // das Entfernen aus dem Baum lief trotz Transition hart. Die Pille
-            // bleibt im Baum, solange es ein Angebot gibt, und kommt und geht
-            // über die Deckkraft. `disabled`, damit eine unsichtbare Pille
-            // weder Klick noch Tastaturfokus nimmt.
-            // Steht dort die Karte der nächsten Folge, weicht die Pille ihr.
-            if angebot.sichtbar {
+            // **Fade out, don't snap out**, as on iPhone: removal from the tree was abrupt
+            // despite a transition. The pill stays in the tree as long as there is an offer
+            // and comes and goes through opacity. `disabled` so an invisible pill takes
+            // neither clicks nor keyboard focus. When the next-episode card is there, the
+            // pill yields to it.
+            if offering.visible {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
-                        angebotsknopf
-                            .disabled(!knopfDa)
+                        offeringButton
+                            .disabled(!buttonPresent)
                     }
                 }
-                .padding(.horizontal, mass.seite)
-                .padding(.bottom, mass.unten + mass.leiste + mass.ueberLeiste)
-                .opacity(knopfDa ? 1 : 0)
-                .allowsHitTesting(knopfDa)
-                .accessibilityHidden(!knopfDa)
-                .animation(knopfDa ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
-                           value: knopfDa)
+                .padding(.horizontal, mass.page)
+                .padding(.bottom, mass.bottom + mass.bar + mass.overBar)
+                .opacity(buttonPresent ? 1 : 0)
+                .allowsHitTesting(buttonPresent)
+                .accessibilityHidden(!buttonPresent)
+                .animation(buttonPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
+                           value: buttonPresent)
                 .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.18)),
                                         removal: .opacity.animation(.easeInOut(duration: 0.34))))
             }
 
-            if let offeneEbene {
-                ebenenansicht(offeneEbene)
+            if let openLayer {
+                layersView(openLayer)
                     .transition(.opacity)
                     .zIndex(5)
             }
 
-            stehenderTitel
+            stateTitle
                 .zIndex(6)
         }
-        .animation(Stil.einblenden, value: technikschild)
-        .animation(Stil.einblenden, value: gemeinsam.ereignis)
-        .animation(.easeInOut(duration: 0.2), value: offeneEbene)
-        .task(id: technikschild) {
-            guard technikschild else { return }
+        .animation(Theme.reveal, value: techBadge)
+        .animation(Theme.reveal, value: gemeinsam.event)
+        .animation(.easeInOut(duration: 0.2), value: openLayer)
+        .task(id: techBadge) {
+            guard techBadge else { return }
             while !Task.isCancelled {
-                // Die Rate entsteht aus der Differenz zum letzten Mal —
-                // siehe `Spielwerte`.
-                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
-                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
+                // The rate is derived from the difference to the last time; see `PlayValues`.
+                playValues = PlayValues(area?.statistics, spot: area?.positionSeconds ?? 0,
+                                        running: area?.isPlaying ?? false, before: playValues)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .background(Fensterzugriff(halter: halter))
-        // Der Zeiger ruft die Steuerung — nicht ein Klick. Ein Klick ins Bild
-        // täte auf dem Mac nichts Erwartbares.
-        // `onContinuousHover` meldet nicht nur Bewegung, sondern auch jedes
-        // Neuzeichnen mit unveränderter Stelle. Deshalb der Vergleich: nur
-        // eine wirkliche Bewegung ruft die Steuerung.
-        .onContinuousHover { lage in
-            guard case let .active(stelle) = lage else {
-                // **Zeiger raus aus dem Fenster: sofort weg.**
+        .background(WindowHandle(holder: holder))
+        // The pointer brings up the controls, not a click; a click on the picture would
+        // do nothing expected on the Mac. `onContinuousHover` reports not only movement
+        // but also every redraw with an unchanged position. Hence the comparison: only
+        // real movement brings up the controls.
+        .onContinuousHover { status in
+            guard case let .active(spot) = status else {
+                // **Pointer leaves the window: hide immediately.**
                 //
-                // Die vier Sekunden sind dafür da, dass die Steuerung nicht
-                // unter der Hand verschwindet, während man sie noch braucht.
-                // Ist der Zeiger gar nicht mehr im Fenster, braucht sie
-                // niemand — dann ist Warten nur Verzögerung. In Pause bleibt
-                // sie stehen: dort ist sie kein Überbleibsel, sondern der
-                // Zustand.
-                zeigerZuletzt = nil
-                halter.setzeZeigerOben(false)
-                if stand.laeuft, !amRegler { steuerungSofortWeg() }
+                // The four seconds exist so the controls do not vanish while still in use. If
+                // the pointer is no longer in the window nobody needs them, and waiting is just
+                // delay. While paused they stay, since there they are the state rather than a
+                // leftover.
+                pointerLast = nil
+                holder.setPointerTop(false)
+                if state.running, !atSlider { controlsImmediateDistance() }
                 return
             }
-            defer { zeigerZuletzt = stelle }
-            // **Die Fensterampel hängt an dieser Zone, nicht an der
-            // Steuerung.** Sie steht sonst dauerhaft über dem Bild und ist
-            // im Weg. So kommt sie, wenn man sie sucht — oben — und bleibt
-            // sonst fort.
-            halter.setzeZeigerOben(stelle.y < Stil.ampelzone)
-            guard let vorher = zeigerZuletzt else { return }
-            let weg = hypot(stelle.x - vorher.x, stelle.y - vorher.y)
-            // Nebenbei: Bewegung holt die Steuerung, sagt aber die Karte
-            // „Nächste Folge" nicht ab (17.09.2026).
-            if weg > 2 { steuerungZeigen(durch: .nebenbei) }
+            defer { pointerLast = spot }
+            // **The window traffic lights follow this zone, not the controls.** Otherwise
+            // they sit permanently above the picture and get in the way. This way they
+            // appear when sought at the top and stay away otherwise.
+            holder.setPointerTop(spot.y < Theme.signalZone)
+            guard let before = pointerLast else { return }
+            let distance = hypot(spot.x - before.x, spot.y - before.y)
+            // Incidentally: movement brings up the controls but does not dismiss the
+            // "Next episode" card.
+            if distance > 2 { controlsShow(through: .beside) }
         }
-        .onAppear { steuerungZeigen() }
-        .onChange(of: lautstaerke) { _, neu in
-            flaeche?.lautstaerkeSetzen(Int((neu * 100).rounded()))
+        .onAppear { controlsShow() }
+        .onChange(of: volume) { _, new in
+            area?.volumeSet(Int((new * 100).rounded()))
         }
-        // Nach dem Schliessen einer Ebene laeuft die Viersekundenuhr neu an.
-        .onChange(of: offeneEbene) { _, offen in if offen == nil { steuerungZeigen() } }
-        // Die Einblendung hört auf die Steuerung. Nur Abgleich: ob das Öffnen
-        // die Karte absagt, entscheidet `steuerungZeigen(durch:)`.
-        .onChange(of: steuerungDa, initial: true) { _, offen in
-            ebene.steuerung(offen: offen, durch: .nebenbei)
-            fuellungStellen()
+        // After a layer closes, the four-second timer restarts.
+        .onChange(of: openLayer) { _, opened in if opened == nil { controlsShow() } }
+        // The fade follows the controls. Only a sync: whether opening cancels the card is
+        // decided by `controlsShow(through:)`.
+        .onChange(of: controlsPresent, initial: true) { _, opened in
+            layer.controls(opened: opened, through: .beside)
+            fillSet()
         }
-        .onChange(of: karteDa) { _, da in
-            guard kartenwechsel == nil else { return }
-            Protokoll.schreib(da ? "[Karte] erscheint bei \(Int(stand.position)) s von \(Int(stand.dauer)) s"
+        .onChange(of: cardPresent) { _, present in
+            guard cardsSwitch == nil else { return }
+            AppLog.writeOut(present ? "[Karte] erscheint bei \(Int(state.position)) s von \(Int(state.duration)) s"
                                  : "[Karte] geht (abgesagt oder Steuerung)")
         }
         .onAppear {
-            model.playerOffen = true
-            // Vor der Zentrale: deren Griffe fragen die Gruppe.
-            if gemeinsam.gehoertZurGruppe(titel.id) {
-                brueckeNachziehen()
-                gemeinsam.anschliessen(bruecke)
-                gemeinsamAn = true
+            model.playerOpen = true
+            // In front of the hub: its handlers ask the group.
+            if gemeinsam.belongsGroup(title.id) {
+                bridgeCatchUp()
+                gemeinsam.plugIn(bridge)
+                sharedAn = true
             }
-            zentraleUebernehmen()
-            // **Auch die Fernsteuerung, nicht nur der Sperrbildschirm.**
+            hubAdopt()
+            // **Remote control too, not just the lock screen.**
             //
-            // Beide bekommen dieselben Griffe, sie kommen nur aus
-            // verschiedenen Richtungen: die Zentrale von den Medientasten
-            // dieses Rechners, `fernbefehl` über Jellyfins Socket von einem
-            // anderen Gerät. Auf dem Mac fehlte die zweite Hälfte ganz
-            model.fernbefehl = ausfuehren
-            halter.setzePlayer(true)
+            // Both get the same handlers but arrive from different directions: the hub from
+            // this computer's media keys, `remoteCommand` over Jellyfin's socket from another
+            // device. The Mac was missing the second half entirely.
+            model.remoteCommand = execute
+            holder.setPlayer(true)
         }
-        .onChange(of: stand.laeuft) { _, neu in
-            fuellungStellen()
-            if laeuftAnzeige == neu { laeuftAnzeige = nil }
+        .onChange(of: state.running) { _, new in
+            fillSet()
+            if runsDisplay == new { runsDisplay = nil }
         }
-        .onChange(of: schlafminuten) { schlafzeitSetzen(schlafminuten) }
+        .onChange(of: sleepMinutes) { sleepTimeSet(sleepMinutes) }
         .task {
-            let geoeffnet = titel
-            // **In der Gruppe keine nächste Folge.** Jeder schaltete sonst für
-            // sich weiter, und die Gruppe liefe auseinander.
-            await folgenwechsel.nachschlagen(holen: { await model.folgeNach(geoeffnet) },
-                                             uebernehmen: { naechsteFolge = gemeinsamAn ? nil : $0 })
-            await folgenwechsel.nachschlagen(holen: { await model.abschnitte(fuer: geoeffnet.id) },
-                                             uebernehmen: { abschnitte = $0 })
+            let opened = title
+            // **No next episode in a group.** Everyone would otherwise advance on their own
+            // and the group would drift apart.
+            await episodesSwitch.lookUp(fetch: { await model.episodePost(opened) },
+                                             adopt: { nextEpisode = sharedAn ? nil : $0 })
+            await episodesSwitch.lookUp(fetch: { await model.sections(for: opened.id) },
+                                             adopt: { sections = $0 })
         }
-        // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
-        .task(id: titel.id) { await trickplay.laden(model: model, item: titel, plan: plan) }
-        // **Je Fassung, nicht je Titel** — ein Director's Cut hat andere
-        // Kapitel. Bis sie da sind, zeigt die Leiste keine fremden.
-        .task(id: [titel.id, plan.mediaSourceID]) {
-            kapitel = []   // auch beim Wechsel der Fassung ohne neuen Titel
-            let gefunden = await model.kapitel(fuer: titel.id, quelle: plan.mediaSourceID)
+        // Check once per title whether the server has thumbnails.
+        .task(id: title.id) { await trickplay.load(model: model, item: title, plan: plan) }
+        // **Per version, not per title**: a director's cut has different chapters. Until
+        // they arrive, the scrubber shows none from another version.
+        .task(id: [title.id, plan.mediaSourceID]) {
+            chapter = []   // also when only the version changes, without a new title
+            let found = await model.chapter(for: title.id, source: plan.mediaSourceID)
             guard !Task.isCancelled else { return }
-            kapitel = gefunden
+            chapter = found
         }
-        // Das Folgenbild für eine mögliche Übergabe schon bereit — die Karte
-        // des Abgebers braucht es im ersten Bild (``Uebergabeabgang``).
-        .task(id: titel.id) { await Uebergabeabgang.vorladen(titel, model: model) }
+        // Have the next-episode image ready for a possible handoff; the giving side's
+        // card needs it in the first frame (``Uebergabeabgang``).
+        .task(id: title.id) { await HandoffExit.preload(title, model: model) }
         .onDisappear {
-            Uebergabebuehne.geteilt.spielerWeg(titel.id)
-            ruheAufgabe?.cancel()
-            schlafAufgabe?.cancel()
-            halter.aufraeumen()
-            zentrale.abgeben()
-            model.fernbefehl = nil
-            // Schließen heißt verlassen (Entwurf A).
-            if gemeinsamAn { gemeinsam.abtrennen() }
-            // Ohne `beenden()` zu — Fenster zu, Konto- oder Serverwechsel:
-            // ein laufender Wechsel darf danach nichts mehr anwenden, und der
-            // Server erfährt das Ende trotzdem (Audit T1-N6). Kam `beenden`
-            // vorher, zählt dessen Aufruf; dieser tut dann nichts.
-            zaehlen(bei: stand.position)
-            folgenwechsel.schliessen(stoppen: stoppMeldung(bei: stand.position))
-            // Der Zeiger gehört zurück, sobald der Player weg ist.
+            HandoffStage.shared.playerDistance(title.id)
+            idleTask?.cancel()
+            sleepTask?.cancel()
+            holder.cleanUp()
+            hub.handIn()
+            model.remoteCommand = nil
+            // Closing means leaving (design A).
+            if sharedAn { gemeinsam.detach() }
+            // Without closing `finish()`: window closed, account or server switch. A running
+            // switch must not apply anything afterwards, and the server still learns about
+            // the end. If `finish` came first, its call counts and this one
+            // does nothing.
+            tally(at: state.position)
+            episodesSwitch.close(stopNow: stopMessage(at: state.position))
+            // The pointer must come back as soon as the player is gone.
             NSCursor.unhide()
-            model.playerOffen = false
+            model.playerOpen = false
         }
-        .task { await mitlaufen() }
-        // **Absicherung, nicht Behebung eines belegten Fehlers:** ob SwiftUI
-        // beim Schließen des Fensters (⌘W) `onDisappear` zuverlässig ruft, ist
-        // nicht gemessen. Schließt das Fenster mit laufendem Film, nimmt dies
-        // den Ton weg und meldet Stelle und Ende — dieselben Aufrufe wie in
-        // `beenden()`, die ein zweites Mal nichts tun (`zaehlen` ist
-        // einmalig, `pause` ist billig).
+        .task { await withRun() }
+        // **Safeguard, not a fix for a proven bug:** whether SwiftUI reliably calls
+        // `onDisappear` when the window closes (Cmd-W) has not been measured. If the
+        // window closes during playback, this silences the audio and reports position and
+        // end, using the same calls as in `finish()`, which do nothing a second time
+        // (`zaehlen` is once-only, `pause` is cheap).
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { n in
-            guard let fenster = n.object as? NSWindow, fenster === halter.fenster else { return }
-            let stelle = stand.position
-            zaehlen(bei: stelle)
-            flaeche?.pause()
-            folgenwechsel.schliessen(stoppen: stoppMeldung(bei: stelle))
+            guard let window = n.object as? NSWindow, window === holder.window else { return }
+            let spot = state.position
+            tally(at: spot)
+            area?.pause()
+            episodesSwitch.close(stopNow: stopMessage(at: spot))
         }
-        // Das Menü „Wiedergabe" — dieselben Handgriffe wie die Tasten.
-        .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
-            guard offeneEbene == nil, let kommando = Kommandopost.empfangen(post) else { return }
-            switch kommando {
-            case .spielUmschalten: umschalten()
-            case .spielZurueck: springe(-Double(model.zurueckSekunden))
-            case .spielVor: springe(Double(model.vorSekunden))
-            case .spielPause: if laeuftJetzt { umschalten() }
-            case .spielVollbild: halter.vollbildUmschalten()
-            case .lauter: lautstaerkeStufe(0.05)
-            case .leiser: lautstaerkeStufe(-0.05)
-            case .stumm: lautstaerkeStumm(); lautstaerkeKurzZeigen()
+        // The "Wiedergabe" menu: the same actions as the keys.
+        .onReceive(NotificationCenter.default.publisher(for: CommandPost.name)) { post in
+            guard openLayer == nil, let command = CommandPost.receive(post) else { return }
+            switch command {
+            case .playToggle: toggle()
+            case .playBack: vault(-Double(model.backSeconds))
+            case .playForward: vault(Double(model.forwardSeconds))
+            case .playPause: if runsNow { toggle() }
+            case .playFullscreen: holder.fullscreenToggle()
+            case .louder: volumeLevel(0.05)
+            case .quieter: volumeLevel(-0.05)
+            case .muted: volumeMuted(); volumeShortShow()
             default: break
             }
         }
-        // Tastenkürzel. Sie stehen zusätzlich in der Menüleiste, damit man sie
-        // findet, ohne sie zu kennen.
+        // Keyboard shortcuts. They also appear in the menu bar so they can be found
+        // without knowing them.
         .background {
             VStack {
-                // **Bei offener Ebene gehoeren die Tasten ihr.**
+                // **While a layer is open, the keys belong to it.**
                 //
-                // Diese Knoepfe liegen unsichtbar im Hintergrund und galten
-                // deshalb immer — auch waehrend eine Ebene offen war. Wer dort
-                // durch die Tonspuren ging, hielt mit der Leertaste den Film
-                // an und sprang mit den Pfeilen darin herum.
+                // These buttons sit invisibly in the background and therefore always applied,
+                // even while a layer was open. Anyone browsing audio tracks paused the film with
+                // space and jumped around in it with the arrows.
                 //
-                // Escape bleibt: es schliesst dann die Ebene, nicht den Player
-                // — erst die Auswahl zu, dann weggehen.
+                // Escape stays: it then closes the layer, not the player. First close the
+                // selection, then leave.
                 Group {
-                    Button("") { umschalten() }.keyboardShortcut(.space, modifiers: [])
-                    Button("") { springe(-Double(model.zurueckSekunden)) }
+                    Button("") { toggle() }.keyboardShortcut(.space, modifiers: [])
+                    Button("") { vault(-Double(model.backSeconds)) }
                         .keyboardShortcut(.leftArrow, modifiers: [])
-                    Button("") { springe(Double(model.vorSekunden)) }
+                    Button("") { vault(Double(model.forwardSeconds)) }
                         .keyboardShortcut(.rightArrow, modifiers: [])
                 }
-                .disabled(offeneEbene != nil)
-                // Lautstärke: Pfeile hoch/runter ±5 %, M stumm.
+                .disabled(openLayer != nil)
+                // Volume: up/down arrows +/-5%, M mutes.
                 Group {
-                    Button("") { lautstaerkeStufe(0.05) }.keyboardShortcut(.upArrow, modifiers: [])
-                    Button("") { lautstaerkeStufe(-0.05) }.keyboardShortcut(.downArrow, modifiers: [])
-                    Button("") { lautstaerkeStumm(); lautstaerkeKurzZeigen() }
+                    Button("") { volumeLevel(0.05) }.keyboardShortcut(.upArrow, modifiers: [])
+                    Button("") { volumeLevel(-0.05) }.keyboardShortcut(.downArrow, modifiers: [])
+                    Button("") { volumeMuted(); volumeShortShow() }
                         .keyboardShortcut("m", modifiers: [])
                 }
-                .disabled(offeneEbene != nil)
-                // **Verzögerung wie in VLC:** G/H Untertitel, J/K Ton, je
-                // 50 ms. Nicht bei offener Ebene — dort steht die Zeile
-                // selbst, und ihre Anzeige wüsste vom Tastendruck nichts.
+                .disabled(openLayer != nil)
+                // **Delay as in VLC:** G/H subtitles, J/K audio, 50 ms each. Not while a layer is
+                // open: the row is displayed there and would not know about the key press.
                 Group {
-                    Button("") { verzoegern(untertitel: true, -1) }.keyboardShortcut("g", modifiers: [])
-                    Button("") { verzoegern(untertitel: true, 1) }.keyboardShortcut("h", modifiers: [])
-                    Button("") { verzoegern(untertitel: false, -1) }.keyboardShortcut("j", modifiers: [])
-                    Button("") { verzoegern(untertitel: false, 1) }.keyboardShortcut("k", modifiers: [])
+                    Button("") { postpone(subtitle: true, -1) }.keyboardShortcut("g", modifiers: [])
+                    Button("") { postpone(subtitle: true, 1) }.keyboardShortcut("h", modifiers: [])
+                    Button("") { postpone(subtitle: false, -1) }.keyboardShortcut("j", modifiers: [])
+                    Button("") { postpone(subtitle: false, 1) }.keyboardShortcut("k", modifiers: [])
                 }
-                .disabled(offeneEbene != nil || flaeche == nil)
+                .disabled(openLayer != nil || area == nil)
 
-                Button("") { fluchttaste() }.keyboardShortcut(.escape, modifiers: [])
-                // Wie am Fernseher ohne Fokus: steht die Einblendung da, löst
-                // die Eingabetaste sie aus (Jellyfin Android TV).
-                Button("") { if angebotDa, ebene.anzeige.sichtbar { angebotAusfuehren() } }
+                Button("") { escapeKey() }.keyboardShortcut(.escape, modifiers: [])
+                // As on a TV without focus: when the overlay is showing, Return triggers it
+                // (Jellyfin Android TV).
+                Button("") { if offeringPresent, layer.display.visible { offeringRun() } }
                     .keyboardShortcut(.return, modifiers: [])
-                // Vollbild auch ohne den Knopf zu treffen — dieselbe Taste,
-                // die die Fensterampel dafür anbietet.
-                Button("") { halter.vollbildUmschalten() }.keyboardShortcut("f", modifiers: [])
-                // „Kleines Fenster" ist vorerst aus der Oberfläche raus;
-                // der Kurzbefehl geht mit, sonst gäbe es einen Weg dorthin,
-                // aus dem man nicht zurückfindet.
+                // Full screen without having to hit the button; the same key the window traffic
+                // lights offer.
+                Button("") { holder.fullscreenToggle() }.keyboardShortcut("f", modifiers: [])
+                // "Small window" is currently removed from the UI; the shortcut goes with it,
+                // otherwise there would be a way in with no way back.
                 Button("") { }
                     .keyboardShortcut("p", modifiers: [.command, .option])
             }
@@ -604,1743 +576,1697 @@ struct PlayerScreen: View {
         }
     }
 
-    private var startschleier: some View {
+    private var startScrim: some View {
         ZStack {
             Color.black
-            Lader()
+            Loader()
         }
         .ignoresSafeArea()
         .transition(.opacity)
         .allowsHitTesting(false)
     }
 
-    // MARK: - Kopf, Mitte, Fuß
+    // MARK: - Header, middle, footer
 
-    /// Bei einer Folge die Serie, sonst der Titel selbst — wörtlich die Regel
-    /// von iOS.
-    private var titelzeile: String {
-        if titel.type == "Episode", let serie = titel.seriesName, !serie.isEmpty { return serie }
-        return titel.name
+    /// For an episode the series, otherwise the title itself; the same rule as iOS.
+    private var titleLine: String {
+        if title.type == "Episode", let series = title.seriesName, !series.isEmpty { return series }
+        return title.name
     }
 
-    /// „Staffel 1 · Folge 3" — beim Film Jahr, Laufzeit und Genre.
-    private var metatext: String? {
-        if titel.type == "Episode" {
-            if let staffel = titel.parentIndexNumber, let folge = titel.indexNumber {
-                return String(localized: "Staffel \(staffel) · Folge \(folge)")
+    /// "Season 1 - Episode 3" (shown in the UI as "Staffel 1 · Folge 3"); for a movie
+    /// year, runtime and genre.
+    private var metaText: String? {
+        if title.type == "Episode" {
+            if let season = title.parentIndexNumber, let episode = title.indexNumber {
+                return String(localized: "Staffel \(season) · Folge \(episode)")
             }
-            return titel.kontextzeile
+            return title.contextLine
         }
-        let zeile = titel.nebenzeile
-        return zeile.isEmpty ? nil : zeile
+        let row = title.secondaryLine
+        return row.isEmpty ? nil : row
     }
 
-    /// Nur Folgen einer Serie haben eine Folgenliste.
-    private var hatFolgen: Bool { titel.type == "Episode" && titel.seriesId != nil }
+    /// Only episodes of a series have an episode list.
+    private var hasEpisodes: Bool { title.type == "Episode" && title.seriesId != nil }
 
-    /// **Oben links der Titel, oben rechts nur Symbole.** Kein Bild-im-Bild-
-    /// Knopf, kein Tempo — beides stand im alten Wiedergabemenü und fällt mit
-    /// ihm weg. Beim Spulen weichen die Symbole der Vorschau.
-    private var symbolreihe: some View {
+    /// **Title at the top left, only icons at the top right.** No Picture in Picture
+    /// button and no speed control. While scrubbing the icons make way for the
+    /// preview.
+    private var iconRail: some View {
         HStack(spacing: 4) {
-            Lautstaerkeregler(mass: mass, wert: $lautstaerke,
-                              aufgeklappt: lautstaerkeKurz, zieht: $lautstaerkeZieht,
-                              stummUmschalten: lautstaerkeStumm,
-                              radGedreht: { lautstaerkeRad($0) })
-            Symbolknopf(symbol: "captions.bubble", beschriftung: "Audio & Untertitel",
-                        mass: mass) { ebeneOeffnen(.spuren) }
-            if hatFolgen {
-                Symbolknopf(symbol: "rectangle.stack", beschriftung: "Folgen",
-                            mass: mass) { ebeneOeffnen(.folgen) }
+            VolumeSlider(mass: mass, value: $volume,
+                              expanded: volumeShort, pulls: $volumePulls,
+                              mutedToggle: volumeMuted,
+                              wheelRotated: { volumeWheel($0) })
+            IconButton(symbol: "captions.bubble", label: "Audio & Untertitel",
+                        mass: mass) { unfoldLayer(.tracks) }
+            if hasEpisodes {
+                IconButton(symbol: "rectangle.stack", label: "Folgen",
+                            mass: mass) { unfoldLayer(.episodes) }
             }
-            Symbolknopf(symbol: "slider.horizontal.3", beschriftung: "Einstellungen",
-                        mass: mass) { ebeneOeffnen(.einstellungen) }
-            Symbolknopf(symbol: halter.istVollbild ? "arrow.down.right.and.arrow.up.left"
+            IconButton(symbol: "slider.horizontal.3", label: "Einstellungen",
+                        mass: mass) { unfoldLayer(.settings) }
+            IconButton(symbol: holder.isFullscreen ? "arrow.down.right.and.arrow.up.left"
                                                     : "arrow.up.left.and.arrow.down.right",
-                        beschriftung: halter.istVollbild ? "Vollbild verlassen" : "Vollbild",
-                        mass: mass) { halter.vollbildUmschalten() }
-            Symbolknopf(symbol: "xmark", beschriftung: "Player schließen",
-                        mass: mass) { beenden() }
+                        label: holder.isFullscreen ? "Vollbild verlassen" : "Vollbild",
+                        mass: mass) { holder.fullscreenToggle() }
+            IconButton(symbol: "xmark", label: "Player schließen",
+                        mass: mass) { finish() }
         }
     }
 
-    /// **Der Titel oben links, eine Ebene über allem.** Bei offener
-    /// Folgenebene bleibt er genau hier stehen; läge er im Kopf, blendete er
-    /// mit der Steuerung aus und in der Ebene wieder ein — er flackerte.
-    /// Wörtlich `stehenderTitel` von iOS.
-    private var stehenderTitel: some View {
-        let da = (steuerungDa && offeneEbene == nil) || offeneEbene == .folgen
+    /// **The title at the top left, a layer above everything.** With the episode layer
+    /// open it stays exactly here; if it were part of the header it would fade out
+    /// with the controls and back in inside the layer, flickering. Same as
+    /// `stateTitle` on iOS.
+    private var stateTitle: some View {
+        let present = (controlsPresent && openLayer == nil) || openLayer == .episodes
         return HStack(alignment: .top, spacing: 12) {
-            Text(verbatim: titelzeile)
-                .font(.system(size: mass.titel, weight: .semibold))
+            Text(verbatim: titleLine)
+                .font(.system(size: mass.title, weight: .semibold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            symbolreihe
+            iconRail
                 .hidden()
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, mass.seite)
-        .padding(.top, mass.oben)
+        .padding(.horizontal, mass.page)
+        .padding(.top, mass.top)
         .frame(maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(false)
-        .opacity(da ? 1 : 0)
-        .animation(da ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34), value: da)
+        .opacity(present ? 1 : 0)
+        .animation(present ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34), value: present)
     }
 
-    private var kopf: some View {
+    private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                // Nur Platzhalter: gezeigt wird der Titel von
-                // `stehenderTitel`, der bei offener Folgenebene stehen bleibt.
-                Text(verbatim: titelzeile)
-                    .font(.system(size: mass.titel, weight: .semibold))
+                // Placeholder only: what is shown is the title from `stateTitle`, which stays
+                // put while the episode layer is open.
+                Text(verbatim: titleLine)
+                    .font(.system(size: mass.title, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
                 HStack(spacing: 6) {
-                    // **In der Gruppe steht hier die Gruppe** (Entwurf A):
-                    // wo sonst Jahr und Laufzeit stehen. Das ist Zustand,
-                    // also Akzent.
-                    if inGruppe, let gruppe = gemeinsam.gruppe {
-                        Gruppenzeile(name: gruppe.name, mitWem: gemeinsam.mitWem,
-                                     groesse: mass.meta)
-                    } else if let metatext { Text(verbatim: metatext) }
+                    // **In a group the group is shown here** (design A), where year and runtime
+                    // otherwise go. It is state, hence accent.
+                    if inGroup, let group = gemeinsam.group {
+                        GroupsRow(name: group.name, withWhom: gemeinsam.withWhom,
+                                     size: mass.meta)
+                    } else if let metaText { Text(verbatim: metaText) }
                     if !plan.isLossless {
                         Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Stil.warnung)
+                            .foregroundStyle(Theme.warning)
                     }
                 }
                 .font(.system(size: mass.meta))
-                .foregroundStyle(Stil.schriftLeise)
+                .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
             }
             .foregroundStyle(.white)
 
             Spacer(minLength: 0)
 
-            symbolreihe
-                .opacity(amRegler ? 0 : 1)
-                .allowsHitTesting(!amRegler)
+            iconRail
+                .opacity(atSlider ? 0 : 1)
+                .allowsHitTesting(!atSlider)
         }
-        .padding(.horizontal, mass.seite)
-        .padding(.top, mass.oben)
+        .padding(.horizontal, mass.page)
+        .padding(.top, mass.top)
         .overlay(alignment: .bottom) {
-            // Unter der Kopfzeile, mittig: dort kommt sie weder der Leiste
-            // noch dem Überspringen-Knopf in die Quere.
-            if let hinweis {
-                Text(verbatim: hinweis)
-                    // `.caption2` sind 11 Regular — 11 steht nur als
-                    // Semibold in der Leiter; ein Satz ist eine Angabe,
-                    // also 12.
-                    .font(Stil.klein).foregroundStyle(Stil.schrift)
+            // Below the header row, centered: there it gets in the way of neither the
+            // scrubber nor the skip button.
+            if let hint {
+                Text(verbatim: hint)
+                    // `.caption2` is 11 regular; 11 exists in the scale only as semibold. A sentence
+                    // is information, so 12.
+                    .font(Theme.small).foregroundStyle(Theme.font)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, mass.seite)
+                    .padding(.horizontal, mass.page)
                     .offset(y: 22)
             }
         }
     }
 
-    private func ebeneOeffnen(_ ziel: Playerebene) {
-        offeneEbene = ziel
+    private func unfoldLayer(_ target: PlayerLayer) {
+        openLayer = target
     }
 
-    private func ebeneSchliessen() {
-        offeneEbene = nil
+    private func layerClose() {
+        openLayer = nil
     }
 
     @ViewBuilder
-    private func ebenenansicht(_ welche: Playerebene) -> some View {
-        switch welche {
-        case .spuren:
-            SpurenEbene(flaeche: flaeche, mass: mass, schliessen: ebeneSchliessen)
-        case .einstellungen:
-            EinstellungsEbene(flaeche: flaeche, mass: mass, schlafminuten: $schlafminuten,
-                              qualitaet: qualitaetswahl,
-                              gemeinsam: inGruppe ? gemeinsam : nil,
-                              gruppeVerlassen: { beenden() },
-                              schliessen: ebeneSchliessen)
-        case .folgen:
-            FolgenEbene(model: model, item: titel, titel: titelzeile, mass: mass,
-                        schliessen: ebeneSchliessen) { folge in
-                ebeneSchliessen()
-                // Die laufende Folge anklicken heißt: weiterschauen.
-                guard folge.id != titel.id else { return }
-                // In der Gruppe wechselt niemand allein: die Wahl setzt die
-                // Warteschlange, und alle laden die Folge (wie iOS).
-                if inGruppe { gemeinsam.bitteTitel(folge.id); return }
-                zurNaechstenFolge(folge)
+    private func layersView(_ which: PlayerLayer) -> some View {
+        switch which {
+        case .tracks:
+            TracksLayer(area: area, mass: mass, close: layerClose)
+        case .settings:
+            SettingLayer(area: area, mass: mass, sleepMinutes: $sleepMinutes,
+                              quality: qualitySelection,
+                              gemeinsam: inGroup ? gemeinsam : nil,
+                              groupLeave: { finish() },
+                              close: layerClose)
+        case .episodes:
+            EpisodesLayer(model: model, item: title, title: titleLine, mass: mass,
+                        close: layerClose) { episode in
+                layerClose()
+                // Clicking the current episode means: keep watching.
+                guard episode.id != title.id else { return }
+                // In a group nobody switches alone: the choice sets the queue and everyone loads
+                // the episode (as on iOS).
+                if inGroup { gemeinsam.bitTitle(episode.id); return }
+                toNextEpisode(episode)
             }
         }
     }
 
-    /// Mittig im Bild — die Maus muss dort ohnehin erst hin, anders als der
-    /// Daumen, der am Rand liegt.
-    private var mittelsteuerung: some View {
+    /// Centered in the picture. The mouse has to go there anyway, unlike a thumb
+    /// resting at the edge.
+    private var centerControls: some View {
         HStack(spacing: 80) {
-            Sprungknopf(symbol: "gobackward.\(model.zurueckSekunden)", gross: 30, takt: taktZurueck,
-                        beschriftung: "\(model.zurueckSekunden) Sekunden zurück") {
-                springe(-Double(model.zurueckSekunden))
+            JumpButton(symbol: "gobackward.\(model.backSeconds)", large: 30, tick: tickBack,
+                        label: "\(model.backSeconds) Sekunden zurück") {
+                vault(-Double(model.backSeconds))
             }
-            Sprungknopf(symbol: laeuftJetzt ? "pause.fill" : "play.fill", gross: 40, flott: true,
-                        beschriftung: laeuftJetzt ? "Anhalten" : "Abspielen") { umschalten() }
-            // Vorwärts weiter als rückwärts: vorwärts überspringt man
-            // Vorspann und Werbung, rückwärts sucht man einen Satz.
-            Sprungknopf(symbol: "goforward.\(model.vorSekunden)", gross: 30, takt: taktVor,
-                        beschriftung: "\(model.vorSekunden) Sekunden vor") {
-                springe(Double(model.vorSekunden))
+            JumpButton(symbol: runsNow ? "pause.fill" : "play.fill", large: 40, snappy: true,
+                        label: runsNow ? "Anhalten" : "Abspielen") { toggle() }
+            // Forward goes further than back: forward skips intros and ads, backward looks
+            // for a line of dialogue.
+            JumpButton(symbol: "goforward.\(model.forwardSeconds)", large: 30, tick: tickPre,
+                        label: "\(model.forwardSeconds) Sekunden vor") {
+                vault(Double(model.forwardSeconds))
             }
         }
     }
 
-    /// Nur die Leiste, über die volle Breite: links die verstrichene Zeit,
-    /// rechts die Restzeit.
-    private var fuss: some View {
-        Zeitzeile(position: $stand.position, dauer: stand.dauer, amRegler: $amRegler,
-                  mass: mass, marken: abschnitte.flatMap { [$0.von, $0.bis] }, kapitel: kapitel,
-                  vorschau: { trickplay.bild(bei: $0, model: model) }) { ziel in
-            if inGruppe { gemeinsam.bitteSpringen(auf: ziel) }
-            else { flaeche?.seek(toSeconds: ziel) }
-            gesprungen(auf: ziel)
+    /// Only the scrubber, full width: elapsed time on the left, remaining time on the
+    /// right.
+    private var footer: some View {
+        TimeRow(position: $state.position, duration: state.duration, atSlider: $atSlider,
+                  mass: mass, marks: sections.flatMap { [$0.from, $0.until] }, chapter: chapter,
+                  preview: { trickplay.image(at: $0, model: model) }) { target in
+            if inGroup { gemeinsam.bitJump(on: target) }
+            else { area?.seek(toSeconds: target) }
+            jumped(on: target)
         }
-        .padding(.horizontal, mass.seite)
-        .padding(.bottom, mass.unten)
+        .padding(.horizontal, mass.page)
+        .padding(.bottom, mass.bottom)
     }
 
-    private var angebotsknopf: some View {
-        Angebotsknopf(angebot: angebot, aktion: angebotAusfuehren)
-            .accessibilityAction(.escape) { _ = ebene.schliessen() }
+    private var offeringButton: some View {
+        OfferingButton(offering: offering, action: offeringRun)
+            .accessibilityAction(.escape) { _ = layer.close() }
     }
 
-    // MARK: Handlungen
+    // MARK: Actions
 
-    /// Läuft die Zeit ab, wird angehalten und gesagt warum — nicht einfach
-    /// stillgestellt. Wörtlich die iPhone-Fassung.
-    private func schlafzeitSetzen(_ minuten: Int?) {
-        schlafAufgabe?.cancel()
-        guard let minuten else { return }
-        schlafAufgabe = Task {
-            try? await Task.sleep(for: .seconds(minuten * 60))
+    /// When time runs out, playback is paused and the reason is given, not silently
+    /// stopped. Same as the iPhone version.
+    private func sleepTimeSet(_ minutes: Int?) {
+        sleepTask?.cancel()
+        guard let minutes else { return }
+        sleepTask = Task {
+            try? await Task.sleep(for: .seconds(minutes * 60))
             guard !Task.isCancelled else { return }
-            flaeche?.pause()
-            steuerungZeigen()
-            melde(String(localized: "Schlafzeit abgelaufen."))
+            area?.pause()
+            controlsShow()
+            notify(String(localized: "Schlafzeit abgelaufen."))
         }
     }
 
-    /// Klick auf den Lautsprecher und Taste M: stumm, beim zweiten Mal
-    /// zurück auf den Wert davor.
-    private func lautstaerkeStumm() {
-        if lautstaerke > 0 {
-            lautstaerkeDavor = lautstaerke
-            lautstaerke = 0
+    /// Click on the speaker and key M: mute, and a second time restore the previous
+    /// value.
+    private func volumeMuted() {
+        if volume > 0 {
+            volumePrior = volume
+            volume = 0
         } else {
-            lautstaerke = lautstaerkeDavor > 0 ? lautstaerkeDavor : 1
+            volume = volumePrior > 0 ? volumePrior : 1
         }
     }
 
-    private func lautstaerkeStufe(_ schritt: Double) {
-        lautstaerke = min(max((lautstaerke + schritt).rounded(toPlaces: 2), 0), 1)
-        lautstaerkeKurzZeigen()
+    private func volumeLevel(_ step: Double) {
+        volume = min(max((volume + step).rounded(toPlaces: 2), 0), 1)
+        volumeShortShow()
     }
 
-    /// Mausrad über dem Regler: stufenlos, ohne zu runden, 0 bis 1.
-    private func lautstaerkeRad(_ schritt: Double) {
-        lautstaerke = min(max(lautstaerke + schritt, 0), 1)
-        lautstaerkeKurzZeigen()
+    /// Mouse wheel over the slider: continuous, unrounded, 0 to 1.
+    private func volumeWheel(_ step: Double) {
+        volume = min(max(volume + step, 0), 1)
+        volumeShortShow()
     }
 
-    /// Klappt den Regler 1,2 s auf und hält die Leiste da, damit man den Wert sieht.
-    private func lautstaerkeKurzZeigen() {
-        steuerungZeigen()
-        lautstaerkeKurz = true
-        lautstaerkeUhr?.cancel()
-        lautstaerkeUhr = Task {
+    /// Opens the slider for 1.2 s and holds the controls open so the value is visible.
+    private func volumeShortShow() {
+        controlsShow()
+        volumeShort = true
+        volumeClock?.cancel()
+        volumeClock = Task {
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled else { return }
-            lautstaerkeKurz = false
+            volumeShort = false
         }
     }
 
-    private func umschalten() {
-        guard let flaeche else { return }
-        // In der Gruppe eine Bitte: der Knopf springt erst um, wenn der
-        // Befehl zurückkommt — dann bei allen gleichzeitig.
-        if inGruppe {
-            gemeinsam.bitteUmschalten(laeuftGerade: laeuftJetzt)
-            steuerungZeigen()
+    private func toggle() {
+        guard let area else { return }
+        // In a group this is a request: the button flips only when the command comes
+        // back, then simultaneously for everyone.
+        if inGroup {
+            gemeinsam.bitToggle(runningCurrently: runsNow)
+            controlsShow()
             return
         }
-        if flaeche.isPlaying { flaeche.pause() } else { fortsetzen() }
-        steuerungZeigen()
+        if area.isPlaying { area.pause() } else { resume() }
+        controlsShow()
     }
 
-    /// Weiterspielen auf Wunsch des Zuschauers — nach langer Pause ein
-    /// Stück zurück (``Pausenruecksprung``), wie am iPhone. Die Zeit
-    /// übernimmt das Ziel im selben Moment, damit die Leiste nicht erst die
-    /// alte Stelle zeigt. In der Gruppe kommt man hier nicht an: dort ist
-    /// Weiterspielen eine Bitte.
-    private func fortsetzen() {
-        guard let ziel = flaeche?.resume(ruecksprung: !inGruppe) else { return }
-        gesprungen(auf: ziel)
+    /// Resume at the viewer's request, after a long pause a little way back
+    /// (``Pausenruecksprung``), as on iPhone. The time takes the target at once so the
+    /// scrubber does not first show the old position. In a group this is not reached:
+    /// there resuming is a request.
+    private func resume() {
+        guard let target = area?.resume(jumpBack: !inGroup) else { return }
+        jumped(on: target)
     }
 
-    private func springe(_ sekunden: Double) {
-        let ziel = Wiedergabetakt.ziel(um: sekunden, stand: stand)
-        if inGruppe {
-            // Bitte an die Gruppe; gesprungen wird, wenn der Befehl kommt.
-            gemeinsam.bitteSpringen(auf: max(0, ziel))
+    private func vault(_ seconds: Double) {
+        let target = PlaybackTick.target(um: seconds, state: state)
+        if inGroup {
+            // Request to the group; the seek happens when the command arrives.
+            gemeinsam.bitJump(on: max(0, target))
         } else {
-            flaeche?.jump(seconds: Int32(sekunden))
+            area?.jump(seconds: Int32(seconds))
         }
-        gesprungen(auf: ziel)
-        steuerungZeigen()
+        jumped(on: target)
+        controlsShow()
 
-        if sekunden < 0 { taktZurueck += 1 } else { taktVor += 1 }
-        sprungTakt += 1
-        let takt = sprungTakt
-        // **Mehrfach gedrückt, zählt sie hoch**: +10 s, +20 s, +30 s —
-        // solange die Anzeige der vorigen Sprünge in dieselbe Richtung noch
-        // steht. Dieselbe Regel wie der Doppeltipp am iPhone, hier für
-        // Pfeiltasten und Knöpfe.
-        let richtung = sekunden < 0 ? -1 : 1
-        let bisher = sprungAnzeige.flatMap { $0.richtung == richtung ? $0.sekunden : nil } ?? 0
+        if seconds < 0 { tickBack += 1 } else { tickPre += 1 }
+        jumpTick += 1
+        let tick = jumpTick
+        // **Pressed repeatedly, it counts up**: +10 s, +20 s, +30 s, as long as the
+        // display of the previous seeks in the same direction is still showing. Same rule
+        // as double-tap on iPhone, here for arrow keys and buttons.
+        let bearing = seconds < 0 ? -1 : 1
+        let untilFrom = jumpDisplay.flatMap { $0.bearing == bearing ? $0.seconds : nil } ?? 0
         withAnimation(.easeInOut(duration: 0.15)) {
-            sprungAnzeige = (richtung, bisher + Int(abs(sekunden)))
+            jumpDisplay = (bearing, untilFrom + Int(abs(seconds)))
         }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(700))
-            guard sprungTakt == takt else { return }
-            withAnimation(.easeInOut(duration: 0.15)) { sprungAnzeige = nil }
+            guard jumpTick == tick else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { jumpDisplay = nil }
         }
     }
 
-    /// Was ein anderes Gerät hier auslöst.
+    /// What another device triggers here.
     ///
-    /// Dieselben Griffe wie in ``zentraleUebernehmen``, nur über Jellyfins
-    /// Socket statt über die Medientasten. `.stopp` schließt den Player —
-    /// darauf verlässt sich das Übernehmen: drüben zu, hier weiter.
-    private func ausfuehren(_ befehl: Fernbefehl) {
-        if inGruppe {
-            switch befehl {
-            case .pause:  if laeuftJetzt { gemeinsam.bitteUmschalten(laeuftGerade: true) }
-            case .weiter: if !laeuftJetzt { gemeinsam.bitteUmschalten(laeuftGerade: false) }
-            case .umschalten: umschalten()
-            case .stopp: beenden()
-            case let .springenAuf(sekunden):
-                gemeinsam.bitteSpringen(auf: sekunden)
-                gesprungen(auf: sekunden)
-            case .vor:     springe(Double(model.vorSekunden))
-            case .zurueck: springe(-Double(model.zurueckSekunden))
-            case .naechste, .vorige: break
+    /// The same handlers as in ``hubAdopt``, but over Jellyfin's socket
+    /// instead of the media keys. `.stop` closes the player, which handoff relies
+    /// on: closed there, continuing here.
+    private func execute(_ command: RemoteCommand) {
+        if inGroup {
+            switch command {
+            case .pause:  if runsNow { gemeinsam.bitToggle(runningCurrently: true) }
+            case .proceed: if !runsNow { gemeinsam.bitToggle(runningCurrently: false) }
+            case .toggle: toggle()
+            case .stop: finish()
+            case let .jumpOn(seconds):
+                gemeinsam.bitJump(on: seconds)
+                jumped(on: seconds)
+            case .forward:     vault(Double(model.forwardSeconds))
+            case .back: vault(-Double(model.backSeconds))
+            case .next, .previous: break
             }
-            steuerungZeigen()
+            controlsShow()
             return
         }
-        switch befehl {
-        case .pause:     flaeche?.pause()
-        case .weiter:    fortsetzen()
-        case .umschalten: umschalten()
-        // **Ein anderes Gerät übernimmt** (Hinweis kam kurz vorher): das Bild
-        // geht als Karte ab. Sonst — Dashboard, andere App — wie immer.
-        case .stopp:
-            if let ziel = model.uebergabeZielNehmen(), let flaeche { abgeben(an: ziel, flaeche: flaeche) }
-            else { beenden() }
-        case let .springenAuf(sekunden):
-            flaeche?.seek(toSeconds: sekunden)
-            gesprungen(auf: sekunden)
-        case .vor:       springe(Double(model.vorSekunden))
-        case .zurueck:   springe(-Double(model.zurueckSekunden))
-        case .naechste:
-            if let folge = naechsteFolge { zurNaechstenFolge(folge) }
-        case .vorige:    break
+        switch command {
+        case .pause:     area?.pause()
+        case .proceed:    resume()
+        case .toggle: toggle()
+        // **Another device takes over** (hint arrived shortly before): the picture leaves
+        // as a card. Otherwise (dashboard, other app) as usual.
+        case .stop:
+            if let target = model.handoffTargetTake(), let area { handIn(an: target, area: area) }
+            else { finish() }
+        case let .jumpOn(seconds):
+            area?.seek(toSeconds: seconds)
+            jumped(on: seconds)
+        case .forward:       vault(Double(model.forwardSeconds))
+        case .back:   vault(-Double(model.backSeconds))
+        case .next:
+            if let episode = nextEpisode { toNextEpisode(episode) }
+        case .previous:    break
         }
-        steuerungZeigen()
+        controlsShow()
     }
 
-    /// **Jeder Sprung:** Zeit und Knopf stehen sofort auf dem Ziel, der Takt
-    /// übergibt an VLCs Zeit, sobald VLC dort ist (Bug 17.09.2026).
-    private func gesprungen(auf ziel: Double) {
-        Wiedergabetakt.gesprungen(&stand, ziel: ziel)
-        // Ein Sprung in den Abspann oder ans Ende: der Countdown der Karte
-        // fängt von vorn an, wie am iPhone (ans Ende gespult, sofort weiter).
-        ebene.gesprungen()
-        if countdownAnteil != nil { fuellungsuhr = Fuellungsuhr() }
-        angebotNachziehen(vergangen: 0)
+    /// **Every seek:** time and button immediately show the target, and the tick hands
+    /// back to VLC's time once VLC is there (a seek-confirmation bug).
+    private func jumped(on target: Double) {
+        PlaybackTick.jumped(&state, target: target)
+        // A seek into the outro or to the end restarts the card's countdown, as on
+        // iPhone (seeked to the end, advance immediately).
+        layer.jumped()
+        if countdownShare != nil { fillClock = FillClock() }
+        offeringCatchUp(elapsed: 0)
     }
 
-    /// Die Einblendung an die angezeigte Stelle anpassen — mit `vergangen: 0`
-    /// direkt nach einem Sprung, sonst einmal je Takt.
+    /// Adjust the overlay to the displayed position: with `elapsed: 0` right after a
+    /// seek, otherwise once per tick.
     @discardableResult
-    private func angebotNachziehen(vergangen: Double) -> Bool {
-        guard !wechselt else { return false }
-        var neu = ebene
-        let fertig = neu.takt(angebot: angebot,
-                          karteFaellig: Abschnittslogik.karteFaellig(position: stand.position,
-                                                                     dauer: stand.dauer,
-                                                                     abschnitte: abschnitte,
-                                                                     hatNaechsteFolge: naechsteFolge != nil,
-                                                                     restfenster: Folgenkarte.restfenster),
-                          laeuft: stand.laeuft && schirmWeg && !amRegler,
-                          vergangen: vergangen,
-                          countdown: Abschnittslogik.countdown(position: stand.position, dauer: stand.dauer,
-                                                               abschnitte: abschnitte,
-                                                               restfenster: Folgenkarte.restfenster),
-                          // Am Dateiende zählt der Countdown weiter.
-                          amEnde: Folgenende.amEnde(position: stand.position, dauer: stand.dauer)
-                              && !amRegler)
-        // Blendet der Überspringen-Knopf von selbst aus (`knopfdauer`), soll
-        // er so weich gehen, wie er kam: der Takt läuft ohne Animation, also
-        // den Wechsel der Sichtbarkeit hier ausdrücklich animieren.
-        if neu.anzeige.sichtbar != ebene.anzeige.sichtbar {
-            withAnimation(Stil.einblenden) { ebene = neu }
+    private func offeringCatchUp(elapsed: Double) -> Bool {
+        guard !switches else { return false }
+        var new = layer
+        let done = new.tick(offering: offering,
+                          cardDue: SectionLogic.cardDue(position: state.position,
+                                                                     duration: state.duration,
+                                                                     sections: sections,
+                                                                     hasNextEpisode: nextEpisode != nil,
+                                                                     remainingWindow: EpisodeCard.remainingWindow),
+                          running: state.running && screenDistance && !atSlider,
+                          elapsed: elapsed,
+                          countdown: SectionLogic.countdown(position: state.position, duration: state.duration,
+                                                               sections: sections,
+                                                               remainingWindow: EpisodeCard.remainingWindow),
+                          // At the end of the file the countdown keeps running.
+                          atEnd: EpisodeEnd.atEnd(position: state.position, duration: state.duration)
+                              && !atSlider)
+        // When the skip button hides by itself (`buttonDuration`) it should leave as softly as
+        // it came. The tick runs without animation, so the visibility change is animated
+        // explicitly here.
+        if new.display.visible != layer.display.visible {
+            withAnimation(Theme.reveal) { layer = new }
         } else {
-            ebene = neu
+            layer = new
         }
-        fuellungStellen()
-        return fertig
+        fillSet()
+        return done
     }
 
-    private func fuellungStellen() {
-        fuellungsuhr.stellen(anteil: countdownAnteil, laeuft: stand.laeuft && schirmWeg && !amRegler,
-                             laenge: ebene.countdownLaenge)
+    private func fillSet() {
+        fillClock.set(share: countdownShare, running: state.running && screenDistance && !atSlider,
+                             length: layer.countdownLength)
     }
 
-    /// Welcher Knopf gerade gilt. Dieselbe Regel wie auf iOS.
-    private var angebot: Knopfangebot {
-        guard !wechselt else { return .keiner }
-        return Abschnittslogik.angebot(position: stand.position, dauer: stand.dauer,
-                                       abschnitte: abschnitte,
-                                       hatNaechsteFolge: naechsteFolge != nil)
+    /// Which button currently applies. Same rule as on iOS.
+    private var offering: ButtonOffering {
+        guard !switches else { return .nobody }
+        return SectionLogic.offering(position: state.position, duration: state.duration,
+                                       sections: sections,
+                                       hasNextEpisode: nextEpisode != nil)
     }
 
-    /// **Eine Stelle, egal ob die Steuerung offen ist** (wie iOS): solange
-    /// der Abschnitt läuft, das Überspringen; bei geschlossener Steuerung die
-    /// Karte, bei offener der normale Knopf „Nächste Folge".
-    private var angebotDa: Bool {
-        guard angebot.sichtbar, schirmWeg, !wechselt, offeneEbene == nil else { return false }
-        return ebene.anzeige.sichtbar || (steuerungDa && angebot == .naechsteFolge)
+    /// **One place, whether or not the controls are open** (as iOS): while the section
+    /// runs, skipping; with the controls closed the card, with them open the normal
+    /// "Next episode" button.
+    private var offeringPresent: Bool {
+        guard offering.visible, screenDistance, !switches, openLayer == nil else { return false }
+        return layer.display.visible || (controlsPresent && offering == .nextEpisode)
     }
 
-    private var countdownAnteil: Double? {
-        if case let .karte(anteil) = ebene.anzeige { return anteil }
+    private var countdownShare: Double? {
+        if case let .card(share) = layer.display { return share }
         return nil
     }
 
-    /// Die Karte der nächsten Folge steht (oder zoomt gerade).
-    private var karteDa: Bool {
-        kartenwechsel != nil || (angebotDa && countdownAnteil != nil)
+    /// The next-episode card is up (or just zooming).
+    private var cardPresent: Bool {
+        cardsSwitch != nil || (offeringPresent && countdownShare != nil)
     }
 
-    /// Die Pille unten rechts — nicht, solange dort die Karte steht.
-    private var knopfDa: Bool {
-        angebotDa && countdownAnteil == nil && kartenwechsel == nil
+    /// The pill at the bottom right, not while the card is there.
+    private var buttonPresent: Bool {
+        offeringPresent && countdownShare == nil && cardsSwitch == nil
     }
 
-    /// Der Schleier liegt auf dem Bild: bei offener Steuerung — und solange
-    /// die Karte steht, damit sie im Vordergrund liest.
-    private var abgedunkelt: Bool {
-        (steuerungDa && offeneEbene == nil) || (karteDa && kartenwechsel == nil)
+    /// The scrim lies on the picture while the controls are open, and while the card
+    /// is up so that it reads in the foreground.
+    private var dimmed: Bool {
+        (controlsPresent && openLayer == nil) || (cardPresent && cardsSwitch == nil)
     }
 
-    /// Federn des Entwurfs, kritisch gedämpft (``Folgenkarte``).
-    private static func feder(_ omega: Double) -> Animation {
-        if Stil.bewegungReduziert { return Stil.blendeReduziert }
-        let f = Folgenkarte.feder(omega)
-        return .interpolatingSpring(mass: 1, stiffness: f.steifigkeit, damping: f.daempfung)
+    /// Springs from the design, critically damped (``EpisodeCard``).
+    private static func spring(_ omega: Double) -> Animation {
+        if Theme.motionReduced { return Theme.fadeReduced }
+        let f = EpisodeCard.spring(omega)
+        return .interpolatingSpring(mass: 1, stiffness: f.stiffness, damping: f.damping)
     }
 
-    /// Die Karte unten rechts — im Baum, solange es eine nächste Folge gibt,
-    /// damit Herein und Hinaus Federn aus dem jetzigen Stand sind.
+    /// The card at the bottom right stays in the tree as long as there is a next
+    /// episode, so entering and leaving are springs from the current state.
     @ViewBuilder
-    private var kartenebene: some View {
-        if schirmWeg || kartenwechsel != nil, let folge = kartenfolge ?? naechsteFolge, !inGruppe {
-            Folgenkartenansicht(
-                folge: folge,
-                bildAdresse: model.imageURL(for: folge, maxHeight: 1080)
-                    ?? model.querbildURL(for: folge, breite: 1920),
+    private var cardsLayer: some View {
+        if screenDistance || cardsSwitch != nil, let episode = cardsEpisode ?? nextEpisode, !inGroup {
+            EpisodeCardsView(
+                episode: episode,
+                imageAddress: model.imageURL(for: episode, maxHeight: 1080)
+                    ?? model.landscapeImageURL(for: episode, width: 1920),
                 mass: mass,
-                da: karteDa, zoom: kartenzoom,
-                angabenDa: karteDa && kartenwechsel == nil,
-                bild: kartenbild,
-                fuellung: kartenuhr ?? fuellungsuhr,
-                rest: ebene.countdownRest,
-                tippen: {
-                    ebene.gedrueckt()
-                    zurNaechstenFolge(folge, ausKarte: true)
+                present: cardPresent, zoom: cardsZoom,
+                detailsPresent: cardPresent && cardsSwitch == nil,
+                image: cardImage,
+                fillContent: cardsClock ?? fillClock,
+                rest: layer.countdownRest,
+                onTap: {
+                    layer.pressed()
+                    toNextEpisode(episode, fromCard: true)
                 },
-                abbrechen: karteAbsagen)
-            .allowsHitTesting(karteDa && kartenwechsel == nil)
-            .animation(karteDa ? Self.feder(Folgenkarte.erscheinenOmega)
-                                .delay(kartenwechsel == nil ? Folgenkarte.erscheinenVerzug : 0)
-                               : Self.feder(Folgenkarte.wegOmega),
-                       value: karteDa)
+                cancel: cardCancel)
+            .allowsHitTesting(cardPresent && cardsSwitch == nil)
+            .animation(cardPresent ? Self.spring(EpisodeCard.appearOmega)
+                                .delay(cardsSwitch == nil ? EpisodeCard.appearLag : 0)
+                               : Self.spring(EpisodeCard.distanceOmega),
+                       value: cardPresent)
         }
     }
 
-    /// Abspann ansehen: Countdown weg, am Dateiende kein Weiterschalten mehr
-    /// (`Angebotsebene.weiterAbgesagt`). X an der Karte, Esc, Wegziehen.
-    private func karteAbsagen() {
-        ebene.schliessen()
-        fuellungStellen()
+    /// Watch the credits: countdown gone, no auto-advance at the end of the file
+    /// (`OfferingLayer.nextCancelled`). X on the card, Esc, drag away.
+    private func cardCancel() {
+        layer.close()
+        fillSet()
     }
 
-    private func angebotAusfuehren() {
-        ebene.gedrueckt()
-        switch angebot {
-        case .keiner:
+    private func offeringRun() {
+        layer.pressed()
+        switch offering {
+        case .nobody:
             break
-        case let .ueberspringen(nach, _):
-            if inGruppe { gemeinsam.bitteSpringen(auf: nach) }
-            else { flaeche?.seek(toSeconds: nach) }
-            gesprungen(auf: nach)
-            steuerungZeigen()
-        case .naechsteFolge:
-            // Aus der Karte (Eingabetaste) zoomt sie ins Bild, aus der Pille
-            // der offenen Steuerung nicht.
-            if let folge = naechsteFolge { zurNaechstenFolge(folge, ausKarte: karteDa) }
+        case let .skip(to, _):
+            if inGroup { gemeinsam.bitJump(on: to) }
+            else { area?.seek(toSeconds: to) }
+            jumped(on: to)
+            controlsShow()
+        case .nextEpisode:
+            // From the card (Return) it zooms into the picture, from the pill of the open
+            // controls it does not.
+            if let episode = nextEpisode { toNextEpisode(episode, fromCard: cardPresent) }
         }
     }
 
-    /// Der Stopp für das, was jetzt läuft — nur, wenn sein Start gemeldet
-    /// wurde. Einmal für `beenden` und einmal für das Verschwinden ohne.
-    private func stoppMeldung(bei stelle: Double) -> @Sendable () async -> Void {
-        let laufend = (item: titel, plan: plan, gemeldet: stand.startGemeldet)
+    /// The stop for whatever is running now, only if its start was reported. Once for
+    /// `finish` and once for disappearing without it.
+    private func stopMessage(at spot: Double) -> @Sendable () async -> Void {
+        let ongoing = (item: title, plan: plan, reported: state.startReported)
         let model = model
         return {
-            guard laufend.gemeldet else { return }
-            await model.reportStopped(item: laufend.item, plan: laufend.plan, seconds: stelle)
+            guard ongoing.reported else { return }
+            await model.reportStopped(item: ongoing.item, plan: ongoing.plan, seconds: spot)
         }
     }
 
-    /// Zu Ende geschaut? Zählt für Bewertung und Discord-Hinweis
-    /// (`AppModel.fertigGeschaut`) — je Titel einmal.
-    private func zaehlen(bei stelle: Double) {
-        guard gezaehlt != titel.id else { return }
-        gezaehlt = titel.id
-        model.fertigGeschaut(position: stelle, dauer: stand.dauer)
+    /// Watched to the end? Counts for rating and the Discord hint
+    /// (`AppModel.doneWatch`), once per title.
+    private func tally(at spot: Double) {
+        guard counted != title.id else { return }
+        counted = title.id
+        model.doneWatch(position: spot, duration: state.duration)
     }
 
-    /// **Die Wiedergabe geht an ein anderes Gerät** (``Uebergabeabgang``).
-    /// Die Stelle geht sofort an den Server — drüben wird auf sie gewartet —,
-    /// die Steuerung weg, das Bild steht bei 0,12 s und geht als Karte ab;
-    /// danach schließt der Player wie sonst.
-    private func abgeben(an ziel: String, flaeche: VLCPlayerView) {
-        guard !abgabeLaeuft else { return }
-        abgabeLaeuft = true
-        let stelle = stand.position
-        Task { await stoppMeldung(bei: stelle)() }
-        var ohne = Transaction()
-        ohne.disablesAnimations = true
-        withTransaction(ohne) { steuerungDa = false }
-        Uebergabeabgang.starten(flaeche: flaeche, ziel: ziel, titel: titel, model: model,
-                                anhalten: { flaeche.pause() },
-                                fertig: { beenden() })
+    /// **Playback goes to another device** (``Uebergabeabgang``). The position goes to
+    /// the server immediately (the other side waits for it), the controls go away, the
+    /// picture stops at 0.12 s and leaves as a card; then the player closes as usual.
+    private func handIn(an target: String, area: VLCPlayerView) {
+        guard !handoverRuns else { return }
+        handoverRuns = true
+        let spot = state.position
+        Task { await stopMessage(at: spot)() }
+        var without = Transaction()
+        without.disablesAnimations = true
+        withTransaction(without) { controlsPresent = false }
+        HandoffExit.start(area: area, target: target, title: title, model: model,
+                                halt: { area.pause() },
+                                done: { finish() })
     }
 
-    private func beenden() {
-        // **Vor** dem Anhalten ablesen — danach steht die Zeit auf null und
-        // „Weiterschauen" verlöre die Stelle.
-        let stelle = stand.position
-        zaehlen(bei: stelle)
+    private func finish() {
+        // Read **before** pausing; afterwards the time is zero and "Continue watching"
+        // would lose the position.
+        let spot = state.position
+        tally(at: spot)
 
-        // Zuerst die OpenGL-Fläche weg, sonst bleibt sie als schwarzes
-        // Rechteck liegen, während die Seite darüber hinunterfährt.
-        flaecheAus = true
+        // First remove the OpenGL surface, otherwise it stays as a black rectangle while
+        // the page above slides down.
+        areaOut = true
 
-        // **Anhalten ja, abräumen später.**
+        // **Pause now, tear down later.**
         //
-        // Hier stand `flaeche?.stop()` unmittelbar vor `schliessen()`. `stop`
-        // räumt den Dekoder ab und braucht dafür sichtbar Zeit — auf dem
-        // Hauptlauf, in demselben Vorgang, in dem die Bewegung nach unten
-        // losfährt. Deshalb war das Öffnen weich und das Schliessen hart:
-        // beim Öffnen ist nichts abzuräumen.
+        // This used to call `area?.stop()` right before `close()`. `stop` tears
+        // down the decoder and visibly takes time, on the main thread, in the same
+        // operation in which the downward motion starts. That is why opening was smooth
+        // and closing was abrupt: opening has nothing to tear down.
         //
-        // `pause` ist billig und nimmt den Ton sofort weg. Das Abräumen
-        // folgt, wenn die Bewegung durch ist.
-        flaeche?.pause()
+        // `pause` is cheap and silences the audio immediately. Teardown follows once the
+        // motion is done.
+        area?.pause()
 
-        // Ueber den Wechsel: laeuft gerade einer, bricht er ab, und ist der
-        // Start der neuen Folge unterwegs, geht der Stopp danach.
-        folgenwechsel.schliessen(stoppen: stoppMeldung(bei: stelle))
-        schliessen()
-        // Abgeräumt wird in `Videoflaeche.dismantleNSView`, also dann, wenn
-        // SwiftUI die Ansicht wirklich entfernt — nach der Bewegung. Ein
-        // eigener Wecker dafür war geraten und traf den Zeitpunkt nur
-        // ungefähr.
+        // About the switch: if one is running it is aborted, and if the new episode's
+        // start is on its way, the stop follows after it.
+        episodesSwitch.close(stopNow: stopMessage(at: spot))
+        close()
+        // Teardown happens in `MacVideoSurface.dismantleNSView`, i.e. when SwiftUI really
+        // removes the view, after the motion. A separate timer for this was a guess and
+        // only roughly hit the moment.
     }
 
-    /// Esc verlässt zuerst eine offene Ebene, dann das Vollbild, und schließt
-    /// erst dann den Film. Andersherum verliert man beim Versuch, aus dem
-    /// Vollbild zu kommen, die Wiedergabe — und das ist keine Kleinigkeit,
-    /// wenn man mitten drin ist.
-    private func fluchttaste() {
-        // **Erst die Auswahl, dann der Player.** Zurueck heisst zuerst
-        // „diese Ebene geht zu" — dieselbe Regel wie auf iOS und dem
-        // Fernseher.
-        if offeneEbene != nil {
-            ebeneSchliessen()
+    /// Esc first leaves an open layer, then full screen, and only then closes the
+    /// film. The other way round, trying to leave full screen would lose playback,
+    /// which matters in the middle of a film.
+    private func escapeKey() {
+        // **First the selection, then the player.** Back first means "this layer closes",
+        // The same rule as on iOS and tvOS.
+        if openLayer != nil {
+            layerClose()
             return
         }
-        // Dann die Einblendung — der Film läuft weiter.
-        if angebotDa, ebene.anzeige.sichtbar {
-            ebene.schliessen()
-            fuellungStellen()
+        // Then the overlay; the film keeps running.
+        if offeringPresent, layer.display.visible {
+            layer.close()
+            fillSet()
             return
         }
-        if halter.istVollbild {
-            halter.vollbildUmschalten()
+        if holder.isFullscreen {
+            holder.fullscreenToggle()
         } else {
-            beenden()
+            finish()
         }
     }
 
-    /// Vier Sekunden Ruhe, dann zieht sie sich zurück — nicht im
-    /// Pausenzustand. Dieselbe Regel wie auf dem iPhone.
-    /// Ohne die vier Sekunden — für den Fall, dass der Zeiger das Fenster
-    /// verlässt.
-    private func steuerungSofortWeg() {
-        // Auch hier: eine offene Ebene bleibt. Den Zeiger aus dem Fenster
-        // zu schieben ist kein Grund, eine Entscheidung abzuraeumen, die
-        // gerade getroffen wird.
-        guard offeneEbene == nil else { return }
-        ruheAufgabe?.cancel()
+    /// Four seconds of quiet, then it withdraws, but not while paused. Same rule as on
+    /// iPhone. The second variant has no four seconds, for when the pointer leaves
+    /// the window.
+    private func controlsImmediateDistance() {
+        // Here too an open layer stays. Moving the pointer out of the window is no reason
+        // to clear a decision that is being made.
+        guard openLayer == nil else { return }
+        idleTask?.cancel()
         withAnimation(.easeInOut(duration: 0.34)) {
-            steuerungDa = false
-            halter.setzeSteuerung(false)
+            controlsPresent = false
+            holder.setControls(false)
         }
     }
 
-    /// `.bewusst` (Klick, Taste, Knopf) sagt eine laufende Karte „Nächste
-    /// Folge" ab, `.nebenbei` (Zeigerbewegung) nicht.
-    private func steuerungZeigen(durch art: Angebotsebene.Oeffnung = .bewusst) {
-        withAnimation(.easeOut(duration: 0.18)) { steuerungDa = true }
-        ebene.steuerung(offen: true, durch: art)
-        fuellungStellen()
-        halter.setzeSteuerung(true)
+    /// `.deliberate` (click, key, button) dismisses a running "Next episode" card,
+    /// `.beside` (pointer movement) does not.
+    private func controlsShow(through art: OfferingLayer.Opening = .deliberate) {
+        withAnimation(.easeOut(duration: 0.18)) { controlsPresent = true }
+        layer.controls(opened: true, through: art)
+        fillSet()
+        holder.setControls(true)
         NSCursor.unhide()
-        ruheAufgabe?.cancel()
-        ruheAufgabe = Task {
+        idleTask?.cancel()
+        idleTask = Task {
             try? await Task.sleep(for: .seconds(4))
-            // **Solange eine Ebene offen ist, wird nichts weggenommen.**
+            // **While a layer is open, nothing is taken away.**
             //
-            // Sie stand mit im Ausblenden -- wer die Einstellungen oeffnete
-            // und die Maus liegen liess, sah nach vier Sekunden alles
-            // verschwinden, die Auswahl eingeschlossen. Eine offene Ebene
-            // ist Aufmerksamkeit; sie zaehlt wie eine Hand am Regler.
+            // It used to be part of the hiding: anyone who opened settings and left the mouse
+            // alone saw everything vanish after four seconds, the selection included. An
+            // open layer counts as attention, like a hand on the slider.
             //
-            // Die Uhr faengt nach dem Schliessen von vorn an, siehe unten --
-            // dieser Riegel sitzt nach dem Schlafen, die Aufgabe endet hier
-            // also, ohne eine neue anzustossen.
-            guard !Task.isCancelled, stand.laeuft, !amRegler, !lautstaerkeZieht, offeneEbene == nil else { return }
+            // The timer restarts after closing (see below). This latch sits after the sleep,
+            // so the task ends here without starting a new one.
+            guard !Task.isCancelled, state.running, !atSlider, !volumePulls, openLayer == nil else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
-                steuerungDa = false
-                halter.setzeSteuerung(false)
+                controlsPresent = false
+                holder.setControls(false)
             }
-            // Der Zeiger geht mit. `setHiddenUntilMouseMoves` ist der richtige
-            // Weg und nicht `hide()`: er kommt bei der nächsten Bewegung von
-            // selbst zurück, ohne dass wir ihn wieder einschalten müssen —
-            // und bleibt nicht verschwunden, wenn die App abstürzt.
+            // The pointer goes along. `setHiddenUntilMouseMoves` is the right way, not
+            // `hide()`: it comes back by itself on the next movement without us having to
+            // re-enable it, and it does not stay hidden if the app crashes.
             NSCursor.setHiddenUntilMouseMoves(true)
         }
     }
 
-    /// Now Playing und die Medientasten der Tastatur. Beides läuft über
-    /// `MPRemoteCommandCenter` — auf dem Mac braucht es dafür nichts Eigenes.
-    private func zentraleUebernehmen() {
-        seitStart = Date()
-        // In der Gruppe gehen die Medientasten als Bitte — gefragt wird beim
-        // Druck, nicht beim Anlegen der Griffe.
-        zentrale.uebernehmen(.init(
-            abspielen: { if inGruppe { gemeinsam.bitteUmschalten(laeuftGerade: false) }
-                         else { fortsetzen() } },
-            anhalten:  { if inGruppe { gemeinsam.bitteUmschalten(laeuftGerade: true) }
-                         else { flaeche?.pause() } },
-            umschalten: { umschalten() },
-            springenAuf: { ziel in
-                if inGruppe { gemeinsam.bitteSpringen(auf: ziel); gesprungen(auf: ziel) }
-                else { flaeche?.seek(toSeconds: ziel); gesprungen(auf: ziel) } },
-            vor:     { springe(Double(model.vorSekunden)) },
-            zurueck: { springe(-Double(model.zurueckSekunden)) },
-            naechste: inGruppe ? nil : naechsteFolge.map { folge in { zurNaechstenFolge(folge) } }))
+    /// Now Playing and the keyboard's media keys. Both go through
+    /// `MPRemoteCommandCenter`, which needs nothing special on the Mac.
+    private func hubAdopt() {
+        sinceStart = Date()
+        // In a group, media keys go out as requests; the group is asked at press time,
+        // not when the handlers are created.
+        hub.adopt(.init(
+            play: { if inGroup { gemeinsam.bitToggle(runningCurrently: false) }
+                         else { resume() } },
+            halt:  { if inGroup { gemeinsam.bitToggle(runningCurrently: true) }
+                         else { area?.pause() } },
+            toggle: { toggle() },
+            jumpOn: { target in
+                if inGroup { gemeinsam.bitJump(on: target); jumped(on: target) }
+                else { area?.seek(toSeconds: target); jumped(on: target) } },
+            forward:     { vault(Double(model.forwardSeconds)) },
+            back: { vault(-Double(model.backSeconds)) },
+            next: inGroup ? nil : nextEpisode.map { episode in { toNextEpisode(episode) } }))
     }
 
-    /// Wechselt im laufenden Player, ohne in die Übersicht zurückzuspringen.
+    /// Switches inside the running player without returning to the overview.
     ///
-    /// **Der Ablauf steht im Paket** (`Folgenwechsel`), gemeinsam mit iOS und
-    /// tvOS. Hier setzte der Wechsel den Stand erst nach `await reportStart`
-    /// zurück; fiel ein Meldetakt dazwischen, bekam die **neue** Folge die
-    /// Stelle der alten als Fortsetzstelle (Audit 16.09.2026, T1-M2), und der
-    /// Ladeschirm kam nicht zurück (T1-M3).
-    /// Direct Play oder Obergrenze — nur, wenn vom Server gespielt wird und
-    /// das Konto umwandeln darf.
-    private var qualitaetswahl: Qualitaetswahl? {
-        // **In der Gruppe keine Wahl** (wie iOS): der Wechsel lud den Titel
-        // an der Gruppe vorbei neu, danach lief man allein weiter.
-        guard model.downloads.datei(fuer: titel.id) == nil, model.umwandelnErlaubt,
-              !inGruppe else { return nil }
-        return Qualitaetswahl(directPlay: model.immerDirectPlay, grenze: model.bitratenGrenze) { wert in
-            // Die Gruppe kann dazukommen, während die Ebene offen steht.
-            guard !inGruppe else { return }
-            let vorher = (model.immerDirectPlay, model.bitratenGrenze)
-            if let wert {
-                model.immerDirectPlay = false
-                model.bitratenGrenze = wert
+    /// **The sequence lives in the package** (`EpisodeSwitch`), shared with iOS and
+    /// tvOS. Here the switch used to reset the state only after `await reportStart`;
+    /// if a report tick fell in between, the **new** episode got the old episode's
+    /// position as resume position, and the loading screen did not come
+    /// back.
+    /// Direct Play or cap: only when playing from the server and the account may
+    /// transcode.
+    private var qualitySelection: QualitySelection? {
+        // **No choice in a group** (as iOS): the switch used to reload the title past the
+        // group, after which one continued alone.
+        guard model.downloads.file(for: title.id) == nil, model.convertAllowed,
+              !inGroup else { return nil }
+        return QualitySelection(directPlay: model.alwaysDirectPlay, limit: model.bitratesLimit) { value in
+            // The group can join while the layer is open.
+            guard !inGroup else { return }
+            let before = (model.alwaysDirectPlay, model.bitratesLimit)
+            if let value {
+                model.alwaysDirectPlay = false
+                model.bitratesLimit = value
             } else {
-                model.immerDirectPlay = true
+                model.alwaysDirectPlay = true
             }
-            guard vorher != (model.immerDirectPlay, model.bitratenGrenze) else { return }
-            Protokoll.schreib("[Qualität] \(model.immerDirectPlay ? "Direct Play" : "\(model.bitratenGrenze) Mbit/s") — neu laden bei \(Int(stand.position)) s")
-            let stelle = stand.position
-            ebeneSchliessen()
-            // Ein vorbereiteter Plan der nächsten Folge trägt die alte Wahl.
-            vorbereitung.vergessen()
-            qualitaetGewechselt = true
-            zurNaechstenFolge(titel, ab: stelle)
+            guard before != (model.alwaysDirectPlay, model.bitratesLimit) else { return }
+            AppLog.writeOut("[Qualität] \(model.alwaysDirectPlay ? "Direct Play" : "\(model.bitratesLimit) Mbit/s") — neu laden bei \(Int(state.position)) s")
+            let spot = state.position
+            layerClose()
+            // A prepared plan for the next episode carries the old choice.
+            preparation.forget()
+            qualitySwitched = true
+            toNextEpisode(title, since: spot)
         }
     }
 
-    private func zurNaechstenFolge(_ folge: Item, ab: Double = 0, ausKarte: Bool = false) {
-        guard !wechselt else { return }
-        wechselt = true
-        // **Aus der Karte: sie zoomt aufs ganze Bild** und deckt den Wechsel
-        // (wie iOS). Nicht in der Gruppe, nicht bei derselben Folge
-        // (Qualitätswahl).
-        let zoomt = ausKarte && !inGruppe && folge.id != titel.id
-        if zoomt {
-            kartenfolge = folge
-            kartenuhr = fuellungsuhr
-            kartenwechsel = Kartenwechsel(folgeID: folge.id)
-            Protokoll.schreib("[Karte] Start → \(folge.id)")
-            withAnimation(Self.feder(Folgenkarte.zoomOmega)) { kartenzoom = 1 }
-            if let beginn = kartenwechsel?.beginn { Task { await karteWachen(beginn) } }
+    private func toNextEpisode(_ episode: Item, since: Double = 0, fromCard: Bool = false) {
+        guard !switches else { return }
+        switches = true
+        // **From the card: it zooms to the whole picture** and covers the switch (as
+        // iOS). Not in a group, not for the same episode (quality choice).
+        let zooms = fromCard && !inGroup && episode.id != title.id
+        if zooms {
+            cardsEpisode = episode
+            cardsClock = fillClock
+            cardsSwitch = CardsSwitch(episodeID: episode.id)
+            AppLog.writeOut("[Karte] Start → \(episode.id)")
+            withAnimation(Self.spring(EpisodeCard.zoomOmega)) { cardsZoom = 1 }
+            if let beginning = cardsSwitch?.beginning { Task { await cardGuard(beginning) } }
         }
-        let tauschAb = zoomt ? Date().addingTimeInterval(Folgenkarte.tausch) : nil
-        zaehlen(bei: stand.position)
-        let alt = (item: titel, plan: plan, stelle: stand.position)
-        // In den letzten Minuten schon geholt (``Folgenvorbereitung``)? Dann
-        // wartet der Wechsel nicht noch einmal auf den Server.
-        let vorbereitet = vorbereitung.nimm(folge.id)
-        Protokoll.schreib("[Wechsel] Beginn → \(folge.id) · Plan vorbereitet: \(vorbereitet != nil ? "ja" : "nein")")
+        let swapOff = zooms ? Date().addingTimeInterval(EpisodeCard.swap) : nil
+        tally(at: state.position)
+        let alt = (item: title, plan: plan, spot: state.position)
+        // Already fetched in the last minutes (``EpisodePreparation``)? Then the switch
+        // does not wait for the server again.
+        let prepared = preparation.take(episode.id)
+        AppLog.writeOut("[Wechsel] Beginn → \(episode.id) · Plan vorbereitet: \(prepared != nil ? "ja" : "nein")")
         Task {
-            let ergebnis = await folgenwechsel.ausfuehren(.init(
-                stoppen: { await model.reportStopped(item: alt.item, plan: alt.plan,
-                                                     seconds: alt.stelle) },
-                planen: {
-                    let neuerPlan: PlaybackPlan?
-                    if let vorbereitet { neuerPlan = vorbereitet }
-                    else { neuerPlan = await model.plan(for: folge.id) }
-                    // Erst tauschen, wenn die Karte das Bild deckt — sonst
-                    // stünde um sie herum Schwarz.
-                    if let tauschAb, neuerPlan != nil {
-                        let rest = tauschAb.timeIntervalSinceNow
+            let result = await episodesSwitch.execute(.init(
+                stopNow: { await model.reportStopped(item: alt.item, plan: alt.plan,
+                                                     seconds: alt.spot) },
+                planOut: {
+                    let newPlan: PlaybackPlan?
+                    if let prepared { newPlan = prepared }
+                    else { newPlan = await model.plan(for: episode.id) }
+                    // Only swap once the card covers the picture; otherwise black would show around
+                    // it.
+                    if let swapOff, newPlan != nil {
+                        let rest = swapOff.timeIntervalSinceNow
                         if rest > 0 { try? await Task.sleep(for: .seconds(rest)) }
                     }
-                    return neuerPlan
+                    return newPlan
                 },
-                anwenden: { neuerPlan in folgeAnwenden(folge, neuerPlan, ab: ab) },
-                starten: { neuerPlan in await model.reportStart(item: folge, plan: neuerPlan,
-                                                           seconds: ab) },
-                gescheitert: {
-                    melde(String(localized: "Nächste Folge konnte nicht geladen werden."))
-                    // Die alte Folge laeuft weiter, der Server kennt sie aber
-                    // schon als beendet. Die Schleife meldet sie neu an.
-                    stand.startGemeldet = false
+                apply: { newPlan in episodeApply(episode, newPlan, since: since) },
+                start: { newPlan in await model.reportStart(item: episode, plan: newPlan,
+                                                           seconds: since) },
+                failed: {
+                    notify(String(localized: "Nächste Folge konnte nicht geladen werden."))
+                    // The old episode keeps playing, but the server already considers it finished.
+                    // The loop reports it again.
+                    state.startReported = false
                 }))
-            Protokoll.schreib("[Wechsel] \(ergebnis) → \(folge.id)")
-            // **Hier ist der Wechsel fertig, also faellt hier der Riegel** —
-            // nicht erst nach dem Nachschlag. Solange er liegt, gibt es keine
-            // Knoepfe; eine gute Minute ohne Knoepfe fuehlt sich tot an.
-            wechselt = false
-            guard ergebnis == .gewechselt else {
-                if kartenwechsel != nil { karteZurueck() }
+            AppLog.writeOut("[Wechsel] \(result) → \(episode.id)")
+            // **The switch is done here, so the latch is released here**, not after the
+            // follow-up. While it is held there are no buttons, and a good minute without
+            // buttons feels dead.
+            switches = false
+            guard result == .switched else {
+                if cardsSwitch != nil { cardBack() }
                 return
             }
-            await folgenwechsel.nachschlagen(holen: { await model.folgeNach(folge) },
-                                             uebernehmen: { naechsteFolge = gemeinsamAn ? nil : $0 })
-            await folgenwechsel.nachschlagen(holen: { await model.abschnitte(fuer: folge.id) },
-                                             uebernehmen: { abschnitte = $0 })
-            // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste
-            // Folge", und der braucht `naechsteFolge`.
-            zentraleUebernehmen()
+            await episodesSwitch.lookUp(fetch: { await model.episodePost(episode) },
+                                             adopt: { nextEpisode = sharedAn ? nil : $0 })
+            await episodesSwitch.lookUp(fetch: { await model.sections(for: episode.id) },
+                                             adopt: { sections = $0 })
+            // **Stays at the end.** The hub carries the "next episode" command, which needs
+            // `nextEpisode`.
+            hubAdopt()
         }
     }
 
-    /// Das erste Bild der neuen Folge steht: das Vorschaubild blendet aus,
-    /// darunter läuft sie schon — frühestens ab dem Tausch.
-    private func karteUebergeben() async {
-        guard let k = kartenwechsel, let bildSeit = k.bildSeit else { return }
-        let warten = Folgenkarte.blendeAb(bildSeit: bildSeit) - k.seit
-        if warten > 0 { try? await Task.sleep(for: .seconds(warten)) }
-        withAnimation(Stil.bewegungReduziert ? Stil.blendeReduziert
-                      : .easeInOut(duration: Folgenkarte.bildBlende)) { kartenbild = 0 }
-        try? await Task.sleep(for: .seconds(Folgenkarte.bildBlende))
-        guard kartenwechsel?.beginn == k.beginn else { return }
-        Protokoll.schreib("[Karte] Ende nach \(Int(k.seit * 1000)) ms")
-        karteAufraeumen()
+    /// The first frame of the new episode is up: the preview image fades out, with the
+    /// episode already playing underneath, from the swap at the earliest.
+    private func cardHandOver() async {
+        guard let k = cardsSwitch, let imageSince = k.imageSince else { return }
+        let wait = EpisodeCard.fadeOff(imageSince: imageSince) - k.since
+        if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+        withAnimation(Theme.motionReduced ? Theme.fadeReduced
+                      : .easeInOut(duration: EpisodeCard.imageFade)) { cardImage = 0 }
+        try? await Task.sleep(for: .seconds(EpisodeCard.imageFade))
+        guard cardsSwitch?.beginning == k.beginning else { return }
+        AppLog.writeOut("[Karte] Ende nach \(Int(k.since * 1000)) ms")
+        cardCleanUp()
     }
 
-    /// Der Wechsel scheiterte: die Karte geht zurück in die Ecke und hinaus.
-    private func karteZurueck() {
-        Protokoll.schreib("[Karte] Wechsel gescheitert, zurück")
-        withAnimation(Self.feder(Folgenkarte.wegOmega)) { kartenzoom = 0 }
-        karteAufraeumen()
+    /// The switch failed: the card goes back to the corner and out.
+    private func cardBack() {
+        AppLog.writeOut("[Karte] Wechsel gescheitert, zurück")
+        withAnimation(Self.spring(EpisodeCard.distanceOmega)) { cardsZoom = 0 }
+        cardCleanUp()
     }
 
-    /// **Ohne erstes Bild weicht die Karte dem Ladeschirm.** Solange sie
-    /// gezoomt liegt, gibt es weder Steuerung noch Ladeschirm und damit
-    /// keinen Weg hinaus; kommt das Bild nicht (``Folgenkarte/weicht``),
-    /// übernimmt der gewöhnliche Ladeschirm samt Schließen. Der Wechsel
-    /// läuft darunter weiter.
-    private func karteWachen(_ beginn: Date) async {
-        try? await Task.sleep(for: .seconds(Folgenkarte.hoechstensDecken))
-        guard let k = kartenwechsel, k.beginn == beginn,
-              Folgenkarte.weicht(seit: k.seit, bildSeit: k.bildSeit) else { return }
-        Protokoll.schreib("[Karte] kein Bild nach \(Int(k.seit * 1000)) ms, Ladeschirm übernimmt")
-        karteAufraeumen()
+    /// **Without a first frame the card yields to the loading screen.** While it is
+    /// zoomed there are neither controls nor loading screen, hence no way out; if the
+    /// frame does not arrive (``Folgenkarte/weicht``), the regular loading screen,
+    /// including close, takes over. The switch continues underneath.
+    private func cardGuard(_ beginning: Date) async {
+        try? await Task.sleep(for: .seconds(EpisodeCard.atMostCovers))
+        guard let k = cardsSwitch, k.beginning == beginning,
+              EpisodeCard.yields(since: k.since, imageSince: k.imageSince) else { return }
+        AppLog.writeOut("[Karte] kein Bild nach \(Int(k.since * 1000)) ms, Ladeschirm übernimmt")
+        cardCleanUp()
     }
 
-    private func karteAufraeumen() {
+    private func cardCleanUp() {
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) {
-            kartenwechsel = nil
-            kartenfolge = nil
-            kartenuhr = nil
-            kartenzoom = 0
-            kartenbild = 1
+            cardsSwitch = nil
+            cardsEpisode = nil
+            cardsClock = nil
+            cardsZoom = 0
+            cardImage = 1
         }
     }
 
-    /// Die neue Folge übernehmen — **vor** `play` und vor jedem `await`.
-    /// Die Spurwahl fürs Öffnen — dieselben Eingaben wie `wendeSprachenAn`,
-    /// nur schon vor `play`, damit VLC gleich mit der richtigen Spur anläuft.
-    private func spurwunsch(_ titel: Item, _ plan: PlaybackPlan) -> VLCPlayerView.Spurwunsch {
-        VLCPlayerView.Spurwunsch(ton: model.tonSprache, untertitel: model.untertitelSprache,
-                                 automatisch: model.untertitelAutomatisch, quelle: plan.quelle,
-                                 titel: Spurgedaechtnis.titel(fuer: titel))
+    /// Take over the new episode **before** `play` and before any `await`.
+    /// Track selection for opening: the same inputs as `wendeLanguagesAn`, but already
+    /// before `play` so that VLC starts with the right track.
+    private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
+        VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
+                                 automatic: model.subtitleAutomatic, source: plan.source,
+                                 title: TrackMemory.title(for: title))
     }
 
-    private func folgeAnwenden(_ folge: Item, _ neuerPlan: PlaybackPlan, ab: Double = 0) {
-        if let kartenwechsel {
-            Protokoll.schreib("[Karte] Tausch nach \(Int(kartenwechsel.seit * 1000)) ms")
+    private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {
+        if let cardsSwitch {
+            AppLog.writeOut("[Karte] Tausch nach \(Int(cardsSwitch.since * 1000)) ms")
         }
-        // Verzögerung: dieselbe Serie behält sie, sonst null.
-        flaeche?.verzoegerungFuerNeuenTitel(alterTitel: titel.id, alteSerie: titel.seriesId,
-                                            neuerTitel: folge.id, neueSerie: folge.seriesId)
-        titel = folge
-        plan = neuerPlan
-        // Grenze gewählt, aber es läuft das Original: entweder reicht die Datei
-        // schon, oder der Server wandelt nicht um. Sagen statt schweigen.
-        if qualitaetGewechselt {
-            qualitaetGewechselt = false
-            if !model.immerDirectPlay, neuerPlan.method == .directPlay {
-                melde(String(localized: "Läuft in Originalqualität. Der Server wandelt nichts um."))
+        // Delay: the same series keeps it, otherwise zero.
+        area?.delayForNewTitle(oldTitle: title.id, oldSeries: title.seriesId,
+                                            newTitle: episode.id, addedSeries: episode.seriesId)
+        title = episode
+        plan = newPlan
+        // A cap was chosen but the original is playing: either the file already fits or
+        // the server does not transcode. Say so instead of staying silent.
+        if qualitySwitched {
+            qualitySwitched = false
+            if !model.alwaysDirectPlay, newPlan.method == .directPlay {
+                notify(String(localized: "Läuft in Originalqualität. Der Server wandelt nichts um."))
             }
         }
-        // Stelle, Spuren, Startmeldung und erstes Bild zurueck; `true`, weil
-        // der Wechsel den Start meldet.
-        Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
-        // **Mitten in der Folge anfangen ist ein Sprung** — wie auf iOS.
-        if ab > 0 { gesprungen(auf: ab) }
-        // Der Ladeschirm kommt zurueck, bis VLC die neue Folge zeigt.
-        schirmWeg = false
-        // **Auch die Uhr.** Ohne das hält `Zeitannahme` die neue Folge für
-        // einen alten, längst eingesteuerten Titel. Auf tvOS hat genau das
-        // eine Folge übersprungen. (`zentraleUebernehmen` setzt sie ebenfalls.)
-        seitStart = Date()
-        // **Nichts zeigt mehr auf die alte Folge** (T1-M4).
-        naechsteFolge = nil
-        abschnitte = []
-        kapitel = []
-        ebene.neueFolge()
-        zentraleUebernehmen()
-        // **Auch hier vor `play`.** Ohne das behielte die nächste Folge die
-        // Pufferstufe vom Öffnen.
-        flaeche?.puffer = model.pufferstufe
-        flaeche?.spurwunsch = spurwunsch(folge, neuerPlan)
-        flaeche?.play(url: neuerPlan.url, abSekunden: ab, container: neuerPlan.container,
-                      untertitel: model.untertiteldateien(neuerPlan),
-                      softwareDekoder: neuerPlan.softwareDekoder)
+        // Reset position, tracks, start report and first frame; `true` because the switch
+        // reports the start.
+        PlaybackTick.newTitle(&state, startReported: true)
+        // **Starting mid-episode is a seek**, as on iOS.
+        if since > 0 { jumped(on: since) }
+        // The loading screen returns until VLC shows the new episode.
+        screenDistance = false
+        // **The clock too.** Without it `TimeAssumption` takes the new episode for an old,
+        // long-settled title. On tvOS exactly this skipped an episode.
+        // (`hubAdopt` sets it as well.)
+        sinceStart = Date()
+        // **Nothing points at the old episode any more**.
+        nextEpisode = nil
+        sections = []
+        chapter = []
+        layer.newEpisode()
+        hubAdopt()
+        // **Here too before `play`.** Without it the next episode would keep the buffer
+        // level from opening.
+        area?.buffer = model.bufferLevel
+        area?.trackRequest = trackRequest(episode, newPlan)
+        area?.play(url: newPlan.url, offSeconds: since, container: newPlan.container,
+                      subtitle: model.subtitleFiles(newPlan),
+                      softwareDecoder: newPlan.softwareDecoder)
     }
 
-    /// Tastenkürzel G/H/J/K: einen Schritt schieben und den neuen Wert sagen.
-    private func verzoegern(untertitel: Bool, _ richtung: Int) {
-        guard let flaeche else { return }
-        if untertitel {
-            flaeche.untertitelVerzoegerung = flaeche.untertitelVerzoegerung.verschoben(richtung)
-            melde(String(localized: "Untertitelverzögerung \(flaeche.untertitelVerzoegerung.text())"))
+    /// Shortcuts G/H/J/K: shift one step and announce the new value.
+    private func postpone(subtitle: Bool, _ bearing: Int) {
+        guard let area else { return }
+        if subtitle {
+            area.subtitleDelay = area.subtitleDelay.shifted(bearing)
+            notify(String(localized: "Untertitelverzögerung \(area.subtitleDelay.text())"))
         } else {
-            flaeche.tonVerzoegerung = flaeche.tonVerzoegerung.verschoben(richtung)
-            melde(String(localized: "Tonverzögerung \(flaeche.tonVerzoegerung.text())"))
+            area.audioDelay = area.audioDelay.shifted(bearing)
+            notify(String(localized: "Tonverzögerung \(area.audioDelay.text())"))
         }
     }
 
-    /// Trägt den jetzigen Stand in die Brücke zur Gruppe und gibt ihr den
-    /// Takt — siehe ``Gemeinsamspieler``, warum ein Objekt und kein Abschluss.
-    private func brueckeNachziehen() {
-        bruecke.flaeche = flaeche
-        bruecke.titelID = titel.id
-        bruecke.istBereit = (flaeche?.startFertig ?? false) && schirmWeg && !wechselt
-        bruecke.sprungZeigen = { ziel in gesprungen(auf: ziel) }
-        bruecke.titelWechseln = { folge, _, ab in zurNaechstenFolge(folge, ab: ab) }
-        gemeinsam.spielertakt()
+    /// Writes the current state into the bridge to the group and gives it the tick;
+    /// see ``Gemeinsamspieler`` for why an object and not a closure.
+    private func bridgeCatchUp() {
+        bridge.area = area
+        bridge.titleID = title.id
+        bridge.isReady = (area?.startReady ?? false) && screenDistance && !switches
+        bridge.jumpShow = { target in jumped(on: target) }
+        bridge.switchTitle = { episode, _, since in toNextEpisode(episode, since: since) }
+        gemeinsam.playerTick()
     }
 
-    private func melde(_ text: String) {
-        hinweis = text
+    private func notify(_ text: String) {
+        hint = text
         Task {
             try? await Task.sleep(for: .seconds(3))
-            withAnimation { hinweis = nil }
+            withAnimation { hint = nil }
         }
     }
 
-    /// Ein Takt alle halbe Sekunde — die Regeln stehen in
-    /// `Wiedergabetakt`, gemeinsam mit iPhone und Fernseher. Hier steht nur,
-    /// **wie** der Mac die vier Aufträge ausführt.
-    private func mitlaufen() async {
-        var takte = 0
-        var nurZeit = false
+    /// One tick every half second; the rules live in `PlaybackTick`, shared with
+    /// iPhone and TV. This only holds **how** the Mac executes the four jobs.
+    private func withRun() async {
+        var beats = 0
+        var onlyTime = false
         while !Task.isCancelled {
-            try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
-            guard let flaeche else { continue }
-            if gemeinsamAn { brueckeNachziehen() }
+            try? await Task.sleep(for: PlaybackTick.displayTick)
+            guard let area else { continue }
+            if sharedAn { bridgeCatchUp() }
 
-            // **Dazwischen nur die Zeit**, wie auf iOS (17.09.2026): im
-            // halben Sekundentakt lief sie verzögert an und zählte ungleichmäßig.
-            nurZeit.toggle()
-            if nurZeit {
-                if !wechselt {
-                    Wiedergabetakt.zeitUebernehmen(&stand, gemeldet: flaeche.positionSeconds,
-                                                   amSchieben: amRegler, seitStart: seitStart)
+            // **In between, only the time**, as on iOS: running on the half-second tick it
+            // started late and advanced unevenly.
+            onlyTime.toggle()
+            if onlyTime {
+                if !switches {
+                    PlaybackTick.timeAdopt(&state, reported: area.positionSeconds,
+                                                   atPush: atSlider, sinceStart: sinceStart)
                 }
                 continue
             }
 
-            // Ob VLC am Ziel eines Sprungs steht, entscheidet `Wiedergabetakt`
-            // anhand von `stand.sprung` (Bug 17.09.2026).
+            // Whether VLC is at the target of a seek is decided by `PlaybackTick` based on
+            // `state.sprung`.
 
-            let auftrag = Wiedergabetakt.rechnen(
-                &stand,
-                messung: .init(dauer: flaeche.durationSeconds,
-                               position: flaeche.positionSeconds,
-                               guteStelle: flaeche.guteStelle,
-                               zeigtBild: flaeche.zeigtBild,
-                               stelltEin: flaeche.stelltEin,
-                               laeuft: flaeche.isPlaying,
-                               // **Die Spurliste nur lesen, solange sie
-                               // gebraucht wird.** `Wiedergabetakt` fragt
-                               // `hatTonspuren` allein, bis die Spuren gesetzt
-                               // sind; danach ist der Wert unbenutzt. Gelesen
-                               // wurde er trotzdem -- zweimal je Sekunde, den
-                               // ganzen Film lang. `player.audioTracks` baut die
-                               // Liste jedes Mal neu auf, unter der Sperre des
-                               // laufenden Players. Genau der Dauergriff, vor
-                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
-                               // ein paar Zeilen weiter oben warnt; das `||`
-                               // kuerzt ihn weg, sobald er nichts mehr traegt.
-                               hatTonspuren: stand.spurenGesetzt || !flaeche.tonspuren.isEmpty),
-                stelltWiederHer: false,
-                // Kein Finger, aber ein Zeiger — dieselbe Frage.
-                amSchieben: amRegler,
-                seitStart: seitStart)
+            let job = PlaybackTick.compute(
+                &state,
+                measurement: .init(duration: area.durationSeconds,
+                               position: area.positionSeconds,
+                               goodPoint: area.goodPoint,
+                               showsImage: area.showsImage,
+                               seeksToStart: area.seeksToStart,
+                               running: area.isPlaying,
+                               // **Read the track list only while it is needed.** `PlaybackTick` asks
+                               // `hasAudioTracks` alone until the tracks are set; afterwards the value is unused.
+                               // It was still being read, twice a second for the whole film.
+                               // `player.audioTracks` rebuilds the list each time, under the lock of the running
+                               // player. Exactly the constant access that the comment on
+                               // `FrameTick.stillPostMeasure` a few lines up warns about; the `||` short-circuits
+                               // it once it carries nothing.
+                               hasAudioTracks: state.tracksSet || !area.audioTracks.isEmpty),
+                restoring: false,
+                // No finger, but a pointer: the same question.
+                atPush: atSlider,
+                sinceStart: sinceStart)
 
-            if auftrag.ladeschirmWeg {
-                Startmessung.geteilt.marke("Ladeschirm weicht")
-                // Zoomt die Karte gerade ins Bild, übergibt sie jetzt an die
-                // neue Folge (wie iOS).
-                if let k = kartenwechsel, k.bildSeit == nil {
-                    kartenwechsel?.bildSeit = k.seit
-                    Protokoll.schreib("[Karte] erstes Bild nach \(Int(k.seit * 1000)) ms")
-                    Task { await karteUebergeben() }
+            if job.loadingScreenGone {
+                StartMeasurement.shared.mark("Ladeschirm weicht")
+                // If the card is zooming into the picture, it now hands over to the new episode
+                // (as iOS).
+                if let k = cardsSwitch, k.imageSince == nil {
+                    cardsSwitch?.imageSince = k.since
+                    AppLog.writeOut("[Karte] erstes Bild nach \(Int(k.since * 1000)) ms")
+                    Task { await cardHandOver() }
                 }
-                withAnimation(.easeOut(duration: 0.3)) { schirmWeg = true } completion: {
-                    Startmessung.geteilt.marke("Ladeschirm ausgeblendet")
+                withAnimation(.easeOut(duration: 0.3)) { screenDistance = true } completion: {
+                    StartMeasurement.shared.mark("Ladeschirm ausgeblendet")
                 }
-                // Aus einer Übergabe: die Karte zoomt jetzt aufs Bild.
-                Uebergabebuehne.geteilt.bildDa(titel.id)
+                // From a handoff: the card now zooms onto the picture.
+                HandoffStage.shared.imagePresent(title.id)
             }
-            if auftrag.spurenAnwenden {
-                flaeche.wendeSprachenAn(ton: model.tonSprache,
-                                        untertitel: model.untertitelSprache,
-                                        automatisch: model.untertitelAutomatisch,
-                                        quelle: plan.quelle,
-                                        titel: Spurgedaechtnis.titel(fuer: titel))
+            if job.tracksApply {
+                area.wendeLanguagesAn(audio: model.audioLanguage,
+                                        subtitle: model.subtitleLanguage,
+                                        automatic: model.subtitleAutomatic,
+                                        source: plan.source,
+                                        title: TrackMemory.title(for: title))
             }
-            // Waehrend des Wechsels schweigen, wie auf iOS (T1-M2).
-            // Abgesetzt, nicht abgewartet (T1-H2) — siehe tvOS.
-            if auftrag.startMelden, !wechselt {
-                model.reportStart(item: titel, plan: plan,
-                                  seconds: stand.position)
-                zentrale.melden(item: titel, position: stand.position,
-                                dauer: stand.dauer, tempo: flaeche.tempo,
-                                laeuft: stand.laeuft,
-                                sprungweite: (model.zurueckSekunden, model.vorSekunden),
-                                bildURL: model.sperrbildURL(for: titel))
+            // Stay silent during the switch, as on iOS. Dispatched, not awaited (see tvOS).
+            if job.startReport, !switches {
+                model.reportStart(item: title, plan: plan,
+                                  seconds: state.position)
+                hub.report(item: title, position: state.position,
+                                duration: state.duration, tempo: area.tempo,
+                                running: state.running,
+                                jumpDistance: (model.backSeconds, model.forwardSeconds),
+                                imageUrl: model.lockImageURL(for: title))
             }
-            if auftrag.fortschrittMelden, !wechselt {
-                model.reportProgress(item: titel, plan: plan,
-                                     seconds: stand.position,
-                                     paused: !stand.laeuft)
-            }
-
-            // **Die Einblendung** (Countdown der Karte). Im Stehen hält er an.
-            let karteVorher = karteDa
-            if angebotNachziehen(vergangen: Wiedergabetakt.taktlaenge / .seconds(1)),
-               let folge = naechsteFolge {
-                Protokoll.schreib("[Karte] Countdown abgelaufen")
-                zurNaechstenFolge(folge, ausKarte: karteVorher)
+            if job.progressReport, !switches {
+                model.reportProgress(item: title, plan: plan,
+                                     seconds: state.position,
+                                     paused: !state.running)
             }
 
-            // **Die nächste Folge vorbereiten**, solange diese noch läuft —
-            // nicht in der Gruppe, die schaltet selbst. Einmal je Folge;
-            // wann und über welches Netz, sagt `Vorpuffer`.
-            if let folge = naechsteFolge, !inGruppe, !wechselt,
-               Vorpuffer.jetzt(position: stand.position, dauer: stand.dauer,
-                               abspannVon: abschnitte.first { $0.art == .abspann }?.von,
-                               netzGuenstig: vorbereitung.netzGuenstig) {
-                vorbereitung.vorbereiten(folge) { await model.plan(for: folge.id, still: true) }
+            // **The overlay** (card countdown). While stationary it pauses.
+            let cardBefore = cardPresent
+            if offeringCatchUp(elapsed: PlaybackTick.tickLength / .seconds(1)),
+               let episode = nextEpisode {
+                AppLog.writeOut("[Karte] Countdown abgelaufen")
+                toNextEpisode(episode, fromCard: cardBefore)
             }
 
-            // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
-            // Server), nicht, wenn sie abgesagt wurde (17.09.2026). **Zählt
-            // die Karte, gehört das Weiterschalten ihr** (wie iOS: ans Ende
-            // gespult, und das Dateiende wechselte sofort).
-            if ebene.weiterAmEnde, let folge = naechsteFolge, !wechselt,
-               Folgenende.weiterschalten(position: stand.position, dauer: stand.dauer,
-                                         seitOeffnen: Date().timeIntervalSince(seitStart),
-                                         karteZaehlt: ebene.karteZaehlt) {
-                Protokoll.schreib("[Wechsel] Dateiende ohne Karte")
-                zurNaechstenFolge(folge)
+            // **Prepare the next episode** while this one is still running; not in a group,
+            // which advances by itself. Once per episode; when and over which network is
+            // decided by `Prebuffer`.
+            if let episode = nextEpisode, !inGroup, !switches,
+               Prebuffer.now(position: state.position, duration: state.duration,
+                               creditsFrom: sections.first { $0.art == .credits }?.from,
+                               networkFavorable: preparation.networkFavorable) {
+                preparation.prepare(episode) { await model.plan(for: episode.id, still: true) }
             }
 
-            takte += 1
-            // Das Now-Playing-Feld braucht die Stelle nur im Sekundentakt.
-            if takte % 2 == 0, stand.startGemeldet {
-                zentrale.standNachziehen(position: stand.position,
-                                         laeuft: stand.laeuft, tempo: flaeche.tempo)
+            // Advance by itself at the end only with a card (outro section from the server),
+            // not if it was dismissed. **If the card is counting, it owns the advance**
+            // (as iOS: when seeked to the end, the end of file switched immediately).
+            if layer.nextAtEnd, let episode = nextEpisode, !switches,
+               EpisodeEnd.advance(position: state.position, duration: state.duration,
+                                         sinceOpen: Date().timeIntervalSince(sinceStart),
+                                         cardCounts: layer.cardCounts) {
+                AppLog.writeOut("[Wechsel] Dateiende ohne Karte")
+                toNextEpisode(episode)
+            }
+
+            beats += 1
+            // The Now Playing field needs the position only once per second.
+            if beats % 2 == 0, state.startReported {
+                hub.stateCatchUp(position: state.position,
+                                         running: state.running, tempo: area.tempo)
             }
         }
     }
 
 }
 
-// MARK: - Die Videofläche
+// MARK: - The video surface
 
-/// Das Gegenstück zu `VideoSurfaceHost` auf iOS. Dieselbe Aufgabe, nur
-/// `NSViewRepresentable` — die Ansicht selbst kommt unverändert aus
+/// The counterpart of `VideoSurfaceHost` on iOS. Same job, but as
+/// `NSViewRepresentable`; the view itself comes unchanged from
 /// `Sources/Shared/VLCPlayer.swift`.
-struct Videoflaeche: NSViewRepresentable {
+struct MacVideoSurface: NSViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
-    /// Solange wahr, ist die Fläche **ausgeblendet** statt überdeckt.
+    /// While true, the surface is **hidden** rather than covered.
     ///
-    /// Das ist der Unterschied zu iOS, und er ist macOS-eigen: VLCs
-    /// Videoausgang ist hier ein `VLCOpenGLVideoView`. Eine OpenGL-Ansicht
-    /// zeichnet in ihre eigene Fläche und liegt dabei über allem, was im
-    /// SwiftUI-Stapel nach ihr kommt — die Reihenfolge im `ZStack` entscheidet
-    /// nichts. Ein schwarzer Schleier darüber blieb deshalb wirkungslos, und
-    /// man sah VLC an den Anfang gehen und von dort einsteuern.
+    /// This is where macOS differs from iOS: VLC's video output here is a
+    /// `VLCOpenGLVideoView`. An OpenGL view draws into its own surface and sits above
+    /// everything later in the SwiftUI stack, so the order in the `ZStack` does not
+    /// matter. A black scrim on top therefore had no effect, and VLC could be seen
+    /// jumping to the start and seeking from there.
     ///
-    /// `isHidden` wirkt dagegen auf AppKit-Ebene und damit sicher. VLC
-    /// dekodiert weiter, nur gezeigt wird nichts.
-    let verdeckt: Bool
-    /// **Vor `play`, nicht danach.** Der Vorrat wird als Option an das Medium
-    /// gehängt; wer ihn nachträgt, hat schon mit der alten Stufe geöffnet.
-    let puffer: Pufferstufe
-    /// Externe Untertitel, ebenfalls vor `play` (T1-H4).
-    var untertitel: [Untertiteldatei] = []
-    /// Gleich mit Software-Dekoder öffnen — ``PlaybackPlan/softwareDekoder``.
-    var softwareDekoder = false
-    /// Die gewünschten Spuren, ebenfalls vor `play`.
-    var spuren: VLCPlayerView.Spurwunsch?
-    let beimAnlegen: (VLCPlayerView) -> Void
+    /// `isHidden` acts at the AppKit level and is therefore reliable. VLC keeps
+    /// decoding; nothing is shown.
+    let covered: Bool
+    /// **Before `play`, not after.** The buffer is attached to the media as an option;
+    /// adding it afterwards means opening has already used the old level.
+    let buffer: BufferLevel
+    /// External subtitles, also before `play`.
+    var subtitle: [SubtitleFile] = []
+    /// Open directly with the software decoder: ``PlaybackPlan/softwareDekoder``.
+    var softwareDecoder = false
+    /// The requested tracks, also before `play`.
+    var tracks: VLCPlayerView.TrackRequest?
+    let whenCreating: (VLCPlayerView) -> Void
 
     func makeNSView(context: Context) -> VLCPlayerView {
-        let ansicht = VLCPlayerView()
-        ansicht.isHidden = verdeckt
-        ansicht.puffer = puffer
-        ansicht.spurwunsch = spuren
-        ansicht.play(url: url, abSekunden: startAt, container: container, untertitel: untertitel,
-                     softwareDekoder: softwareDekoder)
-        DispatchQueue.main.async { beimAnlegen(ansicht) }
-        return ansicht
+        let viewRef = VLCPlayerView()
+        viewRef.isHidden = covered
+        viewRef.buffer = buffer
+        viewRef.trackRequest = tracks
+        viewRef.play(url: url, offSeconds: startAt, container: container, subtitle: subtitle,
+                     softwareDecoder: softwareDecoder)
+        DispatchQueue.main.async { whenCreating(viewRef) }
+        return viewRef
     }
 
-    func updateNSView(_ ansicht: VLCPlayerView, context: Context) {
-        if ansicht.isHidden != verdeckt { ansicht.isHidden = verdeckt }
+    func updateNSView(_ viewRef: VLCPlayerView, context: Context) {
+        if viewRef.isHidden != covered { viewRef.isHidden = covered }
     }
 
-    /// **Fehlte hier, steht auf iOS seit jeher.**
+    /// **Missing here, present on iOS from the start.**
     ///
-    /// Ohne das läuft der Wachhund-Zeitgeber der abgeräumten Ansicht endlos
-    /// weiter. Auf `stop()` im Verschwinden ist kein Verlass: das trifft die
-    /// Ansicht, auf die `flaeche` zeigt, nicht zwingend jede, die SwiftUI
-    /// angelegt hat.
-    static func dismantleNSView(_ ansicht: VLCPlayerView, coordinator: ()) {
-        MainActor.assumeIsolated { ansicht.stop() }
+    /// Without it the watchdog timer of the torn-down view runs forever. `stop()` on
+    /// disappearing cannot be relied on: it hits the view `area` points to, not
+    /// necessarily every view SwiftUI created.
+    static func dismantleNSView(_ viewRef: VLCPlayerView, coordinator: ()) {
+        MainActor.assumeIsolated { viewRef.stop() }
     }
 }
 
-// MARK: - Bausteine des Players
+// MARK: - Player building blocks
 
-/// Runder Knopf in der Mitte — −10, Pause/Play, +10. Anders als die alte
-/// Fassung ohne Kürzel-Beschriftung darunter: wörtlich das Bild von iOS, das
-/// keine Tastaturhinweise im Player zeigt.
-struct Sprungknopf: View {
+/// Round button in the middle: -10, pause/play, +10. Unlike the old version there
+/// is no shortcut label underneath: the same look as iOS, which shows no keyboard
+/// hints in the player.
+struct JumpButton: View {
     let symbol: String
-    /// Kantenlänge des Symbols selbst — 30 für ±10, 40 für Play/Pause.
-    let gross: CGFloat
-    /// Zählt jeden Druck. Ein **Wert**, kein Schalter: der Effekt spielt bei
-    /// jeder Änderung erneut, auch beim zehnten Sprung hintereinander.
-    var takt: Int = 0
-    /// Der schnelle Austausch statt des vorbeischiebenden.
-    var flott = false
-    let beschriftung: LocalizedStringKey
-    let aktion: () -> Void
+    /// Edge length of the symbol itself: 30 for +/-10, 40 for play/pause.
+    let large: CGFloat
+    /// Counts every press. A **value**, not a switch: the effect replays on every
+    /// change, even on the tenth seek in a row.
+    var tick: Int = 0
+    /// The quick replace instead of the sliding one.
+    var snappy = false
+    let label: LocalizedStringKey
+    let action: () -> Void
 
-    @State private var schwebt = false
+    @State private var hovers = false
 
     var body: some View {
-        Button(action: aktion) {
+        Button(action: action) {
             Image(systemName: symbol)
-                // **Ohne das blendet SwiftUI die beiden Symbole
-                // ineinander** — das sieht nach Fehler aus, nicht nach
-                // Absicht.
+                // **Without this SwiftUI cross-fades the two symbols**, which looks like a bug,
+                // not intent.
                 //
-                // `.downUp` schiebt beide Symbole aneinander vorbei und
-                // braucht dafür sichtbar Zeit. Für Pause ist das zu lang:
-                // der Knopf muss in demselben Moment umspringen, in dem
-                // der Ton aufhört, sonst wirkt der ganze Player träge.
-                // Dort also der einfache Austausch.
-                .contentTransition(.symbolEffect(flott ? .replace.offUp
+                // `.downUp` slides both symbols past each other and visibly takes time. For pause
+                // that is too long: the button must flip at the same moment the audio stops,
+                // otherwise the whole player feels sluggish. So the plain replace is used there.
+                .contentTransition(.symbolEffect(snappy ? .replace.offUp
                                                        : .replace.downUp))
-                .font(.system(size: gross, weight: .medium))
-                .foregroundStyle(Stil.schrift)
-                // Diskreter Effekt aus SF Symbols: spielt einmal ab und
-                // geht von selbst in die Ruhelage zurück.
-                // Kein Huepfen bei reduzierter Bewegung — daneben wird die
-                // Einstellung fuer den Massstab schon abgefragt.
+                .font(.system(size: large, weight: .medium))
+                .foregroundStyle(Theme.font)
+                // Discrete SF Symbols effect: plays once and returns to rest by itself. No
+                // bounce with reduced motion; the setting is already queried nearby for the
+                // scale.
                 .symbolEffect(.bounce, options: .speed(1.7),
-                              value: Stil.bewegungReduziert ? 0 : takt)
-                .frame(width: gross * 1.8, height: gross * 1.8)
-                .scaleEffect(schwebt ? 1.06 : 1)
+                              value: Theme.motionReduced ? 0 : tick)
+                .frame(width: large * 1.8, height: large * 1.8)
+                .scaleEffect(hovers ? 1.06 : 1)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(Stil.Druckknopf())
-        .onHover { schwebt = $0 }
-        .animation(Stil.zeitSchweben, value: schwebt)
-        .accessibilityLabel(Text(beschriftung))
+        .buttonStyle(Theme.PressButton())
+        .onHover { hovers = $0 }
+        .animation(Theme.timeFloat, value: hovers)
+        .accessibilityLabel(Text(label))
     }
 }
 
-/// Zeit links, Regler, Restzeit rechts.
-private struct Zeitzeile: View {
+/// Time on the left, slider, remaining time on the right.
+private struct TimeRow: View {
     @Binding var position: Double
-    let dauer: Double
-    @Binding var amRegler: Bool
-    let mass: Playermass
-    /// Vorspann, Rückblick, Abspann — Anfang und Ende als Kerben.
-    let marken: [Double]
-    /// Die Kapitel — Stücke auf der Leiste, ihr Name in der Vorschau.
-    let kapitel: [Kapitel]
-    /// Das Trickplay-Bild zur Stelle, oder `nil`.
-    let vorschau: (Double) -> CGImage?
-    /// Beim Loslassen: wohin gesprungen wird.
-    let springe: (Double) -> Void
+    let duration: Double
+    @Binding var atSlider: Bool
+    let mass: PlayerMetric
+    /// Intro, recap, outro: start and end as notches.
+    let marks: [Double]
+    /// The chapters: segments on the scrubber, their name in the preview.
+    let chapter: [Chapter]
+    /// The trickplay image for the position, or `nil`.
+    let preview: (Double) -> CGImage?
+    /// On release: where to seek.
+    let vault: (Double) -> Void
 
-    /// **Restzeit oder Ende — ein Klick schaltet um**, wie der Tipp am
-    /// iPhone: „−12:34" oder „Endet um 22:41"; die Wahl bleibt, unter
-    /// demselben Schlüssel. Kein eigener Knopf, keine zweite Zeile.
-    @AppStorage("restzeitAlsEnde") private var alsEnde = false
+    /// **Remaining time or end time; a click toggles**, like the tap on iPhone:
+    /// "-12:34" or "Ends at 22:41". The choice persists under the same key. No
+    /// separate button, no second line.
+    @AppStorage("restzeitAlsEnde") private var asEnd = false
 
     var body: some View {
         HStack(spacing: 14) {
-            Text(Spielzeit.text(position))
-            Zeitregler(position: $position, dauer: dauer, amRegler: $amRegler, mass: mass,
-                       marken: marken, kapitel: kapitel, vorschau: vorschau, springe: springe)
-            restzeit
+            Text(PlayTime.text(position))
+            TimeSlider(position: $position, duration: duration, atSlider: $atSlider, mass: mass,
+                       marks: marks, chapter: chapter, preview: preview, vault: vault)
+            remainingTime
         }
-        .font(.system(size: mass.zeit).monospacedDigit())
-        .foregroundStyle(Stil.schriftLeise)
+        .font(.system(size: mass.time).monospacedDigit())
+        .foregroundStyle(Theme.fontQuiet)
     }
 
-    private var ende: Text {
-        let rest = max(dauer - position, 0)
+    private var end: Text {
+        let rest = max(duration - position, 0)
         return Text("Endet um \(Date().addingTimeInterval(rest).formatted(date: .omitted, time: .shortened))")
     }
 
-    private var restzeit: some View {
+    private var remainingTime: some View {
         Button {
-            alsEnde.toggle()
+            asEnd.toggle()
         } label: {
             Group {
-                if alsEnde { ende } else { Text(verbatim: "−" + Spielzeit.text(max(dauer - position, 0))) }
+                if asEnd { end } else { Text(verbatim: "−" + PlayTime.text(max(duration - position, 0))) }
             }
             .lineLimit(1)
             .contentShape(Rectangle().inset(by: -8))
         }
         .buttonStyle(.plain)
         .help(Text("Wechselt zwischen Restzeit und Ende"))
-        .accessibilityLabel(alsEnde ? ende : Text("Restzeit"))
+        .accessibilityLabel(asEnd ? end : Text("Restzeit"))
         .accessibilityHint(Text("Wechselt zwischen Restzeit und Ende"))
     }
 }
 
-/// Der Zeitregler: 4-pt-Balken, beim Ziehen 6 pt mit Akzent-Griff — wörtlich
-/// dieselbe Regel wie auf iOS (`Zeitregler` in `Sources/Shared/Stil.swift`).
+/// The time slider: 4 pt bar, 6 pt while dragging with an accent handle; the same
+/// rule as iOS (`Zeitregler` in `Sources/Shared/Style.swift`).
 ///
-/// **Anders als dort: die Vorschau erscheint schon beim blossen Überfahren
-/// mit der Maus**, nicht erst beim Ziehen — eine Maus kann hovern, ein Finger
-/// nicht, und genau darauf soll sie antworten (Auftrag, 19.09.2026). Der
-/// Balken selbst bleibt dabei ruhig; nur die Vorschau über dem Zeiger folgt.
-private struct Zeitregler: View {
+/// **Unlike there: the preview appears on mere hover** with the mouse, not only
+/// while dragging. A mouse can hover and a finger cannot, and this is what it
+/// should respond to. The bar itself stays calm; only the preview above the
+/// pointer follows.
+private struct TimeSlider: View {
     @Binding var position: Double
-    let dauer: Double
-    @Binding var amRegler: Bool
-    let mass: Playermass
-    /// Abschnittsgrenzen in Sekunden — als Kerben gezeichnet, und beim Ziehen
-    /// rastet der Griff an ihnen ein (``Kerbenfang``).
-    let marken: [Double]
-    /// **Die Kapitel teilen die Leiste in Stücke** — beim Ziehen hebt sich
-    /// das unter dem Griff, wie am iPhone. Beim blossen Überfahren nicht:
-    /// dort bleibt der Balken ruhig, und nur die Vorschau nennt das Kapitel.
-    let kapitel: [Kapitel]
-    let vorschau: (Double) -> CGImage?
-    let springe: (Double) -> Void
+    let duration: Double
+    @Binding var atSlider: Bool
+    let mass: PlayerMetric
+    /// Section boundaries in seconds, drawn as notches; while dragging the handle
+    /// snaps to them (``Kerbenfang``).
+    let marks: [Double]
+    /// **Chapters split the scrubber into segments**; while dragging, the one under
+    /// the handle rises, as on iPhone. Not on mere hover: the bar stays calm and only
+    /// the preview names the chapter.
+    let chapter: [Chapter]
+    let preview: (Double) -> CGImage?
+    let vault: (Double) -> Void
 
-    @State private var zieht = false
-    /// Die Kerbe, auf der der Griff gerade eingerastet steht — damit der
-    /// Tick einmal beim Einrasten kommt, nicht bei jeder Bewegung darauf.
-    @State private var eingerastet: Double?
+    @State private var pulls = false
+    /// The notch the handle is currently snapped to, so the tick plays once on
+    /// snapping, not on every movement there.
+    @State private var inSnapped: Double?
 
-    /// Die Grenzen als Anteil, ohne die an den beiden Kanten — wie am iPhone.
-    private var kerben: [CGFloat] {
-        guard dauer > 0 else { return [] }
-        return marken.map { CGFloat($0 / dauer) }.filter { $0 > 0.01 && $0 < 0.99 }
+    /// The boundaries as a fraction, without the two at the edges, as on iPhone.
+    private var notches: [CGFloat] {
+        guard duration > 0 else { return [] }
+        return marks.map { CGFloat($0 / duration) }.filter { $0 > 0.01 && $0 < 0.99 }
     }
 
-    /// Lücke und kleinstes Stück wie am iPhone (`Zeitregler` in
-    /// `Sources/Shared/Stil.swift`).
-    private static let luecke: CGFloat = 2
-    private static let mindestbreite: CGFloat = 8
-    private static let dicke: CGFloat = 4
-    private static let dickeGehoben: CGFloat = 6
+    /// Gap and smallest segment as on iPhone (`Zeitregler` in
+    /// `Sources/Shared/Style.swift`).
+    private static let gap: CGFloat = 2
+    private static let minWidth: CGFloat = 8
+    private static let thickness: CGFloat = 4
+    private static let thicknessRaised: CGFloat = 6
 
-    private func stuecke(breite: CGFloat) -> [Kapitelleiste.Stueck] {
-        Kapitelleiste.stuecke(grenzen: Kapitelleiste.grenzen(kapitel, dauer: dauer), dauer: dauer,
-                              breite: Double(breite), mindestbreite: Double(Self.mindestbreite))
+    private func pieces(width: CGFloat) -> [ChapterBar.Piece] {
+        ChapterBar.pieces(limits: ChapterBar.limits(chapter, duration: duration), duration: duration,
+                              width: Double(width), minWidth: Double(Self.minWidth))
     }
 
-    /// Eingerastet wird an den Kerben und an den Schnitten mit Platz daneben
-    /// (``Kapitelleiste/fangschnitte(_:dauer:breite:)``) — wie am iPhone.
-    private func fangmarken(_ stuecke: [Kapitelleiste.Stueck], breite: CGFloat) -> [Double] {
-        marken + Kapitelleiste.fangschnitte(stuecke, dauer: dauer, breite: Double(breite))
+    /// Snapping happens at the notches and at the cuts with space beside them
+    /// (``Kapitelleiste/fangschnitte(_:dauer:breite:)``), as on iPhone.
+    private func snapMarks(_ pieces: [ChapterBar.Piece], width: CGFloat) -> [Double] {
+        marks + ChapterBar.snapCuts(pieces, duration: duration, width: Double(width))
     }
 
-    /// Für VoiceOver: Stelle, Länge und — wenn es eins gibt — das Kapitel.
-    private var gesprochenerWert: String {
-        let stelle = String(localized: "\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))")
-        guard let name = Kapitelleiste.kapitel(bei: position, in: kapitel)?.name, !name.isEmpty
-        else { return stelle }
-        return String(localized: "\(stelle), \(name)")
+    /// For VoiceOver: position, length and, if there is one, the chapter.
+    private var spokenValue: String {
+        let spot = String(localized: "\(PlayTime.text(position)) von \(PlayTime.text(duration))")
+        guard let name = ChapterBar.chapter(at: position, in: chapter)?.name, !name.isEmpty
+        else { return spot }
+        return String(localized: "\(spot), \(name)")
     }
-    @State private var zugAnteil: CGFloat = 0
-    /// Anteil unter dem Zeiger, unabhängig vom Ziehen — `nil`, solange der
-    /// Zeiger nicht über der Leiste steht.
-    @State private var hoverAnteil: CGFloat?
-    /// Wie breit der Kasten über dem Zeiger wirklich ist — mit Kapitelname,
-    /// aber ohne Vorschaubild hängt das am Namen.
-    @State private var kastenBreite: CGFloat = 0
+    @State private var pullShare: CGFloat = 0
+    /// Fraction under the pointer, independent of dragging; `nil` while the pointer is
+    /// not over the scrubber.
+    @State private var hoverShare: CGFloat?
+    /// How wide the box above the pointer really is. With a chapter name but no
+    /// thumbnail it depends on the name.
+    @State private var boxWidth: CGFloat = 0
 
-    private var anzeigeAnteil: CGFloat {
-        zieht ? zugAnteil : (dauer > 0 ? CGFloat(min(max(position / dauer, 0), 1)) : 0)
+    private var displayShare: CGFloat {
+        pulls ? pullShare : (duration > 0 ? CGFloat(min(max(position / duration, 0), 1)) : 0)
     }
 
-    /// Welcher Anteil gerade eine Vorschau zeigt: beim Ziehen der Griff,
-    /// sonst der Zeiger.
-    private var schauAnteil: CGFloat? { zieht ? zugAnteil : hoverAnteil }
+    /// Which fraction currently shows a preview: the handle while dragging, otherwise
+    /// the pointer.
+    private var watchShare: CGFloat? { pulls ? pullShare : hoverShare }
 
     var body: some View {
-        GeometryReader { raum in
-            let anteil = anzeigeAnteil
-            let stuecke = stuecke(breite: raum.size.width)
+        GeometryReader { space in
+            let share = displayShare
+            let pieces = pieces(width: space.size.width)
             ZStack(alignment: .leading) {
                 ZStack(alignment: .leading) {
-                    // Dieselbe helle Spur wie auf dem iPhone. Weiss mit 28 %
-                    // steht in BRAND 1 unter den gerechnet zu schwachen Werten.
+                    // The same light track as on iPhone. White at 28% is too weak a contrast.
                     Rectangle().fill(Color.white.opacity(0.18))
-                    Capsule().fill(.white)  // Akzent nur am Griff, wie auf iOS und tvOS
-                        .frame(width: raum.size.width * anteil,
-                               height: zieht ? Self.dickeGehoben : Self.dicke)
-                    // **Kerben an den Abschnittsgrenzen**, zwei Punkt in `grund`
-                    // — auf Spur und Balken zu sehen, wie am iPhone.
-                    ForEach(kerben, id: \.self) { stelle in
-                        Rectangle().fill(Stil.grund)
+                    Capsule().fill(.white)  // Accent only on the handle, as on iOS and tvOS
+                        .frame(width: space.size.width * share,
+                               height: pulls ? Self.thicknessRaised : Self.thickness)
+                    // **Notches at the section boundaries**, two points in `reason`, visible on track
+                    // and bar, as on iPhone.
+                    ForEach(notches, id: \.self) { spot in
+                        Rectangle().fill(Theme.reason)
                             .frame(width: 2)
-                            .offset(x: raum.size.width * stelle - 1)
+                            .offset(x: space.size.width * spot - 1)
                     }
                 }
-                .frame(height: Self.dickeGehoben)
-                // Vier Punkt im Stehen, sechs beim Ziehen — mit Kapiteln nur
-                // das Stück unter dem Griff (``Kapitelmaske``). Ohne Bewegung,
-                // wie bisher: der Mac schaltet die Dicke um, er federt nicht.
+                .frame(height: Self.thicknessRaised)
+                // Four points at rest, six while dragging; with chapters only the segment under
+                // the handle (``ChapterMask``). Without animation: the Mac switches the
+                // thickness, it does not spring.
                 .mask(alignment: .leading) {
-                    Kapitelmaske(stuecke: stuecke, breite: raum.size.width, luecke: Self.luecke,
-                                 dicke: Self.dicke,
-                                 gehoben: zieht
-                                     ? Kapitelleiste.stueck(bei: Double(anteil), in: stuecke) : nil,
-                                 dickeGehoben: Self.dickeGehoben, bewegung: nil)
+                    ChapterMask(pieces: pieces, width: space.size.width, gap: Self.gap,
+                                 thickness: Self.thickness,
+                                 elevated: pulls
+                                     ? ChapterBar.piece(at: Double(share), in: pieces) : nil,
+                                 thicknessRaised: Self.thicknessRaised, motion: nil)
                 }
-                if zieht {
-                    Circle().fill(Stil.akzent).frame(width: 18, height: 18)
-                        .offset(x: raum.size.width * anteil - 9)
+                if pulls {
+                    Circle().fill(Theme.accent).frame(width: 18, height: 18)
+                        .offset(x: space.size.width * share - 9)
                 }
             }
-            .frame(height: mass.leiste)
+            .frame(height: mass.bar)
             .contentShape(Rectangle())
             .overlay(alignment: .topLeading) {
-                if let schauAnteil {
-                    vorschauKasten(anteil: schauAnteil)
+                if let watchShare {
+                    previewBox(share: watchShare)
                 }
             }
-            .onContinuousHover { lage in
-                guard !zieht else { return }
-                switch lage {
-                case let .active(punkt):
-                    hoverAnteil = min(max(punkt.x / raum.size.width, 0), 1)
+            .onContinuousHover { status in
+                guard !pulls else { return }
+                switch status {
+                case let .active(point):
+                    hoverShare = min(max(point.x / space.size.width, 0), 1)
                 case .ended:
-                    hoverAnteil = nil
+                    hoverShare = nil
                 }
             }
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { wert in
-                        zieht = true
-                        amRegler = true
-                        let roh = min(max(wert.location.x / raum.size.width, 0), 1)
-                        // **An den Kerben rastet er ein** (`Kerbenfang`) — mit
-                        // dem Tick des Trackpads statt der Haptik des iPhones;
-                        // eine Maus ohne Force Touch rastet still ein.
-                        if dauer > 0,
-                           let kerbe = Kerbenfang.kerbe(wert: Double(roh) * dauer, bis: dauer,
-                                                         marken: fangmarken(stuecke,
-                                                                            breite: raum.size.width),
-                                                         breite: Double(raum.size.width)) {
-                            zugAnteil = CGFloat(kerbe / dauer)
-                            if eingerastet != kerbe {
-                                eingerastet = kerbe
+                    .onChanged { value in
+                        pulls = true
+                        atSlider = true
+                        let raw = min(max(value.location.x / space.size.width, 0), 1)
+                        // **It snaps to the notches** (`NotchesSnap`), with the trackpad's tick instead of
+                        // the iPhone's haptics; a mouse without Force Touch snaps silently.
+                        if duration > 0,
+                           let notch = NotchesSnap.notch(value: Double(raw) * duration, until: duration,
+                                                         marks: snapMarks(pieces,
+                                                                            width: space.size.width),
+                                                         width: Double(space.size.width)) {
+                            pullShare = CGFloat(notch / duration)
+                            if inSnapped != notch {
+                                inSnapped = notch
                                 NSHapticFeedbackManager.defaultPerformer
                                     .perform(.alignment, performanceTime: .now)
                             }
                         } else {
-                            zugAnteil = roh
-                            eingerastet = nil
+                            pullShare = raw
+                            inSnapped = nil
                         }
                     }
                     .onEnded { _ in
-                        eingerastet = nil
-                        let ziel = dauer * zugAnteil
-                        position = ziel
-                        springe(ziel)
-                        zieht = false
-                        amRegler = false
-                        hoverAnteil = nil
+                        inSnapped = nil
+                        let target = duration * pullShare
+                        position = target
+                        vault(target)
+                        pulls = false
+                        atSlider = false
+                        hoverShare = nil
                     }
             )
         }
-        .frame(height: mass.leiste)
-        // Für VoiceOver ein Regler mit Stelle und Länge, nicht eine
-        // namenlose Fläche.
+        .frame(height: mass.bar)
+        // For VoiceOver a slider with position and length, not a nameless surface.
         .accessibilityElement()
         .accessibilityLabel("Abspielstelle")
-        .accessibilityValue(gesprochenerWert)
-        .accessibilityAdjustableAction { richtung in
-            let schritt = max(dauer / 20, 10)
-            switch richtung {
-            case .increment: let z = min(dauer, position + schritt); position = z; springe(z)
-            case .decrement: let z = max(0, position - schritt); position = z; springe(z)
+        .accessibilityValue(spokenValue)
+        .accessibilityAdjustableAction { bearing in
+            let step = max(duration / 20, 10)
+            switch bearing {
+            case .increment: let z = min(duration, position + step); position = z; vault(z)
+            case .decrement: let z = max(0, position - step); position = z; vault(z)
             @unknown default: break
             }
         }
     }
 
-    /// **Über dem Zeiger oder Griff: Vorschaubild, darunter die Zeit.** Ohne
-    /// Trickplay am Server nur die Zeit — kein leerer Kasten. Wörtlich das
-    /// Bild von iOS' `vorschauKasten`.
+    /// **Above the pointer or handle: thumbnail, time below.** Without trickplay on
+    /// the server only the time, with no empty box. Same as iOS `vorschauKasten`.
     ///
-    /// **Als eigene `GeometryReader`, nicht mit der Breite von aussen** —
-    /// genau wie auf iOS: `.position(x:y:)` setzt die Mitte innerhalb des
-    /// eigenen Rahmens, und der muss deshalb selbst über die volle Breite der
-    /// Leiste reichen, nicht nur über die schmale Breite des Kastens.
+    /// **As its own `GeometryReader`, not with the width from outside**, exactly as on
+    /// iOS: `.position(x:y:)` sets the center within its own frame, so that frame must
+    /// itself span the full scrubber width, not just the narrow width of the box.
     ///
-    /// **Mit Kapiteln steht sein Name vor der Zeit**, in einer Zeile und
-    /// höchstens so breit wie das Vorschaubild — wie am iPhone.
-    private func vorschauKasten(anteil: CGFloat) -> some View {
+    /// **With chapters its name comes before the time**, on one line and at most as
+    /// wide as the thumbnail, as on iPhone.
+    private func previewBox(share: CGFloat) -> some View {
         GeometryReader { g in
-            let stelle = dauer * anteil
-            let bild = vorschau(stelle)
+            let spot = duration * share
+            let image = preview(spot)
             let box: CGFloat = 170
-            let hoehe = box * 9 / 16
-            let name = Kapitelleiste.kapitel(bei: stelle, in: kapitel)?.name ?? ""
-            let halb = bild != nil ? box / 2 : max(name.isEmpty ? 40 : kastenBreite / 2, 40)
-            let x = min(max(g.size.width * anteil, halb), max(g.size.width - halb, halb))
+            let height = box * 9 / 16
+            let name = ChapterBar.chapter(at: spot, in: chapter)?.name ?? ""
+            let half = image != nil ? box / 2 : max(name.isEmpty ? 40 : boxWidth / 2, 40)
+            let x = min(max(g.size.width * share, half), max(g.size.width - half, half))
             VStack(spacing: 6) {
-                if let bild {
-                    Image(decorative: bild, scale: 1)
+                if let image {
+                    Image(decorative: image, scale: 1)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: box, height: hoehe)
-                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke,
+                        .frame(width: box, height: height)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.corner,
                                                     style: .continuous))
-                        // `rand` ist der Token fuer die wenigen Stellen, die
-                        // wirklich eine Kante brauchen — ein Vorschaubild
-                        // ueber bewegtem Bild ist eine davon.
-                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke,
+                        // `rand` is the token for the few places that truly need an edge; a thumbnail over
+                        // moving video is one of them.
+                        .overlay(RoundedRectangle(cornerRadius: Theme.corner,
                                                   style: .continuous)
-                            .strokeBorder(Stil.rand, lineWidth: 1))
+                            .strokeBorder(Theme.margin, lineWidth: 1))
                 }
                 HStack(spacing: 6) {
                     if !name.isEmpty {
                         Text(verbatim: name)
-                            .font(.system(size: mass.zeit))
+                            .font(.system(size: mass.time))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    Text(Spielzeit.text(stelle))
-                        .font(.system(size: mass.zeit, weight: .semibold).monospacedDigit())
+                    Text(PlayTime.text(spot))
+                        .font(.system(size: mass.time, weight: .semibold).monospacedDigit())
                         .layoutPriority(1)
                 }
                 .foregroundStyle(.white)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { kastenBreite = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
             .frame(maxWidth: box)
             .fixedSize(horizontal: false, vertical: true)
-            .position(x: x, y: -((bild == nil ? 0 : hoehe + 6) + mass.zeit) / 2 - 2)
+            .position(x: x, y: -((image == nil ? 0 : height + 6) + mass.time) / 2 - 2)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }
 
-/// **„Vorspann überspringen" / „Nächste Folge" — derselbe Knopf.** Wörtlich
-/// das Bild von iOS' `Angebotsknopf`: weiße Pille, dunkle Schrift — die
-/// Akzentfarbe gehört im Player allein dem Griff der Leiste beim Ziehen. Den
-/// Countdown trägt seit 1.0.5 die Karte (``Folgenkartenansicht``), nicht mehr
-/// eine Füllung der Pille.
-private struct Angebotsknopf: View {
-    private static let dunkel = Stil.grund
-    let angebot: Knopfangebot
-    let aktion: () -> Void
+/// **"Skip intro" / "Next episode": the same button.** Same look as iOS
+/// `Angebotsknopf`: white pill, dark text. The accent color belongs in the player
+/// only to the scrubber handle while dragging. The countdown is carried by the card
+/// (``EpisodeCardsView``), no longer by a fill of the pill.
+private struct OfferingButton: View {
+    private static let dark = Theme.reason
+    let offering: ButtonOffering
+    let action: () -> Void
 
     var body: some View {
-        if angebot.sichtbar {
-            Button(action: aktion) {
+        if offering.visible {
+            Button(action: action) {
                 HStack(spacing: 8) {
                     Image(systemName: "forward.end.fill")
                         .accessibilityHidden(true)
-                    Text(verbatim: angebot.beschriftung)
+                    Text(verbatim: offering.label)
                 }
-                .font(Stil.listentitel)
+                .font(Theme.listTitle)
                 .padding(.horizontal, 18)
                 .frame(height: 40)
-                .background(.white, in: RoundedRectangle(cornerRadius: Stil.eckeFeld,
+                .background(.white, in: RoundedRectangle(cornerRadius: Theme.cornerField,
                                                          style: .continuous))
             }
-            .buttonStyle(Stil.Druckknopf())
-            .foregroundStyle(Self.dunkel)
+            .buttonStyle(Theme.PressButton())
+            .foregroundStyle(Self.dark)
             .fixedSize()
-            .accessibilityLabel(Text(verbatim: angebot.beschriftung))
+            .accessibilityLabel(Text(verbatim: offering.label))
         }
     }
 }
 
-// MARK: - Das kleine Fenster
+// MARK: - The small window
 
-/// Der Griff ans Fenster: Vollbild, kleines Fenster, Zeiger.
+/// The handle on the window: full screen, small window, pointer.
 ///
-/// Bewusst **dasselbe** Fenster, nur kleiner und über allen anderen: würde der
-/// Player in ein zweites Fenster umziehen, müsste VLC seine Zeichenfläche neu
-/// bekommen — das hieße Neuaufbau und Sprung an den Anfang.
+/// Deliberately the **same** window, just smaller and above all others: if the
+/// player moved to a second window, VLC would need a new drawing surface, which
+/// means a rebuild and a jump to the start.
 @MainActor
 @Observable
-final class Fensterhalter {
-    @ObservationIgnored private(set) weak var fenster: NSWindow?
+final class WindowHolder {
+    @ObservationIgnored private(set) weak var window: NSWindow?
 
-    /// Das Fenster kommt aus `viewDidMoveToWindow` und damit **später** als
-    /// `setzePlayer(true)` aus `.onAppear`. Ohne das Nachziehen hier bliebe
-    /// die Ampel im Player stehen: `ampelNachziehen` lief ins Leere, weil es
-    /// noch kein Fenster gab, und danach rief es niemand mehr.
-    func uebernehme(_ neues: NSWindow?) {
-        guard fenster !== neues else { return }
-        // Der Stand **vor** dem Player, einmal gemerkt — siehe `aufraeumen`.
-        if vollbildVorher == nil, let neues {
-            vollbildVorher = neues.styleMask.contains(.fullScreen)
+    /// The window arrives from `viewDidMoveToWindow` and so **later** than
+    /// `setPlayer(true)` from `.onAppear`. Without catching up here, the traffic
+    /// lights would stay in the player: `signalCatchUp` ran into the void because
+    /// there was no window yet, and nobody called it afterwards.
+    func takeOver(_ newItem: NSWindow?) {
+        guard window !== newItem else { return }
+        // The state **before** the player, remembered once; see `aufraeumen`.
+        if fullscreenBefore == nil, let newItem {
+            fullscreenBefore = newItem.styleMask.contains(.fullScreen)
         }
-        fenster = neues
-        vollbildBeobachten()
-        ampelNachziehen()
+        window = newItem
+        fullscreenObserve()
+        signalCatchUp()
     }
 
-    /// War das Fenster schon im Vollbild, als der Player aufging?
+    /// Was the window already full screen when the player opened?
     ///
-    /// `nil`, bis das Fenster da ist. Gemerkt wird der Stand, nicht der Weg
-    /// hinein: ob der Knopf im Kopf, die Taste F oder die gruene Ampel das
-    /// Vollbild eingeschaltet hat, spielt fuer den Rueckweg keine Rolle.
-    @ObservationIgnored private var vollbildVorher: Bool?
+    /// `nil` until the window exists. The state is remembered, not the way in: whether
+    /// the button in the header, the F key or the green traffic light turned full
+    /// screen on does not matter for the way back.
+    @ObservationIgnored private var fullscreenBefore: Bool?
 
-    @ObservationIgnored private var vollbildwache: [NSObjectProtocol] = []
+    @ObservationIgnored private var fullscreenGuard: [NSObjectProtocol] = []
 
-    /// **Beim Wechsel ins Vollbild und zurück neu entscheiden.**
+    /// **Decide anew on entering and leaving full screen.**
     ///
-    /// Im Vollbild lassen wir die Ampel dem System; kommt das Fenster zurück,
-    /// muss unsere Regel wieder greifen. Ohne das bliebe sie nach dem
-    /// Verlassen des Vollbilds stehen, obwohl die Steuerung längst weg ist.
-    /// **Und der Vollbild-Knopf im Kopf muss sein Zeichen tauschen** — sonst
-    /// zeigt er nach dem Wechsel weiter „hinein", wo es nur noch „heraus"
-    /// geben kann.
-    private func vollbildBeobachten() {
-        vollbildwache.forEach(NotificationCenter.default.removeObserver)
-        vollbildwache.removeAll()
-        guard let fenster else { return }
+    /// In full screen we leave the traffic lights to the system; when the window comes
+    /// back, our rule must apply again. Without this they would stay visible after
+    /// leaving full screen even though the controls are long gone.
+    /// **And the full-screen button in the header must swap its symbol**, otherwise it
+    /// keeps showing "enter" after the change where only "exit" can exist.
+    private func fullscreenObserve() {
+        fullscreenGuard.forEach(NotificationCenter.default.removeObserver)
+        fullscreenGuard.removeAll()
+        guard let window else { return }
         for name: Notification.Name in [NSWindow.didEnterFullScreenNotification,
                                         NSWindow.didExitFullScreenNotification] {
-            vollbildwache.append(NotificationCenter.default.addObserver(
-                forName: name, object: fenster, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.ampelNachziehen() }
+            fullscreenGuard.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.signalCatchUp() }
                 })
         }
     }
-    @ObservationIgnored private var vorher: NSRect?
-    private(set) var istKlein = false
-    /// Ob der Player gerade das Fenster füllt.
-    private(set) var imPlayer = false
+    @ObservationIgnored private var before: NSRect?
+    private(set) var isSmall = false
+    /// Whether the player currently fills the window.
+    private(set) var inPlayer = false
 
-    var istVollbild: Bool { fenster?.styleMask.contains(.fullScreen) ?? false }
+    var isFullscreen: Bool { window?.styleMask.contains(.fullScreen) ?? false }
 
-    /// **Ein Ausdruck, nicht zwei Schalter.**
+    /// **One expression, not two switches.**
     ///
-    /// Ob der Zeiger im Player oben steht — dort, wo die Ampel sitzt.
-    private(set) var zeigerOben = false
+    /// Whether the pointer is at the top of the player, where the traffic lights are.
+    private(set) var pointerTop = false
 
-    /// Die Ampel verschwindet im kleinen Fenster — dort gehört sie nicht hin —
-    /// **und sie geht im Player mit der Steuerung.**
+    /// The traffic lights vanish in the small window, where they do not belong, **and in
+    /// the player they leave with the controls.**
     ///
-    /// Genau richtig: sie ist Bedienung, und Bedienung tritt nach vier
-    /// Sekunden Ruhe zurück. Ein Film, über dem drei bunte Punkte kleben, ist
-    /// kein Vollbild.
+    /// That is right: they are controls, and controls withdraw after four seconds of
+    /// quiet. A film with three colored dots stuck on it is not full screen.
     ///
-    /// **Im Vollbild fassen wir sie nicht an.** Dort blendet macOS die ganze
-    /// Titelleiste samt Ampel von sich aus aus und schiebt sie herunter,
-    /// sobald der Zeiger an den oberen Rand geht — so kennt man es vom Mac,
-    /// und so soll es bleiben. Griffen wir zusätzlich in die Deckkraft ein,
-    /// bliebe die Leiste beim Herunterschieben leer.
+    /// **In full screen we do not touch them.** There macOS hides the whole title bar
+    /// including the traffic lights by itself and slides it down when the pointer
+    /// reaches the top edge, as is familiar from the Mac, and it should stay so. If we
+    /// also intervened in the opacity, the bar would be empty while sliding down.
     ///
-    /// Der Winkel des Players (jetzt: das X oben rechts) schliesst den
-    /// **Player**, die Ampel das **Fenster**. Zwei Handlungen, zwei Orte.
-    private var ampelSichtbar: Bool {
-        if istVollbild { return true }
-        return !istKlein && (!imPlayer || zeigerOben)
+    /// The player's close control (now the X at the top right) closes the **player**,
+    /// the traffic lights the **window**. Two actions, two places.
+    private var signalVisible: Bool {
+        if isFullscreen { return true }
+        return !isSmall && (!inPlayer || pointerTop)
     }
 
-    private func ampelNachziehen(weich: Bool = false) {
-        guard let fenster else { return }
-        // **Im Vollbild gar nichts.** Nicht nur „sichtbar lassen", sondern die
-        // Knöpfe überhaupt nicht anfassen.
+    private func signalCatchUp(soft: Bool = false) {
+        guard let window else { return }
+        // **Nothing at all in full screen.** Not just "leave visible" but do not touch the
+        // buttons at all.
         //
-        // Dort schiebt macOS die Titelleiste selbst herunter, sobald der
-        // Zeiger an den oberen Rand geht — und animiert dabei genau diese
-        // Ansichten. Legt man in demselben Moment eine eigene
-        // `NSAnimationContext`-Gruppe auf ihre Deckkraft, ringen zwei
-        // Animationen um dieselben Ansichten, und das System steht für einen
-        // Moment.
-        guard !istVollbild else { return }
-        for knopf in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            guard let ansicht = fenster.standardWindowButton(knopf) else { continue }
-            // **Ausblenden, nicht verstecken.** `isHidden` nimmt sie
-            // schlagartig weg; die Steuerung daneben blendet über 180 ms.
-            // Zwei verschiedene Geschwindigkeiten an derselben Ecke sieht
-            // man sofort.
-            ansicht.isHidden = false
-            if weich {
-                NSAnimationContext.runAnimationGroup { lauf in
-                    lauf.duration = 0.18
-                    lauf.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    ansicht.animator().alphaValue = ampelSichtbar ? 1 : 0
+        // There macOS slides the title bar down itself when the pointer reaches the top
+        // edge, animating exactly these views. If our own `NSAnimationContext` group is
+        // put on their opacity at the same moment, two animations fight over the same
+        // views and the system freezes for a moment.
+        guard !isFullscreen else { return }
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let viewRef = window.standardWindowButton(button) else { continue }
+            // **Fade, don't hide.** `isHidden` removes them abruptly; the controls next to
+            // them fade over 180 ms. Two different speeds at the same corner are noticed
+            // immediately.
+            viewRef.isHidden = false
+            if soft {
+                NSAnimationContext.runAnimationGroup { run in
+                    run.duration = 0.18
+                    run.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    viewRef.animator().alphaValue = signalVisible ? 1 : 0
                 }
             } else {
-                ansicht.alphaValue = ampelSichtbar ? 1 : 0
+                viewRef.alphaValue = signalVisible ? 1 : 0
             }
         }
     }
 
-    /// Der Player meldet, ob der Zeiger oben in der Ampelzone steht.
-    func setzeZeigerOben(_ oben: Bool) {
-        guard !istVollbild, zeigerOben != oben else { return }
-        zeigerOben = oben
-        ampelNachziehen(weich: true)
+    /// The player reports whether the pointer is in the traffic-light zone at the top.
+    func setPointerTop(_ top: Bool) {
+        guard !isFullscreen, pointerTop != top else { return }
+        pointerTop = top
+        signalCatchUp(soft: true)
     }
 
-    /// Geht die Steuerung, geht die Ampel in jedem Fall mit — auch wenn der
-    /// Zeiger oben stehen bleibt, etwa weil er sich nicht bewegt.
-    func setzeSteuerung(_ da: Bool) {
-        guard !da, zeigerOben else { return }
-        zeigerOben = false
-        ampelNachziehen(weich: true)
+    /// When the controls go, the traffic lights go too, even if the pointer stays at
+    /// the top, e.g. because it is not moving.
+    func setControls(_ present: Bool) {
+        guard !present, pointerTop else { return }
+        pointerTop = false
+        signalCatchUp(soft: true)
     }
 
-    /// Der Player meldet sich an und ab.
-    func setzePlayer(_ an: Bool) {
-        guard imPlayer != an else { return }
-        imPlayer = an
-        ampelNachziehen()
-        // **Nur beim Aufgehen anstreichen, nicht beim Schliessen.**
+    /// The player registers and unregisters.
+    func setPlayer(_ an: Bool) {
+        guard inPlayer != an else { return }
+        inPlayer = an
+        signalCatchUp()
+        // **Paint only when opening, not when closing.**
         //
-        // AppKit stellt das Material der Titelleiste bei Gelegenheit wieder
-        // her; geht der Player auf, steht es dann als heller Streifen über
-        // dem Bild. Deshalb muss der Anstrich dort noch einmal laufen.
+        // AppKit restores the title bar material from time to time; when the player
+        // opens, it then shows as a light stripe over the picture. So the paint must run
+        // once more there.
         //
-        // Beim Schliessen darf er es nicht: `aufraeumen()` hängt an
-        // `.onDisappear`, und das feuert, **wenn die Bewegung anfängt** —
-        // nicht, wenn sie durch ist.
-        if an, let fenster { Fensteranstrich.anstreichen(fenster) }
+        // On closing it must not: `aufraeumen()` hangs on `.onDisappear`, which fires
+        // **when the motion starts**, not when it is done.
+        if an, let window { WindowLine.highlight(window) }
     }
 
-    func vollbildUmschalten() { fenster?.toggleFullScreen(nil) }
+    func fullscreenToggle() { window?.toggleFullScreen(nil) }
 
-    /// Kleines Fenster an oder aus.
+    /// Small window on or off.
     ///
-    /// **Erst aus dem Vollbild.** Dort ignoriert macOS sowohl `setFrame` als
-    /// auch den Fensterrang — das kleine Fenster blieb sonst bildschirmfüllend.
-    /// Der Rückweg wartet auf die Meldung, dass das Vollbild wirklich verlassen
-    /// ist; vorher hat das Fenster noch die alten Maße.
-    func setzeKlein(_ klein: Bool) {
-        guard let fenster, klein != istKlein else { return }
-        istKlein = klein
+    /// **First out of full screen.** There macOS ignores both `setFrame` and the window
+    /// level, so the small window would stay screen-filling. The way back waits for the
+    /// notification that full screen has really been left; before that the window
+    /// still has the old size.
+    func setSmall(_ small: Bool) {
+        guard let window, small != isSmall else { return }
+        isSmall = small
 
-        if klein, istVollbild {
-            var beobachter: NSObjectProtocol?
-            beobachter = NotificationCenter.default.addObserver(
+        if small, isFullscreen {
+            var observer: NSObjectProtocol?
+            observer = NotificationCenter.default.addObserver(
                 forName: NSWindow.didExitFullScreenNotification,
-                object: fenster, queue: .main) { [weak self] _ in
-                    if let beobachter { NotificationCenter.default.removeObserver(beobachter) }
-                    MainActor.assumeIsolated { self?.kleinAnwenden(true) }
+                object: window, queue: .main) { [weak self] _ in
+                    if let observer { NotificationCenter.default.removeObserver(observer) }
+                    MainActor.assumeIsolated { self?.smallApply(true) }
                 }
-            fenster.toggleFullScreen(nil)
+            window.toggleFullScreen(nil)
             return
         }
-        kleinAnwenden(klein)
+        smallApply(small)
     }
 
-    private func kleinAnwenden(_ klein: Bool) {
-        guard let fenster else { return }
+    private func smallApply(_ small: Bool) {
+        guard let window else { return }
 
-        ampelNachziehen()
-        // Ohne Titelleiste zum Anfassen zieht man es am Bild.
-        fenster.isMovableByWindowBackground = klein
-        fenster.level = klein ? .floating : .normal
+        signalCatchUp()
+        // Without a title bar to grab, the window is dragged by its picture.
+        window.isMovableByWindowBackground = small
+        window.level = small ? .floating : .normal
 
-        // **Kein `contentAspectRatio`.** Ein gesetztes Verhältnis muss man
-        // zum Zurückschalten wieder loswerden, und `.zero` ist dafür kein
-        // gültiger Wert — AppKit rechnet damit weiter und stürzt beim Ziehen
-        // ab (`_resizeWithEvent:`, brk 1). Gemessen, einmal passiert.
-        // Das Bild läuft ohnehin im Letterbox, wenn das Fenster nicht passt.
-        if klein {
-            vorher = fenster.frame
-            fenster.contentMinSize = NSSize(width: 320, height: 180)
-            let inhalt = NSRect(origin: .zero, size: NSSize(width: 480, height: 270))
-            var rahmen = fenster.frameRect(forContentRect: inhalt)
-            if let schirm = fenster.screen?.visibleFrame {
-                rahmen.origin = CGPoint(x: schirm.maxX - rahmen.width - 24,
-                                        y: schirm.minY + 24)
+        // **No `contentAspectRatio`.** A set ratio has to be removed when switching back,
+        // and `.zero` is not a valid value for that: AppKit keeps computing with it and
+        // crashes while dragging (`_resizeWithEvent:`, brk 1). Measured, happened once.
+        // The picture letterboxes anyway when the window does not match.
+        if small {
+            before = window.frame
+            window.contentMinSize = NSSize(width: 320, height: 180)
+            let content = NSRect(origin: .zero, size: NSSize(width: 480, height: 270))
+            var frameRect = window.frameRect(forContentRect: content)
+            if let screen = window.screen?.visibleFrame {
+                frameRect.origin = CGPoint(x: screen.maxX - frameRect.width - 24,
+                                        y: screen.minY + 24)
             }
-            fenster.setFrame(rahmen, display: true, animate: true)
+            window.setFrame(frameRect, display: true, animate: true)
         } else {
-            fenster.contentMinSize = NSSize(width: Stil.fensterMinBreite,
-                                            height: Stil.fensterMinHoehe)
-            if let vorher { fenster.setFrame(vorher, display: true, animate: true) }
+            window.contentMinSize = NSSize(width: Theme.windowMinWidth,
+                                            height: Theme.windowMinHeight)
+            if let before { window.setFrame(before, display: true, animate: true) }
         }
     }
 
-    /// Beim Verlassen des Players alles zurückdrehen — sonst bliebe das
-    /// Hauptfenster ohne Lampen und über allen anderen stehen.
-    func aufraeumen() {
-        if istKlein { istKlein = false; kleinAnwenden(false) }
-        // **Die App verlaesst den Player so, wie sie ihn betreten hat.**
+    /// On leaving the player, undo everything; otherwise the main window would stay
+    /// without traffic lights and above all others.
+    func cleanUp() {
+        if isSmall { isSmall = false; smallApply(false) }
+        // **The app leaves the player the way it entered it.**
         //
-        // Das kleine Fenster nahm der Player schon immer zurueck, das
-        // Vollbild nicht. Wer im Player auf Vollbild ging und ihn dann
-        // schloss, stand mit der ganzen App im Vollbild. Rückmeldung vom 22.09.:
-        // „Im Normalfall sollte die App dann wieder zurueck zu dem Stand
-        // gehen, wo sie vorher war."
+        // The player always undid the small window, but not full screen. Anyone who went
+        // full screen in the player and then closed it ended up with the whole app in
+        // full screen.
         //
-        // Nur zurueck, wenn der Player es war: lief die App schon vorher im
-        // Vollbild, bleibt sie dort — das hat jemand bewusst so eingestellt.
-        if istVollbild, vollbildVorher == false {
-            fenster?.toggleFullScreen(nil)
+        // Only go back if the player caused it: if the app was already full screen
+        // beforehand, it stays there; someone set it up that way on purpose.
+        if isFullscreen, fullscreenBefore == false {
+            window?.toggleFullScreen(nil)
         }
-        setzePlayer(false)
+        setPlayer(false)
     }
 }
 
-/// Reicht das AppKit-Fenster an den Halter durch.
+/// Passes the AppKit window on to the holder.
 ///
-/// **Über `viewDidMoveToWindow`, nicht in `makeNSView`.** Beim Anlegen hängt
-/// die View noch in keinem Fenster, `window` ist dort `nil` — und dann lief
-/// das kleine Fenster still ins Leere, weil `setzeKlein` am `guard` abbrach.
-/// Einmal passiert, und von außen sah es aus, als täte der Knopf nichts.
-struct Fensterzugriff: NSViewRepresentable {
-    let halter: Fensterhalter
+/// **Via `viewDidMoveToWindow`, not in `makeNSView`.** At creation the view is not
+/// in any window yet, `window` is `nil`, and the small window silently ran into the
+/// void because `setSmall` bailed out at the `guard`. It happened once, and from
+/// outside it looked as if the button did nothing.
+struct WindowHandle: NSViewRepresentable {
+    let holder: WindowHolder
 
-    final class Spion: NSView {
-        var gefunden: ((NSWindow?) -> Void)?
+    final class Probe: NSView {
+        var found: ((NSWindow?) -> Void)?
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            gefunden?(window)
+            found?(window)
         }
     }
 
-    func makeNSView(context: Context) -> Spion {
-        let ansicht = Spion(frame: .zero)
-        ansicht.gefunden = { fenster in
-            MainActor.assumeIsolated { halter.uebernehme(fenster) }
+    func makeNSView(context: Context) -> Probe {
+        let viewRef = Probe(frame: .zero)
+        viewRef.found = { window in
+            MainActor.assumeIsolated { holder.takeOver(window) }
         }
-        return ansicht
+        return viewRef
     }
 
-    func updateNSView(_ ansicht: Spion, context: Context) {}
+    func updateNSView(_ viewRef: Probe, context: Context) {}
 }
 
-/// Rückmeldung beim Springen — dieselbe Drehung wie auf den Knöpfen, damit
-/// Knopf und Tastendruck nicht wie zwei verschiedene Dinge wirken.
+/// Feedback when seeking: the same rotation as on the buttons, so button and key
+/// press do not feel like two different things.
 ///
-/// Wörtlich aus der iPhone-Fassung (`Sprungmarke` in
-/// `Sources/iOS/PlayerScreen.swift`), nur ohne den Doppeltipp, den es auf dem
-/// Mac nicht gibt. Die Marke steht an derselben Seite, in die gesprungen wird.
-private struct Sprungmarke: View {
-    let richtung: Int
-    let sekunden: Int
-    @State private var gedreht = false
+/// Taken from the iPhone version (`Sprungmarke` in `Sources/iOS/PlayerScreen.swift`),
+/// only without the double-tap, which the Mac does not have. The marker sits on the
+/// same side as the direction of the seek.
+private struct JumpMark: View {
+    let bearing: Int
+    let seconds: Int
+    @State private var rotated = false
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: richtung < 0 ? "gobackward" : "goforward")
+            Image(systemName: bearing < 0 ? "gobackward" : "goforward")
                 .font(.system(size: 32, weight: .medium))
                 .symbolEffect(.bounce, options: .speed(1.7),
-                              value: Stil.bewegungReduziert ? false : gedreht)
-            Text(verbatim: "\(sekunden) s").font(Stil.kachel)
+                              value: Theme.motionReduced ? false : rotated)
+            Text(verbatim: "\(seconds) s").font(Theme.tile)
         }
         .foregroundStyle(.white)
         .frame(width: 108, height: 108)
         .background(.black.opacity(0.45), in: Circle())
-        .onAppear { gedreht = true }
+        .onAppear { rotated = true }
     }
 }
 
 private extension Double {
-    func rounded(toPlaces stellen: Int) -> Double {
-        let f = pow(10.0, Double(stellen))
+    func rounded(toPlaces set: Int) -> Double {
+        let f = pow(10.0, Double(set))
         return (self * f).rounded() / f
     }
 }

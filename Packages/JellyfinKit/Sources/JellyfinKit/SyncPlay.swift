@@ -3,218 +3,214 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// **Gemeinsam schauen über Jellyfins SyncPlay.**
+/// **Watching together via Jellyfin's SyncPlay.**
 ///
-/// Nichts Eigenes: die Gruppe gehört dem Server. Wer drin ist, schickt
-/// Bitten (`Pause`, `Unpause`, `Seek`) als Aufruf, der Server gibt sie als
-/// Befehl mit **Ausführungszeitpunkt** über den Steuerkanal an alle weiter.
-/// Damit der Zeitpunkt auf jedem Gerät derselbe Augenblick ist, rechnet jedes
-/// Gerät seine Uhr gegen die des Servers (``Zeitabgleich``).
+/// Nothing of its own: the group belongs to the server. Members send requests (`Pause`,
+/// `Unpause`, `Seek`) as calls; the server relays them to everyone as commands with an
+/// **execution time** over the control channel. For that time to be the same moment on
+/// every device, each device calculates its clock against the server's (``Zeitabgleich``).
 ///
-/// Vorbild ist jellyfin-web (`plugins/syncPlay/core`): dieselben Regeln für
-/// Befehle in der Vergangenheit und in der Zukunft, dieselbe Messung der
-/// Uhren. Was hier steht, ist nur die Rechnung — die Oberfläche und der
-/// Abspieler hängen sich an, ohne sie selbst zu kennen.
+/// Modeled on jellyfin-web (`plugins/syncPlay/core`): the same rules for commands in the
+/// past and in the future, the same clock measurement. This file is only the calculation;
+/// the UI and the player attach to it without knowing it.
 public enum SyncPlay {
-    /// Jellyfin zählt in Ticks zu 100 ns.
-    public static let ticksJeSekunde: Double = 10_000_000
+    /// Jellyfin counts in ticks of 100 ns.
+    public static let ticksJeSecond: Double = 10_000_000
 
-    static func sekunden(_ ticks: Int64) -> Double { Double(ticks) / ticksJeSekunde }
-    static func ticks(_ sekunden: Double) -> Int64 { Int64((sekunden * ticksJeSekunde).rounded()) }
+    static func seconds(_ ticks: Int64) -> Double { Double(ticks) / ticksJeSecond }
+    static func ticks(_ seconds: Double) -> Int64 { Int64((seconds * ticksJeSecond).rounded()) }
 
-    /// **Ab wann ein Versatz zum Springen führt.** jellyfin-web springt ab
-    /// 400 ms nach (`minDelaySkipToSync`); darunter hört niemand den
-    /// Unterschied, ein Sprung in VLC dagegen schon.
-    public static let sprunggrenze: Double = 0.4
+    /// **From which offset a correction seeks.** jellyfin-web seeks from 400 ms
+    /// (`minDelaySkipToSync`); below that nobody hears the difference, but a seek in VLC is
+    /// audible.
+    public static let jumpLimit: Double = 0.4
 
-    /// **Nachführen im Lauf erst ab einer Sekunde.** Ein Sprung kostet VLC
-    /// bei MKV selbst ein paar hundert Millisekunden; mit der Grenze von
-    /// oben liefe das in eine Schleife aus Springen und Nachhinken.
-    /// jellyfin-web führt im Lauf von Haus aus gar nicht nach.
-    public static let driftgrenze: Double = 1.0
+    /// **Catching up while playing only from one second.** A seek costs VLC a few hundred
+    /// milliseconds on MKV; with the limit above this would loop between seeking and
+    /// falling behind. jellyfin-web does not catch up during playback at all.
+    public static let driftLimit: Double = 1.0
 }
 
-// MARK: - Was der Server schickt
+// MARK: - What the server sends
 
-/// Eine Gruppe, wie `GET /SyncPlay/List` sie liefert.
-public struct SyncPlayGruppe: Sendable, Equatable, Identifiable, Decodable {
-    public enum Zustand: String, Sendable, Equatable {
-        case leer = "Idle"
-        case wartet = "Waiting"
-        case angehalten = "Paused"
-        case laeuft = "Playing"
+/// A group as `GET /SyncPlay/List` returns it.
+public struct SyncPlayGroup: Sendable, Equatable, Identifiable, Decodable {
+    public enum Phase: String, Sendable, Equatable {
+        case empty = "Idle"
+        case waits = "Waiting"
+        case halted = "Paused"
+        case running = "Playing"
     }
 
     public let id: String
     public let name: String
-    public let zustand: Zustand?
-    /// Benutzernamen, nicht Geräte. Wer auf zwei Geräten drin ist, steht
-    /// zweimal.
-    public let teilnehmer: [String]
-    public let stand: Date?
+    public let condition: Phase?
+    /// User names, not devices. Someone on two devices appears twice.
+    public let participant: [String]
+    public let state: Date?
 
-    public init(id: String, name: String, zustand: Zustand? = nil,
-                teilnehmer: [String] = [], stand: Date? = nil) {
+    public init(id: String, name: String, condition: Phase? = nil,
+                participant: [String] = [], state: Date? = nil) {
         self.id = id
         self.name = name
-        self.zustand = zustand
-        self.teilnehmer = teilnehmer
-        self.stand = stand
+        self.condition = condition
+        self.participant = participant
+        self.state = state
     }
 
-    enum Schluessel: String, CodingKey {
-        case id = "GroupId", name = "GroupName", zustand = "State"
-        case teilnehmer = "Participants", stand = "LastUpdatedAt"
+    enum Keys: String, CodingKey {
+        case id = "GroupId", name = "GroupName", condition = "State"
+        case participant = "Participants", state = "LastUpdatedAt"
     }
 
     public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: Schluessel.self)
+        let c = try decoder.container(keyedBy: Keys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
-        zustand = try c.decodeIfPresent(String.self, forKey: .zustand).flatMap(Zustand.init(rawValue:))
-        teilnehmer = try c.decodeIfPresent([String].self, forKey: .teilnehmer) ?? []
-        stand = try? c.decodeIfPresent(Datumsfeld.self, forKey: .stand)?.wert
+        condition = try c.decodeIfPresent(String.self, forKey: .condition).flatMap(Phase.init(rawValue:))
+        participant = try c.decodeIfPresent([String].self, forKey: .participant) ?? []
+        state = try? c.decodeIfPresent(DateField.self, forKey: .state)?.value
     }
 
-    /// Alle außer einem selbst, jeder Name einmal. Für „mit Paul und Tom".
-    public func andere(als ich: String?) -> [String] {
-        var gesehen = Set<String>()
-        var ergebnis: [String] = []
-        var eigenerUebersprungen = false
-        for name in teilnehmer {
-            if name == ich, !eigenerUebersprungen { eigenerUebersprungen = true; continue }
-            if gesehen.insert(name).inserted { ergebnis.append(name) }
+    /// Everyone except oneself, each name once. For "with Ann and Ben".
+    public func other(asValue ich: String?) -> [String] {
+        var watched = Set<String>()
+        var result: [String] = []
+        var ownSkipped = false
+        for name in participant {
+            if name == ich, !ownSkipped { ownSkipped = true; continue }
+            if watched.insert(name).inserted { result.append(name) }
         }
-        return ergebnis
+        return result
     }
 }
 
-/// Ein Befehl mit Ausführungszeitpunkt (`SyncPlayCommand`).
-public struct SyncPlayBefehl: Sendable, Equatable {
+/// A command with an execution time (`SyncPlayCommand`).
+public struct SyncPlayCommand: Sendable, Equatable {
     public enum Art: String, Sendable, Equatable {
-        case weiter = "Unpause"
+        case proceed = "Unpause"
         case pause = "Pause"
-        case stopp = "Stop"
-        case springen = "Seek"
+        case stop = "Stop"
+        case jump = "Seek"
     }
 
-    public let gruppe: String
-    /// `PlaylistItemId` — gilt nur für diesen Eintrag der Warteschlange.
-    public let eintrag: String?
+    public let group: String
+    /// `PlaylistItemId`: valid only for this queue entry.
+    public let entryRecord: String?
     public let art: Art
-    /// Serverzeit, zu der er ausgeführt wird.
-    public let wann: Date
-    /// Stelle in Sekunden, zu der er gilt.
-    public let stelle: Double?
-    /// Serverzeit, zu der er ausgesandt wurde.
-    public let ausgesandt: Date?
+    /// Server time at which it is executed.
+    public let moment: Date
+    /// Position in seconds at which it applies.
+    public let spot: Double?
+    /// Server time at which it was sent.
+    public let emitted: Date?
 
-    public init(gruppe: String, eintrag: String?, art: Art, wann: Date,
-                stelle: Double?, ausgesandt: Date? = nil) {
-        self.gruppe = gruppe
-        self.eintrag = eintrag
+    public init(group: String, entryRecord: String?, art: Art, moment: Date,
+                spot: Double?, emitted: Date? = nil) {
+        self.group = group
+        self.entryRecord = entryRecord
         self.art = art
-        self.wann = wann
-        self.stelle = stelle
-        self.ausgesandt = ausgesandt
+        self.moment = moment
+        self.spot = spot
+        self.emitted = emitted
     }
 }
 
-/// Die Warteschlange der Gruppe (`PlayQueue`).
-public struct SyncPlayWarteschlange: Sendable, Equatable {
-    public struct Eintrag: Sendable, Equatable {
-        public let titel: String
-        public let eintrag: String
-        public init(titel: String, eintrag: String) {
-            self.titel = titel
-            self.eintrag = eintrag
+/// The group's queue (`PlayQueue`).
+public struct SyncPlayQueue: Sendable, Equatable {
+    public struct Record: Sendable, Equatable {
+        public let title: String
+        public let entryRecord: String
+        public init(title: String, entryRecord: String) {
+            self.title = title
+            self.entryRecord = entryRecord
         }
     }
 
-    /// `NewPlaylist`, `SetCurrentItem`, `NextItem` …
-    public let grund: String
-    public let stand: Date?
-    public let eintraege: [Eintrag]
+    /// `NewPlaylist`, `SetCurrentItem`, `NextItem` ...
+    public let reason: String
+    public let state: Date?
+    public let entries: [Record]
     public let index: Int
-    public let startstelle: Double
-    public let laeuft: Bool
+    public let startPoint: Double
+    public let running: Bool
 
-    public init(grund: String, stand: Date?, eintraege: [Eintrag], index: Int,
-                startstelle: Double, laeuft: Bool) {
-        self.grund = grund
-        self.stand = stand
-        self.eintraege = eintraege
+    public init(reason: String, state: Date?, entries: [Record], index: Int,
+                startPoint: Double, running: Bool) {
+        self.reason = reason
+        self.state = state
+        self.entries = entries
         self.index = index
-        self.startstelle = startstelle
-        self.laeuft = laeuft
+        self.startPoint = startPoint
+        self.running = running
     }
 
-    public var aktuell: Eintrag? {
-        eintraege.indices.contains(index) ? eintraege[index] : nil
+    public var current: Record? {
+        entries.indices.contains(index) ? entries[index] : nil
     }
 
-    /// Muss der Abspieler dafür einen (anderen) Titel laden? Umsortieren,
-    /// Wiederholen und Mischen ändern nichts an dem, was läuft.
-    public var wechseltTitel: Bool {
-        ["NewPlaylist", "SetCurrentItem", "NextItem", "PreviousItem", "RemoveItems"].contains(grund)
+    /// Must the player load a (different) title for this? Reordering, repeating and
+    /// shuffling do not change what is playing.
+    public var switchesTitle: Bool {
+        ["NewPlaylist", "SetCurrentItem", "NextItem", "PreviousItem", "RemoveItems"].contains(reason)
     }
 }
 
-/// Alles, was über den Steuerkanal zu SyncPlay ankommt.
-public enum SyncPlayNachricht: Sendable, Equatable {
-    case befehl(SyncPlayBefehl)
-    /// Man ist drin — nach `New` wie nach `Join`.
-    case beigetreten(SyncPlayGruppe)
-    case verlassen
-    case nichtInGruppe
-    case gibtEsNicht
-    /// Einem in der Gruppe fehlt der Titel in seiner Bibliothek.
-    case keinZugriff
-    case jemandKam(String)
-    case jemandGing(String)
-    case zustand(SyncPlayGruppe.Zustand, grund: String?)
-    case warteschlange(SyncPlayWarteschlange)
-    /// Vom Steuerkanal selbst, nicht vom Server: die Leitung ist abgerissen.
-    /// Der Server wirft die Sitzung damit aus der Gruppe.
-    case leitungVerloren
-    /// Vom Steuerkanal selbst: nach einem Abriss kommt wieder etwas an.
-    case leitungWieder
+/// Everything that arrives about SyncPlay over the control channel.
+public enum SyncPlayPostDirection: Sendable, Equatable {
+    case command(SyncPlayCommand)
+    /// One is in the group, after `New` as well as `Join`.
+    case joined(SyncPlayGroup)
+    case leave
+    case notInGroup
+    case doesNotExist
+    /// Someone in the group lacks the title in their library.
+    case noAccess
+    case someoneJoined(String)
+    case someoneLeft(String)
+    case condition(SyncPlayGroup.Phase, reason: String?)
+    case queue(SyncPlayQueue)
+    /// From the control channel itself, not the server: the connection dropped. The server
+    /// then removes the session from the group.
+    case connectionLost
+    /// From the control channel itself: after a drop, something arrives again.
+    case connectionAgain
 
-    /// Liest eine ganze Nachricht des Steuerkanals. `nil` für alles, was
-    /// nicht SyncPlay ist oder sich nicht lesen lässt.
-    public static func lesen(_ text: String) -> SyncPlayNachricht? {
-        guard let daten = text.data(using: .utf8),
-              let kopf = try? JSONDecoder().decode(Kopf.self, from: daten) else { return nil }
-        let dekoder = JSONDecoder()
-        switch kopf.MessageType {
+    /// Parses a whole control-channel message. `nil` for anything that is not SyncPlay or
+    /// cannot be read.
+    public static func read(_ text: String) -> SyncPlayPostDirection? {
+        guard let data = text.data(using: .utf8),
+              let header = try? JSONDecoder().decode(Header.self, from: data) else { return nil }
+        let decoderRef = JSONDecoder()
+        switch header.MessageType {
         case "SyncPlayCommand":
-            guard let h = try? dekoder.decode(Huelle<Befehlsdaten>.self, from: daten),
-                  let b = h.Data.befehl else { return nil }
-            return .befehl(b)
+            guard let h = try? decoderRef.decode(Wrapper<CommandData>.self, from: data),
+                  let b = h.Data.command else { return nil }
+            return .command(b)
         case "SyncPlayGroupUpdate":
-            guard let art = try? dekoder.decode(Huelle<Gruppenkopf>.self, from: daten).Data.Type
+            guard let art = try? decoderRef.decode(Wrapper<GroupsHeader>.self, from: data).Data.Type
             else { return nil }
             switch art {
             case "GroupJoined":
-                return (try? dekoder.decode(Huelle<Gruppendaten<SyncPlayGruppe>>.self, from: daten))
-                    .map { .beigetreten($0.Data.Data) }
-            case "GroupLeft": return .verlassen
-            case "NotInGroup": return .nichtInGruppe
-            case "GroupDoesNotExist": return .gibtEsNicht
-            case "LibraryAccessDenied": return .keinZugriff
+                return (try? decoderRef.decode(Wrapper<GroupsData<SyncPlayGroup>>.self, from: data))
+                    .map { .joined($0.Data.Data) }
+            case "GroupLeft": return .leave
+            case "NotInGroup": return .notInGroup
+            case "GroupDoesNotExist": return .doesNotExist
+            case "LibraryAccessDenied": return .noAccess
             case "UserJoined":
-                return (try? dekoder.decode(Huelle<Gruppendaten<String>>.self, from: daten))
-                    .map { .jemandKam($0.Data.Data) }
+                return (try? decoderRef.decode(Wrapper<GroupsData<String>>.self, from: data))
+                    .map { .someoneJoined($0.Data.Data) }
             case "UserLeft":
-                return (try? dekoder.decode(Huelle<Gruppendaten<String>>.self, from: daten))
-                    .map { .jemandGing($0.Data.Data) }
+                return (try? decoderRef.decode(Wrapper<GroupsData<String>>.self, from: data))
+                    .map { .someoneLeft($0.Data.Data) }
             case "StateUpdate":
-                guard let z = try? dekoder.decode(Huelle<Gruppendaten<Zustandsdaten>>.self, from: daten),
-                      let zustand = SyncPlayGruppe.Zustand(rawValue: z.Data.Data.State) else { return nil }
-                return .zustand(zustand, grund: z.Data.Data.Reason)
+                guard let z = try? decoderRef.decode(Wrapper<GroupsData<StateData>>.self, from: data),
+                      let condition = SyncPlayGroup.Phase(rawValue: z.Data.Data.State) else { return nil }
+                return .condition(condition, reason: z.Data.Data.Reason)
             case "PlayQueue":
-                return (try? dekoder.decode(Huelle<Gruppendaten<Warteschlangendaten>>.self, from: daten))
-                    .map { .warteschlange($0.Data.Data.schlange) }
+                return (try? decoderRef.decode(Wrapper<GroupsData<QueueData>>.self, from: data))
+                    .map { .queue($0.Data.Data.queue) }
             default:
                 return nil
             }
@@ -223,417 +219,411 @@ public enum SyncPlayNachricht: Sendable, Equatable {
         }
     }
 
-    // Nur zum Lesen. Die Feldnamen sind die des Servers.
-    private struct Kopf: Decodable { let MessageType: String }
-    private struct Huelle<D: Decodable>: Decodable { let Data: D }
-    private struct Gruppenkopf: Decodable { let `Type`: String }
-    private struct Gruppendaten<D: Decodable>: Decodable { let Data: D }
-    private struct Zustandsdaten: Decodable { let State: String; let Reason: String? }
+    // Read-only. The field names are the server's.
+    private struct Header: Decodable { let MessageType: String }
+    private struct Wrapper<D: Decodable>: Decodable { let Data: D }
+    private struct GroupsHeader: Decodable { let `Type`: String }
+    private struct GroupsData<D: Decodable>: Decodable { let Data: D }
+    private struct StateData: Decodable { let State: String; let Reason: String? }
 
-    private struct Befehlsdaten: Decodable {
+    private struct CommandData: Decodable {
         let GroupId: String
         let PlaylistItemId: String?
-        let When: Datumsfeld
+        let When: DateField
         let PositionTicks: Int64?
         let Command: String
-        let EmittedAt: Datumsfeld?
+        let EmittedAt: DateField?
 
-        var befehl: SyncPlayBefehl? {
-            guard let art = SyncPlayBefehl.Art(rawValue: Command) else { return nil }
-            return SyncPlayBefehl(gruppe: GroupId, eintrag: PlaylistItemId, art: art,
-                                  wann: When.wert, stelle: PositionTicks.map(SyncPlay.sekunden),
-                                  ausgesandt: EmittedAt?.wert)
+        var command: SyncPlayCommand? {
+            guard let art = SyncPlayCommand.Art(rawValue: Command) else { return nil }
+            return SyncPlayCommand(group: GroupId, entryRecord: PlaylistItemId, art: art,
+                                  moment: When.value, spot: PositionTicks.map(SyncPlay.seconds),
+                                  emitted: EmittedAt?.value)
         }
     }
 
-    private struct Warteschlangendaten: Decodable {
-        struct Posten: Decodable { let ItemId: String; let PlaylistItemId: String }
+    private struct QueueData: Decodable {
+        struct PlaylistEntry: Decodable { let ItemId: String; let PlaylistItemId: String }
         let Reason: String
-        let LastUpdate: Datumsfeld?
-        let Playlist: [Posten]?
+        let LastUpdate: DateField?
+        let Playlist: [PlaylistEntry]?
         let PlayingItemIndex: Int?
         let StartPositionTicks: Int64?
         let IsPlaying: Bool?
 
-        var schlange: SyncPlayWarteschlange {
-            SyncPlayWarteschlange(
-                grund: Reason, stand: LastUpdate?.wert,
-                eintraege: (Playlist ?? []).map { .init(titel: $0.ItemId, eintrag: $0.PlaylistItemId) },
+        var queue: SyncPlayQueue {
+            SyncPlayQueue(
+                reason: Reason, state: LastUpdate?.value,
+                entries: (Playlist ?? []).map { .init(title: $0.ItemId, entryRecord: $0.PlaylistItemId) },
                 index: PlayingItemIndex ?? -1,
-                startstelle: SyncPlay.sekunden(StartPositionTicks ?? 0),
-                laeuft: IsPlaying ?? false)
+                startPoint: SyncPlay.seconds(StartPositionTicks ?? 0),
+                running: IsPlaying ?? false)
         }
     }
 }
 
-/// Ein Zeitstempel des Servers, mit seinen sieben Nachkommastellen — siehe
-/// ``Zeitstempel``.
-struct Datumsfeld: Decodable, Sendable {
-    let wert: Date
-    init(from decoder: any Decoder) throws { wert = try Zeitstempel.lesen(aus: decoder) }
+/// A server timestamp with its seven fractional digits; see ``Zeitstempel``.
+struct DateField: Decodable, Sendable {
+    let value: Date
+    init(from decoder: any Decoder) throws { value = try TimestampFormat.read(from: decoder) }
 }
 
 extension SyncPlay {
-    /// **Millisekunden, UTC, mit `Z`** — so liest der Server `When` in
-    /// `Ready` und `Buffering`.
-    public static func zeitText(_ datum: Date) -> String {
+    /// **Milliseconds, UTC, with `Z`**: how the server reads `When` in `Ready` and
+    /// `Buffering`.
+    public static func timeText(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         f.timeZone = TimeZone(identifier: "UTC")
-        return f.string(from: datum)
+        return f.string(from: date)
     }
 
-    static func zeitLesen(_ text: String) -> Date? {
-        let mit = ISO8601DateFormatter()
-        mit.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = mit.date(from: text) { return d }
-        let ohne = ISO8601DateFormatter()
-        ohne.formatOptions = [.withInternetDateTime]
-        return ohne.date(from: text)
+    static func timeRead(_ text: String) -> Date? {
+        let with = ISO8601DateFormatter()
+        with.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = with.date(from: text) { return d }
+        let without = ISO8601DateFormatter()
+        without.formatOptions = [.withInternetDateTime]
+        return without.date(from: text)
     }
 }
 
-// MARK: - Zeitabgleich
+// MARK: - Clock sync
 
-/// **Wie weit die Uhr des Servers von unserer abweicht.**
+/// **How far the server's clock is from ours.**
 ///
-/// Eine Messung sind vier Zeitpunkte: Anfrage gesendet (lokal), empfangen
-/// (Server), Antwort gesendet (Server), empfangen (lokal). Daraus der
-/// Versatz nach NTP: `((t1 − t0) + (t2 − t3)) / 2`. Gilt die Messung mit der
-/// kürzesten Laufzeit der letzten acht — eine lange Laufzeit heißt, das Netz
-/// hat irgendwo gewartet, und dann weiß man nicht, auf welchem Weg.
+/// One measurement is four timestamps: request sent (local), received (server), response
+/// sent (server), received (local). The offset follows NTP: `((t1 - t0) + (t2 - t3)) / 2`.
+/// The measurement with the shortest round trip of the last eight counts; a long round trip
+/// means the network waited somewhere, and then the path is unknown.
 ///
-/// Genau so misst jellyfin-web (`TimeSync.js`), mit `GET /GetUtcTime`.
-public struct Zeitabgleich: Sendable, Equatable {
-    public struct Messung: Sendable, Equatable {
-        public let gesendet: Date
-        public let serverEmpfangen: Date
-        public let serverGesendet: Date
-        public let empfangen: Date
+/// jellyfin-web measures the same way (`TimeSync.js`), with `GET /GetUtcTime`.
+public struct TimeReconcile: Sendable, Equatable {
+    public struct Reading: Sendable, Equatable {
+        public let sent: Date
+        public let serverReceive: Date
+        public let serverSent: Date
+        public let receive: Date
 
-        public init(gesendet: Date, serverEmpfangen: Date, serverGesendet: Date, empfangen: Date) {
-            self.gesendet = gesendet
-            self.serverEmpfangen = serverEmpfangen
-            self.serverGesendet = serverGesendet
-            self.empfangen = empfangen
+        public init(sent: Date, serverReceive: Date, serverSent: Date, receive: Date) {
+            self.sent = sent
+            self.serverReceive = serverReceive
+            self.serverSent = serverSent
+            self.receive = receive
         }
 
-        /// Server minus lokal, in Sekunden.
-        public var versatz: TimeInterval {
-            ((serverEmpfangen.timeIntervalSince(gesendet))
-             + (serverGesendet.timeIntervalSince(empfangen))) / 2
+        /// Server minus local, in seconds.
+        public var offset: TimeInterval {
+            ((serverReceive.timeIntervalSince(sent))
+             + (serverSent.timeIntervalSince(receive))) / 2
         }
 
-        /// Hin und zurück, ohne die Zeit, die der Server selbst brauchte.
-        public var laufzeit: TimeInterval {
-            empfangen.timeIntervalSince(gesendet) - serverGesendet.timeIntervalSince(serverEmpfangen)
+        /// Round trip, without the time the server itself needed.
+        public var runtime: TimeInterval {
+            receive.timeIntervalSince(sent) - serverSent.timeIntervalSince(serverReceive)
         }
     }
 
-    public static let behalten = 8
+    public static let keep = 8
 
-    public private(set) var messungen: [Messung] = []
+    public private(set) var measurements: [Reading] = []
 
     public init() {}
 
-    /// Die Messung, die gilt.
-    public var beste: Messung? { messungen.min { $0.laufzeit < $1.laufzeit } }
+    /// The measurement that counts.
+    public var best: Reading? { measurements.min { $0.runtime < $1.runtime } }
 
-    public var bereit: Bool { !messungen.isEmpty }
+    public var ready: Bool { !measurements.isEmpty }
 
-    /// Server minus lokal. Ohne Messung null — dann gilt die eigene Uhr.
-    public var versatz: TimeInterval { beste?.versatz ?? 0 }
+    /// Server minus local. Zero without a measurement; then the local clock counts.
+    public var offset: TimeInterval { best?.offset ?? 0 }
 
-    /// Eine Richtung, in Millisekunden — so will `/SyncPlay/Ping` es haben.
-    public var pingMillisekunden: Int64 {
-        Int64(max(0, (beste?.laufzeit ?? 0) / 2 * 1000).rounded())
+    /// One direction, in milliseconds, as `/SyncPlay/Ping` wants it.
+    public var pingMilliseconds: Int64 {
+        Int64(max(0, (best?.runtime ?? 0) / 2 * 1000).rounded())
     }
 
-    public mutating func aufnehmen(_ m: Messung) {
-        messungen.append(m)
-        if messungen.count > Self.behalten { messungen.removeFirst(messungen.count - Self.behalten) }
+    public mutating func record(_ m: Reading) {
+        measurements.append(m)
+        if measurements.count > Self.keep { measurements.removeFirst(measurements.count - Self.keep) }
     }
 
-    public func lokal(_ server: Date) -> Date { server.addingTimeInterval(-versatz) }
-    public func server(_ lokal: Date) -> Date { lokal.addingTimeInterval(versatz) }
+    public func localOnly(_ server: Date) -> Date { server.addingTimeInterval(-offset) }
+    public func server(_ localOnly: Date) -> Date { localOnly.addingTimeInterval(offset) }
 
-    /// Wann gemessen wird: dreimal im Sekundenabstand, danach jede Minute.
-    public static func pause(nachMessungen anzahl: Int) -> TimeInterval {
-        anzahl < 3 ? 1 : 60
+    /// When to measure: three times at one-second intervals, then every minute.
+    public static func pause(toMeasurements count: Int) -> TimeInterval {
+        count < 3 ? 1 : 60
     }
 }
 
-// MARK: - Befehle ausführen
+// MARK: - Executing commands
 
-/// **Was der Abspieler mit einem Befehl tun soll, und wann.**
+/// **What the player should do with a command, and when.**
 ///
-/// Die Regeln von jellyfin-web (`PlaybackCore.js`):
+/// The rules of jellyfin-web (`PlaybackCore.js`):
 ///
-/// - **Weiter in der Zukunft:** bis zum Zeitpunkt warten, vorher an die
-///   Stelle springen, falls man merklich daneben steht.
-/// - **Weiter in der Vergangenheit:** die Gruppe läuft schon. Sofort los, und
-///   zwar an der Stelle, an der sie **jetzt** ist — Stelle plus die Zeit seit
-///   dem Befehl.
-/// - **Pause:** zum Zeitpunkt anhalten, dann auf die Stelle der Gruppe.
-/// - **Springen:** zum Zeitpunkt an die Stelle, angehalten. Danach meldet der
-///   Abspieler „bereit", und der Server gibt das Weiter frei.
-public struct SyncPlayAusfuehrung: Sendable, Equatable {
-    public enum Schritt: Sendable, Equatable { case weiter, pause, springen, stopp }
+/// - **Play, in the future:** wait until the time; seek to the position beforehand if
+///   noticeably off.
+/// - **Play, in the past:** the group is already running. Start at once, at the position
+///   the group is at **now**: position plus the time since the command.
+/// - **Pause:** pause at the time, then go to the group's position.
+/// - **Seek:** at the time, go to the position, paused. The player then reports "ready" and
+///   the server releases the play.
+public struct SyncPlayExecution: Sendable, Equatable {
+    public enum Step: Sendable, Equatable { case proceed, pause, jump, stop }
 
-    public let schritt: Schritt
-    /// Wohin vorher (bei Pause: danach) gesprungen wird. `nil` heißt: bleiben.
-    public let stelle: Double?
-    /// Wie lange ab jetzt gewartet wird.
-    public let warten: TimeInterval
+    public let step: Step
+    /// Where to seek beforehand (for pause: afterwards). `nil` means stay.
+    public let spot: Double?
+    /// How long to wait from now.
+    public let wait: TimeInterval
 
-    public init(schritt: Schritt, stelle: Double?, warten: TimeInterval) {
-        self.schritt = schritt
-        self.stelle = stelle
-        self.warten = warten
+    public init(step: Step, spot: Double?, wait: TimeInterval) {
+        self.step = step
+        self.spot = spot
+        self.wait = wait
     }
 
-    public static func fuer(_ befehl: SyncPlayBefehl, jetzt: Date, abgleich: Zeitabgleich,
-                            lokaleStelle: Double) -> SyncPlayAusfuehrung {
-        let wannLokal = abgleich.lokal(befehl.wann)
-        let warten = max(0, wannLokal.timeIntervalSince(jetzt))
+    public static func of(_ command: SyncPlayCommand, now: Date, reconcile: TimeReconcile,
+                            localPoint: Double) -> SyncPlayExecution {
+        let whenLocal = reconcile.localOnly(command.moment)
+        let wait = max(0, whenLocal.timeIntervalSince(now))
 
-        func nurWennDaneben(_ ziel: Double?) -> Double? {
-            guard let ziel else { return nil }
-            return abs(ziel - lokaleStelle) > SyncPlay.sprunggrenze ? max(0, ziel) : nil
+        func onlyIfPresentBeside(_ target: Double?) -> Double? {
+            guard let target else { return nil }
+            return abs(target - localPoint) > SyncPlay.jumpLimit ? max(0, target) : nil
         }
 
-        switch befehl.art {
-        case .weiter:
-            if warten > 0 {
-                return .init(schritt: .weiter, stelle: nurWennDaneben(befehl.stelle), warten: warten)
+        switch command.art {
+        case .proceed:
+            if wait > 0 {
+                return .init(step: .proceed, spot: onlyIfPresentBeside(command.spot), wait: wait)
             }
-            // Schon vorbei: dorthin, wo die Gruppe jetzt ist.
-            let jetztDort = befehl.stelle.map {
-                geschaetzteStelle(stelle: $0, gueltigAb: befehl.wann, jetzt: jetzt, abgleich: abgleich)
+            // Already past: go to where the group is now.
+            let nowThere = command.spot.map {
+                estimatedPoint(spot: $0, validFrom: command.moment, now: now, reconcile: reconcile)
             }
-            return .init(schritt: .weiter, stelle: nurWennDaneben(jetztDort), warten: 0)
+            return .init(step: .proceed, spot: onlyIfPresentBeside(nowThere), wait: 0)
         case .pause:
-            return .init(schritt: .pause, stelle: nurWennDaneben(befehl.stelle), warten: warten)
-        case .springen:
-            return .init(schritt: .springen, stelle: befehl.stelle.map { max(0, $0) }, warten: warten)
-        case .stopp:
-            return .init(schritt: .stopp, stelle: nil, warten: warten)
+            return .init(step: .pause, spot: onlyIfPresentBeside(command.spot), wait: wait)
+        case .jump:
+            return .init(step: .jump, spot: command.spot.map { max(0, $0) }, wait: wait)
+        case .stop:
+            return .init(step: .stop, spot: nil, wait: wait)
         }
     }
 
-    /// Wo die Gruppe jetzt ist, wenn sie seit `gueltigAb` (Serverzeit) ab
-    /// `stelle` läuft.
-    public static func geschaetzteStelle(stelle: Double, gueltigAb: Date, jetzt: Date,
-                                         abgleich: Zeitabgleich) -> Double {
-        stelle + max(0, abgleich.server(jetzt).timeIntervalSince(gueltigAb))
+    /// Where the group is now, if it has been running from `spot` since `validFrom`
+    /// (server time).
+    public static func estimatedPoint(spot: Double, validFrom: Date, now: Date,
+                                         reconcile: TimeReconcile) -> Double {
+        spot + max(0, reconcile.server(now).timeIntervalSince(validFrom))
     }
 
-    /// **Welche Stelle „bereit" nach einem Sprung meldet.**
+    /// **Which position "ready" reports after a seek.**
     ///
-    /// Der Server nimmt sie auf eine halbe Sekunde genau (`MaxPlaybackOffset`)
-    /// und schickt sonst den Sprung noch einmal. Nach dem Anspielen steht VLC
-    /// ein paar Zehntel hinter dem Ziel; das ist dieselbe Stelle, nicht eine
-    /// neue. Erst ab einer Sekunde gilt die gemessene — dann ist der Sprung
-    /// wirklich woanders gelandet, und das soll der Server wissen.
-    public static func bereitStelle(ziel: Double, ist: Double) -> Double {
-        abs(ist - ziel) <= 1 ? ziel : ist
+    /// The server accepts it to within half a second (`MaxPlaybackOffset`) and otherwise
+    /// sends the seek again. After starting, VLC is a few tenths behind the target; that is
+    /// the same position, not a new one. Only from one second on does the measured one
+    /// count: the seek then really landed elsewhere, and the server should know.
+    public static func readyPoint(target: Double, actualValue: Double) -> Double {
+        abs(actualValue - target) <= 1 ? target : actualValue
     }
 
-    /// **Nachführen im Lauf.** Gibt die Stelle zurück, an die gesprungen
-    /// werden soll, oder `nil`, solange man nah genug dran ist. Nur nach
-    /// einem „Weiter", und nur für den Eintrag, der gerade läuft.
-    public static func nachfuehren(letzter: SyncPlayBefehl?, eintrag: String?, jetzt: Date,
-                                   abgleich: Zeitabgleich, lokaleStelle: Double) -> Double? {
-        guard let letzter, letzter.art == .weiter, let stelle = letzter.stelle,
-              letzter.eintrag == nil || letzter.eintrag == eintrag,
-              abgleich.lokal(letzter.wann) <= jetzt else { return nil }
-        let soll = geschaetzteStelle(stelle: stelle, gueltigAb: letzter.wann, jetzt: jetzt,
-                                     abgleich: abgleich)
-        return abs(soll - lokaleStelle) > SyncPlay.driftgrenze ? soll : nil
+    /// **Catching up during playback.** Returns the position to seek to, or `nil` while
+    /// close enough. Only after a "play", and only for the entry currently playing.
+    public static func bringUpToDate(lastOne: SyncPlayCommand?, entryRecord: String?, now: Date,
+                                   reconcile: TimeReconcile, localPoint: Double) -> Double? {
+        guard let lastOne, lastOne.art == .proceed, let spot = lastOne.spot,
+              lastOne.entryRecord == nil || lastOne.entryRecord == entryRecord,
+              reconcile.localOnly(lastOne.moment) <= now else { return nil }
+        let should = estimatedPoint(spot: spot, validFrom: lastOne.moment, now: now,
+                                     reconcile: reconcile)
+        return abs(should - localPoint) > SyncPlay.driftLimit ? should : nil
     }
 }
 
-// MARK: - Puffern melden
+// MARK: - Reporting buffering
 
-/// **Steht der Film, obwohl er laufen soll?**
+/// **Is the movie stopped although it should be playing?**
 ///
-/// Dann muss die Gruppe es wissen (`Buffering`), sonst läuft sie dem einen
-/// davon. Und sobald es weitergeht, „bereit" (`Ready`). Gemessen wird an der
-/// Stelle, nicht an VLCs Zustand: der meldet das Puffern je nach Quelle gar
-/// nicht oder im Sekundentakt.
-public struct Pufferwaechter: Sendable, Equatable {
-    public enum Meldung: Sendable, Equatable { case puffert, bereit }
+/// Then the group must know (`Buffering`), or it runs away from that member. And once it
+/// continues, "ready" (`Ready`). This is measured on the position, not on VLC's state,
+/// which reports buffering either not at all or every second depending on the source.
+public struct BufferGuard: Sendable, Equatable {
+    public enum Message: Sendable, Equatable { case buffers, ready }
 
-    /// So lange ohne Fortschritt, bevor es als Puffern gilt.
-    public static let frist: TimeInterval = 3
+    /// How long without progress before it counts as buffering.
+    public static let deadline: TimeInterval = 3
 
-    public private(set) var puffert = false
-    private var letzteStelle: Double?
-    private var stehtSeit: Date?
+    public private(set) var buffers = false
+    private var lastPoint: Double?
+    private var standsSince: Date?
 
     public init() {}
 
-    public mutating func takt(stelle: Double, sollLaufen: Bool, jetzt: Date) -> Meldung? {
-        defer { letzteStelle = stelle }
-        guard sollLaufen else {
-            stehtSeit = nil
+    public mutating func tick(spot: Double, shouldRun: Bool, now: Date) -> Message? {
+        defer { lastPoint = spot }
+        guard shouldRun else {
+            standsSince = nil
             return nil
         }
-        let bewegt = letzteStelle.map { stelle - $0 > 0.05 } ?? false
-        if bewegt {
-            stehtSeit = nil
-            if puffert { puffert = false; return .bereit }
+        let moved = lastPoint.map { spot - $0 > 0.05 } ?? false
+        if moved {
+            standsSince = nil
+            if buffers { buffers = false; return .ready }
             return nil
         }
-        if stehtSeit == nil { stehtSeit = jetzt }
-        if !puffert, let seit = stehtSeit, jetzt.timeIntervalSince(seit) >= Self.frist {
-            puffert = true
-            return .puffert
+        if standsSince == nil { standsSince = now }
+        if !buffers, let since = standsSince, now.timeIntervalSince(since) >= Self.deadline {
+            buffers = true
+            return .buffers
         }
         return nil
     }
 
-    /// Nach einem Sprung oder einem neuen Titel von vorn zählen.
-    public mutating func zuruecksetzen() {
-        puffert = false
-        letzteStelle = nil
-        stehtSeit = nil
+    /// Start counting again after a seek or a new title.
+    public mutating func reset() {
+        buffers = false
+        lastPoint = nil
+        standsSince = nil
     }
 }
 
-// MARK: - Aufrufe
+// MARK: - Calls
 
-/// Das Recht, das der Betreiber je Konto setzt (`Policy.SyncPlayAccess`).
-public enum SyncPlayRecht: String, Sendable, Equatable {
-    case anlegenUndBeitreten = "CreateAndJoinGroups"
-    case beitreten = "JoinGroups"
-    case keins = "None"
+/// The permission the operator sets per account (`Policy.SyncPlayAccess`).
+public enum SyncPlayRight: String, Sendable, Equatable {
+    case createAndJoin = "CreateAndJoinGroups"
+    case join = "JoinGroups"
+    case no = "None"
 
-    public var darfAnlegen: Bool { self == .anlegenUndBeitreten }
-    public var darfBeitreten: Bool { self != .keins }
+    public var mayCreate: Bool { self == .createAndJoin }
+    public var mayJoin: Bool { self != .no }
 }
 
 extension JellyfinClient {
 
-    /// Das SyncPlay-Recht des Kontos. `nil`, wenn der Server nichts sagt —
-    /// dann entscheidet er beim Aufruf selbst.
-    public func syncPlayRecht() async -> SyncPlayRecht? {
-        struct Antwort: Decodable {
+    /// The account's SyncPlay permission. `nil` if the server says nothing; it then decides
+    /// on the call itself.
+    public func syncPlayRight() async -> SyncPlayRight? {
+        struct Reply: Decodable {
             struct Policy: Decodable { let SyncPlayAccess: String? }
             let Policy: Policy?
         }
         guard let s = try? requireSessionForReporting(),
-              let req = try? rohAnfrage("Users/\(s.userID)", method: "GET"),
-              let (daten, antwort) = try? await rohSitzung.data(for: req),
-              let http = antwort as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let wert = try? JSONDecoder().decode(Antwort.self, from: daten).Policy?.SyncPlayAccess
+              let req = try? rawRequest("Users/\(s.userID)", method: "GET"),
+              let (data, answer) = try? await rawSession.data(for: req),
+              let http = answer as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let value = try? JSONDecoder().decode(Reply.self, from: data).Policy?.SyncPlayAccess
         else { return nil }
-        return SyncPlayRecht(rawValue: wert)
+        return SyncPlayRight(rawValue: value)
     }
 
-    /// Alle Gruppen, die dieses Konto sehen darf.
-    public func syncPlayGruppen() async throws -> [SyncPlayGruppe] {
-        let req = try rohAnfrage("SyncPlay/List", method: "GET")
-        let daten = try await syncPlaySenden(req)
+    /// All groups this account may see.
+    public func syncPlayGroups() async throws -> [SyncPlayGroup] {
+        let req = try rawRequest("SyncPlay/List", method: "GET")
+        let data = try await syncPlaySend(req)
         do {
-            return try JSONDecoder().decode([SyncPlayGruppe].self, from: daten)
+            return try JSONDecoder().decode([SyncPlayGroup].self, from: data)
         } catch {
             throw JellyfinError.decoding(String(describing: error))
         }
     }
 
-    public func syncPlayAnlegen(name: String) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/New", ["GroupName": name]))
+    public func syncPlayCreate(name: String) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/New", ["GroupName": name]))
     }
 
-    public func syncPlayBeitreten(_ gruppe: String) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Join", ["GroupId": gruppe]))
+    public func syncPlayJoin(_ group: String) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Join", ["GroupId": group]))
     }
 
-    public func syncPlayVerlassen() async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Leave", nil))
+    public func syncPlayLeave() async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Leave", nil))
     }
 
-    /// Setzt, was die Gruppe schaut. Alle laden es, dann hält die Gruppe an
-    /// der Startstelle, bis jemand „Weiter" drückt.
-    public func syncPlayWarteschlange(_ titel: [String], ab sekunden: Double = 0) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/SetNewQueue", [
-            "PlayingQueue": titel, "PlayingItemPosition": 0,
-            "StartPositionTicks": SyncPlay.ticks(sekunden),
+    /// Sets what the group watches. Everyone loads it, then the group holds at the start
+    /// position until someone presses play.
+    public func syncPlayQueue(_ title: [String], since seconds: Double = 0) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/SetNewQueue", [
+            "PlayingQueue": title, "PlayingItemPosition": 0,
+            "StartPositionTicks": SyncPlay.ticks(seconds),
         ]))
     }
 
-    public func syncPlayBitteWeiter() async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Unpause", nil))
+    public func syncPlayBitNext() async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Unpause", nil))
     }
 
-    public func syncPlayBittePause() async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Pause", nil))
+    public func syncPlayBitPause() async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Pause", nil))
     }
 
-    public func syncPlayBitteSpringen(auf sekunden: Double) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Seek", [
-            "PositionTicks": SyncPlay.ticks(max(0, sekunden)),
+    public func syncPlayPleaseJump(on seconds: Double) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Seek", [
+            "PositionTicks": SyncPlay.ticks(max(0, seconds)),
         ]))
     }
 
-    /// `Ready` oder `Buffering`. `wann` ist **Serverzeit**.
-    public func syncPlayStand(bereit: Bool, wann: Date, stelle: Double, laeuft: Bool,
-                              eintrag: String) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage(bereit ? "SyncPlay/Ready" : "SyncPlay/Buffering", [
-            "When": SyncPlay.zeitText(wann),
-            "PositionTicks": SyncPlay.ticks(max(0, stelle)),
-            "IsPlaying": laeuft,
-            "PlaylistItemId": eintrag,
+    /// `Ready` or `Buffering`. `moment` is **server time**.
+    public func syncPlayState(ready: Bool, moment: Date, spot: Double, running: Bool,
+                              entryRecord: String) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest(ready ? "SyncPlay/Ready" : "SyncPlay/Buffering", [
+            "When": SyncPlay.timeText(moment),
+            "PositionTicks": SyncPlay.ticks(max(0, spot)),
+            "IsPlaying": running,
+            "PlaylistItemId": entryRecord,
         ]))
     }
 
-    public func syncPlayPing(millisekunden: Int64) async throws {
-        _ = try await syncPlaySenden(try syncPlayAnfrage("SyncPlay/Ping", ["Ping": millisekunden]))
+    public func syncPlayPing(milliseconds: Int64) async throws {
+        _ = try await syncPlaySend(try syncPlayRequest("SyncPlay/Ping", ["Ping": milliseconds]))
     }
 
-    /// Eine Messung für den ``Zeitabgleich``.
-    public func serverzeitMessen() async throws -> Zeitabgleich.Messung {
-        struct Antwort: Decodable {
+    /// A measurement for the ``Zeitabgleich``.
+    public func serverTimeMeasure() async throws -> TimeReconcile.Reading {
+        struct Reply: Decodable {
             let RequestReceptionTime: String
             let ResponseTransmissionTime: String
         }
-        let req = try rohAnfrage("GetUtcTime", method: "GET")
-        let gesendet = Date()
-        let daten = try await syncPlaySenden(req)
-        let empfangen = Date()
-        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten),
-              let rein = SyncPlay.zeitLesen(a.RequestReceptionTime),
-              let raus = SyncPlay.zeitLesen(a.ResponseTransmissionTime) else {
+        let req = try rawRequest("GetUtcTime", method: "GET")
+        let sent = Date()
+        let data = try await syncPlaySend(req)
+        let receive = Date()
+        guard let a = try? JSONDecoder().decode(Reply.self, from: data),
+              let within = SyncPlay.timeRead(a.RequestReceptionTime),
+              let out = SyncPlay.timeRead(a.ResponseTransmissionTime) else {
             throw JellyfinError.decoding("GetUtcTime")
         }
-        return .init(gesendet: gesendet, serverEmpfangen: rein, serverGesendet: raus,
-                     empfangen: empfangen)
+        return .init(sent: sent, serverReceive: within, serverSent: out,
+                     receive: receive)
     }
 
-    private func syncPlayAnfrage(_ pfad: String, _ rumpf: [String: Any]?) throws -> URLRequest {
-        var req = try rohAnfrage(pfad, method: "POST")
-        if let rumpf {
+    private func syncPlayRequest(_ path: String, _ shell: [String: Any]?) throws -> URLRequest {
+        var req = try rawRequest(path, method: "POST")
+        if let shell {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try JSONSerialization.data(withJSONObject: rumpf)
+            req.httpBody = try JSONSerialization.data(withJSONObject: shell)
         }
         return req
     }
 
-    private func syncPlaySenden(_ req: URLRequest) async throws -> Data {
-        let (daten, antwort): (Data, URLResponse)
+    private func syncPlaySend(_ req: URLRequest) async throws -> Data {
+        let (data, answer): (Data, URLResponse)
         do {
-            (daten, antwort) = try await rohSitzung.data(for: req)
+            (data, answer) = try await rawSession.data(for: req)
         } catch {
-            throw JellyfinError(anfrage: error)
+            throw JellyfinError(petition: error)
         }
-        guard let http = antwort as? HTTPURLResponse else {
+        guard let http = answer as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine HTTP-Antwort.")
         }
         guard (200..<300).contains(http.statusCode) else {
             throw JellyfinError.http(status: http.statusCode,
-                                     body: String(data: daten.prefix(300), encoding: .utf8))
+                                     body: String(data: data.prefix(300), encoding: .utf8))
         }
-        return daten
+        return data
     }
 }

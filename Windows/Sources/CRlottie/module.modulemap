@@ -1,8 +1,8 @@
-// **`rlottie`, nicht `librlottie`.** Der MSVC-Bau legt `rlottie.lib` an; unter
-// Linux heisst dieselbe Bibliothek `librlottie.a` und wird ueber `-lrlottie`
-// gefunden. Der Name im Modul folgt der Datei.
+// **`rlottie`, not `librlottie`.** The MSVC build produces `rlottie.lib`; on
+// Linux the same library is `librlottie.a` and is found via `-lrlottie`. The
+// name in the module follows the file.
 module CRlottie [system] {
-    header "include/bruecke.h"
+    header "include/bridge.h"
     link "rlottie"
     export *
 }

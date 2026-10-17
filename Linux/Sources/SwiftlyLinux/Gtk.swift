@@ -1,961 +1,911 @@
 import CGtk
 import Foundation
 
-/// **GTK kennt keine Vererbung, es hat Zeigerkunst.**
+/// **GTK has no inheritance, only pointer casts.**
 ///
-/// Jede Funktion nimmt den Typ, für den sie gedacht ist — `gtk_box_append`
-/// will eine Box, `gtk_button_set_label` einen Knopf —, aber jedes `*_new()`
-/// gibt ein `GtkWidget*` zurück. In C erledigen Makros das Umdeuten; in Swift
-/// gibt es die nicht, also stehen die Umwandlungen hier einmal beisammen.
+/// Every function takes the type it is meant for (`gtk_box_append` wants a box,
+/// `gtk_button_set_label` a button), but every `*_new()` returns a `GtkWidget*`.
+/// C macros do the casting; Swift has none, so the conversions live here.
 ///
-/// **Welche Typen Swift benennen kann, ist nicht zu erraten:** `GtkBox`,
-/// `GtkButton` und `GtkEntry` ja, `GtkLabel` und `GtkEditable` nein — die
-/// kommen als undurchsichtige Zeiger herein. Herausgefunden am 04.09.2026,
-/// indem der Übersetzer selbst nach den erwarteten Typen gefragt wurde,
-/// nachdem drei Anläufe daran gescheitert waren. Wer hier etwas ergänzt,
-/// fragt ihn am besten genauso, statt zu raten.
+/// **Which types Swift can name is not guessable:** `GtkBox`, `GtkButton` and
+/// `GtkEntry` yes, `GtkLabel` and `GtkEditable` no (they arrive as opaque
+/// pointers). When adding a cast, ask the compiler for the expected types
+/// instead of guessing.
 typealias Widget = UnsafeMutablePointer<GtkWidget>
 
-@inline(__always) func alsBox(_ w: Widget!) -> UnsafeMutablePointer<GtkBox>! {
+@inline(__always) func asBox(_ w: Widget!) -> UnsafeMutablePointer<GtkBox>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkBox>.self)
 }
-@inline(__always) func alsKnopf(_ w: Widget!) -> UnsafeMutablePointer<GtkButton>! {
+@inline(__always) func asButton(_ w: Widget!) -> UnsafeMutablePointer<GtkButton>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkButton>.self)
 }
-@inline(__always) func alsFeld(_ w: Widget!) -> UnsafeMutablePointer<GtkEntry>! {
+@inline(__always) func asField(_ w: Widget!) -> UnsafeMutablePointer<GtkEntry>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkEntry>.self)
 }
-@inline(__always) func alsFenster(_ w: Widget!) -> UnsafeMutablePointer<GtkWindow>! {
+@inline(__always) func asWindow(_ w: Widget!) -> UnsafeMutablePointer<GtkWindow>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkWindow>.self)
 }
-@inline(__always) func alsZeichen(_ w: Widget!) -> UnsafeMutablePointer<GtkDrawingArea>! {
+@inline(__always) func asCharacter(_ w: Widget!) -> UnsafeMutablePointer<GtkDrawingArea>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkDrawingArea>.self)
 }
-@inline(__always) func alsFest(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
+@inline(__always) func asFixed(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkFixed>.self)
 }
-@inline(__always) func alsTafel(_ w: Widget!) -> UnsafeMutablePointer<GtkPopover>! {
+@inline(__always) func asPanel(_ w: Widget!) -> UnsafeMutablePointer<GtkPopover>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkPopover>.self)
 }
-@inline(__always) func alsHaken(_ w: Widget!) -> UnsafeMutablePointer<GtkCheckButton>! {
+@inline(__always) func asCheckmark(_ w: Widget!) -> UnsafeMutablePointer<GtkCheckButton>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkCheckButton>?.self)
 }
 
-@inline(__always) func alsSkala(_ w: Widget!) -> UnsafeMutablePointer<GtkScale>! {
+@inline(__always) func asScale(_ w: Widget!) -> UnsafeMutablePointer<GtkScale>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkScale>.self)
 }
-@inline(__always) func alsBereich(_ w: Widget!) -> UnsafeMutablePointer<GtkRange>! {
+@inline(__always) func asSection(_ w: Widget!) -> UnsafeMutablePointer<GtkRange>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkRange>.self)
 }
-@inline(__always) func alsFeld2(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
+@inline(__always) func asField2(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkFixed>.self)
 }
 
-// MARK: - Bausteine
+// MARK: - Building blocks
 
-/// Ein senkrechter oder waagerechter Stapel mit Abstand.
-func stapel(_ richtung: GtkOrientation, abstand: Int32 = 0) -> Widget! {
-    gtk_box_new(richtung, abstand)
+/// A vertical or horizontal stack with spacing.
+func stack(_ bearing: GtkOrientation, spacing: Int32 = 0) -> Widget! {
+    gtk_box_new(bearing, spacing)
 }
 
-func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
-    gtk_box_append(alsBox(eltern), kind)
+func append(_ parent: Widget!, _ kind: Widget!) {
+    gtk_box_append(asBox(parent), kind)
 }
 
-/// Leert eine Box. GTK bietet dafür nichts Fertiges — man muss sich von vorn
-/// durchhangeln, bis kein Kind mehr da ist.
-/// Eine Tafel, die an ihrem Anker hängt — und mit ihm verschwindet.
+/// Empties a box. GTK has no ready-made call; remove the first child until none is left.
+/// A popover tied to its anchor that goes away with it.
 ///
-/// **GTK räumt ein Popover nicht mit seinem Anker ab.** Es wird zwar über
-/// `gtk_widget_set_parent` dessen Kind, aber niemand löst es wieder: wird der
-/// Anker zerstört, meldet GTK
+/// **GTK does not clean up a popover together with its anchor.** It becomes a child
+/// through `gtk_widget_set_parent`, but nobody unparents it. When the anchor is
+/// destroyed, GTK reports
 ///
 ///     Finalizing GtkButton …, but it still has children left: GtkPopover …
 ///
-/// und lässt einen Zeiger stehen. Solange man nur zusieht, fällt das nicht
-/// auf; sobald derselbe Speicher wieder gebraucht wird, nimmt es die App mit.
-/// Genau so ist sie beim Öffnen einer Serie abgestürzt — und die Startseite
-/// hängt eine solche Tafel an **jede** Kachel.
+/// and leaves a dangling pointer. This goes unnoticed until the memory is reused,
+/// then the app crashes (it did when opening a series: the home page attaches one
+/// popover to **every** tile).
 ///
-/// Deshalb hier: anhängen und im selben Atemzug das Lösen bestellen. Wer eine
-/// Tafel braucht, nimmt diese Funktion und nicht `gtk_popover_new` von Hand.
-/// **Der Anker haelt die Tafel, und wer sie merkt, muss sie vergessen.**
+/// So attach it here and schedule the unparenting in the same step. Use this
+/// function instead of `gtk_popover_new` by hand.
+/// **The anchor owns the popover; whoever stores it must forget it.**
 ///
-/// Beim Zerstoeren des Ankers wird die Tafel abgehaengt und damit
-/// freigegeben. Ein Feld, das sie weiter merkt, zeigt danach auf toten
-/// Speicher — und der naechste `gtk_widget_unparent` darauf ist ein
-/// Absturz. Genau so ist die App am 08.09.2026 gestorben, im Kern
-/// nachgelesen: `mehrZeigen`, `gtk_widget_unparent`, SIGSEGV.
+/// When the anchor is destroyed, the popover is unparented and freed. A field that
+/// still holds it then points at dead memory, and the next `gtk_widget_unparent`
+/// on it crashes (SIGSEGV).
 ///
-/// Wer die Tafel in einem Feld haelt, nimmt deshalb ``App/tafelOeffnen(an:stil:)``
-/// und nicht diese Funktion allein.
-final class Tafelstand { var da = true }
+/// Code that keeps the popover in a field should use ``App/panelOpen(an:stil:)``
+/// instead of this function alone.
+final class PanelState { var present = true }
 
 ///
-/// **Die Tafel haengt an einer Ecke ihres Knopfes** (Mac 51c9c8a8): links
-/// buendig darunter, ohne Pfeil, 8 Punkt Luft — und sie waechst aus dieser
-/// Ecke (`swiftly-aufklappen` im Stilblatt). `buendig` waehlt die Ecke.
-func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
-             lage: GtkPositionType = GTK_POS_BOTTOM,
-             buendig: GtkAlign = GTK_ALIGN_START) -> Widget! {
-    let tafel: Widget! = gtk_popover_new()
-    gtk_widget_add_css_class(tafel, stil)
-    gtk_popover_set_position(alsTafel(tafel), lage)
-    gtk_popover_set_has_arrow(alsTafel(tafel), 0)
-    gtk_popover_set_offset(alsTafel(tafel), 0, Skalierung.fenstermass(8))
-    gtk_widget_set_halign(tafel, buendig)
-    gtk_widget_add_css_class(tafel, buendig == GTK_ALIGN_START ? "swiftly-links"
-                                  : buendig == GTK_ALIGN_END ? "swiftly-rechts" : "swiftly-mitte")
-    // **Neben den Knopf, nicht in ihn.** GTK setzt beim Drücken `:active`
-    // auf das Ziel *und jeden Elternteil* — und der Elternteil einer Tafel
-    // ist ihr Anker. Wer einen Eintrag in „Filme ▾" gedrückt hielt, drückte
-    // damit auch „Filme": der Knopf schrumpfte (`scale(0.97)`), beim
-    // schnellen Klick nur zu kurz, um es zu sehen. `GtkMenuButton` hängt
-    // sein Popover aus demselben Grund an sich und nicht an den inneren
-    // Knopf. Hier hängt die Tafel am Elternteil des Knopfes und zeigt auf
-    // dessen Rechteck; Behälter legen eine Tafel nicht aus, sie misst nichts.
-    let knopf = g_type_check_instance_is_a(
-        UnsafeMutableRawPointer(anker).assumingMemoryBound(to: GTypeInstance.self),
+/// **The popover hangs from a corner of its button:** flush left below it, no
+/// arrow, 8 pt gap, and it grows from that corner (`swiftly-aufklappen` in the
+/// stylesheet). `flush` picks the corner.
+func panelAn(_ anchor: Widget!, style: String = "swiftly-mehr",
+             status: GtkPositionType = GTK_POS_BOTTOM,
+             flush: GtkAlign = GTK_ALIGN_START) -> Widget! {
+    let panel: Widget! = gtk_popover_new()
+    gtk_widget_add_css_class(panel, style)
+    gtk_popover_set_position(asPanel(panel), status)
+    gtk_popover_set_has_arrow(asPanel(panel), 0)
+    gtk_popover_set_offset(asPanel(panel), 0, Scaling.windowMetric(8))
+    gtk_widget_set_halign(panel, flush)
+    gtk_widget_add_css_class(panel, flush == GTK_ALIGN_START ? "swiftly-links"
+                                  : flush == GTK_ALIGN_END ? "swiftly-rechts" : "swiftly-mitte")
+    // **Next to the button, not inside it.** On press GTK sets `:active` on the target
+    // *and every parent*, and the parent of a popover is its anchor. Holding an entry
+    // in a "Filme ▾" menu would press "Filme" too, shrinking the button
+    // (`scale(0.97)`). `GtkMenuButton` attaches its popover to itself for the same
+    // reason. So the popover hangs from the button's parent and points at the
+    // button's rectangle; containers do not lay out a popover and measure nothing.
+    let button = g_type_check_instance_is_a(
+        UnsafeMutableRawPointer(anchor).assumingMemoryBound(to: GTypeInstance.self),
         gtk_button_get_type()) != 0
-    if knopf, let eltern = gtk_widget_get_parent(anker) {
-        gtk_widget_set_parent(tafel, eltern)
+    if button, let parent = gtk_widget_get_parent(anchor) {
+        gtk_widget_set_parent(panel, parent)
         var r = graphene_rect_t()
-        if gtk_widget_compute_bounds(anker, eltern, &r) != 0 {
-            var rahmen = GdkRectangle(x: Int32(r.origin.x.rounded()), y: Int32(r.origin.y.rounded()),
+        if gtk_widget_compute_bounds(anchor, parent, &r) != 0 {
+            var frameRect = GdkRectangle(x: Int32(r.origin.x.rounded()), y: Int32(r.origin.y.rounded()),
                                       width: Int32(r.size.width.rounded()),
                                       height: Int32(r.size.height.rounded()))
-            gtk_popover_set_pointing_to(alsTafel(tafel), &rahmen)
+            gtk_popover_set_pointing_to(asPanel(panel), &frameRect)
         }
     } else {
-        gtk_widget_set_parent(tafel, anker)
+        gtk_widget_set_parent(panel, anchor)
     }
-    // **Nur, wenn es sie noch gibt.** `tafelSchliessen` haengt sie selbst ab
-    // und gibt sie damit frei; ging danach der Anker weg, griff dieser
-    // Rueckruf auf freigegebenen Speicher — Absturz beim Verlassen der Seite.
-    let lebt = Tafelstand()
-    beiSignal(tafel, "destroy") { lebt.da = false }
-    beiSignal(anker, "destroy") { if lebt.da { gtk_widget_unparent(tafel) } }
-    return tafel
+    // **Only if it still exists.** `panelClose` unparents (and thus frees) the
+    // popover itself; if the anchor went away afterwards, this callback touched freed
+    // memory and crashed when leaving the page.
+    let lives = PanelState()
+    signal(panel, "destroy") { lives.present = false }
+    signal(anchor, "destroy") { if lives.present { gtk_widget_unparent(panel) } }
+    return panel
 }
 
-/// Nimmt alle Kinder aus einem Behälter — **aus jedem, nicht nur aus Boxen.**
+/// Removes all children from a container, **from any container, not only boxes.**
 ///
-/// **Die Fassung davor hat die App aufgehängt.** Sie rief `gtk_box_remove`,
-/// und der Zeiger wurde dafür blind gecastet. Ist der Behälter keine
-/// `GtkBox`, scheitert der Aufruf an seiner Zusicherung und **entfernt
-/// nichts** — `gtk_widget_get_first_child` liefert daraufhin dasselbe Kind,
-/// und die Schleife läuft ewig. Gemessen am 05.09.2026: der Hauptfaden auf
-/// `R`, ein voller Kern, alle anderen Fäden schlafend, und ein Protokoll, das
-/// mit 58 MB je Sekunde auf 7,7 GB wuchs:
+/// **The earlier version hung the app.** It called `gtk_box_remove` on a blindly
+/// cast pointer. If the container is not a `GtkBox`, the call fails its assertion
+/// and **removes nothing**; `gtk_widget_get_first_child` then returns the same child
+/// and the loop never ends: one core at 100 %, and a log growing by tens of MB per
+/// second:
 ///
 /// ```
 /// Gtk-CRITICAL **: gtk_box_remove: assertion 'GTK_IS_BOX (box)' failed
 /// ```
 ///
-/// Ausgelöst hat es ein `GtkFixed` (die Kreise unten in der Leiste), aber der
-/// Fehler war nicht der Aufrufer — es war diese Schleife: **sie hing am
-/// Vorhandensein eines Kindes statt am Fortschritt.**
+/// A `GtkFixed` triggered it, but the bug was this loop: **it depended on a child
+/// existing, not on progress.**
 ///
-/// Beides ist deshalb geändert. `gtk_widget_unparent` trägt für jedes Widget,
-/// womit der Fehlerfall gar nicht mehr entstehen kann; und die Wache am Ende
-/// bricht ab, falls ein Kind trotzdem einmal hängenbleibt. Lieber ein
-/// Behälter, der nicht ganz leer wird, als eine App, die steht.
-func leeren(_ behaelter: Widget!) {
-    while let kind = gtk_widget_get_first_child(behaelter) {
+/// So `gtk_widget_unparent` is used for every widget (the failure case cannot
+/// occur), and a guard at the end aborts if a child still remains. A container
+/// that does not become fully empty is better than a frozen app.
+func wipe(_ container: Widget!) {
+    while let kind = gtk_widget_get_first_child(container) {
         gtk_widget_unparent(kind)
-        guard gtk_widget_get_first_child(behaelter) != kind else { return }
+        guard gtk_widget_get_first_child(container) != kind else { return }
     }
 }
 
-func beschriftung(_ text: String, stil: String? = nil, umbruch: Bool = false) -> Widget! {
+func label(_ text: String, style: String? = nil, wrap: Bool = false) -> Widget! {
     let l: Widget! = gtk_label_new(text)
-    if let stil { gtk_widget_add_css_class(l, stil) }
-    if umbruch {
+    if let style { gtk_widget_add_css_class(l, style) }
+    if wrap {
         gtk_label_set_wrap(OpaquePointer(l), 1)
         gtk_label_set_justify(OpaquePointer(l), GTK_JUSTIFY_CENTER)
     }
     return l
 }
 
-func raender(_ w: Widget!, _ alle: Int32) {
-    gtk_widget_set_margin_top(w, alle)
-    gtk_widget_set_margin_bottom(w, alle)
-    gtk_widget_set_margin_start(w, alle)
-    gtk_widget_set_margin_end(w, alle)
+func edges(_ w: Widget!, _ all: Int32) {
+    gtk_widget_set_margin_top(w, all)
+    gtk_widget_set_margin_bottom(w, all)
+    gtk_widget_set_margin_start(w, all)
+    gtk_widget_set_margin_end(w, all)
 }
 
-// MARK: - Rückrufe mit Zustand
+// MARK: - Callbacks with state
 
-/// **Ein C-Rückruf kann nichts einfangen.**
+/// **A C callback cannot capture anything.**
 ///
-/// Er ist ein nackter Funktionszeiger. Wer ihm etwas mitgeben will, reicht
-/// einen Zeiger auf ein Objekt durch und packt ihn drüben wieder aus. Diese
-/// Hülle nimmt einem das ab: sie hält den Swift-Abschluss am Leben, bis GTK
-/// ihn nicht mehr braucht.
-final class Auftrag {
+/// It is a bare function pointer. To pass something along, hand a pointer to an
+/// object through and unpack it on the other side. This wrapper does that: it
+/// keeps the Swift closure alive until GTK no longer needs it.
+final class WorkItem {
     let block: () -> Void
     init(_ block: @escaping () -> Void) { self.block = block }
 }
 
-nonisolated(unsafe) let auftragAlsSignalOeffentlich: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { _, daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+nonisolated(unsafe) let jobAsSignalPublic: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { _, data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-nonisolated(unsafe) let auftragFreigebenOeffentlich: @convention(c) (gpointer?, UnsafeMutablePointer<_GClosure>?) -> Void = { daten, _ in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).release()
+nonisolated(unsafe) let jobSharePublic: @convention(c) (gpointer?, UnsafeMutablePointer<_GClosure>?) -> Void = { data, _ in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).release()
 }
 
-/// Verbindet ein Signal mit einem Swift-Abschluss.
+/// Connects a signal to a Swift closure.
 ///
-/// `g_signal_connect` ist ein Makro und in Swift unsichtbar; darunter liegt
-/// `g_signal_connect_data`. Der Abschluss wird festgehalten und wieder
-/// freigegeben, wenn GTK das Signal löst — sonst wäre er nach dem nächsten
-/// Aufräumen ein Zeiger ins Leere.
+/// `g_signal_connect` is a macro and invisible to Swift; `g_signal_connect_data`
+/// is underneath. The closure is retained and released when GTK disconnects the
+/// signal, so it never dangles after cleanup.
 ///
-/// **Nur für Signale ohne eigene Argumente.** Der Rückruf unten nimmt zwei
-/// Zeiger: den Sender und die Nutzdaten. Ein Signal, das dazwischen etwas
-/// mitgibt, schiebt die Nutzdaten eine Stelle weiter — und dann liest der
-/// Rückruf dessen Wert als Zeiger.
-///
-/// Genau so ist die App am 04.09.2026 abgestürzt, als „Bad pointer dereference
-/// at 0x8". Wer ein Signal mit Argumenten braucht, schreibt einen eigenen
-/// Rückruf mit passender Form — siehe ``beiZeiger`` für „enter", das x und y
-/// mitbringt.
-func beiSignal(_ ziel: Widget!, _ name: String, _ block: @escaping () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(ziel), name,
-                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+/// **Only for signals without arguments of their own.** The callback below takes
+/// two pointers: sender and user data. A signal that passes something in between
+/// shifts the user data by one slot, and the callback then reads that value as a
+/// pointer (this crashed with "Bad pointer dereference at 0x8"). For signals with
+/// arguments, write a callback of the matching shape; see ``onPointer`` for
+/// "enter", which brings x and y.
+func signal(_ target: Widget!, _ name: String, _ block: @escaping () -> Void) {
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(target), name,
+                          unsafeBitCast(jobAsSignalPublic, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
 }
 
-/// Dasselbe für etwas, das kein Widget ist — eine `GtkAdjustment` etwa.
-/// Es gelten dieselben Formvorschriften wie bei ``beiSignal``.
-func beiSignalRoh(_ ziel: UnsafeMutableRawPointer, _ name: String,
+/// The same for something that is not a widget, e.g. a `GtkAdjustment`.
+/// The same shape rules as ``signal`` apply.
+func signalRaw(_ target: UnsafeMutableRawPointer, _ name: String,
                   _ block: @escaping () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(ziel, name,
-                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(target, name,
+                          unsafeBitCast(jobAsSignalPublic, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
 }
 
-nonisolated(unsafe) private let auftragAlsEigenschaft: @convention(c) (
+nonisolated(unsafe) private let jobAsProperty: @convention(c) (
     UnsafeMutableRawPointer?, OpaquePointer?, gpointer?
-) -> Void = { _, _, daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { _, _, data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-/// Horcht auf eine Eigenschaft — `notify::is-active` und Verwandte.
+/// Listens to a property: `notify::is-active` and similar.
 ///
-/// **Eigener Rückruf, weil `notify` die Eigenschaft mitgibt.** Es ist genau
-/// die Form, an der die App am 04.09.2026 gestorben ist: der GParamSpec steht
-/// an der Stelle, an der ``beiSignal`` die Nutzdaten erwartet.
-func beiEigenschaft(_ ziel: UnsafeMutableRawPointer, _ name: String,
+/// **Own callback because `notify` passes the property.** This is exactly the shape
+/// that crashed the app: the GParamSpec sits where ``signal`` expects the user
+/// data.
+func onProperty(_ target: UnsafeMutableRawPointer, _ name: String,
                     _ block: @escaping () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(ziel, name,
-                          unsafeBitCast(auftragAlsEigenschaft, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(target, name,
+                          unsafeBitCast(jobAsProperty, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
 }
 
-/// **Ein GTK-Zeiger ist nicht „sendbar", und Swift 6 besteht darauf.**
+/// **A GTK pointer is not "sendable", and Swift 6 insists on that.**
 ///
-/// Zu Recht: ein roher Zeiger sagt nichts darüber, wer ihn gleichzeitig
-/// anfassen darf. Bei GTK ist die Antwort trotzdem einfach — alles läuft auf
-/// dem Hauptfaden, und genau dorthin schickt ``aufHauptfaden`` die Arbeit
-/// zurück. Diese Kiste trägt den Zeiger über die Grenze; die Zusicherung gilt,
-/// solange sie **nur** in einem `aufHauptfaden`-Block ausgepackt wird.
-struct Zeigerkiste: @unchecked Sendable {
+/// Rightly so: a raw pointer says nothing about who may touch it concurrently.
+/// With GTK the answer is simple anyway: everything runs on the main thread, and
+/// ``onMainThread`` sends work back there. This box carries the pointer across the
+/// boundary; the guarantee holds as long as it is unpacked **only** inside an
+/// `onMainThread` block.
+struct PointerBox: @unchecked Sendable {
     let widget: Widget!
     init(_ widget: Widget!) { self.widget = widget }
 }
 
-// MARK: - Zurück auf den Hauptfaden
+// MARK: - Back to the main thread
 
-nonisolated(unsafe) private let auftragImLeerlauf: @convention(c) (gpointer?) -> gboolean = { daten in
-    guard let daten else { return 0 }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeRetainedValue().block()
-    return 0   // einmal ausführen, dann abmelden
+nonisolated(unsafe) private let jobEmptyRun: @convention(c) (gpointer?) -> gboolean = { data in
+    guard let data else { return 0 }
+    Unmanaged<WorkItem>.fromOpaque(data).takeRetainedValue().block()
+    return 0   // run once, then remove the source
 }
 
-/// **GTK ist nicht nebenläufig.** Jede Änderung an der Oberfläche muss auf
-/// dem Hauptfaden geschehen; ein Aufruf aus einer Task würde sie irgendwann
-/// still zerlegen. `g_idle_add` ist der vorgesehene Rückweg.
-/// **Vorrang vor dem Zeichnen, nicht dahinter.**
+/// **GTK is not thread-safe.** Every UI change must happen on the main thread;
+/// a call from a task would eventually corrupt things silently. `g_idle_add` is the
+/// intended way back.
 ///
-/// Hier stand `200` (`G_PRIORITY_DEFAULT_IDLE`). GTK zeichnet mit `120`
-/// (`GDK_PRIORITY_REDRAW`), und kleiner heisst wichtiger: solange ein
-/// Neuzeichnen ansteht, kommt eine 200er-Quelle nicht dran. Im Player steht
-/// dauernd eins an, denn jedes Bild setzt ein neues Paintable.
+/// **Priority above redraw, not below.** `G_PRIORITY_DEFAULT_IDLE` (200) is wrong:
+/// GTK redraws at `GDK_PRIORITY_REDRAW` (120), and smaller means more important, so
+/// a 200 source never runs while a redraw is pending. The player always has one
+/// pending, because every frame sets a new paintable. The symptom was a black
+/// loading veil over a picture that was already there: black image, time 0:00,
+/// audio playing, and VLC's "buffering 100 %" arriving about fifteen seconds late.
 ///
-/// Im Protokoll eines Testers vom 20.09.2026 stand das schwarz auf weiss: ab
-/// dem Augenblick, in dem Bilder flossen, kam **keine** Leerlaufquelle mehr
-/// durch. VLCs „puffert 100 %" fehlte ganze fuenfzehn Sekunden und kam dann
-/// im Schwall, als die Wiedergabe endete. Mit ihr hing der Wiedergabetakt —
-/// und damit blieb der schwarze Ladeschleier ueber dem Bild liegen, das
-/// laengst da war. Von aussen: schwarzes Bild, Zeit 0:00, Ton laeuft.
-///
-/// `0` (`G_PRIORITY_DEFAULT`) ist die richtige Stufe. Was hier hereinkommt,
-/// ist eine Antwort aus dem Netz oder eine Meldung von VLC — Arbeit, kein
-/// Beiwerk, das warten kann, bis nichts mehr zu tun ist.
-func aufHauptfaden(_ block: @escaping @Sendable () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_idle_add_full(0, auftragImLeerlauf, auftrag, nil)   // 0 = G_PRIORITY_DEFAULT
+/// `0` (`G_PRIORITY_DEFAULT`) is right. What arrives here is a network response or
+/// a VLC message: real work, not something that can wait until nothing is left to
+/// do.
+func onMainThread(_ block: @escaping @Sendable () -> Void) {
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_idle_add_full(0, jobEmptyRun, job, nil)   // 0 = G_PRIORITY_DEFAULT
 }
 
-/// **Lebt das Widget noch?** — ein schwacher Verweis von GLib, der beim
-/// Abräumen von selbst leer wird.
+/// **Is the widget still alive?** A weak GLib reference that empties itself on
+/// teardown.
 ///
-/// Ein Auftrag, der erst nach einer Netzantwort läuft, trifft sonst auf ein
-/// Widget, das die Seite längst abgeräumt hat: `GTK_IS_LABEL failed` im
-/// Protokoll, im schlimmeren Fall freigegebener Speicher. `gehalten` hält das
-/// Widget fest und lässt es damit länger leben als seine Seite; das hier hält
-/// nichts fest und fragt nur.
+/// A job that runs after a network response otherwise hits a widget the page has
+/// already removed: `GTK_IS_LABEL failed` in the log, or freed memory. `held`
+/// keeps the widget alive longer than its page; this one holds nothing and only
+/// asks.
 ///
-/// **Auf dem Hauptfaden anlegen**, solange das Widget sicher lebt — also vor
-/// dem `Task.detached`, nicht darin. Abfragen und Freigeben darf jeder Faden,
-/// `GWeakRef` ist dafür gebaut.
-final class Lebenszeichen: @unchecked Sendable {
-    private let verweis: UnsafeMutablePointer<GWeakRef>
+/// **Create it on the main thread** while the widget is certainly alive, i.e. before
+/// `Task.detached`, not inside it. Querying and releasing is allowed from any
+/// thread; `GWeakRef` is built for that.
+final class LifeCharacter: @unchecked Sendable {
+    private let reference: UnsafeMutablePointer<GWeakRef>
     init(_ widget: Widget!) {
-        verweis = .allocate(capacity: 1)
-        verweis.initialize(to: GWeakRef())
-        g_weak_ref_init(verweis, widget.map { UnsafeMutableRawPointer($0) })
+        reference = .allocate(capacity: 1)
+        reference.initialize(to: GWeakRef())
+        g_weak_ref_init(reference, widget.map { UnsafeMutableRawPointer($0) })
     }
     deinit {
-        g_weak_ref_clear(verweis)
-        verweis.deallocate()
+        g_weak_ref_clear(reference)
+        reference.deallocate()
     }
-    /// Nur auf dem Hauptfaden fragen: dort kann das Widget zwischen Antwort
-    /// und Gebrauch nicht verschwinden.
-    var lebt: Bool {
-        guard let stark = g_weak_ref_get(verweis) else { return false }
-        g_object_unref(stark)
+    /// Ask only on the main thread: there the widget cannot disappear between the
+    /// answer and its use.
+    var lives: Bool {
+        guard let strong = g_weak_ref_get(reference) else { return false }
+        g_object_unref(strong)
         return true
     }
 }
 
-/// ``aufHauptfaden``, aber nur, solange das Widget noch lebt.
-/// Ist es abgeräumt, fällt der Auftrag still weg — seine Seite gibt es
-/// nicht mehr, und was er zeigen wollte, sieht niemand.
-func aufHauptfaden(solange zeichen: Lebenszeichen, _ block: @escaping @Sendable () -> Void) {
-    aufHauptfaden {
-        guard zeichen.lebt else { return }
+/// ``onMainThread``, but only while the widget is still alive.
+/// If it was torn down, the job is silently dropped: its page is gone and nobody
+/// would see the result.
+func onMainThread(during symbolText: LifeCharacter, _ block: @escaping @Sendable () -> Void) {
+    onMainThread {
+        guard symbolText.lives else { return }
         block()
     }
 }
 
-// MARK: - Sanftes Blättern
+// MARK: - Smooth paging
 
-/// **Ein Sprung sieht kaputt aus, auch wenn er richtig ist.**
+/// **A jump looks broken even when it is correct.**
 ///
-/// Auf dem Mac blättert die Reihe mit `easeInOut` über 280 ms. GTK bewegt eine
-/// `GtkAdjustment` nicht von selbst — der Wert wird gesetzt, und zwar sofort.
-/// Diese Hülle setzt ihn stattdessen bei jedem Bild neu.
+/// On the Mac the row pages with `easeInOut` over 280 ms. GTK does not animate a
+/// `GtkAdjustment`; the value is set immediately. This wrapper sets it anew on
+/// every frame instead.
 ///
-/// **Am Bildtakt, nicht an einem Zeitgeber.** Hier stand `g_timeout_add` mit
-/// 16 ms — das sind 62 Bilder je Sekunde, und zwar auf jedem Schirm.
-/// `gtk_widget_add_tick_callback` hängt am Bildtakt des Fensters und läuft
-/// damit so schnell wie der Schirm.
-private final class Bewegung {
-    let setzen: (Double) -> Void
-    let von: Double
-    let nach: Double
-    let beginn = Date()
-    static let dauer = 0.28
-    /// Bei reduzierter Bewegung kurz und gleichmaessig, wie `linearReduziert`
-    /// auf dem Mac — dort fragt jede Kurve `bewegungReduziert`, hier fragte
-    /// `sanft` nie.
-    var dauer = Bewegung.dauer
+/// **Driven by the frame clock, not a timer.** `g_timeout_add` with 16 ms means 62
+/// frames per second on every screen. `gtk_widget_add_tick_callback` follows the
+/// window's frame clock and thus runs as fast as the screen.
+private final class Motion {
+    let setDown: (Double) -> Void
+    let from: Double
+    let to: Double
+    let beginning = Date()
+    static let duration = 0.28
+    /// With reduced motion: short and linear, like `linearReduced` on the Mac (there
+    /// every curve asks `motionReduced`; `gentle` never did).
+    var duration = Motion.duration
     var linear = false
-    var takt: guint = 0
-    var teiler: Double = 1
+    var tick: guint = 0
+    var divider: Double = 1
 
-    init(von: Double, nach: Double, setzen: @escaping (Double) -> Void) {
-        self.von = von
-        self.nach = nach
-        self.setzen = setzen
+    init(from: Double, to: Double, setDown: @escaping (Double) -> Void) {
+        self.from = from
+        self.to = to
+        self.setDown = setDown
     }
 }
 
-nonisolated(unsafe) private let bewegungsTakt: @convention(c) (
+nonisolated(unsafe) private let motionTick: @convention(c) (
     UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
-) -> gboolean = { _, _, daten in
-    guard let daten else { return 0 }
-    let b = Unmanaged<Bewegung>.fromOpaque(daten).takeUnretainedValue()
-    let t = min(Date().timeIntervalSince(b.beginn) / b.dauer, 1)
-    // easeInOut, dieselbe Kennlinie wie `Animation.easeInOut` auf dem Mac.
+) -> gboolean = { _, _, data in
+    guard let data else { return 0 }
+    let b = Unmanaged<Motion>.fromOpaque(data).takeUnretainedValue()
+    let t = min(Date().timeIntervalSince(b.beginning) / b.duration, 1)
+    // easeInOut, the same curve as `Animation.easeInOut` on the Mac.
     let e = b.linear ? t : (t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2)
-    // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen.
-    let roh = b.von + (b.nach - b.von) * e
-    b.setzen((roh * b.teiler).rounded() / b.teiler)
+    // Snap to whole device pixels, for the same reason as in scrolling.
+    let raw = b.from + (b.to - b.from) * e
+    b.setDown((raw * b.divider).rounded() / b.divider)
     if t >= 1 {
-        Unmanaged<Bewegung>.fromOpaque(daten).release()
+        Unmanaged<Motion>.fromOpaque(data).release()
         return 0   // G_SOURCE_REMOVE
     }
     return 1
 }
 
-/// Bewegt einen Wert weich von `von` nach `nach`, im Takt des Schirms.
-func sanft(auf widget: Widget!, von: Double, nach: Double,
-           setzen: @escaping (Double) -> Void) {
-    guard abs(nach - von) > 0.5 else { return }
-    let lauf = Bewegung(von: von, nach: nach, setzen: setzen)
-    if bewegungReduziert() {
-        lauf.dauer = Stil.zeitReduziert
-        lauf.linear = true
+/// Moves a value smoothly from `from` to `to`, in step with the screen.
+func gentle(on widget: Widget!, from: Double, to: Double,
+           setDown: @escaping (Double) -> Void) {
+    guard abs(to - from) > 0.5 else { return }
+    let run = Motion(from: from, to: to, setDown: setDown)
+    if motionReduced() {
+        run.duration = Theme.timeReduced
+        run.linear = true
     }
-    lauf.teiler = Skalierung.geraetepunkte(widget)
-    let b = Unmanaged.passRetained(lauf).toOpaque()
-    _ = gtk_widget_add_tick_callback(widget, bewegungsTakt, b, nil)
+    run.divider = Scaling.devicesPoints(widget)
+    let b = Unmanaged.passRetained(run).toOpaque()
+    _ = gtk_widget_add_tick_callback(widget, motionTick, b, nil)
 }
 
-// MARK: - Zeiger drüber, Zeiger weg
+// MARK: - Pointer in, pointer out
 
-nonisolated(unsafe) let auftragAlsBewegungOeffentlich: @convention(c) (
+nonisolated(unsafe) let jobAsMotionPublic: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> Void = { _, _, _, daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { _, _, _, data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-nonisolated(unsafe) private let auftragAlsBewegung: @convention(c) (
+nonisolated(unsafe) private let jobAsMotion: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> Void = { _, _, _, daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { _, _, _, data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-/// Meldet, wenn der Zeiger ein Widget betritt oder verlässt.
+/// Reports when the pointer enters or leaves a widget.
 ///
-/// GTK4 hat dafür `GtkEventControllerMotion` mit „enter" und „leave" — zwei
-/// Signale mit **verschiedenen** Formen: „enter" bringt die Koordinaten mit,
-/// „leave" nicht. Deshalb zwei Rückrufe statt einem.
-func beiZeiger(_ ziel: Widget!, herein: @escaping () -> Void, hinaus: @escaping () -> Void) {
-    let horcher = gtk_event_controller_motion_new()
-    let a = Unmanaged.passRetained(Auftrag(herein)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "enter",
-                          unsafeBitCast(auftragAlsBewegung, to: GCallback.self),
-                          a, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    let b = Unmanaged.passRetained(Auftrag(hinaus)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "leave",
-                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
-                          b, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+/// GTK4 uses `GtkEventControllerMotion` with "enter" and "leave", two signals with
+/// **different** shapes: "enter" carries the coordinates, "leave" does not. Hence
+/// two callbacks instead of one.
+func onPointer(_ target: Widget!, inward: @escaping () -> Void, out: @escaping () -> Void) {
+    let watcher = gtk_event_controller_motion_new()
+    let a = Unmanaged.passRetained(WorkItem(inward)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "enter",
+                          unsafeBitCast(jobAsMotion, to: GCallback.self),
+                          a, jobSharePublic, GConnectFlags(rawValue: 0))
+    let b = Unmanaged.passRetained(WorkItem(out)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "leave",
+                          unsafeBitCast(jobAsSignalPublic, to: GCallback.self),
+                          b, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-/// Meldet **wo** der Zeiger über einem Widget steht — jede Bewegung, ohne
-/// Schwelle, und das Verlassen. Für die Trickplay-Vorschau am Zeitregler: sie
-/// soll dem Zeiger folgen, nicht nur wissen, dass er da ist (``beiZeiger`` und
-/// ``beiBewegung`` reichen dafür nicht).
-final class Ortswache {
-    let bewegt: (Double, Double) -> Void
-    let verlassen: () -> Void
-    init(bewegt: @escaping (Double, Double) -> Void, verlassen: @escaping () -> Void) {
-        self.bewegt = bewegt
-        self.verlassen = verlassen
+/// Reports **where** the pointer is over a widget: every movement, no threshold,
+/// and leaving. For the trickplay preview at the seek bar, which must follow the
+/// pointer, not just know it is there (``onPointer`` and ``onMotion`` are not
+/// enough).
+final class LocalGuard {
+    let moved: (Double, Double) -> Void
+    let leave: () -> Void
+    init(moved: @escaping (Double, Double) -> Void, leave: @escaping () -> Void) {
+        self.moved = moved
+        self.leave = leave
     }
 }
 
-nonisolated(unsafe) private let wacheAlsOrt: @convention(c) (
+nonisolated(unsafe) private let guardAsPlace: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> Void = { _, x, y, daten in
-    guard let daten else { return }
-    Unmanaged<Ortswache>.fromOpaque(daten).takeUnretainedValue().bewegt(x, y)
+) -> Void = { _, x, y, data in
+    guard let data else { return }
+    Unmanaged<LocalGuard>.fromOpaque(data).takeUnretainedValue().moved(x, y)
 }
 
-nonisolated(unsafe) private let wacheAlsVerlassen: @convention(c) (
+nonisolated(unsafe) private let guardAsLeave: @convention(c) (
     UnsafeMutableRawPointer?, gpointer?
-) -> Void = { _, daten in
-    guard let daten else { return }
-    Unmanaged<Ortswache>.fromOpaque(daten).takeUnretainedValue().verlassen()
+) -> Void = { _, data in
+    guard let data else { return }
+    Unmanaged<LocalGuard>.fromOpaque(data).takeUnretainedValue().leave()
 }
 
-nonisolated(unsafe) private let ortswacheFreigeben: @convention(c) (
+nonisolated(unsafe) private let localGuardShare: @convention(c) (
     gpointer?, UnsafeMutablePointer<_GClosure>?
-) -> Void = { daten, _ in
-    guard let daten else { return }
-    Unmanaged<Ortswache>.fromOpaque(daten).release()
+) -> Void = { data, _ in
+    guard let data else { return }
+    Unmanaged<LocalGuard>.fromOpaque(data).release()
 }
 
-func beiMausOrt(_ ziel: Widget!, bewegt: @escaping (Double, Double) -> Void,
-                verlassen: @escaping () -> Void) {
-    let horcher = gtk_event_controller_motion_new()
-    let wache = Unmanaged.passRetained(Ortswache(bewegt: bewegt, verlassen: verlassen)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "motion",
-                          unsafeBitCast(wacheAlsOrt, to: GCallback.self),
-                          wache, nil, GConnectFlags(rawValue: 0))
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "leave",
-                          unsafeBitCast(wacheAlsVerlassen, to: GCallback.self),
-                          wache, ortswacheFreigeben, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+func onMousePosition(_ target: Widget!, moved: @escaping (Double, Double) -> Void,
+                leave: @escaping () -> Void) {
+    let watcher = gtk_event_controller_motion_new()
+    let sentry = Unmanaged.passRetained(LocalGuard(moved: moved, leave: leave)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "motion",
+                          unsafeBitCast(guardAsPlace, to: GCallback.self),
+                          sentry, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "leave",
+                          unsafeBitCast(guardAsLeave, to: GCallback.self),
+                          sentry, localGuardShare, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-// MARK: - Weiches Scrollen
+// MARK: - Smooth scrolling
 
-/// **GTK scrollt am Mausrad in Sprüngen.** Ein Rastpunkt, ein Satz — das ist
-/// das Stockige. Am Zeigerfeld glättet GTK selbst, am Rad nicht.
+/// **GTK scrolls in jumps with a mouse wheel.** One notch, one jump; that is the
+/// stutter. GTK smooths touchpad scrolling itself, but not the wheel.
 ///
-/// Jeder Rastpunkt wird hier zu einem Ziel, und ein Takt läuft diesem Ziel
-/// hinterher. Kommen weitere Rastpunkte, wandert nur das Ziel — es entsteht
-/// keine zweite Bewegung, die gegen die erste läuft.
+/// Each notch becomes a target, and a tick follows it. Further notches only move
+/// the target; no second motion starts that fights the first.
 ///
-/// **Zwei Sachen, die es vorher nicht getroffen haben.** Der Takt hing an
-/// `g_timeout_add` mit 16 ms, also an 62 Bildern je Sekunde statt am Schirm;
-/// auf 144 Hz fühlt sich das an wie 60. Und der Schritt war ein fester Anteil
-/// *je Bild* — damit liefe dieselbe Bewegung auf einem schnellen Schirm mehr
-/// als doppelt so schnell. Beides hängt jetzt an der **Zeit**: `1 − e^(−k·dt)`
-/// mit `k = 13,9`, was bei 16 ms genau den alten Fünftelschritt ergibt.
-private final class Weichlauf {
-    let lesen: () -> Double
-    let setzen: (Double) -> Void
-    let obergrenze: () -> Double
-    var ziel: Double
-    var takt: guint = 0
-    var zuletzt: Int = 0
-    /// Wie viele Gerätepunkte auf einen Punkt kommen.
-    var teiler: Double = 1
+/// **Time-based, not frame-based.** A `g_timeout_add` tick with 16 ms is tied to 62
+/// frames per second instead of the screen (on 144 Hz it feels like 60), and a
+/// fixed fraction *per frame* would run the same motion more than twice as fast on
+/// a fast screen. Both now depend on **time**: `1 − e^(−k·dt)` with `k = 13.9`,
+/// which at 16 ms gives exactly one fifth per step.
+private final class SoftRun {
+    let read: () -> Double
+    let setDown: (Double) -> Void
+    let upperLimit: () -> Double
+    var target: Double
+    var tick: guint = 0
+    var recent: Int = 0
+    /// How many device pixels make one point.
+    var divider: Double = 1
 
-    init(lesen: @escaping () -> Double, setzen: @escaping (Double) -> Void,
-         obergrenze: @escaping () -> Double) {
-        self.lesen = lesen
-        self.setzen = setzen
-        self.obergrenze = obergrenze
-        self.ziel = lesen()
+    init(read: @escaping () -> Double, setDown: @escaping (Double) -> Void,
+         upperLimit: @escaping () -> Double) {
+        self.read = read
+        self.setDown = setDown
+        self.upperLimit = upperLimit
+        self.target = read()
     }
 
-    /// **Auf ganze Gerätepunkte einrasten.**
+    /// **Snap to whole device pixels.**
     ///
-    /// Ein gebrochener Scrollstand verschiebt den ganzen Inhalt um einen
-    /// halben Bildpunkt. Dann werden **alle** Widget-Kanten mit halber
-    /// Deckung gezeichnet — und wo zwei gleichfarbige Kästen aneinander
-    /// stossen, scheint der Grund dahinter durch. Genau daher der dunkle
-    /// Strich zwischen Kopfzone und Unterbau: beide tragen denselben Ton,
-    /// dahinter liegt Schwarz, und zwei halb gedeckte Zeilen ergeben
-    /// 66 → 60 → 52 → 64. Am Bildschirmfoto gemessen.
-    func rasten(_ wert: Double) -> Double {
-        (wert * teiler).rounded() / teiler
+    /// A fractional scroll offset shifts all content by half a pixel. Then **all**
+    /// widget edges are drawn at half coverage, and where two boxes of the same color
+    /// meet, the background shows through (a dark line between header and body: both
+    /// have the same tone, black lies behind, and two half-covered rows give
+    /// 66 → 60 → 52 → 64, measured on a screenshot).
+    func latch(_ value: Double) -> Double {
+        (value * divider).rounded() / divider
     }
 }
 
-/// Wie weit ein Rastpunkt trägt. Etwa drei Textzeilen — dieselbe Größenordnung,
-/// die ein Zeigerfeld in einer Wischbewegung zurücklegt.
-private let rastweite: Double = 110
-/// Wie schnell der Rest zusammenschmilzt. Bei 16 ms bleibt ein Fünftel.
-private let weichrate: Double = 13.9
+/// How far one notch carries: about three lines of text, the same order of
+/// magnitude as a touchpad swipe.
+private let detentRange: Double = 110
+/// How fast the remainder melts away. At 16 ms one fifth is left.
+private let softRate: Double = 13.9
 
-nonisolated(unsafe) private let weichTakt: @convention(c) (
+nonisolated(unsafe) private let softTick: @convention(c) (
     UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
-) -> gboolean = { _, uhr, daten in
-    guard let daten else { return 0 }
-    let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
+) -> gboolean = { _, clock, data in
+    guard let data else { return 0 }
+    let w = Unmanaged<SoftRun>.fromOpaque(data).takeUnretainedValue()
 
-    // Die Zeit kommt aus dem Bildtakt, in Mikrosekunden.
-    let jetztZeit = Int(uhr.map { gdk_frame_clock_get_frame_time($0) } ?? 0)
-    let dt = w.zuletzt == 0 ? 1.0 / 60 : Double(jetztZeit - w.zuletzt) / 1_000_000
-    w.zuletzt = jetztZeit
+    // The time comes from the frame clock, in microseconds.
+    let nowTime = Int(clock.map { gdk_frame_clock_get_frame_time($0) } ?? 0)
+    let dt = w.recent == 0 ? 1.0 / 60 : Double(nowTime - w.recent) / 1_000_000
+    w.recent = nowTime
 
-    let jetzt = w.lesen()
-    let rest = w.ziel - jetzt
+    let now = w.read()
+    let rest = w.target - now
     if abs(rest) < 0.5 {
-        w.setzen(w.rasten(w.ziel))
-        w.takt = 0
-        Unmanaged<Weichlauf>.fromOpaque(daten).release()
+        w.setDown(w.latch(w.target))
+        w.tick = 0
+        Unmanaged<SoftRun>.fromOpaque(data).release()
         return 0
     }
-    w.setzen(w.rasten(jetzt + rest * (1 - exp(-weichrate * min(dt, 0.1)))))
+    w.setDown(w.latch(now + rest * (1 - exp(-softRate * min(dt, 0.1)))))
     return 1
 }
 
-nonisolated(unsafe) private let radGedreht: @convention(c) (
+nonisolated(unsafe) private let wheelRotated: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> gboolean = { horcher, _, dy, daten in
-    guard let daten else { return 0 }
-    let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
-    let hoechst = w.obergrenze()
-    // **Bei jedem neuen Griff neu ansetzen.** Läuft gerade nichts, ist das
-    // gemerkte Ziel womöglich veraltet — die Seite kann inzwischen neu gebaut
-    // oder von woanders gescrollt worden sein.
-    if w.takt == 0 { w.ziel = w.lesen(); w.zuletzt = 0 }
-    w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
-    if w.takt == 0, let horcher,
-       let ziel = gtk_event_controller_get_widget(OpaquePointer(horcher)) {
-        w.teiler = Skalierung.geraetepunkte(ziel)
-        w.takt = gtk_widget_add_tick_callback(ziel, weichTakt,
+) -> gboolean = { watcher, _, dy, data in
+    guard let data else { return 0 }
+    let w = Unmanaged<SoftRun>.fromOpaque(data).takeUnretainedValue()
+    let highest = w.upperLimit()
+    // **Start over on every new grab.** When nothing is running, the stored target may
+    // be stale: the page may have been rebuilt or scrolled elsewhere in the meantime.
+    if w.tick == 0 { w.target = w.read(); w.recent = 0 }
+    w.target = min(max(w.target + dy * detentRange, 0), max(highest, 0))
+    if w.tick == 0, let watcher,
+       let target = gtk_event_controller_get_widget(OpaquePointer(watcher)) {
+        w.divider = Scaling.devicesPoints(target)
+        w.tick = gtk_widget_add_tick_callback(target, softTick,
                                               Unmanaged.passRetained(w).toOpaque(), nil)
     }
-    return 1   // verbraucht: GTK soll nicht zusätzlich springen
+    return 1   // consumed: GTK must not jump on top of it
 }
 
-nonisolated(unsafe) private let weichlaufFreigeben: @convention(c) (
+nonisolated(unsafe) private let softRunShare: @convention(c) (
     gpointer?, UnsafeMutablePointer<_GClosure>?
-) -> Void = { daten, _ in
-    guard let daten else { return }
-    Unmanaged<Weichlauf>.fromOpaque(daten).release()
+) -> Void = { data, _ in
+    guard let data else { return }
+    Unmanaged<SoftRun>.fromOpaque(data).release()
 }
 
-/// Hängt weiches Scrollen an eine Scrollfläche.
-func weichesScrollen(_ scroller: Widget!) {
-    guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+/// Attaches smooth scrolling to a scrolled window.
+func softScroll(_ scroller: Widget!) {
+    guard let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
     else { return }
-    // GTKs eigene Trägheit läuft sonst gegen unsere Bewegung an.
+    // GTK's own kinetic scrolling would otherwise fight this motion.
     gtk_scrolled_window_set_kinetic_scrolling(OpaquePointer(scroller), 0)
-    let w = Weichlauf(
-        lesen: { gtk_adjustment_get_value(anpassung) },
-        setzen: { gtk_adjustment_set_value(anpassung, $0) },
-        obergrenze: {
-            gtk_adjustment_get_upper(anpassung) - gtk_adjustment_get_page_size(anpassung)
+    let w = SoftRun(
+        read: { gtk_adjustment_get_value(adjustment) },
+        setDown: { gtk_adjustment_set_value(adjustment, $0) },
+        upperLimit: {
+            gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment)
         })
-    let horcher = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL)
-    // **In der Fangphase, sonst kommt nichts an.** Ein Horcher, der an der
-    // Scrollfläche hängt, läuft von Haus aus in der Blasenphase — also
-    // *nachdem* die Scrollfläche das Rad schon selbst verarbeitet und den
-    // Sprung gemacht hat. Genau deshalb blieb das Scrollen stockig, obwohl
-    // der Horcher dran war. `CAPTURE` sieht das Ereignis zuerst.
-    gtk_event_controller_set_propagation_phase(horcher, GTK_PHASE_CAPTURE)
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "scroll",
-                          unsafeBitCast(radGedreht, to: GCallback.self),
+    let watcher = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL)
+    // **In the capture phase, otherwise nothing arrives.** A controller on the scrolled
+    // window runs in the bubble phase by default, i.e. *after* the scrolled window has
+    // already handled the wheel and jumped. `CAPTURE` sees the event first.
+    gtk_event_controller_set_propagation_phase(watcher, GTK_PHASE_CAPTURE)
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "scroll",
+                          unsafeBitCast(wheelRotated, to: GCallback.self),
                           Unmanaged.passRetained(w).toOpaque(),
-                          weichlaufFreigeben, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(scroller, horcher)
+                          softRunShare, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(scroller, watcher)
 }
 
-// MARK: - Klicken ohne Knopf
+// MARK: - Clicking without a button
 
-nonisolated(unsafe) let auftragAlsKlick: @convention(c) (
+nonisolated(unsafe) let jobAsClick: @convention(c) (
     UnsafeMutableRawPointer?, Int32, Double, Double, gpointer?
-) -> Void = { _, _, _, _, daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { _, _, _, _, data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-/// Macht ein beliebiges Widget anklickbar, ohne es zu einem Knopf zu machen.
+/// Makes any widget clickable without making it a button.
 ///
-/// **Warum kein Knopf.** Eine Folgenzeile trägt selbst einen Knopf — den
-/// Haken zum Umschalten. Ein Knopf im Knopf ist in GTK kein sicherer Bau; wer
-/// beide braucht, nimmt für den äusseren eine Geste. Auf dem Mac steht dort
-/// aus demselben Grund `.onTapGesture` statt eines `Button`.
+/// **Why not a button.** An episode row contains its own button (the checkmark
+/// toggle). A button inside a button is not safe in GTK, so the outer one uses a
+/// gesture. On the Mac `.onTapGesture` is used instead of a `Button` for the same
+/// reason.
 ///
-/// `released` bringt Zählung und Ort mit — vier Argumente, nicht zwei.
+/// `released` carries count and position: four arguments, not two.
 ///
-/// - Parameter tastatur: **Auch per Tastatur erreichbar.** Eine Geste ist
-///   kein Knopf: ohne das kommt die Tabulatortaste nie hin, und Eingabe oder
-///   Leertaste tun nichts. Mit `true` wird das Widget fokussierbar und nimmt
-///   beide Tasten wie einen Klick — aber nur, wenn es **selbst** den Fokus
-///   hat; ein Knopf darin behält seine eigenen Tasten.
-func beiKlick(_ ziel: Widget!, tastatur: Bool = false, _ block: @escaping () -> Void) {
-    let geste = gtk_gesture_click_new()
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
-                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    // `GtkEventController` ist in C ein unvollstaendiger Typ; Swift bekommt
-    // ihn als `OpaquePointer` — genau das, was die Geste schon ist.
-    gtk_widget_add_controller(ziel, geste)
-    guard tastatur else { return }
-    gtk_widget_set_focusable(ziel, 1)
-    let horcher = gtk_event_controller_key_new()
-    let tastenauftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "key-pressed",
-                          unsafeBitCast(tasteAlsKlick, to: GCallback.self),
-                          tastenauftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+/// - Parameter tastatur: **Also reachable by keyboard.** A gesture is not a button:
+///   without this, Tab never reaches it, and Enter or Space do nothing. With `true`
+///   the widget becomes focusable and takes both keys like a click, but only when
+///   **it** has focus; a button inside keeps its own keys.
+func onClick(_ target: Widget!, keyboard: Bool = false, _ block: @escaping () -> Void) {
+    let gesture = gtk_gesture_click_new()
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(gesture), "released",
+                          unsafeBitCast(jobAsClick, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
+    // `GtkEventController` is an incomplete type in C; Swift gets it as
+    // `OpaquePointer`, which is what the gesture already is.
+    gtk_widget_add_controller(target, gesture)
+    guard keyboard else { return }
+    gtk_widget_set_focusable(target, 1)
+    let watcher = gtk_event_controller_key_new()
+    let keysJob = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "key-pressed",
+                          unsafeBitCast(keyAsClick, to: GCallback.self),
+                          keysJob, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-/// Eingabe, Ziffernblock-Eingabe, Leertaste — die Tasten, die einen Knopf
-/// auslösen. GDKs Tastenwerte sind in C Makros und in Swift nicht zu haben.
-nonisolated(unsafe) private let tasteAlsKlick: @convention(c) (
+/// Enter, keypad Enter, Space: the keys that trigger a button. GDK key values are
+/// macros in C and not available in Swift.
+nonisolated(unsafe) private let keyAsClick: @convention(c) (
     OpaquePointer?, UInt32, UInt32, GdkModifierType, gpointer?
-) -> gboolean = { horcher, wert, _, _, daten in
-    guard let daten, [0xFF0D, 0xFF8D, 0x020, 0xFF80].contains(wert),
-          let horcher, let ziel = gtk_event_controller_get_widget(horcher),
-          gtk_widget_has_focus(ziel) != 0 else { return 0 }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> gboolean = { watcher, value, _, _, data in
+    guard let data, [0xFF0D, 0xFF8D, 0x020, 0xFF80].contains(value),
+          let watcher, let target = gtk_event_controller_get_widget(watcher),
+          gtk_widget_has_focus(target) != 0 else { return 0 }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
     return 1
 }
 
-/// Meldet, wann der Tastaturfokus in ein Widget oder eines seiner Kinder
-/// kommt und wann er es ganz verlässt — das Gegenstück zu ``beiZeiger`` für
-/// alle, die ohne Maus unterwegs sind. Ein Wechsel **zwischen** den Kindern
-/// meldet nichts.
-func beiFokus(_ ziel: Widget!, herein: @escaping () -> Void, hinaus: @escaping () -> Void) {
-    let horcher = gtk_event_controller_focus_new()
-    let a = Unmanaged.passRetained(Auftrag(herein)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "enter",
-                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
-                          a, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    let b = Unmanaged.passRetained(Auftrag(hinaus)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "leave",
-                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
-                          b, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+/// Reports when keyboard focus enters a widget or one of its children and when it
+/// leaves entirely: the counterpart to ``onPointer`` for keyboard users. A move
+/// **between** children reports nothing.
+func focus(_ target: Widget!, inward: @escaping () -> Void, out: @escaping () -> Void) {
+    let watcher = gtk_event_controller_focus_new()
+    let a = Unmanaged.passRetained(WorkItem(inward)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "enter",
+                          unsafeBitCast(jobAsSignalPublic, to: GCallback.self),
+                          a, jobSharePublic, GConnectFlags(rawValue: 0))
+    let b = Unmanaged.passRetained(WorkItem(out)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "leave",
+                          unsafeBitCast(jobAsSignalPublic, to: GCallback.self),
+                          b, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-// MARK: - Ein Lauf von null nach eins
+// MARK: - A run from zero to one
 
-/// Ein Lauf über eine Dauer, im Takt des Schirms. ``sanft(auf:von:nach:setzen:)``
-/// bewegt **einen** Wert; hier braucht es den Fortschritt selbst, weil an ihm
-/// mehrere Ebenen gleichzeitig hängen.
-private final class Lauf {
-    let schritt: (Double) -> Void
-    let fertig: () -> Void
-    let dauer: Double
-    /// **Die Uhr läuft ab dem ersten Bild, nicht ab dem Auftrag.** Wer eine
-    /// Seite baut und gleich danach die Blende startet, bekam sonst das
-    /// erste Bild erst nach dem Auslegen — und das kostet bei einer langen
-    /// Folgenliste mehr als die halbe Blende. Die Bewegung sprang dann
-    /// mittendrin an.
-    var beginn: Date?
+/// A run over a duration, in step with the screen. ``sanft(on:from:to:setzen:)``
+/// moves **one** value; this one exposes the progress itself, for when several
+/// layers depend on it.
+private final class Run {
+    let step: (Double) -> Void
+    let done: () -> Void
+    let duration: Double
+    /// **The clock starts at the first frame, not at the request.** If a page is built
+    /// and the fade starts right after, the first frame would otherwise come only after
+    /// layout, which for a long episode list costs more than half the fade, and the
+    /// motion would jump in midway.
+    var beginning: Date?
     var linear = false
 
-    init(dauer: Double, schritt: @escaping (Double) -> Void, fertig: @escaping () -> Void) {
-        self.dauer = dauer
-        self.schritt = schritt
-        self.fertig = fertig
+    init(duration: Double, step: @escaping (Double) -> Void, done: @escaping () -> Void) {
+        self.duration = duration
+        self.step = step
+        self.done = done
     }
 }
 
-nonisolated(unsafe) private let laufTakt: @convention(c) (
+nonisolated(unsafe) private let runTick: @convention(c) (
     UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
-) -> gboolean = { _, _, daten in
-    guard let daten else { return 0 }
-    let l = Unmanaged<Lauf>.fromOpaque(daten).takeUnretainedValue()
-    let jetzt = Date()
-    let beginn = l.beginn ?? jetzt
-    l.beginn = beginn
-    let t = min(jetzt.timeIntervalSince(beginn) / l.dauer, 1)
-    // easeInOut — dieselbe Kennlinie wie `Animation.easeInOut` auf dem Mac;
-    // `linear` reicht den Fortschritt roh durch, wenn der Aufrufer selbst
-    // kurvt.
-    l.schritt(l.linear ? t : (t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2))
+) -> gboolean = { _, _, data in
+    guard let data else { return 0 }
+    let l = Unmanaged<Run>.fromOpaque(data).takeUnretainedValue()
+    let now = Date()
+    let beginning = l.beginning ?? now
+    l.beginning = beginning
+    let t = min(now.timeIntervalSince(beginning) / l.duration, 1)
+    // easeInOut, the same curve as `Animation.easeInOut` on the Mac; `linear` passes
+    // the progress through raw when the caller applies its own curve.
+    l.step(l.linear ? t : (t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2))
     if t >= 1 {
-        l.fertig()
-        Unmanaged<Lauf>.fromOpaque(daten).release()
+        l.done()
+        Unmanaged<Run>.fromOpaque(data).release()
         return 0   // G_SOURCE_REMOVE
     }
     return 1
 }
 
-/// Ruft `schritt` mit dem geglätteten Fortschritt 0…1, dann einmal `fertig`.
-func laufen(auf widget: Widget!, dauer: Double, linear: Bool = false,
-            schritt: @escaping (Double) -> Void,
-            fertig: @escaping () -> Void) {
-    let lauf = Lauf(dauer: dauer, schritt: schritt, fertig: fertig)
-    lauf.linear = linear
-    _ = gtk_widget_add_tick_callback(widget, laufTakt,
-                                     Unmanaged.passRetained(lauf).toOpaque(), nil)
+/// Calls `schritt` with the eased progress 0…1, then `done` once.
+func runningCount(on widget: Widget!, duration: Double, linear: Bool = false,
+            step: @escaping (Double) -> Void,
+            done: @escaping () -> Void) {
+    let run = Run(duration: duration, step: step, done: done)
+    run.linear = linear
+    _ = gtk_widget_add_tick_callback(widget, runTick,
+                                     Unmanaged.passRetained(run).toOpaque(), nil)
 }
 
-// MARK: - Grösse melden
+// MARK: - Reporting size
 
-final class Massauftrag {
+final class MetricJob {
     let block: (Int32, Int32) -> Void
     init(_ block: @escaping (Int32, Int32) -> Void) { self.block = block }
 }
 
-nonisolated(unsafe) private let auftragAlsMass: @convention(c) (
+nonisolated(unsafe) private let jobAsMass: @convention(c) (
     UnsafeMutableRawPointer?, Int32, Int32, gpointer?
-) -> Void = { _, breite, hoehe, daten in
-    guard let daten else { return }
-    Unmanaged<Massauftrag>.fromOpaque(daten).takeUnretainedValue().block(breite, hoehe)
+) -> Void = { _, width, height, data in
+    guard let data else { return }
+    Unmanaged<MetricJob>.fromOpaque(data).takeUnretainedValue().block(width, height)
 }
 
-nonisolated(unsafe) private let massFreigeben: @convention(c) (
+nonisolated(unsafe) private let massShare: @convention(c) (
     gpointer?, UnsafeMutablePointer<_GClosure>?
-) -> Void = { daten, _ in
-    guard let daten else { return }
-    Unmanaged<Massauftrag>.fromOpaque(daten).release()
+) -> Void = { data, _ in
+    guard let data else { return }
+    Unmanaged<MetricJob>.fromOpaque(data).release()
 }
 
-/// Meldet die Grösse einer Zeichenfläche. **`resize` bringt Breite und Höhe
-/// mit** — vier Argumente, also wieder ein eigener Rückruf (Falle 2).
-func beiGroesse(_ feld: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
-    let auftrag = Unmanaged.passRetained(Massauftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(feld), "resize",
-                          unsafeBitCast(auftragAlsMass, to: GCallback.self),
-                          auftrag, massFreigeben, GConnectFlags(rawValue: 0))
+/// Reports the size of a drawing area. **`resize` carries width and height**
+/// (four arguments), so again a dedicated callback.
+func onSize(_ inputField: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
+    let job = Unmanaged.passRetained(MetricJob(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(inputField), "resize",
+                          unsafeBitCast(jobAsMass, to: GCallback.self),
+                          job, massShare, GConnectFlags(rawValue: 0))
 }
 
-// MARK: - Während eine Seite fährt, wird nichts Schweres getan
+// MARK: - Nothing heavy while a page is moving
 
-/// **Das Ruckeln war nie die Kurve.**
+/// **The stutter was never the curve.**
 ///
-/// Auf dem Mac stand an derselben Stelle ein `HStack`, der jede Kachel sofort
-/// baute — „in demselben Bild, in dem die Seite hereinfährt. Das war das
-/// Ruckeln: nicht die Bewegung war hart, sondern sie verlor Bilder, weil
-/// daneben die halbe Seite gebaut wurde." Ein `LazyHStack` hat es behoben.
+/// On the Mac, an `HStack` built every tile immediately, in the same frame in which
+/// the page slides in. The motion was not hard; it dropped frames because half the
+/// page was built next to it. A `LazyHStack` fixed that.
 ///
-/// GTK hat kein faules Auslegen, und die schweren Sachen sind hier andere:
-/// ein 1600 Punkt breites Kopfbild entpacken, das Stilblatt für den Farbton
-/// neu einlesen (das stellt **jedes** Widget der App neu), die halbe Seite
-/// verwerfen und mit dem vollen Satz vom Server neu bauen. Alles das kommt
-/// aus dem Netz und trifft die Seite deshalb genau in der Mitte der Fahrt —
-/// da, wo es hakt.
+/// GTK has no lazy layout, and the heavy things here are different: decoding a 1600
+/// pt wide header image, reloading the stylesheet for the tint (which restyles
+/// **every** widget of the app), discarding half the page and rebuilding it with the
+/// full data set from the server. All of that comes from the network and hits the
+/// page right in the middle of the slide.
 ///
-/// Also wartet es. Die Fahrt dauert 0,45 s; wer danach dran ist, merkt nichts
-/// davon, und die Bewegung behält alle Bilder.
+/// So it waits. The slide takes 0.45 s; whatever comes after is unaffected and the
+/// motion keeps all its frames.
 ///
-/// `nonisolated(unsafe)`, weil es GTKs Hauptfaden gehört wie alles hier —
-/// angefasst wird es nur aus ``aufHauptfaden`` heraus.
-enum Schubsperre {
-    nonisolated(unsafe) private static var tiefe = 0
-    nonisolated(unsafe) private static var seit = Date.distantPast
-    nonisolated(unsafe) private static var warteschlange: [@Sendable () -> Void] = []
+/// `nonisolated(unsafe)` because it belongs to GTK's main thread like everything
+/// here; it is only touched from within ``onMainThread``.
+enum PushLock {
+    nonisolated(unsafe) private static var depth = 0
+    nonisolated(unsafe) private static var since = Date.distantPast
+    nonisolated(unsafe) private static var queue: [@Sendable () -> Void] = []
 
-    /// **Eine Sperre, die haengenbleibt, ist schlimmer als keine.** Der
-    /// Bildtakt gibt keine Zusicherung, dass er einen Lauf zu Ende bringt —
-    /// wird das Fenster unterwegs abgebaut, kommt der letzte Rueckruf nie,
-    /// und dann laedt die App nie wieder ein Bild. Eine Fahrt dauert 0,45 s;
-    /// was laenger als eine Sekunde behauptet zu fahren, faehrt nicht mehr.
-    static var faehrt: Bool {
-        guard tiefe > 0 else { return false }
-        guard Date().timeIntervalSince(seit) < 1 else { tiefe = 0; return false }
+    /// **A lock that sticks is worse than none.** The frame clock does not guarantee
+    /// that a run finishes: if the window is torn down meanwhile, the last callback
+    /// never arrives and the app would never load an image again. A slide takes 0.45 s;
+    /// anything claiming to slide for over a second is not sliding.
+    static var drives: Bool {
+        guard depth > 0 else { return false }
+        guard Date().timeIntervalSince(since) < 1 else { depth = 0; return false }
         return true
     }
 
-    static func beginnen() {
-        tiefe += 1
-        seit = Date()
+    static func begin() {
+        depth += 1
+        since = Date()
     }
 
-    static func beenden() {
-        tiefe = max(tiefe - 1, 0)
-        guard !faehrt, !warteschlange.isEmpty else { return }
-        let offen = warteschlange
-        warteschlange = []
-        // **Nicht im letzten Bild der Fahrt.** Der Rückruf läuft noch im
-        // Bildtakt; wer hier arbeitet, kostet genau das Bild, das die
-        // Bewegung abschliesst.
-        aufHauptfaden { for block in offen { block() } }
+    static func finish() {
+        depth = max(depth - 1, 0)
+        guard !drives, !queue.isEmpty else { return }
+        let opened = queue
+        queue = []
+        // **Not in the last frame of the slide.** The callback still runs in the frame
+        // clock; work here costs exactly the frame that completes the motion.
+        onMainThread { for block in opened { block() } }
     }
 
-    /// Sperrt für eine feste Zeit. Gebraucht für Bewegungen, die **GTK**
-    /// führt — ein `GtkStack` sagt nicht Bescheid, wenn er fertig ist, und
-    /// beim Schliessen des Players baut die Startseite sich gerade neu auf,
-    /// mitten in der Fahrt.
-    static func fuer(_ sekunden: Double) {
-        beginnen()
-        let auftrag = Unmanaged.passRetained(Auftrag { beenden() }).toOpaque()
-        g_timeout_add_full(200, guint(sekunden * 1000 + 30), auftragEinmal,
-                           auftrag, auftragFreigebenRoh)
+    /// Locks for a fixed time. Needed for motions that **GTK** drives: a `GtkStack`
+    /// does not signal when it is done, and when the player closes, the home page
+    /// rebuilds itself right in the middle of the slide.
+    static func of(_ seconds: Double) {
+        begin()
+        let job = Unmanaged.passRetained(WorkItem { finish() }).toOpaque()
+        g_timeout_add_full(200, guint(seconds * 1000 + 30), jobInTimes,
+                           job, jobShareRaw)
     }
 
-    static func spaeter(_ block: @escaping @Sendable () -> Void) {
-        guard faehrt else { beenden(); block(); return }
-        warteschlange.append(block)
+    static func later(_ block: @escaping @Sendable () -> Void) {
+        guard drives else { finish(); block(); return }
+        queue.append(block)
     }
 }
 
-/// Wie ``aufHauptfaden``, aber **nicht, während eine Seite fährt**.
+/// Like ``onMainThread``, but **not while a page is sliding**.
 ///
-/// **Nur für die vielen, nicht für die wenigen.** Das Kopfbild, der Farbton,
-/// der Titelblock, die Staffelauswahl — das ist das, was man während der
-/// Fahrt anschaut, und das darf nicht nachpoppen; es ist auch je eine Sache
-/// und keine zwanzig. Was hier wartet, sind die Folgenbilder, die Besetzung
-/// und „Ähnliches": viele kleine Bilder, die alle im selben Augenblick
-/// eintreffen. Nicht für die Navigation selbst — die löst die Fahrt ja
-/// erst aus.
-func nachDemSchub(_ block: @escaping @Sendable () -> Void) {
-    aufHauptfaden { Schubsperre.spaeter(block) }
+/// **Only for the many, not the few.** The header image, tint, title block and
+/// season picker are what one looks at during the slide and must not pop in later;
+/// they are also one item each, not twenty. What waits here are episode images,
+/// cast and "similar": many small images arriving at the same moment. Not for
+/// navigation itself, which triggers the slide.
+func postPush(_ block: @escaping @Sendable () -> Void) {
+    onMainThread { PushLock.later(block) }
 }
 
-/// Ein Abruf, der neben den anderen läuft — **statt `async let`**.
+/// A fetch that runs next to others, **instead of `async let`**.
 ///
-/// Swift 6.2.1 auf Windows beendet die App mit „freed pointer was not the
-/// last allocation" (0xC0000409), sobald drei `async let` nebeneinander
-/// stehen und eines davon einen grossen Wert wie `Item?` trägt: der
-/// Aufgabenspeicher gibt dann in falscher Reihenfolge frei. Nachgestellt in
-/// der Windows-VM (29.09.2026); dieselbe Probe läuft auf Linux durch, und
-/// mit eigenen Aufgaben auch auf Windows. Die Serienseite hatte genau dieses
-/// Muster. Hier deshalb keine `async let` — jede Nebenläufigkeit über diese
-/// Hilfe, abgewartet mit `.value`.
+/// Swift 6.2.1 on Windows terminates the app with "freed pointer was not the last
+/// allocation" (0xC0000409) when three `async let` stand side by side and one of
+/// them carries a large value such as `Item?`: the task allocator frees in the
+/// wrong order. Linux is unaffected, and with explicit tasks Windows is fine too.
+/// So no `async let` here; all concurrency goes through this helper, awaited with
+/// `.value`.
 @discardableResult
-func nebenher<T: Sendable>(_ arbeit: @escaping @Sendable () async -> T) -> Task<T, Never> {
-    Task.detached(operation: arbeit)
+func besideFrom<T: Sendable>(_ labor: @escaping @Sendable () async -> T) -> Task<T, Never> {
+    Task.detached(operation: labor)
 }
 
 
-nonisolated(unsafe) private let auftragEinmal: @convention(c) (gpointer?) -> gboolean = { daten in
-    guard let daten else { return 0 }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+nonisolated(unsafe) private let jobInTimes: @convention(c) (gpointer?) -> gboolean = { data in
+    guard let data else { return 0 }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
     return 0   // G_SOURCE_REMOVE
 }
 
-nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) -> Void = { daten in
-    guard let daten else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).release()
+nonisolated(unsafe) private let jobShareRaw: @convention(c) (gpointer?) -> Void = { data in
+    guard let data else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).release()
 }
 
 
-/// Einmal nach einer Frist, auf dem Hauptfaden. Fuer Drosseln — wer bei
-/// jedem Scrollsignal rechnet, rechnet sechzigmal je Sekunde.
-func nachFrist(_ sekunden: Double, _ block: @escaping () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_timeout_add_full(200, guint(sekunden * 1000), auftragEinmal, auftrag, auftragFreigebenRoh)
+/// Once after a delay, on the main thread. For throttling: computing on every
+/// scroll signal means sixty times per second.
+func postDeadline(_ seconds: Double, _ block: @escaping () -> Void) {
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_timeout_add_full(200, guint(seconds * 1000), jobInTimes, job, jobShareRaw)
 }
 
-/// Meldet, wenn ein Scroller **unten** angekommen ist.
+/// Reports when a scroller reaches the **bottom**.
 ///
-/// `edge-reached` reicht die erreichte Kante als zweites Argument mit — genau
-/// das Signal, an dem die App am 04.09.2026 abgestuerzt ist, als es noch ueber
-/// ``beiSignal`` lief. Deshalb ein eigener Rueckruf mit passender Form, und
-/// gemeldet wird nur die untere Kante (`GTK_POS_BOTTOM` = 3).
-func randMelden(_ scroller: Widget!, _ block: @escaping () -> Void) {
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+/// `edge-reached` passes the reached edge as a second argument, exactly the shape
+/// that crashed the app when it went through ``signal``. Hence a dedicated
+/// callback, and only the bottom edge (`GTK_POS_BOTTOM` = 3) is reported.
+func edgeReport(_ scroller: Widget!, _ block: @escaping () -> Void) {
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
     g_signal_connect_data(UnsafeMutableRawPointer(scroller), "edge-reached",
-                          unsafeBitCast(auftragAnKante, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+                          unsafeBitCast(jobAnEdge, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
 }
 
-nonisolated(unsafe) private let auftragAnKante: @convention(c) (
+nonisolated(unsafe) private let jobAnEdge: @convention(c) (
     UnsafeMutableRawPointer?, UInt32, gpointer?
-) -> Void = { _, kante, daten in
-    guard let daten, kante == GTK_POS_BOTTOM.rawValue else { return }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { _, border, data in
+    guard let data, border == GTK_POS_BOTTOM.rawValue else { return }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-/// Meldet **echte** Bewegungen des Zeigers über einem Widget.
+/// Reports **real** pointer movement over a widget.
 ///
-/// **Warum eine Schwelle.** Auf dem Mac steht dort ausdrücklich „bei jeder
-/// echten Bewegung > 2 px" (`PlayerScreen.swift:180`). Ich hatte das
-/// weggelassen — mit sichtbarer Folge: über eine Fernsitzung schickt der
-/// Client laufend die Zeigerposition, auch wenn niemand die Maus anfasst.
-/// Jede dieser Meldungen holte die Steuerung zurück, und sie blendete nie
-/// wieder aus.
+/// **Why a threshold.** The Mac explicitly uses "on every real movement > 2 px"
+/// (`PlayerScreen.swift`). Without it, a remote session keeps sending the pointer
+/// position even when nobody touches the mouse; each of those reports brought the
+/// controls back and they never faded out again.
 ///
-/// Zwei Punkte sind ausserdem der Zittertoleranz eines ruhenden Fingers oder
-/// einer optischen Maus geschuldet; ohne sie zählt schon das Rauschen.
-func beiBewegung(_ ziel: Widget!, _ block: @escaping () -> Void) {
-    let horcher = gtk_event_controller_motion_new()
-    let a = Unmanaged.passRetained(Bewegungswache(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "motion",
-                          unsafeBitCast(wacheAlsBewegung, to: GCallback.self),
-                          a, wacheFreigeben, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+/// The two points also cover the jitter of a resting finger or an optical mouse;
+/// without them noise already counts.
+func onMotion(_ target: Widget!, _ block: @escaping () -> Void) {
+    let watcher = gtk_event_controller_motion_new()
+    let a = Unmanaged.passRetained(MotionGuard(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "motion",
+                          unsafeBitCast(guardAsMotion, to: GCallback.self),
+                          a, guardShare, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-/// Merkt sich, wo der Zeiger zuletzt war.
-final class Bewegungswache {
+/// Remembers where the pointer was last.
+final class MotionGuard {
     let block: () -> Void
     var x: Double = -1
     var y: Double = -1
     init(_ block: @escaping () -> Void) { self.block = block }
 }
 
-nonisolated(unsafe) private let wacheAlsBewegung: @convention(c) (
+nonisolated(unsafe) private let guardAsMotion: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> Void = { _, x, y, daten in
-    guard let daten else { return }
-    let w = Unmanaged<Bewegungswache>.fromOpaque(daten).takeUnretainedValue()
-    // **Die Marke wandert nur beim Auslösen mit.**
+) -> Void = { _, x, y, data in
+    guard let data else { return }
+    let w = Unmanaged<MotionGuard>.fromOpaque(data).takeUnretainedValue()
+    // **The mark only moves when it fires.**
     //
-    // Vorher stand sie nach *jeder* Meldung neu — damit wurde immer nur der
-    // Abstand zur vorigen Meldung geprüft, und langsames Ziehen blieb ewig
-    // darunter: die Steuerung blendete weg, obwohl die Maus lief. Bleibt die
-    // Marke stehen, summiert sich die Strecke, und irgendwann sind die zwei
-    // Punkte erreicht — genau das meint „echte Bewegung".
+    // If it were updated on *every* report, only the distance to the previous report
+    // would be checked, and slow dragging would stay below the threshold forever: the
+    // controls faded out although the mouse was moving. With the mark fixed, the
+    // distance accumulates until the two points are reached, which is what "real
+    // movement" means.
     guard w.x >= 0 else { w.x = x; w.y = y; return }
     guard abs(x - w.x) > 2 || abs(y - w.y) > 2 else { return }
     w.x = x
@@ -963,225 +913,220 @@ nonisolated(unsafe) private let wacheAlsBewegung: @convention(c) (
     w.block()
 }
 
-nonisolated(unsafe) private let wacheFreigeben: @convention(c) (
+nonisolated(unsafe) private let guardShare: @convention(c) (
     gpointer?, UnsafeMutablePointer<_GClosure>?
-) -> Void = { daten, _ in
-    guard let daten else { return }
-    Unmanaged<Bewegungswache>.fromOpaque(daten).release()
+) -> Void = { data, _ in
+    guard let data else { return }
+    Unmanaged<MotionGuard>.fromOpaque(data).release()
 }
 
-/// Meldet einen Rechtsklick — die Zeigerform des langen Drückens (A6).
+/// Reports a right click, the pointer equivalent of a long press.
 ///
-/// Dieselbe Geste wie ``beiKlick``, nur auf die rechte Taste gestellt und auf
-/// `pressed`: ein Kontextmenü erscheint beim Drücken, nicht beim Loslassen.
-func beiRechtsklick(_ ziel: Widget!, _ block: @escaping () -> Void) {
-    let geste = gtk_gesture_click_new()
-    gtk_gesture_single_set_button(geste, 3)
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
-                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, geste)
-    // **Dasselbe Menü von der Tastatur:** Menütaste oder Umschalt+F10, die
-    // beiden Wege, die GTK und jede Schreibtischumgebung dafür kennen.
-    let horcher = gtk_event_controller_key_new()
-    let tastenauftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "key-pressed",
-                          unsafeBitCast(tasteAlsKontext, to: GCallback.self),
-                          tastenauftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, horcher)
+/// The same gesture as ``onClick``, set to the right button and to `pressed`: a
+/// context menu appears on press, not on release.
+func rightClick(_ target: Widget!, _ block: @escaping () -> Void) {
+    let gesture = gtk_gesture_click_new()
+    gtk_gesture_single_set_button(gesture, 3)
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(gesture), "pressed",
+                          unsafeBitCast(jobAsClick, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, gesture)
+    // **The same menu from the keyboard:** Menu key or Shift+F10, the two ways GTK and
+    // every desktop environment know.
+    let watcher = gtk_event_controller_key_new()
+    let keysJob = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(watcher), "key-pressed",
+                          unsafeBitCast(keyAsContext, to: GCallback.self),
+                          keysJob, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, watcher)
 }
 
-/// Meldet einen langen Druck — die Berührungsform des Rechtsklicks, wie der
-/// lange Druck am iPhone.
+/// Reports a long press, the touch form of the right click, like the long press on
+/// iPhone.
 ///
-/// **Der Druck gehört dann dieser Geste**: sie beansprucht die Folge, damit
-/// das Loslassen nicht zusätzlich als Klick zählt und die Zeile startet.
-func beiLangdruck(_ ziel: Widget!, _ block: @escaping () -> Void) {
-    let geste = gtk_gesture_long_press_new()
-    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
-                          unsafeBitCast(auftragAlsLangdruck, to: GCallback.self),
-                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, geste)
+/// **The press then belongs to this gesture**: it claims the sequence so that
+/// the release does not also count as a click and start the row.
+func longPress(_ target: Widget!, _ block: @escaping () -> Void) {
+    let gesture = gtk_gesture_long_press_new()
+    let job = Unmanaged.passRetained(WorkItem(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(gesture), "pressed",
+                          unsafeBitCast(jobAsLongPress, to: GCallback.self),
+                          job, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(target, gesture)
 }
 
-/// `pressed` einer `GtkGestureLongPress`: `(Geste, x, y, Daten)`.
-nonisolated(unsafe) private let auftragAlsLangdruck: @convention(c) (
+/// `pressed` of a `GtkGestureLongPress`: `(gesture, x, y, data)`.
+nonisolated(unsafe) private let jobAsLongPress: @convention(c) (
     OpaquePointer?, Double, Double, gpointer?
-) -> Void = { geste, _, _, daten in
-    guard let daten else { return }
-    if let geste { _ = gtk_gesture_set_state(geste, GTK_EVENT_SEQUENCE_CLAIMED) }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> Void = { gesture, _, _, data in
+    guard let data else { return }
+    if let gesture { _ = gtk_gesture_set_state(gesture, GTK_EVENT_SEQUENCE_CLAIMED) }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
 }
 
-nonisolated(unsafe) private let tasteAlsKontext: @convention(c) (
+nonisolated(unsafe) private let keyAsContext: @convention(c) (
     OpaquePointer?, UInt32, UInt32, GdkModifierType, gpointer?
-) -> gboolean = { horcher, wert, _, zustand, daten in
-    let umschalt = (zustand.rawValue & GDK_SHIFT_MASK.rawValue) != 0
-    guard let daten, wert == 0xFF67 || (wert == 0xFFC7 && umschalt),   // Menü, F10
-          let horcher, let ziel = gtk_event_controller_get_widget(horcher),
-          gtk_widget_has_focus(ziel) != 0 else { return 0 }
-    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+) -> gboolean = { watcher, value, _, condition, data in
+    let shift = (condition.rawValue & GDK_SHIFT_MASK.rawValue) != 0
+    guard let data, value == 0xFF67 || (value == 0xFFC7 && shift),   // menu key, F10
+          let watcher, let target = gtk_event_controller_get_widget(watcher),
+          gtk_widget_has_focus(target) != 0 else { return 0 }
+    Unmanaged<WorkItem>.fromOpaque(data).takeUnretainedValue().block()
     return 1
 }
 
-// MARK: - Was die Bedienhilfe erfährt
+// MARK: - What assistive technology learns
 
-/// Gibt einem selbstgebauten Bedienelement einen Namen.
+/// Gives a custom control a name.
 ///
-/// **E8: wer keine Standardsteuerelemente nimmt, erbt auch deren
-/// Barrierefreiheit nicht.** Ein gemalter Knopf ist sonst nur „Taste", ein
-/// Zeitregler ein namenloses Rechteck. Auf Apple leistet das
-/// `accessibilityLabel`; in GTK4 heisst es `GTK_ACCESSIBLE_PROPERTY_LABEL`.
-/// Die kurze Form von ``bedienhilfe(_:name:gewaehlt:haken:)``.
-func beschriften(_ ziel: Widget!, _ name: String) {
-    bedienhilfe(ziel, name: name)
+/// **Controls not built from standard widgets do not inherit their accessibility.**
+/// A drawn button is otherwise just "button", a seek bar a nameless rectangle. On
+/// Apple this is `accessibilityLabel`; in GTK4 it is
+/// `GTK_ACCESSIBLE_PROPERTY_LABEL`. The short form of
+/// ``bedienhilfe(_:name:selected:checkmark:)``.
+func caption(_ target: Widget!, _ name: String) {
+    help(target, name: name)
 }
 
-/// Wie ein Haken der Bedienhilfe klingt. `teils` ist das Kästchen einer
-/// Staffel, von der nur einige Folgen gewählt sind.
-enum Hakenstand { case an, aus, teils }
+/// How a checkmark sounds to assistive technology. `partly` is the box of a season
+/// of which only some episodes are selected.
+enum CheckmarkState { case an, off, partly }
 
-/// **Was die Bedienhilfe über ein Element erfährt — an einer Stelle.**
+/// **What assistive technology learns about an element, in one place.**
 ///
-/// Name, „ausgewählt" und „angehakt". Auf Apple sind das
-/// `accessibilityLabel` und die Merkmale `.isSelected`/`.isToggle`; hier
-/// `GTK_ACCESSIBLE_PROPERTY_LABEL`, `GTK_ACCESSIBLE_STATE_SELECTED` und
-/// `GTK_ACCESSIBLE_STATE_CHECKED`. Was `nil` bleibt, wird nicht angefasst —
-/// wer nur den Zustand nachführt, muss den Namen nicht noch einmal nennen.
+/// Name, "selected" and "checked". On Apple these are `accessibilityLabel` and the
+/// traits `.isSelected`/`.isToggle`; here `GTK_ACCESSIBLE_PROPERTY_LABEL`,
+/// `GTK_ACCESSIBLE_STATE_SELECTED` and `GTK_ACCESSIBLE_STATE_CHECKED`. Anything
+/// left `nil` is not touched, so code that only updates the state need not repeat
+/// the name.
 ///
-/// **Die bequemen Formen sind variadisch und damit für Swift gesperrt.**
-/// `gtk_accessible_update_property`/`…_state` nehmen Paare beliebiger Länge;
-/// die `…_value`-Formen nehmen zwei Felder und sind aufrufbar. Die Typen der
-/// Werte werden über ihren Namen geholt, statt die Makros `G_TYPE_STRING`
-/// und Verwandte nachzubauen. **Jeder Zustand geht als `gint` hinein**, auch
-/// der wahr/falsch-Wert von `SELECTED`: GTK 4.22 liest ihn mit
-/// `g_value_get_int`, und ein `gboolean` oder der Aufzählungstyp
-/// `GtkAccessibleTristate` endet in einer `CRITICAL`-Zeile (mit einem kleinen
-/// C-Prüfling gegen GTK 4.22 nachgemessen).
-func bedienhilfe(_ ziel: Widget!, name: String? = nil, gewaehlt: Bool? = nil,
-                 haken: Hakenstand? = nil) {
-    guard let ziel else { return }
-    let element = OpaquePointer(ziel)
+/// **The convenient forms are variadic and therefore unavailable to Swift.**
+/// `gtk_accessible_update_property`/`…_state` take pairs of any length; the
+/// `…_value` forms take two fields and are callable. The value types are looked up
+/// by name instead of rebuilding the `G_TYPE_STRING` macros and relatives.
+/// **Every state goes in as `gint`**, including the true/false value of `SELECTED`:
+/// GTK 4.22 reads it with `g_value_get_int`, and a `gboolean` or the
+/// `GtkAccessibleTristate` enum ends in a `CRITICAL` line (verified with a small C
+/// test against GTK 4.22).
+func help(_ target: Widget!, name: String? = nil, selected: Bool? = nil,
+                 checkmark: CheckmarkState? = nil) {
+    guard let target else { return }
+    let element = OpaquePointer(target)
     if let name {
-        var eigenschaft = GTK_ACCESSIBLE_PROPERTY_LABEL
-        var wert = GValue()
-        g_value_init(&wert, g_type_from_name("gchararray"))
-        name.withCString { g_value_set_string(&wert, $0) }
-        gtk_accessible_update_property_value(element, 1, &eigenschaft, &wert)
-        g_value_unset(&wert)
+        var characteristic = GTK_ACCESSIBLE_PROPERTY_LABEL
+        var value = GValue()
+        g_value_init(&value, g_type_from_name("gchararray"))
+        name.withCString { g_value_set_string(&value, $0) }
+        gtk_accessible_update_property_value(element, 1, &characteristic, &value)
+        g_value_unset(&value)
     }
-    if let gewaehlt {
-        var zustand = GTK_ACCESSIBLE_STATE_SELECTED
-        var wert = GValue()
-        g_value_init(&wert, g_type_from_name("gint"))
-        g_value_set_int(&wert, gewaehlt ? 1 : 0)
-        gtk_accessible_update_state_value(element, 1, &zustand, &wert)
-        g_value_unset(&wert)
+    if let selected {
+        var condition = GTK_ACCESSIBLE_STATE_SELECTED
+        var value = GValue()
+        g_value_init(&value, g_type_from_name("gint"))
+        g_value_set_int(&value, selected ? 1 : 0)
+        gtk_accessible_update_state_value(element, 1, &condition, &value)
+        g_value_unset(&value)
     }
-    if let haken {
-        let dreiwert: GtkAccessibleTristate = switch haken {
+    if let checkmark {
+        let threeValue: GtkAccessibleTristate = switch checkmark {
         case .an:    GTK_ACCESSIBLE_TRISTATE_TRUE
-        case .aus:   GTK_ACCESSIBLE_TRISTATE_FALSE
-        case .teils: GTK_ACCESSIBLE_TRISTATE_MIXED
+        case .off:   GTK_ACCESSIBLE_TRISTATE_FALSE
+        case .partly: GTK_ACCESSIBLE_TRISTATE_MIXED
         }
-        var zustand = GTK_ACCESSIBLE_STATE_CHECKED
-        var wert = GValue()
-        g_value_init(&wert, g_type_from_name("gint"))
-        g_value_set_int(&wert, gint(dreiwert.rawValue))
-        gtk_accessible_update_state_value(element, 1, &zustand, &wert)
-        g_value_unset(&wert)
+        var condition = GTK_ACCESSIBLE_STATE_CHECKED
+        var value = GValue()
+        g_value_init(&value, g_type_from_name("gint"))
+        g_value_set_int(&value, gint(threeValue.rawValue))
+        gtk_accessible_update_state_value(element, 1, &condition, &value)
+        g_value_unset(&value)
     }
 }
 
 
-/// **Bewegung reduzieren** — GTKs `gtk-enable-animations`, das Gegenstueck zu
-/// `Stil.bewegungReduziert` auf dem Mac (`Sources/macOS/Stil.swift:22`).
+/// **Reduce motion**: GTK's `gtk-enable-animations`, the counterpart of
+/// `Theme.motionReduced` on the Mac.
 ///
-/// Stilblatt-Uebergaenge, `GtkStack` und `GtkRevealer` richten sich von
-/// selbst danach; unsere eigenen Blenden im Bildtakt nicht. Die fragen hier,
-/// und zwar bei jedem Lauf: die Einstellung kann sich waehrend des Laufens
-/// aendern. Die bequeme Form `g_object_get` ist variadisch und fuer Swift
-/// gesperrt, deshalb ueber einen `GValue` wie bei ``beschriften(_:_:)``.
-func bewegungReduziert() -> Bool {
-    guard let einstellungen = gtk_settings_get_default() else { return false }
-    var wert = GValue()
-    g_value_init(&wert, g_type_from_name("gboolean"))
-    g_object_get_property(unsafeBitCast(einstellungen, to: UnsafeMutablePointer<GObject>.self),
-                          "gtk-enable-animations", &wert)
-    let an = g_value_get_boolean(&wert) != 0
-    g_value_unset(&wert)
+/// Stylesheet transitions, `GtkStack` and `GtkRevealer` follow it by themselves;
+/// our own frame-clock fades do not. They query it on every run, because the
+/// setting can change at runtime. The convenient `g_object_get` is variadic and
+/// unavailable to Swift, hence a `GValue` as in ``beschriften(_:_:)``.
+func motionReduced() -> Bool {
+    guard let settings = gtk_settings_get_default() else { return false }
+    var value = GValue()
+    g_value_init(&value, g_type_from_name("gboolean"))
+    g_object_get_property(unsafeBitCast(settings, to: UnsafeMutablePointer<GObject>.self),
+                          "gtk-enable-animations", &value)
+    let an = g_value_get_boolean(&value) != 0
+    g_value_unset(&value)
     return !an
 }
 
 
-/// Legt Text in die Zwischenablage.
+/// Puts text on the clipboard.
 ///
-/// GTK4 fragt die Ablage über die Anzeige des Widgets ab — es gibt keine
-/// globale. Deshalb muss ein Widget mit, das gerade im Fenster hängt.
-func inZwischenablage(_ text: String, an widget: Widget!) {
-    guard let anzeige = gtk_widget_get_display(widget) else { return }
-    let ablage = gdk_display_get_clipboard(anzeige)
-    gdk_clipboard_set_text(ablage, text)
+/// GTK4 gets the clipboard through the widget's display; there is no global one.
+/// So a widget that is currently in a window must be passed.
+func inClipboard(_ text: String, an widget: Widget!) {
+    guard let display = gtk_widget_get_display(widget) else { return }
+    let store = gdk_display_get_clipboard(display)
+    gdk_clipboard_set_text(store, text)
 }
 
-@inline(__always) func alsStapel(_ w: Widget!) -> OpaquePointer! {
+@inline(__always) func asStack(_ w: Widget!) -> OpaquePointer! {
     OpaquePointer(w)
 }
 
-/// Der `GtkRevealer` — für Listen, die im Seitenfluss auf- und zuklappen.
-@inline(__always) func alsAufklapp(_ w: Widget!) -> OpaquePointer! {
+/// The `GtkRevealer`, for lists that expand and collapse in the page flow.
+@inline(__always) func asExpand(_ w: Widget!) -> OpaquePointer! {
     OpaquePointer(w)
 }
 
-/// **Wann jemand ein Bedienelement anfasst und wieder loslässt.**
+/// **When someone grabs a control and lets go.**
 ///
-/// Für den Zeitregler: solange die Maus darauf steht, darf die Steuerung
-/// nicht ausblenden und die Stelle nicht vom Server überschrieben werden
-/// (B1, B4). Auf dem Mac liefert `Zeitregler` dafür `amRegler`; hier gibt es
-/// nichts Vergleichbares, also die Geste selbst — **`pressed` und
-/// `released` an derselben**, damit beide dasselbe Drücken meinen.
-func beiGriff(_ ziel: Widget!, _ block: @escaping (Bool) -> Void) {
-    // **Eine Zieh-Geste, keine Klick-Geste.** `GtkGestureClick` meldet kein
-    // `released`, sobald der Zeiger über die Ziehschwelle wandert — beim
-    // Spulen also nie. `amRegler` blieb dann hängen: die Steuerung blendete
-    // nicht mehr aus, und der Griff blieb im Akzent. `drag-begin` und
-    // `drag-end` kommen immer paarweise.
-    let geste = gtk_gesture_drag_new()
-    let runter = Unmanaged.passRetained(Auftrag { block(true) }).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "drag-begin",
-                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
-                          runter, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    let hoch = Unmanaged.passRetained(Auftrag { block(false) }).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "drag-end",
-                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
-                          hoch, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_event_controller_set_propagation_phase(geste, GTK_PHASE_CAPTURE)
-    gtk_widget_add_controller(ziel, geste)
+/// For the seek bar: while the mouse is on it, the controls must not fade out and
+/// the position must not be overwritten from the server. On the Mac `Zeitregler`
+/// provides `atSlider` for this; here nothing comparable exists, so the gesture
+/// itself is used, with **`pressed` and `released` on the same one** so both refer
+/// to the same press.
+func onGrip(_ target: Widget!, _ block: @escaping (Bool) -> Void) {
+    // **A drag gesture, not a click gesture.** `GtkGestureClick` sends no `released`
+    // once the pointer moves beyond the drag threshold, i.e. never while seeking.
+    // `atSlider` then stayed set: the controls no longer faded out and the handle
+    // stayed in the accent color. `drag-begin` and `drag-end` always come in pairs.
+    let gesture = gtk_gesture_drag_new()
+    let down = Unmanaged.passRetained(WorkItem { block(true) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(gesture), "drag-begin",
+                          unsafeBitCast(jobAsMotionPublic, to: GCallback.self),
+                          down, jobSharePublic, GConnectFlags(rawValue: 0))
+    let up = Unmanaged.passRetained(WorkItem { block(false) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(gesture), "drag-end",
+                          unsafeBitCast(jobAsMotionPublic, to: GCallback.self),
+                          up, jobSharePublic, GConnectFlags(rawValue: 0))
+    gtk_event_controller_set_propagation_phase(gesture, GTK_PHASE_CAPTURE)
+    gtk_widget_add_controller(target, gesture)
 }
 
 
-/// **Eine Adresse im Standardbrowser öffnen.**
+/// **Opens a URL in the default browser.**
 ///
-/// Für den Fall, dass der Server keinen Trailer hat und nur ein Verweis ins
-/// Netz bleibt — der Mac nimmt dafür `NSWorkspace.shared.open`
-/// (`Sources/macOS/DetailView.swift:620`).
+/// For when the server has no trailer and only a web link remains; the Mac uses
+/// `NSWorkspace.shared.open` (`Sources/macOS/DetailView.swift`).
 ///
-/// `g_app_info_launch_default_for_uri` statt `GtkUriLauncher`: der Launcher
-/// ist asynchron und will ein Elternfenster, hier genügt der Aufruf. Ein
-/// Fehlschlag ist still — wer keinen Browser hat, dem sagt eine Meldung
-/// darüber auch nichts.
-func imBrowser(_ ziel: URL) {
-    var fehler: UnsafeMutablePointer<GError>?
-    _ = g_app_info_launch_default_for_uri(ziel.absoluteString, nil, &fehler)
-    if let fehler { g_error_free(fehler) }
+/// `g_app_info_launch_default_for_uri` instead of `GtkUriLauncher`: the launcher is
+/// asynchronous and wants a parent window, while this call is enough. A failure is
+/// silent: a message would not help someone without a browser.
+func browser(_ target: URL) {
+    var error: UnsafeMutablePointer<GError>?
+    _ = g_app_info_launch_default_for_uri(target.absoluteString, nil, &error)
+    if let error { g_error_free(error) }
 }
 
-/// Eine Datei im Dateimanager zeigen, markiert — der Weg, auf dem ein
-/// Nutzer sie weiterreicht, wo es kein Teilen-Menue gibt.
-func imDateimanagerZeigen(_ datei: URL) {
-    let f = g_file_new_for_path(datei.path)
+/// Shows a file in the file manager, selected: the way to pass it on where there is
+/// no share menu.
+func fileManagerShow(_ file: URL) {
+    let f = g_file_new_for_path(file.path)
     let starter = gtk_file_launcher_new(f)
     gtk_file_launcher_open_containing_folder(starter, nil, nil, nil, nil)
     g_object_unref(UnsafeMutableRawPointer(starter))

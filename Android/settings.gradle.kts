@@ -1,4 +1,4 @@
-// Swiftly fuer Android. Aufbau und Regeln: Notizen/Android/PLAN.md
+// Swiftly for Android.
 pluginManagement {
     repositories {
         mavenLocal()
@@ -16,14 +16,14 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        // `swiftkit-core` liegt nur lokal: swift-java veroeffentlicht es noch
-        // nicht auf Maven Central. Einmalig mit JDK 25 bereitstellen, siehe PLAN.
+        // `swiftkit-core` exists only locally: swift-java does not publish it to Maven Central yet.
+        // Provide it once with JDK 25.
         mavenLocal()
         google()
         mavenCentral()
     }
 }
 rootProject.name = "Swiftly"
-include(":kern")
-include(":handy")
-include(":gemeinsam")
+include(":core")
+include(":phone")
+include(":shared")

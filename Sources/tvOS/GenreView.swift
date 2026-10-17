@@ -1,100 +1,91 @@
 import JellyfinKit
 import SwiftUI
 
-/// **Alle Titel eines Genres** — aus den Chips auf der Startseite.
-///
-/// Dasselbe Gitter wie die Bibliothek, dieselbe Spaltenzahl. Die zuletzt
-/// hinzugefügten zuerst: wer ein Genre öffnet, sucht meist, was neu ist.
+/// All titles of a genre, from the chips on the home page. Same grid and column count as the library. Most recently added first: opening a genre usually means looking for what is new.
 struct GenreView: View {
     let model: AppModel
     let name: String
 
     @State private var items: [Item] = []
-    @State private var laedt = true
-    /// Der Server hat nicht geantwortet — anders als „nichts in diesem Genre".
-    @State private var gestoert = false
+    @State private var loads = true
+    /// The server did not answer, as opposed to "nothing in this genre".
+    @State private var disrupted = false
 
-    private var spalten: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: Stil.gitterSpalte),
-              count: Stil.gitterSpalten)
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Theme.gridColumn),
+              count: Theme.gridColumns)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Der Name kommt vom Server und wird nicht übersetzt.
-                Reihentitel(name: name)
-                    .padding(.horizontal, Stil.randSeite)
-                    .padding(.top, Stil.kopfversatzDetail + 40)
-                    .padding(.bottom, Stil.titelAbstand)
+                // The name comes from the server and is not translated.
+                RailTitle(name: name)
+                    .padding(.horizontal, Theme.edgePage)
+                    .padding(.top, Theme.headerOffsetDetail + 40)
+                    .padding(.bottom, Theme.titleSpacing)
 
-                LazyVGrid(columns: spalten, alignment: .leading, spacing: Stil.gitterZeile) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
                     ForEach(items) { item in
                         NavigationLink(value: item) {
-                            Kachelinhalt(bild: model.imageURL(for: item, maxHeight: 600,
-                                                              hochkant: true),
-                                         titel: item.name,
-                                         fortschritt: item.userData?.playedPercentage
+                            TileContent(image: model.imageURL(for: item, maxHeight: 600,
+                                                              portrait: true),
+                                         title: item.name,
+                                         progress: item.userData?.playedPercentage
                                              .map { $0 / 100 },
-                                         mitUnterzeile: false,
-                                         marke: Anzeigeregeln.kachelmarke(
+                                         withUnderRow: false,
+                                         mark: DisplayRules.tileMark(
                                             art: item.type,
-                                            staffeln: item.childCount,
-                                            gesehen: item.userData?.played,
-                                            offeneFolgen: item.userData?.unplayedItemCount),
-                                         zeichen: item.kachelzeichen)
+                                            seasons: item.childCount,
+                                            watched: item.userData?.played,
+                                            openEpisodes: item.userData?.unplayedItemCount),
+                                         symbolText: item.tileCharacter)
                         }
-                        .buttonStyle(KachelStil())
-                        .kachelmenue(item, model: model)
+                        .buttonStyle(TileStyle())
+                        .tileMenu(item, model: model)
                     }
                 }
-                .padding(.horizontal, Stil.randSeite)
+                .padding(.horizontal, Theme.edgePage)
             }
-            .padding(.bottom, Stil.abschlussLuft)
+            .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
         .ignoresSafeArea()
         .overlay {
-            if laedt {
-                // **Kein Ladering, das Raster steht in seiner Form.** So
-                // machen es Bibliothek, Merkliste und Suche; diese Seite war
-                // die einzige der drei Genre-Fassungen, die beim Laden einen
-                // schwarzen Schirm zeigte.
-                Rasterplatzhalter()
-                    .padding(.horizontal, Stil.randSeite)
+            if loads {
+                // No loading ring; the grid stands in its final shape, as in library, saved list and search. This page was the only genre version that showed a black screen while loading.
+                GridPlaceholder()
+                    .padding(.horizontal, Theme.edgePage)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, Stil.leisteUnten + 90)
+                    .padding(.top, Theme.barBottom + 90)
                     .transition(.opacity)
-            } else if gestoert {
-                // **Gestoert ist nicht leer.** `titel(gattung:)` gibt `nil`
-                // zurueck, wenn der Server nicht antwortet; das `?? []`
-                // machte daraus eine leere Liste, und die Seite behauptete,
-                // das Genre sei leer. Derselbe Text wie in der Bibliothek.
-                Leerzustand(
+            } else if disrupted {
+                // Disturbed is not empty: `title(genre:)` returns `nil` when the server does not answer; `?? []` turned that into an empty list and the page claimed the genre was empty. Same text as the library.
+                EmptyState(
                     symbol: "externaldrive.badge.xmark",
-                    titel: "Server ist abgetaucht",
-                    hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    knopf: ("Erneut versuchen", { Task { await laden() } }))
+                    title: "Server ist abgetaucht",
+                    hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                    button: ("Erneut versuchen", { Task { await load() } }))
             } else if items.isEmpty {
-                // Ein Ausweg, kein Sackgassenschild.
-                Leerzustand(symbol: "tag", titel: "Nichts in diesem Genre",
-                            hinweis: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.",
-                            knopf: ("Aktualisieren", { Task { await laden() } }))
+                // A way out, not a dead-end sign.
+                EmptyState(symbol: "tag", title: "Nichts in diesem Genre",
+                            hint: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.",
+                            button: ("Aktualisieren", { Task { await load() } }))
             }
         }
-        .animation(Stil.einblenden, value: laedt)
-        .task(id: name) { await laden() }
-        // Gesehen/Gemerkt woanders: still nachladen, die Liste bleibt stehen.
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden(still: true) } }
+        .animation(Theme.reveal, value: loads)
+        .task(id: name) { await load() }
+        // Seen/saved elsewhere: reload quietly, the list stays.
+        .onChange(of: model.pagesRefresh) { _, _ in Task { await load(still: true) } }
     }
 
-    private func laden(still: Bool = false) async {
-        if !still { laedt = true }
-        let antwort = await model.titel(gattung: name, limit: 200)
-        // Still nachgeladen und gescheitert: der alte Stand bleibt.
-        if still, antwort == nil { return }
-        gestoert = antwort == nil
-        items = Listenregeln.ohneDoppelte(antwort ?? [])
-        laedt = false
+    private func load(still: Bool = false) async {
+        if !still { loads = true }
+        let answer = await model.title(genre: name, limit: 200)
+        // Reloaded quietly and failed: the old state stays.
+        if still, answer == nil { return }
+        disrupted = answer == nil
+        items = ListRules.withoutDouble(answer ?? [])
+        loads = false
     }
 }

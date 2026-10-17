@@ -1,10 +1,10 @@
 {
   "layers": [
     {
-      "filename": "Wortmarke.imagestacklayer"
+      "filename": "Wordmark.imagestacklayer"
     },
     {
-      "filename": "Hintergrund.imagestacklayer"
+      "filename": "Background.imagestacklayer"
     }
   ],
   "info": {

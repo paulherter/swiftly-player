@@ -1,8 +1,8 @@
-# Aktualisiert das AUR-Paket swiftly-player-bin bei jeder Veroeffentlichung.
+# Updates the AUR package swiftly-player-bin on every release.
 #
-# Das Paket selbst muss einmal von Hand im AUR angelegt werden (siehe
-# Verteilung/EINRICHTEN.md) - danach schreibt dieser Lauf pkgver und die
-# Pruefsumme des Release-Tarballs neu und stoesst sie ins AUR-Git.
+# The package itself has to be created in the AUR by hand once (see
+# Distribution/SETUP.md). After that, this run rewrites pkgver and the checksum
+# of the release tarball and pushes them to the AUR git repository.
 
 name: AUR
 
@@ -35,11 +35,10 @@ jobs:
         run: |
           mkdir -p aur-arbeit
           sed "s/^pkgver=.*/pkgver=${{ steps.f.outputs.wert }}/" \
-            Verteilung/aur/swiftly-player-bin/PKGBUILD > aur-arbeit/PKGBUILD
+            Distribution/aur/swiftly-player-bin/PKGBUILD > aur-arbeit/PKGBUILD
 
-      # updpkgsums laedt den neuen Tarball und schreibt die Pruefsumme selbst
-      # in die Kopie unter aur-arbeit - die Vorlage im Repository bleibt
-      # unberuehrt und zeigt weiter den Stand der Ersteinrichtung.
+      # updpkgsums downloads the new tarball and writes the checksum into the
+      # copy under aur-arbeit. The template in the repository stays untouched.
       - name: Ins AUR stellen
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:

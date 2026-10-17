@@ -3,372 +3,366 @@ import StoreKit
 import SwiftUI
 
 struct RootView: View {
-    @State private var model = AppModel.einziges
-    /// Der Vorhang liegt über allem, bis die Animation durch ist.
-    @State private var gestartet = false
+    @State private var model = AppModel.only
+    /// The curtain covers everything until the animation is done.
+    @State private var started = false
     #if os(iOS)
-    /// Apples eigene Bewertungsabfrage. Wann sie kommt, entscheidet
-    /// `Bewertungsfrage` im Paket; Apple zeigt sie höchstens dreimal im Jahr.
-    @Environment(\.requestReview) private var bewerten
+    /// Apple's own rating prompt. When it appears is decided by
+    /// `RatingQuestion` in the package; Apple shows it at most three times a
+    /// year.
+    @Environment(\.requestReview) private var rate
     #endif
-    /// Der einmalige Hinweis auf den Discord, nach dem fünften Titel.
-    @State private var discordBlatt = false
+    /// The one-time hint to the Discord, after the fifth title.
+    @State private var discordSheet = false
 
-    /// Nur hier gelesen. Die Ansichten fragen `\.breit` ab, damit die Regel
-    /// an einer Stelle steht und nicht in jeder Ansicht neu.
-    @Environment(\.horizontalSizeClass) private var breitenklasse
+    /// Read only here. Views query `\.wide` so the rule lives in one place
+    /// and not in every view.
+    @Environment(\.horizontalSizeClass) private var widthClass
 
-    private var breit: Bool { breitenklasse == .regular && Stil.amPad }
+    private var wide: Bool { widthClass == .regular && Theme.atPad }
 
-    /// Gemessene Fensterbreite. Die Größenklasse allein sagt nichts darüber,
-    /// ob eine Knopfreihe nebeneinander passt.
-    @State private var fensterbreite: CGFloat = 0
+    /// Measured window width. The size class alone says nothing about whether
+    /// a button row fits side by side.
+    @State private var windowWidthValue: CGFloat = 0
 
 
-    /// Die App teilt sich den Schirm — dann liegt iPadOS' Ampel auf unserer
-    /// oberen linken Ecke. Siehe `Fensterknoepfe`.
-    private var imFenster: Bool {
-        Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
+    /// The app shares the screen: iPadOS' traffic lights then lie on our top
+    /// left corner. See `WindowButtons`.
+    private var inWindow: Bool {
+        WindowButtons.inWindow(windowWidthValue: windowWidthValue)
     }
 
     var body: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
             switch model.phase {
             case .disconnected, .connecting:
                 ConnectView(model: model)
             case let .needsLogin(serverName, version):
                 LoginView(model: model, serverName: serverName, version: version)
             case .ready:
-                HauptView(model: model)
+                MainView(model: model)
             }
         }
-        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
-        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
-        // die 33 Aufrufstellen, die `fortschritt:` weiterreichen, sollen
-        // nichts davon wissen muessen. Gelesen wird sie dort, wo der Balken
-        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
-        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
+        // **Once at the root, not on every tile.** A setting decides which tile
+        // shows its progress bar, and the 33 call sites passing `progress:`
+        // through should not have to know about it. It is read where the bar is
+        // created. See `EnvironmentValues.progressOnTiles`.
+        .environment(\.progressOnTiles, model.progressOnTiles)
         #if os(iOS)
-        // **Erst nach dem Player, und mit einem Atemzug Abstand.** Die Frage
-        // kommt, wenn jemand gerade etwas zu Ende geschaut hat — nicht mitten
-        // in der Wiedergabe und nicht beim Start.
+        // **Only after the player, and with a beat of delay.** The prompt comes
+        // when someone has just finished watching something, not in the middle
+        // of playback and not at launch.
         //
-        // **Erst wenn der Player zu ist.** Der Wechsel zur nächsten Folge
-        // zählt den Titel, während der Player offen bleibt — vorher kam die
-        // Abfrage dann 1,5 s später über die laufende Folge.
-        .onChange(of: model.bewertungFaellig && !model.playerOffen) { _, jetzt in
-            guard jetzt else { return }
-            model.bewertungFaellig = false
+        // **Only once the player is closed.** Switching to the next episode
+        // counts the title while the player stays open; before, the prompt then
+        // appeared 1.5 s later over the running episode.
+        .onChange(of: model.ratingDue && !model.playerOpen) { _, now in
+            guard now else { return }
+            model.ratingDue = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !model.playerOffen else { model.bewertungFaellig = true; return }
-                bewerten()
+                guard !model.playerOpen else { model.ratingDue = true; return }
+                rate()
             }
         }
         #endif
-        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
-            guard jetzt else { return }
-            model.discordHinweisFaellig = false
+        .onChange(of: model.discordHintDue && !model.playerOpen) { _, now in
+            guard now else { return }
+            model.discordHintDue = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
-                discordBlatt = true
+                guard !model.playerOpen else { model.discordHintDue = true; return }
+                discordSheet = true
             }
         }
-        .overlay { Discordhinweis(offen: $discordBlatt) }
+        .overlay { DiscordHint(opened: $discordSheet) }
         .overlay {
             #if os(iOS)
-            if !gestartet {
-                Startvorhang {
-                    // 0,28 aus `Stil.einblenden` statt eigener 0,45: der
-                    // Vorhang geht auf wie jeder andere Inhalt, der da ist —
-                    // eine Dauer, nicht zwei. Vorher `.easeOut(0,45)`.
-                    withAnimation(Stil.einblenden) { gestartet = true }
+            if !started {
+                StartCurtain {
+                    // 0.28 from `Theme.einblenden` instead of its own 0.45: the curtain lifts
+                    // like any other content that is there, one duration, not two.
+                    withAnimation(Theme.reveal) { started = true }
                 }
             }
             #endif
         }
-        // Verbinden → Anmelden → Hauptansicht ist ein Bereichswechsel und
-        // kein Systemstandard. `.default` war die letzte Bewegung der App
-        // ohne Token; jetzt dieselbe Kennlinie wie jeder Reiterwechsel.
-        .animation(Stil.bereichswechsel, value: model.phase)
-        // Deckel für die Schriftgröße.
+        // Connect, sign in, main view is a change of area, not a system default.
+        // `.default` was the last motion in the app without a token; now the
+        // same curve as every tab switch.
+        .animation(Theme.sectionSwitch, value: model.phase)
+        // Cap for the type size.
         //
-        // Die Gestaltung steht auf festen Punktmaßen — Kacheln 112 × 168,
-        // Leiste 54, Knöpfe 44. Die obersten Stufen der Systemeinstellung
-        // (bis „AX5") verdreifachen die Schrift; das sprengt jede dieser
-        // Höhen. Bis `accessibility1` geht alles mit, darüber bliebe nur ein
-        // Umbau jeder festen Höhe — das ist ein eigenes Vorhaben.
+        // The design is built on fixed point dimensions: tiles 112 x 168, bar 54,
+        // buttons 44. The top steps of the system setting (up to "AX5") triple
+        // the type, which breaks each of these heights. Everything up to
+        // `accessibility1` is supported; above that only a rework of every fixed
+        // height would help, which is a project of its own.
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        // Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel gebaut.
+        // There is no light theme: the design is built for dark.
         .preferredColorScheme(.dark)
-        .tint(Stil.akzent)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
-            fensterbreite = neu
+        .tint(Theme.accent)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { new in
+            windowWidthValue = new
         }
-        .environment(\.breit, breit)
-        .environment(\.weit, breit && fensterbreite >= Stil.querKopfAbBreite)
-        .environment(\.fensterknoepfe, imFenster)
+        .environment(\.wide, wide)
+        .environment(\.broad, wide && windowWidthValue >= Theme.landscapeHeaderOffWidth)
+        .environment(\.windowButtons, inWindow)
     }
 }
 
-// MARK: - Server eingeben
+// MARK: - Enter server
 
-/// Erster Schritt: wo steht der Server.
+/// First step: where the server is.
 ///
-/// Bewusst nur die Wortmarke, kein Signet daneben — zwei Zeichen übereinander
-/// sind eines zu viel. Und keine Überschrift plus Beschriftung plus
-/// Platzhalter: dreimal dasselbe zu sagen war der Fehler vorher, ein Satz
-/// genügt.
+/// Deliberately only the wordmark, no logo beside it: two marks stacked
+/// are one too many. And no heading plus label plus placeholder: saying
+/// the same thing three times was the earlier mistake, one sentence is
+/// enough.
 struct ConnectView: View {
     let model: AppModel
-    @State private var adresse = ""
-    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
-    @State private var koepfe: [Kopfzeile] = []
+    @State private var address = ""
+    /// "Advanced": custom headers for a service in front of the server.
+    @State private var headers: [HeaderRow] = []
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                Wortmarke(hoehe: 40)
+                Wordmark(height: 40)
                     .padding(.top, 172)
 
                 Text("Wo steht dein Jellyfin-Server?")
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.fontQuiet)
                     .padding(.top, 44)
 
-                Eingabefeld(text: $adresse, symbol: "globe",
-                            platzhalter: "tv.beispiel.de", tastatur: .adresse,
-                            abschluss: verbinden)
+                InputField(text: $address, symbol: "globe",
+                            placeholder: "tv.beispiel.de", keyboard: .address,
+                            completion: linkUp)
                     .padding(.top, 18)
 
                 Text("https:// kannst du weglassen.")
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 9)
                     .padding(.leading, 2)
 
-                Erweitertbereich(zeilen: $koepfe)
+                AdvancedSection(rows: $headers)
                     .padding(.top, 6)
 
-                // **Der Knopf bleibt stehen und sagt, was laeuft.** Hier
-                // wechselte er gegen einen Ring — die Seite sprang, und
-                // wohin man gedrueckt hatte, war weg.
+                // **The button stays and says what is running.** Here it swapped for a
+                // spinner: the page jumped and where you had pressed was gone.
                 do {
                     Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
-                           action: verbinden)
-                        .buttonStyle(HauptknopfStil())
+                           action: linkUp)
+                        .buttonStyle(PrimaryButtonStyle())
                         .padding(.top, 22)
-                        .disabled(adresse.isEmpty || model.phase == .connecting)
-                        .opacity(adresse.isEmpty ? 0.4 : 1)
+                        .disabled(address.isEmpty || model.phase == .connecting)
+                        .opacity(address.isEmpty ? 0.4 : 1)
                 }
 
-                if let fehler = model.errorMessage {
-                    // Der Fehler steht unter dem Feld, das ihn ausgelöst hat,
-                    // nicht am Seitenende.
-                    // **`fehler`, nicht `warnung`.** Eine abgelehnte
-                    // Anmeldung ist schiefgegangen, sie wartet nicht auf
-                    // jemanden — und beides trug dieselbe Farbe.
-                    Text(fehler)
-                        .font(Stil.klein)
-                        .foregroundStyle(Stil.fehler)
+                if let error = model.errorMessage {
+                    // The error appears under the field that caused it, not at the end of the
+                    // page.
+                    // **`error`, not `warning`.** A rejected sign-in went wrong; it is not
+                    // waiting for someone, and both carried the same color.
+                    Text(error)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.error)
                         .multilineTextAlignment(.center)
                         .padding(.top, 14)
                 }
 
-                if let letzte = model.letzterServer, letzte.adresse != adresse {
-                    zuletzt(letzte)
+                if let last = model.lastServer, last.address != address {
+                    recent(last)
                 }
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 40)
-            // Sonst zieht sich das Feld über die ganze iPad-Breite.
-            .frame(maxWidth: Stil.formularbreite)
+            // Otherwise the field stretches across the whole iPad width.
+            .frame(maxWidth: Theme.formWidth)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        .onAppear { if adresse.isEmpty { adresse = model.letzterServer?.adresse ?? "" } }
-        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
-        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
+        .onAppear { if address.isEmpty { address = model.lastServer?.address ?? "" } }
+        // Changing the address during the check cancels it.
+        .onChange(of: address) { _, new in model.addressChanged(new) }
     }
 
-    /// Beim zweiten Mal tippt niemand die Adresse erneut.
-    private func zuletzt(_ letzte: Servererinnerung) -> some View {
+    /// The second time nobody types the address again.
+    private func recent(_ last: ServerReminder) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Gruppentitel(text: "Zuletzt verbunden")
-            Trennlinie()
+            GroupsTitle(text: "Zuletzt verbunden")
+            SeparatorLine()
             Button {
-                adresse = letzte.adresse
-                verbinden()
+                address = last.address
+                linkUp()
             } label: {
                 HStack(spacing: 12) {
-                    Circle().fill(Stil.akzent).frame(width: 7, height: 7)
+                    Circle().fill(Theme.accent).frame(width: 7, height: 7)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(letzte.name)
-                            // Listenzeile aus der Leiter — vorher 15 als Zahl.
-                            .font(Stil.listentitel)
-                            .foregroundStyle(Stil.schrift)
-                        Text("\(letzte.adresse) · Jellyfin \(letzte.version)")
-                            // Die Angabe der Leiter, 12 Regular. Vorher 12 als
-                            // Zahl an der Aufrufstelle.
-                            .font(Stil.klein)
-                            .foregroundStyle(Stil.schriftSehrLeise)
+                        Text(last.name)
+                            // List row from the scale; before it was a literal 15.
+                            .font(Theme.listTitle)
+                            .foregroundStyle(Theme.font)
+                        Text("\(last.address) · Jellyfin \(last.version)")
+                            // The scale's info grade, 12 Regular. Before it was a literal 12 at the
+                            // call site.
+                            .font(Theme.small)
+                            .foregroundStyle(Theme.fontVeryQuiet)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        // 13 Semibold: der Winkel rechts in einer Zeile, wie
-                        // in `Wertzeile` und `Profilzeile`. 12 war die zweite
-                        // Zahl fuer dasselbe Zeichen.
+                        // 13 semibold: the chevron on the right of a row, as in `ValueRow` and
+                        // `ProfileRow`. 12 was the second number for the same symbol.
                         .font(.system(size: 13, weight: .semibold))
-                        // Weiss 28 Prozent sind 2,50:1 - fuer ein Bedienzeichen
-                        // liegt die Grenze bei 3:1.
-                        .foregroundStyle(Stil.schriftSehrLeise)
+                        // White at 28 percent is 2.50:1; for a control symbol the limit is 3:1.
+                        .foregroundStyle(Theme.fontVeryQuiet)
                 }
                 .padding(.vertical, 14)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(Stil.Druckzeile())
-            Trennlinie()
+            .buttonStyle(Theme.PressRow())
+            SeparatorLine()
         }
         .padding(.top, 36)
     }
 
-    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
-    /// Senden während der Prüfung verwirft das Modell.
-    private func verbinden() {
-        guard !adresse.isEmpty else { return }
-        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
+    /// The button and the keyboard's Send key meet here; a second send during
+    /// the check discards the model.
+    private func linkUp() {
+        guard !address.isEmpty else { return }
+        model.connectStart(address, headers: headers.headers)
     }
 }
 
-// MARK: - Anmelden
+// MARK: - Sign in
 
-/// Zweiter Schritt: wer schaut.
+/// Second step: who is watching.
 ///
-/// Jellyfin gibt die öffentlichen Benutzer ohne Anmeldung heraus. Sie als
-/// Bilder anzubieten, statt den Namen abtippen zu lassen, den der Server
-/// schon kennt, ist der eigentliche Unterschied zu vorher.
+/// Jellyfin hands out the public users without sign-in. Offering them as
+/// images, instead of making people type a name the server already knows,
+/// is the real difference from before.
 struct LoginView: View {
     let model: AppModel
     let serverName: String
     let version: String
-    /// Als Blatt aus dem Profil geoeffnet: derselbe Server, ein weiteres
-    /// Konto. Dann gibt es keinen Weg zu einem anderen Server — und das Blatt
-    /// muss sich selbst schliessen koennen.
-    var weiteresKonto = false
-    /// Wird beim Hinzufuegen nicht mehr gebraucht — die Seite geht selbst
-    /// zurueck. Bleibt fuer die Anmeldung an der Wurzel, die kein Zurueck hat.
-    var fertig: () -> Void = {}
+    /// Opened as a sheet from the profile: the same server, one more account.
+    /// There is then no way to another server, and the sheet must be able to
+    /// close itself.
+    var moreAccount = false
+    /// No longer needed when adding: the page goes back by itself. Remains for
+    /// sign-in at the root, which has no back.
+    var done: () -> Void = {}
 
-    @Environment(\.dismiss) private var schliessen
+    @Environment(\.dismiss) private var close
 
-    @State private var benutzer = ""
-    @State private var passwort = ""
-    @State private var bekannte: [OeffentlicherBenutzer] = []
-    @State private var bilder: [String: URL] = [:]
+    @State private var user = ""
+    @State private var password = ""
+    @State private var knownOnes: [PublicUser] = []
+    @State private var images: [String: URL] = [:]
     @State private var quickConnect = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                kopf
-                if !bekannte.isEmpty { wahl }
-                felder
-                quickConnectWeg
+                header
+                if !knownOnes.isEmpty { choice }
+                fields
+                quickConnectDistance
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 40)
-            .frame(maxWidth: Stil.formularbreite)
+            .frame(maxWidth: Theme.formWidth)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        // **Beim Hinzufuegen traegt die Leiste oben den Rueckweg.**
+        // **When adding, the bar carries the way back at the top.**
         //
-        // Unten stand „Abbrechen" — das brauchte es, solange die Ansicht als
-        // Blatt kam. Als geschobene Seite hat sie oben denselben Rueckweg wie
-        // jede andere Unterseite, und zwei Wege zurueck sind einer zu viel.
-        // An der Wurzel bleibt die Zeile: dort gibt es kein Zurueck, sondern
-        // nur den Weg zu einem anderen Server.
+        // There was "Cancel" at the bottom, needed while the view came as a
+        // sheet. As a pushed page it has the same way back at the top as every
+        // subpage, and two ways back are one too many. At the root the row stays:
+        // there is no back, only the way to another server.
         .safeAreaInset(edge: .top, spacing: 0) {
-            if weiteresKonto {
-                Unterseitenkopf(titel: String(localized: "Konto hinzufügen")) {
-                    schliessen()
-                } rechts: { EmptyView() }
+            if moreAccount {
+                SubpageHeader(title: String(localized: "Konto hinzufügen")) {
+                    close()
+                } right: { EmptyView() }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !weiteresKonto {
+            if !moreAccount {
                 Button("Anderer Server") { model.signOut() }
-                    .buttonStyle(Stil.Druckzeile())
-                    // 12 Regular aus der Leiter; 13 Regular steht dort nicht.
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .buttonStyle(Theme.PressRow())
+                    // 12 Regular from the scale; 13 Regular is not in it.
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
                     .padding(.bottom, 22)
             }
         }
         #if os(iOS)
-        // Nur beim Hinzufuegen: an der Wurzel gibt es keine Leiste, die stoeren
-        // koennte, und `WischZurueck` haette dort nichts zurueckzuwischen.
-        .toolbar(weiteresKonto ? .hidden : .automatic, for: .navigationBar)
+        // Only when adding: at the root there is no bar to get in the way, and
+        // `SwipeBack` would have nothing to swipe back to.
+        .toolbar(moreAccount ? .hidden : .automatic, for: .navigationBar)
         #endif
-        // **Wer das Blatt zeigt, schliesst es auch.** Nach dem Hinzufuegen
-        // blieb es sonst stehen und es sah aus, als sei nichts passiert.
+        // **Whoever shows the sheet also closes it.** After adding it would
+        // otherwise stay and it looked as if nothing happened.
         //
-        // `kontowechsel` steigt genau dann, wenn schon jemand angemeldet war —
-        // also beim Hinzufuegen und nicht bei der ersten Anmeldung. Und **nur
-        // ohne Fehlermeldung**: sonst verschluckt das Schliessen sie.
-        .onChange(of: model.kontowechsel) { _, _ in
-            guard weiteresKonto, model.errorMessage == nil else { return }
-            schliessen()
+        // `accountSwitch` rises exactly when someone was already signed in, i.e.
+        // when adding and not on first sign-in. And **only without an error
+        // message**: otherwise closing swallows it.
+        .onChange(of: model.accountSwitch) { _, _ in
+            guard moreAccount, model.errorMessage == nil else { return }
+            close()
         }
         .task {
-            bekannte = await model.oeffentlicheBenutzer()
-            bilder = await model.bildAdressen(bekannte)
-            // Bei genau einem Konto gibt es nichts zu wählen. Den Namen dann
-            // trotzdem eintippen zu lassen — und den Anmeldeknopf so lange
-            // grau zu lassen — ist eine Hürde ohne Zweck.
-            if bekannte.count == 1, benutzer.isEmpty {
-                benutzer = bekannte[0].name
+            knownOnes = await model.publicUser()
+            images = await model.imageAddresses(knownOnes)
+            // With exactly one account there is nothing to choose. Making people type
+            // the name anyway, and leaving the sign-in button gray until then, is a
+            // hurdle without purpose.
+            if knownOnes.count == 1, user.isEmpty {
+                user = knownOnes[0].name
             }
         }
         .fullScreenCover(isPresented: $quickConnect) {
-            QuickConnectAnmeldung(model: model)
+            QuickConnectLogin(model: model)
         }
     }
 
-    private var kopf: some View {
+    private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Circle().fill(Stil.akzent).frame(width: 7, height: 7)
+                Circle().fill(Theme.accent).frame(width: 7, height: 7)
                 Text("Verbunden · Jellyfin \(version)")
-                    // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    // The scale's info grade, 12 Regular. Before it was a literal.
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
             }
             Text(serverName)
-                .font(Stil.titel)
-                .foregroundStyle(Stil.schrift)
+                .font(Theme.title)
+                .foregroundStyle(Theme.font)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 48)
     }
 
-    private var wahl: some View {
+    private var choice: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Gruppentitel(text: "Wer schaut?")
+            GroupsTitle(text: "Wer schaut?")
             ScrollView(.horizontal) {
                 HStack(spacing: 16) {
-                    ForEach(bekannte) { person in
-                        Button { benutzer = person.name } label: {
-                            Kontozeichen(name: person.name,
-                                         bild: bilder[person.id],
-                                         gewaehlt: benutzer == person.name)
+                    ForEach(knownOnes) { person in
+                        Button { user = person.name } label: {
+                            AccountCharacter(name: person.name,
+                                         image: images[person.id],
+                                         selected: user == person.name)
                         }
-                        .buttonStyle(Stil.Druckzeile())
+                        .buttonStyle(Theme.PressRow())
                     }
                 }
                 .padding(.vertical, 2)
@@ -378,45 +372,45 @@ struct LoginView: View {
         .padding(.top, 22)
     }
 
-    private var felder: some View {
+    private var fields: some View {
         VStack(spacing: 10) {
-            Eingabefeld(text: $benutzer, symbol: "person",
-                        platzhalter: "Benutzername")
-            Eingabefeld(text: $passwort, symbol: "lock",
-                        platzhalter: "Passwort", geheim: true,
-                        abschluss: anmelden)
+            InputField(text: $user, symbol: "person",
+                        placeholder: "Benutzername")
+            InputField(text: $password, symbol: "lock",
+                        placeholder: "Passwort", secret: true,
+                        completion: signIn)
 
-            // Derselbe Grund wie oben: der Knopf bleibt stehen.
+            // The same reason as above: the button stays.
             do {
-                Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
-                    .buttonStyle(HauptknopfStil())
+                Button(model.isWorking ? "Anmelden…" : "Anmelden", action: signIn)
+                    .buttonStyle(PrimaryButtonStyle())
                     .padding(.top, 10)
                     .disabled(model.isWorking)
-                    .disabled(benutzer.isEmpty)
-                    .opacity(benutzer.isEmpty ? 0.4 : 1)
+                    .disabled(user.isEmpty)
+                    .opacity(user.isEmpty ? 0.4 : 1)
             }
 
-            if let fehler = model.errorMessage {
-                Text(fehler)
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.fehler)
+            if let error = model.errorMessage {
+                Text(error)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.error)
                     .multilineTextAlignment(.center)
             }
         }
         .padding(.top, 28)
     }
 
-    /// Gleichrangig, nicht versteckt: ein Passwort mit Sonderzeichen tippt
-    /// sich auf einer Glasscheibe schlecht.
-    private var quickConnectWeg: some View {
+    /// Equal rank, not hidden: a password with special characters is hard to
+    /// type on a glass screen.
+    private var quickConnectDistance: some View {
         VStack(spacing: 20) {
             HStack(spacing: 12) {
-                Rectangle().fill(Stil.linie).frame(height: 1)
+                Rectangle().fill(Theme.line).frame(height: 1)
                 Text("oder")
-                    // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
-                    .font(Stil.klein)
-                    .foregroundStyle(Stil.schriftSehrLeise)
-                Rectangle().fill(Stil.linie).frame(height: 1)
+                    // The scale's info grade, 12 Regular. Before it was a literal.
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                Rectangle().fill(Theme.line).frame(height: 1)
             }
             Button {
                 quickConnect = true
@@ -427,59 +421,57 @@ struct LoginView: View {
                     Text("Mit Quick Connect anmelden")
                 }
             }
-            .buttonStyle(NebenknopfStil(akzent: true))
+            .buttonStyle(SecondaryButtonStyle(accent: true))
         }
         .padding(.top, 26)
     }
 
-    private func anmelden() {
-        guard !benutzer.isEmpty else { return }
-        Task { await model.login(username: benutzer, password: passwort) }
+    private func signIn() {
+        guard !user.isEmpty else { return }
+        Task { await model.login(username: user, password: password) }
     }
 }
 
-/// Rundes Zeichen für ein Konto auf der Anmeldeseite.
-struct Kontozeichen: View {
+/// Round symbol for an account on the sign-in page.
+struct AccountCharacter: View {
     let name: String
-    let bild: URL?
-    let gewaehlt: Bool
+    let image: URL?
+    let selected: Bool
 
     var body: some View {
         VStack(spacing: 8) {
-            // **Der Baustein, nicht sein Nachbau.**
+            // **The building block, not a copy of it.**
             //
-            // Hier stand das Zeichen ein zweites Mal von Hand: `erhoeht` als
-            // Grund statt des Verlaufs, weisser Ring 2 pt statt `hervorgehoben`,
-            // 20 Semifett als Buchstabe statt `groesse * 0,38`, und das Bild
-            // ueber `Bild` statt ueber den Bildspeicher — also ohne den
-            // synchronen Blick, der das Aufblitzen des Buchstaben verhindert.
-            // Dasselbe Ding in zwei Bauarten heisst zwei Profilringe in einer
-            // App. Dass der Ring hier weiss ist und nicht im Akzent, ist
-            // richtig und steht jetzt als `gewaehlt` im Baustein.
-            Profilzeichen(name: name, bild: bild, groesse: 60, gewaehlt: gewaehlt)
+            // The symbol was built a second time by hand here: `erhoeht` as the
+            // background instead of the gradient, a white 2 pt ring instead of
+            // `highlighted`, 20 semibold as the letter instead of `size * 0.38`,
+            // and the image via `Picture` instead of the image store, i.e. without the
+            // synchronous lookup that prevents the letter from flashing. The same
+            // thing in two builds means two profile rings in one app. That the ring
+            // is white here and not accent is correct and is now `selected` in the
+            // block.
+            ProfileCharacter(name: name, image: image, size: 60, selected: selected)
             Text(name)
-                // Titel unter einem Zeichen: 13 aus der Leiter, vorher als
-                // Zahl. Ein Gewicht, nicht zwei: `semibold` ist breiter als
-                // `medium`, und bei zwei Zeilen mit `minimumScaleFactor`
-                // entscheidet die Breite ueber den Umbruch — der Name brach
-                // beim Auswaehlen anders. Ton und Ring sagen die Wahl.
-                .font(Stil.kachel)
-                .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
-                // Zwei Zeilen und etwas mehr Breite: ein elfstelliger Name wurde bei
-                // 66 Punkt und einer Zeile auf zehn Zeichen verstümmelt, und
-                // ein abgeschnittener Name auf einem Anmeldebildschirm sieht
-                // nach Fehler aus.
+                // Title under a symbol: 13 from the scale, before a literal. One weight,
+                // not two: `semibold` is wider than `medium`, and with two lines and
+                // `minimumScaleFactor` the width decides the line break, so the name
+                // wrapped differently when selected. Tone and ring express the choice.
+                .font(Theme.tile)
+                .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
+                // Two lines and a bit more width: an eleven-character name was truncated
+                // to ten characters at 66 pt and one line, and a truncated name on a
+                // sign-in screen looks like an error.
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.85)
         }
         .frame(width: 84)
-        // **Die Wahl sagt sich nicht nur ueber Ton und Ring.** Beides ist
-        // Farbe, und Farbe allein erreicht niemanden, der die Seite vorlesen
-        // laesst: VoiceOver sagte bei jedem Konto dasselbe. `.isSelected`
-        // ist das Merkmal, das das System dafuer kennt.
+        // **The choice is not expressed only through tone and ring.** Both are
+        // color, and color alone reaches nobody who has the page read aloud:
+        // VoiceOver said the same for every account. `.isSelected` is the trait
+        // the system knows for this.
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

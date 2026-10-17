@@ -1,9 +1,8 @@
 name: Swiftly
 options:
   bundleIdPrefix: de.paulherter
-  # Deutsch ist die Ausgangssprache, Englisch kommt aus dem Katalog.
-  # Beides steht in der Abgabe, und Englisch ist bei der Prüfung ohnehin die
-  # Sprache, in der geprüft wird.
+  # German is the source language; English comes from the catalog. Both ship
+  # with the app.
   developmentLanguage: de
   deploymentTarget:
     iOS: "18.0"
@@ -15,9 +14,9 @@ options:
 packages:
   JellyfinKit:
     path: Packages/JellyfinKit
-  # Für die Startanimation. Die Vorlage kommt als Lottie aus After Effects;
-  # die Keyframes tragen je eigene Bezier-Anläufe, das von Hand nachzubauen
-  # geht schief. Airbnbs Umsetzung ist die übliche.
+  # For the launch animation. The source asset is a Lottie export from After
+  # Effects; the keyframes carry individual bezier easing, which is error-prone
+  # to rebuild by hand. Airbnb's implementation is the standard one.
   Lottie:
     url: https://github.com/airbnb/lottie-ios
     from: 4.5.0
@@ -25,39 +24,21 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    # Damit Xcode die Texte aus dem Swift-Code in den Katalog zieht.
+    # Makes Xcode extract strings from Swift code into the catalog.
     SWIFT_EMIT_LOC_STRINGS: "YES"
-    # Muss mit der Version in App Store Connect uebereinstimmen,
-    # sonst laesst sich der Build dort nicht anhaengen.
-    # 1.0.2 seit dem 10.09.2026: der Durchgang ueber Geschwindigkeit und
-    # Barrierefreiheit, der Puffer fuer wackelige Leitungen — und vor allem
-    # die Vertraeglichkeit mit Jellyfin 12. Dort ist `api_key` abgeschafft;
-    # ohne diese Fassung ist auf einem 12er Server die Fernbedienung tot,
-    # die Sitzung zeigt keine Bedienknoepfe und keine Uebernahme erscheint.
-    # Das trifft jeden Nutzer, der seinen Server aktualisiert.
+    # Must match the version in App Store Connect, otherwise the build cannot be
+    # attached there. Do not attach another build to an already released
+    # version; that does not work cleanly.
+    MARKETING_VERSION: "1.0.7"
+    # Must be incremented on EVERY upload: Apple does not accept the same build
+    # number twice per version (error 90189).
     #
-    # **Warum nicht ein weiterer Bau von 1.0.1.** Die steht seit dem 09.09.
-    # als `READY_FOR_SALE` in App Store Connect. Einen Bau an eine bereits
-    # veroeffentlichte Fassung zu haengen geht nicht sauber; und was hier
-    # drinsteckt, gehoert ohnehin bald in den Store.
-    MARKETING_VERSION: "1.0.6"
-    # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
-    # Buildnummer je Version kein zweites Mal an (Fehler 90189).
-    #
-    # **Je Fassung, und deshalb faengt 1.0.1 wieder bei 1 an.** Die 12 stand
-    # hier, weil 1.0.0 bis Bau 11 gelaufen ist und ich weitergezaehlt habe.
-    # Noetig ist das nicht: die Bedingung gilt innerhalb einer Fassung, und
-    # fuer 1.0.1 liegt bei Apple noch gar nichts. Am 06.09.2026 live in App
-    # Store Connect nachgesehen — hoechster Stand dort ist auf allen drei
-    # Plattformen **1.0.0 (11)**, kein 1.0.1. Es ist der erste Bau von
-    # 1.0.1, also Bau 1.
-    #
-    # Vor einem Zuruecksetzen immer erst nachsehen:
-    #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "21"
-    # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
-    # persönliche Team in das bezahlte umgewandelt, statt ein zweites
-    # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
+    # The counter applies per version, so it restarts at 1 for a new version.
+    # Before resetting it, check the highest build number already uploaded for
+    # that version on all platforms in App Store Connect.
+    CURRENT_PROJECT_VERSION: "23"
+    # Same identifier as in the free-account days: Apple converted the personal
+    # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
     CODE_SIGN_STYLE: Automatic
     SWIFT_STRICT_CONCURRENCY: complete
@@ -73,332 +54,307 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/iOS
-      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
-      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      # **Licenses come from one source**: `LICENSES/` (components.json and the
+      # full texts) is copied into the bundle unchanged; `Lizenzbestand` reads
+      # it.
       - path: LICENSES
         type: folder
     dependencies:
       - package: JellyfinKit
       - package: Lottie
-      # VLCKit 4 liefert Picture-in-Picture (VLCPictureInPictureDrawable) —
-      # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
-      # VideoLAN den Download auf ~40 KB/s drosselt.
-      # Holen mit: Werkzeuge/vlckit-holen.sh
-      # **Selbst gebaute Fassung** — siehe Werkzeuge/vlckit-patches/README.md.
-      # VLC 4 kann in einer Matroska mit unvollstaendig lesbaren Cues ueber
-      # HTTP nicht vorwaerts springen; Patch 0028 stellt das Verhalten von
-      # VLC 3 wieder her. Gemessen auf tvOS und iOS an derselben Datei.
+      # VLCKit 4 provides Picture-in-Picture (VLCPictureInPictureDrawable), the
+      # reason for this app. Included locally instead of via SwiftPM because
+      # VideoLAN throttles the download to ~40 KB/s. Fetch with:
+      # Werkzeuge/vlckit-fetch.sh
+      # **Self-built version** - see Werkzeuge/vlckit-patches/README.md. VLC 4
+      # cannot seek forward in a Matroska with partly unreadable cues over HTTP;
+      # patch 0028 restores the VLC 3 behavior.
       - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
       path: Sources/iOS/Info.plist
       properties:
-        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        # **The fallback language, not the source language.**
         #
-        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
-        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
-        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
-        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
-        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
-        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
-        # pruefen.
+        # German stays the key in the catalog. A device set to neither German
+        # nor English (Dutch, Russian, Chinese) gets exactly this value: Apple's
+        # last fallback level is CFBundleDevelopmentRegion (QA1828). With `de`
+        # here, much of the world saw a German app.
         #
-        # Nicht ueber `options.developmentLanguage`: das ist die
-        # Ausgangssprache des Projekts und soll deutsch bleiben.
-        # **Ohne diesen Schluessel deckelt iOS die App auf 60 Hz** -- auch
-        # auf einem Geraet, das 120 kann. Apple hat das absichtlich zum
-        # Opt-in gemacht, um Akku zu sparen; fuer eine Videoapp ist es der
-        # Unterschied zwischen glatt und ruckelig.
+        # Not via `options.developmentLanguage`: that is the project's source
+        # language and stays German.
+        # **Without this key iOS caps the app at 60 Hz**, even on a device that
+        # can do 120. Apple made this opt-in on purpose to save battery; for a
+        # video app it is the difference between smooth and juddery.
         #
-        # Warum es hier steht: 24p auf 60 Hz geht nicht auf. 60 / 23,976 =
-        # 2,503, jedes Bild bleibt also mal zwei, mal drei Bildwiederholungen
-        # stehen -- die klassische 3:2-Kadenz, am staerksten bei Schwenks zu
-        # sehen. Bei 120 Hz sind es 5,005, und das geht praktisch auf.
+        # Why it matters: 24p does not fit 60 Hz. 60 / 23.976 = 2.503, so each
+        # frame is held for two or three refreshes alternately (the classic 3:2
+        # cadence), most visible in pans. At 120 Hz it is 5.005, which works out
+        # almost exactly.
         #
-        # Am 08.09.2026 gemessen: VLC lieferte in zwei Laeufen ueber je eine
-        # Minute jedes Bild puenktlich ab -- kein verworfenes, kein
-        # verspaetetes, Hardware-Dekoder, das Protokoll vollstaendig still --
-        # und das Ruckeln war trotzdem da. Es entstand also erst beim
-        # Anzeigen, hinter allem, was VLC ueberhaupt sieht.
+        # Measured: VLC delivered every frame on time (none dropped or late,
+        # hardware decoder, log silent) and the judder was still there. It
+        # arises at display time, beyond anything VLC sees.
         #
-        # iPad Pro braucht den Schluessel laut Apple nicht.
+        # iPad Pro does not need the key, according to Apple.
         CADisableMinimumFrameDurationOnPhone: true
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
-        # Ohne Farbe blitzt vor der Startanimation kurz Weiß auf.
+        # Without a color, white flashes briefly before the launch animation.
         UILaunchScreen:
-          UIColorName: Startgrund
-        # Alle vier, und zwar zwingend: ohne UIRequiresFullScreen gilt eine
-        # App mit "1,2" als multitaskingfähig, und dann verlangt Apple die
-        # volle Auswahl. Fehlt PortraitUpsideDown, schlägt das schon in der
-        # Upload-Prüfung auf, nicht erst in der Review.
+          UIColorName: StartBackground
+        # All four are required: without UIRequiresFullScreen an app with "1,2"
+        # counts as multitasking-capable, and Apple then requires the full set.
+        # Without PortraitUpsideDown the upload check fails, not only the
+        # review.
         #
-        # Das ist nur der äußere Rahmen. Was davon gilt, entscheidet zur
-        # Laufzeit `Orientierung`: auf dem iPhone bleibt es bei Hochformat,
-        # der Player darf drehen. Auf dem iPad gilt der Rahmen unverändert —
-        # eine multitaskingfähige App darf die Drehung nicht erzwingen.
+        # This is only the outer frame. What applies is decided at runtime by
+        # `Orientierung`: on iPhone it stays portrait, the player may rotate. On
+        # iPad the frame applies unchanged, since a multitasking-capable app
+        # must not force rotation.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # Pflicht für Picture-in-Picture: ohne 'audio' im Hintergrundmodus
-        # beendet iOS die Wiedergabe, sobald das Fenster klein wird.
+        # Required for Picture-in-Picture: without 'audio' as background mode
+        # iOS ends playback as soon as the window gets small.
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
-          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          # **Only this one key, on purpose.**
           #
-          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
-          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
-          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
-          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
-          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
-          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          # Adding `NSAllowsLocalNetworking` next to it is wrong: **since iOS
+          # 10, `NSAllowsArbitraryLoads` is ignored as soon as
+          # `NSAllowsLocalNetworking`, `NSAllowsArbitraryLoadsInWebContent` or
+          # `...ForMedia` is present.** The keys do not complement each other;
+          # the second disables the first.
           #
-          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
-          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
-          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
-          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
-          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          # This blocked users reaching Jellyfin over Tailscale
+          # (`http://100.x.x.x:8096`): Tailscale uses 100.64.0.0/10, the CGNAT
+          # range, which ATS does **not** count as local network (RFC1918,
+          # `.local` and `localhost` are). The same block hit plain-http
+          # dynamic-DNS hostnames.
           #
-          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
-          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
-          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
-          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
-          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
-          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          # A client for self-hosted servers cannot know the address at build
+          # time, so `NSExceptionDomains` do not help. Swiftly steers towards
+          # https in code instead: an address without scheme gets `https://`
+          # prepended unless it looks like a home network
+          # (`AppModelURLNormalizer`, IP literals included). It falls back to
+          # http only if https fails at the connection level, never on an error
+          # response.
           NSAllowsArbitraryLoads: true
-        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        # **Required since iOS 14; without it the error is hard to interpret.**
         #
-        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
-        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
-        # Verweigert der Nutzer, meldet URLSession „The Internet connection
-        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
-        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
-        # erklaeren, warum die App das will.
+        # The system asks for permission before an app talks to devices on the
+        # local network, even for a direct IP, not only `.local`. If the user
+        # denies, URLSession reports "The Internet connection appears to be
+        # offline" although the network is fine. This sentence is shown in the
+        # prompt itself and is the only chance to explain why the app wants it.
         #
-        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
-        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
-        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
-        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
-        # Sprachfehler an genau der Stelle wieder, an der er am meisten
-        # stoert.
+        # **English as default, German from `InfoPlist.xcstrings`.** A
+        # hard-coded plist value is not translated; it appears as written. Since
+        # `CFBundleDevelopmentRegion` is `en`, this sentence must be English
+        # too.
         NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
           on your home network. Without this, the app cannot reach a server at
           an address like 192.168.1.5.
-        # Sonst fragt App Store Connect bei jedem Upload nach der
-        # Exportbestimmung. Die App verschlüsselt nichts selbst, sie nutzt nur
-        # HTTPS über die Systemschnittstellen — damit ist sie ausgenommen.
+        # Otherwise App Store Connect asks about export compliance on every
+        # upload. The app does no encryption itself, only HTTPS through system
+        # APIs, which is exempt.
         ITSAppUsesNonExemptEncryption: false
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
-        # iPhone und iPad.
+        # iPhone and iPad. The former reasons to exclude iPad are resolved:
+        # PortraitUpsideDown is in the orientations above, and views read their
+        # width instead of hard-wiring three columns (`Stil.spalten(fuer:)`).
         #
-        # Beide Gründe, die das iPad bisher ausgeschlossen haben, sind
-        # ausgeräumt: PortraitUpsideDown steht oben in den Ausrichtungen, und
-        # die Ansichten lesen ihre Breite, statt drei Spalten fest zu
-        # verdrahten (`Stil.spalten(fuer:)`).
-        #
-        # Bewusst **ohne** UIRequiresFullScreen: die App soll im geteilten
-        # Bildschirm laufen. Der Preis dafür ist genau die Zeile darüber.
+        # Deliberately **without** UIRequiresFullScreen: the app should run in
+        # split screen. The price is the orientation requirement above.
         TARGETED_DEVICE_FAMILY: "1,2"
-        # Ein einziges 1024er Bild, ohne eigene Fassungen für dunkel und
-        # getönt — iOS leitet die dunkle und getönte Darstellung daraus ab.
-        # Reicht für die Abgabe; eigene Fassungen wären eine Verbesserung,
-        # keine Voraussetzung.
+        # A single 1024 image without separate dark and tinted variants; iOS
+        # derives those from it. Enough for submission; separate variants would
+        # be an improvement, not a requirement.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # Ohne Entitlements verweigert der Keychain das Schreiben (-34018),
-        # und die Anmeldung ginge bei jedem Start verloren.
+        # Without entitlements the keychain refuses writes (-34018) and the
+        # login would be lost on every launch.
         CODE_SIGN_ENTITLEMENTS: Sources/iOS/Swiftly.entitlements
 
   Swiftly-tvOS:
     type: application
     platform: tvOS
-    # Bewusst **nicht** `Sources/Shared` im Ganzen: dort stecken Wischgesten,
-    # die Navileiste unten, Tippflächen und Tastaturtypen, die es auf tvOS
-    # nicht gibt. Geteilt wird nur, was von Entfernung und Eingabeart
-    # unabhängig ist — Zustandshalter, Keychain, Marken, Routen, Farben.
-    # Die Ansichten hat jede Plattform für sich.
+    # Deliberately **not** all of `Sources/Shared`: it contains swipe gestures,
+    # the bottom nav bar, tap areas and keyboard types that do not exist on
+    # tvOS. Only what is independent of distance and input method is shared:
+    # state holders, keychain, brands, routes, colors. Each platform has its own
+    # views.
     sources:
-      # **Ein Manifest fuer alle Plattformen.**
+      # **One manifest for all platforms.**
       #
-      # Es lag unter `Sources/iOS` und wurde dort nur mitgenommen, weil das
-      # ganze Verzeichnis eingesammelt wird. tvOS und macOS picken aus
-      # `Shared` einzeln und hatten deshalb gar keins — Apple schickt dafuer
-      # die ITMS-91053-Meldung. Die Angaben sind auf allen dreien dieselben,
-      # also gibt es sie einmal.
+      # It used to live in `Sources/iOS` and was only picked up there because
+      # the whole directory is collected. tvOS and macOS pick files from
+      # `Shared` individually and so had none; Apple sends the ITMS-91053 notice
+      # for that. The entries are identical on all three, so they exist once.
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
-      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
-      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
-      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
-      # `downloadsAn` ist aus, also faengt weder Netzwache noch
-      # Hintergrundsitzung je an.
-      - path: Sources/Shared/Downloadverwaltung.swift
-      - path: Sources/Shared/Anmeldemodell.swift
-      - path: Sources/Shared/Abspielwunsch.swift
-      - path: Sources/Shared/Farben.swift
+      # **Only the management, not the views.** Downloads exist only on iPhone
+      # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
+      # sits idle here: `downloadsAn` is off, so neither the network watcher nor
+      # the background session ever starts.
+      - path: Sources/Shared/DownloadManager.swift
+      - path: Sources/Shared/LoginModel.swift
+      - path: Sources/Shared/PlayRequest.swift
+      - path: Sources/Shared/Colors.swift
       - path: Sources/Shared/Keychain.swift
-      - path: Sources/Shared/Marken.swift
-      - path: Sources/Shared/Routen.swift
-      - path: Sources/Shared/Titelhandlung.swift
-      - path: Sources/Shared/Titelmarke.swift
-      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
-      # überall (VERHALTEN.md D5).
-      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
-      # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
-      # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
-      # Parameter mit, siehe `Lader.fern` in Stil.swift.
-      - path: Sources/Shared/Bausteine.swift
-      # **Der Bildspeicher, an dem `Profilzeichen` haengt.** Er merkt sich,
-      # was schon geholt wurde, und antwortet synchron — nur deshalb steht
-      # ein bekanntes Profilbild im ersten Durchgang da statt nach einem
-      # Aufblitzen des Verlaufs. Der Fernseher hat daneben weiter seinen
-      # eigenen `Bild`-Baustein fuer die Kacheln.
-      - path: Sources/Shared/Netzbild.swift
-      # VLCs Zaehlwerk und das Technikschild darueber — beide teilen sich
-      # alle vier Plattformen, seit es das Schild ueberall gibt.
-      - path: Sources/Shared/Spielwerte.swift
-      # Die Folgenkarte am Ende einer Folge — Rahmen, Ring, Verlauf; die
-      # Karte selbst zeichnet jede Plattform.
-      - path: Sources/Shared/Folgenkartenteile.swift
-      # Plan und Dateianfang der nächsten Folge in den letzten Minuten
-      # (Regeln in `Vorpuffer` im Paket) — iPhone und Fernseher.
-      - path: Sources/Shared/Folgenvorbereitung.swift
-      # Der Kontowechsel als Bewegung (Entwurf D) — Flug, Bühne, gestaffelte
-      # Reihen; iPhone und Fernseher.
-      - path: Sources/Shared/Kontowechselflug.swift
-      - path: Sources/Shared/KontowechselbuehneUIKit.swift
-      # Feder und „aus dem Punkt" — die Auswahl wächst aus dem Abzeichen.
-      - path: Sources/Shared/Uebergaenge.swift
-      # Das Menü hinter dem langen Druck auf jede Kachel — auf dem Fernseher
-      # ohne Vorschau und ohne „Laden".
-      - path: Sources/Shared/Kachelmenue.swift
-      - path: Sources/Shared/Technikschild.swift
-      - path: Sources/Shared/QuickConnectModell.swift
-      - path: Sources/Shared/Wiedergabezentrale.swift
-      # Selbsttest ohne Netz (`-offlinelauf`), nur im Debug-Bau wirksam.
-      - path: Sources/Shared/Offlinelauf.swift
-      - path: Sources/Shared/Discordanzeiger.swift
-      # Trakt: Schluesselbund, Anmeldezustand, die Aufrufe aus AppModel.
-      - path: Sources/Shared/Traktkonto.swift
-      - path: Sources/Shared/Startseitenmodell.swift
-      # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
-      - path: Sources/Shared/Seerrmodell.swift
-      - path: Sources/Shared/Seerrmarke.swift
-      # Die Fassungsangabe fuer die Profilseite — eine Rechnung, drei Ansichten.
-      - path: Sources/Shared/Fassung.swift
-      - path: Sources/Shared/Bibliotheksmodell.swift
-      - path: Sources/Shared/Merklistenmodell.swift
-      # **Den Serienspeicher gab es hier noch ein zweites Mal.** Die
-      # geteilte Datei ist aus genau dieser Fassung herausgeloest worden,
-      # der Fernseher behielt aber seine Kopie — und der fehlte, was beim
-      # Herausloesen dazukam: die Frage, zu welchem Konto der Inhalt
-      # gehoert. Nach einem Kontowechsel standen dort fremde Haken und
-      # fremde Fortschrittsbalken.
-      - path: Sources/Shared/Serienspeicher.swift
-      - path: Sources/Shared/SVGPfad.swift
-      # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
-      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
-      # darin ist mit `#if os(iOS)` ausgeklammert.
-      # Traegt die Ansichtsklasse der Plattform. VLCPlayer haengt daran,
-      # seit es auch einen AppKit-Arm gibt.
-      - path: Sources/Shared/Basisansicht.swift
+      - path: Sources/Shared/Marks.swift
+      - path: Sources/Shared/Routes.swift
+      - path: Sources/Shared/TitleAction.swift
+      - path: Sources/Shared/TitleMark.swift
+      # Container, codec, subtitles in the file excerpt - same info everywhere.
+      # Which bitrates, skip lengths and languages are offered.
+      # Row title, badge, loader, profile glyph - building blocks without
+      # platform dimensions. They used to exist three times; the target now
+      # passes the dimensions as a parameter, see `Lader.far` in Style.swift.
+      - path: Sources/Shared/Components.swift
+      # **The image cache `Profilzeichen` depends on.** It remembers what was
+      # already fetched and answers synchronously - only so a known profile
+      # image appears in the first pass instead of after a gradient flash. tvOS
+      # keeps its own `Bild` building block for tiles.
+      - path: Sources/Shared/NetworkImage.swift
+      # VLC's counters and the tech badge above them - shared by all platforms
+      # since the badge exists everywhere.
+      - path: Sources/Shared/PlayValues.swift
+      # The next-episode card at the end of an episode: frame, ring, gradient;
+      # each platform draws the card itself.
+      - path: Sources/Shared/EpisodeCardParts.swift
+      # Plan and file start of the next episode in the last minutes (rules in
+      # `Vorpuffer` in the package) - iPhone and TV.
+      - path: Sources/Shared/EpisodePreparation.swift
+      # Account switch as animation - flight, stage, staggered rows; iPhone and
+      # TV.
+      - path: Sources/Shared/AccountTransition.swift
+      - path: Sources/Shared/AccountSwitchStageUIKit.swift
+      # Spring and "out of the point" - the selection grows from the badge.
+      - path: Sources/Shared/Transitions.swift
+      # The menu behind a long press on any tile - on TV without preview and
+      # without "Download".
+      - path: Sources/Shared/TileMenu.swift
+      - path: Sources/Shared/TechBadge.swift
+      - path: Sources/Shared/QuickConnectModel.swift
+      - path: Sources/Shared/PlaybackHub.swift
+      # Offline self-test (`-offlinelauf`), only active in Debug builds.
+      - path: Sources/Shared/OfflineRun.swift
+      - path: Sources/Shared/DiscordIndicator.swift
+      # Trakt: keychain, sign-in state, the calls from AppModel.
+      - path: Sources/Shared/TraktAccount.swift
+      - path: Sources/Shared/HomePageModel.swift
+      # Seerr - the integration itself; views stay platform-specific.
+      - path: Sources/Shared/SeerrModel.swift
+      - path: Sources/Shared/SeerrMark.swift
+      # The version string for the profile page - one computation, three views.
+      - path: Sources/Shared/Version.swift
+      - path: Sources/Shared/LibraryModel.swift
+      - path: Sources/Shared/WatchlistModel.swift
+      # **The series store existed a second time here.** The shared file was
+      # extracted from this version, but tvOS kept its copy, which lacked what
+      # extraction added: the question which account the content belongs to.
+      # After an account switch, foreign checkmarks and progress bars showed up.
+      - path: Sources/Shared/SeriesCache.swift
+      - path: Sources/Shared/SVGPath.swift
+      # Both platforms share the playback machinery: the same `mkv_trusted`
+      # trick, the same stall detection. Picture-in-Picture in it is excluded
+      # with `#if os(iOS)`.
+      # Carries the platform's view class. VLCPlayer depends on it since there
+      # is also an AppKit arm.
+      - path: Sources/Shared/BaseView.swift
       - path: Sources/Shared/VLCPlayer.swift
-      - path: Sources/Shared/Netzprobe.swift
-      # Vorschaubilder beim Spulen: Holen und Zwischenspeicher der
-      # Trickplay-Blaetter, geteilt mit iPhone und Mac.
-      - path: Sources/Shared/Trickplaybilder.swift
-      # Die Zeitleiste in Stuecken, eins je Kapitel — dieselbe Maske wie am
-      # iPhone und am Mac.
-      - path: Sources/Shared/Kapitelmaske.swift
-      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
-      - path: Sources/Shared/Uebernahmemodell.swift
-      # „Hier weiterschauen" als Karte (Entwurf B): Bühne über allem und
-      # der Abgang des Abgebers, Zeitleiste im Paket (`Uebergabekarte`).
-      - path: Sources/Shared/Uebergabebuehne.swift
-      # Gemeinsam schauen: der Spiegel der Gruppe und die Bruecke zum
-      # Player. Der Ablauf selbst steht im Paket (`SyncPlaySitzung`).
-      - path: Sources/Shared/Gemeinsammodell.swift
+      - path: Sources/Shared/NetworkProbe.swift
+      # Preview images while scrubbing: fetching and caching of the trickplay
+      # sheets, shared with iPhone and Mac.
+      - path: Sources/Shared/TrickplayImages.swift
+      # The timeline in pieces, one per chapter - same mask as on iPhone and
+      # Mac.
+      - path: Sources/Shared/ChapterMask.swift
+      # Handover between devices: polling interval and state.
+      - path: Sources/Shared/TakeoverModel.swift
+      # "Continue watching here" as a card: stage above everything and the exit
+      # of the handing-over device; timeline in the package (`Uebergabekarte`).
+      - path: Sources/Shared/HandoffStage.swift
+      # Watch together: the group mirror and the bridge to the player. The flow
+      # itself is in the package (`SyncPlaySitzung`).
+      - path: Sources/Shared/SharedModel.swift
       - path: Sources/Shared/Localizable.xcstrings
-      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
-      # deutsch kommt hier heraus.
+      # Only for the local-network prompt: English is in Info.plist, German
+      # comes from here.
       - path: Sources/Shared/InfoPlist.xcstrings
-      - path: Sources/Shared/Regalvorschau.swift
-      # Die Startanimation gehört auf beide Plattformen — die Marke soll
-      # überall gleich auffahren. Nur das Quadrat ist auf dem Fernseher
-      # größer.
-      - path: Sources/Shared/Startanimation.swift
-      - path: Sources/Shared/Mittel
-      - path: Sources/Shared/Lizenzen.swift
-      # Die Toene eines Kulissenbilds — der Fernseher faerbt damit seine
-      # Detailseiten, das iPhone seinen Grund darunter.
-      - path: Sources/Shared/Bildton.swift
+      - path: Sources/Shared/ShelfPreview.swift
+      # The launch animation belongs on both platforms - the mark should animate
+      # the same way everywhere. Only the square is larger on TV.
+      - path: Sources/Shared/StartAnimation.swift
+      - path: Sources/Shared/Assets
+      - path: Sources/Shared/Licenses.swift
+      # The tones of a backdrop image - TV tints its detail pages with them,
+      # iPhone the background below.
+      - path: Sources/Shared/ImageTone.swift
       - path: Sources/tvOS
-      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
-      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      # **Licenses come from one source**: `LICENSES/` (components.json and the
+      # full texts) is copied into the bundle unchanged; `Lizenzbestand` reads
+      # it.
       - path: LICENSES
         type: folder
     dependencies:
       - package: JellyfinKit
       - package: Lottie
-      # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
+      # The Top Shelf is a separate target and is embedded.
       - target: Swiftly-TopShelf
-      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
-      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
-      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
-      # **VERSUCH: selbst gebaute Fassung mit einem Patch am mkv-Sucher.**
+      # VLCKit 4 ships tvOS slices (tvos-arm64 and simulator, checked in the
+      # XCFramework). No Picture-in-Picture here, but the player is used, and
+      # with it the `mkv_trusted` trick.
+      # **Self-built version with a patch to the mkv seeker.**
       #
-      # VLC 4 koppelt `index_range()` an `b_fastseekable`, und das ist über
-      # HTTP nie wahr. Damit hat eine Matroska, deren Cues sich nicht
-      # auswerten lassen, gar keinen Weg mehr, nach vorn zu springen: jeder
-      # Sprung landet am Dateianfang und der Demuxer liest sich vorwärts
-      # durch — bei der Testfolge 30 bis 90 Sekunden. VLC 3 ruft dieselbe
-      # Zeile ohne diesen Vorbehalt, und genau deshalb springt Swiftfin in
-      # derselben Datei sofort.
+      # VLC 4 ties `index_range()` to `b_fastseekable`, which is never true over
+      # HTTP. A Matroska whose cues cannot be evaluated then has no way to seek
+      # forward: every seek lands at the file start and the demuxer reads
+      # forward, 30 to 90 seconds in the test episode. VLC 3 calls the same line
+      # without that condition, which is why other clients seek instantly in the
+      # same file.
       #
-      # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
-      # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.
-      #
-      # Zurück auf `VLCKit.xcframework`, falls es sich nicht bewährt.
+      # Built from VLCKit 4.0.0-a23 plus this one patch. Revert to
+      # `VLCKit.xcframework` if it does not hold up.
       - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
       path: Sources/tvOS/Info.plist
       properties:
-        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        # **The fallback language, not the source language.**
         #
-        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
-        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
-        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
-        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
-        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
-        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
-        # pruefen.
+        # German stays the key in the catalog. A device set to neither German
+        # nor English (Dutch, Russian, Chinese) gets exactly this value: Apple's
+        # last fallback level is CFBundleDevelopmentRegion (QA1828). With `de`
+        # here, much of the world saw a German app.
         #
-        # Nicht ueber `options.developmentLanguage`: das ist die
-        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        # Not via `options.developmentLanguage`: that is the project's source
+        # language and stays German.
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
-        # **Ohne das faellt die App auf 1 zurueck, der Top Shelf steht auf 2.**
-        # Xcode warnt beim Bauen, App Store Connect weist den Upload ab: die
-        # Buildnummer einer Erweiterung muss die ihrer App sein.
+        # **Without this the app falls back to 1 while the Top Shelf is at 2.**
+        # Xcode warns at build time and App Store Connect rejects the upload: an
+        # extension's build number must match its app's.
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # Dieselbe Begruendung wie auf iOS: die App verschluesselt nichts
-        # selbst, sie nutzt HTTPS ueber die Systemschnittstellen.
+        # Same reason as on iOS: the app does no encryption itself, it uses
+        # HTTPS through system APIs.
         ITSAppUsesNonExemptEncryption: false
-        # Gehört **hierher**, nicht in die Info.plist: die wird von XcodeGen
-        # aus diesen Angaben erzeugt und bei jedem Lauf überschrieben. Ein
-        # Eintrag von Hand hält genau bis zum nächsten `xcodegen generate` —
-        # genau das ist einmal passiert, und der Top Shelf führte ins Leere.
+        # Belongs **here**, not in Info.plist: that file is generated by
+        # XcodeGen from these entries and overwritten on every run. A hand edit
+        # lasts only until the next `xcodegen generate`, and the Top Shelf would
+        # lead nowhere.
         CFBundleURLTypes:
           - CFBundleURLName: de.paulherter.swiftly
             CFBundleURLSchemes:
@@ -406,106 +362,97 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
-          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          # **Only this one key, on purpose.**
           #
-          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
-          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
-          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
-          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
-          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
-          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          # Adding `NSAllowsLocalNetworking` next to it is wrong: **since iOS
+          # 10, `NSAllowsArbitraryLoads` is ignored as soon as
+          # `NSAllowsLocalNetworking`, `NSAllowsArbitraryLoadsInWebContent` or
+          # `...ForMedia` is present.** The keys do not complement each other;
+          # the second disables the first.
           #
-          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
-          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
-          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
-          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
-          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          # This blocked users reaching Jellyfin over Tailscale
+          # (`http://100.x.x.x:8096`): Tailscale uses 100.64.0.0/10, the CGNAT
+          # range, which ATS does **not** count as local network (RFC1918,
+          # `.local` and `localhost` are). The same block hit plain-http
+          # dynamic-DNS hostnames.
           #
-          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
-          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
-          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
-          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
-          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
-          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          # A client for self-hosted servers cannot know the address at build
+          # time, so `NSExceptionDomains` do not help. Swiftly steers towards
+          # https in code instead: an address without scheme gets `https://`
+          # prepended unless it looks like a home network
+          # (`AppModelURLNormalizer`, IP literals included). It falls back to
+          # http only if https fails at the connection level, never on an error
+          # response.
           NSAllowsArbitraryLoads: true
-        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        # **Required since iOS 14; without it the error is hard to interpret.**
         #
-        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
-        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
-        # Verweigert der Nutzer, meldet URLSession „The Internet connection
-        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
-        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
-        # erklaeren, warum die App das will.
+        # The system asks for permission before an app talks to devices on the
+        # local network, even for a direct IP, not only `.local`. If the user
+        # denies, URLSession reports "The Internet connection appears to be
+        # offline" although the network is fine. This sentence is shown in the
+        # prompt itself and is the only chance to explain why the app wants it.
         #
-        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
-        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
-        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
-        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
-        # Sprachfehler an genau der Stelle wieder, an der er am meisten
-        # stoert.
+        # **English as default, German from `InfoPlist.xcstrings`.** A
+        # hard-coded plist value is not translated; it appears as written. Since
+        # `CFBundleDevelopmentRegion` is `en`, this sentence must be English
+        # too.
         NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
           on your home network. Without this, the app cannot reach a server at
           an address like 192.168.1.5.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
-        # Dieselbe Begründung wie auf iOS: ohne die Zugriffsgruppe verweigert
-        # der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
-        # jedem Start verloren.
+        # Same reason as on iOS: without the access group the keychain refuses
+        # writes (-34018) and the login would be lost on every launch.
         CODE_SIGN_ENTITLEMENTS: Sources/tvOS/Swiftly.entitlements
-        # tvOS verlangt ein **geschichtetes** Zeichen, kein flaches Bild:
-        # Grundton hinten, Wortmarke vorn, dazwischen rechnet das System die
-        # Parallaxe. Erzeugt aus derselben Vorlage, aus der die App ihre
-        # Wortmarke zeichnet — siehe Werkzeuge/Iconbauer.
+        # tvOS requires a **layered** icon, not a flat image: base tone at the
+        # back, wordmark in front, with the parallax computed by the system in
+        # between. Generated from the same source the app uses to draw its
+        # wordmark.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
-  # Die Reihe über dem App-Zeichen auf dem Startbildschirm des Apple TV.
+  # The row above the app icon on the Apple TV home screen.
   #
-  # Eigener Prozess, eigene Berechtigungen: sie liest nur die Liste, die die
-  # App in den geteilten Ordner legt. Kein JellyfinKit, kein VLCKit, keine
-  # Serveranfrage — sie wird bei jedem Fokus auf dem Zeichen aufgerufen und
-  # muss in Sekundenbruchteilen etwas zeigen.
+  # Separate process, separate entitlements: it only reads the list the app puts
+  # into the shared folder. No JellyfinKit, no VLCKit, no server request - it is
+  # invoked on every focus on the icon and must show something within fractions
+  # of a second.
   Swiftly-TopShelf:
     type: app-extension
     platform: tvOS
     sources:
-      - path: Sources/Shared/Regalvorschau.swift
+      - path: Sources/Shared/ShelfPreview.swift
       - path: Sources/TopShelf
     info:
       path: Sources/TopShelf/Info.plist
       properties:
-        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        # **The fallback language, not the source language.**
         #
-        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
-        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
-        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
-        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
-        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
-        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
-        # pruefen.
+        # German stays the key in the catalog. A device set to neither German
+        # nor English (Dutch, Russian, Chinese) gets exactly this value: Apple's
+        # last fallback level is CFBundleDevelopmentRegion (QA1828). With `de`
+        # here, much of the world saw a German app.
         #
-        # Nicht ueber `options.developmentLanguage`: das ist die
-        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        # Not via `options.developmentLanguage`: that is the project's source
+        # language and stays German.
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly Top Shelf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # **Auch hier, obwohl die Erweiterung selbst nichts holt.**
+        # **Needed here too, although the extension fetches nothing itself.**
         #
-        # Sie gibt dem System nur Bildadressen (`setImageURL`), geladen wird
-        # ausserhalb. Liegen die Bilder aber auf einem Server, der nur ueber
-        # http erreichbar ist, entscheidet ATS mit — und ein leeres Regal
-        # waere ein Fehler, den niemand einem fehlenden Plist-Schluessel
-        # zuordnet. Es kostet nichts, ihn zu setzen.
+        # It only hands the system image URLs (`setImageURL`); loading happens
+        # outside. If the images are on a server reachable only over http, ATS
+        # decides as well, and an empty shelf would be an error nobody links to
+        # a missing plist key. Setting it costs nothing.
         NSAppTransportSecurity:
-          # Siehe App-Ziel: der zweite Schluessel wuerde den ersten abschalten.
+          # See app target: the second key would disable the first.
           NSAllowsArbitraryLoads: true
-        # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
-        # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
-        # Der App-Zielblock braucht es nicht — dort setzt Xcode den Schluessel
-        # von sich aus. Bei `app-extension` tut es das nicht, und auffallen
-        # kann es erst beim Hochladen: bauen, archivieren und exportieren
-        # laufen alle durch.
+        # **Without this App Store Connect rejects the upload** (error 90502):
+        # an extension with a 64-bit slice must name `arm64` itself. The app
+        # target does not need it, as Xcode sets the key on its own. For
+        # `app-extension` it does not, and the problem only shows on upload:
+        # build, archive and export all pass.
         UIRequiredDeviceCapabilities:
           - arm64
         NSExtension:
@@ -516,13 +463,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
-  # Die Mac-Fassung.
+  # The Mac version.
   #
-  # Wie beim Fernseher **nicht** `Sources/Shared` im Ganzen: dort stecken
-  # Wischgesten, die Leiste unten, Tippflächen und Tastaturtypen, die es auf
-  # dem Mac nicht gibt — und `Stil.swift` trägt die iPhone-Maße, die hier
-  # durch `Sources/macOS/Stil.swift` ersetzt sind. Geteilt wird, was von
-  # Eingabeart und Fenstergröße unabhängig ist.
+  # As with TV, **not** all of `Sources/Shared`: it contains swipe gestures, the
+  # bottom bar, tap areas and keyboard types that do not exist on the Mac, and
+  # `Style.swift` carries the iPhone dimensions, replaced here by
+  # `Sources/macOS/Style.swift`. Shared is what is independent of input method
+  # and window size.
   Swiftly-macOS:
     type: application
     platform: macOS
@@ -530,253 +477,225 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
-      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
-      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
-      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
-      # `downloadsAn` ist aus, also faengt weder Netzwache noch
-      # Hintergrundsitzung je an.
-      - path: Sources/Shared/Downloadverwaltung.swift
-      - path: Sources/Shared/Anmeldemodell.swift
-      - path: Sources/Shared/Abspielwunsch.swift
-      # Die Startseite laedt fuer alle Plattformen gleich — und sie muss es,
-      # sonst laeuft es auseinander: die Mac-Fassung hatte sie nachgebaut und
-      # dabei `naechsteFolge(ohne:)` verloren, sodass angefangene Titel
-      # zweimal auf der Seite standen.
-      - path: Sources/Shared/Startseitenmodell.swift
-      # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
-      - path: Sources/Shared/Seerrmodell.swift
-      - path: Sources/Shared/Seerrmarke.swift
-      # Die Fassungsangabe fuer die Profilseite — eine Rechnung, drei Ansichten.
-      - path: Sources/Shared/Fassung.swift
-      # Serien, Staffeln und Folgen im Speicher — seit `2fc501c` einmal
-      # geteilt statt zweimal gebaut, und mit eigener Kontopruefung.
-      - path: Sources/Shared/Serienspeicher.swift
-      # Trickplay-Vorschaubilder beim Spulen — lag bis zur Mac-Übernahme
-      # der neuen Player-Gestaltung unter Sources/iOS, obwohl der Code
-      # selbst schon plattformneutral war (nur CoreGraphics/ImageIO).
-      - path: Sources/Shared/Trickplaybilder.swift
-      # Die Zeitleiste in Stücken, eins je Kapitel — wie am iPhone und am
-      # Fernseher.
-      - path: Sources/Shared/Kapitelmaske.swift
-      # Bildlader mit eigenem Speicher — entschluesselt abseits des
-      # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
-      - path: Sources/Shared/Spielwerte.swift
-      - path: Sources/Shared/Technikschild.swift
-      - path: Sources/Shared/Netzbild.swift
-      - path: Sources/Shared/Bibliotheksmodell.swift
-      - path: Sources/Shared/Merklistenmodell.swift
-      - path: Sources/Shared/Farben.swift
-      # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
-      # Profilzeichen. Lagen dreimal da.
-      - path: Sources/Shared/Bausteine.swift
+      # **Only the management, not the views.** Downloads exist only on iPhone
+      # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
+      # sits idle here: `downloadsAn` is off, so neither the network watcher nor
+      # the background session ever starts.
+      - path: Sources/Shared/DownloadManager.swift
+      - path: Sources/Shared/LoginModel.swift
+      - path: Sources/Shared/PlayRequest.swift
+      # The home page loads identically for all platforms, and has to, or they
+      # drift apart: the Mac version had rebuilt it and lost
+      # `naechsteFolge(ohne:)`, so started titles appeared twice on the page.
+      - path: Sources/Shared/HomePageModel.swift
+      # Seerr - the integration itself; views stay platform-specific.
+      - path: Sources/Shared/SeerrModel.swift
+      - path: Sources/Shared/SeerrMark.swift
+      # The version string for the profile page - one computation, three views.
+      - path: Sources/Shared/Version.swift
+      # Series, seasons and episodes in memory - shared once instead of built
+      # twice, with its own account check.
+      - path: Sources/Shared/SeriesCache.swift
+      # Trickplay preview images while scrubbing - used to live under
+      # Sources/iOS although the code was already platform-neutral (only
+      # CoreGraphics/ImageIO).
+      - path: Sources/Shared/TrickplayImages.swift
+      # The timeline in pieces, one per chapter - as on iPhone and TV.
+      - path: Sources/Shared/ChapterMask.swift
+      # Image loader with its own cache - decodes off the main thread.
+      - path: Sources/Shared/PlayValues.swift
+      - path: Sources/Shared/TechBadge.swift
+      - path: Sources/Shared/NetworkImage.swift
+      - path: Sources/Shared/LibraryModel.swift
+      - path: Sources/Shared/WatchlistModel.swift
+      - path: Sources/Shared/Colors.swift
+      # Building blocks without platform dimensions - row title, badge, loader,
+      # profile glyph. They used to exist three times.
+      - path: Sources/Shared/Components.swift
       - path: Sources/Shared/Keychain.swift
-      - path: Sources/Shared/Marken.swift
-      - path: Sources/Shared/Routen.swift
-      - path: Sources/Shared/SVGPfad.swift
-      # Was das Mehr-Blatt anbietet — der Inhalt ist auf allen Plattformen
-      # derselbe, nur die Darreichung ist eigen.
-      - path: Sources/Shared/Titelhandlung.swift
-      - path: Sources/Shared/Titelmarke.swift
-      # Nur der Sehstand-Eintrag der Mehr-Tafel (`Titelhandlung.sehstand`);
-      # das Menü selbst ist dort ausgeklammert, der Mac hat seins in
-      # Sources/macOS/KachelmenueMac.swift.
-      - path: Sources/Shared/Kachelmenue.swift
-      # Abgeleitete Angaben am Titel — Fortsetzstelle, Kontextzeile.
-      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
-      # überall (VERHALTEN.md D5).
-      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
-      # Now Playing und die Medientasten der Tastatur. Der
-      # AVAudioSession-Teil darin steht unter `#if !os(macOS)` — den Ton
-      # mischt und leitet macOS selbst.
-      - path: Sources/Shared/Wiedergabezentrale.swift
-      - path: Sources/Shared/Discordanzeiger.swift
-      # Trakt: Schluesselbund, Anmeldezustand, die Aufrufe aus AppModel.
-      - path: Sources/Shared/Traktkonto.swift
-      # Der Namensgeber für UIView beziehungsweise NSView. Ohne ihn stünde
-      # der Player zweimal da.
-      - path: Sources/Shared/Basisansicht.swift
-      # Die Abspiel-Maschinerie teilen sich alle Plattformen: derselbe
-      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
-      # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
-      # ohnehin nicht, siehe die Messung in CLAUDE.md.
+      - path: Sources/Shared/Marks.swift
+      - path: Sources/Shared/Routes.swift
+      - path: Sources/Shared/SVGPath.swift
+      # What the More sheet offers - the content is identical on all platforms,
+      # only the presentation is specific.
+      - path: Sources/Shared/TitleAction.swift
+      - path: Sources/Shared/TitleMark.swift
+      # Only the watch-state entry of the More panel (`Titelhandlung.sehstand`);
+      # the menu itself is excluded there, the Mac has its own in
+      # Sources/macOS/TileMenuMac.swift.
+      - path: Sources/Shared/TileMenu.swift
+      # Derived info on a title - resume point, context line.
+      # Container, codec, subtitles in the file excerpt - same info everywhere.
+      # Which bitrates, skip lengths and languages are offered.
+      # Now Playing and the keyboard media keys. The AVAudioSession part is
+      # under `#if !os(macOS)` - macOS mixes and routes audio itself.
+      - path: Sources/Shared/PlaybackHub.swift
+      - path: Sources/Shared/DiscordIndicator.swift
+      # Trakt: keychain, sign-in state, the calls from AppModel.
+      - path: Sources/Shared/TraktAccount.swift
+      # Base type alias for UIView or NSView. Without it the player would exist
+      # twice.
+      - path: Sources/Shared/BaseView.swift
+      # All platforms share the playback machinery: the same `mkv_trusted`
+      # trick, the same stall detection. Picture-in-Picture in it is excluded
+      # with `#if os(iOS)`; on the Mac it does not work anyway.
       - path: Sources/Shared/VLCPlayer.swift
-      - path: Sources/Shared/Netzprobe.swift
-      # „Protokoll teilen" im Profil — die Datei; geteilt wird mit dem
-      # Teilen-Menü des Mac (ProfilView).
-      - path: Sources/Shared/Protokollteilen.swift
-      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
-      - path: Sources/Shared/Uebernahmemodell.swift
-      # „Hier weiterschauen" als Karte (Entwurf B): Bühne über allem und
-      # der Abgang des Abgebers, Zeitleiste im Paket (`Uebergabekarte`).
-      - path: Sources/Shared/Uebergabebuehne.swift
-      # Gemeinsam schauen: der Spiegel der Gruppe und die Bruecke zum
-      # Player. Der Ablauf selbst steht im Paket (`SyncPlaySitzung`).
-      - path: Sources/Shared/Gemeinsammodell.swift
-      # Der Code-Weg beim Aufnehmen eines weiteren Kontos: Code holen,
-      # im Zweisekundentakt nachfragen, fuenf Minuten Gueltigkeit.
-      - path: Sources/Shared/QuickConnectModell.swift
+      - path: Sources/Shared/NetworkProbe.swift
+      # "Share log" in the profile - the file; shared via the Mac share menu
+      # (ProfilView).
+      - path: Sources/Shared/LogShare.swift
+      # Handover between devices: polling interval and state.
+      - path: Sources/Shared/TakeoverModel.swift
+      # "Continue watching here" as a card: stage above everything and the exit
+      # of the handing-over device; timeline in the package (`Uebergabekarte`).
+      - path: Sources/Shared/HandoffStage.swift
+      # Watch together: the group mirror and the bridge to the player. The flow
+      # itself is in the package (`SyncPlaySitzung`).
+      - path: Sources/Shared/SharedModel.swift
+      # The code route when adding another account: fetch a code, poll every two
+      # seconds, valid for five minutes.
+      - path: Sources/Shared/QuickConnectModel.swift
       - path: Sources/Shared/Localizable.xcstrings
-      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
-      # deutsch kommt hier heraus.
+      # Only for the local-network prompt: English is in Info.plist, German
+      # comes from here.
       - path: Sources/Shared/InfoPlist.xcstrings
-      # Die Startanimation und ihre Vorlage. Der Mac lief bis hierher ohne
-      # Vorhang — die Datei war in keinem seiner Pfade.
-      - path: Sources/Shared/Startanimation.swift
-      - path: Sources/Shared/Mittel
-      # Die Folgenkarte (Variante C): Rahmen, Ring, Verlauf — die Karte
-      # selbst zeichnet `Sources/macOS/Folgenkartenansicht.swift`. Dazu die
-      # Vorbereitung der nächsten Folge in den letzten Minuten.
-      - path: Sources/Shared/Folgenkartenteile.swift
-      - path: Sources/Shared/Folgenvorbereitung.swift
-      # Die Farbe des Kopfbilds unter Film- und Serienseite — dieselbe
-      # Rechnung wie Fernseher und iPhone, derselbe Auslauf wie das iPhone.
-      - path: Sources/Shared/Bildton.swift
-      - path: Sources/Shared/Bildstimmung.swift
-      # Kontowechsel D und die Karte aus dem Abzeichen: Ablauf und Kurve
-      # geteilt, die Bühne steht in `Sources/macOS/Kontowechselbuehne.swift`.
-      - path: Sources/Shared/Kontowechselflug.swift
-      - path: Sources/Shared/Lizenzen.swift
-      - path: Sources/Shared/Uebergaenge.swift
+      # The launch animation and its asset. Without this file the Mac would
+      # start without the animation.
+      - path: Sources/Shared/StartAnimation.swift
+      - path: Sources/Shared/Assets
+      # The next-episode card: frame, ring, gradient - the card itself is drawn
+      # by `Sources/macOS/EpisodeCardsView.swift`. Plus the preparation of
+      # the next episode in the last minutes.
+      - path: Sources/Shared/EpisodeCardParts.swift
+      - path: Sources/Shared/EpisodePreparation.swift
+      # The color of the header image below movie and series pages - same
+      # computation as TV and iPhone, same fade as iPhone.
+      - path: Sources/Shared/ImageTone.swift
+      - path: Sources/Shared/ImageMood.swift
+      # Account switch and the card from the badge: flow and curve are shared,
+      # the stage is in `Sources/macOS/AccountSwitchStage.swift`.
+      - path: Sources/Shared/AccountTransition.swift
+      - path: Sources/Shared/Licenses.swift
+      - path: Sources/Shared/Transitions.swift
       - path: Sources/macOS
-      # **Die Lizenzen kommen aus einer Quelle**: `LICENSES/` (bausteine.json und
-      # die Volltexte) wandert unverändert ins Bündel; `Lizenzbestand` liest sie.
+      # **Licenses come from one source**: `LICENSES/` (components.json and the
+      # full texts) is copied into the bundle unchanged; `Lizenzbestand` reads
+      # it.
       - path: LICENSES
         type: folder
     dependencies:
       - package: JellyfinKit
-      # Fuer die Startanimation — dieselbe Vorlage wie iPhone und Fernseher.
-      # Fehlte hier, deshalb lief der Mac ohne Vorhang an.
+      # For the launch animation - same asset as iPhone and TV. Without it the
+      # Mac would start without the animation.
       - package: Lottie
-      # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
+      # Self-built version - see Werkzeuge/vlckit-patches/README.md.
       - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
       path: Sources/macOS/Info.plist
       properties:
-        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        # **The fallback language, not the source language.**
         #
-        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
-        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
-        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
-        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
-        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
-        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
-        # pruefen.
+        # German stays the key in the catalog. A device set to neither German
+        # nor English (Dutch, Russian, Chinese) gets exactly this value: Apple's
+        # last fallback level is CFBundleDevelopmentRegion (QA1828). With `de`
+        # here, much of the world saw a German app.
         #
-        # Nicht ueber `options.developmentLanguage`: das ist die
-        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        # Not via `options.developmentLanguage`: that is the project's source
+        # language and stays German.
         CFBundleDevelopmentRegion: en
-        # **Ohne das weist der Store den Upload ab** (Fehler 90242): eine
-        # Mac-App muss ihre Kategorie im Info.plist tragen, nicht nur im
-        # Store-Eintrag. iOS und tvOS verlangen das nicht — es faellt also
-        # erst beim ersten Mac-Upload auf, so wie das fehlende `arm64` am
-        # Top Shelf erst beim ersten tvOS-Upload.
+        # **Without this the store rejects the upload** (error 90242): a Mac app
+        # must carry its category in Info.plist, not only in the store listing.
+        # iOS and tvOS do not require it, so it only shows on the first Mac
+        # upload.
         LSApplicationCategoryType: public.app-category.entertainment
-        # **Der Mac zaehlt seine Bauten fuer sich, und zwar streng
-        # aufsteigend ueber alle Fassungen hinweg.**
+        # **Mac build numbers must be strictly ascending across all versions.**
         #
-        # Am 10.09.2026 beim Hochladen von 1.0.2 (1) aufgeschlagen: iOS und
-        # tvOS nahmen die 1 anstandslos — die Bedingung gilt dort je Fassung,
-        # und fuer 1.0.2 lag noch nichts vor. Der Mac wies ab:
+        # iOS and tvOS only require an increase per version, but for the Mac the
+        # check is per app record, and the upload is rejected:
         #
-        #     CFBundleVersion [1] must contain a higher version than that of
-        #     the previously uploaded version [2]                     (90061)
+        #     CFBundleVersion [1] must contain a higher version than that of the previously uploaded version [2]   (90061)
         #
-        # Dort zaehlt nicht die Fassung, sondern der App-Eintrag. Hochgeladen
-        # war 1.0.1 (2), also muss der naechste Mac-Bau ueber 2 liegen.
-        # Deshalb traegt er hier seine eigene Nummer, und nur er.
+        # So the next Mac build must be higher than the highest ever uploaded
+        # for the Mac.
         #
-        # Wer sie das naechste Mal anhebt: es muss die hoechste je fuer den
-        # Mac hochgeladene sein, **nicht** die des iPhones.
-        #
-        # Sie steht als **Bau-Einstellung** weiter unten, nicht hier. Hier
-        # stand sie zuerst, und das ist wirkungslos: dieser Block wird zum
-        # Info.plist, dort waere sie ein Schluessel, den niemand liest —
-        # `CFBundleVersion` haette weiter den Projektwert eingesetzt. Der
-        # Upload wies denselben Fehler ein zweites Mal ab, mit derselben 1.
+        # The number is a **build setting** (`CURRENT_PROJECT_VERSION`), not a
+        # literal key here: this block becomes the Info.plist, where a literal
+        # would be ignored in favor of the project value.
         CFBundleDisplayName: Swiftly
-        # **Der Name des Buendels heisst „Swiftly", nicht „Swiftly-macOS".**
+        # **The bundle name is "Swiftly", not "Swiftly-macOS".**
         #
-        # Apple hat 1.0.0 (8) danach abgewiesen (Richtlinie 5.2.5): der auf
-        # dem Geraet angezeigte Name enthielt einen Begriff fuer ein
-        # Apple-Produkt. Auf dem Mac steht `CFBundleName` in der Menuezeile
-        # und unter dem Zeichen im Finder; ohne diese Zeile faellt er auf den
-        # Zielnamen zurueck, und der heisst nach dem Bauziel.
-        #
-        # `CFBundleDisplayName` allein genuegte nicht — den liest der Mac
-        # nicht ueberall.
+        # Apple rejected a build over this (guideline 5.2.5): the displayed name
+        # contained a term for an Apple product. On the Mac `CFBundleName`
+        # appears in the menu bar and under the icon in Finder; without this
+        # line it falls back to the target name. `CFBundleDisplayName` alone is
+        # not enough, as the Mac does not read it everywhere.
         CFBundleName: Swiftly
-        # **Das Zeichen zusaetzlich als vollstaendige `.icns`.**
+        # **The icon additionally as a complete `.icns`.**
         #
-        # Nachgesehen: die von Xcode aus dem Katalog erzeugte `AppIcon.icns`
-        # enthaelt nur die 16er und die 128er — 32, 256, 512 und 1024 fehlen.
-        # Der Dock braucht die grossen. Die hier daneben liegende ist mit
-        # `iconutil` aus denselben zehn Bildern gebaut und vollstaendig.
+        # The `AppIcon.icns` Xcode generates from the catalog contains only the
+        # 16 and 128 sizes; 32, 256, 512 and 1024 are missing, and the Dock
+        # needs the large ones. The one next to it is built with `iconutil` from
+        # the same ten images and is complete.
         CFBundleIconFile: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
-        # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
+        # No light theme - the design is built for dark, and without this macOS
+        # draws the window buttons light.
         NSRequiresAquaSystemAppearance: false
         NSAppTransportSecurity:
-          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          # **Only this one key, on purpose.**
           #
-          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
-          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
-          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
-          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
-          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
-          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          # Adding `NSAllowsLocalNetworking` next to it is wrong: **since iOS
+          # 10, `NSAllowsArbitraryLoads` is ignored as soon as
+          # `NSAllowsLocalNetworking`, `NSAllowsArbitraryLoadsInWebContent` or
+          # `...ForMedia` is present.** The keys do not complement each other;
+          # the second disables the first.
           #
-          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
-          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
-          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
-          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
-          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          # This blocked users reaching Jellyfin over Tailscale
+          # (`http://100.x.x.x:8096`): Tailscale uses 100.64.0.0/10, the CGNAT
+          # range, which ATS does **not** count as local network (RFC1918,
+          # `.local` and `localhost` are). The same block hit plain-http
+          # dynamic-DNS hostnames.
           #
-          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
-          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
-          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
-          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
-          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
-          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          # A client for self-hosted servers cannot know the address at build
+          # time, so `NSExceptionDomains` do not help. Swiftly steers towards
+          # https in code instead: an address without scheme gets `https://`
+          # prepended unless it looks like a home network
+          # (`AppModelURLNormalizer`, IP literals included). It falls back to
+          # http only if https fails at the connection level, never on an error
+          # response.
           NSAllowsArbitraryLoads: true
-        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        # **Required since iOS 14; without it the error is hard to interpret.**
         #
-        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
-        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
-        # Verweigert der Nutzer, meldet URLSession „The Internet connection
-        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
-        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
-        # erklaeren, warum die App das will.
+        # The system asks for permission before an app talks to devices on the
+        # local network, even for a direct IP, not only `.local`. If the user
+        # denies, URLSession reports "The Internet connection appears to be
+        # offline" although the network is fine. This sentence is shown in the
+        # prompt itself and is the only chance to explain why the app wants it.
         #
-        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
-        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
-        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
-        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
-        # Sprachfehler an genau der Stelle wieder, an der er am meisten
-        # stoert.
+        # **English as default, German from `InfoPlist.xcstrings`.** A
+        # hard-coded plist value is not translated; it appears as written. Since
+        # `CFBundleDevelopmentRegion` is `en`, this sentence must be English
+        # too.
         NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
           on your home network. Without this, the app cannot reach a server at
           an address like 192.168.1.5.
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        # **Die eigene Nummer ist weg.** Der Mac lag eine Weile vorn — 1.0.2 (3),
-        # waehrend iOS und tvOS noch auf (1) standen — und trug deshalb hier
-        # seine eigene. Seit dem 12.09.2026 gehen alle drei zusammen hoch, und
-        # zwei Stellen fuer dieselbe Zahl sind eine zu viel: die globale steht
-        # auf 4, also hoeher als jede bisher hochgeladene.
-        # Damit auch die Datei selbst „Swiftly.app" heisst und nicht nach dem
-        # Bauziel — siehe die Begruendung bei `CFBundleName`.
+        # **No separate Mac build number.** All three platforms share the global
+        # counter; two places for the same number are one too many. It must stay
+        # higher than any build already uploaded for the Mac.
+        # So that the file itself is also called "Swiftly.app" and not after the
+        # build target - see `CFBundleName`.
         PRODUCT_NAME: Swiftly
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
-        # Dieselbe Begründung wie auf iOS und tvOS: ohne die Zugriffsgruppe
-        # verweigert der Keychain das Schreiben (-34018) und die Anmeldung
-        # ginge bei jedem Start verloren.
+        # Same reason as on iOS and tvOS: without the access group the keychain
+        # refuses writes (-34018) and the login would be lost on every launch.
         CODE_SIGN_ENTITLEMENTS: Sources/macOS/Swiftly.entitlements
-        # Das Zeichen sitzt **nicht** randfüllend: macOS erwartet Abstand
-        # (824 von 1024), sonst wirkt es im Dock größer als seine Nachbarn.
-        # Auf iOS ist es umgekehrt — deshalb ein eigener Satz.
+        # The icon is **not** edge-to-edge: macOS expects padding (824 of 1024),
+        # otherwise it looks larger than its neighbors in the Dock. iOS is the
+        # opposite, hence a separate asset.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

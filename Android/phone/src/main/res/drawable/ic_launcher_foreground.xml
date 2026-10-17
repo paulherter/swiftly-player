@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground layer: the brand play mark in accent #50D5DA.
+    
+    The path is the same as on Apple (`Marken.signetForm`, unchanged, in its own 1024 x 1024 box).
+    Not redrawn: a hand-built shape would be a second logo.
+    
+    Safe zone: an adaptive icon is a 108 x 108 dp box of which the system only guarantees the inner
+    72 x 72; the outer 18 dp per side go to the mask and parallax. Apple shows the whole 1024 tile.
+    To make the mark look equally large on both, the 1024 box is mapped onto exactly those 72:
+    
+        scale   72 / 1024       = 0.0703125
+        offset  (108 - 72) / 2  = 18
+    
+    The shape (x 321.6 to 754.6, y 280 to 744 in the 1024 box) ends up 30.5 x 32.6 dp, 42 % and 45 %
+    of the visible 72, as on Apple, and sits fully inside the safe zone (18 to 90). Apple's slight
+    shift to the right stays: a play triangle looks centred when it sits a bit right of the
+    geometric middle.
+    
+    `<group>` applies scale before offset (M = T * S), so the two numbers above are used as they
+    are, with no converted path points.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.0703125" android:scaleY="0.0703125"
+           android:translateX="18" android:translateY="18">
+        <path android:fillColor="#50D5DA"
+              android:pathData="M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z" />
+    </group>
+</vector>

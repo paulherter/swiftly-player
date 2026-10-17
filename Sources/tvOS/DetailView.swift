@@ -1,552 +1,471 @@
 import JellyfinKit
 import SwiftUI
 
-// MARK: - Der Kopf, den Film und Serie teilen
+// MARK: - Header shared by movie and series
 
-/// Kulisse, Titel, Angaben, Beschreibung und Knopfreihe — die obere Haelfte
-/// jeder Detailseite.
-///
-/// Auf dem iPhone sind Film- und Serienseite **dieselbe Seite**: gleicher
-/// Kopf, gleiche Belegzeile, gleicher weisser Knopf, gleiche Aktionsreihe. Nur
-/// die Beschriftung des Knopfes wechselt, und bei Serien kommen darunter die
-/// Folgen. Genau so ist es hier — deshalb steht der Kopf in einem eigenen
-/// Baustein und nicht zweimal.
-///
-/// **510 hoch, nicht 1080.** Vorher fuellte der Kopf den ganzen Schirm, das
-/// Poster stand links und der Text daneben. Der Entwurf nimmt stattdessen die
-/// Kopfzone der Startseite: Kulisse rechts, Text links, und darunter beginnen
-/// bei 534 die Reihen — **dieselbe Zeile, in der auf der Startseite der erste
-/// Reihentitel steht** (510 + `Stil.reihenKopfLuft`). Beim Wechsel von Start
-/// auf Detail bleiben die Reihen also stehen. Das ist der Griff, der die
-/// beiden Seiten zusammenhaelt.
-///
-/// Das Poster faellt damit weg. Es trug den Fortschrittsbalken; der steht
-/// jetzt dort, wo er auf jeder anderen Kachel auch steht — an der Folge in
-/// der Reihe darunter.
-///
-/// Kein Zurueckpfeil und keine Reiterleiste: die Seite ist aufgeschlagen,
-/// nicht eine Ebene der Startseite. Zurueck macht auf tvOS die Menue-Taste.
-struct Detailkopf<Knoepfe: View>: View {
+/// Backdrop, title, details, description and button row: the upper half of
+/// every detail page.
+/// On the iPhone movie and series pages are **the same page**: same header,
+/// same proof line, same white button, same action row. Only the button label
+/// changes, and series add the episodes below. The header is therefore one
+/// component, not two copies.
+/// **510 high, not 1080.** The header used to fill the screen with the poster
+/// on the left. Now it takes the home page's header zone: backdrop right, text
+/// left, and the rows start at 534, **the same line as the first row title on
+/// the home page** (510 + `Theme.railsHeaderPadding`). Going from home to detail
+/// keeps the rows in place, which ties the two pages together.
+/// The poster is gone. It carried the progress bar, which now sits where it
+/// does on every other tile: on the episode in the row below.
+/// No back arrow and no tab bar: the page is pushed, not a level of the home
+/// page. Back is the Menu button on tvOS.
+struct DetailHeader<Buttons: View>: View {
     let model: AppModel
     let item: Item
     let plan: PlaybackPlan?
-    /// Ob der Kopf ueberhaupt etwas Fokussierbares enthaelt.
-    ///
-    /// Die Serienseite hat seit dem Umbau keine Knopfreihe mehr — dort steht
-    /// nur Text. Ein `focusSection` ohne Ziel darin ist kein leerer Aufwand,
-    /// sondern schaedlich: tvOS meldet einen Bereich an, zieht den Druck
-    /// dorthin, findet nichts und laesst ihn fallen. Genau daran ist die
-    /// Besetzungsreihe schon einmal haengengeblieben.
-    var fokussierbar = true
-    @ViewBuilder var knoepfe: () -> Knoepfe
+    /// Whether the header contains anything focusable at all.
+    /// The series page has no button row, only text. A `focusSection` without a
+    /// target is harmful, not just wasted: tvOS registers a region, routes the
+    /// press there, finds nothing and drops it. The cast row got stuck on exactly
+    /// that once.
+    var focusable = true
+    @ViewBuilder var buttons: () -> Buttons
 
     @ViewBuilder
     var body: some View {
-        if fokussierbar { rumpf.focusSection() } else { rumpf }
+        if focusable { shell.focusSection() } else { shell }
     }
 
-    private var rumpf: some View {
+    private var shell: some View {
         ZStack(alignment: .topLeading) {
-            Kulisse(url: model.querbildURL(for: item, breite: 1600)
-                         ?? model.kopfbildURL(for: item))
+            Backdrop(url: model.landscapeImageURL(for: item, width: 1600)
+                         ?? model.headerImageURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
-            // **Derselbe Kopfschatten wie auf der Startseite.**
-            //
-            // Hier hat er keine Leiste zu tragen — es gibt keine. Er steht
-            // trotzdem, und zwar aus einem Grund, der nichts mit Lesbarkeit
-            // zu tun hat: er war die letzte Ebene, die es nur auf einer der
-            // beiden Seiten gab. Beim Oeffnen blendete er weg, und das war
-            // das Aufhellen oben, das nach einer Ueberblendung aussah,
-            // obwohl sich Bild und Netz gar nicht aenderten.
-            //
-            // Dieselbe Regel wie beim Kopfblock, bei der Kulissenblende und
-            // beim gefaerbten Grund: was auf beiden Seiten gleich aussehen
-            // soll, muss dieselbe Ebene sein — sonst sieht man den
-            // Unterschied genau im Uebergang.
-            Kopfschatten()
+            // **Same header shadow as the home page.**
+            // It has no bar to carry here, but stays anyway: it was the last layer that
+            // existed on only one of the two pages. On opening it faded out, which was
+            // the brightening at the top that looked like a crossfade though image and
+            // mesh did not change. Same rule as for the header block, the backdrop fade
+            // and the tinted background: what should look the same on both pages must be
+            // the same layer, or the difference shows in the transition.
+            HeaderShadow()
 
             block
-                .padding(.leading, Stil.randSeite)
-                // 140 aus der Tafel, plus der Versatz, der die nicht
-                // gezeichnete Kopfleiste freihaelt — siehe
-                // `Stil.kopfversatzDetail`. Zusammen 196, also dieselbe
-                // Zeile, in der die Startseite ihren Titel hat.
-                .padding(.top, 140 + Stil.kopfversatzDetail)
+                .padding(.leading, Theme.edgePage)
+                // 140 from the layout, plus the offset that clears the undrawn header bar;
+                // see `Theme.headerOffsetDetail`. Together 196, the same line as the home
+                // page's title.
+                .padding(.top, 140 + Theme.headerOffsetDetail)
         }
-        // Nicht beschnitten: die Kulisse ist 700 hoch und darf nach unten
-        // ueberragen, ihr eigener Verlauf beendet sie. Die erste Reihe
-        // zeichnet darueber, sie ist das naechste Geschwister.
-        //
-        // 566 statt 510: die Zone waechst um denselben Versatz wie der Text
-        // darin, sonst waere der Abstand zur ersten Reihe um 56 kleiner als
-        // in der Tafel.
-        .frame(height: Stil.heldenHoeheDetail, alignment: .topLeading)
+        // Not clipped: the backdrop is 700 high and may overhang downward, its own
+        // gradient ends it. The first row draws over it as the next sibling.
+        // 566 instead of 510: the zone grows by the same offset as the text inside,
+        // else the gap to the first row would be 56 smaller than in the layout.
+        .frame(height: Theme.heroHeightDetail, alignment: .topLeading)
     }
 
-    // **Der ganze Kopf ist ein Fokusabschnitt, nicht nur die Knopfreihe.**
-    //
-    // tvOS sucht geometrisch. Ohne den Abschnitt findet ein Druck nach oben
-    // aus der ersten Reihe nur, was zufaellig in derselben Spalte steht — und
-    // links steht die Kulisse, die kein Ziel ist. Umfasst der Abschnitt den
-    // ganzen Kopf, landet jeder Weg nach oben auf dem einzigen
-    // Fokussierbaren darin: der Knopfreihe. Siehe `fokussierbar`.
+    // **The whole header is one focus section, not just the button row.**
+    // tvOS searches geometrically. Without the section, an up press from the
+    // first row finds only what happens to be in the same column, and the
+    // backdrop on the left is no target. With the section spanning the header,
+    // every way up lands on its only focusable element: the button row. See
+    // `focusable`.
 
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // **Derselbe Baustein wie auf der Startseite.** Der Header ist
-            // dort und hier identisch; das Einzige, was hier dazukommt, ist
-            // die Knopfreihe. Siehe `Kopfauskunft`.
-            Kopfauskunft(item: item, logoModell: model) {
-                // **Der Beleg blendet ein, der Rest des Kopfes nicht.**
-                //
-                // Er haengt an `plan`, und der kommt vom Server — im Kopf,
-                // der sonst still steht, erschien er sonst mitten hinein.
-                // Er gehoert zu dem, was neu dazukommt: auf der Startseite
-                // gibt es ihn nicht, dort ist noch kein Plan geholt.
+            // **Same component as on the home page.** The header is identical there and
+            // here; only the button row is added. See `HeaderInfo`.
+            HeaderInfo(item: item, logoModel: model) {
+                // **The proof fades in, the rest of the header does not.** It hangs on
+                // `plan`, which comes from the server; in the otherwise still header it
+                // would appear in the middle. It belongs to what is new: the home page has no
+                // plan fetched yet.
                 if let plan {
-                    Belegmarken(direktplay: plan.isLossless,
-                                hinweis: plan.isLossless ? nil : plan.method.rawValue,
-                                belegZuletzt: true)
+                    ProofMarks(directPlayFlag: plan.isLossless,
+                                hint: plan.isLossless ? nil : plan.method.rawValue,
+                                proofLast: true)
                         .transition(.opacity)
                 }
             }
-            // **Die Blende haengt am Plan, nicht an der Transaktion des
-            // Aufrufers.**
-            //
-            // `.transition` allein blendet nur, wenn der Plan in einer
-            // animierten Transaktion ankommt. Die Filmseite setzt ihn in
-            // ihrem `withAnimation`; die Serienseite holt ihn seit
-            // fb4ce5a5 (24.09., „ein Einblenden statt mehrerer Stufen")
-            // nach dem gemeinsamen Einblenden ohne Animation — und seitdem
-            // sprang die Direct-Play-Marke dort herein. Hier festgemacht
-            // gilt die Blende fuer jede Seite, die den Kopf traegt, egal
-            // wie sie ihren Plan setzt. Die Marke steht zuletzt in der
-            // Zeile, es verschiebt sich also nichts.
-            .animation(Stil.bewegung(.easeOut(duration: 0.3)), value: plan != nil)
+            // **The fade hangs on the plan, not on the caller's transaction.**
+            // `.transition` alone fades only if the plan arrives in an animated
+            // transaction. The movie page sets it inside its `withAnimation`; the series
+            // page sets it after the shared fade-in without animation, so the Direct Play
+            // mark jumped in there. Pinned here, the fade applies to every page that
+            // carries the header, however it sets its plan. The mark is last in the line,
+            // so nothing shifts.
+            .animation(Theme.motion(.easeOut(duration: 0.3)), value: plan != nil)
 
-            // Die Knopfreihe darf breiter werden als die 1000 des Textes.
-            // Deshalb liegt der Deckel am Text und nicht am ganzen Block;
-            // einmal stand er aussen, und jede Beschriftung war
-            // abgeschnitten.
-            //
-            // 36 aus `Film-Neu.dc.html`. Weil `auskunftHoehe` fest ist,
-            // sitzt die Reihe damit auf **jeder** Detailseite bei 490.
-            knoepfe()
+            // The button row may grow wider than the text's 1000. The cap therefore sits
+            // on the text, not on the whole block; once it sat outside and every label
+            // was cut off. 36 from the layout. Since `infoHeight` is fixed, the row
+            // sits at 490 on **every** detail page.
+            buttons()
                 .padding(.top, 36)
         }
     }
 
 }
 
-// MARK: - Merkliste und Gesehen
+// MARK: - Watchlist and watched
 
-/// Der Merklistenknopf — **nur das Symbol, ohne Beschriftung.**
-///
-/// Stimmt: das Lesezeichen ist eines der wenigen Symbole, die für sich stehen,
-/// und gefüllt gegen leer sagt den Zustand mit. Fünf beschriftete Pillen waren
-/// zu viel für eine Reihe.
-///
-/// „Gesehen" ist ganz aus der Reihe heraus und steht in der Handlungstafel —
-/// siehe `Titelhandlung.sehstand`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
-/// Merkliste, Mehr.
-///
-/// **Ohne Beschriftung ist die Beschriftung Pflicht.** Für VoiceOver ist ein
-/// Symbolknopf sonst namenlos (E8), deshalb der ausdrückliche Name.
-struct Zustandsknoepfe: View {
+/// The watchlist button: **symbol only, no label.**
+/// The bookmark is one of the few symbols that stand alone, and filled versus
+/// empty states the status. Five labeled pills were too many for a row.
+/// "Gesehen" is out of the row entirely and sits in the action panel; see
+/// `TitleAction.watchState`. That leaves four targets: Continue, From start,
+/// Watchlist, More.
+/// **Without a label, the label is mandatory.** For VoiceOver a symbol button
+/// is otherwise nameless, hence the explicit name.
+struct StateButtons: View {
     let model: AppModel
     let item: Item
-    @Binding var gemerkt: Bool
-    @Binding var gesehen: Bool
-    @Binding var meldung: String?
+    @Binding var remembered: Bool
+    @Binding var watched: Bool
+    @Binding var message: String?
 
     var body: some View {
         Group {
             Button {
-                gemerkt.toggle()
-                // Sofort umschalten, damit der Knopf antwortet — aber
-                // zurückdrehen, wenn der Server nein sagt.
+                remembered.toggle()
+                // Toggle at once so the button responds, but revert if the server says
+                // no.
                 Task {
-                    if let grund = await model.setzeMerkliste(item, an: gemerkt) {
-                        gemerkt.toggle()
-                        meldung = grund
+                    if let reason = await model.setWatchlist(item, an: remembered) {
+                        remembered.toggle()
+                        message = reason
                     }
                 }
             } label: {
-                Image(systemName: gemerkt ? "bookmark.fill" : "bookmark")
-                    .font(Stil.knopf)
+                Image(systemName: remembered ? "bookmark.fill" : "bookmark")
+                    .font(Theme.button)
             }
-            .buttonStyle(KnopfStil(nurSymbol: true, aktiv: gemerkt))
+            .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
             .accessibilityLabel(Text("Merkliste"))
-            // Gefuelltes gegen leeres Symbol ist der ganze Unterschied —
-            // fuer VoiceOver heissen beide „Merkliste".
-            .accessibilityAddTraits(gemerkt ? [.isButton, .isSelected] : .isButton)
+            // Filled versus empty symbol is the whole difference; for VoiceOver both
+            // read "Merkliste".
+            .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
         }
     }
 }
 
-// „Gesehen" steht nicht als Pille in der Knopfreihe, sondern in der
-// Handlungstafel — **Anordnung, kein Verhalten** (VERHALTEN.md F): D6 verlangt,
-// dass Gesehen sofort umschaltet und der Zustand die Antwort ist; das tut es
-// dort weiter, nur eine Ebene tiefer. Am Fernseher zaehlt jedes Fokusziel in
-// der Reihe, und fuenf davon nebeneinander waren zu viele. Der Eintrag selbst
-// kommt aus dem gemeinsamen Baustein: `Titelhandlung.sehstand` in
-// `Sources/Shared/Kachelmenue.swift`.
+// "Gesehen" is not a pill in the button row but in the action panel:
+// **placement, not behavior**. The toggle rule requires that it toggles
+// at once and the state is the answer; it still does, one level deeper. On a
+// TV every focus target in the row counts, and five side by side were too
+// many. The entry itself comes from the shared component
+// `TitleAction.watchState` in `Sources/Shared/TileMenu.swift`.
 
-// MARK: - Filmseite
+// MARK: - Movie page
 
-/// Kopf mit Knopfreihe, darunter „Ähnliche Filme", „Extras" und „Besetzung" —
-/// jede Reihe ein `Section`-Abschnitt wie auf der Startseite.
+/// Header with button row, then "Ähnliche Filme", "Extras" and "Besetzung",
+/// each row a `Section` as on the home page.
 struct DetailView: View {
     let model: AppModel
     let item: Item
 
-    @State private var frisch: Item?
+    @State private var freshValue: Item?
     @State private var plan: PlaybackPlan?
-    /// Zählt die Abrufe von Titel und Plan; nur der jüngste schreibt (Öffnen und
-    /// Auffrischen können sich überholen).
-    @State private var titellauf = 0
-    @State private var gemerkt = false
-    @State private var gesehen = false
-    @State private var meldung: String?
-    /// Der Player liegt im Rahmen — siehe `HauptView`.
-    @Environment(\.abspielwunsch) private var abspielen
-    /// **Alles unter dem Kopf ist beantwortet** — Sammlung, Aehnliches,
-    /// Extras, Besetzung. Gesetzt in derselben animierten Transaktion wie die
-    /// Daten, deshalb blendet es jedes Mal ein, auch wenn die Zwischenspeicher
-    /// schon alles hatten.
-    ///
-    /// Vorher hiess das `eingeblendet` und hing am Erscheinen der Seite: die
-    /// Reihen standen dann zwar weich da, aber jede fuer sich, sobald ihre
-    /// Daten kamen, und die Sammlungsreihe als eigener Abruf zuletzt. Noch
-    /// frueher hing die Ueberblendung an der Ankunft der Daten und war ab dem
-    /// zweiten Oeffnen hart — beides ist mit dem gemeinsamen Schalter erledigt.
-    @State private var untenDa = false
-    @State private var sammlungsreihen: [AppModel.Sammlungsreihendaten] = []
-    /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
-    ///
-    /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
-    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand.
-    ///
-    /// Stimmt: eine Tafel ist kein Ortswechsel, sondern etwas, das ueber dem
-    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
-    /// dem er sie geoeffnet hat.
-    @FocusState private var amMehrknopf: Bool
-    /// **Der Startfokus gehoert auf den Hauptknopf.**
-    ///
-    /// Er stand hier nirgends — tvOS suchte sich geometrisch etwas aus, und
-    /// wer ueber die Suche hereinkam, landete auf „Merkliste". Die
-    /// Serienseite setzt ihn seit heute ausdruecklich; die Filmseite hatte
-    /// es nur bisher zufaellig richtig getroffen, weil der Fokus meist von
-    /// oben links kam.
-    @FocusState private var amHauptknopf: Bool
-    /// **Wohin der Fokus zurueckkehrt, wenn der Player zugeht.**
-    ///
-    /// Derselbe Grund wie bei `amMehrknopf`, nur fuer den Player: er liegt im
-    /// Rahmen als Geschwister, die Seite bleibt beim Abspielen durchgehend
-    /// eingehaengt, nur `disabled` — und das setzt `amHauptknopf`/`amMehrknopf`
-    /// dabei auf `false` zurueck. Ohne diese Erinnerung sucht sich tvOS beim
-    /// Entfernen des Players geometrisch etwas aus und landet oben am ersten
-    /// Reiter der Kopfleiste.
-    private enum Fokusziel { case hauptknopf, mehrknopf }
-    @State private var zuletztFokus: Fokusziel = .hauptknopf
+    /// Counts the fetches of title and plan; only the newest writes (open and
+    /// refresh can overtake each other).
+    @State private var titleRun = 0
+    @State private var remembered = false
+    @State private var watched = false
+    @State private var message: String?
+    /// The player sits in the frame; see `MainView`.
+    @Environment(\.playRequest) private var play
+    /// **Everything below the header is answered:** collection, similar, extras,
+    /// cast. Set in the same animated transaction as the data, so it fades in
+    /// every time, even when the caches already had everything. It used to hang
+    /// on the page appearing, so rows faded in separately as their data arrived,
+    /// and the collection row came last as its own fetch. Before that, the fade
+    /// hung on data arriving and was hard from the second opening. The shared
+    /// switch fixes both.
+    @State private var bottomPresent = false
+    @State private var collectionRails: [AppModel.CollectionRailsData] = []
+    /// **Where focus returns when a panel closes.**
+    /// It used to jump to the main button, the page's initial focus, though the
+    /// user stood at the More button or season pill. A panel is not a change of
+    /// place but opens above its button; closing it returns to the button
+    /// that opened it.
+    @FocusState private var atMoreButton: Bool
+    /// **Initial focus belongs on the main button.**
+    /// It was set nowhere, so tvOS picked geometrically and arrivals from search
+    /// landed on "Merkliste". The series page now sets it explicitly; the movie
+    /// page had only happened to be right because focus mostly came from the top
+    /// left.
+    @FocusState private var atPrimaryButton: Bool
+    /// **Where focus returns when the player closes.**
+    /// Same reason as `atMoreButton`, for the player: it is a sibling in the
+    /// frame and the page stays mounted during playback, only `disabled`, which
+    /// resets `atPrimaryButton`/`atMoreButton` to `false`. Without this memory tvOS
+    /// picks something geometrically on removal and lands on the first tab of the
+    /// header bar.
+    private enum FocusTarget { case primaryButton, moreButton }
+    @State private var lastFocus: FocusTarget = .primaryButton
 
-    @State private var bereitet = false
-    @State private var aehnliche: [Item] = []
+    @State private var prepares = false
+    @State private var similar: [Item] = []
     @State private var extras: [Item] = []
-    @State private var mehrOffen = false
+    @State private var moreOpen = false
 
-    private var aktuell: Item { frisch ?? item }
-    private var darsteller: [Person] { (aktuell.people ?? []).filter(\.istDarsteller) }
+    private var current: Item { freshValue ?? item }
+    private var actors: [Person] { (current.people ?? []).filter(\.isCast) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                kopf
+                header
 
-                // **Alles unter dem Kopf kommt auf einmal** — wie am iPhone
-                // (`untenDa` in `BrowseViews.swift`, 24.09.2026). Sammlung,
-                // Aehnliches, Extras und Besetzung trafen einzeln ein; die
-                // Sammlungsreihe lud sogar selbst und kam als letzte. Jetzt
-                // wartet die Seite auf alle und blendet sie gemeinsam ein.
-                if untenDa {
+                // **Everything below the header arrives at once**, as on the iPhone
+                // (`bottomPresent` in `BrowseViews.swift`). Collection, similar, extras and cast
+                // used to arrive one by one, the collection row even loaded itself and came
+                // last. Now the page waits for all and fades them in together.
+                if bottomPresent {
                     VStack(alignment: .leading, spacing: 0) {
-                        // Ueber „Aehnliche Filme": die Sammlung ist die naehere
-                        // Verwandtschaft. Nur bei Titeln, die in einer stehen.
-                        Sammlungsreihe(model: model, titel: item, reihen: sammlungsreihen)
+                        // Above "Ähnliche Filme": the collection is the closer relation. Only for
+                        // titles that belong to one.
+                        CollectionRail(model: model, title: item, rails: collectionRails)
 
-                        if !aehnliche.isEmpty {
-                            reihenabschnitt {
-                                Reihentitel(text: "Ähnliche Filme")
-                            } inhalt: {
-                                Titelstreifen(model: model, items: aehnliche)
+                        if !similar.isEmpty {
+                            railsSection {
+                                RailTitle(text: "Ähnliche Filme")
+                            } content: {
+                                TitleStrip(model: model, items: similar)
                             }
                         }
                         if !extras.isEmpty {
-                            // **Der Trailer wohnt hier**, nicht als sechste Pille.
-                            // Ein Trailer ist etwas zum Abspielen, keine Auskunft —
-                            // ein Regalplatz passt besser als eine Zeile in der
-                            // Handlungstafel.
-                            reihenabschnitt {
-                                Reihentitel(text: "Extras")
-                            } inhalt: {
-                                Titelstreifen(model: model, items: extras) { extra in
-                                    starte(extra, ab: 0)
+                            // **The trailer lives here**, not as a sixth pill. A trailer is something to
+                            // play, not information; a shelf slot fits better than a line in the action
+                            // panel.
+                            railsSection {
+                                RailTitle(text: "Extras")
+                            } content: {
+                                TitleStrip(model: model, items: extras) { extra in
+                                    launch(extra, since: 0)
                                 }
                             }
                         }
-                        if !darsteller.isEmpty {
-                            reihenabschnitt {
-                                Reihentitel(text: "Besetzung")
-                            } inhalt: {
-                                Besetzungsstreifen(model: model, leute: darsteller, herkunft: item.name)
+                        if !actors.isEmpty {
+                            railsSection {
+                                RailTitle(text: "Besetzung")
+                            } content: {
+                                CastStrip(model: model, folks: actors, origin: item.name)
                             }
                         }
                     }
                     .transition(.opacity)
                 }
             }
-            .padding(.bottom, Stil.abschlussLuft)
+            .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
+        // **The side margin is granted once, not twice.**
+        // tvOS keeps 80 pt free left and right by itself, and the page adds
+        // `Theme.edgePage` (also 80): 160 together, twice the layout, which always
+        // measures from 80. So the system margin is dropped here, and `edgePage`
+        // measures from the screen edge afterwards.
         //
-        // tvOS haelt links und rechts von sich aus 80 Punkt frei, und die
-        // Seite legt `Stil.randSeite` (auch 80) darauf. Zusammen waren es
-        // 160 — doppelt so viel wie im Entwurf, der immer ab 80 misst.
-        // Deshalb faellt der Systemrand hier weg; `randSeite` misst danach
-        // ab der Bildkante.
-        //
-        // **An jeder Seite einzeln, nicht am Rahmen.** Im Rahmen versucht
-        // steht es wirkungslos da: der `NavigationStack` in `stapel(b)`
-        // setzt den sicheren Bereich fuer seinen Inhalt neu. Gemessen, nicht
-        // vermutet — die Wortmarke rueckte, der Inhalt darunter nicht.
+        // **On each page individually, not on the frame.** On the frame it has no
+        // effect: the `NavigationStack` in `stack(b)` resets the safe area for its
+        // content. Measured: the wordmark moved, the content below did not.
         .ignoresSafeArea()
-        // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
-        //
-        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um den
-        // sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt 1920 x
-        // 1080. Das Netz rechnet in Bruchteilen seiner Flaeche, sass damit auf
-        // der Detailseite anders als auf der Startseite, und beim Oeffnen sah
-        // man den Unterschied als Schrumpfen.
-        //
-        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`; dass
-        // die beiden verschieden standen, war der Unterschied.
-        //
-        // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
-        // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
-        // `Bildgrund`.
-        .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.kopfbildURL(for: aktuell))
-        // **Solange eine Tafel offen ist, ist der Rest kein Fokusziel.**
-        //
-        // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
-        // Druck nach links oder rechts sprang deshalb aus der offenen Tafel
-        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging erst
-        // weg, wenn man die Seite verliess.
-        //
-        // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
-        // bleiben damit selbst bedienbar.
-        .defaultFocus($amHauptknopf, true, priority: .userInitiated)
-        .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
-        .onChange(of: amHauptknopf) { _, an in if an { zuletztFokus = .hauptknopf } }
-        .onChange(of: amMehrknopf) { _, an in if an { zuletztFokus = .mehrknopf } }
-        // Siehe `zuletztFokus`: der Player hinterlaesst denselben leeren
-        // Fokus wie eine offene Tafel, nur eine Ebene hoeher — dieselbe
-        // Zuweisung holt ihn zurueck.
-        .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
-            guard geschlossen, vorher == false else { return }
-            fokusZurueck()
+        // **The whole page background tints to the backdrop.**
+        // **After `ignoresSafeArea`, not before.** Before, it got the area reduced
+        // by the safe area (1760 x 960 instead of 1920 x 1080). The mesh computes in
+        // fractions of its area, so it sat differently than on the home page, and
+        // opening showed the difference as shrinking. The home page applied it after
+        // `ignoresSafeArea` from the start.
+        // On the page and not on the header: otherwise the tint ends at its bottom
+        // edge and a seam crosses the screen. See `ImageReason`.
+        .imageReason(url: model.landscapeImageURL(for: current, width: 1600)
+                        ?? model.headerImageURL(for: current))
+        // **While a panel is open, the rest is not a focus target.**
+        // `focusSection` does not hold focus, it only orders it. A left or right
+        // press used to jump out of the open panel into the content behind it, and
+        // the panel stayed until the page was left.
+        // Locking happens **before** the modifiers: the panels hang after and so
+        // stay operable themselves.
+        .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
+        .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
+        .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
+        .onChange(of: atMoreButton) { _, an in if an { lastFocus = .moreButton } }
+        // See `lastFocus`: the player leaves the same empty focus as an open
+        // panel, one level higher; the same assignment restores it.
+        .onChange(of: play.wrappedValue == nil) { before, closed in
+            guard closed, before == false else { return }
+            focusBack()
         }
-        // **Dasselbe nach „Gemeinsam schauen".** Die Tafel liegt im Rahmen
-        // ueber allem und sperrt die Seite wie der Player. Geht sie zu, ohne
-        // dass ein Player aufgeht, steht der Fokus wieder am Ausloeser.
-        .onChange(of: Gemeinsammodell.geteilt.anlegenFuer == nil) { vorher, zu in
-            guard zu, vorher == false, abspielen.wrappedValue == nil else { return }
-            fokusZurueck()
+        // **Same after "Gemeinsam schauen".** The panel sits above everything in the
+        // frame and locks the page like the player. If it closes without a player
+        // opening, focus returns to its trigger.
+        .onChange(of: SharedModel.shared.createFor == nil) { before, toward in
+            guard toward, before == false, play.wrappedValue == nil else { return }
+            focusBack()
         }
-        .disabled(mehrOffen)
-        // Unter dem Mehr-Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
-        // `unterDerKnopfreihe`: aus dem Kopfaufbau gerechnet und um den
-        // sicheren Rand daneben. Der Knopf steht ganz rechts, die Tafel ist
-        // breiter als er — `Handlungstafel.links` klemmt sie deshalb an seine
-        // rechte Kante statt sie aus dem Bild laufen zu lassen.
-        .tafel(unter: mehrOffen ? "mehr" : nil) {
-            Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
+        .disabled(moreOpen)
+        // Under the More button, at its edge; see `PanelAnchor`. The button sits at
+        // the far right and the panel is wider, so `Handlungstafel.left` clamps it
+        // to the button's right edge instead of letting it run off screen.
+        .panel(under: moreOpen ? "mehr" : nil) {
+            ActionPanel(actions: moreActions, opened: $moreOpen)
                 .transition(.opacity)
         }
-        .animation(Stil.bewegung(.easeInOut(duration: 0.18)), value: mehrOffen)
+        .animation(Theme.motion(.easeInOut(duration: 0.18)), value: moreOpen)
         .overlay(alignment: .top) {
-            if let meldung {
-                Hinweisstreifen(text: meldung) { self.meldung = nil }
-                    .padding(.top, Stil.randOben)
+            if let message {
+                HintStrip(text: message) { self.message = nil }
+                    .padding(.top, Theme.edgeTop)
             }
         }
-        // Nach dem Player neu holen — er liegt als Ebene darüber, `.task`
-        // läuft kein zweites Mal. Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
+        // Reload after the player: it is a layer above, and `.task` does not run
+        // twice. See `AppModel.playbackEnded`.
+        .onChange(of: model.pagesRefresh) { _, _ in Task { await refresh() } }
         .task {
-            titellauf += 1
-            let meiner = titellauf
-            async let frischerTitel = model.item(id: item.id)
-            async let planung = model.plan(for: item.id)
-            async let aehnlich = model.aehnliche(item)
+            titleRun += 1
+            let myOwn = titleRun
+            async let freshTitle = model.item(id: item.id)
+            async let planning = model.plan(for: item.id)
+            async let alike = model.similar(item)
             async let extra = model.extras(item)
-            async let vorschau = model.trailer(zu: item)
-            async let sammlung = model.sammlungsreihen(zu: item)
-            // **Einmal aufblenden, nicht dreimal.**
-            //
-            // `.transition` allein greift nicht — sie wirkt nur, wenn die
-            // Aenderung in einer **animierten Transaktion** stattfindet, und
-            // Werte aus `await` tragen keine. Deshalb war zuerst alles hart
-            // da, obwohl die Uebergaenge dranstanden.
-            //
-            // Danach standen drei getrennte `withAnimation` hier: Titel und
-            // Plan, dann die Extras, dann die Folgen. Jeder Schub blendete
-            // fuer sich, und das ueberlagerte sich zu einem Flackern statt
-            // eines Uebergangs. Jetzt wird **alles abgewartet und einmal**
-            // gezeigt.
-            //
-            // Instant bleibt, was schon auf der Startseite stand: Titel,
-            // Angaben, Beschreibung, Bild, Grund. Ueberblendet wird nur, was
-            // neu dazukommt.
-            // **Titel und Plan zuerst und gleich.** Hauptknopf („Fortsetzen
-            // ab ..."), Merken, Gesehen und die Direct-Play-Marke haengen nur
-            // an diesen beiden; sie warten nicht auf Trailer und Sammlungen.
-            let neuerTitel = await frischerTitel
-            let neuerPlan = await planung
-            if meiner == titellauf {
-                withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
-                    if let neuerTitel { frisch = neuerTitel }
-                    plan = neuerPlan
+            async let preview = model.trailer(toward: item)
+            async let collection = model.collectionRails(toward: item)
+            // **Fade in once, not three times.**
+            // `.transition` alone does not work: it acts only when the change happens in
+            // an **animated transaction**, and values from `await` carry none. So at
+            // first everything appeared hard though the transitions were attached.
+            // Three separate `withAnimation` calls (title and plan, extras, episodes)
+            // then each faded on their own and overlapped into flicker. Now **everything
+            // is awaited and shown once**.
+            // Instant stays what was already on the home page: title, details,
+            // description, image, background. Only what is new is faded.
+            // **Title and plan first, immediately.** The main button, watchlist, watched
+            // and the Direct Play mark depend only on these two; they do not wait for
+            // trailer and collections.
+            let newTitle = await freshTitle
+            let newPlan = await planning
+            if myOwn == titleRun {
+                withAnimation(Theme.motion(.easeOut(duration: 0.32))) {
+                    if let newTitle { freshValue = newTitle }
+                    plan = newPlan
                 }
-                gemerkt = aktuell.userData?.isFavorite ?? false
-                gesehen = aktuell.istGesehen
+                remembered = current.userData?.isFavorite ?? false
+                watched = current.isWatched
             }
-            let neueAehnliche = Listenregeln.ohneDoppelte((await aehnlich) ?? [])
+            let newSimilar = ListRules.withoutDouble((await alike) ?? [])
 
-            // Der Trailer steht vorn in den Extras: er war einmal eine eigene
-            // Pille, und die Knopfreihe des Entwurfs hat dafuer keinen Platz.
-            // Ersatzlos streichen waere falsch — ein Trailer ist etwas zum
-            // Abspielen, und dafuer gibt es hier ein Regal.
-            var regal = (await extra) ?? []
-            if let vorschau = await vorschau { regal.insert(vorschau, at: 0) }
-            let neueSammlungen = await sammlung
+            // The trailer leads the extras: it was once its own pill, and the layout's
+            // button row has no room for it. Dropping it would be wrong; a trailer is
+            // something to play, and the shelf is the place for it.
+            var shelf = (await extra) ?? []
+            if let preview = await preview { shelf.insert(preview, at: 0) }
+            let newCollections = await collection
 
-            withAnimation(Stil.bewegung(.easeOut(duration: 0.32))) {
-                aehnliche = neueAehnliche
-                extras = regal
-                sammlungsreihen = neueSammlungen
-                untenDa = true
+            withAnimation(Theme.motion(.easeOut(duration: 0.32))) {
+                similar = newSimilar
+                extras = shelf
+                collectionRails = newCollections
+                bottomPresent = true
             }
         }
     }
 
-    /// Kulisse, Text und Knopfreihe.
-    ///
-    /// **Ein einziger beschrifteter Knopf, der Rest sind Symbole.** Das ist
-    /// auch E6 — ein Hauptknopf je Seite, hier nur konsequenter gelesen als
-    /// vorher: was nicht der Hauptknopf ist, muss sich auch nicht wie einer
-    /// ausbreiten.
-    ///
-    /// Fuenf beschriftete Pillen waren rund 1400 Punkt breit und lasen sich
-    /// wie fuenf gleichwertige Angebote. Jetzt traegt „Fortsetzen"
-    /// beziehungsweise „Abspielen" den Text, daneben stehen drei quadratische
-    /// Symbole: zurueck, Merkliste, Mehr.
-    ///
-    /// Jedes davon nennt VoiceOver seinen Namen ausdruecklich — ein
-    /// Symbolknopf erbt keine Beschriftung (E8).
-    ///
-    /// **Langer Druck auf den Hauptknopf: das Kachelmenü des Titels** —
-    /// dasselbe wie an seiner Kachel (``Kachelmenue``). Vorher gab es auf der
-    /// Detailseite keins.
-    private var kopf: some View {
-        Detailkopf(model: model, item: aktuell, plan: plan) {
+    /// Backdrop, text and button row.
+    /// **One labeled button, the rest are symbols.** That is also the one-main-button rule, one main
+    /// button per page, read more strictly: what is not the main button need not
+    /// spread like one. Five labeled pills were about 1400 pt wide and read as
+    /// five equal offers. Now "Fortsetzen" or "Abspielen" carries the text, next
+    /// to three square symbols: back, watchlist, more. Each names itself
+    /// explicitly for VoiceOver, since a symbol button inherits no label.
+    /// **Long press on the main button: the title's tile menu**, the same as on
+    /// its tile (``TileMenu``).
+    private var header: some View {
+        DetailHeader(model: model, item: current, plan: plan) {
             HStack(spacing: 24) {
-                if let ab = aktuell.fortsetzenAb {
-                    Button { starte(ab: ab) } label: {
+                if let since = current.resumeFrom {
+                    Button { launch(since: since) } label: {
                         Label("Fortsetzen", systemImage: "play.fill")
                     }
-                    .buttonStyle(KnopfStil())
-                    .disabled(bereitet)
-                    .focused($amHauptknopf)
-                    .kachelmenue(aktuell, model: model)
+                    .buttonStyle(ThemedButtonStyle())
+                    .disabled(prepares)
+                    .focused($atPrimaryButton)
+                    .tileMenu(current, model: model)
 
-                    // Neu und ausdruecklich im Entwurf: wer schon angefangen
-                    // hat, kam sonst nur ueber die Tafel an den Anfang zurueck.
-                    Button { starte(ab: 0) } label: {
-                        Image(systemName: "arrow.counterclockwise").font(Stil.knopf)
+                    // Explicit in the layout: otherwise someone who has started could only get
+                    // back to the beginning through the panel.
+                    Button { launch(since: 0) } label: {
+                        Image(systemName: "arrow.counterclockwise").font(Theme.button)
                     }
-                    .buttonStyle(KnopfStil(nurSymbol: true))
+                    .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))
-                    .disabled(bereitet)
+                    .disabled(prepares)
                 } else {
-                    Button { starte(ab: 0) } label: {
+                    Button { launch(since: 0) } label: {
                         Label("Abspielen", systemImage: "play.fill")
                     }
-                    .buttonStyle(KnopfStil())
-                    .disabled(bereitet)
-                    .focused($amHauptknopf)
-                    .kachelmenue(aktuell, model: model)
+                    .buttonStyle(ThemedButtonStyle())
+                    .disabled(prepares)
+                    .focused($atPrimaryButton)
+                    .tileMenu(current, model: model)
                 }
 
-                Zustandsknoepfe(model: model, item: aktuell,
-                                gemerkt: $gemerkt, gesehen: $gesehen, meldung: $meldung)
+                StateButtons(model: model, item: current,
+                                remembered: $remembered, watched: $watched, message: $message)
 
-                Mehrknopf(offen: $mehrOffen)
-                    .focused($amMehrknopf)
-                    .tafelausloeser("mehr")
+                MoreButton(opened: $moreOpen)
+                    .focused($atMoreButton)
+                    .panelTrigger("mehr")
             }
         }
     }
 
-    // MARK: Starten
+    // MARK: Start
 
-    /// Zurueck an den Knopf oder die Folge, an der man zuletzt stand.
-    private func fokusZurueck() {
-        switch zuletztFokus {
-        case .hauptknopf: amHauptknopf = true
-        case .mehrknopf: amMehrknopf = true
+    /// Back to the button or episode where the user last stood.
+    private func focusBack() {
+        switch lastFocus {
+        case .primaryButton: atPrimaryButton = true
+        case .moreButton: atMoreButton = true
         }
     }
 
-    private var mehrHandlungen: [Titelhandlung] {
-        // Gesehen steht vorn — es ist das, wofuer die Tafel jetzt am
-        // haeufigsten geoeffnet wird. Die geteilte Liste bleibt unangetastet.
-        [Titelhandlung.sehstand(aktuell, model: model, gesehen: $gesehen,
-                                 melden: { meldung = $0 })]
-        + Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
-                                   starten: { starte(ab: $0) },
-                                   melden: { meldung = $0 },
-                                   gemeinsam: Gemeinsammodell.geteilt.darfAnlegen
-                                       ? { [aktuell] in Gemeinsammodell.geteilt.anlegenFuer = aktuell } : nil)
+    private var moreActions: [TitleAction] {
+        // Watched sits first, as it is what the panel is now opened for most often.
+        // The shared list stays untouched.
+        [TitleAction.watchState(current, model: model, watched: $watched,
+                                 report: { message = $0 })]
+        + TitleActions.forMovie(current, plan: plan, model: model,
+                                   start: { launch(since: $0) },
+                                   report: { message = $0 },
+                                   gemeinsam: SharedModel.shared.mayCreate
+                                       ? { [current] in SharedModel.shared.createFor = current } : nil)
     }
 
-    private func auffrischen() async {
-        // Auch den Plan: er traegt den Direct-Play-Beleg, und ein Stand ohne
-        // seinen Plan ist ein halber Stand.
-        titellauf += 1
-        let meiner = titellauf
-        async let frischerTitel = model.item(id: item.id)
-        async let planung = model.plan(for: item.id)
-        let neu = await frischerTitel
-        let neuerPlan = await planung
-        guard meiner == titellauf else { return }
-        if let neu { frisch = neu }
-        plan = neuerPlan
-        gemerkt = aktuell.userData?.isFavorite ?? false
-        gesehen = aktuell.istGesehen
+    private func refresh() async {
+        // The plan too: it carries the Direct Play proof, and a state without its
+        // plan is half a state.
+        titleRun += 1
+        let myOwn = titleRun
+        async let freshTitle = model.item(id: item.id)
+        async let planning = model.plan(for: item.id)
+        let new = await freshTitle
+        let newPlan = await planning
+        guard myOwn == titleRun else { return }
+        if let new { freshValue = new }
+        plan = newPlan
+        remembered = current.userData?.isFavorite ?? false
+        watched = current.isWatched
     }
 
-    /// Frisch geholt: die Position im Listeneintrag ist oft veraltet.
-    private func starte(ab: Double) {
-        starte(aktuell, ab: ab, frisch: true)
+    /// Freshly fetched: the position in the list entry is often stale.
+    private func launch(since: Double) {
+        launch(current, since: since, freshValue: true)
     }
 
-    /// Einen Titel starten — denselben oder ein Extra.
-    private func starte(_ titel: Item, ab: Double, frisch: Bool = false) {
-        Abspielwunsch.starten(titel, ab: ab, frisch: frisch, model: model, bereitet: $bereitet,
-                              fehlt: { meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                              abspielen: { abspielen.wrappedValue = $0 })
+    /// Start a title, the same one or an extra.
+    private func launch(_ title: Item, since: Double, freshValue: Bool = false) {
+        PlayRequest.start(title, since: since, freshValue: freshValue, model: model, prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              play: { play.wrappedValue = $0 })
     }
 }

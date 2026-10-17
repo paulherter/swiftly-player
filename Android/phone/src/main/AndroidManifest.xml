@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Download progress in the notification shade. Asked at the first download, not at start. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Network: cleartext and custom root certificates are governed solely by `network_trust`
+             (rationale there). From API 24 this file overrides `usesCleartextTraffic` anyway, so the
+             flag is not repeated here. -->
+    <application
+        android:name=".SwiftlyAnwendung"
+        android:label="Swiftly"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/tv_banner"
+        android:networkSecurityConfig="@xml/network_trust"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/no_backup"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Swiftly">
+        <!-- configChanges as for the player: a rotation does not rebuild the activity. Compose
+                     reorients itself; a rebuild instead threw away the page stack (it lives in
+                     `remember`) and ran `LaunchedEffect(spiel)` a second time, so closing the player
+                     started the episode again.
+                     **Also dark mode, font size, display size and language** (uiMode, fontScale, density,
+                     locale): the app is always dark and reads its texts once at start. The player was
+                     rebuilt on those, reported "stopped" and restarted from the beginning, e.g. on scheduled
+                     dark mode in the middle of a movie. Compose picks up font and density itself. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|uiMode|fontScale|density|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Within the app's task: the player lies on top and fades out on close.
+                     For the small window Android moves it into its own task by itself. -->
+        <activity
+            android:name=".PlayerAktivitaet"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|uiMode|fontScale|density|locale|layoutDirection" />
+        <!-- TV: its own entry via the Leanback launcher, the same app underneath.
+                     singleTask: a tap on a Watch Next entry (see TvContinueWatchingShelf.kt) should go into
+                     the already running activity (onNewIntent), not open a second one beside it, or the
+                     app would have two page stacks at once. -->
+        <activity
+            android:name=".tv.TvAktivitaet"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|fontScale|density|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- Watch Next leads back into the app through this link, the same address as
+                             "swiftly://titel/<id>" in the Top Shelf on tvOS (`ShelfProvider.swift`). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="swiftly" android:host="titel" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".WiedergabeDienst"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <service
+            android:name=".DownloadDienst"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!-- "Share log": hands exactly the one file to the share sheet (`Protokolldatei`). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.protokoll"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/log_paths" />
+        </provider>
+    </application>
+</manifest>

@@ -3,14 +3,13 @@ import PackageDescription
 
 let package = Package(
     name: "JellyfinKit",
-    // Deutsch ist die Ausgangssprache: die Texte stehen im Code auf Deutsch
-    // und dienen zugleich als Schlüssel. Englisch kommt aus dem Katalog.
-    // **Die Rueckfallsprache des Paketbuendels, nicht die Ausgangssprache.**
-    // Die Schluessel sind weiter deutsch (`de.lproj` bildet sie auf sich ab).
-    // Wer aber ein Geraet auf Niederlaendisch oder Russisch hat, bekommt
-    // genau diesen Wert — auf "de" sah er deutsche Fehlermeldungen in einer
-    // englischen App. Dieselbe Zeile wie CFBundleDevelopmentRegion in den
-    // vier Info.plists.
+    // The texts in the code are German and double as lookup keys; English comes
+    // from the catalog.
+    // **This is the fallback language of the package bundle, not the source language.**
+    // The keys stay German (`de.lproj` maps them to themselves). A device set to
+    // Dutch or Russian gets exactly this value; with "de" it would show German
+    // error messages in an English app. Same value as CFBundleDevelopmentRegion
+    // in the four Info.plists.
     defaultLocalization: "en",
     platforms: [.iOS(.v18), .tvOS(.v18), .macOS(.v14)],
     products: [

@@ -1,0 +1,252 @@
+# Build Linux packages and publish them to the package repository.
+#
+# **Why a CI runner and not a developer machine.** A compiled program is tied
+# to the glibc of the machine it was built on. A rolling-release dev machine
+# has a much newer glibc, and a binary built there starts on nothing older.
+# Ubuntu 24.04 has glibc 2.39 and GTK 4.14, which is the baseline the app
+# needs anyway: older Debian or Ubuntu releases ship GTK 4.8 and could not
+# display the app at all.
+#
+# The output ends up on GitHub Pages as an apt and dnf repository. From
+# there the user's package manager picks up new versions by itself.
+
+name: Linux-Pakete
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      fassung:
+        description: 'Fassung, z. B. 1.0.0'
+        required: true
+        default: '1.0.0'
+      paketstand:
+        description: 'Paketstand (deb-Revision, rpm-Release, pkgrel) — leer lassen, dann gilt pkgrel aus Linux/Install/PKGBUILD'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  bauen:
+    runs-on: ubuntu-24.04
+    container: swift:6.1-noble
+
+    steps:
+      - name: Werkzeuge
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libgtk-4-dev libvlc-dev pkg-config g++ git \
+            rpm dpkg-dev apt-utils createrepo-c gnupg ca-certificates
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Fassung bestimmen
+        id: f
+        run: |
+          if [ -n "${{ github.event.inputs.fassung }}" ]; then
+            echo "wert=${{ github.event.inputs.fassung }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: rlottie
+        run: |
+          export SWIFTLY_RLOTTIE_ZIEL="$PWD/.rlottie"
+          bash Werkzeuge/rlottie-build.sh "$PWD/.rlottie-quelle"
+
+      - name: Swiftly bauen
+        run: |
+          export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          cd Linux
+          swift build -c release -Xswiftc -static-stdlib
+          # **Ask for the build folder, do not guess.** `.build/release` is a
+          # symlink SwiftPM may repoint; the same call with `--show-bin-path`
+          # tells where this build was placed.
+          echo "BAUORDNER=$(swift build -c release -Xswiftc -static-stdlib --show-bin-path)" \
+            >> "$GITHUB_ENV"
+
+      - name: Pakete schnueren
+        run: |
+          bash Linux/Install/build-package.sh \
+            "${{ steps.f.outputs.wert }}" \
+            "$BAUORDNER" \
+            "$PWD/pakete" \
+            "$(bash Linux/Install/package-revision.sh '${{ github.event.inputs.paketstand }}')"
+
+      # Without a key the repository would be unsigned. That works, but apt
+      # complains on every call, so packages are signed as soon as the secret
+      # SIGNIERSCHLUESSEL exists.
+      - name: Paketquelle bauen
+        env:
+          SCHLUESSEL: ${{ secrets.SIGNIERSCHLUESSEL }}
+        run: |
+          mkdir -p seite/deb seite/rpm
+          cp pakete/*.deb seite/deb/
+          cp pakete/*.rpm seite/rpm/
+          ( cd seite/deb && dpkg-scanpackages . /dev/null > Packages && gzip -9kf Packages
+            apt-ftparchive release . > Release )
+          # **Without a key nothing is published.** A mere warning let the run
+          # continue: `keep_files` left the old signatures next to new,
+          # unsigned files, and apt, dnf and pacman rejected the repository
+          # as tampered with.
+          if [ -z "$SCHLUESSEL" ]; then
+            echo "::error::Kein SIGNIERSCHLUESSEL hinterlegt — ohne Signatur wird nichts veroeffentlicht."
+            exit 1
+          fi
+          echo "$SCHLUESSEL" | gpg --batch --import
+          kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          gpg --batch --yes --armor --detach-sign -u "$kennung" \
+              -o seite/deb/Release.gpg seite/deb/Release
+          gpg --batch --yes --clearsign -u "$kennung" -o seite/deb/InRelease seite/deb/Release
+          # **Sign the packages first, then build the index.** Signing
+          # changes every rpm file; if `createrepo_c` ran before, the
+          # checksums in `repodata` no longer matched.
+          for r in seite/rpm/*.rpm; do
+            rpm --define "_gpg_name $kennung" --addsign "$r"
+          done
+          createrepo_c seite/rpm
+          gpg --batch --yes --armor --detach-sign -u "$kennung" \
+              -o seite/rpm/repodata/repomd.xml.asc seite/rpm/repodata/repomd.xml
+          gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
+          echo "signiert mit $kennung"
+          cp Linux/Install/source-setup.sh seite/ 2>/dev/null || true
+          echo "swiftly-player" > seite/.nojekyll
+
+      - name: Auf Pages stellen
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./seite
+          publish_branch: gh-pages
+          keep_files: true
+
+      - name: An die Veroeffentlichung haengen
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.fassung != ''
+        # **Allowed to fail.** If it failed ("Resource not accessible by
+        # integration" when attaching to an existing release), the whole run
+        # failed and the Arch job (`needs: bauen`) never ran, leaving the
+        # pacman repository stale. The package repositories are the way
+        # users get updates.
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.f.outputs.wert }}
+          files: pakete/*
+
+  # Arch is rolling, so it is built against current libraries - a package
+  # from the Ubuntu job would be linked against ones that are too old. This
+  # uses its own pacman repository instead of an AUR entry: the AUR needs an
+  # account and a key, the pacman repository only one line in pacman.conf,
+  # and it updates with every `pacman -Syu`.
+  arch:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    needs: bauen
+
+    steps:
+      - name: Werkzeuge
+        run: |
+          # The last few are for the toolchain, not the app: it comes from
+          # Ubuntu 24.04 and looks for libraries under their Ubuntu names.
+          # `libxml2-legacy` provides soname 2 - Arch now ships 16, and the
+          # compiler does not start without it.
+          pacman -Syu --noconfirm --needed \
+            gtk4 vlc git gcc pkgconf curl unzip which sudo gnupg \
+            libxml2-legacy icu python sqlite libedit ncurses zlib
+          useradd -m bauer
+          echo "bauer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - uses: actions/checkout@v4
+
+      - name: Fassung bestimmen
+        id: f
+        run: |
+          if [ -n "${{ github.event.inputs.fassung }}" ]; then
+            echo "wert=${{ github.event.inputs.fassung }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # swiftly does not know Arch ("Unsupported Linux platform") and aborts
+      # otherwise. The Ubuntu 24.04 toolchain still runs here because Arch
+      # has the newer glibc. Only libncurses is named differently.
+      - name: Swift
+        run: |
+          [ -e /usr/lib/libncurses.so.6 ] ||
+            ln -sf /usr/lib/libncursesw.so.6 /usr/lib/libncurses.so.6
+          # Set the location explicitly. Otherwise swiftly resolves it via the
+          # passwd entry and ends up under /root, while HOME in the container
+          # points to /github/home - and `swiftly` is then not found.
+          export SWIFTLY_HOME_DIR="$HOME/.swiftly" SWIFTLY_BIN_DIR="$HOME/.swiftly/bin"
+          curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-x86_64.tar.gz"
+          tar -xzf swiftly-x86_64.tar.gz
+          ./swiftly init --quiet-shell-followup --assume-yes --skip-install \
+            --platform ubuntu24.04
+          export PATH="$SWIFTLY_BIN_DIR:$PATH"
+          # swiftly reports the toolchain as installed but still exits with 1,
+          # complaining about the session not knowing its path change yet.
+          # So the compiler itself is checked, not the exit code.
+          swiftly install --use latest || true
+          "$SWIFTLY_BIN_DIR/swift" --version
+          echo "$SWIFTLY_BIN_DIR" >> "$GITHUB_PATH"
+          echo "SWIFTLY_HOME_DIR=$SWIFTLY_HOME_DIR" >> "$GITHUB_ENV"
+          echo "SWIFTLY_BIN_DIR=$SWIFTLY_BIN_DIR" >> "$GITHUB_ENV"
+
+      - name: Bauen
+        run: |
+          export SWIFTLY_RLOTTIE_ZIEL="$PWD/.rlottie"
+          bash Werkzeuge/rlottie-build.sh "$PWD/.rlottie-quelle"
+          export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          cd Linux && swift build -c release -Xswiftc -static-stdlib
+          echo "BAUORDNER=$(swift build -c release -Xswiftc -static-stdlib --show-bin-path)" \
+            >> "$GITHUB_ENV"
+
+      - name: Paket schnueren
+        run: |
+          bash Linux/Install/pacman-package.sh \
+            "${{ steps.f.outputs.wert }}" "$BAUORDNER" "$PWD/pakete" \
+            "$(bash Linux/Install/package-revision.sh '${{ github.event.inputs.paketstand }}')"
+
+      # pacman verifies a separate .sig file per package, not the database,
+      # so every package is signed individually and `repo-add -s` adds the
+      # database signature on top.
+      - name: In die pacman-Quelle
+        env:
+          SCHLUESSEL: ${{ secrets.SIGNIERSCHLUESSEL }}
+        run: |
+          mkdir -p seite/arch
+          cp pakete/*.pkg.tar.zst seite/arch/
+          # Same rule as above: without a key the run aborts.
+          if [ -z "$SCHLUESSEL" ]; then
+            echo "::error::Kein SIGNIERSCHLUESSEL — ohne Signatur wird nichts veroeffentlicht."
+            exit 1
+          fi
+          echo "$SCHLUESSEL" | gpg --batch --import
+          kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          for paket in seite/arch/*.pkg.tar.zst; do
+            gpg --batch --yes --detach-sign --no-armor -u "$kennung" "$paket"
+          done
+          repo-add -s -v -k "$kennung" seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+          # `repo-add` creates `swiftly.db` as a symlink; Pages does not serve
+          # symlinks reliably. Use real copies, including the signature.
+          for d in db files; do
+            rm -f "seite/arch/swiftly.$d" "seite/arch/swiftly.$d.sig"
+            cp "seite/arch/swiftly.$d.tar.gz" "seite/arch/swiftly.$d"
+            cp "seite/arch/swiftly.$d.tar.gz.sig" "seite/arch/swiftly.$d.sig"
+          done
+          gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
+
+      - name: Auf Pages stellen
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./seite
+          publish_branch: gh-pages
+          keep_files: true

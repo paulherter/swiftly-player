@@ -2,312 +2,308 @@ import JellyfinKit
 import StoreKit
 import SwiftUI
 
-/// Dieselben drei Zustände wie auf iPhone und Fernseher, aus demselben
-/// `AppModel`. Nur die Ansichten dahinter sind eigen.
+/// The same three states as on iPhone and TV, from the same `AppModel`. Only the
+/// views behind them are specific to the Mac.
 ///
-/// **Mit Startvorhang.** Hier stand lange, es gebe keinen: die Animation lag
-/// nur als `UIViewRepresentable` vor. `Startanimation.swift` hat jetzt einen
-/// AppKit-Arm, und die Marke fährt damit auf allen vier Plattformen gleich
-/// auf.
+/// **With launch curtain.** `StartAnimation.swift` has an AppKit variant, so the
+/// mark animates in the same way on all four platforms.
 struct RootView: View {
-    @State private var model = AppModel.einziges
-    @State private var vorhangDa = true
-    /// Apples Bewertungsabfrage — wann, entscheidet `Gemeinschaft.anstoss`.
-    @Environment(\.requestReview) private var bewerten
-    @State private var discordHinweis = false
+    @State private var model = AppModel.only
+    @State private var curtainShown = true
+    /// Apple's review prompt; `Community.kickoff` decides when.
+    @Environment(\.requestReview) private var rate
+    @State private var discordHint = false
 
     var body: some View {
         #if DEBUG
-        // Die Halbierung: nackte Scrollflaeche statt der App, wenn die
-        // Umgebung sie anfordert. Siehe `NackterVergleich`.
-        if NackterVergleich.angefordert {
-            NackterVergleich()
+        // The halving: a bare scroll surface instead of the app when the environment
+        // asks for it. See `BareSame`.
+        if BareSame.demanded {
+            BareSame()
         } else {
-            rumpf
+            shell
         }
         #else
-        rumpf
+        shell
         #endif
     }
 
-    private var rumpf: some View {
+    private var shell: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
+            Theme.reason.ignoresSafeArea()
             switch model.phase {
             case .disconnected, .connecting:
                 ServerView(model: model)
             case let .needsLogin(serverName, version):
-                AnmeldeView(model: model, serverName: serverName, version: version)
+                SignInView(model: model, serverName: serverName, version: version)
             case .ready:
-                HauptView(model: model)
+                MainView(model: model)
             }
 
-            if vorhangDa {
-                Startvorhang { withAnimation(.easeOut(duration: 0.35)) { vorhangDa = false } }
+            if curtainShown {
+                StartCurtain { withAnimation(.easeOut(duration: 0.35)) { curtainShown = false } }
             }
         }
-        .background(Fensteranstrich())
+        .background(WindowLine())
         #if DEBUG
-        // Misst den Bildtakt ins Protokoll — nur im Entwicklerbau, siehe
-        // `Bildtakt`. Eine Ansicht ohne Groesse, die nichts zeichnet.
-        .background(Bildtaktmesser().frame(width: 0, height: 0))
+        // Logs the frame cadence, development builds only, see `FrameTick`. A view with
+        // no size that draws nothing.
+        .background(ImageTickMeasure().frame(width: 0, height: 0))
         #endif
-        .animation(Stil.zeitSeite, value: model.phase)
-        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
-        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
-        // die Aufrufstellen, die `fortschritt:` weiterreichen, sollen nichts
-        // davon wissen muessen. Gelesen wird sie dort, wo der Balken
-        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
-        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
-        // **Erst wenn der Player zu ist, mit einem Atemzug Abstand** — wie
-        // auf dem iPhone. Der Folgenwechsel zählt bei offenem Player.
-        .onChange(of: model.bewertungFaellig && !model.playerOffen) { _, jetzt in
-            guard jetzt else { return }
-            model.bewertungFaellig = false
+        .animation(Theme.timePage, value: model.phase)
+        // **Once at the root, not on every tile.** A setting decides which tile shows its
+        // progress bar, and call sites that pass `progress:` along should not need to
+        // know. It is read where the bar is created. See
+        // `EnvironmentValues.progressOnTiles`.
+        .environment(\.progressOnTiles, model.progressOnTiles)
+        // **Only once the player is closed, with a short pause**, as on iPhone. An
+        // episode change counts as the player being open.
+        .onChange(of: model.ratingDue && !model.playerOpen) { _, now in
+            guard now else { return }
+            model.ratingDue = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !model.playerOffen else { model.bewertungFaellig = true; return }
-                bewerten()
+                guard !model.playerOpen else { model.ratingDue = true; return }
+                rate()
             }
         }
-        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
-            guard jetzt else { return }
-            model.discordHinweisFaellig = false
+        .onChange(of: model.discordHintDue && !model.playerOpen) { _, now in
+            guard now else { return }
+            model.discordHintDue = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
-                withAnimation(Stil.sprung) { discordHinweis = true }
+                guard !model.playerOpen else { model.discordHintDue = true; return }
+                withAnimation(Theme.leap) { discordHint = true }
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if discordHinweis {
-                Discordhinweis { withAnimation(Stil.sprung) { discordHinweis = false } }
-                    .padding(Stil.randAbstand)
+            if discordHint {
+                DiscordHint { withAnimation(Theme.leap) { discordHint = false } }
+                    .padding(Theme.edgeSpacing)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
     }
 }
 
-/// **Einmal je Installation: Swiftly hat einen Discord.**
+/// **Once per installation: a Discord invite.**
 ///
-/// Nach dem fünften zu Ende geschauten Titel (`Gemeinschaft.anstoss`), wenn
-/// der Player zu ist. Eine Karte unten rechts statt eines Fensters: sie
-/// verdeckt nichts, und ein Klick auf das Kreuz nimmt sie für immer weg.
-struct Discordhinweis: View {
-    let schliessen: () -> Void
-    @Environment(\.openURL) private var oeffnen
+/// Shown after the fifth finished title (`Community.kickoff`), when the player
+/// is closed. A card at the bottom right instead of a window: it covers nothing,
+/// and the close button dismisses it for good.
+struct DiscordHint: View {
+    let close: () -> Void
+    @Environment(\.openURL) private var open
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Swiftly hat einen Discord")
-                    .font(Stil.listentitel)
-                    .foregroundStyle(Stil.schrift)
+                    .font(Theme.listTitle)
+                    .foregroundStyle(Theme.font)
                 Spacer(minLength: 8)
-                Button(action: schliessen) {
+                Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(Stil.klein.weight(.semibold))
-                        .foregroundStyle(Stil.schriftLeise)
+                        .font(Theme.small.weight(.semibold))
+                        .foregroundStyle(Theme.fontQuiet)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(Stil.Druckknopf())
+                .buttonStyle(Theme.PressButton())
                 .accessibilityLabel(Text("Schließen"))
             }
             Text("Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.")
-                .font(Stil.zweitzeile)
-                .foregroundStyle(Stil.schriftLeise)
+                .font(Theme.secondLine)
+                .foregroundStyle(Theme.fontQuiet)
                 .fixedSize(horizontal: false, vertical: true)
-            Hauptknopf(beschriftung: "Discord beitreten", symbol: "bubble.left.and.bubble.right") {
-                oeffnen(Gemeinschaft.discord)
-                schliessen()
+            PrimaryButton(label: "Discord beitreten", symbol: "bubble.left.and.bubble.right") {
+                open(Community.discord)
+                close()
             }
             .padding(.top, 4)
         }
         .padding(16)
         .frame(width: 320, alignment: .leading)
-        // Kein Schatten — nirgends (BRAND 4).
+        // No shadow anywhere.
         .background {
-            let form = RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous)
-            form.fill(Stil.erhoeht).overlay { form.strokeBorder(Stil.rand, lineWidth: 1) }
+            let form = RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
+            form.fill(Theme.raised).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
         }
     }
 }
 
-// MARK: - Server eingeben
+// MARK: - Enter server
 
-/// Wo steht der Server. Ein Satz, ein Feld, ein Knopf — wie auf dem iPhone,
-/// nur mittig im Fenster statt oben am Bildschirm.
+/// Where the server is. One sentence, one field, one button, as on iPhone but
+/// centred in the window instead of at the top of the screen.
 struct ServerView: View {
     let model: AppModel
-    @State private var adresse = ""
-    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
-    @State private var koepfe: [Kopfzeile] = []
-    @FocusState private var imFeld: Bool
+    @State private var address = ""
+    /// "Advanced": custom headers for a service in front of the server.
+    @State private var headers: [HeaderRow] = []
+    @FocusState private var inField: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            Wortmarke(hoehe: 44)
+            Wordmark(height: 44)
 
             Text("Wo steht dein Jellyfin-Server?")
-                .font(Stil.koerper)
-                .foregroundStyle(Stil.schriftLeise)
+                .font(Theme.body)
+                .foregroundStyle(Theme.fontQuiet)
                 .padding(.top, 40)
 
-            Eingabezeile(text: $adresse, symbol: "globe",
-                         platzhalter: "tv.beispiel.de", abschluss: verbinden)
-                .frame(width: Stil.formularbreite)
+            InputRow(text: $address, symbol: "globe",
+                         placeholder: "tv.beispiel.de", completion: linkUp)
+                .frame(width: Theme.formWidth)
                 .padding(.top, 24)
-                .focused($imFeld)
+                .focused($inField)
 
-            MacErweitert(zeilen: $koepfe)
-                .frame(width: Stil.formularbreite)
+            MacAdvanced(rows: $headers)
+                .frame(width: Theme.formWidth)
                 .padding(.top, 10)
 
-            if let fehler = model.errorMessage {
-                Text(fehler)
-                    .font(Stil.zweitzeile)
-                    .foregroundStyle(Stil.warnung)
+            if let error = model.errorMessage {
+                Text(error)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.warning)
                     .multilineTextAlignment(.center)
-                    .frame(width: Stil.formularbreite)
+                    .frame(width: Theme.formWidth)
                     .padding(.top, 12)
             }
 
-            // Die Beschriftung sagt, dass geprüft wird — wie auf dem iPhone.
-            Hauptknopf(beschriftung: model.phase == .connecting ? "Verbinden…" : "Verbinden",
-                       symbol: "arrow.right", auswahl: verbinden)
+            // The label says that a check is running, as on iPhone.
+            PrimaryButton(label: model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                       symbol: "arrow.right", pick: linkUp)
                 .padding(.top, 24)
-                .disabled(adresse.isEmpty || model.isWorking || model.phase == .connecting)
-                .opacity(adresse.isEmpty ? 0.4 : 1)
+                .disabled(address.isEmpty || model.isWorking || model.phase == .connecting)
+                .opacity(address.isEmpty ? 0.4 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { imFeld = true }
-        // Wer während der Prüfung die Adresse ändert, bricht sie ab.
-        .onChange(of: adresse) { _, neu in model.adresseGeaendert(neu) }
+        .onAppear { inField = true }
+        // Changing the address during the check cancels it.
+        .onChange(of: address) { _, new in model.addressChanged(new) }
     }
 
-    /// Knopf und Senden-Taste der Tastatur laufen hier zusammen; ein zweites
-    /// Senden während der Prüfung verwirft das Modell.
-    private func verbinden() {
-        guard !adresse.isEmpty else { return }
-        model.verbindenStarten(adresse, koepfe: koepfe.koepfe)
+    /// The button and the keyboard's submit key meet here; a second submit during the
+    /// check discards the model.
+    private func linkUp() {
+        guard !address.isEmpty else { return }
+        model.connectStart(address, headers: headers.headers)
     }
 }
 
-// MARK: - Anmelden
+// MARK: - Sign in
 
-struct AnmeldeView: View {
+struct SignInView: View {
     let model: AppModel
     let serverName: String
     let version: String
 
-    @State private var benutzer = ""
-    @State private var kennwort = ""
-    @FocusState private var feld: Feld?
+    @State private var user = ""
+    @State private var passphrase = ""
+    @FocusState private var inputField: Field?
 
-    private enum Feld { case benutzer, kennwort }
+    private enum Field { case user, passphrase }
 
     var body: some View {
         VStack(spacing: 0) {
-            Wortmarke(hoehe: 44)
+            Wordmark(height: 44)
 
             Text(serverName)
-                .font(Stil.unterseitentitel).tracking(Stil.sperrungUnterseite)
-                .foregroundStyle(Stil.schrift)
+                .font(Theme.subpageTitle).tracking(Theme.lockSubpage)
+                .foregroundStyle(Theme.font)
                 .padding(.top, 34)
             Text(verbatim: "Jellyfin \(version)")
-                .font(Stil.zweitzeile)
-                .foregroundStyle(Stil.schriftSehrLeise)
+                .font(Theme.secondLine)
+                .foregroundStyle(Theme.fontVeryQuiet)
                 .padding(.top, 4)
 
-            Eingabezeile(text: $benutzer, symbol: "person",
-                         platzhalter: String(localized: "Benutzername")) { feld = .kennwort }
-                .frame(width: Stil.formularbreite)
+            InputRow(text: $user, symbol: "person",
+                         placeholder: String(localized: "Benutzername")) { inputField = .passphrase }
+                .frame(width: Theme.formWidth)
                 .padding(.top, 28)
-                .focused($feld, equals: .benutzer)
+                .focused($inputField, equals: .user)
 
-            Eingabezeile(text: $kennwort, symbol: "lock", geheim: true,
-                         platzhalter: String(localized: "Passwort"), abschluss: anmelden)
-                .frame(width: Stil.formularbreite)
+            InputRow(text: $passphrase, symbol: "lock", secret: true,
+                         placeholder: String(localized: "Passwort"), completion: signIn)
+                .frame(width: Theme.formWidth)
                 .padding(.top, 10)
-                .focused($feld, equals: .kennwort)
+                .focused($inputField, equals: .passphrase)
 
-            if let fehler = model.errorMessage {
-                Text(fehler)
-                    .font(Stil.zweitzeile)
-                    .foregroundStyle(Stil.warnung)
+            if let error = model.errorMessage {
+                Text(error)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.warning)
                     .multilineTextAlignment(.center)
-                    .frame(width: Stil.formularbreite)
+                    .frame(width: Theme.formWidth)
                     .padding(.top, 12)
             }
 
-            Hauptknopf(beschriftung: "Anmelden", symbol: "arrow.right",
-                       auswahl: anmelden)
+            PrimaryButton(label: "Anmelden", symbol: "arrow.right",
+                       pick: signIn)
                 .padding(.top, 24)
-                .disabled(benutzer.isEmpty || model.isWorking)
-                .opacity(benutzer.isEmpty ? 0.4 : 1)
+                .disabled(user.isEmpty || model.isWorking)
+                .opacity(user.isEmpty ? 0.4 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { feld = .benutzer }
+        .onAppear { inputField = .user }
     }
 
-    private func anmelden() {
-        guard !benutzer.isEmpty else { return }
-        Task { await model.login(username: benutzer, password: kennwort) }
+    private func signIn() {
+        guard !user.isEmpty else { return }
+        Task { await model.login(username: user, password: passphrase) }
     }
 }
 
-// MARK: - Eingabefeld
+// MARK: - Input field
 
-/// Eigenes Feld statt `TextField` mit Systemrahmen: der bringt auf dem Mac
-/// eine helle Fläche und eine eigene Ecke mit. Der Rahmen ist hier eine
-/// Haarlinie in Weiß 12 %, die Ecke 10 — dieselben Werte wie auf dem iPhone.
-struct Eingabezeile: View {
+/// A custom field instead of `TextField` with the system frame, which brings a
+/// light surface and its own corner on the Mac. The border is a hairline at white
+/// 12 %, corner radius 10, the same values as on iPhone.
+struct InputRow: View {
     @Binding var text: String
     let symbol: String
-    var geheim = false
-    let platzhalter: String
-    var abschluss: () -> Void = {}
+    var secret = false
+    let placeholder: String
+    var completion: () -> Void = {}
 
-    @FocusState private var drin: Bool
+    @FocusState private var inside: Bool
 
     var body: some View {
         HStack(spacing: 9) {
-            // Zeichen 17 in einer 20 breiten Spalte (BAUTEILE 6).
+            // Character 17 in a 20-wide column.
             Image(systemName: symbol)
-                .font(Stil.rubrikGross.weight(.regular))
-                .foregroundStyle(Stil.schriftSehrLeise)
+                .font(Theme.categoryLarge.weight(.regular))
+                .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 20)
                 .accessibilityHidden(true)
 
             Group {
-                if geheim {
-                    SecureField("", text: $text, prompt: platz)
+                if secret {
+                    SecureField("", text: $text, prompt: slot)
                 } else {
-                    TextField("", text: $text, prompt: platz)
+                    TextField("", text: $text, prompt: slot)
                 }
             }
             .textFieldStyle(.plain)
-            .font(Stil.koerper)
-            .foregroundStyle(Stil.schrift)
-            .focused($drin)
-            .onSubmit(abschluss)
+            .font(Theme.body)
+            .foregroundStyle(Theme.font)
+            .focused($inside)
+            .onSubmit(completion)
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .background(Stil.flaeche,
-                    in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
-        // **Kein Fokusring.** Hier stand ein Akzentrand mit 50 Prozent —
-        // eine rohe Deckkraft, und der Fokus haette allein an der Farbe
-        // gehangen. Jetzt sagt die Strichstaerke, wo man schreibt: 2 statt
-        // 1, gleiche Farbe (BAUTEILE 6).
-        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous)
-            .strokeBorder(Stil.rand, lineWidth: drin ? 2 : 1))
-        .animation(Stil.zeitSchweben, value: drin)
+        .background(Theme.area,
+                    in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+        // **No focus ring.** An accent border at 50 % opacity made focus depend on colour
+        // alone. Instead the stroke width shows where you are typing: 2 instead of 1,
+        // same colour.
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous)
+            .strokeBorder(Theme.margin, lineWidth: inside ? 2 : 1))
+        .animation(Theme.timeFloat, value: inside)
     }
 
-    private var platz: Text {
-        Text(verbatim: platzhalter).foregroundColor(Stil.schriftSehrLeise)
+    private var slot: Text {
+        Text(verbatim: placeholder).foregroundColor(Theme.fontVeryQuiet)
     }
 }

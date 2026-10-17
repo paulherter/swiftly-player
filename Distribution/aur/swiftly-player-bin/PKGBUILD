@@ -1,0 +1,35 @@
+# Maintainer: Paul Herter <accounts@paulherter.de>
+#
+# Prebuilt package from the GitHub release, not a source build. The tarball
+# `swiftly-jellyfin-<version>-x86_64.tar.gz` already has the final usr/ layout,
+# so this only copies it to $pkgdir.
+# For a source build (compiling Swift) see the separate PKGBUILD in
+# `Linux/Install/PKGBUILD` in this repository (package name
+# `swiftly-jellyfin`, without `-bin`).
+#
+# On every release the workflow `.github/workflows/aur.yml` rewrites this file
+# with the new version and checksum and pushes it to the AUR. pkgver and
+# sha256sums here are only the initial state.
+
+pkgname=swiftly-player-bin
+pkgver=1.0.3
+pkgrel=1
+pkgdesc="Jellyfin client that never transcodes (prebuilt binary)"
+arch=('x86_64')
+url="https://github.com/paulherter/swiftly-player"
+license=('MPL-2.0')
+depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
+provides=('swiftly-jellyfin')
+conflicts=('swiftly-jellyfin')
+options=('!strip' '!debug')
+source=("https://github.com/paulherter/swiftly-player/releases/download/v${pkgver}/swiftly-jellyfin-${pkgver}-x86_64.tar.gz")
+sha256sums=('3f1f9704af4529b8a4e5126b6a3ce1d506f6519bcf47251a2bbad235b0df1eee')
+
+package() {
+    # The tarball already unpacks into usr/lib, usr/bin and usr/share, the same
+    # layout the source PKGBUILD produces.
+    cp -r "$srcdir/swiftly-jellyfin-$pkgver/usr" "$pkgdir/usr"
+    install -Dm644 "$pkgdir/usr/share/doc/swiftly-jellyfin/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    rm -rf "$pkgdir/usr/share/doc/swiftly-jellyfin"
+}

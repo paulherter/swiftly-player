@@ -1,268 +1,250 @@
 import JellyfinKit
 import SwiftUI
 
-/// **Eine Person: wer das ist, und was es mit ihr gibt.**
+/// **One person: who they are and what exists for them.**
 ///
-/// Ein Klick auf einen Darsteller führte bisher nirgends hin — von einem
-/// Tester gemeldet, zuerst auf dem iPhone behoben. Aufgebaut wie die
-/// Detailseite dieses Fensters: das Bild rechts als Kulisse, links unten
-/// Porträt und Name, darunter die Rolle, über die man kam, und die
-/// Biografie. Dann die Reihen: was auf dem Server liegt, und — nur mit
-/// Seerr — was sich anfragen lässt.
+/// Built like this window's detail page: the image on the right as backdrop, portrait
+/// and name at the bottom left, below them the role through which the user arrived,
+/// and the biography. Then the rows: what is on the server, and, only with Seerr,
+/// what can be requested.
 ///
-/// **Das Banner wechselt** zwischen den Hintergründen ihrer Titel, weich und
-/// langsam. Gibt es nur einen, bleibt es bei dem.
+/// **The banner changes** between the backgrounds of the person's titles, softly and
+/// slowly. If there is only one, it stays.
 ///
-/// **Nichts springt nach.** Porträt und Name stehen sofort da — sie kommen
-/// mit dem Klick. Alles andere blendet gemeinsam ein, sobald der Server
-/// geantwortet hat; Seerr kommt unten dazu, damit sich darüber nichts
-/// verschiebt.
+/// **Nothing jumps afterwards.** Portrait and name are there at once because they
+/// come with the click. Everything else fades in together once the server has
+/// answered; Seerr is added at the bottom so nothing above it shifts.
 struct PersonView: View {
     let model: AppModel
     let person: Person
-    /// Der Titel, aus dem man kam — steht über der Rolle.
-    let herkunft: String?
-    let zurueck: () -> Void
+    /// The title the user came from; shown above the role.
+    let origin: String?
+    let back: () -> Void
 
     @Environment(Navigator.self) private var navigator
-    @Environment(\.bereich) private var bereich
+    @Environment(\.section) private var section
 
-    @State private var farbe = Bildfarbe()
-    @State private var kopfstand = Kopfstand()
-    @State private var auskunft: Item?
-    @State private var titel: [Item] = []
-    @State private var anfragbar: [Seerrtreffer] = []
-    @State private var geladen = false
-    /// `nil` von `titel(person:)` heisst gestoert. Vorher stand bei einem
-    /// stummen Server „Auf deinem Server gibt es sonst nichts mit …" da.
-    @State private var gestoert = false
-    /// Seerr hat geantwortet — erst dann gilt „es gibt sonst nichts".
-    @State private var seerrFertig = false
-    @State private var ganzeBiografie = false
+    @State private var color = ImageColor()
+    @State private var headerState = HeaderState()
+    @State private var inquiry: Item?
+    @State private var title: [Item] = []
+    @State private var requestable: [SeerrHit] = []
+    @State private var loaded = false
+    /// `nil` from `title(person:)` means the server is disturbed. Previously a silent
+    /// server showed "Auf deinem Server gibt es sonst nichts mit ...".
+    @State private var disrupted = false
+    /// Seerr has answered; only then does "there is nothing else" hold.
+    @State private var seerrReady = false
+    @State private var wholeBiography = false
     @State private var banner: [URL] = []
-    @State private var bannerStelle = 0
+    @State private var bannerPoint = 0
 
-    private var bannerJetzt: URL? { banner.isEmpty ? nil : banner[bannerStelle % banner.count] }
+    private var bannerNow: URL? { banner.isEmpty ? nil : banner[bannerPoint % banner.count] }
 
-    /// Wie hoch der runde Kopf ist — und damit der ganze Block, denn der Text
-    /// daneben ist niedriger.
-    private let blockhoehe: CGFloat = 88
+    /// How tall the round head is, and so the whole block, since the text beside it is shorter.
+    private let blockHeight: CGFloat = 88
 
-    /// **Die Kopfzone ist kürzer als auf der Detailseite, und das ist
-    /// gerechnet.**
+    /// **The header zone is shorter than on the detail page, by calculation.**
     ///
-    /// Auf der Detailseite füllen Titel, Angaben, Beschreibung und Knopfreihe
-    /// die 380 Punkt bis zur Unterkante. Hier steht nur ein Name. Stand der
-    /// Block oben, klaffte darunter ein Loch; hängte man ihn unten an, klaffte
-    /// es darüber — links neben dem Namen liegt ja keine Kulisse, sondern
-    /// blanker Grund.
+    /// On the detail page, title, details, description and button row fill the 380 pt to
+    /// the bottom edge. Here there is only a name. With the block at the top, a hole
+    /// gaped below it; hung at the bottom, the hole gaped above it, because to the left of
+    /// the name there is no backdrop, only plain background.
     ///
-    /// Also dieselbe Rechnung wie dort, nur ohne das, was es hier nicht gibt:
-    /// derselbe Vorlauf oben (`titelHoehe + 98`, damit auch die einblendende
-    /// Leiste weiter passt), darunter der Block und sein Fussabstand.
-    private var kopfhoehe: CGFloat { Stil.titelHoehe + 98 + blockhoehe + 22 }
+    /// So the same calculation as there, minus what does not exist here: the same lead-in
+    /// at the top (`titleHeight + 98`, so the fading bar still fits), then the block and
+    /// its bottom spacing.
+    private var headerHeight: CGFloat { Theme.titleHeight + 98 + blockHeight + 22 }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                held.zIndex(1)
+                hero.zIndex(1)
 
                 VStack(alignment: .leading, spacing: 26) {
-                    // Rolle und Biografie stehen zusammen und eng — auf dem
-                    // iPhone genauso. Der grosse Abstand gilt zwischen den
-                    // Blöcken, nicht innerhalb.
+                    // Role and biography stand together and close, as on the iPhone. The large spacing
+                    // applies between blocks, not within them.
                     VStack(alignment: .leading, spacing: 10) {
-                        rollenzeile
-                        biografie
+                        roleRow
+                        biography
                     }
-                    // **Vor `geladen` stand hier nichts.** Name, Bild, und
-                    // darunter eine leere Flaeche — beim Laden, bei einer
-                    // Person ohne Titel und bei einem stummen Server
-                    // dieselbe. Drei Lagen, ein Bild.
-                    if !geladen {
+                    // **Before `loaded`, nothing was shown here:** name, image and an empty surface
+                    // below, the same while loading, for a person without titles, and for a silent
+                    // server. Three situations, one picture.
+                    if !loaded {
                         VStack(alignment: .leading, spacing: 12) {
-                            Reihentitel(text: "Auf deinem Server")
-                            HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                            RailTitle(text: "Auf deinem Server")
+                            HStack(alignment: .top, spacing: Theme.tileSpacing) {
                                 ForEach(0 ..< 4, id: \.self) { _ in
-                                    Ladefeld()
-                                        .frame(width: Stil.kachelBreite,
-                                               height: Stil.kachelBreite * 1.5)
+                                    LoadField()
+                                        .frame(width: Theme.tileWidth,
+                                               height: Theme.tileWidth * 1.5)
                                 }
                             }
                         }
                         .transition(.opacity)
                     }
-                    Titelreihe(titel: "Auf deinem Server", eintraege: titel, model: model)
-                    anfragereihe
-                    if gestoert, titel.isEmpty {
-                        // Auf Seerr wird nicht gewartet: was der eigene Server
-                        // sagt, ist die Hauptauskunft dieser Seite.
-                        Stoerhinweis(model: model, erneut: { Task { await laden() } },
-                                     abstandOben: 0)
-                    } else if geladen, seerrFertig, titel.isEmpty, anfragbar.isEmpty {
+                    TitleRail(title: "Auf deinem Server", entries: title, model: model)
+                    requestRail
+                    if disrupted, title.isEmpty {
+                        // Seerr is not waited for: what the own server says is the main information of this page.
+                        DisturbHint(model: model, retry: { Task { await load() } },
+                                     spacingTop: 0)
+                    } else if loaded, seerrReady, title.isEmpty, requestable.isEmpty {
                         Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
-                            .font(Stil.koerper)
-                            .foregroundStyle(Stil.schriftLeise)
+                            .font(Theme.body)
+                            .foregroundStyle(Theme.fontQuiet)
                     }
                 }
-                .padding(.horizontal, Stil.randAbstand)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.top, 26)
             }
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .seitenscrollen()
+        .pagesScroll()
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        // Derselbe Auslauf wie auf der Detailseite: der Bildton läuft unter
-        // dem Kopf noch ein Stück weiter und verliert sich im Grundton.
+        // The same run-out as on the detail page: the image tone continues a little below the
+        // header and fades into the background tone.
         .background(alignment: .top) {
-            LinearGradient(colors: [farbe.ton, Stil.grund],
+            LinearGradient(colors: [color.audio, Theme.reason],
                            startPoint: .top, endPoint: .bottom)
-                .frame(height: kopfhoehe + 260)
+                .frame(height: headerHeight + 260)
                 .frame(maxHeight: .infinity, alignment: .top)
         }
-        .background(Stil.grund)
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-            kopfstand.versatz = neu
+        .background(Theme.reason)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+            headerState.offset = new
         }
         .overlay(alignment: .top) {
-            Detailkopf(titel: person.name, stand: kopfstand, zurueck: zurueck)
+            DetailHeader(title: person.name, state: headerState, back: back)
         }
-        .task(id: "\(person.id)|\(model.listenAuffrischen)") { await laden() }
-        .task(id: bannerJetzt) { await farbe.laden(bannerJetzt) }
-        // **Die dekorative Bannerschleife ist weg.**
+        .task(id: "\(person.id)|\(model.listenRefresh)") { await load() }
+        .task(id: bannerNow) { await color.load(bannerNow) }
+        // **The decorative banner loop is gone.**
         //
-        // Sie wechselte alle sechs Sekunden das Hintergrundbild, in einer
-        // Blende von 1,2 Sekunden. „Nichts bewegt sich dekorativ. Keine
-        // dauernde Bewegung, kein Wackeln, kein Puls" (BRAND 6) — und eine
-        // Schleife, die nie aufhoert, ist die deutlichste Form davon. Die
-        // iPhone-Fassung hat sie am 21.09. gestrichen; auf dem Mac lief sie
-        // weiter, und dort ist die Flaeche groesser.
+        // It swapped the background image every six seconds with a 1.2 second cross-fade.
+        // Nothing moves decoratively, and a loop that never ends is the clearest form of
+        // that. The iPhone version dropped it; on the Mac it kept running, and the surface
+        // is larger there.
         //
-        // `bannerStelle` bleibt auf null: das erste Bild steht, und es
-        // bleibt stehen.
+        // `bannerPoint` stays at zero: the first image stays.
     }
 
-    // MARK: Kopf
+    // MARK: Header
 
-    private var held: some View {
-        // Ohne eigenen Hintergrund bleibt die Fläche leer statt ein Porträt
-        // quer zu beschneiden — ein Gesicht im Anschnitt sieht schlechter aus
-        // als Ruhe.
+    private var hero: some View {
+        // Without a background of its own the area stays empty instead of cropping a portrait
+        // sideways: a face cut off looks worse than calm.
         ZStack {
-            Kulisse(url: bannerJetzt, hoehe: kopfhoehe * 1.62)
-                .id(bannerStelle)
+            Backdrop(url: bannerNow, height: headerHeight * 1.62)
+                .id(bannerPoint)
                 .transition(.opacity)
         }
-        .frame(height: kopfhoehe, alignment: .topLeading)
-        // **Unten im Bild, nicht oben.**
+        .frame(height: headerHeight, alignment: .topLeading)
+        // **At the bottom of the image, not the top.**
         //
-        // Der Block sass auf der Höhe, auf der er auf der Detailseite sitzt —
-        // dort folgen darunter aber noch Beschreibung und Knopfreihe, die die
-        // Kopfzone bis zur Unterkante füllen. Hier folgt nichts, und zwischen
-        // dem Namen und der Biografie stand ein Loch von rund 170 Punkt.
-        // Unten verankert steht er, wo er auf iPhone und iPad steht.
+        // The block sat at the height where it sits on the detail page, but there the
+        // description and button row follow and fill the header zone to the bottom edge.
+        // Here nothing follows, and a gap of about 170 pt opened between name and
+        // biography. Anchored at the bottom it sits where it does on iPhone and iPad.
         .overlay(alignment: .bottomLeading) {
             block
-                .padding(.leading, Stil.randAbstand)
+                .padding(.leading, Theme.edgeSpacing)
                 .padding(.bottom, 22)
         }
     }
 
-    /// Porträt, Name, zwei Auskunftszeilen, Rolle — **feste Höhen**, damit
-    /// nichts nach oben schiebt, wenn der Server antwortet.
+    /// Portrait, name, two info lines, role: **fixed heights**, so nothing pushes upward
+    /// when the server answers.
     private var block: some View {
         HStack(alignment: .bottom, spacing: 16) {
-            // Rund, weil es ein Bild ist — wie die Köpfe der Besetzung.
-            Profilzeichen(name: person.name,
-                          bild: model.personBild(person, maxHeight: 300),
-                          groesse: blockhoehe)
+            // Round because it is a picture, like the cast heads.
+            ProfileCharacter(name: person.name,
+                          image: model.personImage(person, maxHeight: 300),
+                          size: blockHeight)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: person.name)
-                    // Seitentitel: 28 Bold, Sperrung an der Stufe.
-                    .font(Stil.titelGross)
-                    .tracking(Stil.sperrungTitel)
-                    .foregroundStyle(Stil.schrift)
+                    // Page title: 28 bold, letter-spacing for that step.
+                    .font(Theme.titleLarge)
+                    .tracking(Theme.lockTitle)
+                    .foregroundStyle(Theme.font)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
 
-                // Die zwei Zeilen haben ihren Platz von Anfang an und blenden
-                // nur ein.
+                // The two lines have their place from the start and only fade in.
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: geburtszeile ?? " ")
-                    Text(verbatim: ort ?? " ")
+                    Text(verbatim: birthRow ?? " ")
+                    Text(verbatim: place ?? " ")
                 }
-                // Angabe (Geburtsdatum, Ort): 12. Die 13 und 14 „ohne Rolle"
-                // sind in BAUTEILE 9.21 genau fuer diese Seite vermerkt.
-                .font(Stil.klein)
-                .foregroundStyle(Stil.schriftLeise)
+                // Detail line (birth date, place): 12. Sizes 13 and 14 "without role" are reserved for this page.
+                .font(Theme.small)
+                .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
-                .opacity(geladen ? 1 : 0)
+                .opacity(loaded ? 1 : 0)
             }
-            .frame(width: Stil.lesebreite, alignment: .leading)
+            .frame(width: Theme.readWidth, alignment: .leading)
         }
     }
 
-    private var geburtszeile: String? {
-        guard let tag = auskunft?.tagesdatum, let datum = Calendar.current.date(from: tag) else { return nil }
-        return String(localized: "Geboren \(datum.formatted(date: .long, time: .omitted))")
+    private var birthRow: String? {
+        guard let tag = inquiry?.daysDate, let date = Calendar.current.date(from: tag) else { return nil }
+        return String(localized: "Geboren \(date.formatted(date: .long, time: .omitted))")
     }
 
-    private var ort: String? {
-        guard let ort = auskunft?.productionLocations?.first, !ort.isEmpty else { return nil }
-        return ort
+    private var place: String? {
+        guard let place = inquiry?.productionLocations?.first, !place.isEmpty else { return nil }
+        return place
     }
 
     @ViewBuilder
-    private var rollenzeile: some View {
-        if let rolle = person.role, !rolle.isEmpty, let herkunft {
-            Text("\(rolle) in \(herkunft)")
-                .font(Stil.kachel)
-                .foregroundStyle(Stil.akzent)
+    private var roleRow: some View {
+        if let role = person.role, !role.isEmpty, let origin {
+            Text("\(role) in \(origin)")
+                .font(Theme.tile)
+                .foregroundStyle(Theme.accent)
                 .lineLimit(1)
         }
     }
 
-    /// Vier Zeilen, dann „Mehr". Eine Biografie ist hier Auskunft, nicht der
-    /// Grund, die Seite zu öffnen — sie soll die Titel nicht nach unten
-    /// schieben, bevor man sie will.
+    /// Four lines, then "Mehr". Here a biography is information, not the reason to open
+    /// the page; it should not push the titles down before the user wants it.
     @ViewBuilder
-    private var biografie: some View {
-        if let text = auskunft?.beschreibung {
+    private var biography: some View {
+        if let text = inquiry?.description {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: text)
-                    .font(Stil.koerper)
+                    .font(Theme.body)
                     .lineSpacing(3)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(ganzeBiografie ? nil : 4)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .lineLimit(wholeBiography ? nil : 4)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(ganzeBiografie ? "Weniger" : "Mehr") {
-                    withAnimation(Stil.sprung) { ganzeBiografie.toggle() }
+                Button(wholeBiography ? "Weniger" : "Mehr") {
+                    withAnimation(Theme.leap) { wholeBiography.toggle() }
                 }
-                .buttonStyle(Stil.Druckknopf())
-                .font(Stil.koerper.weight(.medium))
-                // Der stille Knopf traegt den Akzent — er ist die zweite
-                // Handlung (BAUTEILE 6).
-                .foregroundStyle(Stil.akzent)
+                .buttonStyle(Theme.PressButton())
+                .font(Theme.body.weight(.medium))
+                // The quiet button carries the accent: it is the second action.
+                .foregroundStyle(Theme.accent)
             }
-            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+            .frame(maxWidth: Theme.readWidth, alignment: .leading)
             .transition(.opacity)
         }
     }
 
     @ViewBuilder
-    private var anfragereihe: some View {
-        if !anfragbar.isEmpty {
+    private var requestRail: some View {
+        if !requestable.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Reihentitel(text: "Kann angefragt werden")
-                Blätterreihe(rand: 0) {
-                    ForEach(anfragbar) { treffer in
-                        Button { navigator.oeffne(.seerrTitel(treffer), in: bereich) } label: {
-                            Seerrkachel(treffer: treffer)
+                RailTitle(text: "Kann angefragt werden")
+                PagingRail(margin: 0) {
+                    ForEach(requestable) { hit in
+                        Button { navigator.openIt(.seerrTitle(hit), in: section) } label: {
+                            SeerrTile(hit: hit)
                         }
-                        .buttonStyle(Stil.Druckknopf())
+                        .buttonStyle(Theme.PressButton())
                     }
                 }
             }
@@ -270,47 +252,45 @@ struct PersonView: View {
         }
     }
 
-    // MARK: Laden
+    // MARK: Loading
 
-    private func laden() async {
-        // **Der eigene Server zuerst, Seerr daneben.** Seerr fragt für eine
-        // Filmografie erst bei TMDB nach und braucht dafür manchmal Sekunden;
-        // auf die wartete sonst die ganze Seite.
-        async let eigene = model.titel(person: person.id)
+    private func load() async {
+        // **The own server first, Seerr alongside.** For a filmography Seerr first asks TMDB
+        // and sometimes needs seconds for that; the whole page used to wait for it.
+        async let ownOnes = model.title(person: person.id)
         let a = await model.item(id: person.id)
-        async let fremde = filmografie(tmdb: a?.tmdbKennung)
-        let geholt = await eigene
-        // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
-        let b = geholt ?? titel
+        async let foreignOnes = filmography(tmdb: a?.tmdbId)
+        let fetched = await ownOnes
+        // Failed: the page keeps what it had and says so.
+        let b = fetched ?? title
 
-        // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
-        // Banner, was der erste als Ersatz hergibt.
-        var bilder = b.compactMap { model.querbildEcht(for: $0) }
-        if bilder.isEmpty, let erster = b.first, let ersatz = model.kopfbildURL(for: erster) {
-            bilder = [ersatz]
+        // Only real landscape images rotate; if none of the titles has one, the banner takes
+        // what the first offers as a substitute.
+        var images = b.compactMap { model.landscapeImageReal(for: $0) }
+        if images.isEmpty, let firstOne = b.first, let substitute = model.headerImageURL(for: firstOne) {
+            images = [substitute]
         }
 
-        withAnimation(Stil.einblenden) {
-            auskunft = a
-            gestoert = geholt == nil
-            titel = b
-            banner = bilder
-            geladen = true
+        withAnimation(Theme.reveal) {
+            inquiry = a
+            disrupted = fetched == nil
+            title = b
+            banner = images
+            loaded = true
         }
 
-        // **Nur, was nicht schon da ist.** Seerr kennt, was es selbst
-        // verwaltet; was anders auf den Server kam, steht dort als offen —
-        // der Name fängt es ab.
-        let eigeneNamen = Set(b.map { $0.name.lowercased() })
-        let neu = await fremde.filter { !$0.stand.schonDa && !eigeneNamen.contains($0.titel.lowercased()) }
-        withAnimation(Stil.einblenden) {
-            anfragbar = neu
-            seerrFertig = true
+        // **Only what is not already there.** Seerr knows what it manages itself; what came
+        // onto the server another way appears there as open, so the name filters it out.
+        let ownNames = Set(b.map { $0.name.lowercased() })
+        let new = await foreignOnes.filter { !$0.state.alreadyPresent && !ownNames.contains($0.title.lowercased()) }
+        withAnimation(Theme.reveal) {
+            requestable = new
+            seerrReady = true
         }
     }
 
-    private func filmografie(tmdb: Int?) async -> [Seerrtreffer] {
-        guard model.seerr.verbunden, let tmdb else { return [] }
-        return await model.seerr.filmografie(person: tmdb)
+    private func filmography(tmdb: Int?) async -> [SeerrHit] {
+        guard model.seerr.connected, let tmdb else { return [] }
+        return await model.seerr.filmography(person: tmdb)
     }
 }

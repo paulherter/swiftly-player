@@ -1,22 +1,21 @@
 import Foundation
 
-/// Meldet dem Server, was gerade läuft.
+/// Reports to the server what is playing.
 ///
-/// Das ist mehr als Buchhaltung: Jellyfin merkt sich daran die Position, zeigt
-/// „Weiterschauen" und hält andere Geräte auf demselben Stand. Ohne diese
-/// Meldungen fängt jeder Film auf jedem Gerät wieder bei null an.
+/// This is more than bookkeeping: Jellyfin uses it to remember the position,
+/// show "Continue Watching" and keep other devices in sync. Without these
+/// reports every movie starts at zero again on every device.
 public extension JellyfinClient {
 
-    /// Jellyfin rechnet in 100-Nanosekunden-Ticks.
+    /// Jellyfin counts in 100-nanosecond ticks.
     ///
-    /// **Ohne Absturz bei NaN, Unendlich oder Unsinn.** `Int64(Double)`
-    /// bricht die App ab, sobald der Wert keine Zahl ist oder nicht passt.
-    /// Die Stelle meldet, was der Player sagt — und ein Player, der gerade
-    /// oeffnet oder schliesst, sagt nicht immer eine Zahl. Negatives zaehlt
-    /// als Anfang, wie bei ``Sprungziel``.
+    /// **No crash on NaN, infinity or nonsense.** `Int64(Double)` aborts the app
+    /// when the value is not a number or does not fit. This is where the player's
+    /// word is reported, and a player that is just opening or closing does not
+    /// always say a number. Negative counts as the start, as with ``Sprungziel``.
     static func ticks(fromSeconds seconds: Double) -> Int64 {
         guard seconds.isFinite, seconds > 0 else { return 0 }
-        // Knapp unter Int64.max / 10^7 — ueber 29 000 Jahre.
+        // Just below Int64.max / 10^7, over 29,000 years.
         return Int64(min(seconds, 900_000_000_000) * 10_000_000)
     }
 
@@ -31,34 +30,34 @@ public extension JellyfinClient {
         let IsPaused: Bool
         let MediaSourceId: String?
         let PlayMethod: String
-        /// Ohne dieses Feld merkt sich Jellyfin keine Wiedergabeposition —
-        /// es hält die Wiedergabe sonst für nicht spulbar und verwirft den
-        /// Fortschritt. Der Standardwert ist false.
+        /// Without this field Jellyfin does not remember the playback position;
+        /// otherwise it considers the playback not seekable and discards the
+        /// progress. The default is false.
         let CanSeek: Bool
-        /// Die laufenden Spuren als Jellyfin-Index (T3 #8). Fehlen sie,
-        /// bleiben sie weg — der Server merkt sich sonst „keine".
+        /// The running tracks as Jellyfin indices. If they are missing, they are left
+        /// out; otherwise the server remembers "none".
         var AudioStreamIndex: Int? = nil
         var SubtitleStreamIndex: Int? = nil
     }
 
-    /// Wiedergabe hat begonnen.
+    /// Playback has started.
     func reportStart(itemID: String, plan: PlaybackPlan, ticks: Int64 = 0,
-                     spuren: Spurindizes = .init()) async throws {
+                     tracks: TrackIndices = .init()) async throws {
         try await postSession("Sessions/Playing", itemID: itemID, plan: plan,
-                              positionTicks: ticks, paused: false, spuren: spuren)
+                              positionTicks: ticks, paused: false, tracks: tracks)
     }
 
-    /// Zwischenstand. Sinnvoll etwa alle zehn Sekunden und bei jeder
-    /// Zustandsänderung.
+    /// Progress update. Sensible about every ten seconds and on every state
+    /// change.
     func reportProgress(itemID: String, plan: PlaybackPlan,
                         positionTicks: Int64, paused: Bool,
-                        spuren: Spurindizes = .init()) async throws {
+                        tracks: TrackIndices = .init()) async throws {
         try await postSession("Sessions/Playing/Progress", itemID: itemID, plan: plan,
-                              positionTicks: positionTicks, paused: paused, spuren: spuren)
+                              positionTicks: positionTicks, paused: paused, tracks: tracks)
     }
 
-    /// Wiedergabe beendet. Muss auch beim Verlassen der Ansicht kommen,
-    /// sonst bleibt die Sitzung im Server-Dashboard hängen.
+    /// Playback has ended. Must also be sent when leaving the view, otherwise the
+    /// session stays stuck in the server dashboard.
     func reportStopped(itemID: String, plan: PlaybackPlan, positionTicks: Int64) async throws {
         try await postSession("Sessions/Playing/Stopped", itemID: itemID, plan: plan,
                               positionTicks: positionTicks, paused: false)
@@ -66,16 +65,16 @@ public extension JellyfinClient {
 
     private func postSession(_ path: String, itemID: String, plan: PlaybackPlan,
                              positionTicks: Int64, paused: Bool,
-                             spuren: Spurindizes = .init()) async throws {
+                             tracks: TrackIndices = .init()) async throws {
         _ = try requireSessionForReporting()
-        let body = Self.meldekoerper(itemID: itemID, plan: plan, positionTicks: positionTicks,
-                                     paused: paused, spuren: spuren)
+        let body = Self.reportBody(itemID: itemID, plan: plan, positionTicks: positionTicks,
+                                     paused: paused, tracks: tracks)
         let req = try requestForReporting(path, body: body)
         _ = try await sendIgnoringBody(req)
     }
 
-    internal static func meldekoerper(itemID: String, plan: PlaybackPlan, positionTicks: Int64,
-                             paused: Bool, spuren: Spurindizes) -> ProgressBody {
+    internal static func reportBody(itemID: String, plan: PlaybackPlan, positionTicks: Int64,
+                             paused: Bool, tracks: TrackIndices) -> ProgressBody {
         ProgressBody(
             ItemId: itemID,
             PlaySessionId: plan.playSessionID,
@@ -84,8 +83,8 @@ public extension JellyfinClient {
             MediaSourceId: plan.mediaSourceID,
             PlayMethod: plan.method.wireName,
             CanSeek: true,
-            AudioStreamIndex: spuren.ton,
-            SubtitleStreamIndex: spuren.untertitel
+            AudioStreamIndex: tracks.audio,
+            SubtitleStreamIndex: tracks.subtitle
         )
     }
 }

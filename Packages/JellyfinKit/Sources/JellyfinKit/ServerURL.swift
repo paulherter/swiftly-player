@@ -1,112 +1,108 @@
 import Foundation
 
-/// Macht aus Nutzereingaben wie „tv.beispiel.de" oder „192.168.1.5:8096" eine
-/// brauchbare Basis-URL.
+/// Turns user input such as "tv.example.de" or "192.168.1.5:8096" into a usable
+/// base URL.
 public enum AppModelURLNormalizer {
 
     public static func normalize(_ raw: String) -> URL? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") {
-            // Kein Schema angegeben: raten, und zwar richtig herum.
+            // No scheme given: guess, and the right way round.
             //
-            // Vorher wurde immer `https` angenommen. Der überwiegende Teil
-            // selbst gehosteter Jellyfin-Server läuft aber im Heimnetz unter
-            // einer IP ohne Zertifikat — wer die Adresse ohne Schema eintippt,
-            // bekam einen Fehler, dessen Ursache nicht zu erraten ist.
-            // Eine nackte IPv6-Adresse braucht Klammern, sonst liest `URL`
-            // ihre Doppelpunkte als Port und findet keinen Rechner.
-            if istIPv6(text) { text = "[" + text + "]" }
-            text = (istImHeimnetz(text) ? "http://" : "https://") + text
+            // It used to assume `https` always. But most self-hosted Jellyfin servers run
+            // on the home network under an IP without a certificate; anyone typing the
+            // address without a scheme got an error whose cause could not be guessed.
+            // A bare IPv6 address needs brackets, otherwise `URL` reads its colons as a
+            // port and finds no host.
+            if isIPv6(text) { text = "[" + text + "]" }
+            text = (isHomeNetwork(text) ? "http://" : "https://") + text
         }
         while text.hasSuffix("/") { text.removeLast() }
         guard let url = URL(string: text), url.host() != nil else { return nil }
         return url
     }
 
-    /// **Eine serverrelative Angabe an die Serveradresse hängen — mit deren
-    /// Pfad.**
+    /// **Append a server-relative path to the server address, keeping its path.**
     ///
-    /// Jellyfin nennt `TranscodingUrl` und `DeliveryUrl` als Pfad mit
-    /// führendem Schrägstrich („/videos/…/master.m3u8"), ohne den Unterpfad,
-    /// unter dem ein Reverse-Proxy den Server veröffentlicht. `URL(string:
-    /// relativeTo:)` löst einen solchen Pfad nach RFC 3986 gegen die
-    /// **Wurzel** des Rechners auf: aus `https://h.de/jellyfin` wurde
-    /// `https://h.de/videos/…` — am Proxy ein 404. Externe Untertitel fehlten
-    /// dann, und jede umgepackte Wiedergabe (AirPlay, Bitratengrenze) blieb
-    /// schwarz. Mit IP und Port ohne Unterpfad fällt das nie auf
-    /// (jellyfin/Swiftfin#1695). Die Abspieladresse selbst ging schon immer
-    /// über `appendingPathComponent` und war nicht betroffen.
+    /// Jellyfin gives `TranscodingUrl` and `DeliveryUrl` as a path with a leading
+    /// slash ("/videos/…/master.m3u8"), without the subpath under which a reverse
+    /// proxy publishes the server. `URL(string:relativeTo:)` resolves such a path
+    /// per RFC 3986 against the **root** of the host: `https://h.de/jellyfin`
+    /// became `https://h.de/videos/…`, a 404 at the proxy. External subtitles were
+    /// then missing, and every repackaged playback (AirPlay, bitrate limit) stayed
+    /// black. With IP and port and no subpath this never shows (Swiftfin#1695).
+    /// The playback address itself always went through `appendingPathComponent` and
+    /// was not affected.
     ///
-    /// Eine vollständige Adresse (externe Untertitel mit `IsExternalUrl`)
-    /// bleibt, wie sie ist.
-    public static func serverrelativ(_ angabe: String, basis: URL) -> URL? {
-        if let voll = URL(string: angabe), voll.scheme != nil { return voll }
-        guard let rel = URLComponents(string: angabe),
-              var teile = URLComponents(url: basis, resolvingAgainstBaseURL: false)
+    /// A complete address (external subtitles with `IsExternalUrl`) stays as it is.
+    public static func serverRelative(_ detail: String, base: URL) -> URL? {
+        if let full = URL(string: detail), full.scheme != nil { return full }
+        guard let rel = URLComponents(string: detail),
+              var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)
         else { return nil }
-        var vorne = teile.percentEncodedPath
-        while vorne.hasSuffix("/") { vorne.removeLast() }
-        var hinten = rel.percentEncodedPath
-        while hinten.hasPrefix("/") { hinten.removeFirst() }
-        teile.percentEncodedPath = vorne + "/" + hinten
-        teile.percentEncodedQuery = rel.percentEncodedQuery
-        teile.fragment = nil
-        return teile.url
+        var ahead = parts.percentEncodedPath
+        while ahead.hasSuffix("/") { ahead.removeLast() }
+        var behind = rel.percentEncodedPath
+        while behind.hasPrefix("/") { behind.removeFirst() }
+        parts.percentEncodedPath = ahead + "/" + behind
+        parts.percentEncodedQuery = rel.percentEncodedQuery
+        parts.fragment = nil
+        return parts.url
     }
 
-    /// Dieselbe Adresse mit dem jeweils anderen Schema — für den zweiten
-    /// Versuch, wenn der erste an der Verbindung scheitert.
+    /// The same address with the other scheme, for the second attempt when the first
+    /// fails at the connection.
     ///
-    /// `nil`, wenn schon `http` steht: dorthin auszuweichen wäre kein
-    /// Ausweichen, und ein Rückschritt auf unverschlüsselt darf nie
-    /// automatisch geschehen, wenn der Nutzer `https` verlangt hat.
-    public static func andersHerum(_ url: URL) -> URL? {
+    /// `nil` if it is already `http`: switching there would be no fallback, and a
+    /// step back to unencrypted must never happen automatically if the user asked
+    /// for `https`.
+    public static func reversed(_ url: URL) -> URL? {
         guard url.scheme == "https" else { return nil }
-        var teile = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        teile?.scheme = "http"
-        return teile?.url
+        var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        parts?.scheme = "http"
+        return parts?.url
     }
 
-    /// Adressen, bei denen ein Zertifikat unwahrscheinlich ist: IP-Literale,
-    /// `.local`, `.lan`, `.home`, `.internal` und nackte Rechnernamen ohne Punkt.
-    public static func istImHeimnetz(_ text: String) -> Bool {
-        // Vor einem etwaigen Port und Pfad abschneiden.
+    /// Addresses where a certificate is unlikely: IP literals, `.local`, `.lan`,
+    /// `.home`, `.internal` and bare host names without a dot.
+    public static func isHomeNetwork(_ text: String) -> Bool {
+        // Cut off before any port and path.
         let name = text.split(separator: "/").first.map(String.init) ?? text
-        // **IPv6-Literal**, mit Klammern („[fd00::5]:8096") oder ohne, wie
-        // `URL.host()` es liefert. Gilt wie jedes IP-Literal als Heimnetz —
-        // bisher nur zufaellig: der Schnitt am ersten Doppelpunkt liess
-        // „fd00" stehen, und ein Name ohne Punkt ist ein Rechnername.
-        if name.hasPrefix("["), let zu = name.firstIndex(of: "]") {
-            return istIPv6(String(name[name.index(after: name.startIndex) ..< zu]))
+        // **IPv6 literal**, with brackets ("[fd00::5]:8096") or without, as
+        // `URL.host()` returns it. Counts as home network like any IP literal; before,
+        // that only happened by accident: cutting at the first colon left "fd00",
+        // and a name without a dot is a host name.
+        if name.hasPrefix("["), let toward = name.firstIndex(of: "]") {
+            return isIPv6(String(name[name.index(after: name.startIndex) ..< toward]))
         }
-        if istIPv6(name) { return true }
-        let ohnePort = name.split(separator: ":").first.map(String.init) ?? name
-        let klein = ohnePort.lowercased()
+        if isIPv6(name) { return true }
+        let withoutPort = name.split(separator: ":").first.map(String.init) ?? name
+        let small = withoutPort.lowercased()
 
-        if klein.hasSuffix(".local") || klein.hasSuffix(".lan")
-            || klein.hasSuffix(".home") || klein.hasSuffix(".internal")
-            || klein == "localhost" {
+        if small.hasSuffix(".local") || small.hasSuffix(".lan")
+            || small.hasSuffix(".home") || small.hasSuffix(".internal")
+            || small == "localhost" {
             return true
         }
-        // Ein Name ohne Punkt ist ein Rechnername im eigenen Netz.
-        if !klein.contains(".") { return true }
-        // IPv4-Literal.
-        let teile = klein.split(separator: ".", omittingEmptySubsequences: false)
-        if teile.count == 4, teile.allSatisfy({ stueck in
-            !stueck.isEmpty && stueck.allSatisfy(\.isNumber) && (Int(stueck) ?? 256) < 256
+        // A name without a dot is a host name on the own network.
+        if !small.contains(".") { return true }
+        // IPv4 literal.
+        let parts = small.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count == 4, parts.allSatisfy({ piece in
+            !piece.isEmpty && piece.allSatisfy(\.isNumber) && (Int(piece) ?? 256) < 256
         }) {
             return true
         }
         return false
     }
 
-    /// Sieht der Text aus wie eine IPv6-Adresse? Mindestens zwei Doppelpunkte,
-    /// sonst nur Hexziffern und Punkte (fuer „::ffff:1.2.3.4"); eine Zone
-    /// („fe80::1%en0") wird vorher abgeschnitten.
-    static func istIPv6(_ text: String) -> Bool {
-        let ohneZone = text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text
-        guard ohneZone.filter({ $0 == ":" }).count >= 2 else { return false }
-        return ohneZone.allSatisfy { $0 == ":" || $0 == "." || $0.isHexDigit }
+    /// Does the text look like an IPv6 address? At least two colons, otherwise only
+    /// hex digits and dots (for "::ffff:1.2.3.4"); a zone ("fe80::1%en0") is cut
+    /// off first.
+    static func isIPv6(_ text: String) -> Bool {
+        let withoutZone = text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text
+        guard withoutZone.filter({ $0 == ":" }).count >= 2 else { return false }
+        return withoutZone.allSatisfy { $0 == ":" || $0 == "." || $0.isHexDigit }
     }
 }

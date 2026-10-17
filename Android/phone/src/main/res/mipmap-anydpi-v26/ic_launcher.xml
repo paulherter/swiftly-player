@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon. Without `android:icon` in the manifest, Android shows its default icon on the
+     home screen.
+
+     Only `anydpi-v26`, no PNG chain: `minSdk` is 28 and adaptive icons exist from 26, so a
+     fallback would be dead weight. Two vectors instead of five bitmap sizes stay sharp at any
+     resolution. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

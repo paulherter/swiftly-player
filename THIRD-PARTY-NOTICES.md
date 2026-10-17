@@ -1,6 +1,6 @@
 # Third-party notices
 
-Swiftly Player is published under the MPL-2.0 (see `LICENSE`). It contains and uses the third-party components listed here. Each keeps its own license; the license texts are in `LICENSES/`. This file is generated from `LICENSES/bausteine.json` (`Werkzeuge/lizenzen-erzeugen.py`); do not edit it by hand.
+Swiftly Player is published under the MPL-2.0 (see `LICENSE`). It contains and uses the third-party components listed here. Each keeps its own license; the license texts are in `LICENSES/`. This file is generated from `LICENSES/components.json` (`Werkzeuge/licenses-generate.py`); do not edit it by hand.
 
 ## VLCKit / libVLC — Source and your rights
 
@@ -24,7 +24,7 @@ Bundled libraries: the exact release tarballs are those of VLC's contrib system 
 
 VLC for Windows: the source archive of VLC 3.0.21 at https://download.videolan.org/pub/videolan/vlc/3.0.21/ (vlc-3.0.21.tar.xz). Swiftly does not patch this runtime.
 
-Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Nine patches against libVLC (0028, 0030 to 0034 and 0036 to 0038) and one against VLCKit itself (VLCKit-pause-ohne-warteschlange.patch, for Sources/Playback/VLCMediaPlayer.m). Patch 0035 is in the same directory but is not part of any shipped build.
+Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Six patches against libVLC (0028 and 0030 to 0034) and one against VLCKit itself (VLCKit-pause-without-queue.patch, for Sources/Playback/VLCMediaPlayer.m). Patches 0035 to 0038 are in the same directory but are not part of any shipped build.
 
 How to rebuild: Documentation/VLCKit.md in the same repository describes the steps, and Documentation/Building.md describes how to build Swiftly against your own VLCKit.
 
@@ -73,7 +73,7 @@ Notes:
 | swift-java (swiftkit-core, JNI bridge) and the Swift runtime on Android | swift-java 0.6.0; swiftkit-core without a fixed version in Gradle | Apache-2.0 | Apple Inc. and the Swift.org project authors | https://github.com/swiftlang/swift-java | Android, Android TV |
 | GTK 4 and its libraries (GLib, Pango, Cairo, GdkPixbuf, HarfBuzz, FreeType, libpng and others) | bundled GTK 4 runtime (gvsbuild) on Windows; system library on Linux | LGPL-2.1-or-later | The GTK Team, The GNOME Project and the authors of the bundled libraries | https://www.gtk.org | Windows, Linux |
 | Swift runtime and Foundation | version of the toolchain used | Apache-2.0 | Apple Inc. and the Swift.org project authors | https://www.swift.org | Windows, Linux, Android, Android TV |
-| rlottie | current main branch at build time (Werkzeuge/rlottie-bauen.sh) | MIT | Samsung Electronics Co., Ltd. and the rlottie authors | https://github.com/Samsung/rlottie | Windows, Linux |
+| rlottie | current main branch at build time (Werkzeuge/rlottie-build.sh) | MIT | Samsung Electronics Co., Ltd. and the rlottie authors | https://github.com/Samsung/rlottie | Windows, Linux |
 | libepoxy | system library | MIT | The Khronos Group Inc., Intel Corporation and the libepoxy authors | https://github.com/anholt/libepoxy | Linux, Windows |
 
 Notes:

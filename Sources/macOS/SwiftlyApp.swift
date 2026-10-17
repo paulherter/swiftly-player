@@ -1,215 +1,201 @@
 import AppKit
 import SwiftUI
 
-/// Einstieg der Mac-Fassung.
+/// Entry point of the Mac version.
 ///
-/// `hiddenTitleBar` lässt den Inhalt bis unter die Fensterknöpfe laufen — die
-/// Seitenleiste hält oben `Stil.titelHoehe` frei, damit die Wortmarke nicht
-/// unter den drei Punkten liegt. Ohne das säße über allem eine graue Leiste,
-/// die zu einer flachen, dunklen Gestaltung nicht passt.
+/// `hiddenTitleBar` lets content run up under the window buttons; the sidebar keeps
+/// `Theme.titleHeight` free at the top so the wordmark does not sit under the three
+/// dots. Without that, a grey bar would sit over everything, which does not fit a
+/// flat, dark design.
 @main
 struct SwiftlyApp: App {
 
-    /// Die Kennung des einen Fensters. Als Konstante, damit sie beim Öffnen
-    /// aus dem Menü und beim Erklären dieselbe ist.
-    static let hauptfenster = "hauptfenster"
+    /// Identifier of the one window. A constant so it is the same when opening from
+    /// the menu and when explaining.
+    static let mainWindow = "hauptfenster"
 
-    /// **Damit das Schliessen des Fensters die App nicht beendet.**
+    /// **So that closing the window does not quit the app.**
     ///
-    /// Gemessen: ein `Window` ohne diesen Delegaten beendet das Programm,
-    /// sobald sein einziges Fenster zugeht. Das waere Apples zweiter
-    /// zulaessiger Weg — fuer einen Abspieler aber unueblich: Musik, TV, VLC
-    /// und IINA bleiben alle stehen. Mit `false` bleibt die App im Dock, und
-    /// SwiftUI fuehrt das zugegangene Fenster im Menue „Fenster".
-    @NSApplicationDelegateAdaptor(Anwendungsdelegat.self) private var delegat
+    /// A `Window` without this delegate terminates the program as soon as its only
+    /// window closes. That would be Apple's second permitted behaviour, but it is
+    /// unusual for a player: Music, TV, VLC and IINA all stay running. With `false`
+    /// the app stays in the Dock, and SwiftUI lists the closed window in the "Window"
+    /// menu.
+    @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegateObj
 
     init() {
         #if DEBUG
-        // Der Blick auf die eigene Arbeit — siehe `Fensterabzug`. Nur im
-        // Entwicklerbau, und nur ein Takt, der auf eine Datei sieht.
-        Fensterabzug.lauschen()
-        // Eine gemessene Scrollfahrt, wenn die Umgebung sie anfordert —
-        // siehe `Scrollprobe`. Ohne die Variable passiert nichts.
-        Scrollprobe.starten()
+        // A look at the app's own work, see `WindowOffPull`. Development builds only, and
+        // only a tick that watches one file.
+        WindowOffPull.eavesdrop()
+        // A measured scroll run when the environment requests it, see `ScrollProbe`.
+        // Without the variable nothing happens.
+        ScrollProbe.start()
         #endif
     }
 
     var body: some Scene {
-        // **`Window`, nicht `WindowGroup`.** Zwei Gruende, und der zweite ist
-        // der wichtigere.
+        // **`Window`, not `WindowGroup`.** Two reasons, the second more important.
         //
-        // 1. Apple hat 1.0.0 (8) nach Richtlinie 4 abgewiesen: „when the user
-        //    closes the main application window there is no menu item to
-        //    re-open it." Ein `Window` ist ein einzelnes, benanntes Fenster —
-        //    SwiftUI führt es dauerhaft im Menü „Fenster", auch wenn es zu
-        //    ist. Bei `WindowGroup` stand dort nur der Eintrag der offenen
-        //    Fensterliste.
-        // 2. **Zwei Fenster kann diese App gar nicht.** `AppModel` liegt als
-        //    `@State` in `RootView`; jedes weitere Fenster bekäme ein eigenes,
-        //    also eine zweite, nicht angemeldete App im selben Programm. Der
-        //    Eintrag „Neues Fenster" war deshalb schon vorher entfernt — und
-        //    damit auch der einzige Weg zurück. Genau diese Lücke hat Apple
-        //    gesehen.
-        Window(Text(verbatim: "Swiftly"), id: Self.hauptfenster) {
+        // 1. App Review rejected the app under guideline 4: "when the user closes the main
+        // application window there is no menu item to re-open it." A `Window` is a single
+        // named window; SwiftUI keeps it in the "Window" menu permanently, even when it is
+        // closed. With `WindowGroup` that menu only listed the currently open windows.
+        // 2. **This app cannot have two windows.** `AppModel` is `@State` in `RootView`;
+        // every further window would get its own, i.e. a second, signed-out app inside the
+        // same process. The "New Window" item was therefore already removed, and with it
+        // the only way back. That is exactly the gap App Review saw.
+        Window(Text(verbatim: "Swiftly"), id: Self.mainWindow) {
             RootView()
-                .frame(minWidth: Stil.fensterMinBreite, minHeight: Stil.fensterMinHoehe)
-                // Ein helles Thema gibt es nicht — die Gestaltung ist auf
-                // Dunkel gebaut. Wörtlich aus der iPhone-Fassung.
+                .frame(minWidth: Theme.windowMinWidth, minHeight: Theme.windowMinHeight)
+                // There is no light theme; the design is built for dark. Verbatim from the iPhone
+                // version.
                 .preferredColorScheme(.dark)
-                .tint(Stil.akzent)
+                .tint(Theme.accent)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
-        .commands { Menueleiste() }
+        .commands { MenuBar() }
     }
 }
 
-/// Die Menüleiste gehört zum Mac — aber sie bietet **nichts** an, was die
-/// Oberfläche nicht auch zeigt. Sie ist der zweite Weg zu denselben
-/// Handlungen, kein eigener Vorrat.
+/// The menu bar belongs to the Mac, but it offers **nothing** the UI does not also
+/// show. It is a second route to the same actions, not a store of its own.
 ///
-/// Die Befehle laufen deshalb über `Kommando` als Nachricht an die Ansicht,
-/// statt hier eigene Logik zu tragen.
-/// Was das vorderste Fenster der Menüleiste sagt: läuft ein Film, gibt es die
-/// Downloads?
+/// Commands therefore go through `AppCommand` as a message to the view instead of
+/// carrying logic here.
+/// What the frontmost window tells the menu bar: is a film playing, are downloads
+/// available?
 extension FocusedValues {
-    @Entry var playerOffen: Bool?
+    @Entry var playerOpen: Bool?
     @Entry var downloadsAn: Bool?
 }
 
-struct Menueleiste: Commands {
-    @FocusedValue(\.playerOffen) private var playerOffen
+struct MenuBar: Commands {
+    @FocusedValue(\.playerOpen) private var playerOpen
     @FocusedValue(\.downloadsAn) private var downloadsAn
 
     var body: some Commands {
-        // Apples Vorgaben, die es nicht braucht: keine Tellerränder wie
-        // „Drucken" oder „Neu". **Ein neues Fenster gibt es nicht** — siehe
-        // die Begründung an der Szene: zwei Fenster kann diese App nicht.
+        // Apple's defaults that are not needed: no filler items such as "Print" or "New".
+        // **There is no new window**, see the reasoning at the scene: this app cannot have
+        // two windows.
         CommandGroup(replacing: .newItem) {}
 
-        // **Der Weg zurück zum Fenster.** Apple hat 1.0.0 (8) genau hier
-        // abgewiesen: „when the user closes the main application window there
-        // is no menu item to re-open it."
+        // **The way back to the window.** App Review rejected the app exactly here: "when
+        // the user closes the main application window there is no menu item to re-open it."
         //
-        // Nachgemessen, nicht angenommen: weder `WindowGroup` noch `Window`
-        // stellen von sich aus einen Eintrag hin, der ein **zugegangenes**
-        // Fenster zurückholt. `WindowGroup` führte nur die offene Fensterliste
-        // — steht das Fenster, verschwindet der Eintrag. Bei `Window` war das
-        // Menü „Fenster" auch mit offenem Fenster leer bis auf „Im Dock
-        // ablegen", „Zoomen" und „Alle nach vorne bringen". Also selbst
-        // hinstellen.
-        CommandGroup(after: .singleWindowList) { Fensteroeffner() }
+        // Verified, not assumed: neither `WindowGroup` nor `Window` provides an item that
+        // brings back a **closed** window by itself. `WindowGroup` only listed the open
+        // windows, so the item vanished while the window was open. With `Window` the
+        // "Window" menu was empty even with the window open, apart from "Minimize", "Zoom"
+        // and "Bring All to Front". So it is provided here.
+        CommandGroup(after: .singleWindowList) { WindowOpener() }
 
-        // **Befehl-Komma. Jede Mac-App hat es, unsere hatte es nicht.**
+        // **Command-comma. Every Mac app has it.**
         //
-        // Wer die Einstellungen sucht, sucht sie zuerst im Programmmenü, und
-        // zwar unter diesem Kürzel — es ist auf dem Mac so selbstverständlich
-        // wie Befehl-W zum Schließen. Bei uns war der einzige Weg dorthin die
-        // Profilseite unten in der Seitenleiste. `.appSettings` ist die
-        // Stelle, an der AppKit den Eintrag erwartet; er steht dann dort, wo
-        // ihn jeder sucht, und nicht irgendwo im Menü.
+        // Anyone looking for settings looks in the app menu first, under this shortcut,
+        // as natural on the Mac as Command-W to close. Before this, the only route was the
+        // profile page at the bottom of the sidebar. `.appSettings` is where AppKit expects
+        // the item, so it appears where everyone looks.
         CommandGroup(replacing: .appSettings) {
-            Kommandoknopf("Einstellungen…", .einstellungen, ",")
+            CommandButton("Einstellungen…", .settings, ",")
         }
 
-        // **Alle Bereiche, nicht drei von sechs.** Die Seitenleiste kennt
-        // sechs; das Menü bot Start, Filme, Serien und Suchen. Merkliste und
-        // Downloads waren ohne Maus nur durch Tabben erreichbar — und einen
-        // sichtbaren Fokus gab es bis heute auch nicht.
+        // **All sections, not three of six.** The sidebar has six; the menu offered Home,
+        // Movies, Series and Search. Watchlist and Downloads could only be reached by
+        // tabbing without a mouse, and there was no visible focus either.
         CommandMenu(Text("Gehe zu")) {
-            Kommandoknopf("Start",     .start,     "1")
-            Kommandoknopf("Filme",     .filme,     "2")
-            Kommandoknopf("Serien",    .serien,    "3")
-            Kommandoknopf("Merkliste", .merkliste, "4")
-            Kommandoknopf("Downloads", .downloads, "5")
+            CommandButton("Start",     .start,     "1")
+            CommandButton("Filme",     .movies,     "2")
+            CommandButton("Serien",    .seriesList,    "3")
+            CommandButton("Merkliste", .watchlist, "4")
+            CommandButton("Downloads", .downloads, "5")
                 .disabled(downloadsAn == false)
             Divider()
-            Kommandoknopf("Suchen", .suche,  "f")
+            CommandButton("Suchen", .search,  "f")
             Divider()
-            Kommandoknopf("Zurück", .zurueck, "[")
+            CommandButton("Zurück", .back, "[")
         }
 
-        // **Was im Player ohnehin auf Tasten liegt**, auch in der Menüleiste
-        // zu finden. Ohne Kürzel hier: Leertaste, Pfeile und F gehören dem
-        // Player selbst (`PlayerScreen`), ein zweites Kürzel gleicher Taste
-        // träfe nur eines von beiden.
+        // **What already has keys in the player**, also available in the menu bar. No
+        // shortcuts here: Space, arrows and F belong to the player itself (`PlayerScreen`),
+        // and a second shortcut on the same key would only reach one of the two.
         CommandMenu(Text("Wiedergabe")) {
-            Button("Abspielen") { Kommandopost.senden(.spielUmschalten) }.disabled(playerOffen != true)
-            Button("Zurückspulen") { Kommandopost.senden(.spielZurueck) }.disabled(playerOffen != true)
-            Button("Vorspulen") { Kommandopost.senden(.spielVor) }.disabled(playerOffen != true)
-            Button("Pause") { Kommandopost.senden(.spielPause) }.disabled(playerOffen != true)
+            Button("Abspielen") { CommandPost.dispatch(.playToggle) }.disabled(playerOpen != true)
+            Button("Zurückspulen") { CommandPost.dispatch(.playBack) }.disabled(playerOpen != true)
+            Button("Vorspulen") { CommandPost.dispatch(.playForward) }.disabled(playerOpen != true)
+            Button("Pause") { CommandPost.dispatch(.playPause) }.disabled(playerOpen != true)
             Divider()
-            Button("Lauter") { Kommandopost.senden(.lauter) }.disabled(playerOffen != true)
-            Button("Leiser") { Kommandopost.senden(.leiser) }.disabled(playerOffen != true)
-            Button("Ton aus") { Kommandopost.senden(.stumm) }.disabled(playerOffen != true)
+            Button("Lauter") { CommandPost.dispatch(.louder) }.disabled(playerOpen != true)
+            Button("Leiser") { CommandPost.dispatch(.quieter) }.disabled(playerOpen != true)
+            Button("Ton aus") { CommandPost.dispatch(.muted) }.disabled(playerOpen != true)
             Divider()
-            Button("Vollbild") { Kommandopost.senden(.spielVollbild) }.disabled(playerOffen != true)
+            Button("Vollbild") { CommandPost.dispatch(.playFullscreen) }.disabled(playerOpen != true)
         }
     }
 }
 
-/// Was die Menüleiste auslösen kann. Absichtlich klein: jeder Fall hat eine
-/// sichtbare Entsprechung in der Oberfläche.
-enum Kommando: String {
-    case start, filme, serien, merkliste, downloads, suche, zurueck, einstellungen
-    /// Nur für den Player (Menü „Wiedergabe").
-    case spielUmschalten, spielPause, spielZurueck, spielVor, spielVollbild, lauter, leiser, stumm
+/// What the menu bar can trigger. Deliberately small: every case has a visible
+/// counterpart in the UI.
+enum AppCommand: String {
+    case start, movies = "filme", seriesList = "serien", watchlist = "merkliste", downloads, search = "suche", back = "zurueck", settings = "einstellungen"
+    /// Player only (the "Playback" menu).
+    case playToggle = "spielUmschalten", playPause = "spielPause", playBack = "spielZurueck", playForward = "spielVor", playFullscreen = "spielVollbild", louder = "lauter", quieter = "leiser", muted = "stumm"
 }
 
-/// Ein Menüeintrag, der sein Kommando als Nachricht schickt.
+/// A menu item that sends its command as a message.
 ///
-/// Über `NotificationCenter` und nicht über einen gemeinsamen Zustandshalter:
-/// die Menüleiste lebt außerhalb jeder Ansicht, und bei mehreren Fenstern
-/// gäbe es sonst keinen Weg zu entscheiden, welches gemeint ist — das
-/// vorderste hört zu, die anderen nicht.
-struct Kommandoknopf: View {
-    let beschriftung: LocalizedStringKey
-    let kommando: Kommando
-    let taste: KeyEquivalent
+/// Via `NotificationCenter` rather than a shared state holder: the menu bar lives
+/// outside any view, and with several windows there would be no way to decide which
+/// one is meant. The frontmost listens, the others do not.
+struct CommandButton: View {
+    let label: LocalizedStringKey
+    let command: AppCommand
+    let keyButton: KeyEquivalent
 
-    init(_ beschriftung: LocalizedStringKey, _ kommando: Kommando, _ taste: KeyEquivalent) {
-        self.beschriftung = beschriftung
-        self.kommando = kommando
-        self.taste = taste
+    init(_ label: LocalizedStringKey, _ command: AppCommand, _ keyButton: KeyEquivalent) {
+        self.label = label
+        self.command = command
+        self.keyButton = keyButton
     }
 
     var body: some View {
-        Button(beschriftung) { Kommandopost.senden(kommando) }
-            .keyboardShortcut(taste, modifiers: .command)
+        Button(label) { CommandPost.dispatch(command) }
+            .keyboardShortcut(keyButton, modifiers: .command)
     }
 }
 
-/// Der Draht zwischen Menüleiste und Ansicht.
-enum Kommandopost {
+/// The wire between menu bar and view.
+enum CommandPost {
     static let name = Notification.Name("de.paulherter.swiftly.kommando")
 
-    static func senden(_ kommando: Kommando) {
+    static func dispatch(_ command: AppCommand) {
         NotificationCenter.default.post(name: name, object: nil,
-                                        userInfo: ["k": kommando.rawValue])
+                                        userInfo: ["k": command.rawValue])
     }
 
-    static func empfangen(_ nachricht: Notification) -> Kommando? {
-        guard let roh = nachricht.userInfo?["k"] as? String else { return nil }
-        return Kommando(rawValue: roh)
+    static func receive(_ postDirection: Notification) -> AppCommand? {
+        guard let raw = postDirection.userInfo?["k"] as? String else { return nil }
+        return AppCommand(rawValue: raw)
     }
 }
 
-/// Nur eine Frage beantwortet dieser Delegat, und die stellt AppKit von selbst.
+/// This delegate answers one question only, which AppKit asks by itself.
 @MainActor
-final class Anwendungsdelegat: NSObject, NSApplicationDelegate {
+final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 }
 
-/// „Fenster → Swiftly" — holt das Hauptfenster zurück, wenn es zu ist, und
-/// nach vorn, wenn es offen ist. Beides macht `openWindow` von selbst.
+/// "Window > Swiftly": brings the main window back when closed and to the front
+/// when open. `openWindow` does both by itself.
 ///
-/// Eigene Ansicht und nicht ein Knopf im `Commands`-Rumpf: `openWindow` kommt
-/// aus der Umgebung, und die gibt es nur in einer `View`.
-struct Fensteroeffner: View {
-    @Environment(\.openWindow) private var oeffne
+/// A view of its own rather than a button in the `Commands` body: `openWindow` comes
+/// from the environment, which only exists in a `View`.
+struct WindowOpener: View {
+    @Environment(\.openWindow) private var openIt
 
     var body: some View {
-        Button { oeffne(id: SwiftlyApp.hauptfenster) } label: {
+        Button { openIt(id: SwiftlyApp.mainWindow) } label: {
             Text(verbatim: "Swiftly")
         }
         .keyboardShortcut("0", modifiers: .command)

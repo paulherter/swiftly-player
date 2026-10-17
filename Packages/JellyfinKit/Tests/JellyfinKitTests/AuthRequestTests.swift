@@ -1,20 +1,20 @@
 import Foundation
 import Testing
-// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
-// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
-// Import ist deshalb bedingt und dort wirkungslos.
+// On Linux, URLSession is not in Foundation but in a separate
+// module. That module does not exist on Apple platforms, so the
+// import is conditional and has no effect there.
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 @testable import JellyfinKit
 
-// .serialized, weil sich die Tests den statischen Mitschnitt der Spy-Klasse
-// teilen — parallel überschreiben sie sich gegenseitig.
+// .serialized because the tests share the static capture of the spy
+// class; run in parallel they overwrite each other.
 @Suite("Anmelde-Anfrage", .serialized)
 struct AuthRequestTests {
 
-    /// Fängt die Anfrage ab, statt sie zu senden — so lässt sich prüfen, was
-    /// die App tatsächlich verschickt.
+    /// Intercepts the request instead of sending it, so the test can check
+    /// what the app actually sends.
     final class Spy: URLProtocol, @unchecked Sendable {
         nonisolated(unsafe) static var captured: URLRequest?
 
@@ -22,8 +22,8 @@ struct AuthRequestTests {
         override class func canonicalRequest(for r: URLRequest) -> URLRequest { r }
 
         override func startLoading() {
-            // httpBody ist nach dem Durchlauf durch URLSession nur noch als
-            // Stream lesbar — deshalb hier einsammeln.
+            // After passing through URLSession, httpBody is only readable as a
+            // stream, so collect it here.
             var req = request
             if req.httpBody == nil, let stream = req.httpBodyStream {
                 stream.open()
@@ -73,16 +73,15 @@ struct AuthRequestTests {
         _ = try await spyClient().authenticate(username: "paul", password: "x")
         let header = try #require(Spy.captured?.value(forHTTPHeaderField: "Authorization"))
         #expect(header.hasPrefix("MediaBrowser "))
-        // **„Swiftly Player", der Name aus dem Store.** Der Nutzer sieht ihn
-        // in Jellyfins Geraeteliste, nicht auf dem Homebildschirm — dort
-        // heisst die App weiter „Swiftly". Am 10.09.2026 geaendert, nachdem
-        // in der Sitzungsuebersicht „Swiftly 0.1.0" stand: falscher Name und
-        // eine Fassung, die es nie gab.
+        // **"Swiftly Player", the name from the store.** Users see it
+        // in Jellyfin's device list, not on the home screen, where the app
+        // is still called "Swiftly". Sessions used to show "Swiftly 0.1.0":
+        // the wrong name and a version that never existed.
         #expect(header.contains(#"Client="Swiftly Player""#))
         #expect(header.contains(#"DeviceId="dev-42""#))
-        // Die Fassung kommt aus dem Buendel. Im Test gibt es keins, also
-        // steht dort „unbekannt" — geprueft wird, dass die alte feste
-        // „0.1.0" nirgends mehr auftaucht.
+        // The version comes from the bundle. There is none in the test, so it
+        // reads "unbekannt"; the test checks that the old fixed "0.1.0"
+        // no longer appears anywhere.
         #expect(!header.contains("0.1.0"), "Die feste Fassungsnummer ist zurueck")
         #expect(!header.contains("Token="), "Beim Login darf noch kein Token mitgehen")
     }
@@ -95,217 +94,217 @@ struct AuthRequestTests {
     }
 }
 
-// MARK: - Fernsteuerung
+// MARK: - Remote control
 
 @Suite("Fernbefehle")
-struct FernbefehlTests {
+struct RemoteCommandTests {
 
     @Test("Jellyfins Namen werden richtig übersetzt")
-    func namen() {
-        #expect(Fernsteuerung.uebersetzen("Pause", ziel: nil) == .pause)
-        #expect(Fernsteuerung.uebersetzen("Unpause", ziel: nil) == .weiter)
-        #expect(Fernsteuerung.uebersetzen("PlayPause", ziel: nil) == .umschalten)
-        #expect(Fernsteuerung.uebersetzen("Stop", ziel: nil) == .stopp)
-        #expect(Fernsteuerung.uebersetzen("NextTrack", ziel: nil) == .naechste)
+    func names() {
+        #expect(RemoteControl.translate("Pause", target: nil) == .pause)
+        #expect(RemoteControl.translate("Unpause", target: nil) == .proceed)
+        #expect(RemoteControl.translate("PlayPause", target: nil) == .toggle)
+        #expect(RemoteControl.translate("Stop", target: nil) == .stop)
+        #expect(RemoteControl.translate("NextTrack", target: nil) == .next)
     }
 
     @Test("Seek rechnet Ticks in Sekunden um")
-    func springen() {
-        // Jellyfin zählt in 100-Nanosekunden-Schritten.
-        #expect(Fernsteuerung.uebersetzen("Seek", ziel: 12_000_000_000) == .springenAuf(1200))
-        // Ohne Ziel ist der Befehl nicht ausführbar.
-        #expect(Fernsteuerung.uebersetzen("Seek", ziel: nil) == nil)
+    func jump() {
+        // Jellyfin counts in steps of 100 nanoseconds.
+        #expect(RemoteControl.translate("Seek", target: 12_000_000_000) == .jumpOn(1200))
+        // Without a target the command is not executable.
+        #expect(RemoteControl.translate("Seek", target: nil) == nil)
     }
 
     @Test("Unbekanntes wird verworfen statt geraten")
-    func unbekannt() {
-        #expect(Fernsteuerung.uebersetzen("Beam", ziel: nil) == nil)
+    func unknown() {
+        #expect(RemoteControl.translate("Beam", target: nil) == nil)
     }
 }
 
 @Suite("Zeile für Neuzugänge")
-struct NeuzugangTests {
+struct NewAccessTests {
 
-    private func item(typ: String, folge: Int? = nil, staffel: Int? = nil,
-                      kinder: Int? = nil, jahr: Int? = nil, name: String = "X") -> Item {
+    private func item(type: String, episode: Int? = nil, season: Int? = nil,
+                      children: Int? = nil, year: Int? = nil, name: String = "X") -> Item {
         let json = """
-        {"Id":"1","Name":"\(name)","Type":"\(typ)"
-        \(folge.map { ",\"IndexNumber\":\($0)" } ?? "")
-        \(staffel.map { ",\"ParentIndexNumber\":\($0)" } ?? "")
-        \(kinder.map { ",\"ChildCount\":\($0)" } ?? "")
-        \(jahr.map { ",\"ProductionYear\":\($0)" } ?? "")}
+        {"Id":"1","Name":"\(name)","Type":"\(type)"
+        \(episode.map { ",\"IndexNumber\":\($0)" } ?? "")
+        \(season.map { ",\"ParentIndexNumber\":\($0)" } ?? "")
+        \(children.map { ",\"ChildCount\":\($0)" } ?? "")
+        \(year.map { ",\"ProductionYear\":\($0)" } ?? "")}
         """
         return try! JSONDecoder().decode(Item.self, from: Data(json.utf8))
     }
 
-    // Die Zeilen sind übersetzt, der Wortlaut hängt also an der Sprache des
-    // Geräts. Geprüft wird deshalb die Aussage, nicht die Formulierung: welche
-    // Zahl auftaucht und welche nicht. Genau daran hing auch der Fehler, den
-    // diese Tests festhalten — dort stand die Zahl der neuen Folgen, wo die
-    // Zahl der Staffeln erwartet wurde.
+    // The lines are translated, so the wording depends on the device
+    // language. The test therefore checks the statement, not the phrasing:
+    // which number appears and which does not. The bug these tests pin
+    // down was exactly that: the number of new episodes appeared where
+    // the number of seasons was expected.
 
     @Test("Eine Folge nennt ihre Staffel, nicht ihre Nummer")
-    func folge() {
-        let zeile = item(typ: "Episode", folge: 4, staffel: 3).neuzugangszeile
-        #expect(zeile?.contains("3") == true)
-        #expect(zeile?.contains("4") == false)
-        // Ohne Staffel wenigstens die Folge.
-        #expect(item(typ: "Episode", folge: 4).neuzugangszeile?.contains("4") == true)
+    func episode() {
+        let row = item(type: "Episode", episode: 4, season: 3).newArrivalsRow
+        #expect(row?.contains("3") == true)
+        #expect(row?.contains("4") == false)
+        // Without a season, at least the episode.
+        #expect(item(type: "Episode", episode: 4).newArrivalsRow?.contains("4") == true)
     }
 
     @Test("Ganze Staffel nennt die Staffelnummer")
-    func staffel() {
-        #expect(item(typ: "Season", folge: 2).neuzugangszeile?.contains("2") == true)
-        // Ohne Nummer trägt der Name die Aussage, etwa „Specials" — und der
-        // kommt vom Server, wird also nicht übersetzt.
-        #expect(item(typ: "Season", name: "Specials").neuzugangszeile == "Specials")
+    func season() {
+        #expect(item(type: "Season", episode: 2).newArrivalsRow?.contains("2") == true)
+        // Without a number the name carries the statement, e.g. "Specials",
+        // and it comes from the server, so it is not translated.
+        #expect(item(type: "Season", name: "Specials").newArrivalsRow == "Specials")
     }
 
     @Test("Bei einer Serie zählt ChildCount neue Folgen, nicht Staffeln")
-    func serie() {
-        let acht = item(typ: "Series", kinder: 8).neuzugangszeile
-        #expect(acht?.contains("8") == true)
-        // Der Fehler war, dass hier „Staffeln" stand. In beiden Sprachen darf
-        // das Wort nicht vorkommen.
-        #expect(acht?.lowercased().contains("staffel") == false)
-        #expect(acht?.lowercased().contains("season") == false)
-        // Einzahl und Mehrzahl unterscheiden sich.
-        #expect(item(typ: "Series", kinder: 1).neuzugangszeile != acht)
-        // Ohne Zahl bleibt das Jahr.
-        #expect(item(typ: "Series", jahr: 2024).neuzugangszeile == "2024")
+    func series() {
+        let eight = item(type: "Series", children: 8).newArrivalsRow
+        #expect(eight?.contains("8") == true)
+        // The bug was that "Staffeln" (seasons) appeared here. The word must
+        // not occur in either language.
+        #expect(eight?.lowercased().contains("staffel") == false)
+        #expect(eight?.lowercased().contains("season") == false)
+        // Singular and plural differ.
+        #expect(item(type: "Series", children: 1).newArrivalsRow != eight)
+        // Without a count the year stays.
+        #expect(item(type: "Series", year: 2024).newArrivalsRow == "2024")
     }
 
     @Test("Filme zeigen das Jahr")
     func film() {
-        #expect(item(typ: "Movie", jahr: 2021).neuzugangszeile == "2021")
+        #expect(item(type: "Movie", year: 2021).newArrivalsRow == "2021")
     }
 }
 
 @Suite("Sprachvergleich")
-struct SprachTests {
+struct LanguageTests {
 
     @Test("Erkennt die üblichen Schreibweisen")
-    func schreibweisen() {
-        #expect(Sprache.passt("Surround 5.1 - [German]", zu: "Deutsch"))
-        #expect(Sprache.passt("deutsch (AC3)", zu: "Deutsch"))
-        #expect(Sprache.passt("ger", zu: "Deutsch"))
-        #expect(Sprache.passt("full - [English]", zu: "English"))
+    func writePoint() {
+        #expect(Language.fits("Surround 5.1 - [German]", toward: "Deutsch"))
+        #expect(Language.fits("deutsch (AC3)", toward: "Deutsch"))
+        #expect(Language.fits("ger", toward: "Deutsch"))
+        #expect(Language.fits("full - [English]", toward: "English"))
     }
 
     @Test("Verwechselt nichts")
-    func keineFalschtreffer() {
-        #expect(!Sprache.passt("Surround 5.1 - [English]", zu: "Deutsch"))
-        // Ohne Vorgabe darf nie etwas passen — sonst würde eine leere
-        // Einstellung stillschweigend die erste Spur wählen.
-        #expect(!Sprache.passt("[German]", zu: ""))
+    func noWrongHit() {
+        #expect(!Language.fits("Surround 5.1 - [English]", toward: "Deutsch"))
+        // Without a preference nothing may ever match, otherwise an empty
+        // setting would silently pick the first track.
+        #expect(!Language.fits("[German]", toward: ""))
     }
 }
 
-// MARK: - Adressen im Protokoll
+// MARK: - Addresses in the log
 
 @Suite("Adressgeheimnis")
-struct AdressgeheimnisTests {
+struct AddressSecretTests {
 
     @Test("Entfernt das Zugangsmerkmal aus der Stromadresse")
-    func schwaerztApiKey() throws {
+    func blacksOutApiKey() throws {
         let url = try #require(URL(string:
             "https://tv.example.de/Videos/abc/stream?static=true&api_key=GEHEIM123&mediaSourceId=xy"))
-        let text = url.ohneGeheimnis
+        let text = url.withoutSecret
         #expect(!text.contains("GEHEIM123"))
-        // Der Rest muss lesbar bleiben, sonst nützt das Protokoll nichts.
+        // The rest must stay readable, otherwise the log is useless.
         #expect(text.contains("static=true"))
         #expect(text.contains("mediaSourceId=xy"))
         #expect(text.contains("/Videos/abc/stream"))
     }
 
     @Test("Entfernt auch das Quick-Connect-Geheimnis")
-    func schwaerztSecret() throws {
+    func blacksOutSecret() throws {
         let url = try #require(URL(string:
             "https://tv.example.de/QuickConnect/Connect?secret=ABC"))
-        #expect(!url.ohneGeheimnis.contains("ABC"))
+        #expect(!url.withoutSecret.contains("ABC"))
     }
 
     @Test("Adressen ohne Abfrage bleiben unverändert")
-    func laesstHarmloseInRuhe() throws {
+    func letsHarmlessInIdle() throws {
         let url = try #require(URL(string: "https://tv.example.de/System/Info/Public"))
-        #expect(url.ohneGeheimnis == "https://tv.example.de/System/Info/Public")
+        #expect(url.withoutSecret == "https://tv.example.de/System/Info/Public")
     }
 }
 
-// MARK: - Quellenwahl
+// MARK: - Source selection
 
 @Suite("Plan waehlt die verlustfreie Quelle")
-struct QuellenwahlTests {
+struct SourcesSelectionTests {
 
-    private func quelle(_ id: String, direkt: Bool, strom: Bool = false) -> MediaSource {
+    private func source(_ id: String, direct: Bool, feed: Bool = false) -> MediaSource {
         MediaSource(id: id, name: id, container: "mkv", size: 1,
-                    supportsDirectPlay: direkt, supportsDirectStream: strom,
+                    supportsDirectPlay: direct, supportsDirectStream: feed,
                     supportsTranscoding: true, transcodingUrl: "/t.m3u8",
                     mediaStreams: [])
     }
 
-    private func plan(_ quellen: [MediaSource]) throws -> PlaybackPlan? {
+    private func plan(_ sources: [MediaSource]) throws -> PlaybackPlan? {
         try PlaybackPlan.make(
-            from: PlaybackInfoResponse(mediaSources: quellen, playSessionId: "s"),
+            from: PlaybackInfoResponse(mediaSources: sources, playSessionId: "s"),
             itemID: "abc",
             profile: .vlc(),
-            streamURL: { id, quelle, _ in
-                URL(string: "https://x.de/Videos/\(id)/stream?mediaSourceId=\(quelle ?? "")")!
+            streamURL: { id, source, _ in
+                URL(string: "https://x.de/Videos/\(id)/stream?mediaSourceId=\(source ?? "")")!
             },
             serverBase: URL(string: "https://x.de")!)
     }
 
-    /// Bei mehreren Fassungen eines Films — bei Jellyfin ein ueblicher Aufbau —
-    /// wurde bisher blind die erste genommen. Stand dort ausgerechnet die, die
-    /// umgewandelt werden muesste, wandelte die App um, obwohl daneben eine
-    /// Fassung lag, die direkt laeuft.
+    /// With several versions of a movie, a common setup in Jellyfin, the
+    /// first one used to be taken blindly. If that happened to be the one that
+    /// needed conversion, the app converted even though another version
+    /// next to it played directly.
     @Test("Nimmt die direkt abspielbare Fassung, nicht die erste")
-    func bevorzugtDirectPlay() throws {
-        let ergebnis = try #require(try plan([
-            quelle("umwandeln", direkt: false),
-            quelle("direkt", direkt: true),
+    func preferredDirectPlay() throws {
+        let result = try #require(try plan([
+            source("umwandeln", direct: false),
+            source("direkt", direct: true),
         ]))
-        #expect(ergebnis.method == .directPlay)
-        #expect(ergebnis.mediaSourceID == "direkt")
+        #expect(result.method == .directPlay)
+        #expect(result.mediaSourceID == "direkt")
     }
 
     @Test("Direct Stream schlaegt Umwandeln")
-    func bevorzugtDirectStream() throws {
-        let ergebnis = try #require(try plan([
-            quelle("umwandeln", direkt: false),
-            quelle("umpacken", direkt: false, strom: true),
+    func preferredDirectStream() throws {
+        let result = try #require(try plan([
+            source("umwandeln", direct: false),
+            source("umpacken", direct: false, feed: true),
         ]))
-        #expect(ergebnis.method == .directStream)
-        #expect(ergebnis.mediaSourceID == "umpacken")
+        #expect(result.method == .directStream)
+        #expect(result.mediaSourceID == "umpacken")
     }
 
-    /// Bei Gleichstand bleibt es bei der Reihenfolge des Servers — der sortiert
-    /// selbst schon sinnvoll.
+    /// On a tie the server's order stays; it already sorts sensibly
+    /// itself.
     @Test("Bei Gleichstand bleibt die erste Quelle")
-    func behaeltReihenfolge() throws {
-        let ergebnis = try #require(try plan([
-            quelle("eins", direkt: true),
-            quelle("zwei", direkt: true),
+    func keepsRailsEpisode() throws {
+        let result = try #require(try plan([
+            source("eins", direct: true),
+            source("zwei", direct: true),
         ]))
-        #expect(ergebnis.mediaSourceID == "eins")
+        #expect(result.mediaSourceID == "eins")
     }
 
     @Test("Ohne Quelle kein Plan")
-    func ohneQuelle() throws {
+    func withoutSource() throws {
         #expect(try plan([]) == nil)
     }
 }
 
-// MARK: - Serveradresse
+// MARK: - Server address
 
 @Suite("Serveradresse")
-struct ServeradresseTests {
+struct ServerAddressTests {
 
-    /// Der ueberwiegende Teil selbst gehosteter Jellyfin-Server laeuft im
-    /// Heimnetz ohne Zertifikat. Wer die Adresse ohne Schema eintippt, bekam
-    /// `https://` — und einen Fehler, dessen Ursache nicht zu erraten ist.
+    /// Most self-hosted Jellyfin servers run in the home network without
+    /// a certificate. Typing the address without a scheme used to give
+    /// `https://` and an error whose cause was impossible to guess.
     @Test("IP-Adressen bekommen http, nicht https")
-    func ipBekommtHTTP() throws {
+    func ipGetsHTTP() throws {
         let url = try #require(AppModelURLNormalizer.normalize("192.168.1.5:8096"))
         #expect(url.scheme == "http")
         #expect(url.host() == "192.168.1.5")
@@ -313,184 +312,184 @@ struct ServeradresseTests {
     }
 
     @Test("Namen im Heimnetz bekommen http")
-    func lokalBekommtHTTP() throws {
+    func localGetsHTTP() throws {
         let url = try #require(AppModelURLNormalizer.normalize("kiste.local:8096"))
         #expect(url.scheme == "http")
     }
 
     @Test("Oeffentliche Namen bekommen https")
-    func oeffentlichBekommtHTTPS() throws {
+    func publicGetsHTTPS() throws {
         let url = try #require(AppModelURLNormalizer.normalize("jellyfin.example.com"))
         #expect(url.scheme == "https")
     }
 
     @Test("Ein angegebenes Schema wird nicht angetastet")
-    func schemaBleibt() throws {
+    func schemaStays() throws {
         #expect(AppModelURLNormalizer.normalize("http://tv.example.de")?.scheme == "http")
         #expect(AppModelURLNormalizer.normalize("https://192.168.1.5")?.scheme == "https")
     }
 
     @Test("Ausweichadresse fuer den zweiten Versuch")
-    func ausweich() throws {
+    func alternate() throws {
         let url = try #require(AppModelURLNormalizer.normalize("tv.example.de"))
-        #expect(AppModelURLNormalizer.andersHerum(url)?.scheme == "http")
-        // Wer schon auf http ist, hat keine Ausweichadresse mehr noetig.
-        let lokal = try #require(AppModelURLNormalizer.normalize("192.168.1.5"))
-        #expect(AppModelURLNormalizer.andersHerum(lokal) == nil)
+        #expect(AppModelURLNormalizer.reversed(url)?.scheme == "http")
+        // Whoever is already on http needs no fallback address.
+        let localOnly = try #require(AppModelURLNormalizer.normalize("192.168.1.5"))
+        #expect(AppModelURLNormalizer.reversed(localOnly) == nil)
     }
 
-    /// **Tailscale vergibt aus 100.64.0.0/10, dem CGNAT-Bereich.**
+    /// **Tailscale assigns addresses from 100.64.0.0/10, the CGNAT range.**
     ///
-    /// Ein Nutzer erreichte seinen Jellyfin unter `100.110.192.87:8096` und
-    /// kam nicht durch. Am Normalisierer lag es nicht — jedes IP-Literal gilt
-    /// als Heimnetz, also wird `http://` vorgesetzt, und das ist richtig.
-    /// Gesperrt hat ATS: `NSAllowsLocalNetworking` deckt RFC1918, `.local`
-    /// und `localhost`, aber **nicht** CGNAT, und seine blosse Anwesenheit
-    /// schaltete `NSAllowsArbitraryLoads` ab. Der Test haelt die Halbe fest,
-    /// die hier pruefbar ist; die andere steht im Info.plist.
+    /// A user reached their Jellyfin at `100.110.192.87:8096` and could not
+    /// get through. The normalizer was not at fault: every IP literal counts
+    /// as home network, so `http://` is prepended, and that is correct.
+    /// ATS blocked it: `NSAllowsLocalNetworking` covers RFC1918, `.local`
+    /// and `localhost`, but **not** CGNAT, and its mere presence
+    /// switched off `NSAllowsArbitraryLoads`. The test pins down the half
+    /// that can be checked here; the other half lives in Info.plist.
     @Test("IPv6-Adressen gelten als Heimnetz und bekommen Klammern")
     func ipv6() throws {
-        #expect(AppModelURLNormalizer.istImHeimnetz("[fd00::5]:8096"))
-        #expect(AppModelURLNormalizer.istImHeimnetz("fd00::5"))
-        #expect(AppModelURLNormalizer.istImHeimnetz("fe80::1%en0"))
-        #expect(!AppModelURLNormalizer.istImHeimnetz("jellyfin.example.com:8096"))
-        let nackt = try #require(AppModelURLNormalizer.normalize("fd00::5"))
-        #expect(nackt.scheme == "http")
-        let mitPort = try #require(AppModelURLNormalizer.normalize("[fd00::5]:8096"))
-        #expect(mitPort.scheme == "http")
-        #expect(mitPort.port == 8096)
+        #expect(AppModelURLNormalizer.isHomeNetwork("[fd00::5]:8096"))
+        #expect(AppModelURLNormalizer.isHomeNetwork("fd00::5"))
+        #expect(AppModelURLNormalizer.isHomeNetwork("fe80::1%en0"))
+        #expect(!AppModelURLNormalizer.isHomeNetwork("jellyfin.example.com:8096"))
+        let bare = try #require(AppModelURLNormalizer.normalize("fd00::5"))
+        #expect(bare.scheme == "http")
+        let withPort = try #require(AppModelURLNormalizer.normalize("[fd00::5]:8096"))
+        #expect(withPort.scheme == "http")
+        #expect(withPort.port == 8096)
     }
 
     @Test("Ein Anfuehrungszeichen im Geraetenamen bricht den Kopf nicht auf")
-    func kopfwertMaskiert() {
-        #expect(JellyfinClient.kopfwert(#"Pauls "Kiste""#) == "Pauls 'Kiste'")
-        #expect(JellyfinClient.kopfwert("Zeile\nzwei") == "Zeilezwei")
-        #expect(JellyfinClient.kopfwert("Wohnzimmer-TV") == "Wohnzimmer-TV")
+    func headerValueMasked() {
+        #expect(JellyfinClient.headerValue(#"Pauls "Kiste""#) == "Pauls 'Kiste'")
+        #expect(JellyfinClient.headerValue("Zeile\nzwei") == "Zeilezwei")
+        #expect(JellyfinClient.headerValue("Wohnzimmer-TV") == "Wohnzimmer-TV")
     }
 
-    @Test func tailscaleAdresseGehtUeberHTTP() throws {
-        #expect(AppModelURLNormalizer.istImHeimnetz("100.110.192.87"))
+    @Test func tailscaleAddressGoesOverHTTP() throws {
+        #expect(AppModelURLNormalizer.isHomeNetwork("100.110.192.87"))
         let url = try #require(AppModelURLNormalizer.normalize("100.110.192.87:8096"))
         #expect(url.scheme == "http")
         #expect(url.port == 8096)
     }
 }
 
-// MARK: - Spuren und Sprachen
+// MARK: - Tracks and languages
 
 @Suite("Spurbeschriftung")
-struct SpurTests {
+struct TrackTests {
 
-    private func spur(_ sprache: String?, codec: String?, kanaele: Int?) -> MediaStream {
-        MediaStream(codec: codec, type: "Audio", language: sprache, displayTitle: nil,
-                    channels: kanaele, isDefault: nil, index: 0, height: nil, width: nil)
+    private func track(_ language: String?, codec: String?, channels: Int?) -> MediaStream {
+        MediaStream(codec: codec, type: "Audio", language: language, displayTitle: nil,
+                    channels: channels, isDefault: nil, index: 0, height: nil, width: nil)
     }
 
-    /// Bei null Kanaelen stand „-1.1" in der Zeile.
+    /// With zero channels the line used to show "-1.1".
     @Test("Kaputte Kanalzahl erzeugt keinen Unsinn")
-    func nullKanaele() {
-        #expect(!spur("ger", codec: "ac3", kanaele: 0).kurz.contains("-1"))
-        #expect(!spur("ger", codec: "ac3", kanaele: nil).kurz.contains("-1"))
-        #expect(spur("ger", codec: "ac3", kanaele: 2).kurz.contains("Stereo"))
-        #expect(spur("ger", codec: "dts", kanaele: 6).kurz.contains("5.1"))
-        #expect(spur("ger", codec: "dts", kanaele: 8).kurz.contains("7.1"))
+    func nullChannels() {
+        #expect(!track("ger", codec: "ac3", channels: 0).short.contains("-1"))
+        #expect(!track("ger", codec: "ac3", channels: nil).short.contains("-1"))
+        #expect(track("ger", codec: "ac3", channels: 2).short.contains("Stereo"))
+        #expect(track("ger", codec: "dts", channels: 6).short.contains("5.1"))
+        #expect(track("ger", codec: "dts", channels: 8).short.contains("7.1"))
     }
 
-    /// `contains` auf dem Anzeigenamen liess „Slovenian" als Englisch gelten,
-    /// weil dort „en" vorkommt.
+    /// `contains` on the display name made "Slovenian" count as English,
+    /// because it contains "en".
     @Test("Sprachabgleich trifft keine Teilwoerter")
-    func keineTeilwoerter() {
-        #expect(Sprache.passt("English", zu: "English"))
-        #expect(Sprache.passt("eng", zu: "English"))
-        #expect(Sprache.passt("Deutsch (Kommentar)", zu: "Deutsch"))
-        #expect(!Sprache.passt("Slovenian", zu: "English"))
-        #expect(!Sprache.passt("Armenian", zu: "English"))
-        #expect(!Sprache.passt("Italiano", zu: "Deutsch"))
+    func noPartWords() {
+        #expect(Language.fits("English", toward: "English"))
+        #expect(Language.fits("eng", toward: "English"))
+        #expect(Language.fits("Deutsch (Kommentar)", toward: "Deutsch"))
+        #expect(!Language.fits("Slovenian", toward: "English"))
+        #expect(!Language.fits("Armenian", toward: "English"))
+        #expect(!Language.fits("Italiano", toward: "Deutsch"))
     }
 }
 
-// MARK: - Nachsichtiges Einlesen
+// MARK: - Lenient decoding
 
 @Suite("Antworten mit Luecken")
-struct EinlesenTests {
+struct InReadTests {
 
-    /// Ein einziger Eintrag ohne Namen liess vorher die **ganze** Liste
-    /// scheitern — der Bildschirm blieb leer, ohne dass etwas gesagt wurde.
+    /// A single entry without a name used to make the **whole** list
+    /// fail; the screen stayed empty without any message.
     @Test("Ein kaputter Eintrag kippt nicht die ganze Liste")
-    func kaputterEintrag() throws {
+    func brokenEntry() throws {
         let json = """
         {"Items":[{"Id":"a","Name":"Guter Film"},{"Id":"b"},{"Id":"c","Name":"Noch einer"}],
          "TotalRecordCount":3}
         """
-        let antwort = try JSONDecoder().decode(ItemsResponse.self, from: Data(json.utf8))
-        #expect(antwort.items.count == 2)
-        #expect(antwort.items.map(\.id) == ["a", "c"])
+        let answer = try JSONDecoder().decode(ItemsResponse.self, from: Data(json.utf8))
+        #expect(answer.items.count == 2)
+        #expect(answer.items.map(\.id) == ["a", "c"])
     }
 
-    /// `TotalRecordCount` fehlt bei manchen Endpunkten. Nicht optional
-    /// eingelesen scheiterte die gesamte Antwort.
+    /// `TotalRecordCount` is missing on some endpoints. Decoded as
+    /// non-optional, the whole response failed.
     @Test("Fehlende Gesamtzahl ist kein Grund zu scheitern")
-    func ohneGesamtzahl() throws {
+    func withoutTotalNumber() throws {
         let json = #"{"Items":[{"Id":"a","Name":"Film"}]}"#
-        let antwort = try JSONDecoder().decode(ItemsResponse.self, from: Data(json.utf8))
-        #expect(antwort.items.count == 1)
-        #expect(antwort.totalRecordCount == 1)
+        let answer = try JSONDecoder().decode(ItemsResponse.self, from: Data(json.utf8))
+        #expect(answer.items.count == 1)
+        #expect(answer.totalRecordCount == 1)
     }
 }
 
-// MARK: - Bildrate im Datenstrom
+// MARK: - Frame rate in the stream
 
-/// **Eine Nebenangabe darf die Wiedergabe nicht verhindern.**
+/// **A side detail must not prevent playback.**
 ///
-/// `RealFrameRate` wird nur gebraucht, damit der Fernseher seinen Ausgang
-/// früh genug umstellt. Wirft das Auspacken daran, fällt die ganze Antwort —
-/// und der Titel lässt sich gar nicht mehr abspielen, ohne dass irgendetwas
-/// auf die Bildrate hinweist.
+/// `RealFrameRate` is only needed so the TV switches its output early
+/// enough. If unwrapping it throws, the whole response fails and the
+/// title cannot be played at all, with nothing pointing to the frame
+/// rate.
 @Suite("Bildrate im Medienstrom")
-struct BildrateTests {
-    private func strom(_ inhalt: String) throws -> MediaStream {
+struct FrameRateTests {
+    private func feed(_ content: String) throws -> MediaStream {
         let json = """
-        {"Codec":"h264","Type":"Video","Width":1920,"Height":1080,\(inhalt)}
+        {"Codec":"h264","Type":"Video","Width":1920,"Height":1080,\(content)}
         """
         return try JSONDecoder().decode(MediaStream.self, from: Data(json.utf8))
     }
 
     @Test("Nimmt die Zahl, wie sie im Datenblatt steht")
-    func alsZahl() throws {
-        #expect(try strom("\"RealFrameRate\":23.976").bildrate == 23.976)
+    func asNumber() throws {
+        #expect(try feed("\"RealFrameRate\":23.976").frameRate == 23.976)
     }
 
     @Test("Nimmt sie auch als Zeichenkette")
-    func alsText() throws {
-        #expect(try strom("\"RealFrameRate\":\"25\"").bildrate == 25)
+    func asText() throws {
+        #expect(try feed("\"RealFrameRate\":\"25\"").frameRate == 25)
     }
 
     @Test("Unbrauchbares wirft nicht, es fehlt nur")
-    func unbrauchbar() throws {
-        #expect(try strom("\"RealFrameRate\":true").bildrate == nil)
-        #expect(try strom("\"RealFrameRate\":null").bildrate == nil)
-        #expect(try strom("\"RealFrameRate\":{\"a\":1}").bildrate == nil)
+    func unusable() throws {
+        #expect(try feed("\"RealFrameRate\":true").frameRate == nil)
+        #expect(try feed("\"RealFrameRate\":null").frameRate == nil)
+        #expect(try feed("\"RealFrameRate\":{\"a\":1}").frameRate == nil)
     }
 
     @Test("Fehlt sie ganz, bleibt der Strom trotzdem lesbar")
-    func fehlt() throws {
-        #expect(try strom("\"Index\":0").bildrate == nil)
+    func missing() throws {
+        #expect(try feed("\"Index\":0").frameRate == nil)
     }
 
     @Test("Schwankende Bildrate meldet lieber nichts")
-    func schwankend() throws {
-        let stark = try strom("\"RealFrameRate\":30,\"AverageFrameRate\":24")
-        #expect(stark.bildrate == nil)
-        let leicht = try strom("\"RealFrameRate\":23.976,\"AverageFrameRate\":24")
-        #expect(leicht.bildrate == 23.976)
+    func fluctuating() throws {
+        let strong = try feed("\"RealFrameRate\":30,\"AverageFrameRate\":24")
+        #expect(strong.frameRate == nil)
+        let lightweight = try feed("\"RealFrameRate\":23.976,\"AverageFrameRate\":24")
+        #expect(lightweight.frameRate == 23.976)
     }
 }
 
-// MARK: - Profil zum Umpacken
+// MARK: - Profile for remuxing
 
-/// **Umpacken heißt nicht umrechnen.**
+/// **Remuxing does not mean transcoding.**
 ///
-/// Das Profil für den Serversprung darf dem Server nur erlauben, denselben
-/// Strom in einen anderen Behälter zu legen. Nennt es andere Codecs als die,
-/// die wir ohnehin direkt abspielen, rechnet der Server das Bild neu — und
-/// genau dagegen gibt es diese App.
+/// The profile for the server jump may only allow the server to put the
+/// same stream into a different container. If it names codecs other than
+/// the ones played directly anyway, the server re-encodes the picture,
+/// which is exactly what this app exists to avoid.

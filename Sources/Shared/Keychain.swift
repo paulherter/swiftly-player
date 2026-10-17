@@ -2,40 +2,37 @@ import Foundation
 import OSLog
 import Security
 
-/// Minimaler Keychain-Zugriff für das Access-Token.
-/// Bewusst nicht UserDefaults: der Token ist ein vollwertiger Serverzugang.
+/// Minimal Keychain access for the access token.
+/// Deliberately not UserDefaults: the token is a full server credential.
 ///
-/// **Auf dem Mac gibt es zwei Schlüsselbunde, und das ist der Grund für die
-/// halbe Datei.** Der alte, dateibasierte hängt das Recht, einen Eintrag zu
-/// **ändern**, an der Signatur des Programms, das ihn angelegt hat. Der
-/// neuere — derselbe, den iOS und tvOS als einzigen haben — hängt es an die
-/// Zugriffsgruppe aus den Entitlements.
+/// **On the Mac there are two keychains, which is the reason for half this
+/// file.** The old, file-based one ties the right to **modify** an entry to the
+/// signature of the program that created it. The newer one, the only one on iOS
+/// and tvOS, ties it to the access group from the entitlements.
 ///
-/// Am 05.09.2026 hat uns das einen halben Abend gekostet: Apple verlangte,
-/// dass die Mac-App nicht mehr `Swiftly-macOS` heißt, sondern `Swiftly`. Nach
-/// der Umbenennung war es aus Sicht des alten Schlüsselbunds ein anderes
-/// Programm. **Lesen ging weiter, Schreiben nicht** — und `save` scheiterte
-/// still in einem `catch`, während `load` weiter den alten Stand lieferte.
-/// Sichtbar wurde es als „die App merkt sich das gewählte Profil nicht": der
-/// Wechsel stand im Speicher, der Schlüsselbund behielt den alten Zeiger.
+/// This cost an evening: Apple required the Mac app to be named `Swiftly`
+/// instead of `Swiftly-macOS`. After the rename it was a different program from
+/// the old keychain's point of view. **Reading still worked, writing did not**,
+/// and `save` failed silently in a `catch` while `load` kept returning the old
+/// state. It showed up as "the app does not remember the chosen profile": the
+/// switch was in memory, the keychain kept the old pointer.
 ///
-/// Das trifft nicht nur uns. **Jeder Mac-Nutzer, der von Build ≤ 8
-/// aktualisiert, hat einen Eintrag von `Swiftly-macOS`** — angemeldet bleibt
-/// er, aber jede Änderung am Konto ginge lautlos verloren. Auf einem frischen
-/// Rechner ist davon nichts zu sehen, und genau deshalb hätte es jede Prüfung
-/// überstanden, die mit einem neuen Rechner arbeitet.
+/// It is not just us. **Every Mac user updating from build <= 8 has an entry
+/// from `Swiftly-macOS`**: they stay signed in, but every change to the account
+/// would be silently lost. On a fresh machine none of this is visible, which is
+/// why it would have survived any check done on a new machine.
 enum Keychain {
     private static let log = Logger(subsystem: "de.paulherter.swiftly", category: "keychain")
     private static let service = "de.paulherter.swiftly"
 
-    enum Fehler: Error, CustomStringConvertible {
-        case schreiben(OSStatus)
-        case lesen(OSStatus)
+    enum Failure: Error, CustomStringConvertible {
+        case write(OSStatus)
+        case read(OSStatus)
 
         var description: String {
             switch self {
-            case let .schreiben(s): "Keychain schreiben fehlgeschlagen: \(Keychain.text(s))"
-            case let .lesen(s):     "Keychain lesen fehlgeschlagen: \(Keychain.text(s))"
+            case let .write(s): "Keychain schreiben fehlgeschlagen: \(Keychain.text(s))"
+            case let .read(s):     "Keychain lesen fehlgeschlagen: \(Keychain.text(s))"
             }
         }
     }
@@ -44,83 +41,77 @@ enum Keychain {
         SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
     }
 
-    /// Die Grundabfrage — auf dem Mac ausdrücklich für den Schlüsselbund, der
-    /// an der Zugriffsgruppe hängt.
+    /// The base query, explicitly for the keychain tied to the access group on the
+    /// Mac.
     ///
-    /// **`kSecUseDataProtectionKeychain` gibt es nur auf dem Mac.** Auf iOS
-    /// und tvOS ist dieser Schlüsselbund der einzige; der Schlüssel wäre dort
-    /// wirkungslos, und das `#if` sagt genau das, statt es zu verschweigen.
-    private static func abfrage(_ key: String, alterSpeicher: Bool = false) -> [String: Any] {
+    /// **`kSecUseDataProtectionKeychain` exists only on the Mac.** On iOS and tvOS
+    /// this keychain is the only one; the key would have no effect there, and the
+    /// `#if` says exactly that instead of leaving it unsaid.
+    private static func query(_ key: String, oldCache: Bool = false) -> [String: Any] {
         var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
         #if os(macOS)
-        q[kSecUseDataProtectionKeychain as String] = !alterSpeicher
+        q[kSecUseDataProtectionKeychain as String] = !oldCache
         #endif
         return q
     }
 
-    /// Wirft, statt still zu scheitern — sonst merkt man erst beim nächsten
-    /// Start, dass nichts gespeichert wurde.
+    /// Throws instead of failing silently; otherwise you only notice at the next
+    /// launch that nothing was saved.
     static func save(_ data: Data, key: String) throws {
-        let query = abfrage(key)
+        let query = query(key)
 
         var add = query
         add[kSecValueData as String] = data
-        // AfterFirstUnlock, nicht WhenUnlocked: die App spielt mit dem
-        // Audio-Hintergrundmodus weiter, während das Gerät gesperrt ist, und
-        // meldet dabei den Fortschritt. Solange die Sitzung im Speicher liegt,
-        // geht das auch mit WhenUnlocked gut — aber sobald etwas die App im
-        // gesperrten Zustand neu startet, wäre der Eintrag unlesbar und die
-        // Anmeldung weg. `ThisDeviceOnly` hält ihn aus fremden Sicherungen
-        // heraus: ein Serverzugang gehört nicht auf ein anderes Gerät.
+        // AfterFirstUnlock, not WhenUnlocked: the app keeps playing with the audio
+        // background mode while the device is locked, and reports progress meanwhile.
+        // As long as the session is in memory that works with WhenUnlocked too, but as
+        // soon as something restarts the app in the locked state, the entry would be
+        // unreadable and the login gone. `ThisDeviceOnly` keeps it out of foreign
+        // backups: a server credential does not belong on another device.
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
-        // **Anlegen, und bei einem vorhandenen Eintrag ueberschreiben — nie
-        // vorher loeschen.**
+        // **Create, and overwrite an existing entry; never delete first.**
         //
-        // Hier stand ein `SecItemDelete` davor. Zwischen Loeschen und Anlegen
-        // liegt ein Fenster von wenigen Mikrosekunden, und wer in genau diesem
-        // Fenster beendet wird — Speicherdruck, Absturz, Abschuss durch iOS —,
-        // hat danach keinen veralteten Eintrag, sondern **gar keinen**. Der
-        // Nutzer sieht die Anmeldemaske und weiss nicht, warum. Das ist der
-        // teuerste denkbare Ausgang fuer den billigsten denkbaren Anlass.
+        // A `SecItemDelete` used to precede this. Between delete and create there is a
+        // window of a few microseconds, and anyone terminated in exactly that window
+        // (memory pressure, crash, iOS kill) ends up with **no** entry rather than a
+        // stale one. The user sees the login screen and does not know why. That is the
+        // costliest imaginable outcome for the cheapest imaginable cause.
         //
-        // Die Loeschung hatte trotzdem einen Zweck, und der geht nicht
-        // verloren: sie sorgte dafuer, dass ein alter Eintrag die heutige
-        // Schutzstufe bekommt. `SecItemUpdate` aendert nur, was man ihm
-        // nennt — deshalb steht `kSecAttrAccessible` hier ausdruecklich mit
-        // dabei. Ohne das behielte ein Eintrag aus einer aelteren Fassung
-        // still seine alte Stufe.
+        // The deletion still had a purpose, and it is not lost: it made sure an old
+        // entry got today's protection level. `SecItemUpdate` only changes what it is
+        // told, which is why `kSecAttrAccessible` is listed explicitly here. Without it,
+        // an entry from an older version would silently keep its old level.
         var status = SecItemAdd(add as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            let neu: [String: Any] = [
+            let new: [String: Any] = [
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
-            status = SecItemUpdate(query as CFDictionary, neu as CFDictionary)
+            status = SecItemUpdate(query as CFDictionary, new as CFDictionary)
         }
-        guard status == errSecSuccess else { throw Fehler.schreiben(status) }
+        guard status == errSecSuccess else { throw Failure.write(status) }
     }
 
     static func load(key: String) -> Data? {
-        if let daten = lesen(key) { return daten }
+        if let data = read(key) { return data }
 
         #if os(macOS)
-        // **Einmaliger Umzug.** Im neuen Speicher steht nichts, im alten
-        // vielleicht schon — dann gehört er hierher geholt. Der alte Eintrag
-        // bleibt stehen: wer noch einmal eine ältere Fassung startet, soll
-        // nicht plötzlich abgemeldet sein. Dieselbe Form wie die Übernahme
-        // der Einzelsitzung in `AppModel.bundLaden()`.
-        guard let alt = lesen(key, alterSpeicher: true) else { return nil }
+        // **One-time migration.** Nothing is in the new store, perhaps something in the
+        // old one, then it should be brought here. The old entry stays: someone who
+        // starts an older version again should not suddenly be signed out. The same
+        // form as taking over the single session in `AppModel.loadBundle()`.
+        guard let alt = read(key, oldCache: true) else { return nil }
         log.info("Umzug aus dem alten Schlüsselbund: \(key, privacy: .public)")
         do {
             try save(alt, key: key)
         } catch {
-            // Der Umzug ist eine Verbesserung, kein Muss. Scheitert er, gilt
-            // weiter, was im alten Speicher steht — lesen ging dort immer.
+            // The migration is an improvement, not a requirement. If it fails, whatever is
+            // in the old store still applies; reading always worked there.
             log.error("Umzug fehlgeschlagen: \(String(describing: error), privacy: .public)")
         }
         return alt
@@ -129,8 +120,8 @@ enum Keychain {
         #endif
     }
 
-    private static func lesen(_ key: String, alterSpeicher: Bool = false) -> Data? {
-        var query = abfrage(key, alterSpeicher: alterSpeicher)
+    private static func read(_ key: String, oldCache: Bool = false) -> Data? {
+        var query = query(key, oldCache: oldCache)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
@@ -141,15 +132,15 @@ enum Keychain {
         return out as? Data
     }
 
-    /// Löscht in **beiden** Speichern.
+    /// Deletes in **both** stores.
     ///
-    /// Sonst bliebe nach dem Abmelden der alte Eintrag liegen und der nächste
-    /// Start holte ihn über den Umzug zurück — der Nutzer wäre wieder
-    /// angemeldet, ohne etwas getan zu haben.
+    /// Otherwise the old entry would remain after signing out and the next launch
+    /// would bring it back via the migration, leaving the user signed in again
+    /// without doing anything.
     static func delete(key: String) {
-        SecItemDelete(abfrage(key) as CFDictionary)
+        SecItemDelete(query(key) as CFDictionary)
         #if os(macOS)
-        SecItemDelete(abfrage(key, alterSpeicher: true) as CFDictionary)
+        SecItemDelete(query(key, oldCache: true) as CFDictionary)
         #endif
     }
 }
