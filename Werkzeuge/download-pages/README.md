@@ -14,3 +14,14 @@ python3 page_android.py    # /android/
 `parts.py` holds everything the five pages share: head with meta tags and JSON-LD, footer, sketches with pointer and tap ring, the list of other platforms. The three CSS files are building blocks, not shipped files: `style-base.css` (colors, type, grid), `sketches.css` (drawings), `behavior.css` (the **one** motion for buttons and cards: `--hebung`, `--dauer`, `--kurve`, plus `prefers-reduced-motion`).
 
 **Change the structure in `parts.py`, not in one of the five pages**, or they drift apart. Read `git diff Website/` after every run: the scripts regenerate the pages completely, so hand edits to the HTML are lost.
+
+## Supporter page
+
+`SUPPORTER` in `parts.py` switches the page `/supporter/` and every way to it:
+`"off"`, `"preview"` (local only, the form does not send) or `"live"`. After a
+change run `page_supporter.py` first: it builds or removes the page and keeps the
+links on the hand-written pages (`index.html`, `support.html`, `impressum.html`,
+`privacy.html`, `datenschutz.html`) between `supporter` markers. Then the other
+pages and `blog-build.py`. `website-upload.py` refuses to upload while the switch
+is not `"live"` and the site still links to the page.
+

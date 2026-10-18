@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="56" viewBox="0 0 260 56" role="img" aria-label="Buy us a coffee">
+  <rect width="260" height="56" rx="12" fill="#50D5DA"/>
+  <g transform="translate(26 14)" fill="none" stroke="#061212" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 8h15v6.5a6 6 0 0 1-6 6h-3a6 6 0 0 1-6-6zM18 10h2.2a2.8 2.8 0 0 1 0 5.6H17.4"/>
+    <path d="M8 1.5c0 1.4 1.4 1.4 1.4 2.8M13 1.5c0 1.4 1.4 1.4 1.4 2.8"/>
+  </g>
+  <text x="62" y="35" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#061212" letter-spacing="-.2">Buy us a coffee</text>
+</svg>

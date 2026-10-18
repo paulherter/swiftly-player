@@ -1,41 +1,35 @@
 <div align="center">
 
-<img src=".github/images/wordmark.svg" alt="Swiftly Player" width="300">
+<img src=".github/images/wordmark.svg" alt="Swiftly Player" width="260">
 
 # Swiftly Player
 
-**A native Jellyfin client for iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.**
-It never transcodes — every file plays as Direct Play or Direct Stream.
+**A free, native Jellyfin client for iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.**<br>
+It never transcodes: every file plays as Direct Play or Direct Stream.
 
 <br>
 
-[![Platforms](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Android_TV_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#platforms)
-&nbsp;
+<a href="https://apps.apple.com/app/id6806824067"><img src=".github/images/app-store-badge.svg" alt="Download on the App Store" height="56"></a>
+&nbsp;&nbsp;
+<a href="https://play.google.com/store/apps/details?id=de.paulherter.swiftly"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="82"></a>
+
+<sub>More ways to get it: [TestFlight beta](https://testflight.apple.com/join/MqeP2cnj) · [Android APK](https://github.com/paulherter/swiftly-player/releases/latest) · [Windows](#windows) · [Linux](#linux)</sub>
+
+<br>
+
+<a href="https://swiftlyplayer.com/supporter/"><img src=".github/images/support-button.svg" alt="Buy us a coffee" height="56"></a>
+
+<sub>Swiftly is free for everyone and stays that way. A coffee helps us keep it going.</sub>
+
+<br>
+
 [![License](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
 [![Jellyfin](https://img.shields.io/badge/Jellyfin_10.8+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
 &nbsp;
 [![Website](https://img.shields.io/badge/swiftlyplayer.com-1E1E22?style=flat-square&labelColor=1E1E22)](https://swiftlyplayer.com)
-
-<br>
-
-[![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-50D5DA?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
 &nbsp;
-[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=50D5DA)](https://testflight.apple.com/join/MqeP2cnj)
-&nbsp;
-[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=50D5DA)](#android)
-&nbsp;
-[![Download the Android APK](https://img.shields.io/badge/Android_APK-1E1E22?style=for-the-badge&logo=android&logoColor=50D5DA)](https://github.com/paulherter/swiftly-player/releases/download/v1.0.7/Swiftly-1.0.7.apk)
-&nbsp;
-[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=50D5DA)](#windows)
-&nbsp;
-[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=50D5DA)](#linux)
-&nbsp;
-[![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=50D5DA)](https://discord.gg/MeGwfv3UwN)
-
-<sub>[Release feed (Atom)](https://github.com/paulherter/swiftly-player/releases.atom)</sub>
-
-<br>
+[![Discord](https://img.shields.io/badge/Discord-1E1E22?style=flat-square&logo=discord&logoColor=50D5DA&labelColor=1E1E22)](https://discord.gg/MeGwfv3UwN)
 
 </div>
 
@@ -450,6 +444,12 @@ commit history says so — every commit carries a `Co-Authored-By` line. The
 decisions, the testing and the responsibility are mine; a good deal of the
 typing was not. It seemed more honest to say that here than to let someone
 work it out.
+
+<br>
+
+## Support Swiftly
+
+Swiftly Player is free: no account, no ads, no tracking, and every feature is open to everyone. It is built together, with bug reports, translations and pull requests from people like you. If you would like to say thanks with a coffee, **[you can do that here](https://swiftlyplayer.com/supporter/)**. A few small thank-you extras for supporters (extra app icons, a heart in About, your name in the credits) are on their way to the Windows, Linux and Android APK builds. Nothing is locked for anyone else.
 
 <br>
 

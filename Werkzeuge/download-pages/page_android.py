@@ -65,13 +65,6 @@ for data in [
      {"@type": "ListItem", "position": 2, "name": "Android", "item": "https://swiftlyplayer.com/android/"}]}]:
     LD += '<script type="application/ld+json">\n' + json.dumps(data, indent=2) + "\n</script>\n"
 
-def question(title, response, opened=False):
-    return f"""      <details class="frage"{' open' if opened else ''}>
-        <summary class="frage__knopf"><h3>{title}</h3>
-          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
-        <div class="frage__antwort"><p>{response}</p></div>
-      </details>"""
-
 page = header(
   "Get Swiftly Player on Android and Android TV",
   "Swiftly Player for Android phones and Android TV is on Google Play. Install it, add your Jellyfin server, press play. Free, Android 9 or newer, no account with us.",

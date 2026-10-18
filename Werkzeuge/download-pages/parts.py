@@ -30,6 +30,10 @@ ADDITION_CSS = """
 .download .knopf { margin-top: 16px; min-height: 52px; padding-inline: 28px; }
 @media (min-width: 901px) { .download { padding: 28px 32px 26px; border-radius: 16px; } }
 
+/* One quiet line to the supporter page, below the help box. */
+.kaffeehinweis { margin-top: 18px; text-align: center; color: var(--sehr-leise); font-size: 15px; line-height: 1.55; }
+.kaffeehinweis a { color: var(--leise); text-decoration: underline; text-underline-offset: 3px; }
+
 /* Get involved: one card with short lines, never the large download buttons
    (otherwise it looks like a copied category). */
 .mitmachen__karte { margin-top: 64px; padding: 26px 22px 20px; border-radius: 16px;
@@ -148,6 +152,46 @@ def figure(svg, image):
 # /music/ is live. Until then only the draft itself shows it.
 MUSIC_LIVE = True
 
+# ------------------------------------------------------------------ Supporter
+# One switch for the supporter page and every way to it on the site.
+#   "off"      no page and no links; the generators remove what they added
+#   "preview"  page and links are generated locally, the form does not send,
+#              and website-upload.py refuses to upload
+#   "live"     page and links go up, the form posts to the checkout
+# After changing it, run page_supporter.py first (it also maintains the
+# hand-written pages), then the other generators and blog-build.py.
+SUPPORTER = "live"
+SUPPORTER_ON = SUPPORTER in ("preview", "live")
+SUPPORTER_PATH = "/supporter/"
+SUPPORTER_LINK = "Donate"
+# Second button next to Download (it takes the place of the other app's button) in the header of the home and music page.
+# Its style travels with the supporter block in index.html (page_supporter.py),
+# which the music page copies.
+DONATE_BUTTON = ('        <a class="knopf knopf--gross knopf--zweit knopf--spenden hero__knopf" href="/supporter/">'
+                 '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>'
+                 'Donate</a>')
+
+
+def supporter_upload_block(website=WEBSITE):
+    """Why an upload must not run now, or None. Before "live" nothing may go up
+    while the site still carries the page or a link to it, so a dead form
+    never reaches the server by accident."""
+    if SUPPORTER == "live":
+        return None
+    if os.path.isdir(os.path.join(website, SUPPORTER_PATH.strip("/"))):
+        return (f'Supporter is "{SUPPORTER}" in parts.py, but Website{SUPPORTER_PATH} exists. '
+                'Set it to "off" and run the generators, or to "live" once the checkout works.')
+    for root, folders, files in os.walk(website):
+        folders[:] = [f for f in folders if not f.startswith(".") and f not in ("quellen", "aufnahmen", "bilder", "schrift")]
+        for name in files:
+            if name.endswith((".html", ".php", ".txt", ".json", ".xml")):
+                with open(os.path.join(root, name), encoding="utf-8", errors="ignore") as h:
+                    if f'href="{SUPPORTER_PATH}"' in h.read():
+                        rel = os.path.relpath(os.path.join(root, name), website)
+                        return (f'Supporter is "{SUPPORTER}" in parts.py, but {rel} links to {SUPPORTER_PATH}. '
+                                'Set it to "off" and run the generators, or to "live" once the checkout works.')
+    return None
+
 
 def header(title, description, path, og_title=None, og_text=None, extra_ld="", music=False):
     place = f"https://swiftlyplayer.com{path}"
@@ -155,6 +199,8 @@ def header(title, description, path, og_title=None, og_text=None, extra_ld="", m
     now = ' aria-current="page"' if music else ""
     music_bar = f'\n    <a class="leiste__punkt" href="/music/"{now}>Music</a>' if show else ""
     music_menu = f'\n  <a href="/music/"{now}>Music</a>' if show else ""
+    here = ' aria-current="page"' if path == SUPPORTER_PATH else ""
+    coffee_menu = f'\n  <a href="{SUPPORTER_PATH}"{here}>{SUPPORTER_LINK}</a>' if SUPPORTER_ON else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -193,7 +239,6 @@ def header(title, description, path, og_title=None, og_text=None, extra_ld="", m
       <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
     </a>{music_bar}
     <a class="leiste__punkt" href="/blog/">Blog</a>
-    <a class="leiste__punkt" href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
     <a class="leiste__punkt" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
     <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -204,7 +249,7 @@ def header(title, description, path, og_title=None, og_text=None, extra_ld="", m
 <nav class="menue" id="menue" aria-label="Menu">{music_menu}
   <a href="/blog/">Blog</a>
   <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
-  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
+  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>{coffee_menu}
   <a class="knopf knopf--gross" href="/#downloads">Download</a>
 </nav>
 
@@ -217,6 +262,7 @@ def footer(current, with_copy=False):
     def point(name, href):
         now = ' aria-current="page"' if href == current else ""
         return f'          <li><a href="{href}"{now}>{name}</a></li>'
+    coffee_footer = ("\n" + point(SUPPORTER_LINK, SUPPORTER_PATH)) if SUPPORTER_ON else ""
     list = "\n".join([point("App Store", "/download/app-store/"),
                        point("TestFlight", "/download/testflight/"),
                        point("Android", "/android/"),
@@ -282,7 +328,7 @@ def footer(current, with_copy=False):
           <li><a href="/about/">About</a></li>
           <li><a href="/blog/">Blog</a></li>
           <li><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>{coffee_footer}
           <li><a href="/support.html">Support</a></li>
           <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
         </ul>
@@ -328,6 +374,15 @@ def footer(current, with_copy=False):
 </html>
 """
 
+# One FAQ entry as details, so it works without script.
+def question(title, response, opened=False):
+    return f"""      <details class="frage"{' open' if opened else ''}>
+        <summary class="frage__knopf"><h3>{title}</h3>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+        <div class="frage__antwort"><p>{response}</p></div>
+      </details>"""
+
+
 # ------------------------------------------------------------------ Get involved
 
 GLYPH = {
@@ -369,6 +424,10 @@ HELP = f"""  <div class="hilfe">
     <p>Stuck somewhere? Ask on Discord.</p>
     <a class="knopf knopf--leise" href="{DISCORD}" target="_blank" rel="noopener">Get help on Discord</a>
   </div>"""
+# Below the help box on every download page: one quiet line to the supporter page.
+if SUPPORTER_ON:
+    HELP += f"""
+  <p class="kaffeehinweis">Swiftly is free and stays free. If it helps you, <a href="{SUPPORTER_PATH}">buy us a coffee</a>.</p>"""
 
 def other(ausser):
     all = [("Windows", "/download/windows/"), ("Linux", "/download/linux/"),

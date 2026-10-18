@@ -23,7 +23,9 @@ DESIGN.md), hidden files and folders (.impeccable, .DS_Store) except
 block "# BEGIN swiftly-blog ... # END swiftly-blog" is inserted, everything
 else in it (e.g. the HTTPS redirect) stays.
 """
-import ftplib, hashlib, io, json, os, re, subprocess, sys, time
+import ftplib, hashlib, io, json, os, re, ssl, subprocess, sys, time
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "download-pages"))
+from parts import supporter_upload_block
 
 SERVER = "w0198283.kasserver.com"
 FOLDER = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Website"))
@@ -124,6 +126,13 @@ def fits(rel, only):
 
 def main():
     trocken, changed, only = arguments()
+    # The supporter switch in parts.py: before "live", nothing goes up while the
+    # site still carries the supporter page or a link to it.
+    block = supporter_upload_block(FOLDER)
+    if block and not trocken:
+        sys.exit("Nicht hochgeladen. " + block)
+    if block:
+        print("Hinweis: " + block)
     state = state_read()
     all = [f for f in files() if fits(f, only)]
     summen = {f: checksum(f) for f in all} if changed else {}
@@ -144,7 +153,8 @@ def main():
 
     user, password = access()
     try:
-        ftp = ftplib.FTP_TLS(SERVER, timeout=60)
+        # Without a context ftplib checks neither certificate nor hostname (a MITM could read the password).
+        ftp = ftplib.FTP_TLS(SERVER, timeout=60, context=ssl.create_default_context())
     except (EOFError, OSError) as e:
         password = None
         sys.exit(f"Server hat die Verbindung vor der Anmeldung geschlossen ({type(e).__name__}). "

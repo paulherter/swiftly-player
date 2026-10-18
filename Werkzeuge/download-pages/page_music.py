@@ -16,7 +16,7 @@ import shutil
 import sys
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
-from parts import WEBSITE, DISCORD, GITHUB
+from parts import WEBSITE, DISCORD, GITHUB, SUPPORTER_ON, SUPPORTER_PATH, SUPPORTER_LINK, DONATE_BUTTON
 
 TARGET = "/music/"
 PATH = "/music/"
@@ -42,6 +42,9 @@ BETA_ROW = ("Free beta on TestFlight. No account, no ads." if MUSIC_TESTFLIGHT
 index = open(os.path.join(WEBSITE, "index.html"), encoding="utf-8").read()
 STYLE = re.search(r"<style>(.*?)</style>", index, re.S).group(1)
 STYLE = STYLE.replace("url(schrift/", "url(/schrift/").replace("url(aufnahmen/", "url(/aufnahmen/")
+# Download and Donate; without the supporter page the second button is the player.
+SECOND = DONATE_BUTTON if SUPPORTER_ON else '        <a class="knopf knopf--gross knopf--zweit hero__knopf" href="/">Swiftly Player</a>'
+COFFEE_MENU = f'\n  <a href="{SUPPORTER_PATH}">{SUPPORTER_LINK}</a>' if SUPPORTER_ON else ""
 FOOTER = re.search(r"<footer class=\"fuss\">.*?</footer>", index, re.S).group(0)
 FOOTER = FOOTER.replace('src="wortmarke.svg"', 'src="/wortmarke.svg"')
 FOOTER = re.sub(r'<div class="fuss__marke">.*?</div>',
@@ -378,7 +381,6 @@ page = f"""<!doctype html>
     </a>
     <a class="leiste__punkt nur-desktop" href="/">Player</a>
     <a class="leiste__punkt nur-desktop" href="/blog/">Blog</a>
-    <a class="leiste__punkt nur-desktop" href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
     <a class="leiste__punkt nur-desktop" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
     <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -390,7 +392,7 @@ page = f"""<!doctype html>
   <a href="/">Swiftly Player</a>
   <a href="/blog/">Blog</a>
   <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
-  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
+  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>{COFFEE_MENU}
   <a class="knopf knopf--gross" href="#downloads">Download</a>
 </nav>
 
@@ -406,7 +408,7 @@ page = f"""<!doctype html>
       <p>A music player for the Jellyfin or Navidrome server you run yourself.</p>
       <div class="hero__knoepfe">
         <a class="knopf knopf--gross hero__knopf" href="#downloads">Download</a>
-        <a class="knopf knopf--gross knopf--zweit hero__knopf" href="/">Swiftly Player</a>
+{SECOND}
       </div>
       <p class="hero__frei">{BETA_ROW}</p>
     </div>

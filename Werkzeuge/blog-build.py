@@ -54,6 +54,10 @@ import sys
 import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 
+# The supporter switch lives in download-pages/parts.py, one place for the whole site.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "download-pages"))
+from parts import SUPPORTER_ON, SUPPORTER_PATH, SUPPORTER_LINK
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEBSITE = os.path.normpath(os.path.join(HERE, "..", "Website"))
 SOURCES = os.path.join(WEBSITE, "blog", "quellen")
@@ -606,11 +610,13 @@ def load_box():
         f'<a class="laden" href="{e(href)}"{extern(href)} data-geraet="{g}">'
         f'<span class="laden__zeichen" aria-hidden="true">{z}</span><span><b>{t}</b><em>{u}</em></span></a>'
         for g, href, z, t, u in LOAD)
+    coffee = (f'\n<p class="leistenkasten__kaffee">Free, and it stays free. <a href="{SUPPORTER_PATH}">Buy us a coffee</a></p>'
+              if SUPPORTER_ON else "")
     return f"""<section class="leistenkasten" id="laden" aria-labelledby="laden-titel">
 <p class="leistenkasten__marke" id="laden-titel"><img src="/symbol.svg" alt="" width="28" height="28">Swiftly Player</p>
 <p class="leistenkasten__satz">A free player for your own Jellyfin server. Pause on the TV, keep watching on your phone.</p>
 <div class="knoepfe" data-geraete>{buttons}</div>
-<a class="alle-wege" href="/#downloads">All downloads</a>
+<a class="alle-wege" href="/#downloads">All downloads</a>{coffee}
 </section>"""
 
 
@@ -831,6 +837,8 @@ main > :not(.schein) { position: relative; z-index: 6; }
 .knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 14%, var(--flaeche));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 38%, transparent); }
 .knoepfe > :first-child .laden__zeichen { background: color-mix(in srgb, var(--akzent) 20%, transparent); color: var(--akzent); }
+.leistenkasten__kaffee { margin: 14px 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--sehr-leise); }
+.leistenkasten__kaffee a { color: var(--leise); text-decoration: underline; text-underline-offset: 3px; }
 .alle-wege { display: inline-block; margin: 14px 0 0 10px; font-size: 14.5px; font-weight: 600; color: var(--akzent); }
 .verwandtliste { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .weiterlesen { margin-top: 64px; padding-top: 40px; border-top: 1px solid var(--linie); }
@@ -1216,6 +1224,8 @@ def page(title, description, url, content, og_type="website", addition_header=""
     image_url = DOMAIN + image if image else DOMAIN + "/vorschau.jpg"
     image_old = image_old or "iPad, iPhone and an Apple TV, all showing Swiftly Player"
     current = ' aria-current="page"' if blog_active else ""
+    coffee_menu = f'\n  <a href="{SUPPORTER_PATH}">{SUPPORTER_LINK}</a>' if SUPPORTER_ON else ""
+    coffee_footer = f'\n          <li><a href="{SUPPORTER_PATH}">{SUPPORTER_LINK}</a></li>' if SUPPORTER_ON else ""
     kanonisch = f'<link rel="canonical" href="{e(url)}">\n' if url else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -1260,7 +1270,6 @@ def page(title, description, url, content, og_type="website", addition_header=""
     </a>
     <a class="leiste__punkt" href="/music/">Music</a>
     <a class="leiste__punkt" href="/blog/"{current}>Blog</a>
-    <a class="leiste__punkt" href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
     <a class="leiste__punkt" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
     <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -1272,7 +1281,7 @@ def page(title, description, url, content, og_type="website", addition_header=""
   <a href="/music/">Swiftly Music</a>
   <a href="/blog/"{current}>Blog</a>
   <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
-  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
+  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>{coffee_menu}
   <a class="knopf knopf--gross" href="/#downloads">Download</a>
 </nav>
 
@@ -1304,7 +1313,7 @@ def page(title, description, url, content, og_type="website", addition_header=""
           <li><a href="/about/">About</a></li>
           <li><a href="/blog/">Blog</a></li>
           <li><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>{coffee_footer}
           <li><a href="/support.html">Support</a></li>
           <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
         </ul>
