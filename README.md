@@ -1,35 +1,24 @@
 <div align="center">
 
-<img src=".github/images/wordmark.svg" alt="Swiftly Player" width="260">
+<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: a free, native Jellyfin client" width="100%"></a>
 
-# Swiftly Player
+<p>
+For iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.<br>
+Every file plays as Direct Play or Direct Stream, never transcoded.
+</p>
 
-**A free, native Jellyfin client for iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.**<br>
-It never transcodes: every file plays as Direct Play or Direct Stream.
+<p>
+<a href="https://apps.apple.com/app/id6806824067"><img src=".github/images/app-store-badge.svg" alt="Download on the App Store" width="144" height="48"></a>&nbsp;&nbsp;<a href="https://play.google.com/store/apps/details?id=de.paulherter.swiftly"><img src=".github/images/google-play-badge.svg" alt="Get it on Google Play" width="161" height="48"></a><br>
+<a href="https://swiftlyplayer.com/supporter/"><img src=".github/images/support-button.png" alt="Buy us a coffee" width="314" height="48"></a>
+</p>
 
-<br>
+<p>
+<sub>Swiftly is free. A coffee helps us keep it going.</sub>
+</p>
 
-<a href="https://apps.apple.com/app/id6806824067"><img src=".github/images/app-store-badge.svg" alt="Download on the App Store" height="56"></a>
-&nbsp;&nbsp;
-<a href="https://play.google.com/store/apps/details?id=de.paulherter.swiftly"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="82"></a>
-
-<sub>More ways to get it: [TestFlight beta](https://testflight.apple.com/join/MqeP2cnj) · [Android APK](https://github.com/paulherter/swiftly-player/releases/latest) · [Windows](#windows) · [Linux](#linux)</sub>
-
-<br>
-
-<a href="https://swiftlyplayer.com/supporter/"><img src=".github/images/support-button.svg" alt="Buy us a coffee" height="56"></a>
-
-<sub>Swiftly is free for everyone and stays that way. A coffee helps us keep it going.</sub>
-
-<br>
-
-[![License](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
-&nbsp;
-[![Jellyfin](https://img.shields.io/badge/Jellyfin_10.8+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
-&nbsp;
-[![Website](https://img.shields.io/badge/swiftlyplayer.com-1E1E22?style=flat-square&labelColor=1E1E22)](https://swiftlyplayer.com)
-&nbsp;
-[![Discord](https://img.shields.io/badge/Discord-1E1E22?style=flat-square&logo=discord&logoColor=50D5DA&labelColor=1E1E22)](https://discord.gg/MeGwfv3UwN)
+<p>
+<sub><a href="https://testflight.apple.com/join/MqeP2cnj">TestFlight beta</a> · <a href="https://github.com/paulherter/swiftly-player/releases/latest">Android APK</a> · <a href="#windows">Windows</a> · <a href="#linux">Linux</a> · <a href="https://discord.gg/MeGwfv3UwN">Discord</a></sub>
+</p>
 
 </div>
 
