@@ -86,6 +86,9 @@ public final class Kern: @unchecked Sendable {
     private var _preparation: String?
     /// A counter per row of the track layer (`audio`, `subtitle`) for press-and-hold.
     private var _holdCounter: [String: Delay.HoldCounter] = [:]
+    /// **Seconds actually watched**, for "Support Swiftly" (`WatchTimeCounter` in the package). Fed by
+    /// ``playbackTick``, stored by Kotlin through ``supportWatchTake(usage:force:)`` (`Support.swift`).
+    let watch = WatchBox()
 
     /// What is reported to the server as the limit (`AppModel.profileBitrate`; computed in the package).
     private var profileBitrate: Int {
@@ -1276,6 +1279,8 @@ public final class Kern: @unchecked Sendable {
         let job = PlaybackTick.compute(&w.state, measurement: measurement, restoring: false,
                                              atPush: atPush, sinceStart: w.start)
         let spot = w.state.position
+        // Counts only while the picture runs, not while loading, paused or scrubbing.
+        watch.progress(isPlaying: running && showsImage && !atPush)
         // **The overlay** (countdown) pauses while stopped, while scrubbing and before the first
         // frame. `tickLength` is the interval at which Kotlin asks.
         let countdownReady = Self.offeringCatchUp(&w, running: running && showsImage && !atPush,
@@ -1828,6 +1833,7 @@ public final class Kern: @unchecked Sendable {
     public func playbackEnd(position: Double) async -> String {
         await withCheckedContinuation { (done: CheckedContinuation<String, Never>) in
             barrier.lock()
+            watch.stopped()
             let change = _episodesSwitch
             let presentTimes = _playback.map(Self.key)
             let opened = change.phase != .closed

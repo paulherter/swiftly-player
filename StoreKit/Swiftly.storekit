@@ -1,0 +1,77 @@
+{
+  "identifier": "C5C3EB18-9173-43D0-A705-F8C2B50FBCB9",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6824113000",
+      "localizations": [
+        {
+          "description": "A small thank-you. Swiftly stays free.",
+          "displayName": "A coffee",
+          "locale": "en_US"
+        },
+        {
+          "description": "Kleines Dankeschön. Swiftly bleibt kostenlos.",
+          "displayName": "Ein Kaffee",
+          "locale": "de"
+        }
+      ],
+      "productID": "de.paulherter.swiftly.tip.coffee",
+      "referenceName": "Tip coffee",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "6824113001",
+      "localizations": [
+        {
+          "description": "A big thank-you. Swiftly stays free.",
+          "displayName": "Coffee and cake",
+          "locale": "en_US"
+        },
+        {
+          "description": "Großes Dankeschön. Swiftly bleibt kostenlos.",
+          "displayName": "Kaffee und Kuchen",
+          "locale": "de"
+        }
+      ],
+      "productID": "de.paulherter.swiftly.tip.cake",
+      "referenceName": "Tip cake",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "6824113002",
+      "localizations": [
+        {
+          "description": "The biggest thank-you. Swiftly stays free.",
+          "displayName": "A movie night",
+          "locale": "en_US"
+        },
+        {
+          "description": "Dickes Dankeschön. Swiftly bleibt kostenlos.",
+          "displayName": "Ein Filmabend",
+          "locale": "de"
+        }
+      ],
+      "productID": "de.paulherter.swiftly.tip.movie",
+      "referenceName": "Tip movie",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "de",
+    "_storefront": "DEU",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

@@ -296,6 +296,8 @@ fun TvMain(app: SwiftlyApplication) {
         }
         // While the player runs, the panel belongs to it.
         if (play == null) TvPanel(app)
+        // "Support Swiftly": the ask and the thanks as full panels.
+        if (play == null) TvSupportLayer(app)
         // "Where to continue?" grows out of the badge.
         if (play == null) TvTakeoverStatus(app)
     }
@@ -484,6 +486,9 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
             TvTakeoverBadge(app, offerings, groups)
             Spacer(Modifier.width(18.dp))
         }
+        // "Support Swiftly", left of the profile, as on the phone's home page.
+        TvSupportHeart(app)
+        Spacer(Modifier.width(14.dp))
         // A 32 dp profile circle, the small step of the focus ladder. The ring is white: an image cannot
         // get brighter like a tile, and the accent carries state, not "the remote is here"
         // (`ProfileStyle` on tvOS). The account switch flies here; while the new image is on its way,

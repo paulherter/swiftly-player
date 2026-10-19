@@ -136,17 +136,17 @@ def build():
     badge = '\n<div class="vorschau">Preview, not connected</div>\n' if PREVIEW else ""
     page = header(
         "Buy us a coffee - Swiftly Player",
-        "Swiftly Player is free and stays free. If it makes your evenings better, a coffee helps us keep it going.",
+        "All the features you need are free. If it makes your evenings better, a coffee gets you a few extras and helps us keep it going.",
         SUPPORTER_PATH,
         og_title="Buy us a coffee",
-        og_text="Swiftly Player is free and stays free. A coffee helps us keep it going.",
+        og_text="All the features you need are free. A coffee gets you a few extras and helps us keep it going.",
         extra_ld=head) + f"""{badge}  <div class="kaffeekopf hero" data-plaketten>
-{chip(1, "frei", "Free for everyone", "Every feature, always")}
+{chip(1, "frei", "Free for everyone", "All the features you need")}
 {chip(2, "schloss", "No account, no ads", "And no tracking")}
 {chip(3, "leute", "Built together", "With your bug reports and pull requests")}
     <header class="seitenkopf seitenkopf--mitte">
       <h1>Buy us a coffee <span class="tasse">&#9749;</span></h1>
-      <p class="unter">Swiftly is free and stays free. If it makes your evenings better, a coffee helps us keep it going.</p>
+      <p class="unter">All the features you need are free. If it makes your evenings better, a coffee gets you a few extras and helps us keep it going.</p>
     </header>
   </div>
 
@@ -182,7 +182,7 @@ def build():
       <div class="dank__kachel"><span class="dank__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M12 16.2s-3.6-2.2-3.6-4.9a2 2 0 0 1 3.6-1.2 2 2 0 0 1 3.6 1.2c0 2.7-3.6 4.9-3.6 4.9z"/></svg></span><h3>Supporter icons</h3><p>Extra app icons, and a little heart in About.</p></div>
       <div class="dank__kachel"><span class="dank__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 9.5h14M5 14h9M5 18.5h6"/><path d="m16 17 1.6 1.6L21 15"/></svg></span><h3>Your name in the credits</h3><p>If you want it. It is up to you.</p></div>
     </div>
-    <p class="dank__frei"><span>Everything stays free for everyone.</span> A key unlocks no features.</p>
+    <p class="dank__frei"><span>All the features you need stay free, for everyone.</span> Supporters get a few extras on top.</p>
   </section>
 
 {join("No coffee? Still welcome.",
@@ -197,7 +197,7 @@ def build():
     <div class="fragen__blatt">
 {question("Where does the money go?", "Into the running costs: the Apple developer fee, hosting for the site and updates, and test devices.", opened=True)}
 {question("Do I need an account?", "No. After paying you get a key on the thank-you page and by email. You type it into the app.")}
-{question("Where does the key work?", "In the Windows, Linux and Android APK builds from this site or GitHub. The App Store and Google Play versions have no key field. They stay free and complete.")}
+{question("Where does the key work?", "In the Windows, Linux and Android APK builds from this site or GitHub. The App Store and Google Play versions have no key field. Everything you need to watch is free there too.")}
 {question("Can I cancel or get a refund?", 'Yes. Every receipt links to manage or cancel a monthly payment. For a refund, write to <a href="mailto:info@swiftlyplayer.com">info@swiftlyplayer.com</a>.')}
     </div>
   </section>
@@ -232,7 +232,7 @@ BAND_CSS = f"""{CSS_START}
 BAND = f"""{START}
 <aside class="kaffee" aria-label="Support Swiftly">
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10.5h1.5a2.5 2.5 0 0 1 0 5H16.6M8 3.5c-.6.8-.6 1.7 0 2.5M12 3.5c-.6.8-.6 1.7 0 2.5"/></svg>
-  <p>Swiftly is free and stays free. If it makes your evenings better, <a href="{SUPPORTER_PATH}">buy us a coffee</a>.</p>
+  <p>All the features you need are free. If it makes your evenings better, <a href="{SUPPORTER_PATH}">buy us a coffee</a> for a few extras.</p>
 </aside>
 {END}
 """
@@ -255,6 +255,13 @@ noreply@paulherter.de. The legal basis is Article 6(1)(b) GDPR, carrying out wha
 you asked for, and for the name in the credits your consent under Article 6(1)(a),
 which you can withdraw. Order records are kept as long as tax law requires.
 Nothing on the supporter page is tracked, and it sets no cookies.</p>
+
+<h2>Purchases in the apps</h2>
+<p>Where an app offers a tip or supporter purchase through the App Store or
+Google Play, Apple or Google is the seller. You pay them under their terms and
+privacy notices. I receive no data about buyers from the stores, only anonymous
+sales totals. A supporter key you enter in an app is checked on the device and
+is not sent anywhere.</p>
 
 {END}
 """
@@ -279,6 +286,14 @@ für den Namen in den Credits Ihre Einwilligung nach Buchstabe a, die Sie
 widerrufen können. Bestelldaten werden so lange aufbewahrt, wie das Steuerrecht
 es verlangt. Auf der Supporter-Seite selbst wird nichts verfolgt, sie setzt keine
 Cookies.</p>
+
+<h2>Käufe in den Apps</h2>
+<p>Bietet eine App ein Trinkgeld oder einen Supporter-Kauf über den App Store
+oder Google Play an, ist Apple beziehungsweise Google der Verkäufer. Sie bezahlen
+dort nach deren Bedingungen und Datenschutzhinweisen. Aus den Stores erhalte ich
+keine Daten über Käufer, nur anonyme Verkaufszahlen. Einen Supporter-Schlüssel,
+den Sie in einer App eingeben, prüft die App auf dem Gerät; er wird nirgendwohin
+geschickt.</p>
 
 {END}
 """

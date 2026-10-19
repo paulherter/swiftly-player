@@ -254,6 +254,11 @@ enum class Glyph(val code: Int, val filled: Boolean, val mirrored: Boolean) {
     JumpArrows(0xF69B, false, false),
     /** `forward.fill`: the pill while 2× is held. */
     DoubleSpeed(0xE01F, true, false),
+    /** `heart` / `heart.fill`: "Support Swiftly", and the supporter badge. */
+    Heart(0xE87D, false, false),
+    HeartFilled(0xE87D, true, false),
+    /** `app.badge`-ish: the app icon picker. */
+    AppIcon(0xE5C3, false, false),
     ;
 
     val text: String get() = String(Character.toChars(code))

@@ -118,9 +118,9 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 open(Destination("lizenzen", translated("Open-Source-Lizenzen"), "Lizenzen"))
             }
         }
-        // White at 30 percent is 2.67:1 and not allowed for text.
-        Text(SwiftlyApplication.VersionRow, style = Theme.small, color = Theme.fontVeryQuiet,
-             modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
+        // White at 30 percent is 2.67:1 and not allowed for text. Supporters see the heart next to it.
+        de.paulherter.swiftly.support.VersionLine(app, SwiftlyApplication.VersionRow,
+             Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
     }
 }
 
@@ -399,8 +399,10 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
                 open(Destination("eigenkoepfe", translated("Eigene Header"), "EigeneKoepfe"))
             }
         }
-        Text("${SwiftlyApplication.VersionRow} · libVLC 3.6.3", style = Theme.small, color = Theme.fontVeryQuiet,
-             modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
+        // "Support Swiftly" and the app icon, last, as on iPhone.
+        de.paulherter.swiftly.support.SupportSettingsGroup(app, open)
+        de.paulherter.swiftly.support.VersionLine(app, "${SwiftlyApplication.VersionRow} · libVLC 3.6.3",
+             Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
     }
 }
 

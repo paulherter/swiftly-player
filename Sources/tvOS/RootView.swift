@@ -50,6 +50,7 @@ struct RootView: View {
         .fullScreenCover(isPresented: $discordHint) {
             CodeSheet(target: .discord) { discordHint = false }
         }
+        .tvSupportPresentation(model: model)
     }
 }
 

@@ -53,7 +53,36 @@ for key, entry in catalog["strings"].items():
         if e is not None and e != w:
             tabellen[s][kotlinformat(key) + "#eins"] = kotlinformat(e)
 
+# **"Support Swiftly" texts come from the package** (`SupportCopy` in JellyfinKit), not from the
+# app catalog: every platform copies the same pairs. The shared ones go into the normal tables;
+# the direct-only ones (website, supporter key; `DirectSupportCopy.swift`, module SupportKeyKit)
+# go into the `direct` flavor's own assets, so the Play build never carries them
+# (`Werkzeuge/store-guard-android.py` checks that). Kotlin merges `texts/<language>.*.json`.
+PAIR = re.compile(r'SupportCopy\(\s*de:\s*"((?:[^"\\]|\\.)*)",\s*en:\s*"((?:[^"\\]|\\.)*)"\)', re.S)
+KIT = ROOT / "Packages/JellyfinKit/Sources"
+
+def pairs(path: pathlib.Path):
+    return [(de, en) for de, en in PAIR.findall(path.read_text(encoding="utf-8"))]
+
+def add(table: dict, language: str, found):
+    for de, en in found:
+        table.setdefault(kotlinformat(de), kotlinformat(de if language == "de" else en))
+
+shared_pairs = pairs(KIT / "JellyfinKit/SupportCopy.swift")
+direct_pairs = pairs(KIT / "SupportKeyKit/DirectSupportCopy.swift")
+for s, t in tabellen.items():
+    add(t, s, shared_pairs)
+
 TARGET.mkdir(parents=True, exist_ok=True)
 for s, t in tabellen.items():
     (TARGET / f"{s}.json").write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
     print(f"{s}: {len(t)} Texte → {TARGET / (s + '.json')}")
+
+if len(sys.argv) <= 1:
+    direct = ROOT / "Android/phone/src/direct/assets/texts"
+    direct.mkdir(parents=True, exist_ok=True)
+    for s in tabellen:
+        t = {}
+        add(t, s, direct_pairs)
+        (direct / f"{s}.direct.json").write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+        print(f"{s}: {len(t)} Direkt-Texte → {direct / (s + '.direct.json')}")

@@ -143,10 +143,13 @@ struct ProfileView: View {
                 // **Not typed in.** This used to say "Swiftly 1.0", which has been wrong
                 // since the first release, and this is exactly the line a tester copies into
                 // a bug report.
-                Text(verbatim: Version.row)
-                    .font(Theme.small)
-                    .foregroundStyle(Theme.fontVeryQuiet)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    Text(verbatim: Version.row)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                    MacSupporterMark()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 26)
             }
             // **Left-aligned, not centered in the window, as on iPad.** The page used to
@@ -622,6 +625,7 @@ private struct AccountCard: View {
                           image: account.flatMap { model.userImageURL(for: $0) },
                           size: 56,
                           highlighted: active && model.server.count > 1)
+                .modifier(MacSupporterAvatarBadge(size: 56, shown: active))
                 .modifier(remember(key))
                 // The signed-in image makes room for the new one; a lifting one is on its
                 // way and no longer shown here.

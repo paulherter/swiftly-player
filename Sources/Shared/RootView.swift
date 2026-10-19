@@ -77,6 +77,8 @@ struct RootView: View {
             }
         }
         .overlay { DiscordHint(opened: $discordSheet) }
+        // "Support Swiftly": the sheet and when to ask, see `SupportPresentation`.
+        .supportPresentation(model: model)
         .overlay {
             #if os(iOS)
             if !started {

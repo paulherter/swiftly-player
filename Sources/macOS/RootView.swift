@@ -51,6 +51,7 @@ struct RootView: View {
         .background(ImageTickMeasure().frame(width: 0, height: 0))
         #endif
         .animation(Theme.timePage, value: model.phase)
+        .macSupportPresentation(model: model)
         // **Once at the root, not on every tile.** A setting decides which tile shows its
         // progress bar, and call sites that pass `progress:` along should not need to
         // know. It is read where the bar is created. See

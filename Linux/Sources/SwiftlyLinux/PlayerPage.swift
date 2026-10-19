@@ -264,6 +264,7 @@ extension App {
     func stopDone() {
         guard let afterThat = postStop else { return }
         postStop = nil
+        supportCheckAfterPlayer()
         afterThat()
     }
 
@@ -294,6 +295,7 @@ extension App {
         // **Refresh the pages only after the final report** (as on Apple): otherwise the
         // home page would fetch its rows before the server knew the position.
         let hasPlayed = runningTitle!
+        supportWatchStop()
         handoffPlayerDistance(hasPlayed.id)
         preparation.forget()
         readyCount(hasPlayed, position: playState.position, duration: playState.duration)
@@ -1220,6 +1222,7 @@ extension App {
         }
 
         timesShow()
+        supportWatchTick(isPlaying: playState.running)
         MainActor.assumeIsolated { streamCheck() }
         MainActor.assumeIsolated { audioCheck() }
         imageMeasurementWrite(measurement)

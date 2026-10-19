@@ -246,6 +246,10 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 RailView(rail, open, if (rail.landscape) { k -> continueWatching(k) } else null, afterwards,
                              Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = null).railEntrance(i + 1))
             }
+            // "Support Swiftly" at the very end, only when the package says so (`SupportPrompt`).
+            if (visible.isNotEmpty()) item(key = "unterstuetzen") {
+                Box(Modifier.padding(top = 4.dp)) { de.paulherter.swiftly.support.SupportHomeCard(app) }
+            }
         }
         }
     }
@@ -259,7 +263,7 @@ private fun StartHeader(app: SwiftlyApplication, open: (Destination) -> Unit, of
         Row(verticalAlignment = Alignment.CenterVertically) {
             Wordmark(height = 30.dp)
             Spacer(Modifier.weight(1f))
-            HeaderTargets(app, open)
+            HeaderTargets(app, open) { de.paulherter.swiftly.support.SupportHeaderHeart(app) }
         }
     }
 }

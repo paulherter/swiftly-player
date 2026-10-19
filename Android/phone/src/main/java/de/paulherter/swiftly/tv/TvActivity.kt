@@ -34,6 +34,12 @@ import de.paulherter.swiftly.shared.Theme
  * activity (`onNewIntent`) instead of opening a second one beside it.
  */
 class TvActivity : ComponentActivity() {
+    /** Back in front: ask the store again (a purchase may have finished elsewhere, or been refunded). */
+    override fun onResume() {
+        super.onResume()
+        (application as SwiftlyApplication).support.channel.refresh()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Reverse of `MainActivity`: a phone arriving here (e.g. via a swiftly:// link) gets the phone

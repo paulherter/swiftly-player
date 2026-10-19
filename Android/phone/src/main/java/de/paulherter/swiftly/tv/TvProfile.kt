@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.support.SupporterAvatarHeart
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -293,7 +294,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             TvDisplay(translated("Adresse"), server?.first?.ifEmpty { null } ?: app.serverName.value ?: host.ifEmpty { "—" })
                             SeparatorLine()
                             TvDisplay(translated("Fassung"), server?.second?.let { "Jellyfin $it" } ?: "—")
-                            TvDisplay("Swiftly", SwiftlyApplication.VersionRow.removePrefix("Swiftly Player "))
+                            TvVersionDisplay(app, SwiftlyApplication.VersionRow.removePrefix("Swiftly Player "))
                             SeparatorLine()
                             // Multiple servers; formerly the bundle held exactly one.
                             TvAction(translated("Server hinzufügen")) { open(Destination("serveraufnahme", translated("Server hinzufügen"), "ServerAufnahme")) }
@@ -327,6 +328,13 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // Mirrors the "Swiftly" section on tvOS. There QR codes; here the addresses to type in, since a QR
                             // image would need a library of its own. Rating opens the Play Store, which Android TV has; the rest
                             // needs a browser, which is usually missing.
+                            // "Support Swiftly" first: the one row of this section that is always worth a look.
+                            if (app.support.available || app.support.isSupporter) {
+                                TvAction(translated("Swiftly unterstützen"),
+                                         value = if (app.support.isSupporter) translated("Danke") else translated("Mit einem Kaffee Danke sagen"),
+                                         arrow = false) { tvSupportOpen(app) }
+                                SeparatorLine()
+                            }
                             TvAction(translated("Swiftly bewerten"), modifier = first) {
                                 app.addressOpen(context, app.communityAddress("play"))
                             }
@@ -367,6 +375,21 @@ private fun SectionRow(title: String, selected: Boolean, modifier: Modifier = Mo
                      fontWeight = if (selected || focus) FontWeight.SemiBold else FontWeight.Normal),
                  color = if (selected) Theme.accent else Theme.font, maxLines = 1)
         }
+    }
+}
+
+/** The version row; supporters see the heart and "Supporter" next to the number. */
+@Composable
+private fun TvVersionDisplay(app: SwiftlyApplication, version: String) {
+    Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).padding(horizontal = 13.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("Swiftly", style = TvTheme.body, color = Theme.font, maxLines = 1, modifier = Modifier.weight(1f))
+        if (app.support.isSupporter) {
+            Symbol(Glyph.HeartFilled, 11.dp, color = Theme.accent)
+            Text(translated("Unterstützer"), style = TvTheme.tile, color = Theme.accent, maxLines = 1,
+                 modifier = Modifier.padding(start = 6.dp, end = 14.dp))
+        }
+        Text(version, style = TvTheme.tile, color = Theme.fontQuiet, maxLines = 1)
     }
 }
 
@@ -472,7 +495,10 @@ private fun SeparatorLine() {
 private fun AccountCard(app: SwiftlyApplication, serverRow: String, cards: List<JSONObject>,
                         record: () -> Unit, switchTo: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area).padding(16.dp)) {
-        ProfileImage(app, 42.dp)
+        Box {
+            ProfileImage(app, 42.dp)
+            SupporterAvatarHeart(app, 42.dp)
+        }
         Text(app.username(), style = TvTheme.rail,
              color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.padding(top = 9.dp))

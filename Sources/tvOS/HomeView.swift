@@ -392,6 +392,13 @@ struct HomeView: View {
                         .railEntrance(fixedRails.count + libraries.count + 2 + j, present: showItem)
                     }
                 }
+                // Only after the last row, and only when it is due.
+                if SupportModel.shared.cardVisible {
+                    TVSupportCard()
+                        .padding(.horizontal, Theme.edgePage)
+                        .padding(.top, Theme.railsSpacing)
+                        .transition(.opacity)
+                }
             }
             // So the bottom row at the scroll limit has the same distance to the screen edge as two
             // rows have to each other. See `completionPadding`.

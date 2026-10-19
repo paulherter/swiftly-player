@@ -1834,6 +1834,73 @@ enum Theme {
             outline-offset: 0;
             border-radius: 8px;
         }
+
+        /* MARK: Swiftly unterstuetzen (Direkt-Fassung)
+
+           Blatt und Karte folgen dem Entwurf: Flaeche `area`, Ecke 16, drei
+           Stufen als `raised`-Kacheln, der Knopf weiss wie jeder Hauptknopf.
+           Kein Schatten (BRAND 4); die Abdunklung hinter dem Blatt ist der
+           einzige Hinweis, dass es obenauf liegt. */
+        .swiftly-stuetzgrund { background-color: rgba(0,0,0,0.62); }
+        .swiftly-stuetzblatt {
+            background-color: \(area);
+            border: 1px solid \(margin);
+            border-radius: \(cornerArea)px;
+            padding: 24px;
+        }
+        .swiftly-stuetzmarke {
+            background-color: \(raised);
+            border-radius: \(cornerCapsule)px;
+            color: \(font);
+            font-size: 22px;
+        }
+        .swiftly-stufe {
+            background-color: \(raised);
+            border-radius: \(cornerCard)px;
+            padding: 16px 8px;
+        }
+        .swiftly-stufe-zeichen { font-size: 30px; }
+        .swiftly-stufe-name { font-size: \(body)px; font-weight: 600; }
+        button.swiftly-sekundaer {
+            background-image: none;
+            background-color: \(raised);
+            border: none;
+            box-shadow: none;
+            color: \(font);
+            border-radius: \(corner)px;
+            min-height: 44px;
+            padding: 0 18px;
+            font-size: \(body)px;
+            font-weight: 600;
+        }
+        button.swiftly-sekundaer:hover { background-color: #3A3A3A; }
+        button.swiftly-sekundaer:disabled label { color: \(fontVeryQuiet); }
+        entry.swiftly-schluessel {
+            font-family: "DejaVu Sans Mono", "Cascadia Mono", monospace;
+            letter-spacing: 1px;
+            min-height: 44px;
+            background-color: \(raised);
+        }
+        entry.swiftly-gueltig, entry.swiftly-gueltig:focus-within { border: 2px solid \(accent); padding: 0 11px; }
+        entry.swiftly-ungueltig, entry.swiftly-ungueltig:focus-within { border: 2px solid \(warning); padding: 0 11px; }
+        .swiftly-schluesselmeldung { font-size: 13px; }
+        .swiftly-schluesselmeldung.swiftly-gueltig { color: \(accent); }
+        .swiftly-schluesselmeldung.swiftly-ungueltig { color: \(warning); }
+        /* Das Herz in der Kopfzeile und neben der Fassung: ein Zeichen, kein
+           Bildsatz — das Zeichen gibt es auf jedem System. */
+        button.swiftly-herz {
+            background-image: none;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            min-width: 40px;
+            min-height: 40px;
+            padding: 0;
+            border-radius: \(corner)px;
+        }
+        button.swiftly-herz label { color: \(fontQuiet); font-size: 20px; }
+        button.swiftly-herz:hover label { color: \(font); }
+        label.swiftly-herz-klein { color: \(accent); }
         """
     }
 

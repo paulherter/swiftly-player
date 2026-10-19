@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "filename": "gold-back-400x240.png",
+      "idiom": "tv",
+      "scale": "1x"
+    },
+    {
+      "filename": "gold-back-800x480.png",
+      "idiom": "tv",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.support.SupporterAvatarHeart
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.alpha
 import de.paulherter.swiftly.shared.Glyph
@@ -385,6 +386,8 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.onGloballyPositioned { headerFrame[0] = it.boundsInRoot() }) {
             ProfileCharacter(front.name, front.image, 56.dp, highlighted = card.active && multiple)
+            // The supporter heart, on this device's own account only.
+            if (card.active) SupporterAvatarHeart(app, 56.dp)
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // 17 Semibold, the sheet heading: the name is the subject of the card, not a row.

@@ -31,6 +31,19 @@ android {
             isMinifyEnabled = false
         }
     }
+    // **Two ways to say thanks, two builds** (`Notizen/Supporter/PLAN-APPS.md`), same applicationId,
+    // same versionCode:
+    // - `play`: Google Play and its Play-signed APK. Tips through Play Billing; no link to the
+    //   website, no supporter key, and nothing of either in the binary.
+    // - `direct`: the APK on GitHub signed with the upload key (`Werkzeuge/sideload-apk.sh`). No
+    //   Billing library and no BILLING permission; "Support on the website" and the supporter key.
+    // Flavor code lives in `src/play` and `src/direct`; `Werkzeuge/store-guard-android.py` proves
+    // that the play build carries none of the direct-only strings.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") { dimension = "distribution" }
+        create("direct") { dimension = "distribution" }
+    }
     compileSdk = 36
     defaultConfig {
         applicationId = "de.paulherter.swiftly"
@@ -83,6 +96,9 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.play.review.ktx)
     implementation(libs.androidx.tvprovider)
+    // Only the play flavor: the direct build must not even declare the BILLING permission
+    // (the library's manifest adds it).
+    "playImplementation"(libs.billing)
     // Only for the JVM tests (`StreamNextLeaderTest`).
     testImplementation("junit:junit:4.13.2")
     // Only for the device tests (`CertificatesTest`), on the emulator.

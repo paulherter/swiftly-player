@@ -40,6 +40,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         offline
                         integration
+                        MacSupportSettingsGroup()
                     }
                     .frame(maxWidth: Theme.formWidth, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) {
@@ -54,10 +55,13 @@ struct SettingsView: View {
 
                 // The version is a minor detail: 12 pt in `schriftSehrLeise`. White at 30 % has a
                 // computed contrast of 2.67:1 and is explicitly among the forbidden values.
-                Text(verbatim: Version.withBase)
-                    .font(Theme.small)
-                    .foregroundStyle(Theme.fontVeryQuiet)
-                    .padding(.top, 26)
+                HStack(spacing: 10) {
+                    Text(verbatim: Version.withBase)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                    MacSupporterMark()
+                }
+                .padding(.top, 26)
             }
             .frame(maxWidth: Theme.settingWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)

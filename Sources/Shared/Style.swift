@@ -2414,6 +2414,11 @@ struct Sidebar: View {
             // above the account.
             OfferingBadge(takeover: takeover, bottom: 12)
 
+            // **The heart of the home page header**, here because the wide layout has no
+            // header; above the account, like the offer.
+            SupportHeart()
+                .padding(.bottom, 8)
+
             Button(action: onProfile) {
                 // **The account switch lands here** (design D, wide iPad): like ``Profilziel`` at
                 // the top right on iPhone, one view per image address, and while the new image

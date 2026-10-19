@@ -8,8 +8,9 @@ the old class names. `android:name` is a *string*, so neither the compiler nor
 the unit tests notice: the build is green and the app dies at startup with a
 `ClassNotFoundException`. This reads the manifest of the *built* APK (after the
 manifest merger, so classes from libraries count as well), takes every
-`android:name` of an application, activity, activity-alias, service, receiver and
-provider element, and looks each class up in the DEX files.
+`android:name` of an application, activity, service, receiver and provider element
+and the `android:targetActivity` of every activity-alias (the alias name itself is
+only a label), and looks each class up in the DEX files.
 
 Without an argument it takes the newest `Android/phone/build/outputs/apk/**/*.apk`.
 Needs `aapt2` and `dexdump` from the Android SDK build tools (ANDROID_HOME or
@@ -41,14 +42,26 @@ xml = subprocess.run([tool("aapt2"), "dump", "xmltree", "--file", "AndroidManife
 package = re.search(r'package="([^"]+)"', xml).group(1)
 wanted = []   # (element, name)
 element = None
+aliases = []  # (alias name, target) -- the alias name is no class, its target must be one
+alias_name = None
 for line in xml.splitlines():
     m = re.match(r"\s*E: (\S+)", line)
     if m:
         element = m.group(1)
+        alias_name = None
         continue
     m = re.search(r'A: http://schemas.android.com/apk/res/android:name\([^)]*\)="([^"]+)"', line)
-    if m and element in ("application", "activity", "activity-alias", "service", "receiver", "provider"):
+    if m and element == "activity-alias":
+        alias_name = m.group(1)
+        continue
+    if m and element in ("application", "activity", "service", "receiver", "provider"):
         wanted.append((element, m.group(1)))
+    # **activity-alias** (supporter app icons): `android:name` is only a label, `targetActivity` is a
+    # class name as a string and must exist, exactly like `android:name` elsewhere.
+    m = re.search(r'A: http://schemas.android.com/apk/res/android:targetActivity\([^)]*\)="([^"]+)"', line)
+    if m and element == "activity-alias":
+        wanted.append(("alias→", m.group(1)))
+        aliases.append((alias_name or "?", m.group(1)))
 
 def qualified(name):
     if name.startswith("."):
@@ -73,7 +86,9 @@ for element, name in wanted:
     if not ok:
         missing.append(q)
 
-print(f"{len(wanted)} classes in the manifest of {apk.name}, {len(classes)} classes in {len(dexes)} DEX file(s).")
+for alias, target in aliases:
+    print(f"  alias     {qualified(alias)} -> {qualified(target)}")
+print(f"{len(wanted)} classes in the manifest of {apk.name} ({len(aliases)} aliases), {len(classes)} classes in {len(dexes)} DEX file(s).")
 if missing:
     print("Missing in the DEX: " + ", ".join(missing))
     sys.exit(1)

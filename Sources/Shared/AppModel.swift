@@ -638,6 +638,9 @@ final class AppModel {
         // looks at.
         TrackSupport.write = { AppLog.writeOut($0) }
         StreamForwarder.log = { AppLog.writeOut($0) }
+        // First launch, the App Store listener and the supporter status. Here because
+        // this model exists exactly once per process, on every Apple platform.
+        SupportModel.shared.start()
 
         // **Off the main path:** the test reads and writes only the "dauertest" entry
         // and reports to the log, nothing the sign-in needs. Previously up to four
@@ -2017,6 +2020,9 @@ final class AppModel {
         }
         runningTitle = (item, plan)
         reportedPaused = paused
+        // Watch time for "Support Swiftly": counted where progress is reported anyway,
+        // local only, never sent. A paused player counts nothing.
+        SupportModel.shared.playbackProgress(isPlaying: !paused)
     }
 
     /// **VLC paused or resumed: report immediately.**
@@ -2118,6 +2124,7 @@ final class AppModel {
         // series and detail pages behind the player reloaded. Closing then reports the
         // last episode.
         defer { if !playerOpen { playbackEnded += 1 } }
+        SupportModel.shared.playbackStopped()
         let entryRecord = message(.stop, item: item, plan: plan, seconds: seconds)
         // Before awaiting: Trakt has its own queue and does not wait for Jellyfin, nor
         // Jellyfin for Trakt.

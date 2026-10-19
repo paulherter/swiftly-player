@@ -18,9 +18,17 @@ object Texts {
 
     fun load(context: Context, language: String = Locale.getDefault().language) {
         val file = if (language == "de") "de" else "en"
-        val json = context.assets.open("texts/$file.json").bufferedReader().use { it.readText() }
-        val obj = JSONObject(json)
-        table = obj.keys().asSequence().associateWith { obj.getString(it) }
+        // `<language>.json` from the catalog, plus `<language>.<part>.json` that only one build
+        // flavor ships (the direct build's texts live in `phone/src/direct/assets`, so the Play
+        // build does not contain them at all).
+        val parts = listOf("$file.json") + (context.assets.list("texts").orEmpty()
+            .filter { it.startsWith("$file.") && it.endsWith(".json") && it != "$file.json" }.sorted())
+        val merged = HashMap<String, String>()
+        parts.forEach { name ->
+            val obj = JSONObject(context.assets.open("texts/$name").bufferedReader().use { it.readText() })
+            obj.keys().forEach { merged.putIfAbsent(it, obj.getString(it)) }
+        }
+        table = merged
     }
 
     fun text(key: String, vararg arguments: Any): String {

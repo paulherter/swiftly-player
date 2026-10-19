@@ -148,6 +148,12 @@ fun MainScreen(app: SwiftlyApplication) {
             push.animateTo(0f, Motion.page())
         }
     }
+    // "Support Swiftly": the thanks sheet leads to the icon picker through this; the ask and the
+    // thanks appear when due (`SupportPromptWatcher`).
+    androidx.compose.runtime.SideEffect { app.support.openPage = open }
+    de.paulherter.swiftly.support.SupportPromptWatcher(app,
+        ask = { de.paulherter.swiftly.support.supportSheetShow(app) },
+        thanks = { de.paulherter.swiftly.support.supportThanksShow(app, open) })
     val back: () -> Unit = {
         if (stack[section].orEmpty().isNotEmpty()) job {
             // The way back also counts when cancelled, so the completion is in the finally block.
@@ -313,6 +319,7 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Lizenzen" -> LicensesPage(open, back, app)
         "Lizenz" -> LicenseScreen(target, back, app)
         "Lizenzangebot" -> LicenseOfferingPage(back)
+        "AppIcon" -> de.paulherter.swiftly.support.AppIconPage(app, back)
         "Seerrtitel" -> SeerrDetailPage(app, target, open, back)
         "Genrewahl" -> GenreSelectionPage(app, back)
         "Bibliothekswahl" -> LibrarySelectionPage(app, back)

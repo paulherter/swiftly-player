@@ -143,6 +143,11 @@ struct HomeView: View {
                     }
                     .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
                 }
+                // **At the very end, after the last row.** Never above content: whoever
+                // came to watch sees the rows first. Rules in `SupportPrompt`.
+                if loaded, showItem, SupportModel.shared.cardVisible {
+                    MacSupportCard()
+                }
                 }
 
                 // **Failed is not empty.** The model knows the difference
@@ -181,6 +186,12 @@ struct HomeView: View {
         // The same fixed title as on Movies, Series and Watchlist.
         .overlay(alignment: .top) {
             StateBar(title: "Startseite", state: headerState)
+        }
+        // The heart sits level with the bar, at rest and while scrolling.
+        .overlay(alignment: .topTrailing) {
+            MacSupportHeart()
+                .frame(height: Theme.headerBarHeight)
+                .padding(.trailing, Theme.edgeSpacing - 12)
         }
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
             headerState.offset = new

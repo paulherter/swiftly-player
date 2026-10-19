@@ -154,9 +154,9 @@ the question, and the app simply respects the answer.
 
 ### Yours
 
-- **No account, no subscription, no ads, no tracking.** Nothing leaves your
+- **No account, no ads, no tracking.** Nothing leaves your
   device except the requests to the server you enter yourself.
-- **Free and open source**, MPL-2.0.
+- **Free and open source**, MPL-2.0. All the features you need are free, for everyone.
 
 <sub>1 Apple TV · 2 iPhone, iPad, Android · 3 Linux, Windows, Mac</sub>
 
@@ -438,7 +438,7 @@ work it out.
 
 ## Support Swiftly
 
-Swiftly Player is free: no account, no ads, no tracking, and every feature is open to everyone. It is built together, with bug reports, translations and pull requests from people like you. If you would like to say thanks with a coffee, **[you can do that here](https://swiftlyplayer.com/supporter/)**. A few small thank-you extras for supporters (extra app icons, a heart in About, your name in the credits) are on their way to the Windows, Linux and Android APK builds. Nothing is locked for anyone else.
+All the features you need are free, for everyone: no account, no ads, no tracking. It is built together, with bug reports, translations and pull requests from people like you. If you would like to say thanks with a coffee, **[you can do that here](https://swiftlyplayer.com/supporter/)**. Supporters get a few small extras on top (personalization such as extra app icons, a heart in About, your name in the credits). The features themselves stay free for everyone.
 
 <br>
 

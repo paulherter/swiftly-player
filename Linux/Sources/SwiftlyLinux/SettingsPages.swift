@@ -227,6 +227,8 @@ extension App {
         // **No "rate":** there is no store where a rating could land. The URLs live in
         // the package.
         let g4 = rowsGroup()
+        append(g4.space, supportRow())
+        append(g4.space, rowsLine())
         append(g4.space, valuesRow(symbol: "user-available-symbolic",
                                       title: translated("Discord beitreten"),
                                       under: translated("Fragen stellen und sagen, was fehlt")) {
@@ -273,11 +275,7 @@ extension App {
         #endif
         append(block, g4.outer)
 
-        let footer = label(Version.full, style: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(footer, "swiftly-fuss")
-        gtk_label_set_xalign(OpaquePointer(footer), 0)
-        gtk_widget_set_margin_top(footer, 26)
-        append(block, footer)
+        append(block, versionLine(Version.full))
     }
 
     // MARK: Quick Connect
@@ -618,12 +616,13 @@ extension App {
         append(right, s.outer)
         append(right, ownHeadersBuild())
 
-        let footer = label("\(Version.full) · libVLC \(VLCVersion.text)",
-                                style: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(footer, "swiftly-fuss")
-        gtk_label_set_xalign(OpaquePointer(footer), 0)
-        gtk_widget_set_margin_top(footer, 26)
-        append(block, footer)
+        // "Support Swiftly" under the server group, in its own card.
+        let support = rowsGroup()
+        append(support.space, supportRow())
+        gtk_widget_set_margin_top(support.outer, 26)
+        append(right, support.outer)
+
+        append(block, versionLine("\(Version.full) · libVLC \(VLCVersion.text)"))
     }
 
     // MARK: Page building blocks

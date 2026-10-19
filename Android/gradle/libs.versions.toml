@@ -19,6 +19,9 @@ playReview = "2.0.2"
 # For the Watch Next row on Android TV (`TvContractCompat`), counterpart of Top Shelf on tvOS.
 # The only stable version; only alpha successors since.
 tvprovider = "1.0.0"
+# Tips on Google Play (play flavor only). 8 is the minimum for updates since 31.08.2026; 9 needs
+# targetSdk 35. The plain library, not billing-ktx: its Kotlin metadata may be newer than Kotlin 2.0.
+billing = "9.1.0"
 # Only for Dolby Vision: libVLC 3 never asks MediaCodec for `video/dolby-vision` and shows just the base layer.
 # Media3 (Apache-2.0) uses the device's Dolby Vision decoder. Deliberately without an FFmpeg decoder
 # extension: the Jellyfin build of it (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0.
@@ -40,6 +43,7 @@ lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", versio
 androidx-tvprovider = { group = "androidx.tvprovider", name = "tvprovider", version.ref = "tvprovider" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+billing = { group = "com.android.billingclient", name = "billing", version.ref = "billing" }
 libvlc-all = { group = "org.videolan.android", name = "libvlc-all", version.ref = "libvlc" }
 swiftkit-core = { group = "org.swift.swiftkit", name = "swiftkit-core", version = "+" }
 

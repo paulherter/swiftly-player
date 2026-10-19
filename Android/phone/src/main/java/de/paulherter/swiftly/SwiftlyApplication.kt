@@ -25,6 +25,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         private set
     lateinit var settings: Settings
         private set
+    /** "Support Swiftly": records, the package's decision, and this build's way to say thanks. */
+    lateinit var support: de.paulherter.swiftly.support.Support
+        private set
 
     /** Counts sign-outs; the activity then returns to server selection. */
     val signedOut = androidx.compose.runtime.mutableIntStateOf(0)
@@ -205,6 +208,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.playbackEnd(position).await() }
             }.getOrDefault("")
             toStop(message)
+            support.watchSave(force = true)
             logWrite()
             // Remembered titles, series and episodes carry the state from before watching: opening a series
             // afterwards would otherwise show yesterday's ticks and bars (`SeriesCache.forget` in
@@ -399,6 +403,11 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                          if (isTv) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
         qualityReport()
         sharedListen(run)
+        support = de.paulherter.swiftly.support.Support(this)
+        support.start()
+        // Watched time goes to storage at most once a minute (`WatchTimeCounter.needsSave`), and in
+        // full at the end of playback (`playbackEnd`).
+        run.launch { while (true) { kotlinx.coroutines.delay(60_000); support.watchSave(force = false) } }
     }
 
     /** Direct Play and bitrate to the facade, at startup and on every change. */

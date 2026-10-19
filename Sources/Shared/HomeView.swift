@@ -176,8 +176,12 @@ struct HomeView: View {
                 //
                 // **The offer is no longer here** but in `HeaderTargets` itself: it belongs with
                 // Watchlist and Profile and so on every root page, not just this one.
+                // **The heart only here, on the home page**: the one place that asks for
+                // support. In front of the permanent destinations, like the offer.
                 HeaderTargets(name: model.session?.userName ?? "?",
-                          image: model.userImageURL())
+                          image: model.userImageURL()) {
+                    SupportHeart()
+                }
             }
             .foregroundStyle(Theme.font)
         }
@@ -270,6 +274,11 @@ struct HomeView: View {
                     Rail(model: model, title: "", name: r.name, items: r.items)
                         .transition(.opacity)
                         .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
+                }
+                // **At the very end, after the last row.** Never above content: whoever
+                // came to watch sees the rows first. Rules in `SupportPrompt`.
+                if state.loaded, SupportModel.shared.cardVisible {
+                    SupportCard()
                 }
                 }
                 // The "Libraries" row is gone; Movies and Series are now in the bar below.

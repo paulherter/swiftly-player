@@ -427,7 +427,7 @@ HELP = f"""  <div class="hilfe">
 # Below the help box on every download page: one quiet line to the supporter page.
 if SUPPORTER_ON:
     HELP += f"""
-  <p class="kaffeehinweis">Swiftly is free and stays free. If it helps you, <a href="{SUPPORTER_PATH}">buy us a coffee</a>.</p>"""
+  <p class="kaffeehinweis">All the features you need are free. If it helps you, <a href="{SUPPORTER_PATH}">buy us a coffee</a>.</p>"""
 
 def other(ausser):
     all = [("Windows", "/download/windows/"), ("Linux", "/download/linux/"),

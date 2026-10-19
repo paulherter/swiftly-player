@@ -38,6 +38,12 @@ internal fun ComponentActivity.entrySwitch(target: Class<*>) {
 }
 
 class MainActivity : ComponentActivity() {
+    /** Back in front: ask the store again (a purchase may have finished elsewhere, or been refunded). */
+    override fun onResume() {
+        super.onResume()
+        (application as SwiftlyApplication).support.channel.refresh()
+    }
+
     /** The own call for the notification prompt; on teardown remove it only if it is still the current one. */
     private var messageRightCall: (() -> Unit)? = null
 

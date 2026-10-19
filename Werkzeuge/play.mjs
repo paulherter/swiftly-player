@@ -5,6 +5,14 @@
 //   node Werkzeuge/play.mjs pruefen
 //       read-only: tracks and releases. Opens an edit and discards it again.
 //   node Werkzeuge/play.mjs hochladen <file.aab> <track> [notes.json] [--entwurf]
+//       **Only the bundle of the `play` flavor.** Build it with
+//           cd Android && ./gradlew :phone:bundlePlayRelease
+//       -> Android/phone/build/outputs/bundle/playRelease/phone-play-release.aab
+//       and check it first: python3 Werkzeuge/store-guard-android.py (no website link, no
+//       supporter key, nothing of the `direct` flavor in it). The `direct` flavor never goes to
+//       Play; it is the GitHub APK from `Werkzeuge/sideload-apk.sh` (assembleDirectRelease).
+//       Before the flavors (until versionCode 24) the task was `bundleRelease` and the file
+//       `bundle/release/phone-release.aab`; that path no longer exists.
 //       uploads the bundle, creates a release in the track and publishes it
 //       (with --entwurf it stays a draft in the Play Console).
 //       notes.json: { "de-DE": "...", "en-US": "..." } -- at most 500 characters each.
@@ -105,6 +113,14 @@ async function verify() {
 async function upload(file, track, notesFile, draft) {
   if (!file || !track) throw new Error("Aufruf: play.mjs hochladen <datei.aab> <track> [hinweise.json] [--entwurf]");
   const size = statSync(file).size;
+  // **Only the play flavor goes to Play**: nothing of the direct build (website link, supporter
+  // key) may be in it. The guard reads the bundle itself, not its name.
+  if (/direct/i.test(file)) throw new Error(`${file} ist ein direct-Bau; zu Play geht nur bundlePlayRelease.`);
+  try {
+    execFileSync("python3", [join(dirname(fileURLToPath(import.meta.url)), "store-guard-android.py"), file], { stdio: "inherit" });
+  } catch {
+    throw new Error("Wächter: Das Bundle enthält Teile der direct-Fassung. Nichts hochgeladen.");
+  }
   const notes = notesFile ? JSON.parse(readFileSync(notesFile, "utf8")) : null;
   for (const [language, text] of Object.entries(notes ?? {})) {
     if (text.length > 500) throw new Error(`Versionshinweise ${language}: ${text.length} Zeichen, Google erlaubt 500.`);

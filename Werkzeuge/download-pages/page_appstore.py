@@ -70,7 +70,7 @@ page = header(
   extra_ld=LD) + f"""  <header class="seitenkopf seitenkopf--mitte">
     <ol class="pfad"><li><a href="/">Swiftly Player</a></li><li>App Store</li></ol>
     <h1>Swiftly on iPhone, iPad, Mac and Apple TV</h1>
-    <p class="unter">One download covers all four. It is free, there is no account with me, and your server stays yours.</p>
+    <p class="unter">One download covers all four. The features you need are free, there is no account with me, and your server stays yours.</p>
   </header>
 
   <div class="download">

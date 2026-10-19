@@ -34,6 +34,9 @@ struct ProfileView: View {
     @State private var communityTarget: CommunityTarget?
     /// Open-source licenses: full page, building blocks on the left, text on the right.
     @State private var licensesOpen = false
+    /// Support page and icon picker: a local flag, so the root's `presented` cover
+    /// is the only one bound to the model.
+    @State private var supportStart: TVSupportView.Start?
 
     /// **Look first, then go in.** When focus moves through the areas on the left,
     /// the right side already shows the respective one, dimmed so it is clear you are
@@ -272,6 +275,9 @@ struct ProfileView: View {
         .fullScreenCover(isPresented: $licensesOpen) {
             TVLicensesView { licensesOpen = false }
         }
+        .fullScreenCover(item: $supportStart) { start in
+            TVSupportView(start: start) { supportStart = nil }
+        }
     }
 
     /// Go in on the right, focus on the top row.
@@ -306,6 +312,7 @@ struct ProfileView: View {
             ProfileCharacter(name: model.session?.userName ?? "?",
                           image: model.userImageURL(),
                           size: 84)
+                .modifier(TVSupporterAvatarBadge(size: 84))
             Text(model.session?.userName ?? "—")
                 // Row heading from the ladder.
                 .font(Theme.rail)
@@ -537,8 +544,16 @@ struct ProfileView: View {
 
         case .community:
             // **As a code, not a link**: the TV has no browser.
+            // First and prominent: the entry App Review is pointed to, always here.
+            TVSupportEntryRow {
+                SupportModel.shared.prepare()
+                supportStart = .support
+            }
+            .focused($right, equals: .top)
+            SeparatorLine()
+            TVAppIconRow { supportStart = .icons }
+            SeparatorLine()
             ActionRow(title: "Swiftly bewerten") { communityTarget = .rate }
-                .focused($right, equals: .top)
             SeparatorLine()
             ActionRow(title: "Discord beitreten") { communityTarget = .discord }
             SeparatorLine()
@@ -554,7 +569,7 @@ struct ProfileView: View {
             DisplayRow(title: "Fassung", value: model.serverVersion.map { "Jellyfin \($0)" } ?? "—")
             // **Without this row nobody can say what they are using.** A bug report hangs on
             // the build number, and the TV showed only the Jellyfin version.
-            DisplayRow(title: "Swiftly", value: Version.row)
+            TVVersionRow()
             SeparatorLine()
             // **Multiple servers.** The bundle holds more than one server; this row is the
             // way to add one.

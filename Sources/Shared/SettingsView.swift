@@ -88,12 +88,18 @@ struct SettingsView: View {
                 integration
                 server
             }
+            // **Support, always reachable.** Below the device settings, before the
+            // version line: it concerns the app, not this device or the server.
+            SupportSettingsGroup()
 
             // **Not typed.** This used to say "Swiftly 1.0", a number that became wrong
             // long ago and that nobody updates. The Mac already read it from the bundle;
             // this was the last copy. Use the component, not a third copy: degree, color
             // and scaling live in `Footer`.
-            Footer(Text(verbatim: Version.withBase))
+            HStack(spacing: 8) {
+                Footer(Text(verbatim: Version.withBase))
+                SupporterMark()
+            }
                 .padding(.horizontal, Theme.margin(wide: wide))
                 .padding(.top, 26)
         }

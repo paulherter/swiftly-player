@@ -13,11 +13,16 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.iOS(.v18), .tvOS(.v18), .macOS(.v14)],
     products: [
-        .library(name: "JellyfinKit", targets: ["JellyfinKit"])
+        .library(name: "JellyfinKit", targets: ["JellyfinKit"]),
+        // Supporter keys and the website texts. Only direct builds (Linux, Windows, the
+        // Android APK from GitHub) link it; store builds must not contain it.
+        .library(name: "SupportKeyKit", targets: ["SupportKeyKit"])
     ],
     targets: [
         .target(name: "JellyfinKit",
                 resources: [.process("Resources")]),
-        .testTarget(name: "JellyfinKitTests", dependencies: ["JellyfinKit"])
+        .target(name: "SupportKeyKit", dependencies: ["JellyfinKit"]),
+        .testTarget(name: "JellyfinKitTests", dependencies: ["JellyfinKit"]),
+        .testTarget(name: "SupportKeyKitTests", dependencies: ["SupportKeyKit"])
     ]
 )

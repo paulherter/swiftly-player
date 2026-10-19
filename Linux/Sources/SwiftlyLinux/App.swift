@@ -361,6 +361,7 @@ final class App: @unchecked Sendable {
         }
         gtk_window_set_child(asWindow(window), Scaling.wrapped(cover))
         windowCover = cover
+        supportStart()
 
         keysSetUp()
         onProperty(UnsafeMutableRawPointer(window), "notify::fullscreened") { [weak self] in
@@ -1548,6 +1549,15 @@ final class App: @unchecked Sendable {
     var likesBase: (() -> Void)?
     /// The topmost overlay of the window, where the Discord hint sits.
     var windowCover: Widget?
+    /// Support state (``SupportFile``), the watched-time counter and the open layers.
+    var supportStore = SupportStore(storage: SupportFile())
+    var supportCounter = WatchTimeCounter()
+    let supportLaunch = Date()
+    var supportCard: Widget?
+    var supportSheet: Widget?
+    var supportKeyField: Widget?
+    /// The thank-you wanted to appear during playback and waits for the player to close.
+    var supportThanksDue = false
     /// The running account switch with flight (``Kontoflug``), otherwise `nil`.
     var accountTransition: AccountTransition?
     /// The running "Hier weiterschauen" handover as a card (``Uebergabelauf``),
@@ -2224,6 +2234,8 @@ final class App: @unchecked Sendable {
 
     /// True means consumed, do not pass on.
     func keyButton(_ value: UInt32, ctrl: Bool) -> Bool {
+        // A support dialog on top of the window takes Escape before anything else.
+        if value == 0xFF1B, supportEscape() { return true }
         // **The shortcuts under the buttons must be right.**
         //
         // Under the player's three buttons stand "←", "Leertaste" and "→", and they
@@ -3254,9 +3266,14 @@ final class App: @unchecked Sendable {
 
         let title = label(translated("Startseite"), style: "swiftly-titel-gross")
         gtk_label_set_xalign(OpaquePointer(title), 0)
-        gtk_widget_set_margin_start(title, Int32(Theme.edgeSpacing))
-        gtk_widget_set_margin_end(title, Int32(Theme.edgeSpacing))
-        append(page, title)
+        gtk_widget_set_hexpand(title, 1)
+        // The heart sits at the right end of the title row ("Support Swiftly").
+        let titleRow = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_start(titleRow, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(titleRow, Int32(Theme.edgeSpacing))
+        append(titleRow, title)
+        append(titleRow, supportHeart())
+        append(page, titleRow)
 
         // **The page has no side inset**; the row carries it inside (`Blätterreihe.rand`) so the tiles scroll to the window edge.
         railsStack = stack(GTK_ORIENTATION_VERTICAL, spacing: Int32(Theme.railsSpacing))
@@ -4861,6 +4878,8 @@ final class App: @unchecked Sendable {
             append(railsStack, rail)
             if staggered { railOccur(rail, number: i + tick) }
         }
+        // Last on the page: the quiet card, if the package says it is time.
+        supportCardAtEnd()
     }
 
     /// A horizontally paging row. Heading 20 semibold, 10 gap below (`Theme.rail`).

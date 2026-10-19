@@ -264,6 +264,16 @@ Kit	StartLibraries.Record.Keys	codingkey	id,name,sammlung
 Kit	StartLibrary	codable	id,name,sammlung
 Kit	StartLibrary.CodingKeys	codingkey	id,name,sammlung
 Kit	StartRail	raw	naechsteFolge,neueFilme,neueSerien,neuzugaenge,weiterschauen
+Kit	SupportPlatform	raw	android,androidTV,appleTV,iPad,iPhone,linux,mac,windows
+Kit	SupportPromptHistory	codable	cardDismissed,cardSnoozedUntil,sheetShownAt
+Kit	SupportPromptHistory.CodingKeys	codingkey	cardDismissed,cardSnoozedUntil,sheetShownAt
+Kit	SupportStatus.CodingKeys	codingkey	kind,since,source
+Kit	SupportStatus.Kind	raw	none,supporter
+Kit	SupportStatus.Source	raw	key,store
+Kit	SupportTip	raw	de.paulherter.swiftly.tip.cake,de.paulherter.swiftly.tip.coffee,de.paulherter.swiftly.tip.movie
+Kit	SupportUsage	codable	firstLaunch,watchedSeconds
+Kit	SupportUsage.CodingKeys	codingkey	firstLaunch,watchedSeconds
+Kit	SupporterKey.Failure	raw	badEncoding,badName,badPublicKey,badSignature,empty,testKey,tooLong,tooShort,unknownApp,unsupportedVersion,wrongApp,wrongPrefix
 Kit	SyncPlayCommand.Art	raw	Pause,Seek,Stop,Unpause
 Kit	SyncPlayGroup.Keys	codingkey	GroupId,GroupName,LastUpdatedAt,Participants,State
 Kit	SyncPlayGroup.Phase	raw	Idle,Paused,Playing,Waiting

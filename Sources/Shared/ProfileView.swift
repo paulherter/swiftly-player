@@ -145,7 +145,11 @@ struct ProfileView: View {
                     // Same component as in settings and under the row list. **These stay fixed on
                     // this page:** the account-strip tiles, the profile symbol and the Quick Connect
                     // code, which sit in a grid of point measures that larger type would break.
-                    Footer(Text(verbatim: Version.row))
+                    // Supporters see a heart and "Supporter" next to the version.
+                    HStack(spacing: 8) {
+                        Footer(Text(verbatim: Version.row))
+                        SupporterMark()
+                    }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 26)
@@ -631,6 +635,8 @@ private struct AccountCard: View {
                           image: account.flatMap { model.userImageURL(for: $0) },
                           size: 56,
                           highlighted: active && model.server.count > 1)
+                // The supporter heart belongs to who is signed in on this device.
+                .modifier(SupporterAvatarBadge(size: 56, shown: active))
                 .modifier(FrameReporter { circles.frameRect[key] = $0 })
                 // The signed-in image makes room for the new one; a lifting one is in flight
                 // and no longer shown here.

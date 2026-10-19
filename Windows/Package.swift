@@ -49,7 +49,10 @@ let package = Package(
                 "CMediaKeys",
                 "CFonts",
                 "CRlottie",
-                .product(name: "JellyfinKit", package: "JellyfinKit")
+                .product(name: "JellyfinKit", package: "JellyfinKit"),
+                // Direct builds only: the supporter key check and the website address. Store
+                // builds never link this module.
+                .product(name: "SupportKeyKit", package: "JellyfinKit")
             ],
             resources: [.process("Resources")]
         )

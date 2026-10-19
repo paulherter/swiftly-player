@@ -72,7 +72,10 @@ let package = Package(
                 "CMediaKeys",
                 "CFonts",
                 "CRlottie",
-                .product(name: "JellyfinKit", package: "JellyfinKit")
+                .product(name: "JellyfinKit", package: "JellyfinKit"),
+                // Direct builds only: the supporter key check and the website address. Store
+                // builds never link this module.
+                .product(name: "SupportKeyKit", package: "JellyfinKit")
             ],
             // **The UI ships its own texts.** The package has its own catalog, and a
             // bundle only finds what is inside it. Without this line the UI would be in

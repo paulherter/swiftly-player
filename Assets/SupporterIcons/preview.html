@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supporter Icons</title>
+<style>
+  :root { --names: "Heart", "Aurora", "Gold", "Light", "Night", "Coffee"; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; background: #101010; }
+  .panel { padding: 32px 32px 40px; }
+  .dark { background: #101010; color: #fff; }
+  .light { background: #F2F2F7; color: #111; }
+  h2 { margin: 0 0 20px; font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+  h3 { margin: 28px 0 12px; font-size: 12px; font-weight: 500; opacity: .6; }
+  .grid { display: grid; grid-template-columns: repeat(3, max-content); gap: 28px 40px; }
+  .cell { display: flex; align-items: flex-end; gap: 14px; }
+  .cell figcaption { font-weight: 500; margin-top: 8px; }
+  .sq { display: block; border-radius: 22.37%; }
+  .s180 { width: 180px; height: 180px; }
+  .s120 { width: 120px; height: 120px; }
+  .s60 { width: 60px; height: 60px; }
+  .s40 { width: 40px; height: 40px; }
+  .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .tv { width: 200px; height: 120px; border-radius: 10px; display: block; }
+  .and { width: 72px; height: 72px; border-radius: 50%; display: block; }
+  .ref { outline: 1px dashed currentColor; outline-offset: 6px; opacity: .9; }
+</style>
+</head>
+<body>
+<script>
+  const N = ["Heart", "Aurora", "Gold", "Light", "Night", "Coffee"];
+  function panel(cls, title) {
+    const icon = n => `ios/AppIcon-${n}.appiconset/AppIcon-${n}-1024.png`;
+    let h = `<section class="panel ${cls}"><h2>${title}</h2><div class="grid">`;
+    for (const n of N) h += `<figure class="cell" style="margin:0"><div><img class="sq s180" src="${icon(n)}" alt=""><figcaption>${n}</figcaption></div>
+      <img class="sq s120" src="${icon(n)}" alt=""><img class="sq s60" src="${icon(n)}" alt=""><img class="sq s40" src="${icon(n)}" alt=""></figure>`;
+    h += `</div><h3>Home screen size, next to the regular icon</h3><div class="row"><img class="sq s60 ref" src="../../Sources/iOS/Assets.xcassets/AppIcon.appiconset/swiftly-symbol.png" alt="">`;
+    for (const n of N) h += `<img class="sq s60" src="${icon(n)}" alt="">`;
+    h += `</div><h3>tvOS (composite of the three layers) and Android (circle mask)</h3><div class="row">`;
+    for (const n of N) h += `<img class="tv" src="preview/tv-${n.toLowerCase()}.png" alt="">`;
+    h += `</div><div class="row" style="margin-top:18px">`;
+    for (const n of N) h += `<img class="and" src="preview/android-${n.toLowerCase()}.png" alt="">`;
+    h += `</div></section>`;
+    document.write(h);
+  }
+  panel("dark", "Supporter icons on dark");
+  panel("light", "Supporter icons on light");
+</script>
+</body>
+</html>

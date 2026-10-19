@@ -75,6 +75,13 @@ if [ "$fast" = false ]; then
             log=$(mktemp -t pruefen)   # do not overwrite, the next target needs its own
         fi
     done
+
+    echo
+    echo "── Store-Waechter ─────────────────────────────────────"
+    # Store builds take tips through the App Store only. A link, a word or the
+    # supporter-key module in the bundle is a rejection waiting to happen, and no
+    # build notices it. Reads the bundles just built.
+    python3 "$(dirname "$0")/store-guard.py" || error=1
 fi
 
 echo
@@ -175,6 +182,24 @@ if [ -d Android/phone ]; then
     fi
 else
     report "Android" "${yellow}kein Ordner${reset}"
+fi
+echo
+
+# **The Play build must carry nothing of the direct build** (website link, supporter key): Google
+# refused other apps for a donation link alone. The guard reads the newest built play bundle/APK
+# and direct APK; building them is not this script's job (slow, needs the signing key), so without
+# a play release build it only says so.
+echo "── Android-Waechter (play/direct) ─────────────────────"
+if ls Android/phone/build/outputs/bundle/playRelease/*.aab Android/phone/build/outputs/apk/play/release/*.apk >/dev/null 2>&1; then
+    if guard=$(python3 Werkzeuge/store-guard-android.py 2>&1); then
+        report "Play-Bau sauber" "${green}nichts aus direct${reset}"
+    else
+        report "Play-Bau" "${red}Fund${reset}"
+        echo "$guard" | sed 's/^/    /' | head -20
+        error=1
+    fi
+else
+    report "Play-Bau" "${yellow}keiner gebaut${reset} (store-guard-android.py --build)"
 fi
 echo
 

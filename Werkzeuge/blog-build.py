@@ -610,7 +610,7 @@ def load_box():
         f'<a class="laden" href="{e(href)}"{extern(href)} data-geraet="{g}">'
         f'<span class="laden__zeichen" aria-hidden="true">{z}</span><span><b>{t}</b><em>{u}</em></span></a>'
         for g, href, z, t, u in LOAD)
-    coffee = (f'\n<p class="leistenkasten__kaffee">Free, and it stays free. <a href="{SUPPORTER_PATH}">Buy us a coffee</a></p>'
+    coffee = (f'\n<p class="leistenkasten__kaffee">All the features you need are free. <a href="{SUPPORTER_PATH}">Buy us a coffee</a></p>'
               if SUPPORTER_ON else "")
     return f"""<section class="leistenkasten" id="laden" aria-labelledby="laden-titel">
 <p class="leistenkasten__marke" id="laden-titel"><img src="/symbol.svg" alt="" width="28" height="28">Swiftly Player</p>

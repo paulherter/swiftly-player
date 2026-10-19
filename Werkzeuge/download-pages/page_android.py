@@ -74,7 +74,7 @@ page = header(
   extra_ld=LD) + f"""  <header class="seitenkopf seitenkopf--mitte">
     <ol class="pfad"><li><a href="/">Swiftly Player</a></li><li>Android</li></ol>
     <h1>Get Swiftly on Android and Android TV</h1>
-    <p class="unter">The same app for your phone and your TV. It is free, there is no account with me, and your server stays yours.</p>
+    <p class="unter">The same app for your phone and your TV. The features you need are free, there is no account with me, and your server stays yours.</p>
   </header>
 
   <div class="download">
@@ -112,7 +112,7 @@ page = header(
   <section class="abschnitt" aria-labelledby="fragen">
     <h2 id="fragen">Questions</h2>
     <div class="fragen__blatt">
-{question("Does it cost anything?", "No. Swiftly Player is free, with no subscription and no account with us.", opened=True)}
+{question("Does it cost anything?", "No. All the features you need are free, for everyone, and there is no account with us. Supporters get a few extras on top.", opened=True)}
 {question("Which devices does it run on?", "Android phones and tablets and Android TV, Android 9 or newer. Fire TV is not supported: it installs apps from the Amazon Appstore, not from Google Play.")}
 {question("I joined the test earlier. Do I need to do anything?", f'No. The app stays installed and keeps updating through Google Play. If you only want the regular releases, leave the test on the <a href="{TESTEN}" target="_blank" rel="noopener">testing page</a>.')}
 {question("Is it safe?", f'It comes from Google Play, like any other app. Your watch progress goes to your own Jellyfin server, nowhere else. The code is on <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>.')}
