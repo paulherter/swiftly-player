@@ -24,6 +24,11 @@ green=$'\033[32m'; red=$'\033[31m'; yellow=$'\033[33m'; reset=$'\033[0m'
 report() { printf '%-34s %s\n' "$1" "$2"; }
 
 echo "── Pakettests ─────────────────────────────────────────"
+# GitHub builds the package on Linux, where Apple-only modules do not exist.
+# An unguarded import there failed the public check once (StoreKitTest).
+for apple in $(grep -rlE "^import (StoreKit|StoreKitTest|UIKit|AppKit|SwiftUI|AVKit)$" Packages/JellyfinKit/Sources Packages/JellyfinKit/Tests 2>/dev/null); do
+    head -1 "$apple" | grep -q "^#if" || { report "Linux-Import" "${red}ungeschützt: $apple${reset}"; error=1; }
+done
 if output=$(cd Packages/JellyfinKit && xcrun swift test 2>&1); then
     report "JellyfinKit" "${green}$(echo "$output" | grep -oE 'Test run with [0-9]+ tests' | tail -1)${reset}"
     # SwiftPM drops linker flags silently and says so in exactly one line among

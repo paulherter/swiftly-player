@@ -1,3 +1,4 @@
+#if canImport(StoreKitTest)
 import Foundation
 import StoreKitTest
 import Testing
@@ -48,3 +49,4 @@ struct SupportStoreKitConfigTests {
         _ = try SKTestSession(contentsOf: url)
     }
 }
+#endif

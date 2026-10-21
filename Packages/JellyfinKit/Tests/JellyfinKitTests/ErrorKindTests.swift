@@ -213,7 +213,9 @@ import Testing
             for await _ in QuickConnectWait.flow(deadline: .seconds(30), pollInterval: .milliseconds(10),
                                                      tick: .milliseconds(10)) { await a.next() } {}
         }
-        try await Task.sleep(for: .milliseconds(80))
+        // A loaded CI runner may start the task late: wait for the first
+        // request instead of a fixed time.
+        for _ in 0..<500 where await a.asked == 0 { try await Task.sleep(for: .milliseconds(10)) }
         read.cancel()
         try await Task.sleep(for: .milliseconds(30))
         let afterThat = await a.asked
