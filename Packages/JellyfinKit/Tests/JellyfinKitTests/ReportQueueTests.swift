@@ -35,7 +35,7 @@ struct ReportQueueTests {
     func orderOnSlowStart() async {
         let withFont = WithFont()
         let rail = Rail { m in
-            try? await Task.sleep(for: .milliseconds(m.art == .start ? 300 : 100))
+            try? await Task.sleep(for: .milliseconds(m.art == .start ? 600 : 300))
             withFont.write(Self.row(m))
         }
         // Stop right behind the slow start: only after it.
@@ -44,7 +44,7 @@ struct ReportQueueTests {
         // Progress already on its way, stop follows behind.
         rail.report(Self.message(.start, 1))
         async let progress = rail.reportAndWait(Self.message(.progress(paused: false), 10))
-        try? await Task.sleep(for: .milliseconds(350))
+        try? await Task.sleep(for: .milliseconds(750))
         let result = await rail.reportAndWait(Self.message(.stop, 12))
         #expect(await progress == .sent)
         #expect(result == .sent)
