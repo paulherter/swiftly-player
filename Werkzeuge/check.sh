@@ -23,6 +23,11 @@ green=$'\033[32m'; red=$'\033[31m'; yellow=$'\033[33m'; reset=$'\033[0m'
 
 report() { printf '%-34s %s\n' "$1" "$2"; }
 
+# The repository is public: nothing that issues supporter keys or talks to the
+# shop may ever land in it (public verification key only).
+if leaked=$(git grep -n -I -E "sk_live|rk_live|whsec_|BEGIN ([A-Z]+ )?PRIVATE KEY|KASSE_SS2_SEED" -- . ':!Werkzeuge/check.sh' 2>/dev/null | head -3) && [ -n "$leaked" ]; then
+    report "Geheimnisse im Repo" "${red}GEFUNDEN${reset}"; echo "$leaked" | cut -c1-120 | sed 's/^/      /'; error=1
+fi
 echo "── Pakettests ─────────────────────────────────────────"
 # GitHub builds the package on Linux, where Apple-only modules do not exist.
 # An unguarded import there failed the public check once (StoreKitTest).
