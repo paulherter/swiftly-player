@@ -34,10 +34,13 @@ enum Theme {
     /// The surface of a field and of the sidebar. **Not `erhoeht`.**
     static let area = "#262626"
     static let raised = "#303030"
-    static let accent = "#50D5DA"
+    /// **The four values a look changes** (accent, play mark, warning, text on accent) are
+    /// variables: ``wear(_:)`` sets them from the look's palette and reloads the stylesheet.
+    /// Everything that draws reads them when it draws, so a rebuilt page picks them up.
+    nonisolated(unsafe) static var accent = "#50D5DA"
     /// Brand and UI share the same tone now; the old brand turquoise is gone.
-    static let markAccent = MarksPaths.accentHex     // #50D5DA
-    static let warning = "#E8833A"
+    nonisolated(unsafe) static var markAccent = MarksPaths.accentHex     // #50D5DA
+    nonisolated(unsafe) static var warning = "#E8833A"
     static let font = "#FFFFFF"
     /// **Fixed values instead of opacity.** White at a percentage gives a different tone
     /// on every background, so the contrast is never actually computed. The Apple version
@@ -59,12 +62,12 @@ enum Theme {
     /// (`Farben.groupsArea`).
     static let groupsArea = "#1E1E1E"
     /// Text on a filled light surface (`Farben.aufAkzent`).
-    static let onAccent = "#061212"
+    nonisolated(unsafe) static var onAccent = "#061212"
     /// The hover state: white at 6 % (`Theme.schwebeflaeche` on the Mac).
     static let hover = "rgba(255,255,255,0.06)"
     /// `accent` (#50D5DA) as the three doubles `cairo_set_source_rgba` expects, for custom
     /// drawing (progress bar, slider symbol) where GTK's stylesheet does not apply.
-    static let accentRGB: (Double, Double, Double) = (0x50 / 255.0, 0xD5 / 255.0, 0xDA / 255.0)
+    nonisolated(unsafe) static var accentRGB: (Double, Double, Double) = (0x50 / 255.0, 0xD5 / 255.0, 0xDA / 255.0)
     /// `font` (#FFFFFF) as the same three doubles.
     static let whiteRGB: (Double, Double, Double) = (1, 1, 1)
 
@@ -478,7 +481,7 @@ enum Theme {
         button.swiftly-zeile:hover label,
         button.swiftly-zeile:hover image { color: \(font); }
         button.swiftly-zeile.swiftly-aktiv {
-            background-color: rgba(80,213,218,0.10);
+            background-color: \(accentAlpha(0.10));
         }
         button.swiftly-zeile.swiftly-aktiv label,
         button.swiftly-zeile.swiftly-aktiv image { color: \(accent); }
@@ -604,7 +607,7 @@ enum Theme {
            keine Zeile mehr, weil `bereichszeilenMalen` allen die
            Hervorhebung nimmt und keine sie bekam. */
         button.swiftly-profil.swiftly-aktiv {
-            background-color: rgba(80,213,218,0.10);
+            background-color: \(accentAlpha(0.10));
         }
         button.swiftly-profil.swiftly-aktiv label { color: \(accent); }
 
@@ -647,7 +650,7 @@ enum Theme {
             border-radius: \(cornerCard)px;
         }
         .swiftly-kontokarte.swiftly-aktiv {
-            border: 1.5px solid rgba(80,213,218,0.55);
+            border: 1.5px solid \(accentAlpha(0.55));
         }
         .swiftly-kontoname { font-size: \(rail)px; font-weight: 600; letter-spacing: -0.24px; }
         /* Ein gestrichelter Kreis — ein Platz, der noch frei ist. */
@@ -1898,8 +1901,6 @@ enum Theme {
             padding: 0;
             border-radius: \(corner)px;
         }
-        button.swiftly-herz label { color: \(fontQuiet); font-size: 20px; }
-        button.swiftly-herz:hover label { color: \(font); }
         label.swiftly-herz-klein { color: \(accent); }
         """
     }
@@ -1945,7 +1946,7 @@ enum Theme {
         bringFont()
         let provider = gtk_css_provider_new()
         logCssErrors(provider)
-        gtk_css_provider_load_from_string(provider, sheet)
+        gtk_css_provider_load_from_string(provider, sheet + lookSheet)
         if let display = gdk_display_get_default() {
             // `GtkStyleProvider` is an interface, not a type Swift can name, like `GtkEditable`.
             // So the provider is passed in as an opaque pointer.
@@ -1953,8 +1954,231 @@ enum Theme {
                 display, OpaquePointer(provider),
                 800)   // GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
         }
-        g_object_unref(UnsafeMutableRawPointer(provider))
+        // Kept (not released): a look change reloads this one provider.
+        mainProvider = provider
         outsideLoad()
+    }
+
+    nonisolated(unsafe) private static var mainProvider: UnsafeMutablePointer<GtkCssProvider>?
+
+    // MARK: Looks
+
+    /// The palette the window is drawn with now.
+    nonisolated(unsafe) static var palette = LookPalette.original
+
+    /// `accent` as an `rgba()` with the given opacity, for the few places that need a
+    /// translucent accent (the active sidebar row, the active account).
+    static func accentAlpha(_ opacity: Double) -> String {
+        String(format: "rgba(%d,%d,%d,%.2f)", locale: Locale(identifier: "en_US_POSIX"), Int((accentRGB.0 * 255).rounded()),
+               Int((accentRGB.1 * 255).rounded()), Int((accentRGB.2 * 255).rounded()), opacity)
+    }
+
+    /// **Puts a look on the whole window.** The same four values the Apple versions take
+    /// from `LookPalette` (accent, warning, text on accent, the play mark) and the glow;
+    /// the stylesheet is rebuilt and the wordmarks redrawn. Cheap enough to run on every
+    /// choice in the looks panel, which is what makes the try-on visible at once.
+    static func wear(_ palette: LookPalette) {
+        guard palette != Theme.palette else { return }
+        Theme.palette = palette
+        let accent = palette.accent
+        Theme.accent = accent.main.css
+        Theme.markAccent = palette.markColor.css
+        Theme.warning = accent.warning?.css ?? "#E8833A"
+        Theme.onAccent = accent.on.css
+        Theme.accentRGB = (accent.main.red, accent.main.green, accent.main.blue)
+        if let provider = mainProvider {
+            gtk_css_provider_load_from_string(provider, sheet + lookSheet)
+        }
+        wordmarksRedraw()
+    }
+
+    private static func rgba(_ color: LookColor, _ opacity: Double) -> String {
+        String(format: "rgba(%d,%d,%d,%.3f)", locale: Locale(identifier: "en_US_POSIX"), Int(color.hex >> 16) & 0xFF, Int(color.hex >> 8) & 0xFF,
+               Int(color.hex) & 0xFF, opacity)
+    }
+
+    /// The glow at the top of a page, as the background of its content box, so it scrolls
+    /// away with the content. The Apple layer is an elliptical gradient 1.5 times as wide
+    /// as the screen, 20 % at the top edge, gone after a quarter of the height; here the
+    /// reach is a fixed 280 px (a quarter of a 1080 px window), the rest is the same:
+    /// one tone, and a faint second one to the right when the mark has a gradient.
+    static var glowRule: String {
+        let strength = palette.glow.opacity
+        guard strength > 0 else { return ".swiftly-schein { background-image: none; }" }
+        let tone = palette.glowColor
+        var layers = [String]()
+        var sizes = [String]()
+        if let tint = palette.glowTint {
+            layers.append("""
+            radial-gradient(ellipse 60% 100% at 100% 0%, \(rgba(tint, strength * 0.36)) 0%, \
+            \(rgba(tint, strength * 0.16)) 50%, \(rgba(tint, 0)) 100%)
+            """)
+            sizes.append("150% 280px")
+        }
+        layers.append("""
+        radial-gradient(ellipse farthest-side at 50% 0%, \(rgba(tone, strength)) 0%, \
+        \(rgba(tone, strength * 0.62)) 35%, \(rgba(tone, strength * 0.22)) 70%, \
+        \(rgba(tone, 0)) 100%)
+        """)
+        sizes.append("150% 280px")
+        return """
+        .swiftly-schein {
+            background-image: \(layers.joined(separator: ", "));
+            background-size: \(sizes.joined(separator: ", "));
+            background-position: 50% 0%;
+            background-repeat: no-repeat;
+        }
+        """
+    }
+
+    /// Everything that depends on the look: the glow, and the supporter screens (looks
+    /// panel, purchase page, thank-you, profile cards), whose light follows the look.
+    static var lookSheet: String {
+        func rgba(_ color: LookColor, _ opacity: Double) -> String {
+            String(format: "rgba(%d,%d,%d,%.2f)", locale: Locale(identifier: "en_US_POSIX"), Int((color.red * 255).rounded()),
+                   Int((color.green * 255).rounded()), Int((color.blue * 255).rounded()), opacity)
+        }
+        let tone = palette.glowColor
+        let tint = palette.glowTint ?? tone
+        let a = accentAlpha
+        // The light of the looks panel (`SheetLight`): a tone ellipse at the top, a tint in
+        // the top right corner, 260 high. The purchase page and the thank-you have the soft
+        // glow of the home page over `reason`.
+        let panel = """
+        .swiftly-blatt { border-radius: \(cornerArea)px; padding: 0; border: none; }
+        .swiftly-lookblatt {
+            background-color: \(area);
+            background-image:
+                radial-gradient(ellipse 288px 156px at 100% 0%, \(rgba(tint, 0.11)) 0%, \(rgba(tint, 0.05)) 50%, transparent 100%),
+                radial-gradient(ellipse 240px 130px at 50% 0%, \(rgba(tone, 0.30)) 0%, \(rgba(tone, 0.12)) 45%, \(rgba(tone, 0.03)) 75%, transparent 100%);
+            background-repeat: no-repeat;
+        }
+        .swiftly-wachsenblatt, .swiftly-dankblatt {
+            background-color: \(reason);
+            background-image: radial-gradient(ellipse 360px 300px at 50% 0%, \(rgba(tone, 0.20)) 0%, \(rgba(tone, 0.07)) 55%, transparent 100%);
+            background-repeat: no-repeat;
+        }
+        button.swiftly-blattzu, button.swiftly-pillenknopf, button.swiftly-lookspalte, button.swiftly-akzentpunkt {
+            background: none; border: none; box-shadow: none; padding: 0; min-height: 0; min-width: 0;
+        }
+        .swiftly-lookblatt button.swiftly-blattzu { margin: 14px 10px 0 0; }
+        .swiftly-wachsenblatt button.swiftly-blattzu { margin: 4px 8px 0 0; }
+        .swiftly-blattzu-kreis { background-color: \(raised); border-radius: \(cornerCapsule)px; }
+        .swiftly-blattzu-dunkel { background-color: rgba(0,0,0,0.4); border-radius: \(cornerCapsule)px; }
+        button.swiftly-blattzu:hover .swiftly-blattzu-kreis { background-color: #3A3A3A; }
+
+        .swiftly-s12-sehrleise { font-size: 12px; color: \(fontVeryQuiet); }
+        .swiftly-s12-leise { font-size: 12px; color: \(fontQuiet); }
+        .swiftly-s13-leise { font-size: 13px; color: \(fontQuiet); }
+        .swiftly-s13-sehrleise { font-size: 13px; color: \(fontVeryQuiet); }
+        .swiftly-s15-fett { font-size: 15px; font-weight: 600; color: \(font); }
+        .swiftly-s15-leise { font-size: 15px; color: \(fontQuiet); }
+        .swiftly-s17 { font-size: 17px; }
+        .swiftly-s17-fett { font-size: 17px; font-weight: 600; color: \(font); }
+        .swiftly-s17-hell { font-size: 17px; color: rgba(255,255,255,0.9); }
+        .swiftly-s20-fett { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; color: \(font); }
+        .swiftly-s22-fett { font-size: 22px; font-weight: 700; color: \(font); }
+        .swiftly-s28-titel { font-size: 28px; font-weight: 700; letter-spacing: -0.56px; color: \(font); }
+        .swiftly-s30-titel { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; color: \(font); }
+        .swiftly-s15-fett.swiftly-akzentschrift { color: \(accent); }
+
+        .swiftly-schrift { color: \(font); }
+        .swiftly-leisefarbe { color: \(fontQuiet); }
+        .swiftly-akzentfarbe { color: \(accent); }
+        .swiftly-herzfarbe { color: \(fontQuiet); }
+        button.swiftly-herz:hover .swiftly-herzfarbe { color: \(font); }
+
+        .swiftly-glaspille {
+            background-color: rgba(255,255,255,0.147);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: \(cornerCapsule)px;
+            padding: 0 14px;
+            min-height: 32px;
+        }
+        .swiftly-glaspille-text { font-size: 14px; font-weight: 600; color: \(font); }
+        .swiftly-glaspille-klein { min-height: 28px; }
+        .swiftly-glaspille-klein .swiftly-glaspille-text { font-size: 13px; }
+        button.swiftly-pillenknopf:hover .swiftly-glaspille { background-color: rgba(255,255,255,0.22); }
+
+        button.swiftly-lookkarte {
+            background-image: none; background-color: \(groupsArea); border: none; box-shadow: none;
+            border-radius: \(cornerArea)px; padding: 14px 16px; min-height: 48px;
+        }
+        button.swiftly-lookkarte:hover { background-color: #242424; }
+        button.swiftly-lookteaser {
+            background-color: transparent;
+            background-image: linear-gradient(to bottom, rgba(255,255,255,0.062), rgba(255,255,255,0.063));
+            border: 1px solid rgba(255,255,255,0.09);
+            box-shadow: none;
+            border-radius: \(cornerArea)px;
+            padding: 0;
+        }
+        button.swiftly-lookteaser:hover { background-image: linear-gradient(to bottom, rgba(255,255,255,0.085), rgba(255,255,255,0.08)); }
+        .swiftly-statuskarte {
+            background-color: \(groupsArea);
+            background-image: radial-gradient(circle 220px at 0% 0%, \(a(0.16)) 0%, transparent 100%);
+            border-radius: \(cornerArea)px;
+            padding: 14px;
+        }
+        .swiftly-statusherz {
+            background-image: radial-gradient(circle 22px at 50% 50%, \(a(0.28)) 0%, \(a(0.06)) 100%);
+            border-radius: \(cornerCapsule)px;
+        }
+
+        .swiftly-lookname { font-size: 12px; color: \(fontQuiet); }
+        .swiftly-lookname-gewaehlt { font-weight: 600; color: \(font); }
+        .swiftly-lookblock { background-color: rgba(48,48,48,0.6); border-radius: \(cornerArea)px; }
+        .swiftly-lookblock-zeile { min-height: 52px; padding: 0 16px; }
+        .swiftly-segmente { background-color: rgba(118,118,128,0.24); border-radius: 8px; padding: 2px; }
+        button.swiftly-segment {
+            padding: 3px 8px; border-radius: 6px; border: none; box-shadow: none;
+            background: none; min-height: 0; font-size: 13px; color: \(font);
+        }
+        button.swiftly-segment.swiftly-aktiv { background-color: #5A5A5E; }
+        button.swiftly-kapselknopf {
+            background-image: none; background-color: \(area); border: none; box-shadow: none;
+            border-radius: \(cornerCapsule)px; padding: 0 12px; min-height: 32px;
+            font-size: 13px; font-weight: 600; color: \(font);
+        }
+        button.swiftly-kapselknopf:hover { background-color: #2E2E2E; }
+
+        button.swiftly-weissknopf {
+            background-image: none; background-color: #FFFFFF; border: none; box-shadow: none;
+            border-radius: \(corner)px; min-height: 44px; padding: 0 16px;
+            font-size: 15px; font-weight: 600;
+        }
+        button.swiftly-weissknopf label { color: #000000; }
+        button.swiftly-weissknopf:hover { background-color: #E6E6E6; }
+        button.swiftly-weissknopf:disabled { background-color: \(raised); }
+        button.swiftly-weissknopf:disabled label { color: \(fontVeryQuiet); }
+        button.swiftly-weissknopf-gross { min-height: 50px; font-size: 17px; }
+        button.swiftly-flaechenknopf {
+            background-image: none; background-color: \(area); border: none; box-shadow: none;
+            border-radius: \(corner)px; min-height: 44px; font-size: 14px; font-weight: 500; color: \(font);
+        }
+        button.swiftly-flaechenknopf:hover { background-color: #2E2E2E; }
+
+        button.swiftly-plankachel {
+            background-image: none; background-color: \(area); box-shadow: none;
+            border: 2px solid transparent; border-radius: 12px; padding: 12px; min-height: 56px;
+        }
+        button.swiftly-plankachel:hover { background-color: #2B2B2B; }
+        button.swiftly-plankachel.swiftly-gewaehlt { border-color: \(accent); }
+        .swiftly-plakette {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+            padding: 0 8px; min-height: 20px; border-radius: \(cornerCapsule)px;
+            background-color: #FFFFFF; color: #0A0A0A;
+        }
+        .swiftly-plakette-dunkel { background-color: #3A3A3A; color: #FFFFFF; }
+        button.swiftly-trinkgeld {
+            background-image: none; background-color: \(area); box-shadow: none;
+            border: 2px solid transparent; border-radius: \(cornerCapsule)px; min-height: 36px;
+            font-size: 13px; font-weight: 600; color: \(font); padding: 0 8px;
+        }
+        button.swiftly-trinkgeld:hover { background-color: #2B2B2B; }
+        button.swiftly-trinkgeld.swiftly-gewaehlt { border-color: \(accent); }
+        """
+        return "\n" + glowRule + "\n" + panel + "\n"
     }
 
     /// The provider for ``outsideWrapper``: a separate one, because its content changes
@@ -1985,6 +2209,8 @@ enum Theme {
 
     // MARK: Wordmark
 
+    static func wordmarkForget(_ handle: Int) { wordmarkPictures[handle] = nil }
+
     /// Writes the wordmark once as an SVG file and returns the path.
     ///
     /// The path itself comes from `MarksPaths` in the shared package, the same string the
@@ -1992,21 +2218,46 @@ enum Theme {
     /// is missing, there is a text fallback.
     static func wordmarkFile(height: Int) -> String? {
         let r = MarksPaths.wordmarkFrame
+        // The play mark takes the look's gradient (the whole palette's list, flat for one).
+        let tones = palette.logoGradient.map { $0.css }
+        var defs = ""
+        var fill = markAccent
+        if tones.count > 1 {
+            let step = 100.0 / Double(tones.count - 1)
+            let stops = tones.enumerated().map { spot, tone in
+                "<stop offset=\"\(Int(Double(spot) * step))%\" stop-color=\"\(tone)\"/>"
+            }.joined()
+            defs = "<defs><linearGradient id=\"m\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">\(stops)</linearGradient></defs>"
+            fill = "url(#m)"
+        }
         let svg = """
         <svg xmlns="http://www.w3.org/2000/svg" \
         viewBox="\(r.x) \(r.y) \(r.width) \(r.height)" \
         width="\(Int(Double(height) * r.width / r.height))" height="\(height)">
+        \(defs)
         <path d="\(MarksPaths.wordmark)" fill="\(font)"/>
-        <path d="\(MarksPaths.wordmarkAccent)" fill="\(markAccent)"/>
+        <path d="\(MarksPaths.wordmarkAccent)" fill="\(fill)"/>
         </svg>
         """
+        // One file per look, so a look change never reads a stale picture from the loader.
+        let key = tones.joined().replacingOccurrences(of: "#", with: "")
         let target = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("swiftly-wortmarke-\(height).svg")
+            .appendingPathComponent("swiftly-wortmarke-\(height)-\(key).svg")
         do {
             try svg.write(to: target, atomically: true, encoding: .utf8)
             return target.path
         } catch {
             return nil
+        }
+    }
+
+    /// The wordmark pictures alive now, with the height they were built at, so a look
+    /// change can swap their file.
+    nonisolated(unsafe) private static var wordmarkPictures: [Int: (Widget, Int)] = [:]
+
+    private static func wordmarksRedraw() {
+        for (_, entry) in wordmarkPictures {
+            if let file = wordmarkFile(height: entry.1) { gtk_picture_set_filename(OpaquePointer(entry.0), file) }
         }
     }
 
@@ -2043,6 +2294,11 @@ enum Theme {
         gtk_overlay_set_child(OpaquePointer(wrapper), mass)
 
         let image: Widget! = gtk_picture_new_for_filename(file)
+        let handle = Int(bitPattern: image)
+        wordmarkPictures[handle] = (image, height * 2)
+        g_signal_connect_data(UnsafeMutableRawPointer(image), "destroy",
+                              unsafeBitCast(wordmarkGone, to: GCallback.self),
+                              UnsafeMutableRawPointer(bitPattern: handle), nil, GConnectFlags(rawValue: 0))
         gtk_picture_set_content_fit(OpaquePointer(image), GTK_CONTENT_FIT_CONTAIN)
         gtk_picture_set_can_shrink(OpaquePointer(image), 1)
         gtk_overlay_add_overlay(OpaquePointer(wrapper), image)
@@ -2063,4 +2319,9 @@ nonisolated(unsafe) let styleError: @convention(c) (
     let text = error?.pointee.message.map { String(cString: $0) } ?? "unbekannt"
     let spot = segment.map { String(cString: gtk_css_section_to_string($0)) } ?? "?"
     FileHandle.standardError.write(Data("[Stilblatt] \(spot): \(text)\n".utf8))
+}
+
+/// `destroy` of a wordmark picture: forget it. Signature `(GtkWidget*, gpointer)`.
+nonisolated(unsafe) let wordmarkGone: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void = { _, data in
+    Theme.wordmarkForget(Int(bitPattern: data))
 }

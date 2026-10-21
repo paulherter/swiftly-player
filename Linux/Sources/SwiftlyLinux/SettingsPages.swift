@@ -105,7 +105,7 @@ extension App {
         }
 
         let scroller = pagesScroller()
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), lookGlowWrapped(block))
         // Settings: **each column ends at `formWidth`** (`SettingsView.swift`),
         // i.e. two columns plus 48 spacing.
         if was == .settings {
@@ -159,9 +159,16 @@ extension App {
         // (`ProfileView.swift`), flush with the cards.
         append(block, subpageHeader(translated("Profil")))
 
+        // **Looks at the top, by state**, then the accounts (`Sources/macOS/ProfileView.swift`):
+        // 10 under the header, the looks block 6 more above and 16 below, 20 under the accounts.
+        let looksBlock = looksProfileBlock()
+        if let looksBlock {
+            gtk_widget_set_margin_top(looksBlock, 16)
+            gtk_widget_set_margin_bottom(looksBlock, 16)
+            append(block, looksBlock)
+        }
         let imageBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 14)
-        // 10 above, 20 below (`Sources/macOS/ProfileView.swift`).
-        gtk_widget_set_margin_top(imageBlock, 10)
+        gtk_widget_set_margin_top(imageBlock, looksBlock == nil ? 10 : 0)
         gtk_widget_set_margin_bottom(imageBlock, 20)
         append(imageBlock, accountsCards())
         append(block, imageBlock)
@@ -930,6 +937,8 @@ extension App {
             self?.selection.secure()
         })
         append(left, ga.outer)
+        append(left, paddingHigh(26))
+        append(left, looksGroup())
         append(left, paddingHigh(26))
 
         // **"Rows" above the list, "New additions" below**, the Mac's order

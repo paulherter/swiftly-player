@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -69,17 +71,34 @@ import kotlinx.coroutines.delay
 // MARK: - Entry points
 
 /** The ask, as a sheet from below (`app.sheet`): mark, intro, then what this build offers. */
-fun supportSheetShow(app: SwiftlyApplication) {
-    app.sheet.value = SheetRequest(translated("Swiftly unterstützen"), emptyList(), null, content = { close ->
+fun supportSheetShow(app: SwiftlyApplication, fromLooks: Boolean = false) {
+    // The Play build's sheet is iOS's "Hilf Swiftly zu wachsen": full height, in the look's glow, its own X.
+    val grow = de.paulherter.swiftly.BuildConfig.FLAVOR == "play" && !app.isTv
+    app.sheet.value = SheetRequest(translated("Swiftly unterstützen"), emptyList(), null, heading = !grow, full = grow,
+        backdrop = if (grow) ({ GrowBackdrop(app) }) else null, content = { close ->
+        if (fromLooks) {
+            // Closing without a purchase ends the preview that led here (`LookTryOn`).
+            val context = LocalContext.current
+            DisposableEffect(Unit) { onDispose { app.looks.supportClosed(context) } }
+        }
         FlavorSupport.PhoneSheetBody(app, close)
     }) { }
 }
 
 /** After a purchase or an accepted key: what is new, with a preview of the icons. */
 fun supportThanksShow(app: SwiftlyApplication, open: (Destination) -> Unit) {
-    app.sheet.value = SheetRequest(translated("Danke. Du bist dabei."), emptyList(), null, content = { close ->
-        ThanksBody(app, close, open)
+    val grow = !app.isTv
+    app.sheet.value = SheetRequest(translated("Danke. Du bist dabei."), emptyList(), null, heading = !grow, full = grow,
+        backdrop = if (grow) ({ GrowBackdrop(app) }) else null, content = { close ->
+        if (app.isTv) ThanksBody(app, close, open) else GrowThanksBody(app, close) { app.looks.goHome() }
     }) { }
+}
+
+/** The look's soft glow behind the full support sheets, as on the home page. */
+@Composable
+private fun BoxScope.GrowBackdrop(app: SwiftlyApplication) {
+    val p = app.looks.palette.value
+    LookGlowLayer(p.glowColor, p.glowTint, app.looks.glowOpacity["soft"] ?: p.glowOpacity, Modifier.align(Alignment.TopCenter))
 }
 
 /**
@@ -96,8 +115,10 @@ fun SupportPromptWatcher(app: SwiftlyApplication, ask: () -> Unit, thanks: () ->
         // The package's quiet minute plus a little: asked on a calm home page, not on arrival.
         delay(62_000)
         if (app.play.value != null || app.sheet.value != null) return@LaunchedEffect
+        if (!app.isTv && app.looks.askedThisSession) return@LaunchedEffect
         if (support.decide().showsSheet) {
             support.answer("sheetShown")
+            if (!app.isTv) app.looks.askedThisSession = true
             ask()
         }
     }
@@ -193,17 +214,41 @@ private fun GiftRow(symbol: Glyph, title: String, under: String, right: @Composa
 
 // MARK: - Home page
 
-/** The heart in the home header, left of the watchlist. Filled once someone supports. */
+/**
+ * **The heart in the home header** (`SupportHeart`), left of the watchlist. Filled and white like
+ * the bookmark next to it: it is a destination, not a state, and the accent belongs to state.
+ * In debug builds it beats twice, once per launch, a second after the home page first appears
+ * (the design's `beat`: 1.18 / 1.0 / 1.12 / 1.0 at 0.31 s each, 1.36 s still, again).
+ */
 @Composable
 fun SupportHeaderHeart(app: SwiftlyApplication) {
     val support = app.support
     if (!support.available && !support.isSupporter) return
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val reduced = de.paulherter.swiftly.shared.motionReduced()
+    LaunchedEffect(Unit) {
+        if (!de.paulherter.swiftly.BuildConfig.DEBUG || heartHasBeaten || reduced) return@LaunchedEffect
+        heartHasBeaten = true
+        try {
+            delay(1_000)
+            val step = androidx.compose.animation.core.tween<Float>(310, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            repeat(2) { round ->
+                if (round == 1) delay(1_360)
+                for (target in floatArrayOf(1.18f, 1f, 1.12f, 1f)) scale.animateTo(target, step)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            heartHasBeaten = false; throw e
+        }
+    }
     Box(Modifier.size(44.dp).tapOn { if (support.isSupporter) supportThanksShow(app, support.openPage) else supportSheetShow(app) },
         contentAlignment = Alignment.Center) {
-        Symbol(if (support.isSupporter) Glyph.HeartFilled else Glyph.Heart, 20.dp,
-               color = if (support.isSupporter) Theme.accent else Theme.font, description = translated("Swiftly unterstützen"))
+        Symbol(Glyph.HeartFilled, 20.dp, color = Theme.font, description = translated("Swiftly unterstützen"),
+               modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value })
     }
 }
+
+/** The heart beats once per launch. */
+private var heartHasBeaten = false
 
 /**
  * **The card at the end of the home page**, `SupportPrompt.decide` → `showsCard`. A calm block like

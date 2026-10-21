@@ -145,27 +145,28 @@ SHEEN = lin("mark", 0, MARK_TOP, 0, MARK_BOTTOM, (0, "#FFFFFF", 0.38), (0.42, "#
 
 HEART_CENTRE = (462.0, 514.0)
 
+# **No glow, anywhere.** The tiles are dark glass like the regular icon: a calm ground
+# and a quiet contact shadow under the mark, nothing that shines around it.
+SHADOW = glow("mark", 520, 560, 330, "#000000", 0.18, 0.5)
+
 ICONS = {
     "Heart": {
         "back": [lin("canvas", 0, 0, 0, 1, (0, "#1F2024"), (1, "#111214"))],
-        "middle": [glow("mark", 500, 512, 470, "#50D5DA", 0.22)],
+        "middle": [SHADOW],
         "mark": lin("mark", 330, 280, 750, 744, (0, "#8EEDF0"), (0.5, "#50D5DA"), (1, "#3BBEC4")),
         "sheen": SHEEN,
         "heart": {"hole": 238, "fill": 194,
                   "paint": lin("mark", 0, 420, 0, 600, (0, "#FF8FA0"), (1, "#F0566E"))},
     },
     "Aurora": {
-        "back": [lin("canvas", 0, 0, 1, 1, (0, "#0B2A30"), (0.55, "#0B1422"), (1, "#160F2A"))],
-        "middle": [glow("canvas", 0.10, 0.06, 0.95, "#50D5DA", 0.80, 0.4),
-                   glow("canvas", 0.98, 0.98, 0.80, "#4F7BFF", 0.55, 0.4),
-                   glow("canvas", 0.02, 1.0, 0.50, "#9A5BFF", 0.28, 0.4),
-                   glow("mark", 520, 512, 380, "#BFF6F8", 0.22, 0.4)],
+        "back": [lin("canvas", 0, 0, 1, 1, (0, "#12424A"), (0.55, "#0E1A2E"), (1, "#1E1538"))],
+        "middle": [SHADOW],
         "mark": lin("mark", 330, 280, 750, 744, (0, "#FFFFFF"), (1, "#D2F6F8")),
         "sheen": None,
     },
     "Gold": {
         "back": [lin("canvas", 0, 0, 0, 1, (0, "#26201A"), (1, "#0F0D0B"))],
-        "middle": [glow("mark", 500, 520, 470, "#E8B65A", 0.20)],
+        "middle": [SHADOW],
         "mark": lin("mark", 330, 280, 740, 744, (0, "#FFF0C2"), (0.32, "#F1CB76"),
                     (0.68, "#D19B3C"), (1, "#9C6B1E")),
         "sheen": SHEEN,
@@ -178,13 +179,13 @@ ICONS = {
     },
     "Night": {
         "back": [lin("canvas", 0, 0, 0, 1, (0, "#0A0B0C"), (1, "#030303"))],
-        "middle": [glow("mark", 515, 512, 520, "#50D5DA", 0.55, 0.32)],
+        "middle": [SHADOW],
         "mark": rad("mark", 470, 500, 330, (0, "#E6FEFF"), (0.45, "#8CEEF1"), (1, "#3CC8CE")),
         "sheen": None,
     },
     "Coffee": {
         "back": [lin("canvas", 0, 0, 0, 1, (0, "#3D2B21"), (1, "#1C130E"))],
-        "middle": [glow("mark", 500, 520, 470, "#D08A4E", 0.22)],
+        "middle": [SHADOW],
         "mark": lin("mark", 330, 280, 740, 744, (0, "#FBEBD6"), (0.5, "#E2C29C"), (1, "#B98A5C")),
         "sheen": SHEEN,
     },

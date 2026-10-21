@@ -223,6 +223,8 @@ struct LibraryView: View {
             .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
         }
+        // The look's glow, the same on every main page; goes up with the content.
+        .lookGlow()
         .scrollIndicators(.never)
         // On an account switch like the home screen: old content disappears immediately,
         // the new content fades in staggered (as on iPhone).

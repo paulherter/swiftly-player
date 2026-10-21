@@ -135,7 +135,10 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val serverRow = listOfNotNull(server?.first?.ifEmpty { null } ?: app.serverName.value,
                                      server?.second?.let { "Jellyfin $it" }).joinToString(" · ")
 
-    Column(Modifier.fillMaxSize().background(Theme.reason)
+    // The look's glow stands still here (`lookGlow(fixed:)` on tvOS): the two columns scroll on their own.
+    Box(Modifier.fillMaxSize().background(Theme.reason)) {
+    TvGlow(app)
+    Column(Modifier.fillMaxSize()
             .padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop)) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
             // **Back to the left means onto the selected section** (tvOS: `.focusSection()` with
@@ -222,7 +225,13 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             }
                         }
                         Compartment.Presentation -> {
-                            TvToggleRow(translated("Fortschritt auf Kacheln"), e.progress, modifier = first) { e.progress = !e.progress }
+                            // The look first, as on Apple TV (`TVLookEntryRow`): tile, name and "Ändern"; opens "Wähl deinen Look".
+                            val looksShown = tvLookRowShown(app)
+                            if (looksShown) {
+                                TvLookRow(app, first)
+                                SeparatorLine()
+                            }
+                            TvToggleRow(translated("Fortschritt auf Kacheln"), e.progress, modifier = if (looksShown) Modifier else first) { e.progress = !e.progress }
                             SeparatorLine()
                             TvToggleRow(translated("Titel als Logo"), e.titleAsLogo) { e.titleAsLogo = !e.titleAsLogo }
                             SeparatorLine()
@@ -329,13 +338,12 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // image would need a library of its own. Rating opens the Play Store, which Android TV has; the rest
                             // needs a browser, which is usually missing.
                             // "Support Swiftly" first: the one row of this section that is always worth a look.
-                            if (app.support.available || app.support.isSupporter) {
-                                TvAction(translated("Swiftly unterstützen"),
-                                         value = if (app.support.isSupporter) translated("Danke") else translated("Mit einem Kaffee Danke sagen"),
-                                         arrow = false) { tvSupportOpen(app) }
+                            val supportShown = app.support.available || app.support.isSupporter
+                            if (supportShown) {
+                                TvSupportEntryRow(app, first)
                                 SeparatorLine()
                             }
-                            TvAction(translated("Swiftly bewerten"), modifier = first) {
+                            TvAction(translated("Swiftly bewerten"), modifier = if (supportShown) Modifier else first) {
                                 app.addressOpen(context, app.communityAddress("play"))
                             }
                             SeparatorLine()
@@ -351,6 +359,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 }
             }
         }
+    }
     }
 }
 

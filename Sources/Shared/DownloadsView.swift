@@ -551,6 +551,8 @@ struct DownloadsView: View {
             } action: { _, new in offset = new }
             .animation(Theme.reveal, value: management.entries.count)
             // **Only the scroll area draws in on the switch.**
+            // The look's glow, the same on every main page; goes up with the content.
+            .lookGlow()
             .areaContent()
             // **And the header after it, not before.**
             //

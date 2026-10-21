@@ -27,7 +27,7 @@ echo "Team: $TEAM"
 # --json-output must go to a file: on /dev/stdout the table output mixes in
 # and the JSON is no longer readable.
 DEVICES=$(mktemp -t swiftly-geraete)
-trap 'rm -f "$GERAETE"' EXIT
+trap 'rm -f "$DEVICES"' EXIT
 xcrun devicectl list devices --json-output "$DEVICES" >/dev/null 2>&1 || true
 read -r ID UDID NAME <<<"$(python3 -c 'import json,sys
 for g in json.load(open(sys.argv[1]))["result"]["devices"]:

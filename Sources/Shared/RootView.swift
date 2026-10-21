@@ -63,6 +63,9 @@ struct RootView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOpen else { model.ratingDue = true; return }
+                // One big ask per session: after the gift or What's New, not this time.
+                guard !GiftFlow.shared.bigAskShown else { return }
+                GiftFlow.shared.noteBigAsk()
                 rate()
             }
         }
@@ -73,12 +76,16 @@ struct RootView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOpen else { model.discordHintDue = true; return }
+                guard !GiftFlow.shared.bigAskShown else { return }
+                GiftFlow.shared.noteBigAsk()
                 discordSheet = true
             }
         }
         .overlay { DiscordHint(opened: $discordSheet) }
         // "Support Swiftly": the sheet and when to ask, see `SupportPresentation`.
         .supportPresentation(model: model)
+        // The Halloween gift and "What's new": one sheet, see `GiftFlow`.
+        .giftPresentation(model: model)
         .overlay {
             #if os(iOS)
             if !started {

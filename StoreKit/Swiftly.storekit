@@ -61,6 +61,26 @@
       "productID": "de.paulherter.swiftly.tip.movie",
       "referenceName": "Tip movie",
       "type": "Consumable"
+    },
+    {
+      "displayPrice": "19.99",
+      "familyShareable": true,
+      "internalID": "6824113010",
+      "localizations": [
+        {
+          "description": "One payment, supporter forever.",
+          "displayName": "Supporter for good",
+          "locale": "en_US"
+        },
+        {
+          "description": "Einmal zahlen, für immer Unterstützer.",
+          "displayName": "Unterstützer für immer",
+          "locale": "de"
+        }
+      ],
+      "productID": "de.paulherter.swiftly.supporter.lifetime",
+      "referenceName": "Supporter lifetime",
+      "type": "NonConsumable"
     }
   ],
   "settings": {
@@ -69,7 +89,42 @@
     "_storefront": "DEU",
     "_storeKitErrors": []
   },
-  "subscriptionGroups": [],
+  "subscriptionGroups": [
+    {
+      "id": "21F0A1B2",
+      "localizations": [],
+      "name": "Swiftly Supporter",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1.99",
+          "familyShareable": true,
+          "groupNumber": 1,
+          "internalID": "6824113020",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Supporter, renews monthly.",
+              "displayName": "Supporter monthly",
+              "locale": "en_US"
+            },
+            {
+              "description": "Unterstützer, verlängert sich monatlich.",
+              "displayName": "Unterstützer monatlich",
+              "locale": "de"
+            }
+          ],
+          "productID": "de.paulherter.swiftly.supporter.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Supporter monthly",
+          "subscriptionGroupID": "21F0A1B2",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
   "version": {
     "major": 4,
     "minor": 0

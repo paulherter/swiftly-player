@@ -823,6 +823,10 @@ struct HeaderHistory: View {
     /// as a band. Only softness counts here.
     var soft = false
 
+    /// Scales every stop. Below 1 the scrim stays a quiet shadow, so the look's glow
+    /// behind the page is not darkened by it.
+    var strength: Double = 1
+
     /// The stops in **points**, not fractions.
     ///
     /// Fractions failed: whenever `headerHeight` changed, the whole curve moved and the
@@ -840,7 +844,7 @@ struct HeaderHistory: View {
     private var anchorPoints: [Gradient.Stop] {
         let total = headerHeight + outro
         func point(_ y: CGFloat, _ coverage: Double) -> Gradient.Stop {
-            Gradient.Stop(color: Theme.reason.opacity(coverage),
+            Gradient.Stop(color: Theme.reason.opacity(coverage * strength),
                           location: min(max(y / total, 0), 1))
         }
         if soft {

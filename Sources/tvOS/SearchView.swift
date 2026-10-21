@@ -143,6 +143,8 @@ struct SearchView: View {
             .padding(.bottom, 60)
         }
         .scrollIndicators(.hidden)
+        // The look's glow, the same on every main page; goes up with the content.
+        .lookGlow()
         // Whoever goes to "Search" wants to type, not first navigate to a field. So focus goes there
         // at once, and tvOS opens the keyboard by itself.
         //

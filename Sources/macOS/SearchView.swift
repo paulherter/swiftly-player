@@ -193,6 +193,8 @@ struct SearchView: View {
             .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
         }
+        // The look's glow, the same on every main page; goes up with the content.
+        .lookGlow()
         .scrollIndicators(.never)
         .accountSwitchFade(model: model, ready: true, change: $change)
         // Term and results belong to the previous account.

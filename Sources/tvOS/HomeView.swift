@@ -286,6 +286,9 @@ struct HomeView: View {
             if let t = current { switchImage(toward: t) }
         }
         .onAppear { firstShow() }
+        // The gift and "What's new" wait for a home page that is up (see `GiftFlow`).
+        .onChange(of: state.loaded, initial: true) { _, loaded in GiftFlow.shared.homeVisible(loaded) }
+        .onDisappear { GiftFlow.shared.homeVisible(false) }
         .onChange(of: state.continueWatching.first?.id) { _, _ in firstShow() }
         // Pull focus from the top bar into the first row.
         //

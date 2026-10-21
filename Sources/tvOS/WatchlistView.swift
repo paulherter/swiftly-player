@@ -81,6 +81,8 @@ struct WatchlistView: View {
                     .padding(.bottom, 60)
                     .padding(.horizontal, Theme.edgePage)
                 }
+                // The look's glow, the same on every main page; goes up with the content.
+                .lookGlow()
             }
         }
         // The side system margin is dropped, as in the library and home. Otherwise `edgePage` sits on the margin tvOS already keeps free and the spacing applies twice: the chip row stood about sixty points further right than on movies and series.

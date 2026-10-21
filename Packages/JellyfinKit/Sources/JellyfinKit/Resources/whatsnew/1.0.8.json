@@ -1,0 +1,18 @@
+{
+  "version": "1.0.8",
+  "variant": "gift",
+  "title": { "en": "A Halloween look, on the house 🎃", "de": "Ein Halloween-Look, geschenkt 🎃" },
+  "items": [
+    { "symbol": "paintpalette",
+      "title": { "en": "Orange instead of turquoise", "de": "Orange statt Türkis" },
+      "detail": { "en": "Accent, the glow at the top and the logo", "de": "Akzent, Licht oben und Logo" } },
+    { "symbol": "app",
+      "title": { "en": "An app icon to match", "de": "Ein App-Icon dazu" },
+      "detail": { "en": "If you want it. You can switch it in the looks sheet.", "de": "Wenn du willst. Umschalten geht im Look-Blatt." } },
+    { "symbol": "arrow.uturn.backward",
+      "title": { "en": "Back to the original anytime", "de": "Zurück zum Original geht jederzeit" },
+      "detail": { "en": "Profile, Appearance, Looks", "de": "Profil, Darstellung, Looks" } }
+  ],
+  "module": { "type": "gift", "lookId": "halloween" },
+  "primary": { "label": "grab", "action": "applyLook:halloween" }
+}

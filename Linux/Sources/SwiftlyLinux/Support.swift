@@ -71,10 +71,44 @@ extension App {
 
     var isSupporter: Bool { supportStore.status.isSupporter }
 
+    /// The store with the key's expiry already applied, so a lapsed monthly key never
+    /// shows a heart or unlocked looks for even one frame.
+    static func makeSupportStore() -> SupportStore {
+        let store = SupportStore(storage: SupportFile())
+        SupporterKeyKeeper(store: store).applyExpiry()
+        return store
+    }
+
+    /// At start and then hourly: apply the expiry day, and ask the shop for a renewed key
+    /// when the keeper says it is due. Only the random licence number leaves the machine,
+    /// and only for a stored key near its expiry (monthly) or once a month (lifetime).
+    func supportLicenseTick() {
+        let before = supportStore.status
+        supportKeeper.applyExpiry()
+        if before != supportStore.status { supportLicenseChanged() }
+        Task.detached { [self] in
+            let outcome = await supportKeeper.refreshIfDue()
+            if outcome == .renewed || outcome == .ended || outcome == .revoked {
+                onMainThread { self.supportLicenseChanged() }
+            }
+        }
+    }
+
+    private func supportLicenseChanged() {
+        lookSupporterChanged()
+        supportRefreshPages()
+    }
+
     /// Once per app start, after the window exists.
     func supportStart() {
         supportStore.recordLaunch(now: Date())
         supportCounter = WatchTimeCounter(totalSeconds: supportStore.usage.watchedSeconds)
+        Task.detached { [self] in
+            while true {
+                onMainThread { self.supportLicenseTick() }
+                try? await Task.sleep(nanoseconds: 3_600_000_000_000)
+            }
+        }
         // The package keeps quiet for the first minute after launch; look again right after.
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 65_000_000_000)
@@ -159,35 +193,15 @@ extension App {
         }
     }
 
-    /// The version line, with the heart next to it for supporters.
+    /// The version line, with the heart and "Unterstützer" for supporters (`versionMark`).
     func versionLine(_ text: String) -> Widget! {
-        let line = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
-        let version = label(text, style: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(version, "swiftly-fuss")
-        gtk_label_set_xalign(OpaquePointer(version), 0)
-        append(line, version)
-        if isSupporter {
-            let heart = label("\u{2665}", style: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(heart, "swiftly-herz-klein")
-            caption(heart, translated(SupportCopy.supporterBadge.key))
-            append(line, heart)
-        }
+        let line = versionMark(text)
         gtk_widget_set_margin_top(line, 26)
         return line
     }
 
     /// The heart in the header of the home page.
-    func supportHeart() -> Widget! {
-        let button: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(button, "swiftly-herz")
-        let heart = label("\u{2665}")
-        if isSupporter { gtk_widget_add_css_class(heart, "swiftly-herz-klein") }
-        gtk_button_set_child(asButton(button), heart)
-        caption(button, translated(SupportCopy.supportSwiftly.key))
-        gtk_widget_set_valign(button, GTK_ALIGN_CENTER)
-        signal(button, "clicked") { [weak self] in self?.supportOpen() }
-        return button
-    }
+    func supportHeart() -> Widget! { supportHeartButton() }
 }
 
 // MARK: - The card at the end of the home page
@@ -285,7 +299,7 @@ extension App {
 
     /// Dims the window and puts a dialog in the middle. Not a `GtkDialog` (E4): an overlay
     /// on the window, closed by the cross, Escape or a click outside.
-    private func supportLayerOpen(_ dialog: Widget!, width: Int32 = 600) {
+    func supportLayerOpen(_ dialog: Widget!, width: Int32 = 600, sheet: String? = nil) {
         guard let cover = windowCover, supportSheet == nil else { return }
         let root: Widget! = gtk_overlay_new()
         let dim = stack(GTK_ORIENTATION_VERTICAL)
@@ -306,7 +320,14 @@ extension App {
         signal(outside, "clicked") { [weak self] in self?.supportSheetClose() }
         gtk_overlay_add_overlay(OpaquePointer(root), outside)
 
-        gtk_widget_add_css_class(dialog, "swiftly-stuetzblatt")
+        // `sheet`: the sheets drawn as on the Mac (no padding, their own background).
+        if let sheet {
+            gtk_widget_add_css_class(dialog, "swiftly-blatt")
+            gtk_widget_add_css_class(dialog, sheet)
+            gtk_widget_set_overflow(dialog, GTK_OVERFLOW_HIDDEN)
+        } else {
+            gtk_widget_add_css_class(dialog, "swiftly-stuetzblatt")
+        }
         gtk_widget_set_size_request(dialog, width, -1)
         gtk_widget_set_halign(dialog, GTK_ALIGN_CENTER)
         gtk_widget_set_valign(dialog, GTK_ALIGN_CENTER)
@@ -324,94 +345,32 @@ extension App {
         supportSheet = nil
         supportKeyField = nil
         gtk_overlay_remove_overlay(OpaquePointer(cover), layer)
+        lookSheetClosed()
     }
 
-    /// The round heart at the top left of both dialogs.
-    private func supportMark() -> Widget! {
-        let mark = stack(GTK_ORIENTATION_VERTICAL)
-        gtk_widget_add_css_class(mark, "swiftly-stuetzmarke")
-        gtk_widget_set_size_request(mark, 48, 48)
-        gtk_widget_set_valign(mark, GTK_ALIGN_START)
-        let heart = label("\u{2665}")
-        gtk_widget_set_hexpand(heart, 1)
-        gtk_widget_set_vexpand(heart, 1)
-        append(mark, heart)
-        return mark
-    }
-
-    private func supportHead(title: String, text: String) -> Widget! {
-        let head = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 16)
-        append(head, supportMark())
-        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 4)
-        gtk_widget_set_hexpand(column, 1)
-        let t = label(title, style: "swiftly-titel")
-        gtk_label_set_xalign(OpaquePointer(t), 0)
-        append(column, t)
-        let p = label(text, style: "swiftly-koerper", wrap: true)
-        gtk_widget_add_css_class(p, "dim-label")
-        gtk_label_set_xalign(OpaquePointer(p), 0)
-        gtk_label_set_justify(OpaquePointer(p), GTK_JUSTIFY_LEFT)
-        gtk_label_set_max_width_chars(OpaquePointer(p), 52)
-        append(column, p)
-        append(head, column)
-        let close: Widget! = gtk_button_new_from_icon_name("window-close-symbolic")
-        gtk_widget_add_css_class(close, "swiftly-handlung")
-        gtk_widget_set_valign(close, GTK_ALIGN_START)
-        gtk_widget_set_size_request(close, 36, 36)
-        caption(close, translated("Schließen"))
-        signal(close, "clicked") { [weak self] in self?.supportSheetClose() }
-        append(head, close)
-        return head
-    }
-
-    /// **The sheet with the three tiers.** The tiers only explain; the amount is chosen on
-    /// the website, where the prices are.
+    /// **The purchase page** (`SupportGrowSheet`): the offer as on the Mac, then the key.
+    /// The amount is paid on the website, where the prices are.
     func supportSheetShow() {
         guard supportSheet == nil else { return }
-        let dialog = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        append(dialog, supportHead(title: translated(SupportCopy.supportSwiftly.key),
-                                   text: translated(SupportCopy.sheetIntro.key)))
-
-        let tiers = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
-        gtk_box_set_homogeneous(asBox(tiers), 1)
-        gtk_widget_set_margin_top(tiers, 20)
-        for tier in SupportTip.ordered {
-            let tile = stack(GTK_ORIENTATION_VERTICAL, spacing: 4)
-            gtk_widget_add_css_class(tile, "swiftly-stufe")
-            gtk_widget_set_size_request(tile, -1, 96)
-            gtk_widget_set_valign(tile, GTK_ALIGN_FILL)
-            let sign = label(tier.emoji, style: "swiftly-stufe-zeichen")
-            gtk_widget_set_vexpand(sign, 1)
-            gtk_widget_set_valign(sign, GTK_ALIGN_END)
-            append(tile, sign)
-            let name = label(translated(tier.title.key), style: "swiftly-stufe-name")
-            gtk_widget_set_valign(name, GTK_ALIGN_START)
-            append(tile, name)
-            append(tiers, tile)
-        }
-        append(dialog, tiers)
-
-        let free = label(translated(SupportCopy.freeForEveryone.key), style: "swiftly-listentitel")
-        gtk_widget_set_margin_top(free, 16)
-        gtk_widget_set_margin_bottom(free, 18)
-        append(dialog, free)
-
-        let website = primaryButton(translated(DirectSupportCopyKey.supportOnWebsite),
-                                    symbol: "go-next-symbolic")
-        gtk_widget_set_size_request(website, -1, Int32(Theme.primaryButtonHeight))
-        gtk_widget_set_halign(website, GTK_ALIGN_FILL)
-        gtk_widget_set_hexpand(website, 1)
-        signal(website, "clicked") {
+        // The page as on the Mac (`supportGrowOffer`). The choice travels to the website
+        // only as a hint (`?plan=`), where the real price and the checkout are.
+        let page = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        append(page, supportGrowOffer { id in
             // Opens the page in the system browser through GLib (xdg-open on Linux, the
-            // registered handler on Windows), the same call every other link uses.
-            if let address = URL(string: DirectSupport.websiteURL + "/") { browser(address) }
-        }
-        append(dialog, website)
+            // registered handler on Windows).
+            if let address = URL(string: DirectSupport.websiteURL + "/" + "?plan=" + id) { browser(address) }
+        })
 
-        let note = label(translated(DirectSupportCopyKey.opensWebsite), style: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(note, "swiftly-leise")
-        gtk_widget_set_margin_top(note, 8)
-        append(dialog, note)
+        let note = label(translated(DirectSupportCopyKey.opensWebsite), style: "swiftly-s12-sehrleise")
+        append(page, note)
+
+        // The key, below the offer: on Linux and Windows the purchase ends with one.
+        let keyBox = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_margin_start(keyBox, 16)
+        gtk_widget_set_margin_end(keyBox, 16)
+        gtk_widget_set_margin_bottom(keyBox, 18)
+        append(page, keyBox)
+        let dialog = keyBox
 
         let line = divider()
         gtk_widget_set_margin_top(line, 18)
@@ -477,7 +436,8 @@ extension App {
         signal(activate, "clicked", check)
         signal(field, "activate", check)
 
-        supportLayerOpen(dialog)
+        supportLayerOpen(sheetFrame(page, close: sheetCloseButton(dark: true)),
+                         width: 480, sheet: "swiftly-wachsenblatt")
         supportKeyField = field
         signal(field, "destroy") { [weak self] in self?.supportKeyField = nil }
     }
@@ -486,12 +446,13 @@ extension App {
     /// (and the buyer's name, if they left one), invalid with a friendly line.
     private func supportKeyCheck(field: Widget!, message: Widget!, lost: Widget!, button: Widget!) {
         let typed = String(cString: gtk_editable_get_text(OpaquePointer(field)))
-        let result = SupporterKey.verify(typed)
+        let result = supportKeeper.activate(typed)
         gtk_widget_remove_css_class(message, "swiftly-gueltig")
         gtk_widget_remove_css_class(message, "swiftly-ungueltig")
         switch result {
         case .valid(_, _, _, let name):
-            supportStore.status = SupporterKey.status(for: result)
+            _ = looks.purchaseCompleted()
+            lookSupporterChanged()
             gtk_widget_add_css_class(field, "swiftly-gueltig")
             gtk_widget_remove_css_class(field, "swiftly-ungueltig")
             gtk_widget_add_css_class(message, "swiftly-gueltig")
@@ -512,10 +473,11 @@ extension App {
                     self.supportRefreshPages()
                 }
             }
-        case .invalid:
+        case .invalid(let failure):
             gtk_widget_add_css_class(field, "swiftly-ungueltig")
             gtk_widget_add_css_class(message, "swiftly-ungueltig")
-            gtk_label_set_text(OpaquePointer(message), translated(DirectSupportCopyKey.keyInvalid))
+            AppLog.writeOut("[Unterstützen] Schlüssel abgelehnt: \(failure.rawValue)")
+            gtk_label_set_text(OpaquePointer(message), translated(SupportCopy.keyMessage(for: failure).key))
             gtk_widget_set_visible(message, 1)
             gtk_widget_set_visible(lost, 1)
         }
@@ -538,38 +500,7 @@ extension App {
             return
         }
         guard supportSheet == nil else { return }
-        let dialog = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        append(dialog, supportHead(title: translated(SupportCopy.thanksTitle.key),
-                                   text: translated(SupportCopy.thanksBody.key)))
-
-        // Linux and Windows have no extra icons, so the only gift is the heart.
-        let gift = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
-        gtk_widget_add_css_class(gift, "swiftly-stufe")
-        gtk_widget_set_margin_top(gift, 20)
-        let heart = label("\u{2665}")
-        gtk_widget_add_css_class(heart, "swiftly-herz-klein")
-        gtk_widget_set_valign(heart, GTK_ALIGN_CENTER)
-        append(gift, heart)
-        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
-        let title = label(translated(SupportCopy.giftHeartTitle.key), style: "swiftly-listentitel")
-        gtk_label_set_xalign(OpaquePointer(title), 0)
-        append(column, title)
-        let detail = label(translated(SupportCopy.giftHeartDetail.key), style: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(detail, "swiftly-leise")
-        gtk_label_set_xalign(OpaquePointer(detail), 0)
-        append(column, detail)
-        append(gift, column)
-        append(dialog, gift)
-
-        let done = primaryButton(translated(SupportCopy.done.key), symbol: "object-select-symbolic")
-        gtk_widget_set_size_request(done, -1, Int32(Theme.primaryButtonHeight))
-        gtk_widget_set_halign(done, GTK_ALIGN_FILL)
-        gtk_widget_set_hexpand(done, 1)
-        gtk_widget_set_margin_top(done, 20)
-        signal(done, "clicked") { [weak self] in self?.supportSheetClose() }
-        append(dialog, done)
-
-        supportLayerOpen(dialog)
+        supportLayerOpen(sheetFrame(supportThanksPage(), close: nil), width: 480, sheet: "swiftly-dankblatt")
     }
 
     /// Escape closes the dialog first. True means consumed.

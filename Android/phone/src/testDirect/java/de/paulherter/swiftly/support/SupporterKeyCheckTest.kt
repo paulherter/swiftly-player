@@ -100,13 +100,64 @@ class SupporterKeyCheckTest {
         assertEquals(invalid("empty"), check("   \n "))
         assertEquals(invalid("tooShort"), check("SS1-"))
         assertEquals(invalid("tooShort"), check("SS1-AAAA"))
-        assertEquals(invalid("wrongPrefix"), check("SS2-" + key.drop(4)))
+        assertFalse(isValid(check("SS2-" + key.drop(4))))
         assertEquals(invalid("wrongPrefix"), check("SS1" + key.drop(4)))
         assertEquals(invalid("badEncoding"), check("SS1-" + key.drop(4) + "0"))
         assertEquals(invalid("badEncoding"), check("SS1-" + key.drop(4) + "!"))
         assertEquals(invalid("tooLong"), check("SS1-" + "A".repeat(500)))
         assertEquals(invalid("wrongPrefix"), check("ſs1-" + key.drop(4)))
         assertEquals(invalid("badEncoding"), check("SS1-" + key.drop(4).replace("A", "Ａ")))
+    }
+
+    // MARK: SS2 (vectors from SupporterKeyV2Tests.swift)
+
+    private val v2: Map<String, String> = Regex("""static let (\w+) = "(SS2-[A-Z2-7]+)"""")
+        .findAll(File("../../Packages/JellyfinKit/Tests/SupportKeyKitTests/SupporterKeyV2Tests.swift").readText())
+        .associate { it.groupValues[1] to it.groupValues[2] }
+    private val purchased = 1_792_281_600_000L   // 2026-10-18
+    private val expires = 1_794_960_000_000L     // 2026-11-18
+    private val expiresLater = 1_797_638_400_000L // 2026-12-18
+
+    private fun read(text: String, allowTest: Boolean = false) = SupporterKeyCheck.read(text, testKey, 1, allowTest)
+    private fun license(text: String, allowTest: Boolean = false) = (read(text, allowTest) as SupporterKeyCheck.Read.Ok).license
+
+    @Test fun monthlyKeyReadsPlanExpiryAndId() {
+        assertEquals(SupporterKeyCheck.License(1, "monthly", purchased, expires, "00112233445566778899aabbccddeeff", "Zoë M.",
+                                               isTest = false, isLegacy = false), license(v2.getValue("monthly")))
+        val l = license(v2.getValue("monthly"))
+        assertTrue(l.isActive(expires - 1)); assertFalse(l.isActive(expires))
+    }
+
+    @Test fun verifyRefusesMonthlyFromItsExpiryDay() {
+        val key = v2.getValue("monthly")
+        val ok = SupporterKeyCheck.verify(key, testKey, 1, false, expires - 60_000)
+        assertEquals(SupporterKeyCheck.Result.Valid(1, purchased, "00112233445566778899aabbccddeeff", "Zoë M.", "monthly", expires), ok)
+        assertEquals(invalid("expired"), SupporterKeyCheck.verify(key, testKey, 1, false, expires))
+    }
+
+    @Test fun lifetimeNeverExpiresAndTestOrForeignAreRefused() {
+        val l = license(v2.getValue("lifetime"))
+        assertTrue(l.plan == "lifetime" && l.expiresAtMs == null && l.name == null && l.id == "ffeeddccbbaa99887766554433221100")
+        assertTrue(isValid(SupporterKeyCheck.verify(v2.getValue("lifetime"), testKey, 1, false, Long.MAX_VALUE / 2)))
+        assertEquals(SupporterKeyCheck.Read.Failed("testKey"), read(v2.getValue("lifetimeTest")))
+        assertTrue(license(v2.getValue("lifetimeTest"), allowTest = true).isTest)
+        assertEquals(SupporterKeyCheck.Read.Failed("wrongApp"), read(v2.getValue("otherApp")))
+    }
+
+    @Test fun ss1CountsAsLifetime() {
+        val l = license(swiftlyNamed)
+        assertTrue(l.isLegacy && l.plan == "lifetime" && l.expiresAtMs == null && l.id == "0123456789abcdef")
+    }
+
+    @Test fun ss2Tampering() {
+        val chars = v2.getValue("monthly").toCharArray()
+        for (i in 4 until chars.size - 1 step 17) {
+            val c = chars.copyOf(); c[i] = if (c[i] == 'A') 'B' else 'A'
+            assertFalse("position $i", isValid(SupporterKeyCheck.verify(String(c), testKey, 1, false, purchased)))
+        }
+        assertTrue(read("SS1-" + v2.getValue("monthly").drop(4)) != read(v2.getValue("monthly")))
+        assertFalse(isValid(SupporterKeyCheck.verify(v2.getValue("monthly"), nowMs = purchased)))  // production key
+        assertEquals("ffeeddccbbaa99887766554433221100", license("  " + v2.getValue("lifetime").lowercase() + "\n").id)
     }
 
     @Test fun wrongPublicKey() {

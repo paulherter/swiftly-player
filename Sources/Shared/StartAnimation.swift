@@ -61,6 +61,7 @@ struct StartAnimation: UIViewRepresentable {
         wrapper.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         let viewRef = LottieAnimationView(name: "startanimation")
+        StartAnimation.tint(viewRef)
         viewRef.contentMode = .scaleAspectFit
         viewRef.loopMode = .playOnce
         // Keep running when the screen is not in motion; otherwise the animation
@@ -148,6 +149,7 @@ struct StartAnimation: NSViewRepresentable {
     func makeNSView(context: Context) -> Wrapper {
         let wrapper = Wrapper()
         let viewRef = LottieAnimationView(name: "startanimation")
+        StartAnimation.tint(viewRef)
         viewRef.contentMode = .scaleAspectFit
         viewRef.loopMode = .playOnce
         viewRef.backgroundBehavior = .pauseAndRestore
@@ -185,6 +187,22 @@ struct StartAnimation: NSViewRepresentable {
     func updateNSView(_ viewRef: Wrapper, context: Context) {}
 }
 #endif
+
+extension StartAnimation {
+    /// **The play mark in the look's color**, set before the first frame, so the launch
+    /// never shows turquoise and then switches. The look is read from what is stored:
+    /// `SupportModel` is touched first, because a supporter's look counts only once it
+    /// knows. The system launch screen before this stays neutral; it cannot know the look.
+    @MainActor
+    static func tint(_ view: LottieAnimationView) {
+        _ = SupportModel.shared
+        let palette = LookStore.shared.palette
+        guard palette.look != .original else { return }
+        let color = palette.markColor
+        view.setValueProvider(ColorValueProvider(LottieColor(r: color.red, g: color.green, b: color.blue, a: 1)),
+                              keypath: AnimationKeypath(keypath: "swiftly-wortmarke Konturen 2.Gruppe 1.Füllen 1.Color"))
+    }
+}
 
 /// The launch curtain: solid base color with the animation on top. When it
 /// finishes, the app fades in underneath.

@@ -72,52 +72,56 @@ extension SupportCopy {
     }
 }
 
-/// **StoreKit 2 for the three tips.** No state of its own: it answers what the
-/// App Store knows, and `SupportModel` keeps the result.
+/// **StoreKit 2 for the supporter plans and the tips.** No state of its own: it answers
+/// what the App Store knows, and `SupportModel` keeps the result.
 ///
-/// The tips are consumables. With `SKIncludeConsumableInAppPurchaseHistory` in
-/// the Info.plist, `Transaction.all` also returns finished consumables, so the
-/// supporter status comes back on a new device or after a reinstall without any
-/// server of our own.
+/// The monthly plan is an auto-renewable subscription, "Forever" a non-consumable, the tips
+/// are consumables. With `SKIncludeConsumableInAppPurchaseHistory` in the Info.plist,
+/// `Transaction.all` also returns finished consumables, so the supporter status comes back
+/// on a new device or after a reinstall without any server of our own. What the history
+/// means is decided in the package (`SupportStandingResolver`), where it is tested.
 enum SupportStoreKit {
-    /// What the history says about this Apple Account.
-    enum History: Equatable {
-        /// At least one verified tip that was not refunded; the earliest date.
-        case supporter(since: Date)
-        /// Only refunded tips.
-        case revoked
-        /// No tip at all, or the history is not available.
-        case nothing
+    static func products() async throws -> [String: Product] {
+        let found = try await Product.products(for: SupportProductID.all)
+        return Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    static func products() async throws -> [SupportTip: Product] {
-        let found = try await Product.products(for: SupportTip.ordered.map(\.productID))
-        var result: [SupportTip: Product] = [:]
-        for product in found {
-            if let tip = SupportTip(productID: product.id) { result[tip] = product }
+    /// The App Store's history of our products, reduced to what the standing needs.
+    static func records() async -> [SupportPurchaseRecord] {
+        var current = Set<UInt64>()
+        for await entry in Transaction.currentEntitlements {
+            if case let .verified(transaction) = entry { current.insert(transaction.id) }
+        }
+        var result: [SupportPurchaseRecord] = []
+        for await entry in Transaction.all {
+            guard case let .verified(transaction) = entry,
+                  SupportProductID.plan(for: transaction.productID) != nil else { continue }
+            result.append(record(transaction, current: current.contains(transaction.id)))
         }
         return result
     }
 
-    static func history() async -> History {
-        var earliest: Date?
-        var revoked = false
-        for await entry in Transaction.all {
-            guard case let .verified(transaction) = entry,
-                  SupportTip(productID: transaction.productID) != nil else { continue }
-            if transaction.revocationDate != nil {
-                revoked = true
-            } else {
-                earliest = min(earliest ?? transaction.purchaseDate, transaction.purchaseDate)
-            }
-        }
-        if let earliest { return .supporter(since: earliest) }
-        return revoked ? .revoked : .nothing
+    static func record(_ transaction: Transaction, current: Bool) -> SupportPurchaseRecord {
+        SupportPurchaseRecord(productID: transaction.productID,
+                              purchaseDate: transaction.purchaseDate,
+                              originalPurchaseDate: transaction.originalPurchaseDate,
+                              expirationDate: transaction.expirationDate,
+                              isRevoked: transaction.revocationDate != nil,
+                              isCurrentEntitlement: current)
     }
 
-    /// Only tips are ours to finish; anything else is left alone.
-    static func isTip(_ transaction: Transaction) -> Bool {
-        SupportTip(productID: transaction.productID) != nil
+    /// Whether the monthly plan renews by itself; `nil` when the App Store does not say.
+    static func willAutoRenew(_ product: Product?) async -> Bool? {
+        guard let statuses = try? await product?.subscription?.status else { return nil }
+        for status in statuses {
+            if case let .verified(info) = status.renewalInfo { return info.willAutoRenew }
+        }
+        return nil
+    }
+
+    /// Only our products are ours to finish; anything else is left alone.
+    static func isOurs(_ transaction: Transaction) -> Bool {
+        SupportProductID.plan(for: transaction.productID) != nil
     }
 }
 
@@ -132,10 +136,16 @@ final class SupportModel {
     }
 
     private(set) var status: SupportStatus
-    private(set) var products: [SupportTip: Product] = [:]
+    private(set) var products: [String: Product] = [:]
     private(set) var productsState: ProductsState = .idle
-    /// The tip whose purchase is running; the sheet shows progress on it.
-    private(set) var purchasing: SupportTip?
+    /// The purchase that is running; the sheet shows progress on it.
+    private(set) var purchasing: SupportChoice?
+    /// What kind of support this device has, for the status on the profile.
+    private(set) var plan: SupportPlan?
+    /// The end of the paid period of the monthly plan, as the App Store last said.
+    private(set) var renewsOn: Date?
+    /// Whether the monthly plan renews by itself; `false` means it ends on `renewsOn`.
+    private(set) var autoRenews: Bool?
     private(set) var restoring = false
     var notice: SupportNotice?
     /// After a purchase (or a late approval) the sheet shows the thank-you page.
@@ -147,6 +157,16 @@ final class SupportModel {
     private(set) var cardVisible = false
     /// The chosen supporter icon; `nil` is the regular one.
     private(set) var appIcon: SupporterIcon?
+    #if DEBUG
+    /// **Debug builds only: simulated purchases.** Off unless switched on in Settings →
+    /// Swiftly → Preview; with it on, no StoreKit call is made and a tap on "Support" waits
+    /// a moment and completes the purchase on this device.
+    var simulatePurchases: Bool = UserDefaults.standard.bool(forKey: "support.debug.simulatePurchases") {
+        didSet { UserDefaults.standard.set(simulatePurchases, forKey: "support.debug.simulatePurchases") }
+    }
+    /// The sheet shows the "prices not available" state instead of the prices.
+    var forcePricesUnavailable = false
+    #endif
 
     @ObservationIgnored private let store = SupportStore(storage: UserDefaultsSupportStorage())
     @ObservationIgnored private var counter: WatchTimeCounter
@@ -159,10 +179,17 @@ final class SupportModel {
     /// The sheet was opened by the rules, not by a tap; counted once it appears.
     @ObservationIgnored private var scheduledAsk = false
 
+    /// The app ran on this device before this launch (a first launch was recorded). Tells
+    /// "What's New" an update apart from a fresh install.
+    @ObservationIgnored private(set) var usedBeforeThisLaunch = false
+
     private init() {
         status = store.status
+        usedBeforeThisLaunch = store.usage.firstLaunch != nil
         counter = WatchTimeCounter(totalSeconds: store.usage.watchedSeconds)
         appIcon = SupporterIcon.current
+        plan = store.plan
+        LookStore.shared.setSupporter(isSupporter)
     }
 
     static var platform: SupportPlatform {
@@ -176,6 +203,37 @@ final class SupportModel {
     }
 
     var isSupporter: Bool { status.isSupporter }
+
+    /// When the support began, for the line on the profile.
+    var supporterSince: Date? {
+        if case let .supporter(_, since) = status { since } else { nil }
+    }
+
+    /// The price as the App Store formats it for this storefront; `nil` until it is known.
+    func price(_ choice: SupportChoice) -> String? {
+        #if DEBUG
+        if simulatePurchases { return Self.placeholderPrice(choice) }
+        #endif
+        return products[choice.productID]?.displayPrice
+    }
+
+    /// The prices could not be loaded (offline, purchases off): the sheet says so and offers a retry.
+    var pricesUnavailable: Bool {
+        #if DEBUG
+        if forcePricesUnavailable { return true }
+        if simulatePurchases { return false }
+        #endif
+        return productsState == .unavailable
+    }
+
+    /// The prices are on screen (and the buttons may work).
+    var pricesReady: Bool {
+        #if DEBUG
+        if simulatePurchases { return !forcePricesUnavailable }
+        #endif
+        return productsState == .ready && !pricesUnavailable
+    }
+
     var watchedHours: Int { counter.watchedHours }
 
     // MARK: Start
@@ -204,12 +262,28 @@ final class SupportModel {
     /// Reads the purchase history. A device that has nothing in it keeps its
     /// stored status: the record is the cache, the history the proof.
     func refreshStatus() async {
-        switch await SupportStoreKit.history() {
-        case let .supporter(since):
-            if !status.isSupporter { setStatus(.supporter(source: .store, since: since)) }
-        case .revoked:
-            if case .supporter(.store, _) = status { setStatus(.none) }
-        case .nothing:
+        #if DEBUG
+        if simulatePurchases { return }
+        #endif
+        let standing = SupportStandingResolver.resolve(await SupportStoreKit.records(), now: .now)
+        switch standing {
+        case let .active(plan, since, renews):
+            self.plan = plan
+            store.plan = plan
+            renewsOn = renews
+            autoRenews = plan == .monthly ? await SupportStoreKit.willAutoRenew(products[SupportProductID.monthly]) : nil
+            if status != .supporter(source: .store, since: since) {
+                setStatus(.supporter(source: .store, since: since))
+            }
+        case .ended:
+            renewsOn = nil
+            autoRenews = nil
+            if case .supporter(.store, _) = status {
+                plan = nil
+                store.plan = nil
+                setStatus(.none)
+            }
+        case .unknown:
             break
         }
     }
@@ -218,69 +292,93 @@ final class SupportModel {
         status = new
         store.status = new
         if new.isSupporter { cardVisible = false }
+        LookStore.shared.setSupporter(isSupporter)
         AppLog.writeOut("[Support] Status: \(new.isSupporter ? "Unterstuetzer" : "keiner")")
     }
 
     /// A transaction from outside a purchase in this sheet: Ask to Buy approved,
-    /// bought on another device, a refund.
+    /// bought on another device, a renewal, a refund.
     private func handle(_ update: VerificationResult<Transaction>) async {
         guard case let .verified(transaction) = update else {
             // Never counted, but finished, so it does not come back on every launch.
-            if case let .unverified(transaction, error) = update, SupportStoreKit.isTip(transaction) {
+            if case let .unverified(transaction, error) = update, SupportStoreKit.isOurs(transaction) {
                 AppLog.writeOut("[Support] Unbestaetigte Transaktion: \(error)")
                 await transaction.finish()
             }
             return
         }
-        guard SupportStoreKit.isTip(transaction) else { return }
-        if transaction.revocationDate == nil {
-            let wasSupporter = isSupporter
-            setStatus(.supporter(source: .store, since: transaction.purchaseDate))
-            if !wasSupporter {
-                notice = nil
-                showsThanks = true
-                thanksPending = true
-            }
-        } else {
-            await refreshStatus()
+        guard SupportStoreKit.isOurs(transaction) else { return }
+        let wasSupporter = isSupporter
+        await refreshStatus()
+        if transaction.revocationDate == nil, isSupporter, !wasSupporter {
+            notice = nil
+            showsThanks = true
+            thanksPending = true
+            SupportFlow.shared.purchaseCompleted()
         }
         await transaction.finish()
     }
 
     // MARK: Products and purchases
 
-    func loadProducts() async {
-        guard productsState != .loading, productsState != .ready else { return }
+    /// Loads the prices. Called when the sheet opens; `retry` asks again after a failure.
+    func loadProducts(retry: Bool = false) async {
+        #if DEBUG
+        if simulatePurchases { return }
+        #endif
+        guard productsState != .loading, productsState != .ready || retry else { return }
         productsState = .loading
         do {
             let found = try await SupportStoreKit.products()
             products = found
-            productsState = found.isEmpty ? .unavailable : .ready
+            // Both plans must be there; a sheet with half the offer would be a trap.
+            let complete = found[SupportProductID.monthly] != nil && found[SupportProductID.lifetime] != nil
+            productsState = complete ? .ready : .unavailable
+            if !complete { AppLog.writeOut("[Support] Produkte unvollstaendig: \(found.keys.sorted())") }
         } catch {
             AppLog.writeOut("[Support] Produkte nicht geladen: \(error)")
             productsState = .unavailable
         }
+        if productsState == .ready { await refreshStatus() }
     }
 
-    /// Buys one tip. `purchase` is SwiftUI's `PurchaseAction`, which brings the
+    /// Buys one plan or tip. `purchase` is SwiftUI's `PurchaseAction`, which brings the
     /// window or scene the App Store dialog belongs to.
-    func buy(_ tip: SupportTip,
+    func buy(_ choice: SupportChoice,
              with purchase: (Product) async throws -> Product.PurchaseResult) async {
-        guard purchasing == nil, let product = products[tip] else {
-            if products[tip] == nil { notice = .unavailable }
+        guard purchasing == nil else { return }
+        notice = nil
+        #if DEBUG
+        if simulatePurchases {
+            purchasing = choice
+            try? await Task.sleep(for: .seconds(1.6))
+            purchasing = nil
+            debugCompletePurchase(choice.plan)
+            SupportFlow.shared.purchaseCompleted()
             return
         }
-        purchasing = tip
-        notice = nil
+        #endif
+        guard let product = products[choice.productID] else {
+            notice = .unavailable
+            return
+        }
+        purchasing = choice
         defer { purchasing = nil }
         do {
             switch try await purchase(product) {
             case let .success(.verified(transaction)):
-                setStatus(.supporter(source: .store, since: transaction.purchaseDate))
+                // A tip is a thank-you only; it never changes the standing.
+                if choice.plan != .tip {
+                    plan = choice.plan
+                    store.plan = choice.plan
+                    setStatus(.supporter(source: .store, since: transaction.purchaseDate))
+                }
                 await transaction.finish()
+                await refreshStatus()
                 showsThanks = true
                 // Closed while the App Store dialog ran: the thank-you waits for the next visit.
                 if !presented { thanksPending = true }
+                SupportFlow.shared.purchaseCompleted()
             case let .success(.unverified(transaction, error)):
                 AppLog.writeOut("[Support] Unbestaetigter Kauf: \(error)")
                 await transaction.finish()
@@ -308,6 +406,12 @@ final class SupportModel {
         restoring = true
         notice = nil
         defer { restoring = false }
+        #if DEBUG
+        if simulatePurchases {
+            if !isSupporter { notice = .nothingToRestore }
+            return
+        }
+        #endif
         do {
             try await AppStore.sync()
         } catch StoreKitError.userCancelled {
@@ -320,7 +424,10 @@ final class SupportModel {
         let wasSupporter = isSupporter
         await refreshStatus()
         if isSupporter {
-            if !wasSupporter { showsThanks = true }
+            if !wasSupporter {
+                showsThanks = true
+                SupportFlow.shared.purchaseCompleted()
+            }
         } else {
             notice = .nothingToRestore
         }
@@ -471,11 +578,39 @@ extension SupportModel {
 
     /// Supporter status without a purchase (key source, so the store history leaves it alone).
     func debugMarkSupporter() {
+        store.plan = .lifetime
+        plan = .lifetime
         setStatus(.supporter(source: .key, since: .now))
+    }
+
+    /// The simulated purchase is through: supporter, with its plan, and the thank-you page.
+    /// Source `.key`, so the store history leaves the status alone.
+    func debugCompletePurchase(_ plan: SupportPlan) {
+        store.plan = plan
+        self.plan = plan
+        renewsOn = plan == .monthly ? Calendar.current.date(byAdding: .month, value: 1, to: .now) : nil
+        autoRenews = plan == .monthly ? true : nil
+        notice = nil
+        setStatus(.supporter(source: .key, since: .now))
+        showsThanks = true
+    }
+
+    static func placeholderPrice(_ choice: SupportChoice) -> String {
+        switch choice {
+        case .monthly: "1,99 €"
+        case .lifetime: "19,99 €"
+        case let .tip(tip): tip == .coffee ? "1,99 €" : tip == .cake ? "4,99 €" : "9,99 €"
+        }
     }
 
     /// Back to the state of a fresh install: no status, no ask history, regular icon.
     func debugReset() {
+        store.plan = nil
+        plan = nil
+        renewsOn = nil
+        autoRenews = nil
+        purchasing = nil
+        forcePricesUnavailable = false
         setStatus(.none)
         store.promptHistory = SupportPromptHistory()
         cardVisible = false

@@ -28,7 +28,7 @@ struct SupportStatusTests {
         #expect(try json(SupportUsage(firstLaunch: Self.since, watchedSeconds: 7_200))
             == #"{"firstLaunch":1792281600,"watchedSeconds":7200}"#)
         #expect(try json(SupportPromptHistory(cardSnoozedUntil: Self.since, cardDismissed: true, sheetShownAt: [Self.since]))
-            == #"{"cardDismissed":true,"cardSnoozedUntil":1792281600,"sheetShownAt":[1792281600]}"#)
+            == #"{"cardDismissed":true,"cardSnoozedUntil":1792281600,"cardSnoozes":0,"sheetShownAt":[1792281600]}"#)
     }
 
     @Test("Stored JSON reads back", arguments: [

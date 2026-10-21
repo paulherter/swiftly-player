@@ -26,7 +26,7 @@ def slugs():
 
 
 def paths():
-    p = {"/", "/blog/", "/android/", "/support.html", "/privacy.html", "/impressum.html", "/datenschutz.html"}
+    p = {"/", "/blog/", "/android/", "/support.html", "/privacy.html", "/impressum.html", "/datenschutz.html", "/terms/"}
     for root, _, names in os.walk(WEBSITE):
         if "index.html" in names:
             p.add("/" + os.path.relpath(root, WEBSITE).replace(os.sep, "/").strip(".") + "/")

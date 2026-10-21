@@ -3,7 +3,6 @@ package de.paulherter.swiftly.tv
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
-import android.graphics.Color as AndroidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +10,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalDensity
+import de.paulherter.swiftly.SwiftlyApplication
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
@@ -23,7 +24,6 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -49,8 +49,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -104,6 +102,14 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
     val focusIndex = comeBack?.let { id -> tiles.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
     val end by remember { derivedStateOf { (lattice.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= lattice.layoutInfo.totalItemsCount - TvTheme.gridColumns * 3 } }
     LaunchedEffect(end, tiles.size) { if (end && tiles.isNotEmpty()) loadMore() }
+    // **The look's glow behind the page** (`.lookGlow()` on tvOS): from the screen's top edge, moving
+    // up with the content (read while drawing, so scrolling never recomposes).
+    val glowApp = LocalContext.current.applicationContext as SwiftlyApplication
+    val glowDensity = LocalDensity.current.density
+    Box(Modifier.fillMaxSize()) {
+    TvGlow(glowApp, scrolled = {
+        if (lattice.firstVisibleItemIndex > 0) TV_GLOW_SCROLL_MAX else lattice.firstVisibleItemScrollOffset / glowDensity
+    })
     LazyVerticalGrid(GridCells.Fixed(TvTheme.gridColumns), state = lattice, modifier = Modifier.fillMaxSize(),
                      contentPadding = PaddingValues(start = TvTheme.edgePage, end = TvTheme.edgePage, bottom = 40.dp),
                      horizontalArrangement = Arrangement.spacedBy(TvTheme.gridColumn),
@@ -128,6 +134,7 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
         }
         more()
     }
+    }
 }
 
 /** Mirrors `TilePlaceholder` on tvOS: poster size, below it two breathing lines. */
@@ -137,23 +144,6 @@ private fun TvTilePlaceholder() {
         LoadField(Modifier.size(TvTheme.posterWidth, TvTheme.posterHeight), TvTheme.cornerTile)
         LoadField(Modifier.fillMaxWidth().height(11.dp).padding(top = 9.dp), 3.dp)
         LoadField(Modifier.size(42.dp, 9.dp).padding(top = 5.dp), 3.dp)
-    }
-}
-
-/**
- * Mirrors `reasonAudio` in `LibraryView`: movies in the complementary color (351 deg), series in
- * the accent hue (171 deg), stronger near the top right corner. tvOS uses a `MeshGradient` with 25
- * control points; Compose has no counterpart, so this is an approximate radial gradient from the
- * same spot to transparent, over `Theme.reason`.
- */
-@Composable
-private fun TvReasonAudio(art: String) {
-    val audio = if (art == "movies") 351f else 171f
-    val kern = remember(audio) { Color(AndroidColor.HSVToColor(floatArrayOf(audio, 0.42f, 0.16f))) }
-    Canvas(Modifier.fillMaxSize()) {
-        val center = Offset(size.width * 0.97f, size.height * 0.28f)
-        drawRect(Brush.radialGradient(listOf(kern, Color.Transparent), center = center,
-                                       radius = maxOf(size.width, size.height) * 1.05f))
     }
 }
 
@@ -227,9 +217,6 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val collections = state.collectionsSelected
     val focus = firstFocus(!state.loads || collections)
     Box(Modifier.fillMaxSize()) {
-        // Each section gets its own base tone: series in the accent, movies in the complementary color.
-        // The background shows where one is before the bar is read.
-        TvReasonAudio(art)
         TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.kern) } }, focus, open,
                  loads = state.loads && !collections, withUnderRow = false, header = {
             Column(Modifier.padding(top = headerBottom + 14.dp, bottom = 10.dp)) {

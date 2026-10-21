@@ -89,6 +89,9 @@ public struct SupportCopy: Sendable, Hashable {
                                             en: "If it earns a coffee, we would love that.")
     public static let cardSupport = SupportCopy(de: "Unterstützen", en: "Support")
     public static let notNow = SupportCopy(de: "Nicht jetzt", en: "Not now")
+    /// The card names the hours only from here on (it appears from two hours anyway).
+    public static let cardMinimumHours = 2
+
     public static let dontShowAgain = SupportCopy(de: "Nicht mehr zeigen", en: "Don’t show again")
 
     // MARK: Supporter state

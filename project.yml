@@ -29,14 +29,14 @@ settings:
     # Must match the version in App Store Connect, otherwise the build cannot be
     # attached there. Do not attach another build to an already released
     # version; that does not work cleanly.
-    MARKETING_VERSION: "1.0.7"
+    MARKETING_VERSION: "1.0.8"
     # Must be incremented on EVERY upload: Apple does not accept the same build
     # number twice per version (error 90189).
     #
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "24"
+    CURRENT_PROJECT_VERSION: "25"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -191,7 +191,10 @@ targets:
         # **Six supporter icons** next to the regular one (`SupporterIcon`). Only
         # icons named here are compiled as alternates; the names are strings the
         # code passes to `setAlternateIconName`.
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Heart AppIcon-Aurora AppIcon-Gold AppIcon-Light AppIcon-Night AppIcon-Coffee"
+        #
+        # `AppIcon-NeonNight` and `AppIcon-Halloween` belong to the looks of the same
+        # name (`Look.iconName`); the look switches them, not the icon picker.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Heart AppIcon-Aurora AppIcon-Gold AppIcon-Light AppIcon-Night AppIcon-Coffee AppIcon-NeonNight AppIcon-Halloween AppIcon-LookSunset AppIcon-LookAurora AppIcon-LookIce AppIcon-LookEmber AppIcon-LookGold AppIcon-LookEmerald"
         # Without entitlements the keychain refuses writes (-34018) and the
         # login would be lost on every launch.
         CODE_SIGN_ENTITLEMENTS: Sources/iOS/Swiftly.entitlements
@@ -222,6 +225,15 @@ targets:
       - path: Sources/Shared/LoginModel.swift
       - path: Sources/Shared/PlayRequest.swift
       - path: Sources/Shared/Colors.swift
+      # The active look: `Theme.accent` reads from it.
+      - path: Sources/Shared/LookStore.swift
+      # The gift's flow (What's New, the offer, picking it up, the looks panel's state) is
+      # shared; its views are guarded `#if !os(tvOS)` and Apple TV draws its own
+      # (`Sources/tvOS/TVLooks.swift`).
+      - path: Sources/Shared/LookGiftSheet.swift
+      - path: Sources/Shared/Motion.swift
+      # The flow around a purchase (looks panel, sheet, thank-you page) and SupportChoice.
+      - path: Sources/Shared/SupportFlow.swift
       - path: Sources/Shared/Keychain.swift
       - path: Sources/Shared/Marks.swift
       - path: Sources/Shared/Routes.swift
@@ -420,8 +432,8 @@ targets:
           an address like 192.168.1.5.
     settings:
       base:
-        # tvOS ships 1.0.8 alone (Top Shelf fix); the other targets stay on 1.0.7.
-        MARKETING_VERSION: "1.0.8"
+        # tvOS runs one version ahead (1.0.9); the other targets are on 1.0.8.
+        MARKETING_VERSION: "1.0.9"
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS: without the access group the keychain refuses
         # writes (-34018) and the login would be lost on every launch.
@@ -434,7 +446,9 @@ targets:
         # **Six supporter icons**, each a layered image stack like the regular one, next to the regular one (`SupporterIcon`). Only
         # icons named here are compiled as alternates; the names are strings the
         # code passes to `setAlternateIconName`.
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Heart AppIcon-Aurora AppIcon-Gold AppIcon-Light AppIcon-Night AppIcon-Coffee"
+        # tvOS has no icon switching, and App Store Connect rejects alternate icons without
+        # a 1280x768 App Store layer (error 90471), so none are declared here.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: ""
 
   # The row above the app icon on the Apple TV home screen.
   #
@@ -486,7 +500,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
-        MARKETING_VERSION: "1.0.8"
+        MARKETING_VERSION: "1.0.9"
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
   # The Mac version.
@@ -537,6 +551,19 @@ targets:
       - path: Sources/Shared/LibraryModel.swift
       - path: Sources/Shared/WatchlistModel.swift
       - path: Sources/Shared/Colors.swift
+      # The active look: `Theme.accent` reads from it.
+      - path: Sources/Shared/LookStore.swift
+      # The Halloween gift, the looks sheet and "What's new": one sheet from below, the
+      # same as on iPhone; the seasonal details for the profile's look card.
+      - path: Sources/Shared/LookGiftSheet.swift
+      - path: Sources/Shared/WhatsNewSheet.swift
+      # The supporter views: the same files as on iPhone.
+      - path: Sources/Shared/SupportFlow.swift
+      - path: Sources/Shared/SupportGrowSheet.swift
+      - path: Sources/Shared/SupportProfileParts.swift
+      - path: Sources/Shared/LookAccentDots.swift
+      - path: Sources/Shared/Motion.swift
+      - path: Sources/Shared/SeasonDecor.swift
       # Building blocks without platform dimensions - row title, badge, loader,
       # profile glyph. They used to exist three times.
       - path: Sources/Shared/Components.swift

@@ -37,16 +37,31 @@ struct ProfileView: View {
         ZStack {
             Theme.reason.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // **A page title like everywhere else, next to the arrow.**
-                //
-                // This used to have none, on the grounds that the image block was the title.
-                // That held while it filled half the page and sat centered; as a card it is
-                // an object on the page and no longer a header.
-                SubpageHeader(title: String(localized: "Profil")) { back() }
-
             ScrollView {
                 VStack(spacing: 0) {
+                    // **Looks at the top, by state** (`LookProfileEntry`): who has a look to
+                    // choose sees a quiet line with it; the teaser for the supporter looks;
+                    // everyone else sees nothing here.
+                    if lookEntry != .none || supporterStatusShown {
+                        VStack(spacing: 16) {
+                            switch lookEntry {
+                            case .current:
+                                CurrentLookCard(playing: model.playerOpen) { openLooks() }
+                            case .teaser:
+                                SupportLooksCard()
+                            case .none:
+                                EmptyView()
+                            }
+                            SupportStatusCard()
+                        }
+                        // The same margin as the cards below.
+                        .padding(.horizontal, Theme.margin(wide: wide))
+                        .padding(.top, 6)
+                        .padding(.bottom, 16)
+                        .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
+                        .animation(Theme.reveal, value: lookEntry)
+                    }
+
                     AccountCard(model: model,
                                insertOn: { serverTarget = ServerRoute(preset: $0) }) {
                         accountRecord = true
@@ -83,6 +98,13 @@ struct ProfileView: View {
                         ProfileRow(symbol: "square.grid.2x2", title: "Darstellung",
                                     under: "Startseite, Reihen, Genres",
                                     target: PresentationRoute())
+                        // A plain way to the looks while a gift can be picked up and nothing
+                        // above leads there.
+                        if LookProfileEntry.showsLooksRow(entry: lookEntry,
+                                                          giftAvailable: LookStore.shared.freeLooks().count > 1) {
+                            ProfileRow(symbol: "paintpalette", title: "Looks",
+                                       under: "Original und Halloween") { openLooks() }
+                        }
                         ProfileRow(symbol: "gearshape", title: "Einstellungen",
                                     last: true, target: SettingsRoute())
                     }
@@ -167,6 +189,33 @@ struct ProfileView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
+            .contentMargins(.top, 18, for: .scrollContent)
+            // **Content runs under the title and fades there, never with an edge.** The
+            // scroll area fills the whole screen, down under the home indicator; under the
+            // status bar and the title what scrolls up stays faintly visible (35 percent).
+            //
+            // The mask covers the whole screen (`ignoresSafeArea`). Before, it ended at the
+            // safe area: the page was cut off at the bottom and hard at the top.
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                           .init(color: .black.opacity(0.35), location: 0.62),
+                                           .init(color: .black, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 118)
+                    Color.black
+                }
+                .ignoresSafeArea()
+            }
+            // After the mask, so the glow itself is not dimmed.
+            .lookGlow()
+            // **A page title like everywhere else, next to the arrow**, over the content.
+            //
+            // This used to have none, on the grounds that the image block was the title.
+            // That held while it filled half the page and sat centered; as a card it is an
+            // object on the page and no longer a header.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SubpageHeader(title: String(localized: "Profil"), back: { back() }, bottom: 0) { EmptyView() }
             }
 
         }
@@ -182,6 +231,8 @@ struct ProfileView: View {
             AccountSwitchTransition.note("profil offen: angemeldet \(model.session?.userName ?? "-")")
         }
         .background(SwipeBack())
+        // The pop-up on the first visit.
+        .supportProfileIntro()
         #endif
         .overlay(alignment: .topTrailing) {
             ActionSheet(opened: $signOutSheet,
@@ -191,6 +242,7 @@ struct ProfileView: View {
                               text: "Abmelden", cautionary: true) { model.signOut() },
             ])
         }
+        // flush-ok: the system's own share sheet, not ours to make flush.
         .sheet(item: $log) { file in
             ShareSheet(file: file.url)
                 .presentationDetents([.medium, .large])
@@ -207,6 +259,25 @@ struct ProfileView: View {
                       version: model.serverVersion ?? "",
                       moreAccount: true)
         }
+    }
+
+    // MARK: Looks
+
+    /// What the top of the page shows about looks.
+    private var lookEntry: LookProfileEntry {
+        LookProfileEntry.at(supporterFeatures: true,
+                                   isSupporter: SupportModel.shared.isSupporter,
+                                   ownsLook: LookStore.shared.ownsLook)
+    }
+
+    private var supporterStatusShown: Bool {
+        SupportModel.shared.isSupporter
+    }
+
+    /// The looks panel: the profile slides away, the home page shows, and the one panel
+    /// comes up over it ("Change" here, "Try a look", Settings).
+    private func openLooks() {
+        GiftFlow.shared.openLooksOnHome()
     }
 
     /// A group is a card; see ``CardView``.
@@ -570,6 +641,12 @@ private struct AccountCard: View {
                 TabView(selection: $page) {
                     ForEach(server, id: \.absoluteString) { url in
                         card(url)
+                            // **The left screen edge belongs to "back".** The pager between the
+                            // servers swallowed the edge swipe, so the profile could not be left
+                            // by swiping. It now waits until the back gesture has failed.
+                            .overlay(alignment: .topLeading) {
+                                EdgeGesturePreRank().frame(width: 0, height: 0)
+                            }
                             .fixedSize(horizontal: false, vertical: true)
                             // **The largest, not the most recently measured.** Otherwise the lower card
                             // won and the taller one was cut off top and bottom.
@@ -697,6 +774,10 @@ private struct AccountCard: View {
                 // The row keeps its height even when empty, otherwise the card of a server with
                 // only one account is shorter than the others.
                 Color.clear.frame(width: 0, height: 40)
+                    // The row of accounts yields to the back swipe as well.
+                    .overlay(alignment: .topLeading) {
+                        EdgeGesturePreRank().frame(width: 0, height: 0)
+                    }
                 ForEach(other, id: \.accountKey) { account in
                     let flying = AccountSwitchTransition.shared.transition?.account == account.accountKey
                     Button { switchTo(toward: account) } label: {

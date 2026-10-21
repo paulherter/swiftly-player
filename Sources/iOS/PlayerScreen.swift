@@ -668,10 +668,13 @@ struct PlayerScreen: View {
         // Two seconds is fast enough to watch a stutter, and slow enough that the numbers stay readable.
         .task(id: techBadge) {
             guard techBadge else { screenTick.halt(); return }
-            // Count only while someone is looking: a forgotten counter on the main loop would itself be the load it is meant to measure.
-            screenTick.start()
+            // Count only while someone is looking, and only one second in thirty: a counter
+            // that asks for 120 Hz holds the display at 120 Hz (see `ScreenTick`).
             defer { screenTick.halt() }
+            var round = 0
             while !Task.isCancelled {
+                if round % 15 == 0 { screenTick.sample() }
+                round += 1
                 // The rate comes from the difference to the last time, see `PlayValues`.
                 playValues = PlayValues(surface?.statistics, spot: surface?.positionSeconds ?? 0,
                                         running: surface?.isPlaying ?? false, before: playValues)

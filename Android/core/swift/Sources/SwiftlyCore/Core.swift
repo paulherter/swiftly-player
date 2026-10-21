@@ -146,6 +146,10 @@ public final class Kern: @unchecked Sendable {
         self.devicesName = devicesName
         self.version = version
         messages = Self.reportRail(rows: logRows, probe: reportProbe)
+        // The package's own lines (remote control, SyncPlay …), as on Apple
+        // (`AppModel`: `TrackSupport.write`). Without this they were lost on Android.
+        let rows = logRows
+        TrackSupport.write = { row in rows.write(row); LogRing.shared.append(row) }
     }
 
     private var client: JellyfinClient? {

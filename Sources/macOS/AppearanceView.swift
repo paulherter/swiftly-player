@@ -35,7 +35,7 @@ struct PresentationView: View {
                 SubpageHeader(title: "Darstellung", back: back)
 
                 HStack(alignment: .top, spacing: Theme.edgeSpacing * 2) {
-                    VStack(alignment: .leading, spacing: 0) { general; rails }
+                    VStack(alignment: .leading, spacing: 0) { general; looks; rails }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) { libraryRails; genres }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,6 +66,35 @@ struct PresentationView: View {
                           title: Text("Titel als Logo"),
                           under: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),
                           an: $titleAsLogo)
+        }
+    }
+
+    // MARK: Looks
+
+    /// **The look being worn, with "Change"**, as on iPhone: the choice itself happens in the
+    /// one looks panel on the home page, where the change is visible at once.
+    @ViewBuilder
+    private var looks: some View {
+        let store = LookStore.shared
+        let saved = store.saved
+        SettingGroup(title: "Looks") {
+            CurrentLookRow(look: saved.look)
+                if let season = saved.look.availability, season.isActive(at: LookClock.now) {
+                    ToggleRow(symbol: "sparkles", title: Text("Fledermäuse und Spinnennetz"),
+                              under: Text("Bis \(LooksPanel.end(of: season)) dabei. Farbe und Icon bleiben."),
+                              an: Binding(get: { store.effectsOn }, set: { store.effectsOn = $0 }))
+                }
+                if saved.look.iconName != nil {
+                    ToggleRow(symbol: "app", title: Text("App-Icon"),
+                              an: Binding(get: { saved.usesLookIcon != false },
+                                          set: { on in
+                                              var next = store.saved
+                                              next.usesLookIcon = on ? nil : false
+                                              _ = store.choose(next)
+                                              let icon = store.palette.iconName
+                                              Task { await LookIcon.apply(icon) }
+                                          }))
+                }
         }
     }
 
@@ -466,5 +495,34 @@ struct LibrarySelectionView: View {
             pick = await model.startSelection()
             loaded = true
         }
+    }
+}
+
+/// The look being worn, its name and "Change" in the accent, on one row.
+private struct CurrentLookRow: View {
+    let look: Look
+    @State private var hovers = false
+
+    var body: some View {
+        Button { GiftFlow.shared.openLooksOnHome() } label: {
+            HStack(spacing: 14) {
+                LookTile(look: look, size: 32)
+                Text(look.name)
+                    .font(Theme.listTitle)
+                    .foregroundStyle(Theme.font)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Ändern")
+                    .font(Theme.listTitle)
+                    .foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(hovers ? Theme.hoverArea : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovers = $0 }
+        .accessibilityLabel(Text("Dein Look: \(look.name)"))
+        .accessibilityHint(Text("Ändern"))
     }
 }

@@ -251,6 +251,8 @@ struct ProfileView: View {
         // Side margin: see `HomeView`. The system margin is removed so `edgePage` does
         // not sit on top of it and double.
         .ignoresSafeArea(edges: .horizontal)
+        // The look's glow, the same on every main page; the page itself does not scroll.
+        .background(alignment: .top) { LookGlowLayer() }
         // **Quick Connect, not a new sign-in form.** A name and password on a remote are
         // an imposition. The code exists anyway, and `sessionAdopt` adds the
         // session to the existing account instead of replacing it.
@@ -432,10 +434,17 @@ struct ProfileView: View {
                       select: { model.subtitleLanguage = $0.value })
 
         case .presentation:
+            // **"Your look" first**, where the profile has one to show (see `TVLookEntry`).
+            let looksShown = TVLookEntry.shown
+            if looksShown {
+                TVLookEntryRow()
+                    .focused($right, equals: .top)
+                SeparatorLine()
+            }
             ToggleRow(title: "Fortschritt auf Kacheln", an: model.progressOnTiles) {
                 model.progressOnTiles.toggle()
             }
-            .focused($right, equals: .top)
+            .focused($right, equals: looksShown ? nil : .top)
             SeparatorLine()
             ToggleRow(title: "Titel als Logo", an: titleAsLogo) { titleAsLogo.toggle() }
             SeparatorLine()
@@ -545,9 +554,15 @@ struct ProfileView: View {
         case .community:
             // **As a code, not a link**: the TV has no browser.
             // First and prominent: the entry App Review is pointed to, always here.
+            // The support page is the shared one (`SupportModel.presented`, drawn by
+            // `TVSupportPage`), and a supporter sees the status first.
+            if SupportModel.shared.isSupporter {
+                TVSupportStatusRow()
+                SeparatorLine()
+            }
             TVSupportEntryRow {
                 SupportModel.shared.prepare()
-                supportStart = .support
+                SupportModel.shared.open()
             }
             .focused($right, equals: .top)
             SeparatorLine()

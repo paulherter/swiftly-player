@@ -180,18 +180,26 @@ enum Theme {
     ///
     /// On tvOS it also carries the focus ring - that is the same rule, not a
     /// loosening of it: the ring shows a selection.
-    static let accent  = Color(red: 0.314, green: 0.835, blue: 0.855)   // #50D5DA
+    ///
+    /// **From the active look** (`LookStore`): a computed value instead of a constant, so
+    /// every place that reads it follows a look without being changed. The original
+    /// look returns the constant below, unchanged.
+    static var accent: Color { LookStore.shared.palette.accent.mainColor }
+    static let originalAccent = Color(red: 0.314, green: 0.835, blue: 0.855)   // #50D5DA
 
     /// **The accent, lightened - the focused switch on TV.** Nowhere else: iPhone
     /// has no focus, and the pressed state goes through surface and scale, not a
     /// second accent colour. (`akzentTief` sat next to it as a counterpart and
     /// was never used - removed.)
-    static let accentLight = Color(red: 0.478, green: 0.902, blue: 0.918)  // #7AE6EA
+    static var accentLight: Color { LookStore.shared.palette.accent.lightColor }
+    static let originalAccentLight = Color(red: 0.478, green: 0.902, blue: 0.918)  // #7AE6EA
     /// The surface under accent text - badges carry 15 percent, this value is
     /// the same tone already computed.
-    static let accentQuiet = Color(red: 0.067, green: 0.204, blue: 0.208)  // #113435
+    static var accentQuiet: Color { LookStore.shared.palette.accent.quietColor }
+    static let originalAccentQuiet = Color(red: 0.067, green: 0.204, blue: 0.208)  // #113435
     /// Text on an accent surface.
-    static let onAccent = Color(red: 0.024, green: 0.071, blue: 0.071)   // #061212
+    static var onAccent: Color { LookStore.shared.palette.accent.onColor }
+    static let originalOnAccent = Color(red: 0.024, green: 0.071, blue: 0.071)   // #061212
 
     /// **Removed: `kuehl` and `scheinMitte`.**
     ///
@@ -205,7 +213,11 @@ enum Theme {
     /// second blue. The glow now runs in one tone from 0.22 to 0.14; its depth
     /// comes from quantity, not a colour change.
 
-    static let warning = Color(red: 0.910, green: 0.514, blue: 0.227)   // #E8833A
+    /// **From the active look**, like the accent: an orange accent (Halloween) brings an
+    /// amber warning, otherwise "Direct Play" and "Transcoding" in the stream badge would
+    /// be the same color. Every other look keeps `originalWarning`.
+    static var warning: Color { LookStore.shared.palette.accent.warningColor }
+    static let originalWarning = Color(red: 0.910, green: 0.514, blue: 0.227)   // #E8833A
 
     /// **Something went wrong - and that is not the same as "waiting".**
     ///

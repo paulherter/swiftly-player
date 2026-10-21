@@ -21,11 +21,21 @@ import SwiftUI
 /// **The heart in the header.** White like the bookmark next to it: it is a
 /// destination, not a state, and the accent belongs to state.
 struct SupportHeart: View {
+    /// Counts the heartbeats; each change plays two beats.
+    @State private var beats = 0
+    /// The heart beats once per launch, a second after the home page first appears.
+    @MainActor private static var hasBeaten = false
+
     var body: some View {
+        // Supporters have said thank you already; the heart goes away for them.
+        if !SupportModel.shared.isSupporter { button }
+    }
+
+    private var button: some View {
         Button {
             SupportModel.shared.open()
         } label: {
-            Image(systemName: "heart.fill")
+            symbol
                 .font(.system(size: 20))
                 .foregroundStyle(Theme.font)
                 .frame(width: 44, height: 44)
@@ -33,6 +43,38 @@ struct SupportHeart: View {
         }
         .buttonStyle(Theme.PressButton())
         .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
+    }
+
+    @ViewBuilder private var symbol: some View {
+        // White and filled, as drawn. Two soft beats after launch say it is
+        // there, then it keeps still.
+        Image(systemName: "heart.fill")
+            .keyframeAnimator(initialValue: 1.0, trigger: beats) { content, scale in
+                content.scaleEffect(scale)
+            } keyframes: { _ in
+                // The design's `beat`: 2.6 s, up at 12 and 36 percent, still for the rest; twice.
+                KeyframeTrack {
+                    CubicKeyframe(1.18, duration: 0.31)
+                    CubicKeyframe(1.0, duration: 0.31)
+                    CubicKeyframe(1.12, duration: 0.31)
+                    CubicKeyframe(1.0, duration: 0.31)
+                    LinearKeyframe(1.0, duration: 1.36)
+                    CubicKeyframe(1.18, duration: 0.31)
+                    CubicKeyframe(1.0, duration: 0.31)
+                    CubicKeyframe(1.12, duration: 0.31)
+                    CubicKeyframe(1.0, duration: 0.31)
+                }
+            }
+            .task {
+                guard !Self.hasBeaten, !Theme.motionReduced else { return }
+                Self.hasBeaten = true
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else {
+                    Self.hasBeaten = false
+                    return
+                }
+                beats += 1
+            }
     }
 }
 
@@ -86,15 +128,6 @@ struct SupportSettingsGroup: View {
                      under: Text(SupportCopy.sayThanks.localized),
                      value: support.isSupporter ? SupportCopy.thankYou.localized : nil,
                      action: { support.open() })
-            SheetLine()
-            NavigationLink {
-                AppIconPicker()
-            } label: {
-                ValueRow(symbol: "app",
-                         title: Text(SupportCopy.appIcon.localized),
-                         value: support.appIcon?.name ?? String(localized: "Standard"))
-            }
-            .buttonStyle(Theme.PressRow())
             #if DEBUG
             SupportDebugRows()
             #endif
@@ -105,8 +138,9 @@ struct SupportSettingsGroup: View {
 // MARK: - Card
 
 /// **The quiet card at the end of the home page.** No pop-up: whoever scrolls to the
-/// end finds it, whoever does not, never sees it. "Not now" hides it for 30 days;
-/// "Don't show again" sits in the menu, so the card does not carry three buttons.
+/// end finds it, whoever does not, never sees it. "Not now" hides it for 30 days; the
+/// second "Not now" ends it for good (`SupportPromptHistory.snoozeCard`), so the card needs
+/// no menu and carries two buttons.
 struct SupportCard: View {
     @Environment(\.wide) private var wide
 
@@ -115,29 +149,18 @@ struct SupportCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: SupportCopy.cardWatchedHours.localized, support.watchedHours))
-                        .growing(15, .semibold)
-                        .foregroundStyle(Theme.font)
+                    // The number only from a size worth saying: "0 hours" is no reason to give.
+                    if support.watchedHours >= SupportCopy.cardMinimumHours {
+                        Text(String(format: SupportCopy.cardWatchedHours.localized, support.watchedHours))
+                            .growing(15, .semibold)
+                            .foregroundStyle(Theme.font)
+                    }
                     Text(SupportCopy.cardAsk.localized)
                         .growing(15)
                         .foregroundStyle(Theme.fontQuiet)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Menu {
-                    Button(SupportCopy.dontShowAgain.localized) {
-                        withAnimation(Theme.reveal) { support.dismissCard() }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .padding(.top, -12)
-                .padding(.trailing, -12)
-                .accessibilityLabel(Text(SupportCopy.dontShowAgain.localized))
             }
             HStack(spacing: 10) {
                 Button(SupportCopy.cardSupport.localized) { support.open() }
@@ -183,8 +206,12 @@ private struct SupportPresentation: ViewModifier {
     func body(content: Content) -> some View {
         @Bindable var support = SupportModel.shared
         content
-            .sheet(isPresented: $support.presented, onDismiss: { support.closed() }) {
-                SupportSheet()
+            // flush-ok: the support sheet is full height (`.presentationDetents([.large])`).
+            .sheet(isPresented: rootSheet, onDismiss: {
+                support.closed()
+                SupportFlow.shared.sheetClosed()
+            }) {
+                SupportGrowSheet(model: model)
             }
             .task {
                 try? await Task.sleep(for: .seconds(SupportPrompt.quietAfterLaunch + 1))
@@ -202,418 +229,22 @@ private struct SupportPresentation: ViewModifier {
             }
     }
 
+    /// The support sheet from the root: over the page, and over the looks panel when a
+    /// "Keep" opens it.
+    private var rootSheet: Binding<Bool> {
+        let support = SupportModel.shared
+        return Binding(get: { support.presented }, set: { support.presented = $0 })
+    }
+
     private func ask(sheet: Bool) {
         guard model.phase == .ready else { return }
+        // One big ask per session: after the gift or What's New the sheet waits.
+        let gift = GiftFlow.shared
         SupportModel.shared.evaluate(
             isPlaying: model.playerOpen,
-            sheetAllowed: sheet && !model.ratingDue && !model.discordHintDue
-                && Date.now.timeIntervalSince(playerClosedAt) > 10)
-    }
-}
-
-// MARK: - Sheet
-
-/// **"Support Swiftly": three tips, then the thank-you page.**
-struct SupportSheet: View {
-    @Environment(\.dismiss) private var close
-    @Environment(\.purchase) private var purchase
-    /// Nothing is preselected: choosing is the person's first step.
-    @State private var chosen: SupportTip?
-
-    private var support: SupportModel { .shared }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if support.showsThanks {
-                        SupportThanks { close() }
-                            .transition(.opacity)
-                    } else {
-                        offer
-                    }
-                }
-                .padding(.horizontal, Theme.edgeSpacing)
-                .padding(.bottom, 24)
-                .frame(maxWidth: Theme.formWidth)
-                .frame(maxWidth: .infinity)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .background(Theme.reason.ignoresSafeArea())
-            .safeAreaInset(edge: .top, spacing: 0) { header }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !support.showsThanks { footer }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .animation(Theme.reveal, value: support.showsThanks)
-        }
-        .presentationDetents([.large])
-        .presentationBackground(Theme.reason)
-        .presentationCornerRadius(Theme.cornerSheet)
-        .onAppear { support.sheetAppeared() }
-        .task { await support.loadProducts() }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text(support.showsThanks ? SupportCopy.thankYou.localized
-                                     : SupportCopy.supportSwiftly.localized)
-                .font(Theme.subpageTitle)
-                .tracking(Theme.lockSubpage)
-                .foregroundStyle(Theme.font)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Button { close() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.fontQuiet)
-                    .frame(width: 32, height: 32)
-                    .background(Theme.area, in: Circle())
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(Theme.PressButton())
-            .accessibilityLabel(Text("Schließen"))
-        }
-        .padding(.leading, Theme.edgeSpacing)
-        .padding(.trailing, 8)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .background(Theme.reason)
-    }
-
-    private var offer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(SupportCopy.sheetIntro.localized)
-                .growing(15)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 20)
-
-            VStack(spacing: 10) {
-                ForEach(SupportTip.ordered, id: \.self) { tip in
-                    TipRow(tip: tip, price: support.products[tip]?.displayPrice,
-                           loading: support.productsState == .loading,
-                           chosen: chosen == tip,
-                           running: support.purchasing == tip) {
-                        chosen = tip
-                    }
-                    .disabled(support.purchasing != nil)
-                }
-            }
-
-            if support.productsState == .unavailable {
-                Button("Erneut versuchen") {
-                    Task { await support.loadProducts() }
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 12)
-            }
-
-            Text(SupportCopy.freeForEveryone.localized)
-                .growing(15, .semibold)
-                .foregroundStyle(Theme.font)
-                .padding(.top, 22)
-            Text(SupportCopy.storeThankYouGifts.localized)
-                .growing(15)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
-        }
-        .padding(.top, 6)
-    }
-
-    /// **Buy and "Maybe later" with the same weight**: same height, full width,
-    /// one above the other.
-    private var footer: some View {
-        VStack(spacing: 10) {
-            if let notice = support.notice {
-                Text(notice.text)
-                    .growing(12)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .transition(.opacity)
-            }
-            Button {
-                guard let chosen else { return }
-                Task { await support.buy(chosen) { try await purchase($0) } }
-            } label: {
-                if support.purchasing != nil {
-                    ProgressView().tint(Theme.onAccent)
-                } else {
-                    Text(buyTitle)
-                }
-            }
-            .buttonStyle(PrimaryButtonStyle(lockedArea: Theme.raised))
-            .disabled(chosen == nil || support.products[chosen ?? .coffee] == nil
-                      || support.purchasing != nil)
-
-            Button(SupportCopy.maybeLater.localized) { close() }
-                .buttonStyle(SecondaryButtonStyle())
-
-            Text(SupportCopy.oneTimePurchaseAppStore.localized)
-                .growing(12)
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 2)
-
-            Button {
-                Task { await support.restore() }
-            } label: {
-                if support.restoring {
-                    ProgressView().tint(Theme.fontQuiet)
-                } else {
-                    Text(SupportCopy.restorePurchases.localized)
-                }
-            }
-            .growing(12, .medium)
-            .foregroundStyle(Theme.fontQuiet)
-            .frame(minHeight: 44)
-            .buttonStyle(Theme.PressButton())
-            .disabled(support.restoring)
-        }
-        .padding(.horizontal, Theme.edgeSpacing)
-        .padding(.top, 12)
-        .frame(maxWidth: Theme.formWidth)
-        .frame(maxWidth: .infinity)
-        .background(Theme.reason)
-        .animation(Theme.reveal, value: support.notice)
-    }
-
-    private var buyTitle: String {
-        guard let chosen, let price = support.products[chosen]?.displayPrice else {
-            return SupportCopy.cardSupport.localized
-        }
-        return String(format: SupportCopy.supportWithPrice.localized, price)
-    }
-}
-
-/// One tip: emoji, name, the store's price. The emoji appear only here.
-private struct TipRow: View {
-    let tip: SupportTip
-    let price: String?
-    let loading: Bool
-    let chosen: Bool
-    let running: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Text(verbatim: tip.emoji)
-                    .font(.system(size: 24))
-                    .accessibilityHidden(true)
-                Text(tip.title.localized)
-                    .growing(15, .semibold)
-                    .foregroundStyle(Theme.font)
-                Spacer(minLength: 8)
-                if running || (loading && price == nil) {
-                    ProgressView().tint(Theme.fontQuiet)
-                } else if let price {
-                    Text(verbatim: price)
-                        .growing(15)
-                        .foregroundStyle(Theme.fontQuiet)
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 60)
-            .background(Theme.groupsArea,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
-            .overlay {
-                // The choice is state, hence the accent, as a ring and not a fill.
-                RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
-                    .strokeBorder(chosen ? Theme.accent : Theme.line, lineWidth: chosen ? 2 : 1)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressButton())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
-    }
-}
-
-// MARK: - Thank you
-
-/// **After the purchase: what is new.** A preview of the extras, and the way to
-/// the icons right away.
-struct SupportThanks: View {
-    let done: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 34))
-                .foregroundStyle(Theme.accent)
-                .accessibilityHidden(true)
-                .padding(.top, 12)
-            Text(SupportCopy.thanksTitle.localized)
-                .font(Theme.title)
-                .foregroundStyle(Theme.font)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
-            Text(SupportCopy.thanksBody.localized)
-                .growing(15)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
-
-            VStack(spacing: 0) {
-                gift(preview: AnyView(iconStrip), title: SupportCopy.giftIconsTitle,
-                     detail: SupportCopy.giftIconsDetail)
-                SheetLine()
-                gift(preview: AnyView(heartBadge), title: SupportCopy.giftHeartTitle,
-                     detail: SupportCopy.giftHeartDetail)
-            }
-            .background(Theme.groupsArea,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
-            .padding(.top, 24)
-
-            NavigationLink {
-                AppIconPicker()
-            } label: {
-                Text(SupportCopy.chooseAppIcon.localized)
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .padding(.top, 24)
-            Button(SupportCopy.done.localized, action: done)
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 10)
-        }
-    }
-
-    private func gift(preview: AnyView, title: SupportCopy, detail: SupportCopy) -> some View {
-        HStack(spacing: 14) {
-            preview.frame(width: 64, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title.localized)
-                    .growing(15, .semibold)
-                    .foregroundStyle(Theme.font)
-                Text(detail.localized)
-                    .growing(12)
-                    .foregroundStyle(Theme.fontVeryQuiet)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var iconStrip: some View {
-        HStack(spacing: -10) {
-            ForEach([SupporterIcon.heart, .gold, .aurora]) { icon in
-                Image(icon.previewAsset)
-                    .resizable()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Theme.groupsArea, lineWidth: 2)
-                    }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private var heartBadge: some View {
-        Image(systemName: "heart.fill")
-            .font(.system(size: 22))
-            .foregroundStyle(Theme.accent)
-            .frame(width: 28, height: 28)
-            .accessibilityHidden(true)
-    }
-}
-
-// MARK: - App icon
-
-/// **The icon picker.** Supporters choose; everyone else sees the same icons as a
-/// preview, with the way to support right below. Back to the original with
-/// "Standard", always.
-struct AppIconPicker: View {
-    @Environment(\.dismiss) private var back
-    @Environment(\.wide) private var wide
-    @State private var failed = false
-
-    private var support: SupportModel { .shared }
-    private let columns = [GridItem(.adaptive(minimum: 76), spacing: 14, alignment: .top)]
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            Theme.reason.ignoresSafeArea()
-            VStack(spacing: 0) {
-                SubpageHeader(title: SupportCopy.appIcon.localized) { back() } right: { EmptyView() }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if !support.isSupporter {
-                            Text(SupportCopy.storeThankYouGifts.localized)
-                                .growing(15)
-                                .foregroundStyle(Theme.fontQuiet)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.bottom, 16)
-                        }
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
-                            tile(nil)
-                            ForEach(SupporterIcon.allCases) { tile($0) }
-                        }
-                        if failed {
-                            Text("Das Icon ließ sich nicht wechseln.")
-                                .growing(12)
-                                .foregroundStyle(Theme.fontQuiet)
-                                .padding(.top, 16)
-                        }
-                        if !support.isSupporter {
-                            Button {
-                                support.open()
-                            } label: {
-                                Label(SupportCopy.supportSwiftly.localized, systemImage: "heart.fill")
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .padding(.top, 24)
-                        }
-                    }
-                    .padding(.horizontal, Theme.margin(wide: wide))
-                    .padding(.bottom, 40)
-                    .frame(maxWidth: wide ? Theme.readWidth : .infinity, alignment: .leading)
-                }
-                .scrollIndicators(.hidden)
-            }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-        .background(SwipeBack())
-    }
-
-    private func tile(_ icon: SupporterIcon?) -> some View {
-        let selected = support.isChosen(icon)
-        return Button {
-            Task {
-                await support.choose(icon)
-                failed = support.appIcon != icon
-            }
-        } label: {
-            VStack(spacing: 8) {
-                Image(icon?.previewAsset ?? SupporterIcon.standardPreviewAsset)
-                    .resizable()
-                    .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(selected ? Theme.accent : .clear, lineWidth: 2)
-                            .padding(-4)
-                    }
-                Text(icon?.name ?? String(localized: "Standard"))
-                    .growing(12)
-                    .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressButton())
-        // A preview for everyone else: visible, not selectable; only the way back is open.
-        .disabled(!support.canChoose(icon))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            sheetAllowed: sheet && !model.ratingDue && !model.discordHintDue && !gift.bigAskShown
+                && gift.stage == nil && Date.now.timeIntervalSince(playerClosedAt) > 10)
+        if SupportModel.shared.presented { gift.noteBigAsk() }
     }
 }
 
@@ -630,8 +261,34 @@ struct SupportDebugRows: View {
                  action: { support.debugShowThanks() })
         ValueRow(symbol: "heart.fill", title: Text(verbatim: "Mark as supporter"),
                  action: { support.debugMarkSupporter() })
+        ValueRow(symbol: "creditcard", title: Text(verbatim: "Simulate purchases (no App Store)"),
+                 value: support.simulatePurchases ? "On" : "Off",
+                 action: { support.simulatePurchases.toggle() })
+        ValueRow(symbol: "icloud.slash", title: Text(verbatim: "Prices unavailable in the sheet"),
+                 value: support.forcePricesUnavailable ? "On" : "Off",
+                 action: { support.forcePricesUnavailable.toggle() })
+        // Halloween before its window: the clock of the looks stands on 26 Oct, and the gift
+        // pop-up and What's New can be called up by hand.
+        ValueRow(symbol: "calendar", title: Text(verbatim: "Halloween season now"),
+                 value: LookClock.seasonOverride ? "On" : "Off",
+                 action: {
+                     LookClock.seasonOverride.toggle()
+                     // Switched on: a bat flies at once, to see the effect without waiting.
+                     if LookClock.seasonOverride {
+                         NotificationCenter.default.post(name: .lookBatNow, object: nil)
+                     }
+                 })
+        ValueRow(symbol: "gift", title: Text(verbatim: "Show the gift pop-up now"),
+                 action: { GiftFlow.shared.stage = .offer(.halloween) })
+        ValueRow(symbol: "sparkles", title: Text(verbatim: "Show What's New now"),
+                 action: {
+                     if let entry = WhatsNewEntry.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
+                 })
         ValueRow(symbol: "arrow.counterclockwise", title: Text(verbatim: "Reset support state"),
-                 action: { support.debugReset() })
+                 action: {
+                     support.debugReset()
+                     SupportFlow.shared.reset()
+                 })
     }
 }
 #endif

@@ -3,6 +3,7 @@ import CGtk
 import Foundation
 import CVLC
 import JellyfinKit
+import SupportKeyKit
 
 /// **Swiftly on Linux.**
 ///
@@ -1550,7 +1551,15 @@ final class App: @unchecked Sendable {
     /// The topmost overlay of the window, where the Discord hint sits.
     var windowCover: Widget?
     /// Support state (``SupportFile``), the watched-time counter and the open layers.
-    var supportStore = SupportStore(storage: SupportFile())
+    var supportStore = App.makeSupportStore()
+    /// Keeps the stored supporter key and its status current (expiry, renewal, refund).
+    lazy var supportKeeper = SupporterKeyKeeper(store: supportStore)
+    /// The look the window wears and the try-on rules (``LookModel``), in the same file.
+    lazy var looks = LookModel(storage: supportStore.storage, supporter: supportStore.status.isSupporter)
+    /// Brings the open looks panel up to date after a change; `nil` while it is closed.
+    var lookPanelSync: (() -> Void)?
+    /// True while the looks panel hands its try-on over to the purchase page.
+    var lookKeepHeld = false
     var supportCounter = WatchTimeCounter()
     let supportLaunch = Date()
     var supportCard: Widget?
@@ -2941,7 +2950,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_start(kind, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(kind, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_bottom(kind, Int32(Theme.edgeSpacing))
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), kind)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), lookGlowWrapped(kind))
         return scroller
     }
 
@@ -3259,6 +3268,7 @@ final class App: @unchecked Sendable {
         let scroller = pagesScroller()
         // The top spacing lives in the stylesheet as `padding` (`contentTop`).
         gtk_widget_add_css_class(page, "swiftly-startschein")
+        lookGlowOn(page)
         // **Full width.** Without it the stack keeps the width it had when sliding in after a back.
         gtk_widget_set_hexpand(page, 1)
         gtk_widget_set_halign(page, GTK_ALIGN_FILL)

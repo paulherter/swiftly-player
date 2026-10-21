@@ -47,7 +47,8 @@ import de.paulherter.swiftly.tv.TvTheme
  * `SupportTip`), prices from `ProductDetails`. Every purchase is **acknowledged, never consumed**:
  * Play then lists it on every device of that Google account (`queryPurchasesAsync`), which is the
  * only way to get the status back after a reinstall without a server of our own. Each tip can
- * therefore be bought once.
+ * therefore be bought once. **A tip is a thank-you only**: it is confirmed and says thanks, but
+ * it never changes the standing or the plan; only the subscription and the lifetime purchase do.
  *
  * Without Play (Huawei, LineageOS without GApps, an emulator without Play) the connection fails,
  * `available` stays false, and the app shows no entry point and points nowhere else. Every error
@@ -56,72 +57,30 @@ import de.paulherter.swiftly.tv.TvTheme
 object FlavorSupport {
     fun channel(app: SwiftlyApplication, support: Support): SupportChannel = PlayChannel(app, support)
 
-    /** The phone sheet: intro, the three tips, nothing chosen; "Maybe later" as large as "Support". */
+    /** The phone sheet: plans, tips, nothing chosen (`GrowSheet.kt`). */
     @Composable
-    fun PhoneSheetBody(app: SwiftlyApplication, close: () -> Unit) {
-        val support = app.support
-        val offers = support.channel.offers.value
-        var chosen by remember { mutableStateOf<String?>(null) }
-        val activity = LocalContext.current.findActivity()
-        Column {
-            SupportMark()
-            SheetText(translated("Wir bauen Swiftly ohne Werbung und ohne Tracking. Wenn es deine Abende besser macht, hilft uns ein Kaffee, weiterzumachen."))
-            Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(top = 16.dp),
-                   verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                support.tips.forEach { tip ->
-                    val offer = offers.firstOrNull { it.productId == tip.productId } ?: return@forEach
-                    TipChoice(tip.emoji, support.tipTitle(tip), offer.price, chosen == tip.productId, offer.owned) {
-                        chosen = tip.productId
-                    }
-                }
-            }
-            SheetText(translated("Alles bleibt für alle kostenlos."), quiet = false, top = 14.dp)
-            SheetText(translated("Als Dankeschön bekommst du ein Herz in „Über“ und zusätzliche App-Icons."), small = true, top = 4.dp)
-            val price = offers.firstOrNull { it.productId == chosen }?.price
-            Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(top = 18.dp),
-                   verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PrimaryButton(if (price != null) translated("Mit %@ unterstützen", price) else translated("Unterstützen"),
-                              released = price != null && activity != null, lockedArea = Theme.raised) {
-                    val id = chosen ?: return@PrimaryButton
-                    close()
-                    activity?.let { support.channel.buy(it, id) }
-                }
-                SecondaryButton(translated("Vielleicht später"), action = close)
-            }
-            SheetText(translated("Einmaliger Kauf über deinen App-Store. Nichts verlängert sich."), small = true, center = true, top = 10.dp)
-            Spacer(Modifier.height(16.dp))
-        }
-    }
+    fun PhoneSheetBody(app: SwiftlyApplication, close: () -> Unit) = GrowSheetBody(app, close)
 
-    /** The TV panel: the tips as buttons in a row; each opens Play's own purchase dialog. */
+    /** The TV page: plans, tips, nothing chosen (`TvGrowBody`). */
     @Composable
-    fun TvAskBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester) {
-        val support = app.support
-        val offers = support.channel.offers.value
-        val activity = LocalContext.current.findActivity()
-        Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            support.tips.forEachIndexed { i, tip ->
-                val offer = offers.firstOrNull { it.productId == tip.productId } ?: return@forEachIndexed
-                TvButton("${tip.emoji}  ${support.tipTitle(tip)} · ${if (offer.owned) translated("Danke") else offer.price}",
-                         released = !offer.owned,
-                         modifier = if (i == 0) Modifier.focusRequester(first) else Modifier) {
-                    close()
-                    activity?.let { support.channel.buy(it, tip.productId) }
-                }
-            }
-        }
-        Text(translated("Alles bleibt für alle kostenlos."), style = TvTheme.body, color = Theme.font,
-             modifier = Modifier.padding(top = 24.dp))
-        Text(translated("Einmaliger Kauf über deinen App-Store. Nichts verlängert sich."), style = TvTheme.small,
-             color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 4.dp))
-        TvButton(translated("Vielleicht später"), modifier = Modifier.padding(top = 24.dp), perform = close)
-    }
+    fun TvAskBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester) =
+        de.paulherter.swiftly.tv.TvGrowBody(app, close, first)
 }
 
 private class PlayChannel(private val app: SwiftlyApplication, private val support: Support) : SupportChannel {
     private val availableState = mutableStateOf(false)
     private val offersState = mutableStateOf<List<TipOffer>>(emptyList())
+    private val plansState = mutableStateOf<List<PlanOffer>>(emptyList())
+    override val plans: State<List<PlanOffer>> get() = plansState
+    /** Debug builds without Play pretend to buy, so the whole flow can be tried. */
+    private var simulated = false
     override val available: State<Boolean> get() = availableState
+    private val pricesUnavailableState = mutableStateOf(false)
+    override val pricesUnavailable: State<Boolean> get() = pricesUnavailableState
+    /** Billing answered (OK); the entry stays visible even when Play delivers no prices. */
+    private var connected = false
+    /** How many product queries have answered (two are sent); prices count as missing only after both. */
+    private var queriesAnswered = 0
     override val offers: State<List<TipOffer>> get() = offersState
 
     private var details: Map<String, ProductDetails> = emptyMap()
@@ -160,6 +119,7 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
                     main.post {
                         if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                             Support.log("Billing verbunden")
+                            connected = true
                             loadProducts(); refresh()
                         } else if (result.responseCode == BillingClient.BillingResponseCode.DEVELOPER_ERROR) {
                             // "Already connecting": a second attempt overlapped; the first one answers.
@@ -168,6 +128,7 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
                             // No Play Store, no account, or Billing unsupported: hide everything, no link.
                             Support.log("Billing nicht verfuegbar: ${result.responseCode} ${result.debugMessage}")
                             availableState.value = false
+                            simulate()
                         }
                     }
                 }
@@ -175,30 +136,41 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
                     Support.log("Billing getrennt")
                 }
             })
-        }.onFailure { Support.log("Billing-Verbindung: $it"); availableState.value = false }
+        }.onFailure { Support.log("Billing-Verbindung: $it"); availableState.value = false; simulate() }
     }
 
     private fun loadProducts() {
         val c = client ?: return
-        val products = support.tips.map {
-            QueryProductDetailsParams.Product.newBuilder().setProductId(it.productId)
-                .setProductType(BillingClient.ProductType.INAPP).build()
-        }
-        if (products.isEmpty()) return
-        runCatching {
-            c.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(products).build()) { result, found ->
-                main.post {
-                    if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                        Support.log("Produkte: ${result.responseCode} ${result.debugMessage}")
-                        return@post
+        queriesAnswered = 0
+        fun query(ids: List<String>, type: String) {
+            if (ids.isEmpty()) return
+            val products = ids.map { QueryProductDetailsParams.Product.newBuilder().setProductId(it).setProductType(type).build() }
+            runCatching {
+                c.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(products).build()) { result, found ->
+                    main.post {
+                        queriesAnswered++
+                        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                            Support.log("Produkte: ${result.responseCode} ${result.debugMessage}")
+                            publish()
+                            return@post
+                        }
+                        details = details + found.productDetailsList.associateBy { it.productId }
+                        Support.log("Produkte: ${details.keys.sorted()}")
+                        publish()
                     }
-                    details = found.productDetailsList.associateBy { it.productId }
-                    Support.log("Produkte: ${details.keys.sorted()}")
-                    publish()
                 }
-            }
-        }.onFailure { Support.log("Produkte: $it") }
+            }.onFailure { Support.log("Produkte: $it"); queriesAnswered++; publish() }
+        }
+        query(support.tips.map { it.productId } + LIFETIME, BillingClient.ProductType.INAPP)
+        query(listOf(MONTHLY), BillingClient.ProductType.SUBS)
     }
+
+    /** The subscription's offer for the base plan `monthly`. */
+    private fun monthlyOffer(d: ProductDetails): ProductDetails.SubscriptionOfferDetails? =
+        d.subscriptionOfferDetails?.firstOrNull { it.basePlanId == "monthly" } ?: d.subscriptionOfferDetails?.firstOrNull()
+
+    private fun monthlyPrice(d: ProductDetails): String? =
+        monthlyOffer(d)?.pricingPhases?.pricingPhaseList?.lastOrNull()?.formattedPrice
 
     private fun publish() {
         offersState.value = support.tips.mapNotNull { tip ->
@@ -206,27 +178,49 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
             val price = d.oneTimePurchaseOfferDetails?.formattedPrice ?: return@mapNotNull null
             TipOffer(tip.productId, price, tip.productId in owned)
         }
-        availableState.value = offersState.value.isNotEmpty()
+        plansState.value = listOfNotNull(
+            details[MONTHLY]?.let { d -> monthlyPrice(d)?.let { PlanOffer(MONTHLY, "monthly", it) } },
+            details[LIFETIME]?.let { d -> d.oneTimePurchaseOfferDetails?.formattedPrice?.let { PlanOffer(LIFETIME, "lifetime", it) } })
+        val priced = offersState.value.isNotEmpty() || plansState.value.isNotEmpty()
+        // A working Billing connection keeps the entry; missing prices show the "unavailable" card, never fake ones.
+        pricesUnavailableState.value = connected && !priced && queriesAnswered >= 2
+        availableState.value = priced || connected
     }
+
+    private val allIds: Set<String> get() = support.tips.map { it.productId }.toSet() + MONTHLY + LIFETIME
 
     override fun refresh() {
         val c = client ?: return
         if (!c.isReady) return
-        runCatching {
-            c.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()) { result, purchases ->
-                main.post {
-                    if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                        Support.log("Kaeufe: ${result.responseCode} ${result.debugMessage}"); return@post
+        val found = mutableListOf<Purchase>()
+        var failed = false
+        var pending = 2
+        fun done() {
+            if (--pending > 0) return
+            if (failed) return
+            val summary = PlayPurchases.summarize(allIds, found.map {
+                PlayPurchases.Seen(it.products, it.purchaseState == Purchase.PurchaseState.PURCHASED)
+            })
+            owned = summary.owned
+            // Weakest first, so the best plan is the last word (a lifetime beats a monthly; tips unlock nothing).
+            found.filterIndexed { i, _ -> i in summary.relevant }
+                .sortedBy { PlayPurchases.rank(it.products) }
+                .forEach { handle(it, fresh = false) }
+            if (summary.statusGone) support.storeStatusGone()
+            publish()
+        }
+        for (type in listOf(BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS)) {
+            runCatching {
+                c.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build()) { result, purchases ->
+                    main.post {
+                        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                            Support.log("Kaeufe: ${result.responseCode} ${result.debugMessage}"); failed = true
+                        } else found += purchases
+                        done()
                     }
-                    val summary = PlayPurchases.summarize(support.tips.map { it.productId }.toSet(),
-                        purchases.map { PlayPurchases.Seen(it.products, it.purchaseState == Purchase.PurchaseState.PURCHASED) })
-                    purchases.filterIndexed { i, _ -> i in summary.relevant }.forEach { handle(it, fresh = false) }
-                    owned = summary.owned
-                    if (summary.statusGone) support.storeStatusGone()
-                    publish()
                 }
-            }
-        }.onFailure { Support.log("Kaeufe: $it") }
+            }.onFailure { Support.log("Kaeufe: $it"); failed = true; done() }
+        }
     }
 
     /** A purchase: acknowledge within three days (never consume), then the status. Pending waits. */
@@ -237,7 +231,13 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
         }
         val thanks = fresh || purchase.products.any { it in started }
         val confirmed = {
-            support.becameSupporter(Kern.supportStoreStatus(purchase.purchaseTime), fresh = thanks)
+            val plan = PlayPurchases.plan(purchase.products)
+            if (plan.isEmpty()) {
+                // A tip: thanks only, no standing and no plan.
+                if (thanks) support.thanksDue.value = true
+            } else {
+                support.becameSupporter(Kern.supportStoreStatus(purchase.purchaseTime), fresh = thanks, plan = plan)
+            }
             owned = owned + purchase.products
             purchase.products.forEach { started.remove(it) }
             publish()
@@ -260,30 +260,77 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
     }
 
     override fun buy(activity: Activity, productId: String) {
+        if (simulated) {
+            val plan = PlayPurchases.plan(listOf(productId))
+            if (plan.isEmpty()) support.thanksDue.value = true
+            else support.becameSupporter(Kern.supportStoreStatus(System.currentTimeMillis()), fresh = true, plan = plan)
+            return
+        }
         val c = client ?: return
         val d = details[productId] ?: return
         runCatching {
             started += productId
-            val result = c.launchBillingFlow(activity, BillingFlowParams.newBuilder().setProductDetailsParamsList(listOf(
-                BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d).build())).build())
+            val params = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d)
+            if (productId == MONTHLY) {
+                val token = monthlyOffer(d)?.offerToken ?: return
+                params.setOfferToken(token)
+            }
+            val result = c.launchBillingFlow(activity, BillingFlowParams.newBuilder().setProductDetailsParamsList(listOf(params.build())).build())
             if (result.responseCode != BillingClient.BillingResponseCode.OK)
                 Support.log("Kaufdialog: ${result.responseCode} ${result.debugMessage}")
         }.onFailure { Support.log("Kaufdialog: $it") }
+    }
+
+    /** Debug only: prices and a purchase without Play, so the sheets can be walked through. */
+    private fun simulate() {
+        if (!de.paulherter.swiftly.BuildConfig.DEBUG) return
+        simulated = true
+        offersState.value = support.tips.map { TipOffer(it.productId, "1,99 €", false) }
+        plansState.value = listOf(PlanOffer(MONTHLY, "monthly", "1,99 €"), PlanOffer(LIFETIME, "lifetime", "19,99 €"))
+        availableState.value = true
+        pricesUnavailableState.value = false
+    }
+
+    companion object {
+        /** Play Console: subscription `supporter` with base plan `monthly`; in-app product `supporter_lifetime`. */
+        const val MONTHLY = "supporter"
+        const val LIFETIME = "supporter_lifetime"
     }
 }
 
 /**
  * **What Play's purchase list means for the status**, without Billing types so a JVM test can
- * check it (`PlayPurchasesTest`). Only our tip products count; a pending purchase owns nothing yet;
- * the store status goes only when no tip is purchased any more (refund), never on an error.
+ * check it (`PlayPurchasesTest`). Only our products count; a pending purchase owns nothing yet.
+ * `owned` includes tips (the sheet reads "Danke" for them), but a tip never keeps the status: the
+ * store status goes when no plan (subscription or lifetime) is purchased any more (refund, lapse,
+ * or a status an older version gave for a tip), never on an error.
  */
+internal object PlayChannelIds {
+    const val MONTHLY = "supporter"
+    const val LIFETIME = "supporter_lifetime"
+}
+
 internal object PlayPurchases {
     data class Seen(val products: List<String>, val purchased: Boolean)
     data class Summary(val owned: Set<String>, val relevant: Set<Int>, val statusGone: Boolean)
 
+    /** Higher is better: lifetime, then the subscription; a tip is 0 and unlocks nothing. */
+    fun rank(products: List<String>): Int = when {
+        PlayChannelIds.LIFETIME in products -> 2
+        PlayChannelIds.MONTHLY in products -> 1
+        else -> 0
+    }
+
+    /** "lifetime", "monthly", or "" for a tip: a tip has no plan. */
+    fun plan(products: List<String>): String = when (rank(products)) { 2 -> "lifetime"; 1 -> "monthly"; else -> "" }
+
+    /** The plan a set of purchases stands for: the best one; "" when there are only tips. */
+    fun bestPlan(all: List<List<String>>): String = plan(all.maxByOrNull { rank(it) } ?: emptyList())
+
     fun summarize(tipIds: Set<String>, seen: List<Seen>): Summary {
         val relevant = seen.indices.filter { i -> seen[i].products.any { it in tipIds } }.toSet()
         val owned = relevant.filter { seen[it].purchased }.flatMap { seen[it].products }.filter { it in tipIds }.toSet()
-        return Summary(owned, relevant, owned.isEmpty())
+        val plan = relevant.any { seen[it].purchased && rank(seen[it].products) > 0 }
+        return Summary(owned, relevant, !plan)
     }
 }

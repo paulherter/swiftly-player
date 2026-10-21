@@ -675,10 +675,12 @@ private fun TvRailsPlaceholder(landscape: Boolean) {
 @Composable
 internal fun HeaderShadow() {
     val height = headerBottom + 45.dp
+    // 30 % while a look's glow is on, so the scrim does not swallow it (`tvScrimScale`).
+    val k = tvScrimScale
     Box(Modifier.fillMaxWidth().height(height)
             .background(Brush.verticalGradient(
-                0f to Theme.reason.copy(alpha = 0.46f), 0.35f to Theme.reason.copy(alpha = 0.30f),
-                0.65f to Theme.reason.copy(alpha = 0.12f), 1f to Color.Transparent)))
+                0f to Theme.reason.copy(alpha = 0.46f * k), 0.35f to Theme.reason.copy(alpha = 0.30f * k),
+                0.65f to Theme.reason.copy(alpha = 0.12f * k), 1f to Color.Transparent)))
     // The spot sits at the top right, behind the profile mark of the header bar, where the backdrop
     // is brightest and the even gradient alone is not enough. A `Canvas`, because the centre is
     // needed in screen pixels, not fractions.
@@ -687,7 +689,7 @@ internal fun HeaderShadow() {
         val radius = 260.dp.toPx()
         drawCircle(
             brush = Brush.radialGradient(
-                listOf(Theme.reason.copy(alpha = 0.52f), Theme.reason.copy(alpha = 0.20f), Color.Transparent),
+                listOf(Theme.reason.copy(alpha = 0.52f * k), Theme.reason.copy(alpha = 0.20f * k), Color.Transparent),
                 center = center, radius = radius),
             radius = radius, center = center)
     }

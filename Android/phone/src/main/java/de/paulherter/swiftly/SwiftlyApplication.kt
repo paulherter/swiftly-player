@@ -29,6 +29,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     lateinit var support: de.paulherter.swiftly.support.Support
         private set
 
+    /** The looks (phone and tablet only; never started on TV). */
+    lateinit var looks: de.paulherter.swiftly.support.Looks
+        private set
+
     /** Counts sign-outs; the activity then returns to server selection. */
     val signedOut = androidx.compose.runtime.mutableIntStateOf(0)
     /** Counts account switches (`AppModel.accountSwitch`); the main view rebuilds. */
@@ -405,6 +409,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         sharedListen(run)
         support = de.paulherter.swiftly.support.Support(this)
         support.start()
+        looks = de.paulherter.swiftly.support.Looks(this)
+        looks.start()
+        // The system icon follows what is worn; a look that was ended by a refund goes back (no-op on TV).
+        looks.applyIcon()
         // Watched time goes to storage at most once a minute (`WatchTimeCounter.needsSave`), and in
         // full at the end of playback (`playbackEnd`).
         run.launch { while (true) { kotlinx.coroutines.delay(60_000); support.watchSave(force = false) } }

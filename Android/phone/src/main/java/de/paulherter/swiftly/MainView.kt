@@ -151,6 +151,14 @@ fun MainScreen(app: SwiftlyApplication) {
     // "Support Swiftly": the thanks sheet leads to the icon picker through this; the ask and the
     // thanks appear when due (`SupportPromptWatcher`).
     androidx.compose.runtime.SideEffect { app.support.openPage = open }
+    if (!app.isTv) {
+        androidx.compose.runtime.SideEffect {
+            app.looks.goHomeAction = { stack.clear(); section = Region.Start }
+        }
+        LaunchedEffect(app.support.source.value) { app.looks.syncSupporter() }
+        de.paulherter.swiftly.support.LooksWatcher(app)
+        de.paulherter.swiftly.support.LookToneAnimator(app)
+    }
     de.paulherter.swiftly.support.SupportPromptWatcher(app,
         ask = { de.paulherter.swiftly.support.supportSheetShow(app) },
         thanks = { de.paulherter.swiftly.support.supportThanksShow(app, open) })

@@ -259,6 +259,10 @@ enum class Glyph(val code: Int, val filled: Boolean, val mirrored: Boolean) {
     HeartFilled(0xE87D, true, false),
     /** `app.badge`-ish: the app icon picker. */
     AppIcon(0xE5C3, false, false),
+    /** `paintpalette`: the "Looks" row in the profile. */
+    Palette(0xE40A, false, false),
+    /** `cup.and.saucer.fill`: the supporter status after a tip. */
+    Cup(0xE541, true, false),
     ;
 
     val text: String get() = String(Character.toChars(code))

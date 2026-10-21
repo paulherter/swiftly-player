@@ -614,6 +614,20 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                                      * content (watch together: title, who is watching, what applies).
                                      */
                   val subline: String? = null,
+                  /**
+                   * `SheetModifier.dimmed`: false lays the card over the page with **no scrim** and
+                   * no tap beside it to close (the looks panel over the home page in the look).
+                   */
+                  val dimmed: Boolean = true,
+                  /** The generic heading; off when the content brings its own (looks panel, support). */
+                  val heading: Boolean = true,
+                  /**
+                   * Apple's large sheet (`presentationDetents([.large])`): full height under the
+                   * status bar, ground `reason` instead of `area`. The content column fills it.
+                   */
+                  val full: Boolean = false,
+                  /** Drawn behind the content over the whole card (`SheetModifier.light`, `LookGlowLayer`). */
+                  val backdrop: (@Composable BoxScope.() -> Unit)? = null,
                   val select: (String) -> Unit)
 
 /**
@@ -648,14 +662,20 @@ fun SheetStatus(app: SwiftlyApplication) {
         }
     }
     LaunchedEffect(wish) { if (wish != null) pull.snapTo(0f) }
-    val scrim by animateFloatAsState(if (opened) 0.55f else 0f, Motion.sheet(), label = "schleier")
+    // `dimmed: false` (the looks panel over the real home page): no scrim and no tap beside the
+    // card; the page stays visible and untouched, as in `SheetModifier`.
+    val dimmed = remembered[0]?.dimmed ?: true
+    val scrim by animateFloatAsState(if (opened && dimmed) 0.55f else 0f, Motion.sheet(), label = "schleier")
     val scrimPresent by remember { derivedStateOf { scrim > 0.001f } }
+    // iPad: the card stays 600 wide and centred (`SheetModifier`, `maxWidth: 600`).
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp >= 600
     Box(Modifier.fillMaxSize()) {
         // Alpha in the graphics layer: recomposes only when the scrim appears or leaves.
         if (scrimPresent) Box(Modifier.fillMaxSize()
             .graphicsLayer { alpha = scrim * (1f - (pull.value / height).coerceIn(0f, 1f)) }
-            .background(Color.Black).onTap(close))
-        AnimatedVisibility(opened, Modifier.align(Alignment.BottomCenter),
+            .background(Color.Black).then(if (dimmed) Modifier.onTap(close) else Modifier))
+        AnimatedVisibility(opened, Modifier.align(Alignment.BottomCenter)
+                .then(if (wide) Modifier.widthIn(max = 600.dp) else Modifier),
             enter = slideInVertically(Motion.sheet()) { it },
             exit = slideOutVertically(Motion.sheet()) { it }) {
             remembered[0]?.let { w -> SheetCard(w, pull, { h -> height = h }, close) }
@@ -676,12 +696,15 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
     // Corner 28 (`cornerSheet`), not 16. A sheet from below is the largest rounding on the scale;
         // `eckeFlaeche` belongs to the panel in the picture.
     val top = RoundedCornerShape(topStart = Theme.cornerSheet, topEnd = Theme.cornerSheet)
-    Column(Modifier.fillMaxWidth()
+    // Apple's large sheet: ground `reason`, full height under the status bar.
+    val ground = if (w.full) Theme.reason else Theme.area
+    Box(Modifier.fillMaxWidth()
+        .then(if (w.full) Modifier.statusBarsPadding().padding(top = 10.dp).fillMaxHeight() else Modifier)
         .onSizeChanged { height = it.height; heightReport(it.height) }
         .graphicsLayer { translationY = pull.value }
         // The surface extends under the card: if it springs past its target, nothing shows below.
-        .drawBehind { drawRect(Theme.area, topLeft = Offset(0f, size.height - 1f), size = Size(size.width, 400.dp.toPx())) }
-        .clip(top).background(Theme.area)
+        .drawBehind { drawRect(ground, topLeft = Offset(0f, size.height - 1f), size = Size(size.width, 400.dp.toPx())) }
+        .clip(top).background(ground)
         .draggable(rememberDraggableState { d ->
                 raw[0] += d
                 val target = if (raw[0] >= 0f) raw[0] else -rubber(-raw[0], height.toFloat())
@@ -697,20 +720,24 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
                 }
                 else { raw[0] = 0f; pull.animateTo(0f, spring(dampingRatio = 0.956f, stiffness = 280f), initialVelocity = tempo) }
             })
-        .navigationBarsPadding()) {
-        Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).size(36.dp, 5.dp)
-            .clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
-        // Heading 17 semibold, 5 above / 14 below, and no line below. The line used to separate the
-                // heading from its own rows.
-        Text(w.title, style = Theme.categoryLarge,
-             color = Theme.font, maxLines = 1,
-             modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 5.dp, bottom = 14.dp))
-        val own = w.content
-        when {
-            own != null -> own(close)
-            w.moreCompartment != null -> SeasonSelection(w, pick.orEmpty(), { pick = it }, close)
-            w.icons.isNotEmpty() -> Actions(w, close)
-            else -> SelectionRows(w, close)
+        ) {
+        w.backdrop?.invoke(this)
+        Column(Modifier.fillMaxWidth().then(if (w.full) Modifier.fillMaxHeight() else Modifier)
+            .navigationBarsPadding()) {
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).size(36.dp, 5.dp)
+                .clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
+            // Heading 17 semibold, 5 above / 14 below, and no line below. The line used to separate the
+            // heading from its own rows.
+            if (w.heading) Text(w.title, style = Theme.categoryLarge,
+                 color = Theme.font, maxLines = 1,
+                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 5.dp, bottom = 14.dp))
+            val own = w.content
+            when {
+                own != null -> own(close)
+                w.moreCompartment != null -> SeasonSelection(w, pick.orEmpty(), { pick = it }, close)
+                w.icons.isNotEmpty() -> Actions(w, close)
+                else -> SelectionRows(w, close)
+            }
         }
     }
 }

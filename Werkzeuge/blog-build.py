@@ -1324,6 +1324,7 @@ def page(title, description, url, content, og_type="website", addition_header=""
           <li><a href="/impressum.html">Impressum</a></li>
           <li><a href="/privacy.html">Privacy</a></li>
           <li><a href="/datenschutz.html">Datenschutz</a></li>
+          <li><a href="/terms/">Terms</a></li>
           <li><a href="/licenses/">Open-source licenses</a></li>
         </ul>
       </div>

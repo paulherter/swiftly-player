@@ -188,6 +188,7 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
      * and view and surface callbacks belong on the main thread. Only an attach, no blocking libVLC call.
      */
     fun vlcViewsAttach() {
+        displayRateReset()
         val l = layout
         if (VlcHandover.attachNeeded(l != null, vlcPlayer.vlcVout.areViewsAttached())) vlcPlayer.attachViews(l!!, null, true, false)
     }
@@ -216,6 +217,7 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
      */
     fun openMedia3(address: String, since: Double?, subtitles: List<Pair<Long, String>>) {
         val e = exo ?: buildMedia3().also { exo = it }
+        displayRateReset()
         usesMedia3 = true
         attachMedia3()
         val configs = subtitles.mapNotNull { (index, url) ->
@@ -240,7 +242,13 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
             // `PlayItem` manages audio focus itself, as with VLC.
             .setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), false)
-            .build().also { it.addListener(media3Listener) }
+            .build().also {
+                it.addListener(media3Listener)
+                // Phone: the display rate is voted by `displayRateKeep`, not by Media3. Media3 votes the film's own
+                // rate (23.976), and on a 60/120 Hz panel the only even multiple of that is 120. TV keeps
+                // Media3's default; there `TvImageTick` switches the output mode.
+                if (!isTv) it.videoChangeFrameRateStrategy = C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF
+            }
     }
 
     /** Take Media3 down (main thread), if it was running. */
@@ -430,6 +438,69 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         return s.frameRateNum.toDouble() / s.frameRateDen.toDouble()
     }
 
+    // MARK: Display rate (phone)
+
+    /** The film's frame rate, measured once per opening (`frameRate()` builds a new VLC track object on every call). */
+    private var filmRate: Double? = null
+    private var rateTries = 0
+    /** The layers already given a vote, by identity: a SurfaceView gets a new `SurfaceControl` after it was rebuilt. */
+    private val voted = java.util.IdentityHashMap<android.view.SurfaceControl, Float>()
+
+    private fun displayRateReset() { filmRate = null; rateTries = 0; voted.clear() }
+
+    /**
+     * **Phone: ask for a display rate that fits the film, at most 60 Hz** (main thread, from the player tick).
+     * Without a vote the system guesses from the video layer alone, and for 23.976 fps it picks 120 Hz on
+     * 60/120 Hz panels because that is the only even multiple; the panel then stays at its top rate for the
+     * whole film. The vote is placed on the video layer with `ONLY_IF_SEAMLESS`, so the picture never goes
+     * black for a mode switch. It goes with the layer when the player closes; nothing to undo.
+     */
+    fun displayRateKeep(display: Display?) {
+        if (isTv || android.os.Build.VERSION.SDK_INT < 31 || display == null) return
+        val fps = filmRate ?: run {
+            if (rateTries >= 40) return
+            rateTries++
+            frameRate()?.takeIf { it > 1 && it < 250 }?.also { filmRate = it } ?: return
+        }
+        @Suppress("DEPRECATION")
+        val current = display.mode
+        val rates = display.supportedModes
+            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            .flatMap { listOf(it.refreshRate) + it.alternativeRefreshRates.toList() }
+        val target = PhoneFrameRate.target(fps, rates)
+        for (sv in videoSurfaces()) {
+            val sc = sv.surfaceControl?.takeIf { it.isValid } ?: continue
+            if (voted[sc] == target) continue
+            runCatching {
+                // A Transaction owns native memory; close it after apply().
+                val transaction = android.view.SurfaceControl.Transaction()
+                try {
+                    transaction
+                        .setFrameRate(sc, target, android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                            android.view.Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS)
+                        .apply()
+                } finally {
+                    transaction.close()
+                }
+                voted[sc] = target
+                AppLog.writeOut("[Bildrate] Film ${"%.3f".format(fps)} fps → Anzeige $target Hz (Modi ${rates.distinct().sorted()})")
+            }
+        }
+    }
+
+    /** The visible video surfaces: Media3's own SurfaceView, or VLC's inside its layout. */
+    private fun videoSurfaces(): List<SurfaceView> {
+        if (usesMedia3) return listOfNotNull(frame?.getChildAt(0) as? SurfaceView)
+        val found = ArrayList<SurfaceView>()
+        fun search(v: View) {
+            if (v.visibility != View.VISIBLE) return
+            if (v is SurfaceView) found.add(v)
+            else if (v is android.view.ViewGroup) for (i in 0 until v.childCount) search(v.getChildAt(i))
+        }
+        layout?.let(::search)
+        return found
+    }
+
     /** Counters like VLC's `Media.Stats`; with Media3 from the decoder counters and the bytes read. */
     fun counters(): Counters? {
         if (usesMedia3) {
@@ -511,5 +582,24 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
             }
             return k.foldIndexed(0) { i, sum, z -> sum or (z.code shl (8 * i)) }
         }
+    }
+}
+
+/**
+ * Which display rate a phone asks for while a film runs. **Never above 60 Hz**: the lowest rate the panel
+ * offers up to 60 that the film divides evenly (24 → 24/48, 25 → 50, 30 → 30/60, 60 → 60). If none
+ * divides evenly (24 fps on a 60/120 Hz panel), 60 Hz with pulldown, as the iPhone plays it, instead
+ * of 120 Hz for the whole film.
+ */
+internal object PhoneFrameRate {
+    const val CEILING = 60.5f
+
+    fun target(fps: Double, rates: List<Float>): Float {
+        val low = rates.filter { it >= 1f && it <= CEILING }.distinct().sorted()
+        low.firstOrNull { r ->
+            val factor = r / fps
+            factor >= 0.99 && kotlin.math.abs(factor - kotlin.math.round(factor)) < 0.01
+        }?.let { return it }
+        return low.lastOrNull() ?: 60f
     }
 }

@@ -17,6 +17,7 @@ import Foundation
 ///
 /// ```bash
 /// echo profil > /tmp/swiftly-zeige      # profile
+/// echo looks > /tmp/swiftly-zeige       # looks panel (debug; also kauf, dank)
 /// echo serie:<id> > /tmp/swiftly-zeige  # a series page
 /// echo reiter:besetzung > /tmp/swiftly-zeige
 /// ```
@@ -75,6 +76,11 @@ extension App {
         case "zurueck":     back()
 
         #if DEBUG
+        /// The supporter screens, to compare them with the Mac.
+        case "looks":       lookOpenOnHome()
+        case "kauf":        supportSheetClose(); supportSheetShow()
+        case "dank":        supportSheetClose(); supportThanksShow()
+
         /// The test page for frame time (``Messprobe``): `probe:60`.
         case "probe":
             _ = MeasureProbe.pageShow(self, tiles: Int(parts.count > 1 ? parts[1] : "") ?? 60)

@@ -50,6 +50,7 @@ struct GenreView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
+        .lookGlow()
         .ignoresSafeArea()
         .overlay {
             if loads {

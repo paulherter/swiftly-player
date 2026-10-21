@@ -155,12 +155,12 @@ public actor RemoteControl {
         beat()
     }
 
-    /// **Linux and Windows talk to the channel through libcurl's own WebSocket
-    /// interface**, everything else through `URLSession`, see ``RemoteLink``.
+    /// **Linux, Windows and Android talk to the channel through libcurl's own WebSocket
+    /// interface**, Apple through `URLSession`, see ``RemoteLink``.
     /// Whoever passes in their own `URLSession` (tests) keeps it;
     /// `SWIFTLY_WS=urlsession` forces the old path.
     private func lineBuild(_ petition: URLRequest) -> any RemoteLink {
-        #if os(Linux) || os(Windows)
+        #if os(Linux) || os(Windows) || os(Android)
         if !onlyURLSession, session === RemoteControl.durationSession,
            ProcessInfo.processInfo.environment["SWIFTLY_WS"] != "urlsession",
            let curl = CurlLine(petition: petition) {
@@ -249,6 +249,16 @@ public actor RemoteControl {
                     TrackSupport.sag("[Fernsteuerung] libcurl ohne WebSocket — URLSession")
                     await self.uRLSessionFallBack()
                     return
+                } catch let setup as LineSetupFailed {
+                    guard !Task.isCancelled else { return }
+                    if await self.lineSetupGivesUp(setup) {
+                        TrackSupport.sag("[Fernsteuerung] libcurl-Leitung scheitert (\(setup)) — URLSession")
+                        await self.uRLSessionFallBack()
+                    } else {
+                        await self.teardownReport(setup)
+                        await self.connectionLost()
+                    }
+                    return
                 } catch {
                     guard !Task.isCancelled else { return }
                     // **The quietest spot in the whole app, until now.** Every failure here ended
@@ -272,7 +282,19 @@ public actor RemoteControl {
         if let nextGift { start(at: nextGift) }
     }
 
-    private func resetCounting() { teardowns = 0 }
+    private func resetCounting() { teardowns = 0; lineSetupFailures = 0 }
+
+    /// Consecutive setup failures of the libcurl line (never opened).
+    private var lineSetupFailures = 0
+    static let lineSetupLimit = 3
+
+    /// Counts a failed setup; true once the line itself is to blame often enough in a
+    /// row. The switch is one-way for this object, so it cannot loop.
+    private func lineSetupGivesUp(_ failure: LineSetupFailed) -> Bool {
+        guard LineSetupFailed.blamesLine(code: failure.code) else { return false }
+        lineSetupFailures += 1
+        return lineSetupFailures >= Self.lineSetupLimit
+    }
 
     private func connectionLost() async {
         standsAlready = false

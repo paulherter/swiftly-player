@@ -49,8 +49,8 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 24
-        versionName = "1.0.7"
+        versionCode = 26
+        versionName = "1.0.8"
         // **Only the ABIs the Swift core is built for** (`core/build.gradle`); on any other the app
         // crashed at startup. libVLC shipped four ABIs, x86 never worked.
         // armeabi-v7a for TVs with 32-bit Android: without it the app was invisible in the store there.
@@ -123,3 +123,12 @@ val copyLicenses by tasks.registering(Copy::class) {
 }
 android.sourceSets.getByName("main").assets.srcDir(file("build/generated/licenses"))
 tasks.named("preBuild") { dependsOn(copyLicenses) }
+
+// **"What's new" lives once in the package** (`whatsnew/<version>.json`) and is shipped as an asset
+// under `whatsnew/`; the sheet reads the entry for this version from there.
+val copyWhatsNew by tasks.registering(Copy::class) {
+    from(rootProject.file("../Packages/JellyfinKit/Sources/JellyfinKit/Resources/whatsnew"))
+    into(layout.buildDirectory.dir("generated/whatsnew/whatsnew"))
+}
+android.sourceSets.getByName("main").assets.srcDir(file("build/generated/whatsnew"))
+tasks.named("preBuild") { dependsOn(copyWhatsNew) }

@@ -9,9 +9,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,20 +58,44 @@ import kotlinx.coroutines.delay
 fun TvSupportHeart(app: SwiftlyApplication) {
     val support = app.support
     if (!support.available && !support.isSupporter) return
-    FocusArea(magnifier = TvTheme.focusMagnifierSmall, perform = {
-        support.tvPanel.value = if (support.isSupporter) TvSupportPanel.Thanks else TvSupportPanel.Ask
-    }) { focus ->
+    FocusArea(magnifier = TvTheme.focusMagnifierSmall, perform = { tvSupportOpen(app) }) { focus ->
         Box(Modifier.size(32.dp).border(2.dp, if (focus) Theme.font else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center) {
-            Symbol(if (support.isSupporter) Glyph.HeartFilled else Glyph.Heart, 14.dp,
-                   color = if (support.isSupporter) Theme.accent else Theme.font, strength = Strength.Medium,
+            // Always filled and white, as on Apple TV (`heart.fill`); being a supporter shows in the settings row.
+            Symbol(Glyph.HeartFilled, 15.dp, color = Theme.font, strength = Strength.Medium,
                    description = translated("Swiftly unterstützen"))
+        }
+    }
+}
+
+/**
+ * **The support row in "Swiftly"** (`TVSupportEntryRow`): the filled heart, "Swiftly unterstützen"
+ * with its quiet line below, "Danke" on the right for supporters. Opens the ask, or the thanks.
+ */
+@Composable
+fun TvSupportEntryRow(app: SwiftlyApplication, modifier: Modifier = Modifier) {
+    val supporter = app.support.isSupporter
+    FocusArea(modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button },
+              magnifier = 1f, perform = { tvSupportOpen(app) }) { focus ->
+        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+                .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                Symbol(Glyph.HeartFilled, 15.dp, color = if (supporter) Theme.accent else Theme.font, strength = Strength.Semibold)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(translated("Swiftly unterstützen"), style = TvTheme.body, color = Theme.font, maxLines = 1)
+                Text(translated("Mit einem Kaffee Danke sagen. Alles bleibt für alle kostenlos."), style = TvTheme.small,
+                     color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (supporter) Text(translated("Danke"), style = TvTheme.body, color = Theme.fontQuiet, maxLines = 1)
         }
     }
 }
 
 /** The settings row in the "Swiftly" section: opens the ask, or the thanks for supporters. */
 fun tvSupportOpen(app: SwiftlyApplication) {
+    app.looks.tvFromLooks = false
     app.support.tvPanel.value = if (app.support.isSupporter) TvSupportPanel.Thanks else TvSupportPanel.Ask
 }
 
@@ -72,53 +107,48 @@ fun TvSupportLayer(app: SwiftlyApplication) {
     SupportPromptWatcher(app, ask = { support.tvPanel.value = TvSupportPanel.Ask },
                          thanks = { support.tvPanel.value = TvSupportPanel.Thanks })
     val panel = support.tvPanel.value ?: return
+    val looks = app.looks
+    val context = androidx.compose.ui.platform.LocalContext.current
     // As in `TvPanel`: focus stays inside until it closes; for handing it back the exit opens.
     val sharing = remember(panel) { booleanArrayOf(false) }
     val close = {
         sharing[0] = true
+        // Closing the buy page that the looks page led to, without a purchase, ends the preview (`LookTryOn`).
+        if (looks.tvFromLooks) {
+            looks.tvFromLooks = false
+            if (panel == TvSupportPanel.Ask) looks.supportClosed(context)
+            else looks.tvPage.value = false
+        }
         FocusRemember.backGive()
         support.tvPanel.value = null
     }
     BackHandler(onBack = close)
     val first = remember(panel) { FocusRequester() }
     LaunchedEffect(panel) { delay(2 * TvTheme.focusDeadline); runCatching { first.requestFocus() } }
-    Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = 0.96f))
+    // A page of its own, as on Apple TV: neutral black with the look's glow, soft (`glow: .soft`).
+    // The buy page reads from the top; the thanks stands in the middle.
+    val thanks = panel == TvSupportPanel.Thanks
+    Box(Modifier.fillMaxSize().background(Theme.reason)
             .focusProperties { exit = { if (sharing[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup(),
-        contentAlignment = Alignment.Center) {
+        contentAlignment = if (thanks) Alignment.Center else Alignment.TopCenter) {
+        TvGlow(app, Modifier.align(Alignment.TopStart), strength = tvSoftGlow(app))
         CompositionLocalProvider(LocalWithinPanel provides true) {
-        Column(Modifier.widthIn(max = 820.dp).padding(horizontal = TvTheme.edgePage),
+        Column(Modifier.widthIn(max = 820.dp).verticalScroll(rememberScrollState())
+                   .padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop),
                horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(64.dp).background(Theme.accentQuiet, CircleShape), contentAlignment = Alignment.Center) {
-                Symbol(if (panel == TvSupportPanel.Thanks) Glyph.HeartFilled else Glyph.Heart, 28.dp, color = Theme.accent)
-            }
             when (panel) {
-                TvSupportPanel.Thanks -> {
-                    Text(translated("Danke. Du bist dabei."), style = TvTheme.titleLarge, color = Theme.font,
-                         modifier = Modifier.padding(top = 18.dp))
-                    Text(translated("Dein Kaffee hilft uns, Swiftly für alle kostenlos zu halten. Das ist neu für dich."),
-                         style = TvTheme.body.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
-                         modifier = Modifier.padding(top = 8.dp).widthIn(max = 620.dp))
-                    Row(Modifier.padding(top = 26.dp).background(Theme.area, androidx.compose.foundation.shape.RoundedCornerShape(TvTheme.cornerTile))
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Symbol(Glyph.HeartFilled, 15.dp, color = Theme.accent)
-                        Column {
-                            Text(translated("Ein Herz in „Über“"), style = TvTheme.button, color = Theme.font)
-                            Text(translated("Neben deiner Versionsnummer"), style = TvTheme.small, color = Theme.fontQuiet)
-                        }
-                    }
-                    TvButton(translated("Fertig"), modifier = Modifier.padding(top = 28.dp).focusRequester(first), perform = close)
-                }
-                else -> {
-                    Text(translated("Swiftly unterstützen"), style = TvTheme.titleLarge, color = Theme.font,
-                         modifier = Modifier.padding(top = 18.dp))
-                    Text(translated("Wir bauen Swiftly ohne Werbung und ohne Tracking. Wenn es deine Abende besser macht, hilft uns ein Kaffee, weiterzumachen."),
-                         style = TvTheme.body.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
-                         modifier = Modifier.padding(top = 8.dp).widthIn(max = 620.dp))
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        FlavorSupport.TvAskBody(app, close, first)
-                    }
-                }
+                TvSupportPanel.Thanks -> TvThanksBody(app, first, close = {
+                    // The purchase went through: the looks page below has nothing left to ask.
+                    looks.tvFromLooks = false
+                    looks.tvPage.value = false
+                    close()
+                }, home = {
+                    looks.tvFromLooks = false
+                    looks.tvPage.value = false
+                    looks.goHome()
+                    close()
+                })
+                else -> FlavorSupport.TvAskBody(app, close, first)
             }
         }
         }

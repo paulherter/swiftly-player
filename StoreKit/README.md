@@ -1,6 +1,6 @@
 # Local StoreKit testing
 
-`Swiftly.storekit` describes the three tips exactly as App Store Connect does
+`Swiftly.storekit` describes the three tips, the monthly subscription and the lifetime unlock exactly as App Store Connect does
 (same product IDs, consumables, prices 1.99 / 4.99 / 9.99 in the German
 storefront). With it, Xcode answers purchases locally: no sandbox account, no
 network, and the transaction manager shows every purchase.

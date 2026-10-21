@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "filename": "dock-halloween.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "dock-halloween@2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

@@ -32,11 +32,11 @@ struct PresentationView: View {
                 // only page that did not.
                 if wide {
                     HStack(alignment: .top, spacing: 0) {
-                        list { general; rails }
+                        list { general; looks; rails }
                         list { libraryRails; genres }
                     }
                 } else {
-                    list { general; rails; libraryRails; genres }
+                    list { general; looks; rails; libraryRails; genres }
                 }
             }
         }
@@ -86,6 +86,70 @@ struct PresentationView: View {
         } header: {
             Category(text: "Allgemein")
         }
+    }
+
+    // MARK: Looks
+
+    /// **Looks, in the flow of the page: one list with all of them.** Looks this person may
+    /// wear (the original, gifts picked up or in their window) switch at once; the others
+    /// are greyed with "Supporters only", and a tap shows them as a preview on the home page.
+    @ViewBuilder
+    private var looks: some View {
+        let store = LookStore.shared
+        let saved = store.saved
+        Section {
+            currentLookRow(saved.look)
+            if let season = saved.look.availability, season.isActive(at: LookClock.now) {
+                ChoiceRow(symbol: "sparkles", title: Text("Fledermäuse und Spinnennetz"),
+                          under: Text("Bis \(LooksPanel.end(of: season)) dabei. Farbe und Icon bleiben."),
+                          an: Binding(get: { store.effectsOn }, set: { store.effectsOn = $0 }))
+                    .row()
+            }
+            if saved.look.iconName != nil {
+                ChoiceRow(symbol: "app", title: Text("App-Icon"),
+                          an: Binding(get: { saved.usesLookIcon != false },
+                                      set: { on in
+                                          var next = store.saved
+                                          next.usesLookIcon = on ? nil : false
+                                          _ = store.choose(next)
+                                          let icon = store.palette.iconName
+                                          Task { await LookIcon.apply(icon) }
+                                      }))
+                    .row()
+            }
+        } header: {
+            Category(text: "Looks")
+        }
+    }
+
+    /// **The look being worn, with "Change"**: the choice itself happens in the one looks
+    /// panel on the home page, where the change is visible at once, like from the profile.
+    private func currentLookRow(_ look: Look) -> some View {
+        Button {
+            #if os(iOS)
+            UISelectionFeedbackGenerator().selectionChanged()
+            #endif
+            GiftFlow.shared.openLooksOnHome()
+        } label: {
+            HStack(spacing: 14) {
+                LookTile(look: look, size: 32)
+                Text(look.name)
+                    .growing(15, .semibold)
+                    .foregroundStyle(Theme.font)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Ändern")
+                    .growing(15, .semibold)
+                    .foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .row()
+        .deleteDisabled(true)
+        .accessibilityLabel(Text("Dein Look: \(look.name)"))
+        .accessibilityHint(Text("Ändern"))
     }
 
     // MARK: Rows

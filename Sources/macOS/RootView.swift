@@ -52,6 +52,8 @@ struct RootView: View {
         #endif
         .animation(Theme.timePage, value: model.phase)
         .macSupportPresentation(model: model)
+        // The Halloween gift and "What's new": one sheet, as on iPhone (`GiftFlow`).
+        .giftPresentation(model: model)
         // **Once at the root, not on every tile.** A setting decides which tile shows its
         // progress bar, and call sites that pass `progress:` along should not need to
         // know. It is read where the bar is created. See
@@ -65,6 +67,9 @@ struct RootView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOpen else { model.ratingDue = true; return }
+                // One big ask per session: after the gift or What's New, not this time.
+                guard !GiftFlow.shared.bigAskShown else { return }
+                GiftFlow.shared.noteBigAsk()
                 rate()
             }
         }
@@ -74,6 +79,8 @@ struct RootView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOpen else { model.discordHintDue = true; return }
+                guard !GiftFlow.shared.bigAskShown else { return }
+                GiftFlow.shared.noteBigAsk()
                 withAnimation(Theme.leap) { discordHint = true }
             }
         }

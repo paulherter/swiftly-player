@@ -59,7 +59,20 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
     // If the page opens in the middle of an account switch, it finishes immediately: new account
     // active, profile picture in place (`AccountSwitchTransition.complete`).
     LaunchedEffect(Unit) { AccountSwitchTransition.complete() }
+    val (lookEntry, looksRow) = if (app.isTv) "none" to false else app.looks.profileEntry()
     SettingPage(translated("Profil"), back) {
+        // **Looks at the top, by state** (`LookProfileEntry`), as on iPhone: the current look for who
+        // has one to choose, the teaser for everyone else, and the supporter's status below.
+        if (!app.isTv && (lookEntry != "none" || app.support.isSupporter)) {
+            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 6.dp, bottom = 16.dp),
+                   verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                when (lookEntry) {
+                    "current" -> de.paulherter.swiftly.support.CurrentLookCard(app)
+                    "teaser" -> de.paulherter.swiftly.support.SupportLooksCard(app)
+                }
+                de.paulherter.swiftly.support.SupportStatusCard(app)
+            }
+        }
         AccountCards(app, server, open)
         Spacer(Modifier.height(18.dp))
         CardView {
@@ -77,6 +90,13 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 open(Destination("darstellung", translated("Darstellung"), "Darstellung"))
             }
             SeparatorLine()
+            // A plain way to the looks while a gift can be picked up and nothing above leads there.
+            if (looksRow) {
+                ProfileRow(Glyph.Palette, translated("Looks"), translated("Original und Halloween")) {
+                    de.paulherter.swiftly.support.openLooksOnHome(app)
+                }
+                SeparatorLine()
+            }
             ProfileRow(Glyph.Gear, translated("Einstellungen")) {
                 open(Destination("einstellungen", translated("Einstellungen"), "Einstellungen"))
             }
@@ -263,6 +283,7 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
             ChoiceRow(Glyph.TextBlock, translated("Titel als Logo"), translated("Auf Film- und Serienseiten, wenn dein Server eins hat"),
                       e.titleAsLogo) { e.titleAsLogo = it }
         }
+        if (!app.isTv) LooksGroup(app)
 
         SettingGroup(translated("Startseite")) {
             val rails = remember(e.startRails, e.newAccessDisconnected) {
@@ -467,3 +488,32 @@ suspend fun startSelectionLoad(app: SwiftlyApplication): List<StartLibraryItem> 
         (0 until a.length()).map { a.getJSONObject(it).let { o -> StartLibraryItem(o.getString("id"), o.optString("name"), o.optBoolean("sammlung", false)) } }
     }
 } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+
+/**
+ * **Looks, in the flow of the page** (`AppearanceView.looks`): the look being worn with "Ändern"
+ * (the choice happens in the panel on the home page), the season's effects while it lasts, and
+ * whether the look brings its icon.
+ */
+@Composable
+private fun LooksGroup(app: SwiftlyApplication) {
+    val looks = app.looks
+    val saved = de.paulherter.swiftly.support.JSONObjectOrEmpty(looks.saved.value)
+    val look = looks.info(saved.optString("look", "original"))
+    val context = androidx.compose.ui.platform.LocalContext.current
+    SettingGroup(translated("Looks")) {
+        de.paulherter.swiftly.support.CurrentLookRow(app)
+        if (looks.seasonActive(look)) {
+            SeparatorLine()
+            ChoiceRow(Glyph.Funkeln, translated("Fledermäuse und Spinnennetz"),
+                      looks.seasonEnd(look)?.let { translated("Bis %@ dabei. Farbe und Icon bleiben.", it) },
+                      looks.effectsOn.value) { looks.setEffects(it) }
+        }
+        if (look.iconName != null) {
+            SeparatorLine()
+            ChoiceRow(Glyph.AppIcon, translated("App-Icon"), an = saved.optBoolean("icon", true)) { on ->
+                looks.change { if (on) it.remove("icon") else it.put("icon", false) }
+                looks.applyIcon(context)
+            }
+        }
+    }
+}

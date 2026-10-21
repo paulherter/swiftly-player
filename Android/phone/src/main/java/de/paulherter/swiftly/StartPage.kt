@@ -200,6 +200,9 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // **No glow.** A colored glow used to sit behind the header; on iPhone it is gone, the home page
     // carries the same dark header gradient as every other page, and that only builds up when
     // something scrolls beneath it.
+    // The look's glow sits behind everything (off in the original, `Looks.palette`).
+    Box(Modifier.fillMaxSize()) {
+    if (!app.isTv) de.paulherter.swiftly.support.LookHomeGlow(app, Modifier.align(Alignment.TopCenter)) { kotlin.math.min(offset, 300f) }
     HeaderAndContent(header = { StartHeader(app, open) { offset } }) { headerDp ->
     Box(Modifier.fillMaxSize()) {
         // **Pull to reload** (`.refreshable`). The circle appears under the header, not behind it.
@@ -254,6 +257,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         }
     }
     }
+    }
 }
 
 /** Mirrors the header in `HomeView`: wordmark 30 left, `HeaderTargets` right, in the `BlurHeader`. */
@@ -261,7 +265,9 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
 private fun StartHeader(app: SwiftlyApplication, open: (Destination) -> Unit, offset: () -> Float) {
     RootHeader(offset) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Wordmark(height = 30.dp)
+            val mark = if (app.isTv) null else app.looks.palette.value.logoGradient
+            if (mark != null && mark.size == 1) Wordmark(height = 30.dp, accent = mark.first())
+            else Wordmark(height = 30.dp, gradient = Theme.markGradient)
             Spacer(Modifier.weight(1f))
             HeaderTargets(app, open) { de.paulherter.swiftly.support.SupportHeaderHeart(app) }
         }

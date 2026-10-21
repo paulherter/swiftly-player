@@ -234,6 +234,14 @@ struct MainView: View {
             else if let a = takeover.offering { hereContinueWatching(a) }
         }
         .task { takeover.start(model) }
+        // **"Go to the home page"** (the looks from the profile, "Show me my Home" on the
+        // thank-you page): whatever lies above the home page is popped, so the profile slides
+        // away to the right like on "back", and the person stays on the home page.
+        .onChange(of: GiftFlow.shared.homeRequests) { _, _ in
+            closeProfileBranch()
+            paths[Region.start.rawValue] = NavigationPath()
+            section = .start
+        }
         #if DEBUG
         .task {
             guard AccountSwitchRun.an else { return }
@@ -273,6 +281,13 @@ struct MainView: View {
             guard let wish = await JumpRun.wish(model) else { return }
             takeoverRequest = wish
             await JumpRun.flow(model) { takeoverRequest = nil }
+        }
+        .task {
+            guard BatteryRun.an, BatteryRun.withServer else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let wish = await BatteryRun.wish(model) else { return }
+            takeoverRequest = wish
+            await BatteryRun.flow(model) { takeoverRequest = nil }
         }
         .task {
             guard SwitchRun.an else { return }
@@ -770,6 +785,8 @@ struct LibraryView: View {
                             for: .scrollContent)
             // Only the scroll area draws in on the switch; the header above sits
             // fixed like the bar below.
+            // The look's glow, the same on every main page; goes up with the content.
+            .lookGlow()
             .areaContent()
             // **The header is a safe-area inset, not an overlay.**
             //

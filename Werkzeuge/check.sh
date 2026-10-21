@@ -85,6 +85,18 @@ if [ "$fast" = false ]; then
 fi
 
 echo
+echo "── Blatt-Waechter ─────────────────────────────────────"
+# Apple's sheet floats above the bottom edge on iOS 26 unless it is full height; the
+# strip under it is the "bottom gap" that came back five times. Static, so it runs in
+# the fast mode too.
+if python3 "$(dirname "$0")/sheet-guard.py"; then
+    report "Blaetter" "${green}alle buendig${reset}"
+else
+    report "Blaetter" "${red}schwebendes Blatt${reset}"
+    error=1
+fi
+
+echo
 echo "── Liegt noch etwas auf einem Zweig? ──────────────────"
 # Remote branches too. linux and windows exist ONLY there; a loop over local
 # branches alone would skip both silently -- exactly the two platforms that

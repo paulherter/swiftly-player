@@ -54,16 +54,32 @@ object FlavorSupport {
     /** `DirectSupport.contactEmail`. */
     const val CONTACT = "info@swiftlyplayer.com"
 
-    fun channel(app: SwiftlyApplication, support: Support): SupportChannel = DirectChannel
+    fun channel(app: SwiftlyApplication, support: Support): SupportChannel = DirectChannel(keeper(app, support))
 
-    /** Checks a key; on success stores the status and asks for the thanks. */
+    /** The keeper on top of the app's records (`support.key`, `support.keyChecked`). */
+    private fun keeper(app: SwiftlyApplication, support: Support) = SupporterKeyKeeper(
+        storage = object : SupporterKeyKeeper.Storage {
+            override fun get(key: String): String? = app.store.rememberValue(key)?.takeIf { it.isNotEmpty() }
+            override fun set(key: String, value: String?) = app.store.remember(key, value.orEmpty())
+        },
+        sink = object : SupporterKeyKeeper.Sink {
+            // The renewal runs on a background thread; state and records change on the main thread.
+            private val main = android.os.Handler(android.os.Looper.getMainLooper())
+            override fun grant(license: SupporterKeyCheck.License, fresh: Boolean) {
+                val status = Kern.supportKeyStatus(license.issuedAtMs)
+                main.post { support.becameSupporter(status, fresh = fresh, plan = license.plan) }
+            }
+            override fun withdraw() { main.post { support.keyStatusGone() } }
+            override fun mayTouchStatus(): Boolean = support.source.value.let { it.isEmpty() || it == "key" }
+        })
+
+    /** Checks a key; on success stores it, the status and the plan, and asks for the thanks. */
     private fun activate(app: SwiftlyApplication, text: String): Boolean {
-        val result = SupporterKeyCheck.verify(text)
+        val result = (app.support.channel as? DirectChannel)?.keeper?.activate(text) ?: return false
         if (result !is SupporterKeyCheck.Result.Valid) {
             Support.log("Schluessel abgelehnt: ${(result as SupporterKeyCheck.Result.Invalid).failure}")
             return false
         }
-        app.support.becameSupporter(Kern.supportKeyStatus(result.issuedAtMs), fresh = true)
         return true
     }
 
@@ -111,7 +127,7 @@ object FlavorSupport {
         SheetText(translated("Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail."), top = 4.dp)
         Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(top = 16.dp),
                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            InputField(key, { key = it; refused = false }, Glyph.Keys, "SS1-…", completion = { go += 1 })
+            InputField(key, { key = it; refused = false }, Glyph.Keys, "SS2-…", completion = { go += 1 })
             if (refused) Text(translated("Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal."),
                               style = Theme.small, color = Theme.error)
             PrimaryButton(translated("Aktivieren"), released = key.isNotBlank() && !checking, lockedArea = Theme.raised) { go += 1 }
@@ -130,6 +146,7 @@ object FlavorSupport {
     @Composable
     fun TvAskBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester) {
         var entering by remember { mutableStateOf(false) }
+        Text(translated("Swiftly unterstützen"), style = TvTheme.titleLarge, color = Theme.font)
         if (!entering) {
             Text(translated("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."),
                  style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
@@ -148,7 +165,7 @@ object FlavorSupport {
             val submit = { if (key.isNotBlank()) { if (activate(app, key)) close() else refused = true } }
             Text(translated("Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail."),
                  style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
-            TvField(key, { key = it; refused = false }, "SS1-…", Modifier.padding(top = 24.dp).widthIn(max = 620.dp).focusRequester(field),
+            TvField(key, { key = it; refused = false }, "SS2-…", Modifier.padding(top = 24.dp).widthIn(max = 620.dp).focusRequester(field),
                     imeAction = ImeAction.Done, keyboardAction = submit)
             if (refused) Text(translated("Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal."),
                               style = TvTheme.body, color = Theme.error, modifier = Modifier.padding(top = 10.dp))
@@ -162,13 +179,30 @@ object FlavorSupport {
     }
 }
 
-/** Always there, nothing to buy in the app. */
-private object DirectChannel : SupportChannel {
+/**
+ * Always there, nothing to buy in the app. At every start and return to the front it applies the
+ * stored key's expiry and, when due, asks the shop for the renewed monthly key (a background
+ * thread; the answer is only the licence number's state).
+ */
+private class DirectChannel(val keeper: SupporterKeyKeeper) : SupportChannel {
     private val yes = mutableStateOf(true)
     private val none = mutableStateOf<List<TipOffer>>(emptyList())
     override val available: State<Boolean> get() = yes
     override val offers: State<List<TipOffer>> get() = none
-    override fun connect() {}
-    override fun refresh() {}
+    override val plans: State<List<PlanOffer>> = androidx.compose.runtime.mutableStateOf(emptyList())
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val running = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun connect() {
+        runCatching { keeper.applyExpiry() }.onFailure { Support.log("Schluessel: $it") }
+        if (!running.compareAndSet(false, true)) return
+        Thread {
+            try {
+                val outcome = keeper.refreshIfDue()
+                if (outcome != SupporterKeyKeeper.Refresh.NotDue) Support.log("Schluessel erneuert: $outcome")
+            } catch (e: Exception) { Support.log("Schluessel erneuern: $e") } finally { running.set(false) }
+        }.start()
+    }
+    override fun refresh() = connect()
     override fun buy(activity: Activity, productId: String) {}
 }

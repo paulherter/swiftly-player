@@ -270,6 +270,8 @@ struct SearchView: View {
                 // leave the field at all.
                 .simultaneousGesture(TapGesture().onEnded { inField = false })
                 // Only the results area draws in, not the search field above - see `areaContent()`.
+                // The look's glow, the same on every main page; goes up with the content.
+                .lookGlow()
                 .areaContent()
                 .accountSwitchFade(model: model, ready: true, change: $accountSwitch)
             }

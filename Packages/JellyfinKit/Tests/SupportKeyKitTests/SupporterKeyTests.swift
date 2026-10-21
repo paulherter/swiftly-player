@@ -124,7 +124,8 @@ struct SupporterKeyTests {
         #expect(check("   \n ") == .invalid(.empty))
         #expect(check("SS1-") == .invalid(.tooShort))
         #expect(check("SS1-AAAA") == .invalid(.tooShort))
-        #expect(check("SS2-" + key.dropFirst(4)) == .invalid(.wrongPrefix))
+        #expect(!check("SS2-" + key.dropFirst(4)).isValid)
+        #expect(check("SS3-" + key.dropFirst(4)) == .invalid(.wrongPrefix))
         #expect(check("SS1" + key.dropFirst(4)) == .invalid(.wrongPrefix))
         #expect(check("SS1-" + key.dropFirst(4) + "0") == .invalid(.badEncoding))
         #expect(check("SS1-" + key.dropFirst(4) + "!") == .invalid(.badEncoding))
@@ -161,6 +162,10 @@ struct SupporterKeyTests {
     func shippedKey() {
         #expect(SupporterKey.publicKey.count == 32)
         #expect(SupporterKey.usesTestPublicKey == (SupporterKey.publicKeyBase64 == SupporterKey.testPublicKeyBase64))
+        // Direct builds ship with the shop's production key, never the published test pair.
+        #expect(!SupporterKey.usesTestPublicKey)
+        // Keys signed with the test pair are refused by the shipped key.
+        #expect(SupporterKey.verify(Self.swiftlyNamed) == .invalid(.badSignature))
     }
 
     @Test("Direct-only texts: unique keys, not in the shared list, no exclamation marks")

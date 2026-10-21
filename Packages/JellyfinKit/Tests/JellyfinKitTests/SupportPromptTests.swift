@@ -73,6 +73,18 @@ struct SupportPromptTests {
         #expect(decide(context(days: 34, history: history)).showsCard)
     }
 
+    @Test("Card: the second Not now ends it for good, old histories decode")
+    func cardSecondSnooze() throws {
+        var history = SupportPromptHistory()
+        history.snoozeCard(now: context(days: 4).now)
+        #expect(!history.cardDismissed)
+        history.snoozeCard(now: context(days: 40).now)
+        #expect(history.cardDismissed)
+        #expect(!decide(context(days: 4_000, watchedHours: 900, history: history)).showsCard)
+        let old = Data(#"{"cardDismissed":false,"sheetShownAt":[]}"#.utf8)
+        #expect(try JSONDecoder().decode(SupportPromptHistory.self, from: old).cardSnoozes == 0)
+    }
+
     @Test("Card: Don't show again ends it for good")
     func cardDismissed() {
         var history = SupportPromptHistory()

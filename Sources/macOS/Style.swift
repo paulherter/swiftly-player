@@ -198,6 +198,8 @@ extension Theme {
     /// expands in place. The value exists here anyway, so a shared component finds it
     /// and nobody hard-codes 28.
     static let cornerSheet: CGFloat = 28
+    /// One side margin per sheet (same value as on iPhone).
+    static let sheetInset: CGFloat = 24
     static let edgeSpacing: CGFloat = 24
 
     /// **Where the hairline starts in a settings card.**

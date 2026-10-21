@@ -110,6 +110,8 @@ struct WatchlistView: View {
             // Movies and series have carried it since the rework; the watchlist was
             // built without it: wide, it is a section like those two but jumped in
             // hard. Only the scroll area, not the header above.
+            // The look's glow, the same on every main page; goes up with the content.
+            .lookGlow()
             .areaContent()
             // The header is a safe-area inset, not an overlay; the reasoning is
             // given at length in `MainView`. In short: its top margin came from its

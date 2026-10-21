@@ -604,6 +604,21 @@ struct HeaderBar: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
 
+                // The supporter heart, as on iPhone: white and filled, a destination rather
+                // than a state. It opens the support page.
+                Button {
+                    SupportModel.shared.open()
+                } label: {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Theme.font)
+                        .frame(width: 60, height: 60)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(ProfileStyle())
+                .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
+                .focusSection()
+
                 Button(action: onProfile) {
                     let image = model.userImageURL()
                     ProfileCharacter(name: model.session?.userName ?? "?",

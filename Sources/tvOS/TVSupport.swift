@@ -165,9 +165,15 @@ private struct TVSupportPresentation: ViewModifier {
 
     func body(content: Content) -> some View {
         @Bindable var support = SupportModel.shared
+        // While the gift page is up, the support page goes over that one (see `TVGiftView`).
+        let shown = Binding(get: { support.presented && GiftFlow.shared.stage == nil },
+                            set: { if !$0 { support.presented = false } })
         content
-            .fullScreenCover(isPresented: $support.presented) {
-                TVSupportView { support.presented = false }
+            .fullScreenCover(isPresented: shown, onDismiss: {
+                support.closed()
+                SupportFlow.shared.sheetClosed()
+            }) {
+                TVSupportPage(model: model)
             }
             .task {
                 try? await Task.sleep(for: .seconds(SupportPrompt.quietAfterLaunch + 1))
@@ -330,11 +336,11 @@ struct TVSupportView: View {
     }
 
     private func tipButton(_ tip: SupportTip) -> some View {
-        let price = support.products[tip]?.displayPrice
-        let running = support.purchasing == tip
+        let price = support.price(.tip(tip))
+        let running = support.purchasing == .tip(tip)
         return Button {
-            guard support.purchasing == nil, support.products[tip] != nil else { return }
-            Task { await support.buy(tip) { try await purchase($0) } }
+            guard support.purchasing == nil, price != nil else { return }
+            Task { await support.buy(.tip(tip)) { try await purchase($0) } }
         } label: {
             VStack(spacing: 10) {
                 Text(verbatim: tip.emoji)

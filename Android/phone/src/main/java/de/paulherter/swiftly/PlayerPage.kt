@@ -1930,6 +1930,15 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
 
     // Open, then the tick.
     LaunchedEffect(wish) { mediaWork.openAndTick(wish, close) }
+    // **Display rate to the film, at most 60 Hz** (`PlayerEngine.displayRateKeep`). Once a second: cheap when
+    // nothing changed, and it catches a rebuilt surface (small window, episode change).
+    LaunchedEffect(wish) {
+        while (true) {
+            delay(1000)
+            if (mediaWork.vlcFree && mediaWork.imageFree) mediaWork.player.displayRateKeep(
+                if (android.os.Build.VERSION.SDK_INT >= 30) runCatching { context.display }.getOrNull() else null)
+        }
+    }
 
     val sheetOpen = app.sheet.value != null
     // The overlay follows the intended controls (mirrors `onChange(of: controlsVisible)` on iOS): on
@@ -2144,6 +2153,12 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         // rest was still fading. Hidden, they accept no tap.
         val active = controlsPresent
         val iconsPresent = active && !mediaWork.atPush
+        // **Hidden, the bar does not follow the time.** The tick moves `position` every 250 ms; the bar read
+        // it even at opacity 0 and the window drew four frames a second over the film. On phones that is
+        // what kept the display at its top rate. It reads again as soon as the controls start to appear.
+        val barAwake by remember { derivedStateOf { controlsCoverage > 0f || mediaWork.atPush } }
+        val barTime = remember { DoubleArray(1) }
+        val barPosition: () -> Double = if (barAwake) ({ mediaWork.position.also { barTime[0] = it } }) else ({ barTime[0] })
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsCoverage.coerceIn(0f, 1f) }) {
             // **Center of the screen, not of the safe area**: in landscape there is more room below than above.
             // While seeking only the bar counts; the center gives way.
@@ -2184,7 +2199,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
                 Spacer(Modifier.weight(1f))
                 // **The bar across the full width**, time on the left, remaining time on the right (mirrors `footer`).
                 Box(Modifier.fillMaxWidth().height(PlayerMetric.bar).padding(horizontal = PlayerMetric.page)) {
-                    TimeRow(app, { mediaWork.position }, mediaWork.duration, mediaWork.atPush, active, mediaWork.plan?.marks.orEmpty(), mediaWork.chapterCount, { mediaWork.trickplayImage(it) },
+                    TimeRow(app, barPosition, mediaWork.duration, mediaWork.atPush, active, mediaWork.plan?.marks.orEmpty(), mediaWork.chapterCount, { mediaWork.trickplayImage(it) },
                               { mediaWork.atPush = it; touched++ }) { mediaWork.vault(it) }
                 }
             }

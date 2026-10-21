@@ -8,6 +8,17 @@ struct HomeView: View {
     @Environment(\.wide) private var wide
     @Environment(\.windowButtons) private var windowButtons
     @Environment(\.scenePhase) private var lifeStatus
+    /// The home tab is the one in front.
+    @Environment(\.sectionActive) private var sectionActive
+    /// Read so the bat stops the moment either changes (`LookEffects`).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    #if DEBUG
+    /// Inside the looks preview: the page scrolls, nothing on it reacts to a tap.
+    @Environment(\.looksPreviewing) private var previewing
+    #else
+    private let previewing = false
+    #endif
 
     /// Loading and ordering live in `HomeModel`, shared with the tvOS
     /// version.
@@ -45,9 +56,12 @@ struct HomeView: View {
             content
                 // The switch pulls in the scroll area; the header above stays fixed, see
                 // `areaContent()`.
-                // The backdrop is empty: a colored glow used to sit behind the content here. It
-                // is gone; the home page carries the same dark header gradient as every other
-                // page.
+                // **The look's glow** (`lookGlow()`) goes up with the rows; nothing for the
+                // original look, which keeps the plain dark page. A colored glow used to sit
+                // here for everyone and was removed; a look brings it back for those who
+                // choose one.
+                .lookGlow()
+                // The backdrop is empty: the glow above belongs to the content, not here.
                 .areaContent {
                     EmptyView()
                 }
@@ -56,6 +70,17 @@ struct HomeView: View {
                 .sectionBar()
 
             header
+
+            // **Now and then a bat across the page**, in a seasonal look's window, never during
+            // playback or with "Reduce Motion". Above the rows and the header, also under the
+            // looks panel. It cannot be touched.
+            BatLayer(playing: model.playerOpen, foreground: lifeStatus == .active && sectionActive,
+                     reduceMotion: reduceMotion, lowPower: lowPower)
+                .ignoresSafeArea()
+                .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
+                    .receive(on: DispatchQueue.main)) { _ in
+                    lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+                }
 
             if let message {
                 HintStrip(text: message) { self.message = nil }
@@ -115,6 +140,13 @@ struct HomeView: View {
         }
         .onChange(of: released) { _, now in
             if now, change { reveal() }
+        }
+        // The gift sheet and "What's new" wait for a loaded home page (`GiftFlow`).
+        .onChange(of: state.loaded && sectionActive, initial: true) { _, shown in
+            if !previewing { GiftFlow.shared.homeVisible(shown) }
+        }
+        .onDisappear {
+            if !previewing { GiftFlow.shared.homeVisible(false) }
         }
         // Refetch happens after the end report, not on closing: when closing, it is
         // still in flight (`AppModel.playbackEnded`).
@@ -176,14 +208,12 @@ struct HomeView: View {
                 //
                 // **The offer is no longer here** but in `HeaderTargets` itself: it belongs with
                 // Watchlist and Profile and so on every root page, not just this one.
-                // **The heart only here, on the home page**: the one place that asks for
-                // support. In front of the permanent destinations, like the offer.
+                // **The heart is in `HeaderTargets` itself**, on every main page.
                 HeaderTargets(name: model.session?.userName ?? "?",
-                          image: model.userImageURL()) {
-                    SupportHeart()
-                }
+                          image: model.userImageURL())
             }
             .foregroundStyle(Theme.font)
+            .disabled(previewing)
         }
     }
 
@@ -253,7 +283,8 @@ struct HomeView: View {
                 // **The fixed rows in the configured order**, without the hidden ones;
                 // Settings → Appearance → Home.
                 ForEach(Array(fixedRails.enumerated()), id: \.element.id) { i, rail in
-                    pinned(rail).railEntrance(i + 1, present: showItem)
+                    pinned(rail)
+                        .railEntrance(i + 1, present: showItem)
                 }
                 // The chosen genres as their own rows, after the fixed ones.
                 //
@@ -284,6 +315,9 @@ struct HomeView: View {
                 // The "Libraries" row is gone; Movies and Series are now in the bar below.
             }
             .padding(.top, 8)
+            // In the looks preview the rows are off, the scroll area itself is not: the page
+            // moves under the finger, a tap does nothing.
+            .disabled(previewing)
             // **As wide as the page, even without content.** The scroll area takes its
             // width from its content; measured in the simulator: with an empty home page it
             // shrank to zero, and the bar below, which sits on it as an overlay, with it.

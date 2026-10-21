@@ -6,14 +6,23 @@ import FoundationNetworking
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif canImport(Android)
+import Android
 #endif
 #if os(Windows)
 import WinSDK
 #endif
 
-/// **The line under the remote control**: a WebSocket, however it is built. Apple and
-/// Android use ``URLSessionLine``; Linux and Windows use ``CurlLine`` where
+/// **The line under the remote control**: a WebSocket, however it is built. Apple
+/// uses ``URLSessionLine``; Linux, Windows and Android use ``CurlLine`` where
 /// possible.
+///
+/// Android has a second reason: there `URLSessionWebSocketTask` keeps the libdispatch
+/// socket source firing while the channel is idle. Measured on the home screen with
+/// nothing playing: about 12,000 manager-thread wakeups per second plus five worker
+/// threads at about 3,000 each, all in `_MultiHandle.readAndWriteAvailableData` →
+/// `curl_multi_socket_action`, with only ~1 KB/s on the wire. A battery drain that
+/// never stops while the app is in front.
 ///
 /// Why two: `URLSessionWebSocketTask` in swift-corelibs-foundation (libcurl underneath)
 /// treats an **unsolicited pong frame** as a protocol error and closes with 1002 /
@@ -36,6 +45,21 @@ protocol RemoteLink: AnyObject, Sendable {
 /// The line was not available on this system; the remote control then
 /// falls back to `URLSession`.
 struct LineNotSupported: Error {}
+
+/// libcurl could not set the line up (handshake, certificates, TLS …) before it ever
+/// opened. ``RemoteControl`` counts these and falls back to `URLSession` after a few in a
+/// row, so a curl that cannot reach this server does not leave the remote control dead.
+struct LineSetupFailed: Error, CustomStringConvertible {
+    let code: Int32
+    let text: String
+    var description: String { text }
+
+    /// Plain network trouble (proxy/host not resolved, no connection, timeout): the same
+    /// would happen on `URLSession`, so it is no reason to switch lines.
+    static func blamesLine(code: Int32) -> Bool {
+        ![5, 6, 7, 28, 52, 55, 56].contains(code)
+    }
+}
 
 // MARK: - URLSession
 
@@ -76,9 +100,9 @@ final class URLSessionLine: RemoteLink, @unchecked Sendable {
     }
 }
 
-// MARK: - libcurl (Linux, Windows)
+// MARK: - libcurl (Linux, Windows, Android)
 
-#if os(Linux) || os(Windows)
+#if os(Linux) || os(Windows) || os(Android)
 
 /// What is needed from libcurl, loaded at runtime: the build needs neither header
 /// nor library, and a curl without WebSocket (before 7.86 or compiled without
@@ -122,7 +146,9 @@ struct CurlFunction: @unchecked Sendable {
         }
         #else
         var moduleRef: UnsafeMutableRawPointer?
-        for name in ["libcurl.so.4", "libcurl.so", "libcurl-gnutls.so.4"] {
+        // Android has no system libcurl; the one inside FoundationNetworking exports
+        // the symbols needed here and is already loaded.
+        for name in ["libcurl.so.4", "libcurl.so", "libcurl-gnutls.so.4", "libFoundationNetworking.so"] {
             moduleRef = dlopen(name, RTLD_NOW)
             if moduleRef != nil { break }
         }
@@ -168,6 +194,8 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
         static let connectTimeout: Int32 = 78
         static let noSignal: Int32 = 99
         static let connectOnly: Int32 = 141
+        static let caInfo: Int32 = 10065
+        static let caPath: Int32 = 10097
     }
     private static let infoActiveSocket: Int32 = 0x500000 + 44
     private static let again: Int32 = 81
@@ -191,6 +219,9 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
     private var closeCode: Int?
     private var closeReason: String?
     private var lastError: String?
+    /// Read once on the caller's thread: the read thread must not touch the process
+    /// environment while the host app changes it (`setenv` is not thread-safe).
+    private let trustBundle: String
 
     private let feed: AsyncThrowingStream<String?, Error>
     private let output: AsyncThrowingStream<String?, Error>.Continuation
@@ -200,6 +231,7 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
         guard let f = CurlFunction.loaded, petition.url != nil else { return nil }
         self.f = f
         self.petition = petition
+        self.trustBundle = ProcessInfo.processInfo.environment["URLSessionCertificateAuthorityInfoFile"] ?? ""
         (feed, output) = AsyncThrowingStream.makeStream(of: String?.self)
         reader = feed.makeAsyncIterator()
     }
@@ -332,7 +364,7 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
 
     /// Until data arrives or a quarter second is up, without the lock.
     private func wait() {
-        #if os(Linux)
+        #if os(Linux) || os(Android)
         var s: Int32 = -1
         barrier.lock()
         if let h = handle { _ = f.infoSocket(h, Self.infoActiveSocket, &s) }
@@ -358,6 +390,21 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
         _ = f.optionNumber(h, Opt.connectOnly, 2)
         _ = f.optionNumber(h, Opt.connectTimeout, 15)
         _ = f.optionNumber(h, Opt.noSignal, 1)
+        // The same trust store Foundation's own handles get: the bundle from
+        // `URLSessionCertificateAuthorityInfoFile` (user CAs on Android), otherwise on
+        // Android the system directory. A bare handle has neither, and every
+        // handshake fails with curl 60.
+        let bundle = trustBundle
+        if !bundle.isEmpty {
+            _ = bundle.withCString { f.optionPointer(h, Opt.caInfo, $0) }
+        }
+        #if os(Android)
+        if bundle.isEmpty,
+           let folder = ["/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"]
+               .first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            _ = folder.withCString { f.optionPointer(h, Opt.caPath, $0) }
+        }
+        #endif
 
         barrier.lock()
         handle = h
@@ -372,7 +419,9 @@ final class CurlLine: RemoteLink, @unchecked Sendable {
             if rc == 1 || rc == 4 || rc == 48 {
                 output.finish(throwing: LineNotSupported())
             } else {
-                failure("curl \(rc): \(message(rc))")
+                let text = "curl \(rc): \(message(rc))"
+                barrier.lock(); lastError = text; let was = ended; barrier.unlock()
+                if !was { output.finish(throwing: LineSetupFailed(code: rc, text: text)) }
             }
             return false
         }

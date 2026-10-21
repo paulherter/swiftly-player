@@ -77,6 +77,8 @@ nonisolated(unsafe) private let start: @convention(c) (UnsafeMutableRawPointer?,
     // Before the style sheet and before the first measurement: both ask for the
     // scale factor.
     Scaling.setUp(user: app.selection.surface)
+    // The look first: the first frame is already in its colors.
+    Theme.wear(app.looks.palette)
     Theme.apply()
     app.buildUp(hostApp: hostApp!.assumingMemoryBound(to: GtkApplication.self))
     app.headerRowSetUp()

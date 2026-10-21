@@ -15,7 +15,8 @@ import androidx.compose.ui.unit.dp
 
 /** Mirrors `Wordmark` in `Marks.swift`: same paths, same box. */
 @Composable
-fun Wordmark(height: Dp = 32.dp, font: Color = Theme.font, accent: Color = Color(MarksPaths.accent)) {
+fun Wordmark(height: Dp = 32.dp, font: Color = Theme.font, accent: Color = Color(MarksPaths.accent),
+             gradient: List<Color>? = null) {
     val fontPath = remember { PathParser().parsePathString(MarksPaths.wordmark).toPath() }
     val accentPath = remember { PathParser().parsePathString(MarksPaths.wordmarkAccent).toPath() }
     val width = height * (MarksPaths.frameWidth / MarksPaths.frameHeight)
@@ -24,7 +25,13 @@ fun Wordmark(height: Dp = 32.dp, font: Color = Theme.font, accent: Color = Color
         scale(s, s, pivot = androidx.compose.ui.geometry.Offset.Zero) {
             translate(-MarksPaths.frameX, -MarksPaths.frameY) {
                 drawPath(fontPath, font)
-                drawPath(accentPath, accent)
+                if (gradient != null && gradient.size > 1) {
+                    // Like the icon: the gradient runs across the mark's box, top left to bottom right.
+                    val box = accentPath.getBounds()
+                    drawPath(accentPath, androidx.compose.ui.graphics.Brush.linearGradient(
+                        gradient, start = androidx.compose.ui.geometry.Offset(box.left + box.width * 0.2f, box.top + box.height * 0.15f),
+                        end = androidx.compose.ui.geometry.Offset(box.left + box.width * 0.85f, box.top + box.height * 0.9f)))
+                } else drawPath(accentPath, gradient?.firstOrNull() ?: accent)
             }
         }
     }

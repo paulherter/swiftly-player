@@ -182,6 +182,8 @@ struct HomeView: View {
             // was then a narrow block with a scrim instead of the page.
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // The look's glow, the same on every main page; goes up with the content.
+        .lookGlow()
         .scrollIndicators(.never)
         // The same fixed title as on Movies, Series and Watchlist.
         .overlay(alignment: .top) {
@@ -203,6 +205,8 @@ struct HomeView: View {
         // What the framework adds unasked has to be turned off just like what we write
         // ourselves.
         .pagesScroll()
+        // A bat across the page now and then, in a seasonal look's window.
+        .overlay { MacBatLayer(playing: model.playerOpen).ignoresSafeArea() }
         // Two rows in their own shape instead of a ring.
         .overlay(alignment: .topLeading) {
             if !loaded {
@@ -269,6 +273,11 @@ struct HomeView: View {
         .onChange(of: released) { _, now in
             if now, change { reveal() }
         }
+        // The gift sheet and "What's new" wait for a loaded home page (`GiftFlow`).
+        .onChange(of: state.loaded, initial: true) { _, loaded in
+            GiftFlow.shared.homeVisible(loaded)
+        }
+        .onDisappear { GiftFlow.shared.homeVisible(false) }
         // **Also when coming back to the window.**
         //
         // `.task` covers "view appears", that is tab switches and closing the player.

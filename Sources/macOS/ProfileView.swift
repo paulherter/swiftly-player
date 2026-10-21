@@ -33,6 +33,27 @@ struct ProfileView: View {
                     // `AccountSwitchTransition.complete`.
                     .onAppear { AccountSwitchTransition.shared.complete() }
 
+                // **Looks at the top, by state** (`LookProfileEntry`), as on iPhone: who has a
+                // look to choose sees a quiet card with it; the teaser for the supporter looks;
+                // everyone else sees nothing here.
+                if lookEntry != .none || supporterStatusShown {
+                    VStack(spacing: 16) {
+                        switch lookEntry {
+                        case .current:
+                            CurrentLookCard(playing: model.playerOpen) { GiftFlow.shared.openLooksOnHome() }
+                        case .teaser:
+                            SupportLooksCard()
+                        case .none:
+                            EmptyView()
+                        }
+                        SupportStatusCard()
+                    }
+                    .padding(.top, 6)
+                    .padding(.bottom, 16)
+                    .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
+                    .animation(Theme.reveal, value: lookEntry)
+                }
+
                 AccountCard(model: model,
                            insertOn: { server in
                                navigator.openIt(.serverAdd(server), in: section)
@@ -77,6 +98,18 @@ struct ProfileView: View {
                     }
                     .buttonStyle(Theme.PressRow())
                     SheetLine().padding(.leading, Theme.separatorInsetCard)
+                    // A plain way to the looks while a gift can be picked up and nothing above
+                    // leads there.
+                    if LookProfileEntry.showsLooksRow(entry: lookEntry,
+                                                      giftAvailable: LookStore.shared.freeLooks().count > 1) {
+                        Button { GiftFlow.shared.openLooksOnHome() } label: {
+                            ValuesRow(symbol: "paintpalette", title: Text("Looks"),
+                                       under: Text("Original und Halloween"),
+                                       arrow: true, hoverable: true)
+                        }
+                        .buttonStyle(Theme.PressRow())
+                        SheetLine().padding(.leading, Theme.separatorInsetCard)
+                    }
                     Button { navigator.openIt(.settings, in: section) } label: {
                         ValuesRow(symbol: "gearshape", title: Text("Einstellungen"),
                                    arrow: true, hoverable: true)
@@ -169,6 +202,8 @@ struct ProfileView: View {
             .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
         }
+        // The look's glow, the same on every main page; goes up with the content.
+        .lookGlow()
         .scrollIndicators(.never)
         // **The milky bar at the top edge.** macOS 26 puts it over every scroll view
         // by itself. It was never in our code, which is why it was easy to look in
@@ -178,6 +213,19 @@ struct ProfileView: View {
         // What the framework adds unasked has to be switched off just like what you
         // write yourself.
         .pagesScroll()
+        // The pop-up on the first visit.
+        .supportProfileIntro()
+    }
+
+    /// What the top of the page shows about looks.
+    private var lookEntry: LookProfileEntry {
+        LookProfileEntry.at(supporterFeatures: true,
+                                   isSupporter: SupportModel.shared.isSupporter,
+                                   ownsLook: LookStore.shared.ownsLook)
+    }
+
+    private var supporterStatusShown: Bool {
+        SupportModel.shared.isSupporter
     }
 
     /// **The Mac share menu, at the click position.** The counterpart of the

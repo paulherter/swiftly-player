@@ -45,12 +45,14 @@ struct RootView: View {
                 try? await Task.sleep(for: .seconds(1.5))
                 guard !model.playerOpen else { model.discordHintDue = true; return }
                 discordHint = true
+                GiftFlow.shared.noteBigAsk()
             }
         }
         .fullScreenCover(isPresented: $discordHint) {
             CodeSheet(target: .discord) { discordHint = false }
         }
         .tvSupportPresentation(model: model)
+        .tvGiftPresentation(model: model)
     }
 }
 

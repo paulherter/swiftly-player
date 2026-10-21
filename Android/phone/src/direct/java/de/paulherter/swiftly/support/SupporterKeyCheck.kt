@@ -4,36 +4,40 @@ import java.math.BigInteger
 import java.security.MessageDigest
 
 /**
- * **Supporter keys `SS1-…`, checked offline.** Only in the direct build (`src/direct`).
+ * **Supporter keys `SS2-…` (and the older `SS1-…`), checked offline.** Only in the direct build.
  *
- * The same rules as `SupporterKey.verify` in `Packages/JellyfinKit/Sources/SupportKeyKit`, and the
- * same tests (its vectors, `SupporterKeyCheckTest`). Why Kotlin and not the Swift core: the core is
- * one binary for both flavors, and the Play build must not contain the key check at all. A second
- * Swift library just for the direct flavor would mean a second core build per ABI, a second set of
- * runtime libraries and a second jextract run; this file is about 200 lines with the JDK's SHA-512
- * and `BigInteger`. The test compares the public key and the rules against the Swift source, so
- * the two cannot drift silently.
+ * The same rules as `SupporterKey.read` / `verify` in `Packages/JellyfinKit/Sources/SupportKeyKit`,
+ * and the same tests (its vectors, `SupporterKeyCheckTest`). Why Kotlin and not the Swift core: the
+ * core is one binary for both flavors, and the Play build must not contain the key check at all.
+ * The test compares the public key and the rules against the Swift source, so the two cannot drift.
  *
- * Byte layout before Base32 (RFC 4648, no padding): version, flags (bit 0 test), app (1 Swiftly),
- * issue day (2 bytes, days since 1970, big endian), order id (8 bytes), name (UTF-8, 0 to 48
- * bytes), then 64 bytes Ed25519 signature over "SS1" + everything before it.
+ * `SS2` before Base32 (RFC 4648, no padding): version (2), flags (bit 0 test), app (1 Swiftly),
+ * plan (1 monthly, 2 lifetime), purchase day (2 bytes, days since 1970, big endian), expiry day
+ * (2 bytes, 0 = never; monthly keys only), licence ID (16 random bytes), name (UTF-8, 0 to 48
+ * bytes), then 64 bytes Ed25519 signature over "SS2" + everything before it.
+ * `SS1` (still accepted, counts as lifetime): version (1), flags, app, issue day (2), order id
+ * (8 bytes), name, signature over "SS1" + payload.
  */
 object SupporterKeyCheck {
+    /** What a key says once its signature is checked (`SupporterLicense`). `plan` is "monthly" or "lifetime". */
+    data class License(val app: Int, val plan: String, val issuedAtMs: Long, val expiresAtMs: Long?, val id: String,
+                       val name: String?, val isTest: Boolean, val isLegacy: Boolean) {
+        fun isActive(nowMs: Long): Boolean = expiresAtMs == null || nowMs < expiresAtMs
+    }
+
     sealed interface Result {
-        data class Valid(val app: Int, val issuedAtMs: Long, val orderId: String, val name: String?) : Result
+        data class Valid(val app: Int, val issuedAtMs: Long, val orderId: String, val name: String?,
+                         val plan: String = "lifetime", val expiresAtMs: Long? = null) : Result
         data class Invalid(val failure: String) : Result
     }
 
-    /** `SupporterKey.publicKeyBase64` in the package. The test fails if they differ. */
-    const val PUBLIC_KEY_BASE64 = "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w="
-    /** `SupporterKey.testPublicKeyBase64`: true while the release key is still the test key. */
+    /** `SupporterKey.publicKeyBase64` in the package (production). The test fails if they differ. */
+    const val PUBLIC_KEY_BASE64 = "90hxOk72gFaCS0s3n2OxKoTYBUGvrzw3liCshhfRU2o="
+    /** `SupporterKey.testPublicKeyBase64`: only for tests. */
     const val TEST_PUBLIC_KEY_BASE64 = "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w="
     val usesTestPublicKey: Boolean get() = PUBLIC_KEY_BASE64 == TEST_PUBLIC_KEY_BASE64
 
     const val APP_SWIFTLY = 1
-    private const val PREFIX = "SS1-"
-    private val DOMAIN = "SS1".toByteArray()
-    private const val HEAD = 13
     private const val SIGNATURE = 64
     private const val MAX_NAME = 48
     private const val MAX_TEXT = 400
@@ -43,32 +47,64 @@ object SupporterKeyCheck {
 
     val publicKey: ByteArray = decodePublicKey(PUBLIC_KEY_BASE64) ?: ByteArray(0)
 
+    /** Checks a pasted key, including the expiry of monthly keys. */
     fun verify(text: String, publicKey: ByteArray = this.publicKey, app: Int = APP_SWIFTLY,
-               allowTestKeys: Boolean = false): Result {
-        if (publicKey.size != 32) return Result.Invalid("badPublicKey")
+               allowTestKeys: Boolean = false, nowMs: Long = System.currentTimeMillis()): Result {
+        val license = when (val r = read(text, publicKey, app, allowTestKeys)) {
+            is Read.Failed -> return Result.Invalid(r.failure)
+            is Read.Ok -> r.license
+        }
+        if (!license.isActive(nowMs)) return Result.Invalid("expired")
+        return Result.Valid(license.app, license.issuedAtMs, license.id, license.name, license.plan, license.expiresAtMs)
+    }
+
+    sealed interface Read {
+        data class Ok(val license: License) : Read
+        data class Failed(val failure: String) : Read
+    }
+
+    /** Signature and layout, but not the expiry: an expired monthly key is still read, so it can be renewed. */
+    fun read(text: String, publicKey: ByteArray = this.publicKey, app: Int = APP_SWIFTLY,
+             allowTestKeys: Boolean = false): Read {
+        fun fail(f: String) = Read.Failed(f)
+        if (publicKey.size != 32) return fail("badPublicKey")
         // Exactly what PHP's trim() removes, so app and shop accept the same input.
         val trimmed = text.trim { it == ' ' || it == '\t' || it == '\n' || it == '\r' || it == '\u0000' || it == '\u000B' }
-        if (trimmed.isEmpty()) return Result.Invalid("empty")
+        if (trimmed.isEmpty()) return fail("empty")
         val bytes = trimmed.toByteArray(Charsets.UTF_8)
-        if (bytes.size > MAX_TEXT) return Result.Invalid("tooLong")
-        if (bytes.size < 4 || (0 until 4).any { asciiUpper(bytes[it]) != PREFIX[it].code.toByte() }) return Result.Invalid("wrongPrefix")
-        val raw = base32Decode(bytes.copyOfRange(4, bytes.size)) ?: return Result.Invalid("badEncoding")
-        if (raw.size < HEAD + SIGNATURE) return Result.Invalid("tooShort")
+        if (bytes.size > MAX_TEXT) return fail("tooLong")
+        val prefix = if (bytes.size >= 4) String(ByteArray(4) { asciiUpper(bytes[it]) }, Charsets.ISO_8859_1) else ""
+        val version = when (prefix) { "SS1-" -> 1; "SS2-" -> 2; else -> return fail("wrongPrefix") }
+        val head = if (version == 1) 13 else 24
+        val raw = base32Decode(bytes.copyOfRange(4, bytes.size)) ?: return fail("badEncoding")
+        if (raw.size < head + SIGNATURE) return fail("tooShort")
         val payload = raw.copyOfRange(0, raw.size - SIGNATURE)
         val signature = raw.copyOfRange(raw.size - SIGNATURE, raw.size)
-        if (!Ed25519.verify(signature, DOMAIN + payload, publicKey)) return Result.Invalid("badSignature")
-        if (payload[0].toInt() != 1) return Result.Invalid("unsupportedVersion")
+        val domain = (if (version == 1) "SS1" else "SS2").toByteArray()
+        if (!Ed25519.verify(signature, domain + payload, publicKey)) return fail("badSignature")
+        if ((payload[0].toInt() and 0xff) != version) return fail("unsupportedVersion")
         val keyApp = payload[2].toInt() and 0xff
-        if (keyApp != 1 && keyApp != 2) return Result.Invalid("unknownApp")
-        if (keyApp != app) return Result.Invalid("wrongApp")
-        if (payload[1].toInt() and 1 != 0 && !allowTestKeys) return Result.Invalid("testKey")
-        val nameBytes = payload.copyOfRange(HEAD, payload.size)
-        val decoder = Charsets.UTF_8.newDecoder()
-        val name = runCatching { decoder.decode(java.nio.ByteBuffer.wrap(nameBytes)).toString() }.getOrNull()
-        if (nameBytes.size > MAX_NAME || name == null) return Result.Invalid("badName")
-        val day = ((payload[3].toInt() and 0xff) shl 8) or (payload[4].toInt() and 0xff)
-        val order = (5 until 13).joinToString("") { "%02x".format(payload[it].toInt() and 0xff) }
-        return Result.Valid(keyApp, day * 86_400_000L, order, name.ifEmpty { null })
+        if (keyApp != 1 && keyApp != 2) return fail("unknownApp")
+        if (keyApp != app) return fail("wrongApp")
+        val isTest = payload[1].toInt() and 1 != 0
+        if (isTest && !allowTestKeys) return fail("testKey")
+        val nameBytes = payload.copyOfRange(head, payload.size)
+        val name = runCatching {
+            Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(nameBytes)).toString()
+        }.getOrNull()
+        if (nameBytes.size > MAX_NAME || name == null) return fail("badName")
+        fun day(at: Int) = ((payload[at].toInt() and 0xff) shl 8) or (payload[at + 1].toInt() and 0xff)
+        fun hex(range: IntRange) = range.joinToString("") { "%02x".format(payload[it].toInt() and 0xff) }
+        if (version == 1) {
+            return Read.Ok(License(keyApp, "lifetime", day(3) * 86_400_000L, null, hex(5 until 13), name.ifEmpty { null },
+                                   isTest, isLegacy = true))
+        }
+        val plan = when (payload[3].toInt() and 0xff) { 1 -> "monthly"; 2 -> "lifetime"; else -> return fail("unknownPlan") }
+        val expiryDay = day(6)
+        // Monthly keys always expire, lifetime keys never; anything else is not a shop key.
+        if ((plan == "monthly") != (expiryDay > 0)) return fail("unknownPlan")
+        return Read.Ok(License(keyApp, plan, day(4) * 86_400_000L, if (expiryDay > 0) expiryDay * 86_400_000L else null,
+                               hex(8 until 24), name.ifEmpty { null }, isTest, isLegacy = false))
     }
 
     private fun asciiUpper(c: Byte): Byte = if (c in 97..122) (c - 32).toByte() else c

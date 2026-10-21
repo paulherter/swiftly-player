@@ -48,7 +48,11 @@ struct Wordmark: View {
     /// the "y" count, the letters themselves are about half of it.
     var height: CGFloat = 32
     var font: Color = Theme.font
-    var accent: Color = Mark.markAccent
+    /// `nil` follows the active look (`LookStore`); the original look is `Mark.markAccent`.
+    var accent: Color?
+    /// A fill for the play mark that is not the active look's: the small phones that show
+    /// other looks.
+    var logo: AnyShapeStyle?
 
     private var width: CGFloat {
         height * (Mark.wordmarkBox.width / Mark.wordmarkBox.height)
@@ -57,7 +61,8 @@ struct Wordmark: View {
     var body: some View {
         ZStack {
             SVGForm(data: Mark.wordmarkFont, box: Mark.wordmarkBox).fill(font)
-            SVGForm(data: Mark.wordmarkAccent, box: Mark.wordmarkBox).fill(accent)
+            SVGForm(data: Mark.wordmarkAccent, box: Mark.wordmarkBox)
+                .fill(logo ?? accent.map(AnyShapeStyle.init) ?? LookStore.shared.palette.logoStyle)
         }
         .frame(width: width, height: height)
         .accessibilityLabel("Swiftly")
@@ -77,7 +82,7 @@ struct Emblem: View {
             RoundedRectangle(cornerRadius: size * Mark.emblemCorner, style: .continuous)
                 .fill(Mark.markArea)
             SVGForm(data: Mark.emblemForm, box: Mark.emblemBox)
-                .fill(Mark.markAccent)
+                .fill(LookStore.shared.palette.logoStyle)
                 // Around the center of the shape, not that of the square: a play shape
                 // deliberately sits slightly to the right of it.
                 .scaleEffect(Mark.emblemMagnifier,

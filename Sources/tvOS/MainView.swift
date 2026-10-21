@@ -451,7 +451,8 @@ struct MainView: View {
             // On the remaining sections it stays: tiles scroll under the bar, and without it they
             // hit it bright.
             if (barPresent || anRoot), section != .start {
-                HeaderHistory().zIndex(1).opacity(barPresent ? 1 : 0)
+                // Only a quiet shadow: the look's glow lies behind the page and must shine through.
+                HeaderHistory(soft: true, strength: 0.3).zIndex(1).opacity(barPresent ? 1 : 0)
             }
 
             if barPresent || anRoot {

@@ -140,6 +140,9 @@ fun TvMain(app: SwiftlyApplication) {
     }
     val stateHolder = rememberSaveableStateHolder()
     val context = LocalContext.current
+    // "Zeig mir meine Startseite" after the thanks; a purchase or key changes what may be worn.
+    SideEffect { app.looks.goHomeAction = { stack.clear(); section = TvSection.Start } }
+    LaunchedEffect(app.support.source.value) { app.looks.syncSupporter() }
 
     LaunchedEffect(Unit) {
         app.sessionCheck()
@@ -245,6 +248,7 @@ fun TvMain(app: SwiftlyApplication) {
                     if (target == null) {
                         Box(Modifier.fillMaxSize().focusRequester(content).focusGroup()) {
                             when (b) {
+                                // Start draws no look glow at all (Paul: the extra glow must not be on Home).
                                 TvSection.Start -> TvStartPage(app, open)
                                 TvSection.Movies -> TvLibrary(app, "movies", listOf("alle", "angefangen", "merkliste", "ungesehen"), open)
                                 TvSection.Series -> TvLibrary(app, "tvshows", listOf("alle", "angefangen", "merkliste"), open)
@@ -254,7 +258,9 @@ fun TvMain(app: SwiftlyApplication) {
                             // Mirrors `HeaderHistory` in `MainView`. Not on Start, where nothing scrolls under the bar
                             // any more (fixed hero zone); on the other root pages it does (the chip/filter row
                             // carries its own top spacing as part of the scrolling content, not as `contentPadding`).
-                            if (b != TvSection.Start) TvHeaderHistory(Modifier.align(Alignment.TopStart).graphicsLayer { alpha = bar.value })
+                            // Soft and at 30 %, as on Apple TV: it must not swallow the look's glow.
+                            if (b != TvSection.Start) TvHeaderHistory(Modifier.align(Alignment.TopStart).graphicsLayer { alpha = bar.value },
+                                                                       soft = true, strength = 0.3f)
                         }
                     } else {
                         TvSubpage(app, target, open, back)
@@ -263,6 +269,8 @@ fun TvMain(app: SwiftlyApplication) {
                 }
             }
         }
+        // The look's glow lies behind each page itself (`TvGlow`), never over it; the pages stay neutral black.
+        TvScrimFollowsGlow(app)
         // The top bar is its own layer above the stack, not part of the root page. Mirrors
         // `MainView.barPresent` on tvOS: it fades out when a subpage opens and back in on return,
         // `.easeInOut(duration: 0.26)`. While it was part of the root page it vanished abruptly
@@ -296,6 +304,8 @@ fun TvMain(app: SwiftlyApplication) {
         }
         // While the player runs, the panel belongs to it.
         if (play == null) TvPanel(app)
+        // "Wähl deinen Look": a full page; the buy page opens from it, so it lies below.
+        if (play == null) TvLooksLayer(app)
         // "Support Swiftly": the ask and the thanks as full panels.
         if (play == null) TvSupportLayer(app)
         // "Where to continue?" grows out of the badge.
@@ -484,11 +494,11 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
         val groups = app.gemeinsam.value.openGroups
         if (offerings.isNotEmpty() || groups.isNotEmpty()) {
             TvTakeoverBadge(app, offerings, groups)
-            Spacer(Modifier.width(18.dp))
+            Spacer(Modifier.width(9.dp))
         }
         // "Support Swiftly", left of the profile, as on the phone's home page.
         TvSupportHeart(app)
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(9.dp))
         // A 32 dp profile circle, the small step of the focus ladder. The ring is white: an image cannot
         // get brighter like a tile, and the accent carries state, not "the remote is here"
         // (`ProfileStyle` on tvOS). The account switch flies here; while the new image is on its way,

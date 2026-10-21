@@ -127,6 +127,8 @@ struct LibraryView: View {
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
+                // The look's glow, the same on every main page; goes up with the content.
+                .lookGlow()
                 // Back means: onto the title that was open. Without a preference tvOS picks a tile
                 // itself at the top of the visible area, one or two rows above the opened title.
                 // Same solution as `HomeView`: remember the title, `userInitiated` overrides the

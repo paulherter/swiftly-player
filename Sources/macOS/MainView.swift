@@ -251,6 +251,13 @@ struct MainView: View {
             guard !AccountSwitchTransition.shared.stackAlreadyEmpty() else { return }
             navigator.emptyAll()
         }
+        // **"Go to the home page"** (the looks from the profile or Appearance, "Show me my
+        // Home" on the thank-you page): the pages above the home page close, the person
+        // stays on the home page.
+        .onChange(of: GiftFlow.shared.homeRequests) { _, _ in
+            section = .start
+            navigator.back(in: .start, until: 0)
+        }
         // **On the click in the profile page** (design D, as on iPhone) the page itself slides
         // out, profile included, and the picture flies into the sidebar. See
         // ``AccountSwitchStage``.

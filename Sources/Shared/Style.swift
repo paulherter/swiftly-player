@@ -48,7 +48,7 @@ static var sectionMetric: CGFloat { motionReduced ? 1 : 0.995 }
 /// what is coming nor how much. In its place are placeholders shaped like the
 /// coming content, and once it arrives it is crossfaded in.
 static var reveal: Animation {
-    motionReduced ? fadeReduced : .smooth(duration: 0.28)
+    Motion.change
 }
 
 /// How a progress arc follows a new value: **linear**, so it does not
@@ -67,8 +67,7 @@ static var progressTravel: Animation? {
     /// the same curve `.sheet` shows. It lives here and not at the call sites,
     /// otherwise four sheets would have four curves.
     static var sheetMotion: Animation {
-        motionReduced ? fadeReduced
-                          : .spring(response: 0.35, dampingFraction: 0.86)
+        Motion.sheet
     }
 
     /// **A row that responds to the press, not only to the release.**
@@ -218,6 +217,9 @@ static var progressTravel: Animation? {
     /// **The sheet from below: 28.** It carried 16 and so looked more angular than
     /// every system sheet next to it.
     static let cornerSheet: CGFloat = 28
+    /// **One side margin per sheet**: heading, groups, buttons and texts start and end on
+    /// this line (the row of look icons may sit further out on purpose).
+    static let sheetInset: CGFloat = 24
     static let edgeSpacing: CGFloat = 18
     static let tileSpacing: CGFloat = 12
     static let railsSpacing: CGFloat = 28
@@ -588,6 +590,8 @@ struct SecondaryButtonStyle: ButtonStyle {
     ///
     /// Calculated: `accent` on `area` gives a contrast of 8.55:1.
     var accent = false
+    /// The surface; one step up (`raised`) on a panel that is itself `area`.
+    var area: Color = Theme.area
     /// Disabled means muted text, the same reasoning as on the primary button, and it
     /// was missing here entirely: "From start" looked usable while no plan existed,
     /// and did nothing.
@@ -607,7 +611,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             // **The press was invisible.** This used `Theme.erhoeht.opacity(1.6)`; opacity
             // above 1 clamps to 1.0, and `erhoeht` is opaque, so pressed looked pixel for
             // pixel like resting. Now a separate, lighter surface.
-            .background(configuration.isPressed ? Theme.pressedArea : Theme.area,
+            .background(configuration.isPressed ? Theme.pressedArea : area,
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             // And the same scale effect as on every other button: without it, the secondary
             // button was the only one that stood still on press.
@@ -2087,6 +2091,10 @@ struct HeaderTargets<Front: View>: View {
 
             front()
 
+            // **The heart on every main page**, in the fixed header like watchlist and
+            // profile. Gone for supporters.
+            SupportHeart()
+
             NavigationLink(value: WatchlistRoute()) {
                 // **Filled, not outlined.** A hollow bookmark at 20 pt is almost only contour. In
                 // the button row on detail pages, filled means "saved"; here it is not a state
@@ -3500,6 +3508,14 @@ struct SelectionChip: View {
 /// with three rows must not demand the same distance as one with twelve.
 struct SheetModifier<SheetContent: View>: ViewModifier {
     @Binding var opened: Bool
+    /// `false`: no scrim and no tap-to-close, the page behind stays visible and reachable
+    /// outside the card (the looks panel, which shows the page in the look being tried).
+    var dimmed = true
+    /// A tone of light at the top of the card, drawn on the whole card (handle strip
+    /// included) and clipped to its rounded corners, so it fades out without an edge.
+    var light: Color?
+    /// A faint second tone mixed into `light` (the look's mark gradient); `nil` is one tone.
+    var lightTint: Color?
     @ViewBuilder var sheetContent: () -> SheetContent
 
     /// How tall the card is: determines how far it travels out, how much the rubber
@@ -3508,8 +3524,38 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
     /// How far the finger has currently displaced it.
     @State private var pull: CGFloat = 0
 
+    /// **Opening is one frame later than `opened`.** A step that changes the sheet's content
+    /// in the same moment (the gift sheet goes from nothing to the looks panel) inserts its
+    /// views inside the slide-up animation, and SwiftUI does not carry a freshly inserted
+    /// view along with the animated offset of its parent: the card rose, the content stood
+    /// at its end position and faded in (measured, simulator video, 19.10.2026). So the
+    /// content is inserted while the card is still below the screen, and only then does it
+    /// rise, as one view.
+    @State private var settled = false
+
+    /// On iPad (regular width) the card is a centered panel of sensible width instead of the
+    /// full screen width; on iPhone and in compact iPad windows nothing changes.
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var cardWidth: CGFloat { sizeClass == .regular ? 600 : .infinity }
+
+    /// Opened *and* the content has had its frame: what the card's position follows.
+    private var present: Bool { opened && settled }
+
     func body(content: Content) -> some View {
-        content.overlay { sheet }
+        content
+            .overlay { sheet }
+            .onChange(of: opened, initial: true) { _, now in
+                if now {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(40))
+                        if opened { settled = true }
+                    }
+                } else {
+                    var plain = Transaction()
+                    plain.disablesAnimations = true
+                    withTransaction(plain) { settled = false }
+                }
+            }
     }
 
     private var sheet: some View {
@@ -3517,7 +3563,7 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
             Rectangle()
                 // The scrim opens with the pull: pulling the sheet down already brightens the
                 // page behind it.
-                .fill(.black.opacity(opened ? 0.55 * (1 - share) : 0))
+                .fill(.black.opacity(present && dimmed ? 0.55 * (1 - share) : 0))
                 .ignoresSafeArea()
                 // **The same curve as the card.** It hung only on the card, not on the scrim, and
                 // the scrim was therefore set hard: on opening it was there at once while the
@@ -3527,7 +3573,9 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
                 //
                 // It does not hang on the pull: `value: opened` means only opening and closing
                 // run. While the finger pulls, the scrim follows it one to one.
-                .animation(Theme.sheetMotion, value: opened)
+                .animation(Theme.sheetMotion, value: present)
+                .animation(Theme.sheetMotion, value: dimmed)
+                .allowsHitTesting(dimmed)
                 .onTapGesture { close(with: 0) }
 
             VStack(spacing: 0) {
@@ -3548,7 +3596,7 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
 
                 sheetContent()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: cardWidth, alignment: .leading)
             .background {
                 // **The surface extends further down than the card ever travels.** The spring
                 // overshoots on opening, so the card lifts briefly. If the surface ended at its
@@ -3557,12 +3605,19 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
                 UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
                                        topTrailingRadius: Theme.cornerSheet)
                     .fill(Theme.area)
+                    .overlay(alignment: .top) {
+                        if let light {
+                            CardLight(tone: light, tint: lightTint)
+                        }
+                    }
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
+                                                      topTrailingRadius: Theme.cornerSheet))
                     .padding(.bottom, -400)
                     .ignoresSafeArea(edges: .bottom)
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height }
                 action: { cardsHeight = $0 }
-            .offset(y: opened ? pull : cardsHeight + 400)
+            .offset(y: present ? pull : cardsHeight + 400)
             // **The slide-up belongs here, not at the call sites.**
             //
             // It used to hang on a `withAnimation` at every opener: five places, and when
@@ -3578,7 +3633,7 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
             // The price is small and the safety great: the finger's momentum keeps working
             // where you feel it, in the spring-back, which runs via `pull` and doesn't touch
             // this animation at all.
-            .animation(Theme.sheetMotion, value: opened)
+            .animation(Theme.sheetMotion, value: present)
             .gesture(drag)
             // **Closed means gone, for VoiceOver too.** The closed sheet lay only below the
             // screen edge; VoiceOver found its buttons anyway and read "Remove all" in the
@@ -3659,9 +3714,14 @@ extension View {
     /// **Always attach, never inside an `if opened`.** In an `if`, `opened` is already
     /// true when it is attached, the card sits at its place at once, and the slide-up
     /// doesn't happen.
-    func sheet<ContentBody: View>(opened: Binding<Bool>,
+    ///
+    /// **This is the only bottom sheet of the app that sits flush with the screen's
+    /// edge.** Apple's `.sheet` with a partial height floats on iOS 26 (margin all around,
+    /// the page showing under it); see `Fallen/swiftui.md`. Every sheet that is not full
+    /// height comes through here, and `Werkzeuge/check.sh` fails on one that does not.
+    func sheet<ContentBody: View>(opened: Binding<Bool>, dimmed: Bool = true, light: Color? = nil, lightTint: Color? = nil,
                              @ViewBuilder content: @escaping () -> ContentBody) -> some View {
-        modifier(SheetModifier(opened: opened, sheetContent: content))
+        modifier(SheetModifier(opened: opened, dimmed: dimmed, light: light, lightTint: lightTint, sheetContent: content))
     }
 }
 
@@ -4355,3 +4415,4 @@ struct RailsPlaceholder: View {
         .accessibilityLabel("Lädt")
     }
 }
+

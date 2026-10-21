@@ -53,6 +53,14 @@ object Motion {
     fun <T> toggle(): FiniteAnimationSpec<T> = tween(100, easing = outro)
     /** `Theme.sheetMotion`: `.spring(response: 0.35, dampingFraction: 0.86)`; stiffness (2π / 0.35)² ≈ 322. */
     fun <T> sheet(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
+    /** `Motion.change`: `.smooth(duration: 0.28)`. A look's colors and glow, a step of a sheet. */
+    fun <T> change(): FiniteAnimationSpec<T> = tween(280, easing = soft)
+    /** `Motion.select`: `.smooth(duration: 0.25)`. The segments' surface, the ring around a dot. */
+    fun <T> select(): FiniteAnimationSpec<T> = tween(250, easing = soft)
+    /** `Motion.land`: `.spring(response: 0.45, dampingFraction: 0.86)`; stiffness (2π / 0.45)² ≈ 195. */
+    fun <T> land(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 195f)
+    /** `Motion.pageBeforeSheet`: the page goes first, the sheet follows 0.18 s later. */
+    const val PageBeforeSheetMs = 180L
     /** `Theme.fadeReduced`: 0.14 s linear, when reduced motion is on. */
     fun <T> fadeReduced(): FiniteAnimationSpec<T> = tween(140, easing = LinearEasing)
     /**
@@ -147,16 +155,33 @@ object Theme {
      * **Carries state: never rank, never a surface, never a mere label.**
      * Progress, selection, Direct Play proof.
      */
-    val accent = Color(0xFF50D5DA)
+    val accent: Color get() = tones.value.main
     /** The accent lightened: **only the selected filter chip while focused on TV.** */
-    val accentLight = Color(0xFF7AE6EA)
+    val accentLight: Color get() = tones.value.light
     /** The surface under accent text (badges use 15 %; this is that tone computed out). */
-    val accentQuiet = Color(0xFF113435)
+    val accentQuiet: Color get() = tones.value.quiet
     /** Text on an accent surface. */
-    val onAccent = Color(0xFF061212)
+    val onAccent: Color get() = tones.value.on
 
-    /** Something is waiting for someone. */
-    val warning = Color(0xFFE8833A)
+    /** Something is waiting for someone. An orange or red look turns it amber (see `LookAccent.warning`). */
+    val warning: Color get() = tones.value.warning
+
+    /**
+     * **The accent's tones as state**, so a look change redraws everything that reads them. Only
+     * the phone activity ever sets them (`applyTones`); everything else keeps today's turquoise.
+     */
+    class Tones(val main: Color, val light: Color, val quiet: Color, val on: Color,
+                val warning: Color = Color(0xFFE8833A))
+
+    private val tones = androidx.compose.runtime.mutableStateOf(
+        Tones(Color(0xFF50D5DA), Color(0xFF7AE6EA), Color(0xFF113435), Color(0xFF061212)))
+    fun applyTones(value: Tones) { tones.value = value }
+
+    /** The play mark of the wordmark, top left to bottom right; one color is a flat fill. */
+    private val gradient = androidx.compose.runtime.mutableStateOf<List<Color>?>(null)
+    val markGradient: List<Color>? get() = gradient.value
+    fun applyMarkGradient(colors: List<Color>?) { gradient.value = colors }
+
     /** Something went wrong: **not the same as "waiting".** Carries no text on `erhoeht` (4.23). */
     val error = Color(0xFFEF6567)
 

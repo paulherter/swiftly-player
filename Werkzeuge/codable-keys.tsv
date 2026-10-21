@@ -66,6 +66,7 @@ Android	Kern.QualityResponse	codable	id,plakette,zeile
 Android	Kern.QualityResponse.CodingKeys	codingkey	id,plakette,zeile
 Android	Kern.SectionPagesResponse	codable	gesamt,gesiebt,nochMehr,titel
 Android	Kern.SectionPagesResponse.CodingKeys	codingkey	gesamt,gesiebt,nochMehr,titel
+Android	Kern.Tip	codable	de,emoji,en,id
 Android	LabelResponse	codable	filter,sortierung
 Android	LabelResponse.CodingKeys	codingkey	filter,sortierung
 Android	LabelResponse.Record	codable	text,wert
@@ -78,8 +79,8 @@ Android	PersonResponse	codable	bild,id,name,rolle
 Android	PersonResponse.CodingKeys	codingkey	bild,id,name,rolle
 Android	PlanResponse	codable	lossless,methode
 Android	PlanResponse.CodingKeys	codingkey	lossless,methode
-Android	PlayPlanResponse	codable	bild,dateizeile,episode,folgeNr,itemId,kartenbild,kopfzeile,kuerzel,lossless,marken,methode,naechste,naechsteFolge,nebenzeile,serie,serieId,softwareDekoder,staffelId,staffelNr,titel,untertitel,url
-Android	PlayPlanResponse.CodingKeys	codingkey	bild,dateizeile,episode,folgeNr,itemId,kartenbild,kopfzeile,kuerzel,lossless,marken,methode,naechste,naechsteFolge,nebenzeile,serie,serieId,softwareDekoder,staffelId,staffelNr,titel,untertitel,url
+Android	PlayPlanResponse	codable	audioCodec,bild,dateizeile,dolbyVision,episode,folgeNr,itemId,kartenbild,kopfzeile,kuerzel,lossless,marken,methode,naechste,naechsteFolge,nebenzeile,serie,serieId,softwareDekoder,staffelId,staffelNr,titel,untertitel,url
+Android	PlayPlanResponse.CodingKeys	codingkey	audioCodec,bild,dateizeile,dolbyVision,episode,folgeNr,itemId,kartenbild,kopfzeile,kuerzel,lossless,marken,methode,naechste,naechsteFolge,nebenzeile,serie,serieId,softwareDekoder,staffelId,staffelNr,titel,untertitel,url
 Android	RailsResponse	codable	bibliothek,kacheln,name,quer,sammlung,titelSchluessel
 Android	RailsResponse.CodingKeys	codingkey	bibliothek,kacheln,name,quer,sammlung,titelSchluessel
 Android	RemoteCommandResponse	codable	art,wert
@@ -111,6 +112,7 @@ Android	StopResponse	codable	ablage,posten
 Android	StopResponse.CodingKeys	codingkey	ablage,posten
 Android	SubtitleFileResponse	codable	adresse,index
 Android	SubtitleFileResponse.CodingKeys	codingkey	adresse,index
+Android	SupportDecisionResponse	codable	isSupporter,showsCard,showsHeart,showsSheet,watchedHours
 Android	SwitchResponse	codable	ergebnis,fehler,nachmeldung,spielplan
 Android	SwitchResponse.CodingKeys	codingkey	ergebnis,fehler,nachmeldung,spielplan
 Android	TechResponse	codable	beschaedigt,dekodiert,demuxer,eingang,gezeigt,lauf,soll,spruenge,tonVerloren,verworfen,vorratKiB,vorratSekunden,zeigt
@@ -155,6 +157,7 @@ Apple	ShelfEntry	codable	bild,fortschritt,id,titel,unterzeile
 Apple	ShelfEntry.CodingKeys	codingkey	bild,fortschritt,id,titel,unterzeile
 Apple	ShelfPreview	codable	rubriken
 Apple	ShelfPreview.CodingKeys	codingkey	rubriken
+Apple	SupporterIcon	raw	AppIcon-Aurora,AppIcon-Coffee,AppIcon-Gold,AppIcon-Heart,AppIcon-Light,AppIcon-Night
 Kit	AccountBundle	codable	aktiveKennung,konten
 Kit	AccountBundle.CodingKeys	codingkey	aktiveKennung,konten
 Kit	AccountBundle.Stored	codable	benutzerID,benutzername,serverURL,token
@@ -209,6 +212,11 @@ Kit	JellyfinClient.Reply.Policy	codable	SyncPlayAccess
 Kit	JellyfinClient.Reply@Login.swift	codable	Authenticated
 Kit	JellyfinClient.Reply@SyncPlay.swift	codable	RequestReceptionTime,ResponseTransmissionTime
 Kit	LibraryFilter	raw	alle,angefangen,merkliste,ungesehen
+Kit	LookColor	codable	hex
+Kit	LookEffects.BatBlock	raw	background,lowPower,outsideWindow,playing,reduceMotion,switchOff,wrongPage
+Kit	LookGlow	raw	bright,off,soft
+Kit	LookSelection	codable	accent,glow,icon,look
+Kit	LookSelection.CodingKeys	codingkey	accent,glow,icon,look
 Kit	MediaSource	codable	Container,DefaultAudioStreamIndex,DefaultSubtitleStreamIndex,Id,MediaStreams,Name,RunTimeTicks,Size,SupportsDirectPlay,SupportsDirectStream,SupportsTranscoding,TranscodingUrl
 Kit	MediaSource.CodingKeys	codingkey	Container,DefaultAudioStreamIndex,DefaultSubtitleStreamIndex,Id,MediaStreams,Name,RunTimeTicks,Size,SupportsDirectPlay,SupportsDirectStream,SupportsTranscoding,TranscodingUrl
 Kit	MediaStream	codable	AspectRatio,AverageFrameRate,Channels,Codec,ColorPrimaries,ColorTransfer,DeliveryUrl,DisplayTitle,DvBlSignalCompatibilityId,DvProfile,Height,Index,IsDefault,IsExternal,IsForced,IsHearingImpaired,Language,RealFrameRate,Title,Type,VideoRangeType,Width
@@ -264,9 +272,10 @@ Kit	StartLibraries.Record.Keys	codingkey	id,name,sammlung
 Kit	StartLibrary	codable	id,name,sammlung
 Kit	StartLibrary.CodingKeys	codingkey	id,name,sammlung
 Kit	StartRail	raw	naechsteFolge,neueFilme,neueSerien,neuzugaenge,weiterschauen
+Kit	SupportPlan	raw	lifetime,monthly,tip
 Kit	SupportPlatform	raw	android,androidTV,appleTV,iPad,iPhone,linux,mac,windows
-Kit	SupportPromptHistory	codable	cardDismissed,cardSnoozedUntil,sheetShownAt
-Kit	SupportPromptHistory.CodingKeys	codingkey	cardDismissed,cardSnoozedUntil,sheetShownAt
+Kit	SupportPromptHistory	codable	cardDismissed,cardSnoozedUntil,cardSnoozes,sheetShownAt
+Kit	SupportPromptHistory.CodingKeys	codingkey	cardDismissed,cardSnoozedUntil,cardSnoozes,sheetShownAt
 Kit	SupportStatus.CodingKeys	codingkey	kind,since,source
 Kit	SupportStatus.Kind	raw	none,supporter
 Kit	SupportStatus.Source	raw	key,store
@@ -307,6 +316,12 @@ Kit	User	codable	Id,Name
 Kit	User.CodingKeys	codingkey	Id,Name
 Kit	UserItemData	codable	IsFavorite,LastPlayedDate,PlaybackPositionTicks,Played,PlayedPercentage,UnplayedItemCount
 Kit	UserItemData.CodingKeys	codingkey	IsFavorite,LastPlayedDate,PlaybackPositionTicks,Played,PlayedPercentage,UnplayedItemCount
+Kit	WhatsNewEntry	codable	draft,items,module,primary,title,variant,version
+Kit	WhatsNewEntry.Item	codable	detail,symbol,title
+Kit	WhatsNewEntry.Module	codable	lookId,type
+Kit	WhatsNewEntry.Primary	codable	action,label
+Kit	WhatsNewEntry.Text	codable	de,en
+Kit	WhatsNewEntry.Variant	raw	feature,gift,looks,standard
 Linux	Cache.AccountsStore	codable	bund,servername
 Linux	Cache.AccountsStore.CodingKeys	codingkey	bund,servername
 Linux	Cache.RememberSlip	codable	fassung,serverURL,servername

@@ -186,6 +186,7 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
         if FirstFrameRun.an { FirstFrameRun.start() }
         if CardsRun.an { CardsRun.start() }
         if SpeedRun.an { SpeedRun.start() }
+        if BatteryRun.an { BatteryRun.start() }
         #endif
 
         let session = AVAudioSession.sharedInstance()

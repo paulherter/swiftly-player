@@ -86,6 +86,9 @@ public struct SupportPromptHistory: Codable, Sendable, Equatable {
     public var cardSnoozedUntil: Date?
     /// "Don't show again" on the card: the card never comes back.
     public var cardDismissed: Bool
+    /// How often "Not now" was pressed on the card. The second time ends the card for good,
+    /// so it needs no menu with "Don't show again".
+    public var cardSnoozes: Int
     /// Every time the sheet appeared, newest last. "Maybe later" counts as shown.
     public var sheetShownAt: [Date]
 
@@ -95,18 +98,35 @@ public struct SupportPromptHistory: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case cardSnoozedUntil = "cardSnoozedUntil"
         case cardDismissed = "cardDismissed"
+        case cardSnoozes = "cardSnoozes"
         case sheetShownAt = "sheetShownAt"
     }
 
-    public init(cardSnoozedUntil: Date? = nil, cardDismissed: Bool = false, sheetShownAt: [Date] = []) {
+    public init(cardSnoozedUntil: Date? = nil, cardDismissed: Bool = false, cardSnoozes: Int = 0,
+                sheetShownAt: [Date] = []) {
         self.cardSnoozedUntil = cardSnoozedUntil
         self.cardDismissed = cardDismissed
+        self.cardSnoozes = cardSnoozes
         self.sheetShownAt = sheetShownAt
     }
 
-    /// "Not now" on the card.
+    /// Older stored histories have no `cardSnoozes`.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cardSnoozedUntil = try container.decodeIfPresent(Date.self, forKey: .cardSnoozedUntil)
+        cardDismissed = try container.decodeIfPresent(Bool.self, forKey: .cardDismissed) ?? false
+        cardSnoozes = try container.decodeIfPresent(Int.self, forKey: .cardSnoozes) ?? 0
+        sheetShownAt = try container.decodeIfPresent([Date].self, forKey: .sheetShownAt) ?? []
+    }
+
+    /// After this many "Not now" the card stays away for good.
+    public static let snoozesUntilGone = 2
+
+    /// "Not now" on the card: 30 days; the second time it does not come back.
     public mutating func snoozeCard(now: Date) {
         cardSnoozedUntil = now.addingTimeInterval(SupportPrompt.cardSnooze)
+        cardSnoozes += 1
+        if cardSnoozes >= Self.snoozesUntilGone { cardDismissed = true }
     }
 
     /// "Don't show again" on the card.
@@ -141,6 +161,17 @@ public enum SupportStorageKey {
     public static let usage = "support.usage"
     public static let promptHistory = "support.promptHistory"
     public static let all = [status, usage, promptHistory]
+    /// What kind of support it was (monthly, lifetime, tip). Added later, hence not in `all`.
+    public static let plan = "support.plan"
+}
+
+/// **What kind of support a supporter chose.** Only for how the status reads ("Monthly
+/// supporter", "Supporter for life"); whether someone is a supporter is `SupportStatus`.
+/// The raw values are stored.
+public enum SupportPlan: String, Codable, Sendable, CaseIterable {
+    case monthly = "monthly"
+    case lifetime = "lifetime"
+    case tip = "tip"
 }
 
 /// Keeps everything in a dictionary. For tests and previews, not thread-safe.
@@ -184,6 +215,12 @@ public struct SupportStore {
     public var promptHistory: SupportPromptHistory {
         get { read(SupportPromptHistory.self, SupportStorageKey.promptHistory) ?? SupportPromptHistory() }
         nonmutating set { write(newValue, SupportStorageKey.promptHistory) }
+    }
+
+    /// `nil` when unknown: a status from before plans existed, or from a supporter key.
+    public var plan: SupportPlan? {
+        get { storage.data(forKey: SupportStorageKey.plan).flatMap { SupportPlan(rawValue: String(decoding: $0, as: UTF8.self)) } }
+        nonmutating set { storage.setData(newValue.map { Data($0.rawValue.utf8) }, forKey: SupportStorageKey.plan) }
     }
 
     /// Call once per app start. Records the first launch only the first time.

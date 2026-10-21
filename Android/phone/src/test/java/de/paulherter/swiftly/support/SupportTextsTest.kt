@@ -31,7 +31,8 @@ class SupportTextsTest {
         for (language in listOf("de", "en")) {
             val shared = table(File(shared, "$language.json"))
             val own = table(File(phone, "src/direct/assets/texts/$language.direct.json"))
-            val missing = main.filter { it !in shared } + direct.filter { it !in shared && it !in own }
+            val play = table(File(phone, "src/play/assets/texts/$language.play.json"))
+            val missing = main.filter { it !in shared && it !in play } + direct.filter { it !in shared && it !in own }
             assertTrue("$language: missing $missing", missing.isEmpty())
         }
     }

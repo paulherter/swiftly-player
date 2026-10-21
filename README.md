@@ -13,7 +13,7 @@ Every file plays as Direct Play or Direct Stream, never transcoded.
 </p>
 
 <p>
-<sub>Swiftly is free. A coffee helps us keep it going.</sub>
+<sub>Swiftly is free and open source. <a href="https://swiftlyplayer.com/supporter/">Become a Supporter</a> to help keep it going.</sub>
 </p>
 
 <p>
@@ -438,7 +438,7 @@ work it out.
 
 ## Support Swiftly
 
-All the features you need are free, for everyone: no account, no ads, no tracking. It is built together, with bug reports, translations and pull requests from people like you. If you would like to say thanks with a coffee, **[you can do that here](https://swiftlyplayer.com/supporter/)**. Supporters get a few small extras on top (personalization such as extra app icons, a heart in About, your name in the credits). The features themselves stay free for everyone.
+All the features you need are free, for everyone: no account, no ads, no tracking. It is built together, with bug reports, translations and pull requests from people like you. If you would like to say thanks, **[become a Supporter](https://swiftlyplayer.com/supporter/)**: €1.99 a month, or €19.99 once for good. Supporters get a few small extras on top (personalization such as extra app icons and looks, a heart in About, your name in the credits). The features themselves stay free for everyone.
 
 <br>
 

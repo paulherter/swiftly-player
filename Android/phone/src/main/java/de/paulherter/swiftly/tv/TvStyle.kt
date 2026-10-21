@@ -609,10 +609,18 @@ fun TvRailsTitle(text: String, modifier: Modifier = Modifier) {
  * where the slope changes).
  */
 @Composable
-fun TvHeaderHistory(modifier: Modifier = Modifier, headerHeight: Dp = 64.dp, outro: Dp = 110.dp) {
+fun TvHeaderHistory(modifier: Modifier = Modifier, headerHeight: Dp = 64.dp, outro: Dp = 110.dp,
+                    soft: Boolean = false, strength: Float = 1f) {
     val total = headerHeight + outro
-    fun point(y: Dp, coverage: Float) = (y.value / total.value).coerceIn(0f, 1f) to Theme.reason.copy(alpha = coverage)
-    val levels = listOf(
+    fun point(y: Dp, coverage: Float) = (y.value / total.value).coerceIn(0f, 1f) to Theme.reason.copy(alpha = coverage * strength)
+    // `soft`: one long falloff, as tvOS `HeaderHistory(soft:)`. The sections use it at 0.3, so
+    // the look's glow behind the page shines through.
+    val levels = if (soft) listOf(
+        point(0.dp, 0.72f),
+        point(headerHeight, 0.44f),
+        point(headerHeight + outro * 0.45f, 0.14f),
+        point(total, 0f),
+    ) else listOf(
         point(0.dp, 0.92f),
         point(headerHeight, 0.90f),
         point(headerHeight + 9.dp, 0.72f),
