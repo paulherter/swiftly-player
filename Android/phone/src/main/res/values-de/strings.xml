@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_redirect_title">Swiftly gibt es jetzt bei Google Play</string>
+    <string name="beta_redirect_text">Diese Testversion wird nicht mehr aktualisiert. Bitte verlasse zuerst das Testprogramm (auf der Play-Store-Seite von Swiftly unter \"Du bist Betatester\" → \"Verlassen\") und installiere dann Swiftly normal aus dem Play Store. Bald öffnen wir ein neues Testprogramm für alle, die wirklich Beta-Versionen testen möchten.</string>
+    <string name="beta_redirect_button">Google Play öffnen</string>
+</resources>

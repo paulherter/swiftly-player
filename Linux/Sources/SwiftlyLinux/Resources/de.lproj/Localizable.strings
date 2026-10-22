@@ -242,6 +242,7 @@
 /* Seerr-Zugang */
 "Aktiv" = "Aktiv";
 "Sitzung abgelaufen" = "Sitzung abgelaufen";
+"Seerr nicht erreichbar" = "Seerr nicht erreichbar";
 "Wird geprüft …" = "Wird geprüft …";
 "Puffer" = "Puffer";
 "Discord" = "Discord";

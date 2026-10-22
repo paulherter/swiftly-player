@@ -5,7 +5,13 @@ struct SwiftlyApp: App {
     @UIApplicationDelegateAdaptor(SwiftlyAppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup { RootView() }
+        WindowGroup {
+            #if BETA_REDIRECT
+            BetaRedirectView()
+            #else
+            RootView()
+            #endif
+        }
             // **Without this a background download is left hanging.**
             //
             // An 18 GB file does not download in the thirty seconds iOS gives an app in the

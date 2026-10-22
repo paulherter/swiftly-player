@@ -2047,7 +2047,7 @@ final class App: @unchecked Sendable {
     var seerrClient: SeerrClient?
     /// Whether the stored Seerr session still works. `nil` means not checked yet;
     /// reset on disconnect and on connect.
-    var seerrApplies: Bool?
+    var seerrApplies: SeerrSessionState?
     /// The Seerr results of the search: heading and grid below.
     var seerrHeading: Widget!
     /// The row of heading and count badge; shown and hidden as a whole, not just

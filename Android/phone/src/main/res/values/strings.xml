@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Switch-to-Play-Store build for beta testers (-PbetaRedirect=true). -->
+    <string name="beta_redirect_title">Swiftly is now on Google Play</string>
+    <string name="beta_redirect_text">This test version is no longer updated. Please leave the testing program first (on the Swiftly page in the Play Store under \"You\'re a beta tester\" → \"Leave\"), then install Swiftly normally from the Play Store. We will soon open a new testing program for everyone who really wants to test beta versions.</string>
+    <string name="beta_redirect_button">Open Google Play</string>
+</resources>

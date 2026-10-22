@@ -59,7 +59,8 @@ struct SeerrConnectView: View {
             // A value, not a state color. The template shows it as an ordinary row value
             // (`Shared/SeerrSettingsView`); here it used the accent or `warning`. An expired
             // session is not waiting and not an error, it is information, and the word says it.
-            Text(seerr.carries ? "Sitzung aktiv" : "Sitzung abgelaufen")
+            Text(seerr.sessionState == .valid ? "Sitzung aktiv"
+                 : seerr.sessionState == .invalid ? "Sitzung abgelaufen" : "Seerr nicht erreichbar")
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontQuiet)
             // "Disconnect", not "Sign out": nothing changes on Seerr itself, only this one access.

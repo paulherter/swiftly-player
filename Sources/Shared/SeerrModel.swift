@@ -28,7 +28,9 @@ final class SeerrModel {
     }
 
     private(set) var access: SeerrAccess?
-    private(set) var carries = false
+    /// What the last check (or sign-in) found. `.unreachable` is not an expired session.
+    private(set) var sessionState = SeerrSessionState.invalid
+    var carries: Bool { sessionState == .valid }
     private(set) var error: String?
 
     /// Is a sign-in running? The view disables its button while it is.
@@ -59,7 +61,7 @@ final class SeerrModel {
             Keychain.delete(key: Self.key)
         }
         access = loaded()
-        carries = false
+        sessionState = .invalid
         error = nil
     }
 
@@ -97,11 +99,13 @@ final class SeerrModel {
                                                          password: password, headers: headers)
                 secure(new)
                 access = new
-                carries = true
+                sessionState = .valid
                 error = nil
                 return
             } catch {
-                lastOne = error
+                // The first failure stays when the second attempt only trips over the
+                // scheme or a refused redirect: "no server reachable" is the real news.
+                lastOne = lastOne.map { Seerr.errorToShow(first: $0, second: error) } ?? error
                 // **Only keep trying on a network error.** If Seerr says "wrong password",
                 // the address is right and the other scheme would just add a second
                 // timeout.
@@ -119,7 +123,7 @@ final class SeerrModel {
         if let address = access?.address { Seerr.cookiesForget(for: address) }
         Keychain.delete(key: key)
         access = nil
-        carries = false
+        sessionState = .invalid
         error = nil
     }
 
@@ -129,7 +133,7 @@ final class SeerrModel {
     /// on the next request.
     func lookUp() async {
         guard let client else { return }
-        carries = await client.applies()
+        sessionState = await client.applies()
     }
 
     // MARK: Using

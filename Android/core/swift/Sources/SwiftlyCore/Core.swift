@@ -3012,23 +3012,34 @@ public final class Kern: @unchecked Sendable {
             let addresses = Seerr.addresses(from: address)
             guard !addresses.isEmpty else { throw CoreError.address(address) }
             var lastOne: Error = CoreError.address(address)
+            var firstTry: Error?
             for url in addresses {
                 do {
                     let access = try await SeerrClient.signIn(an: url, user: user, password: password,
                                                                     headers: Self.headersRead(headers))
                     barrier.lock(); _seerr = SeerrClient(access: access); barrier.unlock()
                     return try json(access)
-                } catch let error as URLError {
-                    lastOne = error
+                } catch {
+                    // Only a network error on the first attempt leads to the second; there the
+                    // first error stays unless the second says something about Seerr itself.
+                    if firstTry == nil {
+                        guard error is URLError else { throw error }
+                        firstTry = error
+                        lastOne = error
+                    } else {
+                        throw Seerr.errorToShow(first: firstTry!, second: error)
+                    }
                 }
             }
             throw lastOne
         }
     }
 
+    /// `false` only when Seerr said the session is gone. A network error is not an expired
+    /// session, so it must not show as one; the Kotlin pages have no third state yet.
     public func seerrApplies() async -> Bool {
         guard let s = seerr else { return false }
-        return await s.applies()
+        return await s.applies() != .invalid
     }
 
     /// Only what the own server does not have yet; the rest is in the upper block.

@@ -50,12 +50,19 @@ struct SeerrSettingsView: View {
         }
     }
 
+    private var sessionText: String {
+        switch seerr.sessionState {
+        case .valid: String(localized: "Aktiv")
+        case .invalid: String(localized: "Sitzung abgelaufen")
+        case .unreachable: String(localized: "Seerr nicht erreichbar")
+        }
+    }
+
     private var connected: some View {
         SettingGroup(title: "Verbunden") {
             ValuesRow(symbol: "link",
                        title: Text(verbatim: seerr.address ?? ""),
-                       value: seerr.carries ? String(localized: "Aktiv")
-                                          : String(localized: "Sitzung abgelaufen"))
+                       value: sessionText)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             // **"Disconnect", not "Sign out".** Nothing changes at Seerr itself; only this
             // one access is removed here.

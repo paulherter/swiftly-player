@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     /** Back in front: ask the store again (a purchase may have finished elsewhere, or been refunded). */
     override fun onResume() {
         super.onResume()
+        if (BuildConfig.BETA_REDIRECT) return
         (application as SwiftlyApplication).support.channel.refresh()
     }
 
@@ -48,13 +49,32 @@ class MainActivity : ComponentActivity() {
     private var messageRightCall: (() -> Unit)? = null
 
     override fun onDestroy() {
+        if (BuildConfig.BETA_REDIRECT) { super.onDestroy(); return }
         val app = application as SwiftlyApplication
         if (app.messageRightAsk === messageRightCall) app.messageRightAsk = null
         super.onDestroy()
     }
 
+    private fun openGooglePlay() {
+        val id = packageName
+        try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$id"))) }
+        catch (e: android.content.ActivityNotFoundException) {
+            runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("https://play.google.com/store/apps/details?id=$id"))) }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Beta redirect build: only the notice, before anything else (back closes the app).
+        if (BuildConfig.BETA_REDIRECT) {
+            enableEdgeToEdge(
+                statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+                navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            )
+            setContent { BetaRedirectPage { openGooglePlay() } }
+            return
+        }
         // On TV continue straight into the TV UI. The normal launcher entry (e.g. "Open" after installing
         // from the store) otherwise lands here, in the phone version; only the Leanback launcher opened
         // `TvActivity`. Before the first frame, without a transition.

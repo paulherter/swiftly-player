@@ -51,6 +51,9 @@ android {
         targetSdk = 36
         versionCode = 26
         versionName = "1.0.8"
+        // **Switch-to-Play-Store build for the current beta testers** (`-PbetaRedirect=true`, never set
+        // permanently): the app shows only a notice page (`BetaRedirectPage`). Off by default.
+        buildConfigField("boolean", "BETA_REDIRECT", (findProperty("betaRedirect") == "true").toString())
         // **Only the ABIs the Swift core is built for** (`core/build.gradle`); on any other the app
         // crashed at startup. libVLC shipped four ABIs, x86 never worked.
         // armeabi-v7a for TVs with 32-bit Android: without it the app was invisible in the store there.

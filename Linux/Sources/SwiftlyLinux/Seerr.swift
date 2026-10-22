@@ -110,6 +110,7 @@ extension App {
             let stateLives = LifeCharacter(stateBox.widget)
             Task.detached {
                 var lastOne: String?
+                var firstTry: Error?
                 for url in addresses {
                     do {
                         let new = try await SeerrClient.signIn(an: url, user: b, password: pw,
@@ -117,7 +118,7 @@ extension App {
                         onMainThread {
                             self.seerrAccess = new
                             self.seerrClient = SeerrClient(access: new)
-                            self.seerrApplies = true
+                            self.seerrApplies = .valid
                             Cache.seerrWrite(new)
                             // The password field is cleared once it is no longer needed, if the page
                             // still exists.
@@ -127,7 +128,12 @@ extension App {
                         }
                         return
                     } catch {
-                        lastOne = readableError(error)
+                        // As on the Apple side: the first network error stays unless the
+                        // second attempt says something about Seerr itself.
+                        let shown = firstTry.map { Seerr.errorToShow(first: $0, second: error) } ?? error
+                        lastOne = readableError(shown)
+                        guard error is URLError, firstTry == nil else { break }
+                        firstTry = error
                     }
                 }
                 // **Capture first, then hand over.** Swift 6 does not allow capturing a
@@ -197,9 +203,10 @@ extension App {
         let g = settingGroup(translated("Verbunden"))
         let word: String
         switch seerrApplies {
-        case .some(true):  word = translated("Aktiv")
-        case .some(false): word = translated("Sitzung abgelaufen")
-        case nil:          word = translated("Wird geprüft …")
+        case .valid?:       word = translated("Aktiv")
+        case .invalid?:     word = translated("Sitzung abgelaufen")
+        case .unreachable?: word = translated("Seerr nicht erreichbar")
+        case nil:           word = translated("Wird geprüft …")
         }
         append(g.space, valuesRow(symbol: "network-transmit-receive-symbolic",
                                      title: access.address.absoluteString,

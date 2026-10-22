@@ -23,7 +23,11 @@ public extension URLSession {
     /// `timeoutIntervalForResource` limits the whole operation to 20 seconds. Checking a
     /// typed address does not use this session but ``Adresspruefung`` with a shorter
     /// timeout, so a typo does not take this long to fail.
-    static let localNetworkCapable: URLSession = {
+    static let localNetworkCapable: URLSession = URLSession(configuration: localNetworkConfiguration())
+
+    /// The configuration behind ``localNetworkCapable``, for sessions that need a delegate
+    /// on top of the same behavior.
+    static func localNetworkConfiguration() -> URLSessionConfiguration {
         let k = URLSessionConfiguration.default
         // **Read-only on Linux.** swift-corelibs-foundation knows the property but does not
         // implement it, so there is no waiting for a connection. The two timeouts below
@@ -37,6 +41,6 @@ public extension URLSession {
         // Offline self-test via ``Netzsperre``. While it is off, it accepts no request.
         k.protocolClasses = [NetworkLock.self] + (k.protocolClasses ?? [])
         #endif
-        return URLSession(configuration: k)
-    }()
+        return k
+    }
 }

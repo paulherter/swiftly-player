@@ -488,6 +488,63 @@ public enum Seerr {
     }
 }
 
+/// What a check of the stored session found.
+public enum SeerrSessionState: Sendable, Equatable {
+    case valid
+    /// Seerr answered 401/403: the session is gone.
+    case invalid
+    /// No usable answer (network error, 5xx, proxy page): nothing is known about the
+    /// session.
+    case unreachable
+
+    public init(status: Int) {
+        switch status {
+        case 200: self = .valid
+        case 401, 403: self = .invalid
+        default: self = .unreachable
+        }
+    }
+}
+
+/// Refuses a redirect that would change the method (POST -> GET); the 3xx answer then
+/// comes back as the result instead of a misleading 405 from the target.
+final class KeepPostRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    static func keepsMethod(original: String?, redirected: String?) -> Bool {
+        (original ?? "GET").uppercased() == (redirected ?? "GET").uppercased()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        let keeps = Self.keepsMethod(original: task.originalRequest?.httpMethod,
+                                     redirected: request.httpMethod)
+        completionHandler(keeps ? request : nil)
+    }
+}
+
+extension Seerr {
+    /// Which error to show after the scheme fallback failed too. The second attempt only
+    /// replaces the first when it says something about Seerr itself; a refused redirect
+    /// (3xx), a 405, or a scheme/TLS problem on the guessed scheme says nothing, and the
+    /// first error ("no server reachable") stays.
+    public static func errorToShow(first: Error, second: Error) -> Error {
+        if let j = second as? JellyfinError, case let .http(status, _) = j,
+           (300..<400).contains(status) || status == 405 { return first }
+        if let u = second as? URLError {
+            switch u.code {
+            case .appTransportSecurityRequiresSecureConnection, .unsupportedURL,
+                 .secureConnectionFailed, .httpTooManyRedirects, .redirectToNonExistentLocation,
+                 .badServerResponse, .cannotParseResponse, .serverCertificateUntrusted,
+                 .clientCertificateRequired:
+                return first
+            default: return second
+            }
+        }
+        return second
+    }
+}
+
 /// The fetch. Everything here depends on the network; what it **means** is above in
 /// ``Seerr`` and tested without a network.
 public actor SeerrClient {
@@ -499,6 +556,13 @@ public actor SeerrClient {
     /// wait.
     public nonisolated var address: URL { access.address }
     private let session: URLSession
+
+    /// **The session for signing in: it never turns the POST into a GET.** A 301/302 on
+    /// the way (typically http -> https) makes URLSession repeat the request as a GET,
+    /// which Seerr answers with 405, and that answer hid the real problem.
+    static let signInSession = URLSession(
+        configuration: URLSession.localNetworkConfiguration(),
+        delegate: KeepPostRedirects(), delegateQueue: nil)
 
     public init(access: SeerrAccess, session: URLSession = .localNetworkCapable) {
         self.access = access
@@ -514,7 +578,8 @@ public actor SeerrClient {
     /// would otherwise not let anything through to the sign-in.
     public static func signIn(an address: URL, user: String, password: String,
                                 headers: [OwnHeader] = [],
-                                session: URLSession = .localNetworkCapable) async throws -> SeerrAccess {
+                                session: URLSession? = nil) async throws -> SeerrAccess {
+        let session = session ?? SeerrClient.signInSession
         var req = URLRequest(url: address.appendingPathComponent("api/v1/auth/jellyfin"))
         req.httpMethod = "POST"
         OwnHeaders.apply(headers, on: &req)
@@ -653,11 +718,13 @@ public actor SeerrClient {
         return data
     }
 
-    /// Whether the stored session is still valid.
-    public func applies() async -> Bool {
+    /// Whether the stored session is still valid, **and if that could not be found out,
+    /// that too.** A network error says nothing about the session; reporting it as
+    /// expired sent users into a needless sign-in.
+    public func applies() async -> SeerrSessionState {
         guard let req = try? petition("auth/me"),
               let (_, answer) = try? await session.data(for: req),
-              let http = answer as? HTTPURLResponse else { return false }
-        return http.statusCode == 200
+              let http = answer as? HTTPURLResponse else { return .unreachable }
+        return SeerrSessionState(status: http.statusCode)
     }
 }

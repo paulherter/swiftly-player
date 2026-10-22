@@ -239,6 +239,7 @@
 /* Seerr-Zugang */
 "Aktiv" = "Active";
 "Sitzung abgelaufen" = "Session expired";
+"Seerr nicht erreichbar" = "Seerr unreachable";
 "Wird geprüft …" = "Checking …";
 "Puffer" = "Buffer";
 "Discord" = "Discord";

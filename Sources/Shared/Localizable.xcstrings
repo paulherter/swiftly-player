@@ -6898,6 +6898,23 @@
         }
       }
     },
+    "Seerr nicht erreichbar": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr nicht erreichbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr unreachable"
+          }
+        }
+      }
+    },
     "Sitzung abgelaufen": {
       "extractionState": "manual",
       "localizations": {
@@ -13897,6 +13914,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renews on %@. Thank you for staying."
+          }
+        }
+      }
+    },
+    "Swiftly gibt es jetzt im App Store": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly gibt es jetzt im App Store"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly is now in the App Store"
+          }
+        }
+      }
+    },
+    "Diese Testversion wird nicht mehr aktualisiert. Lade Swiftly bitte aus dem App Store und lösche vorher diese Testversion. Bald öffnen wir ein neues TestFlight für alle, die wirklich Beta-Versionen testen wollen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Testversion wird nicht mehr aktualisiert. Lade Swiftly bitte aus dem App Store und lösche vorher diese Testversion. Bald öffnen wir ein neues TestFlight für alle, die wirklich Beta-Versionen testen wollen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This test version no longer gets updates. Please download Swiftly from the App Store and delete this test version first. We will open a new TestFlight soon for everyone who really wants to test beta versions."
+          }
+        }
+      }
+    },
+    "App Store öffnen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store öffnen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open App Store"
           }
         }
       }

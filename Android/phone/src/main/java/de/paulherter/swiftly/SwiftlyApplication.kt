@@ -394,6 +394,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         settings = Settings(store)
         settings.serverKey = { activeServer().orEmpty().lowercase().trimEnd('/') }
         Texts.load(this)
+        // Beta redirect build: nothing else starts (no core, no billing, no network).
+        if (BuildConfig.BETA_REDIRECT) return
         // Before the core's first request: custom certificate authorities for URLSession and VLC too.
         Certificates.readySet(this)
         Certificates.observe(this)

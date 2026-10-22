@@ -566,4 +566,47 @@ struct SeerrPreItemTests {
         let back = try JSONDecoder().decode(SeerrAccess.self, from: JSONEncoder().encode(z))
         #expect(back == z)
     }
+
+    // MARK: Session state
+
+    /// **The bug (GitHub #17).** Only 401/403 mean "session gone"; anything that is not a
+    /// real answer about the session must not show as expired.
+    @Test("Session state: 401/403 invalid, other non-200 unreachable")
+    func sessionState() {
+        #expect(SeerrSessionState(status: 200) == .valid)
+        #expect(SeerrSessionState(status: 401) == .invalid)
+        #expect(SeerrSessionState(status: 403) == .invalid)
+        #expect(SeerrSessionState(status: 502) == .unreachable)
+        #expect(SeerrSessionState(status: 404) == .unreachable)
+    }
+
+    // MARK: Scheme fallback
+
+    @Test("Fallback: a refused redirect or 405 keeps the first error")
+    func fallbackKeepsFirstError() {
+        let first = URLError(.cannotConnectToHost)
+        for second: Error in [JellyfinError.http(status: 301, body: nil),
+                              JellyfinError.http(status: 405, body: nil),
+                              URLError(.secureConnectionFailed),
+                              URLError(.httpTooManyRedirects)] {
+            #expect(Seerr.errorToShow(first: first, second: second) as? URLError == first)
+        }
+    }
+
+    @Test("Fallback: a real answer or timeout of the second attempt wins")
+    func fallbackShowsRealSecondError() {
+        let first = URLError(.cannotConnectToHost)
+        let wrong = JellyfinError.transport("Name oder Passwort stimmen nicht.")
+        #expect(Seerr.errorToShow(first: first, second: wrong) as? JellyfinError == wrong)
+        let timeout = URLError(.timedOut)
+        #expect(Seerr.errorToShow(first: first, second: timeout) as? URLError == timeout)
+    }
+
+    @Test("Redirect guard: only a method-keeping redirect is followed")
+    func redirectKeepsMethod() {
+        #expect(KeepPostRedirects.keepsMethod(original: "POST", redirected: "POST"))
+        #expect(KeepPostRedirects.keepsMethod(original: "post", redirected: "POST"))
+        #expect(!KeepPostRedirects.keepsMethod(original: "POST", redirected: "GET"))
+        #expect(!KeepPostRedirects.keepsMethod(original: "POST", redirected: nil))
+    }
 }
