@@ -207,6 +207,8 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             SeparatorLine()
                             TvToggleRow(translated("Nächste Folge automatisch"), e.nextAutomatic) { e.nextAutomatic = !e.nextAutomatic }
                             SeparatorLine()
+                            TvToggleRow(translated("Intro und Abspann automatisch überspringen"), e.introOutroAutomatic) { e.introOutroAutomatic = !e.introOutroAutomatic }
+                            SeparatorLine()
                             TvAction(translated("Zurückspulen"), value = translated("%lld s", e.backSeconds)) {
                                 sheet(translated("Zurückspulen"), secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
                             }

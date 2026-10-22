@@ -13,6 +13,7 @@ import SwiftUI
 /// width and every saved jump counts on a remote.
 struct ProfileView: View {
     @AppStorage("bildrateAnpassen") private var frameRateAdapt = true
+    @AppStorage("introAbspannAuto") private var skipAutomatic = false
     let model: AppModel
 
     @State private var section: SectionSelection = .playback
@@ -405,6 +406,10 @@ struct ProfileView: View {
             SeparatorLine()
             ToggleRow(title: "Nächste Folge automatisch", an: model.nextAutomatic) {
                 model.nextAutomatic.toggle()
+            }
+            SeparatorLine()
+            ToggleRow(title: "Intro und Abspann automatisch überspringen", an: skipAutomatic) {
+                skipAutomatic.toggle()
             }
             SeparatorLine()
             valueRow("Zurückspulen", value: "\(model.backSeconds) s",

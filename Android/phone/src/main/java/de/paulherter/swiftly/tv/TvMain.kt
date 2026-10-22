@@ -105,7 +105,7 @@ fun TvBackdropReport(image: String?, ready: Boolean = true) {
 
 /** Subpages that do not use the shared backdrop (counterpart of `TvSubpage`). Person and
  *  Seerr title draw their own (rotating banner, foreign URLs) on an opaque background. */
-private val withoutSharedBackdrop = setOf("Person", "Genre", "BoxSet", "Profil", "WeiteresKonto", "ServerAufnahme",
+private val withoutSharedBackdrop = setOf("Person", "Genre", "BoxSet", "Playlist", "Profil", "WeiteresKonto", "ServerAufnahme",
     "Wiedergabeeinstellungen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
 
 private fun pagesKey(b: TvSection, depth: Int, id: String?) = "${b.name}/$depth/${id.orEmpty()}"
@@ -453,6 +453,7 @@ private fun TvSubpage(app: SwiftlyApplication, target: Destination, open: (Desti
         "Genre" -> TvGenre(app, target, open)
         // A collection: from the title menu with section, from search or watchlist without.
         "BoxSet" -> TvCollection(app, target, open)
+        "Playlist" -> TvPlaylist(app, target, open)
         "Profil" -> TvProfile(app, open)
         "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Theme.reason)) {
             TvLoginPage(app, app.serverName.value.orEmpty(), "", moreAccount = true, otherServer = back) { back() }

@@ -60,6 +60,10 @@ struct PlayerScreen: View {
     }()
     /// The switch is already running; mirrors the latch of `episodesSwitch`.
     @State private var switches = false
+    /// "Skip intro and outro automatically" (settings). Off by default.
+    @AppStorage("introAbspannAuto") private var autoSkip = false
+    /// Sections already skipped on their own in this episode (by start second): once per section.
+    @State private var autoSkipped: Set<Double> = []
     @State private var episodesSwitch = EpisodeSwitch()
     /// Plan and file start of the next episode, fetched in the last minutes, as on iPhone (``EpisodePreparation``, rules in `Vorpuffer`).
     @State private var preparation = EpisodePreparation()
@@ -867,6 +871,17 @@ struct PlayerScreen: View {
                                 hasNextEpisode: next != nil)
     }
 
+    /// The setting "Skip intro and outro automatically": the same step as the press on the button, once per section.
+    private func autoSkipRun() {
+        guard autoSkip, !switches, running, firstImagePresent,
+              let step = SectionLogic.automatic(position: position, duration: duration,
+                                                sections: sections,
+                                                hasNextEpisode: next != nil),
+              autoSkipped.insert(step.segment.from).inserted
+        else { return }
+        offeringRun()
+    }
+
     private func offeringRun() {
         layer.pressed()
         AppLog.writeOut("[Angebot] gedrückt \(offering)")
@@ -1596,6 +1611,7 @@ struct PlayerScreen: View {
         // **Nothing points at the old episode any more.**
         next = nil
         sections = []
+        autoSkipped = []
         chapter = []
         layer.newEpisode()
         hubAdopt()
@@ -1839,6 +1855,8 @@ struct PlayerScreen: View {
                                networkFavorable: preparation.networkFavorable) {
                 preparation.prepare(episode) { await model.plan(for: episode.id, still: true) }
             }
+
+            autoSkipRun()
 
             // **The overlay.** The countdown runs only while the film plays; paused, it holds.
             let cardBefore = episodesCardPresent

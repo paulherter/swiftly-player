@@ -13969,6 +13969,27 @@
         }
       }
     },
+    "%lld Wiedergabelisten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": { "stringUnit": { "state": "translated", "value": "%lld Wiedergabeliste" } },
+              "other": { "stringUnit": { "state": "translated", "value": "%lld Wiedergabelisten" } }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": { "stringUnit": { "state": "translated", "value": "%lld playlist" } },
+              "other": { "stringUnit": { "state": "translated", "value": "%lld playlists" } }
+            }
+          }
+        }
+      }
+    },
     "Intro und Abspann automatisch überspringen": {
       "extractionState": "manual",
       "localizations": {

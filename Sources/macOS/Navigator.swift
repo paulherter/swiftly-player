@@ -141,6 +141,9 @@ enum PagesTarget: Hashable, Identifiable {
     /// on the movie page. Unlike a library, a subpage with back arrow, as on iPhone.
     /// `art`: its movies or its shows; `nil`: everything in it.
     case collection(Item, art: String?)
+    /// **A video playlist:** from the title menu ("Wiedergabelisten"); a subpage with back
+    /// arrow. `art`: its movies or its episodes; `nil`: everything in it.
+    case playlist(Item, art: String?)
     /// **A downloaded series:** from Downloads, no server; everything comes from disk.
     case downloadSeries(String, title: String)
     /// **No longer used.** The watchlist has been its own section in the sidebar since
@@ -183,6 +186,7 @@ enum PagesTarget: Hashable, Identifiable {
         case let .title(item):  "titel-\(item.id)"
         case let .library(b): "bibliothek-\(b.id)"
         case let .collection(s, art): "sammlung-\(s.id)-\(art ?? "")"
+        case let .playlist(l, art): "wiedergabeliste-\(l.id)-\(art ?? "")"
         case let .downloadSeries(id, _): "downloadserie-\(id)"
         case .watchlist:        "merkliste"
         case .seerr:            "seerr"
@@ -218,7 +222,7 @@ enum PagesTarget: Hashable, Identifiable {
         // **The person page belongs to the section, not the account.** It is reached from a
         // title and the user wants to continue from there to the next one, so it lies in
         // the same branch as the page that opened it. The same goes for a genre.
-        case .title, .library, .collection, .downloadSeries, .watchlist, .seerrTitle, .person, .genre: false
+        case .title, .library, .collection, .playlist, .downloadSeries, .watchlist, .seerrTitle, .person, .genre: false
         }
     }
 

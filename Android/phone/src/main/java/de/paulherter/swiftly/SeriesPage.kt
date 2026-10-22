@@ -343,6 +343,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                 if (app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                                 else add(Choice("naechste", translated("Nächste Folge abspielen")))
                             }
+                            add(Choice("zufaellig", translated("Zufällig abspielen")))
                             selectedSeason?.let { add(Choice("staffel", translated("%@ als gesehen", it.name))) }
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
@@ -350,7 +351,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                         // also in German.
                         val abbreviation = s?.state?.let { st -> if (st.season != null && st.episode != null) " · " + translated("S%d F%d", st.season, st.episode) else "" }.orEmpty()
                         app.sheet.value = SheetRequest(name + abbreviation, entries, null,
-                            mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "staffel" to Glyph.CheckmarkCircle,
+                            mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle, "staffel" to Glyph.CheckmarkCircle,
                                   "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload)) { choice ->
                             if (choice == "gemeinsam") {
                                 s?.state?.let { st -> section.launch { kotlinx.coroutines.delay(SheetSwitch)
@@ -366,6 +367,12 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                         val afterThat = withContext(Dispatchers.IO) { app.kern.episodeAfter(st.id, s.id).await() }
                                         if (afterThat.isNotEmpty()) app.play.value = PlayRequest(afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
+                                    }
+                                    // Mixes all episodes once (`ShuffleRun` in the package); "Next episode" in the player follows it.
+                                    "zufaellig" -> {
+                                        val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(s?.id ?: return@withContext "").await() }
+                                        if (first.isNotEmpty()) app.play.value = PlayRequest(first, 0.0)
+                                        else message = translated("Die Folge konnte nicht geladen werden.")
                                     }
                                     "staffel" -> selectedSeason?.let { st ->
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(st.id, true).await() }

@@ -93,6 +93,8 @@ class Settings(store: Store) {
     var nextAutomatic: Boolean
         get() = Kern.nextAutomaticApplies(nextAutomaticSelection, nextAutomaticAccount)
         set(value) { nextAutomaticSelection = if (value) "1" else "0" }
+    /** "Skip intro and outro automatically"; off by default (iOS: `introAbspannAuto`). The pick is in the core (`SectionLogic.automatic`). */
+    var introOutroAutomatic by RememberValue(a, "introAbspannAuto", bool("introAbspannAuto", false), yesNo)
     var newAccessDisconnected by RememberValue(a, "neuGetrennt", bool("neuGetrennt", true), yesNo)
     var startRails by RememberValue(a, "startReihen", list("startReihen"), asList)
     var startOut by RememberValue(a, "startAus", list("startAus"), asList)

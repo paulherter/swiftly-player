@@ -74,6 +74,9 @@ public final class Kern: @unchecked Sendable {
     private var _downloadFolder = ""
     /// The downloads' network observer reports no network at all. Then nothing is asked first.
     private var _withoutNetwork = false
+    /// The running "Play shuffled" order or playlist (`AppModel.shuffleRun`). It applies as long as
+    /// the playing title belongs to it; any other title ends it.
+    private var _shuffleRun: ShuffleRun?
     /// What accumulated at each stop. Kotlin collects it (`stoppsProcess`).
     private var _stopps: [StopRemember] = []
     /// Never two catch-up passes at once; otherwise the same position would be sent twice.
@@ -121,6 +124,9 @@ public final class Kern: @unchecked Sendable {
         }()
         /// Since when VLC has been paused, for ``Pausenruecksprung`` (``resumeTarget(position:inGroup:)``).
         var pausedSince: Date?
+        /// Sections already skipped on their own in this episode (by start second): once per
+        /// section, so rewinding into one does not jump again (`autoSkipped` on iOS).
+        var autoSkipped: Set<Double> = []
         /// External subtitles of the plan (Kotlin sets the token), the running tracks as Jellyfin
         /// index for the reports, and a chosen file whose track VLC does not report yet. New per
         /// episode, as on Apple at every `play(url:)`.
@@ -1197,6 +1203,14 @@ public final class Kern: @unchecked Sendable {
     /// **"Next episode": online as before, offline the next downloaded one**
     /// (`DownloadRules.episodePost`, like `AppModel.episodePost`).
     private func nextEpisode(to item: Item, _ c: JellyfinClient?) async -> Item? {
+        // **A shuffled run or playlist goes along its order**, to its end (`AppModel.episodePost`).
+        let run: ShuffleRun? = lockRead {
+            guard let run = _shuffleRun else { return nil }
+            if run.contains(item.id) { return run }
+            _shuffleRun = nil
+            return nil
+        }
+        if let run { return run.next(after: item.id) }
         guard item.type == "Episode" else { return nil }
         let (list, withoutNetwork) = lockRead { (_downloads, _withoutNetwork) }
         return await DownloadRules.episodePost(item, from: list, withoutNetwork: withoutNetwork) {
@@ -1271,7 +1285,7 @@ public final class Kern: @unchecked Sendable {
     /// (`jumpReported` -> `PlaybackTick.jumped`) until VLC is there; whether playback
     /// advances at the end is decided by the card alone (`OfferingLayer.nextAtEnd`).
     public func playbackTick(duration: Double, position: Double, showsImage: Bool, running: Bool,
-                               hasAudioTracks: Bool, atPush: Bool) -> String {
+                               hasAudioTracks: Bool, atPush: Bool, autoSkip: Bool) -> String {
         barrier.lock()
         // During an episode switch the tick is silent: no report for the old episode after its stop,
         // no offer button, no second advance.
@@ -1291,6 +1305,15 @@ public final class Kern: @unchecked Sendable {
                                                      elapsed: PlaybackTick.tickLength / .seconds(1),
                                                      atEnd: EpisodeEnd.atEnd(position: spot, duration: w.state.duration)
                                                          && !atPush)
+        // **"Skip intro and outro automatically"** (`autoSkipRun` on iOS): the same step as the press on
+        // the button, once per section; Kotlin runs it after adopting the offer below.
+        var autoStep = false
+        if autoSkip, running, showsImage, !atPush,
+           let step = SectionLogic.automatic(position: spot, duration: w.state.duration,
+                                             sections: w.sections, hasNextEpisode: w.next != nil),
+           w.autoSkipped.insert(step.segment.from).inserted {
+            autoStep = true
+        }
         _playback = w
         barrier.unlock()
 
@@ -1316,7 +1339,7 @@ public final class Kern: @unchecked Sendable {
                                       offeringText: status.text, overlay: status.overlay,
                                       countdown: status.share, countdownRest: w.layer.countdownRest,
                                       countdownLength: w.layer.countdownLength,
-                                      advance: proceed))) ?? "{}"
+                                      advance: proceed, autoSkip: autoStep))) ?? "{}"
     }
 
     /// Adjust offer and overlay to the state's position: on the tick, and with `elapsed: 0`
@@ -1630,7 +1653,7 @@ public final class Kern: @unchecked Sendable {
                                       offeringText: status.text, overlay: status.overlay,
                                       countdown: status.share, countdownRest: w.layer.countdownRest,
                                       countdownLength: w.layer.countdownLength,
-                                      advance: false))) ?? "{}"
+                                      advance: false, autoSkip: false))) ?? "{}"
     }
 
     /// **The activity goes to the background:** report the state now, not at the next tick. The
@@ -3162,8 +3185,25 @@ public final class Kern: @unchecked Sendable {
     /// of the series page (`TitleAction.forSeries`, `model.episodePost`). Empty if none follows.
     public func episodeAfter(episode: String, series: String) async -> String {
         guard let c = client else { return "" }
+        let run: ShuffleRun? = lockRead {
+            guard let run = _shuffleRun else { return nil }
+            if run.contains(episode) { return run }
+            _shuffleRun = nil
+            return nil
+        }
+        if let run { return run.next(after: episode)?.id ?? "" }
         guard let next = try? await c.episodePost(itemID: episode, seriesID: series) else { return "" }
         return next.id
+    }
+
+    /// **"Play shuffled" on a series** (`AppModel.shuffleStart`): mixes all episodes once (unwatched first,
+    /// `ShuffleRun`) and returns the first one; "Next episode" in the player then follows the order.
+    /// Empty if the series has no episodes or the server does not answer.
+    public func shuffleStart(series: String) async -> String {
+        guard let c = client, let all = try? await c.episodes(seriesID: series), !all.isEmpty else { return "" }
+        let run = ShuffleRun.mixed(all)
+        lockRead { _shuffleRun = run }
+        return run.episodes.first?.id ?? ""
     }
 
     /// Empty means done. Otherwise the reason: `nichtAngemeldet` as an identifier, the wording is in the app catalog.
@@ -3375,6 +3415,9 @@ public final class Kern: @unchecked Sendable {
     /// Shares of mixed libraries and collections (`AppModel.offeringLoad()`). Valid for one minute.
     private var _offering: (for: ObjectIdentifier, shares: [String: LibraryShare],
                            directory: CollectionDirectory, time: Date)?
+    /// The account's video playlists (`AppModel.playlistDirectory`), per client. Asked together with the
+    /// collections, but a server without an answer shows none and must not hold the collections back.
+    private var _playlists: (for: ObjectIdentifier, directory: PlaylistDirectory)?
     /// The running look-up; whoever asks meanwhile waits for it instead of starting a second.
     private var _offeringTask: (for: ObjectIdentifier, task: Task<Void, Never>)?
     /// "All" across several libraries: the filter plus state in server paging
@@ -3399,7 +3442,8 @@ public final class Kern: @unchecked Sendable {
         let of = ObjectIdentifier(c)
         let state = locked { _offering?.for == of ? _offering : nil }
         return SectionOffering.compose(art: art, views: views, shares: state?.shares ?? [:],
-                                      directory: state?.directory)
+                                      directory: state?.directory,
+                                      playlists: locked { _playlists?.for == of ? _playlists?.directory : nil })
     }
 
     private func directory(_ c: JellyfinClient) -> CollectionDirectory? {
@@ -3435,7 +3479,10 @@ public final class Kern: @unchecked Sendable {
                 }
                 return try? await c.collectionDirectory(viewList: withHidden)
             }()
+            async let playlists: PlaylistDirectory? = try? await c.playlistDirectory()
+            let newPlaylists = await playlists
             let newShares = await shares
+            locked { _playlists = newPlaylists.map { (of, $0) } }
             guard let newDirectory = await directory else { return }
             locked { _offering = (of, newShares, newDirectory, Date()) }
         }
@@ -3558,6 +3605,52 @@ public final class Kern: @unchecked Sendable {
                                  count: $0.count(art: art))
             })
         }
+    }
+
+    /// The video playlists with entries in the section, in server order (`PlaylistDirectory.playlists(art:)`).
+    /// Answer: `[{"id","name","plakat","anzahl"}]`; the count is the entries of this section.
+    public func playlists(art: String) async throws -> String {
+        return try await throwReadable { () async throws -> String in
+            guard let c = client, let a = addresses else { throw CoreError.notConnected }
+            await offeringLoad()
+            let list = locked { _playlists?.for == ObjectIdentifier(c) ? _playlists?.directory : nil }
+            return try json((list?.playlists(art: art) ?? []).map {
+                CollectionEntry(id: $0.id, name: $0.item.name,
+                                 poster: ImageSelection.portrait($0.item, addresses: a)?.absoluteString,
+                                 count: $0.count(art: art))
+            })
+        }
+    }
+
+    /// What a section shows of a playlist: movies in "Movies", episodes in "Series"; without a section
+    /// everything (`AppModel.playlistShown`).
+    private static func playlistShown(_ entries: [Item], art: String) -> [Item] {
+        switch art {
+        case "movies":  entries.filter { $0.type == "Movie" || $0.type == "Video" }
+        case "tvshows": entries.filter { $0.type == "Episode" || $0.type == "Series" }
+        default:        entries
+        }
+    }
+
+    /// The entries of a playlist **in the playlist's order** (no sorting), for the playlist page.
+    /// Answer like ``collectionPage(id:art:sorting:filter:since:count:)``.
+    public func playlistPage(id: String, art: String) async throws -> String {
+        return try await throwReadable { () async throws -> String in
+            guard let c = client, let a = addresses else { throw CoreError.notConnected }
+            let shown = Self.playlistShown(try await c.playlistEntries(id), art: art)
+            return try json(GridPagesResponse(title: shown.map { gridTile($0, a) }, total: shown.count))
+        }
+    }
+
+    /// Starts a playlist (`AppModel.playlistStart`): the entries in their order are the run, and "Next
+    /// episode" in the player walks along it. Returns the first entry's ID, empty for an empty list or
+    /// without an answer.
+    public func playlistStart(id: String, art: String) async -> String {
+        guard let c = client, let all = try? await c.playlistEntries(id) else { return "" }
+        let shown = Self.playlistShown(all, art: art)
+        guard let first = shown.first else { return "" }
+        lockRead { _shuffleRun = ShuffleRun(episodes: shown) }
+        return first.id
     }
 
     /// "3 Movies" or "3 Series" under a collection tile (`collectionCount` in Kotlin); the rule
@@ -4039,6 +4132,7 @@ struct TickResponse: Encodable {
         case countdownRest
         case countdownLength = "countdownLaenge"
         case advance = "weiterschalten"
+        case autoSkip = "autoUeberspringen"
     }
     let loadingScreenGone, tracksApply: Bool
     let position: Double
@@ -4053,6 +4147,8 @@ struct TickResponse: Encodable {
     /// How long the card's fill runs; Kotlin animates the rest continuously from it.
     let countdownLength: Double
     let advance: Bool
+    /// The setting "skip intro and outro automatically" acts now: Kotlin does what the button does.
+    let autoSkip: Bool
 }
 struct PeoplePagesResponse: Encodable {
     enum CodingKeys: String, CodingKey {

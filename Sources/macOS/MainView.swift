@@ -540,7 +540,11 @@ struct MainView: View {
         // iPhone.
         case let .title(item) where item.type == "BoxSet":
             CollectionDetailPage(model: model, collection: item, art: nil) { close(target) }
+        case let .title(item) where item.type == "Playlist":
+            PlaylistPage(model: model, playlist: item, art: nil) { close(target) }
         case let .title(item):  DetailView(model: model, item: item) { close(target) }
+        case let .playlist(item, art):
+            PlaylistPage(model: model, playlist: item, art: art) { close(target) }
         case let .collection(item, art):
             CollectionDetailPage(model: model, collection: item, art: art) { close(target) }
         case let .downloadSeries(id, title):

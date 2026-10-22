@@ -159,7 +159,7 @@ struct LibraryView: View {
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
                     if showsCollections {
-                        collectionTiles
+                        if choice == .playlists { playlistTiles } else { collectionTiles }
                     } else {
                     ForEach(shelf.items, id: \.id) { entryRecord in
                         Button { navigator.openIt(.title(entryRecord), in: section) } label: {
@@ -326,7 +326,7 @@ struct LibraryView: View {
             // against the signed-in account's offer; a library of the previous account does not
             // exist there, and the page falls back to "All".
             choice = model.sectionSelection(art: art)
-            guard choice != .collections else { return }
+            guard !showsCollections else { return }
         }
         loadedSource = source?.key
         await shelf.load(model, from: source)
@@ -342,7 +342,10 @@ struct LibraryView: View {
             + offering.allSources.joined(separator: "+")
     }
 
-    private var showsCollections: Bool { collection == nil && choice == .collections }
+    /// "Collections" and "Playlists" come from memory, not from a query.
+    private var showsCollections: Bool {
+        collection == nil && (choice == .collections || choice == .playlists)
+    }
 
     /// What the grid reads from. `nil`: there is nothing in this area.
     private var source: ShelfSource? {
@@ -373,7 +376,14 @@ struct LibraryView: View {
     }
 
     /// What the count badge shows.
-    private var shown: Int { showsCollections ? collectionList.count : shelf.total }
+    private var shown: Int {
+        guard showsCollections else { return shelf.total }
+        return choice == .playlists ? playlistList.count : collectionList.count
+    }
+
+    private var playlistList: [VideoPlaylist] {
+        model.playlistDirectory?.playlists(art: art) ?? []
+    }
 
     /// The name in the bar while scrolling. `nil`: the title itself.
     private var headerName: String? {
@@ -426,6 +436,23 @@ struct LibraryView: View {
                              symbolText: art == "tvshows" ? "tv" : "film",
                              mosaic: entryRecord.item.imageTags?["Primary"] == nil
                                  ? (model, entryRecord, art) : nil)
+            }
+            .buttonStyle(Theme.PressButton())
+        }
+    }
+
+    /// Playlists in the same grid with the same tile; under the name the number of
+    /// entries in this section. A playlist opens ``PlaylistPage``.
+    @ViewBuilder
+    private var playlistTiles: some View {
+        ForEach(playlistList) { list in
+            Button {
+                navigator.openIt(.playlist(list.item, art: art), in: section)
+            } label: {
+                PosterCell(title: list.item.name,
+                             secondLine: String(localized: "\(list.count(art: art)) Titel"),
+                             image: model.imageURL(for: list.item, portrait: true),
+                             symbolText: art == "tvshows" ? "tv" : "film")
             }
             .buttonStyle(Theme.PressButton())
         }

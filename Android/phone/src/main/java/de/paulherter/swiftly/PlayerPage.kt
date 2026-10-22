@@ -1797,7 +1797,7 @@ class PlayItem(
             val reported = if (restoring) lastGoodPoint else (player.time / 1000.0).coerceAtLeast(0.0)
             val answer = JSONObject(app.kern.playbackTick(
                 if (restoring) maxOf(length, duration) else length, reported, showsImage[0], player.isPlaying,
-                player.audioTracksCount > 0, atPush))
+                player.audioTracksCount > 0, atPush, app.settings.introOutroAutomatic))
             if (answer.optBoolean("ladeschirmWeg")) {
                 imageFree = true
                 // From a handover: the card now zooms onto the picture, the audio fades in.
@@ -1824,6 +1824,8 @@ class PlayItem(
             // If the card was up, it zooms into the picture on expiry (`toNextEpisode(fromCard: cardBefore)`).
             val cardBefore = overlay == "karte"
             if (answer.has("angebot")) offeringAdopt(answer)
+            // "Skip intro and outro automatically": the same step as the button; the core picks the section, once each.
+            if (answer.optBoolean("autoUeberspringen")) { AppLog.writeOut("[Abschnitt] überspringt automatisch"); offeringRun() }
             sharedReport(wish)
             // **Prepare the next episode** while this one still plays; when and over which network is decided
             // by the core (`Prebuffer`): from three minutes before the end, Wi-Fi or cable without data saver.

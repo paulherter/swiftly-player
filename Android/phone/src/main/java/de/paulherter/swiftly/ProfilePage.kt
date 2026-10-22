@@ -241,6 +241,8 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
         SettingGroup(translated("Verhalten")) {
             ChoiceRow(Glyph.Skip, translated("Nächste Folge automatisch"), an = e.nextAutomatic) { e.nextAutomatic = it }
             SeparatorLine()
+            ChoiceRow(Glyph.Skip, translated("Intro und Abspann automatisch überspringen"), an = e.introOutroAutomatic) { e.introOutroAutomatic = it }
+            SeparatorLine()
             ChoiceRow(Glyph.WaveSearch, translated("Technische Daten im Player"), an = e.techBadge) { e.techBadge = it }
             SeparatorLine()
             ValueRow(Glyph.Rewind, translated("Zurückspulen"), value = translated("%lld s", e.backSeconds)) {

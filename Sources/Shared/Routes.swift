@@ -85,3 +85,10 @@ struct GenreRoute: Hashable {
 
 /// Profile → Appearance: home page, rows, genres.
 struct PresentationRoute: Hashable {}
+
+/// A video playlist opened from "Movies" or "Series"; `art` says which entries are
+/// meant, `nil`: all.
+struct PlaylistRoute: Hashable {
+    let playlist: Item
+    let art: String?
+}

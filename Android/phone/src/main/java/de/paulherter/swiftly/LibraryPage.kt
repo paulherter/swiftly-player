@@ -117,6 +117,8 @@ class LibraryState(val art: String, private val store: Store) {
     var choice by mutableStateOf("alle"); private set
     /** The collections of this scope; in memory as soon as the offer knows them. */
     var collectionList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
+    /** The video playlists with entries in this scope (`PlaylistDirectory`); in memory like the collections. */
+    var playlistList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
     var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: "name"); private set
     var filter by mutableStateOf(store.rememberValue("filter.$art") ?: "alle"); private set
     private var loadsPost = false
@@ -127,10 +129,17 @@ class LibraryState(val art: String, private val store: Store) {
     /** Sifted from several libraries: then the core says whether the server has more. */
     private var filterMore: Boolean? = null
 
-    val stillMorePresent: Boolean get() = choice != "sammlungen" && (filterMore ?: (items.size < total))
+    val stillMorePresent: Boolean get() = !listSelected && (filterMore ?: (items.size < total))
     val collectionsSelected: Boolean get() = choice == "sammlungen"
+    val playlistsSelected: Boolean get() = choice == "wiedergabelisten"
+    /** "Sammlungen" and "Wiedergabelisten" come from memory, not from a query (`listChoice` on iOS). */
+    val listSelected: Boolean get() = collectionsSelected || playlistsSelected
     /** What the count badge shows. */
-    val shown: Int get() = if (collectionsSelected) collectionList.size else total
+    val shown: Int get() = when {
+        collectionsSelected -> collectionList.size
+        playlistsSelected -> playlistList.size
+        else -> total
+    }
 
     fun sortingSet(value: String) { sorting = value; store.remember("sortierung.$art", value) }
     fun filterSet(value: String) { filter = value; store.remember("filter.$art", value) }
@@ -140,6 +149,7 @@ class LibraryState(val art: String, private val store: Store) {
     fun label(value: String): String = when (value) {
         "alle" -> translated(if (art == "tvshows") "Alle Serien" else "Alle Filme")
         "sammlungen" -> translated("Sammlungen")
+        "wiedergabelisten" -> translated("Wiedergabelisten")
         else -> offering.firstOrNull { it.value == value }?.name.orEmpty()
     }
 
@@ -167,7 +177,7 @@ class LibraryState(val art: String, private val store: Store) {
         disrupted = false
         if (!offeringRead(kern)) {
             // No server and no content look the same here; told apart by whether the offer arrived at all.
-            disrupted = items.isEmpty() && !collectionsSelected
+            disrupted = items.isEmpty() && !listSelected
             loads = false
             return
         }
@@ -187,6 +197,10 @@ class LibraryState(val art: String, private val store: Store) {
             val a = JSONArray(withContext(Dispatchers.IO) { kern.collections(art).await() })
             collectionList = (0 until a.length()).map { collectionTileRead(a.getJSONObject(it)) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        try {
+            val a = JSONArray(withContext(Dispatchers.IO) { kern.playlists(art).await() })
+            playlistList = (0 until a.length()).map { collectionTileRead(a.getJSONObject(it)) }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
         val before = identifier
         val oldSelection = choice
         if (!offeringRead(kern)) return
@@ -195,7 +209,7 @@ class LibraryState(val art: String, private val store: Store) {
 
     private suspend fun pageLoad(kern: Kern) {
         // The list is already in memory: "Sammlungen" appears in the menu only if there are any.
-        if (collectionsSelected) { loads = false; return }
+        if (listSelected) { loads = false; return }
         loads = items.isEmpty()
         try {
             // Refreshing fetches as much as is already there (up to 300, `LibraryModel.load`): someone
@@ -278,7 +292,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
                     if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.kern)
                 }
         }
-        val collections = state.collectionsSelected
+        val collections = state.listSelected
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(count), state = grid,
@@ -287,7 +301,12 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.fillMaxSize().areaContent()
         ) {
-            if (collections) {
+            if (state.playlistsSelected) {
+                // Playlists in the same grid with the same tile; under the name the number of entries in this scope.
+                items(state.playlistList, key = { "liste" + it.id }) { s ->
+                    PlaylistTileView(s) { open(playlistTarget(s.id, s.name, art)) }
+                }
+            } else if (collections) {
                 // Collections in the same grid with the same tile. Under the name, instead of the year, shows
                                 // how many movies or series it holds.
                 items(state.collectionList, key = { "sammlung" + it.id }) { s ->
@@ -373,7 +392,7 @@ private fun LibraryHeader(app: SwiftlyApplication, state: LibraryState, title: S
             HeaderTargets(app, open)
         }
         ValueRail(offset) {
-            if (state.collectionsSelected) {
+            if (state.listSelected) {
                 // For "Sammlungen" only the count (`ShelfControls.onlyCount`): the list needs neither filtering
                                 // nor sorting. The row keeps the height of a pill, otherwise it jumps up on switching.
                 Box(Modifier.heightIn(min = Theme.pillsHeight))

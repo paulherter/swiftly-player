@@ -39,6 +39,10 @@ struct PlayerScreen: View {
     }()
     /// Mirrors the latch of `episodesSwitch` for the view.
     @State private var switches = false
+    /// "Skip intro and outro automatically" (settings). Off by default.
+    @AppStorage("introAbspannAuto") private var autoSkip = false
+    /// Sections already skipped on their own in this episode (by start second): once per section.
+    @State private var autoSkipped: Set<Double> = []
     @State private var episodesSwitch = EpisodeSwitch()
     /// Plan and file start of the next episode, fetched in the last minutes. Same
     /// preparation as on iPhone (``Prebuffer``).
@@ -1053,6 +1057,17 @@ struct PlayerScreen: View {
         fillSet()
     }
 
+    /// The setting "Skip intro and outro automatically": the same step as the press on the button, once per section.
+    private func autoSkipRun() {
+        guard autoSkip, !switches, state.running, screenDistance,
+              let step = SectionLogic.automatic(position: state.position, duration: state.duration,
+                                                sections: sections,
+                                                hasNextEpisode: nextEpisode != nil),
+              autoSkipped.insert(step.segment.from).inserted
+        else { return }
+        offeringRun()
+    }
+
     private func offeringRun() {
         layer.pressed()
         switch offering {
@@ -1408,6 +1423,7 @@ struct PlayerScreen: View {
         // **Nothing points at the old episode any more**.
         nextEpisode = nil
         sections = []
+        autoSkipped = []
         chapter = []
         layer.newEpisode()
         hubAdopt()
@@ -1533,6 +1549,8 @@ struct PlayerScreen: View {
                                      seconds: state.position,
                                      paused: !state.running)
             }
+
+            autoSkipRun()
 
             // **The overlay** (card countdown). While stationary it pauses.
             let cardBefore = cardPresent

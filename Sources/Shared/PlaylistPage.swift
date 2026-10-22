@@ -3,12 +3,6 @@ import SwiftUI
 
 // MARK: - Playlists
 
-/// A video playlist opened from "Movies" or "Series".
-struct PlaylistRoute: Hashable {
-    let playlist: Item
-    let art: String?
-}
-
 /// **The playlist page is a collection page without sorting.**
 ///
 /// The entries stand in the playlist's order (the server keeps it); sorting or
@@ -34,11 +28,7 @@ struct PlaylistView: View {
     /// What this section shows: movies in "Movies", episodes in "Series"; without a
     /// section (search, watchlist) everything.
     private var shown: [Item] {
-        switch art {
-        case "movies":  entries.filter { $0.type == "Movie" || $0.type == "Video" }
-        case "tvshows": entries.filter { $0.type == "Episode" || $0.type == "Series" }
-        default:        entries
-        }
+        AppModel.playlistShown(entries, art: art)
     }
 
     var body: some View {

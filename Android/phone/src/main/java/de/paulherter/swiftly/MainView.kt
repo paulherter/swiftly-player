@@ -318,6 +318,7 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Genre" -> GenrePage(app, target, open, back)
         // A collection: with a section from the title menu, without from search or watchlist.
         "BoxSet" -> CollectionPage(app, target, open, back)
+        "Playlist" -> PlaylistPage(app, target, open, back)
         "QuickConnect" -> QuickConnectPage(app, back)
         "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back)
         "Darstellung" -> PresentationPage(app, open, back)

@@ -264,7 +264,7 @@ final class AppModel {
 
     /// The account's collections; `nil` until asked.
     private(set) var collectionDirectory: CollectionDirectory?
-    /// The account's video playlists (iPhone and iPad only); `nil` until asked or
+    /// The account's video playlists ; `nil` until asked or
     /// if the server did not answer.
     private(set) var playlistDirectory: PlaylistDirectory?
     /// Movies and series per mixed library.
@@ -316,21 +316,17 @@ final class AppModel {
             }
             return try? await client.collectionDirectory(viewList: withHidden)
         }()
-        // Playlists only on iPhone and iPad. A server without an answer shows none;
-        // that must not hold back collections.
-        #if os(iOS)
+        // A server without an answer shows no playlists; that must not hold back
+        // collections.
         async let playlists: PlaylistDirectory? = try? await client.playlistDirectory()
         let newPlaylists = await playlists
-        #endif
         let newShares = await shares
         let newDirectory = await directory
         // The account changed in the meantime: the result belongs to nobody
         // anymore.
         guard of == offeringKey else { return }
         libraryShares = newShares
-        #if os(iOS)
         playlistDirectory = newPlaylists
-        #endif
         // **Failed is not empty.** Without an answer the state stays invalid, and the
         // next page asks again.
         guard let newDirectory else { return }
@@ -1709,6 +1705,16 @@ final class AppModel {
         guard let first = entries.first else { return nil }
         shuffleRun = ShuffleRun(episodes: entries)
         return first
+    }
+
+    /// What a section shows of a playlist: movies in "Movies", episodes in "Series";
+    /// without a section (search, watchlist) everything.
+    static func playlistShown(_ entries: [Item], art: String?) -> [Item] {
+        switch art {
+        case "movies":  entries.filter { $0.type == "Movie" || $0.type == "Video" }
+        case "tvshows": entries.filter { $0.type == "Episode" || $0.type == "Series" }
+        default:        entries
+        }
     }
 
     /// The entries of a playlist in the playlist's order. `nil` if the server did

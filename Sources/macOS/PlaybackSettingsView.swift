@@ -105,6 +105,7 @@ struct PlaybackSettingsView: View {
     }
 
     @AppStorage("technikschild") private var techBadge = false
+    @AppStorage("introAbspannAuto") private var skipAutomatic = false
 
     private var behavior: some View {
         SettingGroup(title: "Verhalten") {
@@ -112,6 +113,10 @@ struct PlaybackSettingsView: View {
                           title: Text("Nächste Folge automatisch"),
                           an: Binding(get: { model.nextAutomatic },
                                       set: { model.nextAutomatic = $0 }))
+            SheetLine().padding(.leading, Theme.separatorInsetCard)
+            ToggleRow(symbol: "forward.fill",
+                          title: Text("Intro und Abspann automatisch überspringen"),
+                          an: $skipAutomatic)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             // **The switch for the technical badge.**
             //

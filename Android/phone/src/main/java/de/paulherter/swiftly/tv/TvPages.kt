@@ -214,7 +214,7 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val run = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
-    val collections = state.collectionsSelected
+    val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
     Box(Modifier.fillMaxSize()) {
         TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.kern) } }, focus, open,
@@ -251,7 +251,10 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                     }
                     Spacer(Modifier.weight(1f).widthIn(min = 20.dp))
                     // Only the count on the right, as on iPhone.
-                    if (collections) {
+                    if (state.playlistsSelected) {
+                        if (state.playlistList.isNotEmpty())
+                            Text(translated("%lld Wiedergabelisten", state.playlistList.size), style = TvTheme.small, color = Theme.fontVeryQuiet)
+                    } else if (collections) {
                         if (state.collectionList.isNotEmpty())
                             Text(translated("%lld Sammlungen", state.collectionList.size), style = TvTheme.small, color = Theme.fontVeryQuiet)
                     } else if (state.total > 0) {
@@ -271,7 +274,12 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                 }
             }
         }, more = {
-            if (collections) items(state.collectionList.size, key = { "sammlung" + state.collectionList[it].id }) { i ->
+            if (state.playlistsSelected) items(state.playlistList.size, key = { "liste" + state.playlistList[it].id }) { i ->
+                val s = state.playlistList[i]
+                TvPlaylistTile(s, if (i == 0) Modifier.focusRequester(focus) else Modifier) {
+                    open(playlistTarget(s.id, s.name, art))
+                }
+            } else if (collections) items(state.collectionList.size, key = { "sammlung" + state.collectionList[it].id }) { i ->
                 val s = state.collectionList[i]
                 TvCollectionTile(app, s, art, if (i == 0) Modifier.focusRequester(focus) else Modifier) {
                     open(collectionTarget(s.id, s.name, art))

@@ -179,6 +179,7 @@ enum class Glyph(val code: Int, val filled: Boolean, val mirrored: Boolean) {
     FastForward(0xE042, false, true),
     Skip(0xE044, true, false),
     SkipOutline(0xE044, false, false),
+    Shuffle(0xE043, false, false),
     More(0xE5D3, false, false),
     Subtitle(0xE048, false, false),
     Pile(0xF609, false, false),

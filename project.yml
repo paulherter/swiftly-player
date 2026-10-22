@@ -29,14 +29,14 @@ settings:
     # Must match the version in App Store Connect, otherwise the build cannot be
     # attached there. Do not attach another build to an already released
     # version; that does not work cleanly.
-    MARKETING_VERSION: "1.0.8"
+    MARKETING_VERSION: "1.0.9"
     # Must be incremented on EVERY upload: Apple does not accept the same build
     # number twice per version (error 90189).
     #
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "25"
+    CURRENT_PROJECT_VERSION: "29"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -432,8 +432,7 @@ targets:
           an address like 192.168.1.5.
     settings:
       base:
-        # tvOS runs one version ahead (1.0.9); the other targets are on 1.0.8.
-        MARKETING_VERSION: "1.0.9"
+        MARKETING_VERSION: "1.0.10"
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS: without the access group the keychain refuses
         # writes (-34018) and the login would be lost on every launch.
@@ -500,7 +499,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
-        MARKETING_VERSION: "1.0.9"
+        MARKETING_VERSION: "1.0.10"
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
   # The Mac version.

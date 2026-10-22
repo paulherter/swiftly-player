@@ -94,7 +94,7 @@ struct MainView: View {
     /// something is already playing it is not replaced; the app just comes to the front.
     private func shelfStart(_ title: Item) async -> Bool {
         guard play == nil else { return true }
-        guard !["Series", "Season", "BoxSet", "Folder", "CollectionFolder"].contains(title.type ?? "")
+        guard !["Series", "Season", "BoxSet", "Playlist", "Folder", "CollectionFolder"].contains(title.type ?? "")
         else { return false }
         guard let plan = await model.plan(for: title.id) else { return false }
         AppLog.writeOut("[Regal] direkt abspielen: \(title.name) ab \(Int(title.resumeFrom ?? 0)) s")
@@ -774,6 +774,8 @@ extension View {
                     SeriesView(model: model, series: item)
                 } else if item.type == "Episode" {
                     SeasonTarget(model: model, episode: item)
+                } else if item.type == "Playlist" {
+                    PlaylistView(model: model, playlist: item, art: nil)
                 } else if item.type == "BoxSet" {
                     // A collection from search or watchlist: without a section, so everything in it, as on
                     // iPhone.
@@ -794,6 +796,9 @@ extension View {
             }
             .navigationDestination(for: GenreRoute.self) { route in
                 GenreView(model: model, name: route.name)
+            }
+            .navigationDestination(for: PlaylistRoute.self) { route in
+                PlaylistView(model: model, playlist: route.playlist, art: route.art)
             }
             .navigationDestination(for: CollectionRoute.self) { route in
                 LibraryView(model: model, art: route.art, collection: route.collection)

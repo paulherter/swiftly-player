@@ -88,7 +88,7 @@ struct LibraryView: View {
 
     var body: some View {
         ZStack {
-            if state.loads, choice != .collections {
+            if state.loads, !listChoice {
                 // No spinner: the grid already has its shape and is cross-faded once the titles arrive.
                 GridPlaceholder()
                     .padding(.horizontal, Theme.edgePage)
@@ -108,6 +108,8 @@ struct LibraryView: View {
                         if choice == .collections {
                             // The list is already in memory: "Collections" only appears in the panel if there are any.
                             collectionGrid
+                        } else if choice == .playlists {
+                            playlistGrid
                         } else if state.items.isEmpty {
                             empty
                         } else {
@@ -278,13 +280,13 @@ struct LibraryView: View {
 
                 // A vertical divider instead of spacing: choice and filter side by side would otherwise
                 // read as one row. Without a filter ("Collections") it separates nothing and is dropped.
-                if choice != .collections { CapsuleSeparator() }
+                if !listChoice { CapsuleSeparator() }
             }
 
             // Filter and sorting side by side, with icons, like the two `ValuePill`s on the iPhone,
             // same icons in the same order. For "Collections" only the count shows, since the list
             // needs neither filtering nor sorting (`ShelfControls.onlyCount`). The row keeps its height, see below.
-            if choice != .collections {
+            if !listChoice {
                 Button { openPanel = .filter } label: {
                     Text(verbatim: state.filter.label)
                 }
@@ -308,6 +310,12 @@ struct LibraryView: View {
             if choice == .collections {
                 if !collectionList.isEmpty {
                     Text("\(collectionList.count) Sammlungen")
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+            } else if choice == .playlists {
+                if !playlistList.isEmpty {
+                    Text("\(playlistList.count) Wiedergabelisten")
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
                 }
@@ -414,6 +422,33 @@ struct LibraryView: View {
         .scrollClipDisabled()
     }
 
+    /// "Collections" and "Playlists" come from memory, not from a query.
+    private var listChoice: Bool { choice == .collections || choice == .playlists }
+
+    /// Playlists in the same grid with the same tile, as on the iPhone; under the name
+    /// the number of entries in this section. A playlist opens ``PlaylistView``.
+    private var playlistGrid: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
+            ForEach(playlistList) { list in
+                NavigationLink(value: PlaylistRoute(playlist: list.item, art: art)) {
+                    TileContent(image: model.imageURL(for: list.item, maxHeight: 600,
+                                                      portrait: true),
+                                 title: list.item.name,
+                                 subline: String(localized: "\(list.count(art: art ?? "")) Titel"),
+                                 symbolText: art == "tvshows" ? "tv" : "film")
+                }
+                .buttonStyle(TileStyle())
+                .focused($atTitle, equals: list.id)
+            }
+        }
+        .padding(.horizontal, Theme.edgePage)
+        .scrollClipDisabled()
+    }
+
+    private var playlistList: [VideoPlaylist] {
+        model.playlistDirectory?.playlists(art: art ?? "") ?? []
+    }
+
     private var collectionList: [ItemCollection] {
         model.collectionDirectory?.collections(art: art ?? "") ?? []
     }
@@ -488,7 +523,7 @@ struct LibraryView: View {
             // signed-in account's offer; a library of the previous account is not in it, and the
             // page falls back to "All" instead of querying a foreign id.
             choice = model.sectionSelection(art: art ?? "")
-            guard choice != .collections else { return }
+            guard !listChoice else { return }
         }
         loadedSource = source?.key
         await state.load(model, from: source)
