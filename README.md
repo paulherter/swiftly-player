@@ -17,7 +17,7 @@ Every file plays as Direct Play or Direct Stream, never transcoded.
 </p>
 
 <p>
-<sub><a href="https://testflight.apple.com/join/MqeP2cnj">TestFlight beta</a> · <a href="https://github.com/paulherter/swiftly-player/releases/latest">Android APK</a> · <a href="#windows">Windows</a> · <a href="#linux">Linux</a> · <a href="https://discord.gg/MeGwfv3UwN">Discord</a></sub>
+<sub><a href="https://testflight.apple.com/join/BKtrBmbz">TestFlight beta</a> · <a href="https://github.com/paulherter/swiftly-player/releases/latest">Android APK</a> · <a href="#windows">Windows</a> · <a href="#linux">Linux</a> · <a href="https://discord.gg/MeGwfv3UwN">Discord</a></sub>
 </p>
 
 </div>
@@ -182,7 +182,7 @@ and only where distance, input or window size demand it.
 **One download covers iPhone, iPad, Mac and Apple TV:**
 [App Store](https://apps.apple.com/app/id6806824067).
 
-**The beta runs alongside it.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
+**The beta runs alongside it.** [Join on TestFlight](https://testflight.apple.com/join/BKtrBmbz)
 — the next version lands there first, one link for all four. What each build
 wants tested is written in its release notes, and it is usually five specific
 things rather than "have a look around".
