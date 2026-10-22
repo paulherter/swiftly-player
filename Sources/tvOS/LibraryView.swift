@@ -428,6 +428,8 @@ struct LibraryView: View {
             art == "tvshows" ? String(localized: "Alle Serien") : String(localized: "Alle Filme")
         case .collections:
             String(localized: "Sammlungen")
+        case .playlists:
+            String(localized: "Wiedergabelisten")
         case .library(let id):
             offering.library(id)?.name ?? ""
         }
@@ -463,7 +465,7 @@ struct LibraryView: View {
                 : nil
         case .library(let id):
             return ShelfSource(parent: id, art: art)
-        case .collections:
+        case .collections, .playlists:
             return nil
         }
     }

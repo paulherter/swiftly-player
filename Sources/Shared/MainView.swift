@@ -472,6 +472,8 @@ extension View {
             .navigationDestination(for: Item.self) { item in
                 if item.type == "Series" {
                     SeriesDetailView(model: model, series: item)
+                } else if item.type == "Playlist" {
+                    PlaylistView(model: model, playlist: item, art: nil)
                 } else if item.type == "BoxSet" {
                     // A collection from search or watchlist: no section, so everything in it.
                     CollectionView(model: model, collection: item, art: nil)
@@ -485,6 +487,9 @@ extension View {
             }
             .navigationDestination(for: CollectionRoute.self) { route in
                 CollectionView(model: model, collection: route.collection, art: route.art)
+            }
+            .navigationDestination(for: PlaylistRoute.self) { route in
+                PlaylistView(model: model, playlist: route.playlist, art: route.art)
             }
             .navigationDestination(for: WatchlistRoute.self) { _ in
                 WatchlistView(model: model)
@@ -716,7 +721,7 @@ struct LibraryView: View {
                 // **Placeholder instead of a spinner.** While nothing is there, the grid
                 // already shows its shape, so the page looks empty, not waiting. It
                 // cross-fades once the titles arrive.
-                if state.items.isEmpty, state.loads, choice != .collections {
+                if state.items.isEmpty, state.loads, !listChoice {
                     GridPlaceholder(columns: count)
                         .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 8)
@@ -726,6 +731,8 @@ struct LibraryView: View {
                 LazyVGrid(columns: columns(count), alignment: .leading, spacing: 20) {
                     if choice == .collections {
                         collectionTiles
+                    } else if choice == .playlists {
+                        playlistTiles
                     } else {
                     ForEach(state.items) { item in
                         NavigationLink(value: item) {
@@ -745,12 +752,12 @@ struct LibraryView: View {
                 }
                 .padding(.horizontal, Theme.margin(wide: wide))
                 .padding(.top, 8)
-                .opacity(state.items.isEmpty && choice != .collections ? 0 : 1)
+                .opacity(state.items.isEmpty && !listChoice ? 0 : 1)
 
                 // **No spinner when loading more.** The next row arrives on its own
                 // anyway; a spinner below would only say something is running, which
                 // should go unnoticed.
-                if state.stillMorePresent, choice != .collections, state.loadMoreFailed,
+                if state.stillMorePresent, !listChoice, state.loadMoreFailed,
                    let source {
                     Button("Erneut versuchen") {
                         Task { await state.loadMore(model, from: source) }
@@ -761,7 +768,7 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
                     .padding(.top, 12)
-                } else if state.stillMorePresent, choice != .collections {
+                } else if state.stillMorePresent, !listChoice {
                     GridPlaceholder(columns: count, rails: 1)
                         .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 20)
@@ -808,7 +815,7 @@ struct LibraryView: View {
             .safeAreaInset(edge: .top, spacing: 0) { header }
 
 
-            if choice == .collections {
+            if listChoice {
                 // The list is already in memory: "Collections" appears in the menu only if
                 // there are any. No loading, no empty state.
             } else if change || AccountSwitchTransition.shared.waits {
@@ -922,7 +929,7 @@ struct LibraryView: View {
                                filterOpen: $filterListOpen,
                                sortingOpen: $sortListOpen,
                                offset: offset,
-                               onlyCount: choice == .collections ? collectionList.count : nil)
+                               onlyCount: listChoice ? shown : nil)
                     .accountSwitchPart(present: present)
             }
         }
@@ -956,7 +963,7 @@ struct LibraryView: View {
         // account does not exist in it, and the page falls back to "All" instead
         // of requesting a foreign identifier.
         choice = model.sectionSelection(art: art)
-        guard choice != .collections else { return }
+        guard !listChoice else { return }
         loadedSource = source?.key
         await state.load(model, from: source)
     }
@@ -984,7 +991,7 @@ struct LibraryView: View {
                 : nil
         case .library(let id):
             ShelfSource(parent: id, art: art)
-        case .collections:
+        case .collections, .playlists:
             nil
         }
     }
@@ -995,7 +1002,33 @@ struct LibraryView: View {
     }
 
     /// What the counter badge shows.
-    private var shown: Int { choice == .collections ? collectionList.count : state.total }
+    private var shown: Int {
+        switch choice {
+        case .collections: collectionList.count
+        case .playlists:   playlistList.count
+        default:           state.total
+        }
+    }
+
+    /// "Collections" and "Playlists" come from memory, not from a query.
+    private var listChoice: Bool { choice == .collections || choice == .playlists }
+
+    private var playlistList: [VideoPlaylist] {
+        model.playlistDirectory?.playlists(art: art) ?? []
+    }
+
+    /// **Playlists in the same grid, with the same tile**, as collections are. Under
+    /// the name it shows how many entries there are in this section.
+    @ViewBuilder
+    private var playlistTiles: some View {
+        ForEach(playlistList) { list in
+            NavigationLink(value: PlaylistRoute(playlist: list.item, art: art)) {
+                PosterTile(model: model, item: list.item, width: nil,
+                           inquiry: String(localized: "\(list.count(art: art)) Titel"))
+            }
+            .buttonStyle(Theme.PressButton())
+        }
+    }
 
     /// **Collections in the same grid, with the same tile.** Under the name,
     /// instead of the year, it shows how many movies or series are in it.
@@ -1021,6 +1054,8 @@ struct LibraryView: View {
             art == "tvshows" ? String(localized: "Alle Serien") : String(localized: "Alle Filme")
         case .collections:
             String(localized: "Sammlungen")
+        case .playlists:
+            String(localized: "Wiedergabelisten")
         case .library(let id):
             offering.library(id)?.name ?? ""
         }

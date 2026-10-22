@@ -3491,7 +3491,7 @@ public final class Kern: @unchecked Sendable {
                                   onlyOut: offering.allOut == nil ? offering.allSources : [])
                     : nil
             case .library(let id): source = ShelfSource(parent: id, art: art)
-            case .collections: source = nil
+            case .collections, .playlists: source = nil
             }
             guard let source else {
                 return try json(SectionPagesResponse(title: [], total: 0, filtered: false, evenMore: false))

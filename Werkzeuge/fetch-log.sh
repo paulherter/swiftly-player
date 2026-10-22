@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
 DEVICES=$(mktemp -t swiftly-geraete)
-trap 'rm -f "$GERAETE"' EXIT
+trap 'rm -f "$DEVICES"' EXIT
 xcrun devicectl list devices --json-output "$DEVICES" >/dev/null 2>&1 || true
 UDID=$(python3 -c 'import json,sys
 for g in json.load(open(sys.argv[1]))["result"]["devices"]:
@@ -17,11 +17,11 @@ for g in json.load(open(sys.argv[1]))["result"]["devices"]:
 [ -z "${UDID:-}" ] && { echo "Kein erreichbares Geraet." >&2; exit 1; }
 
 TARGET="${1:-swiftly.log}"
-# `--user mobile` is required, otherwise the copy fails. Without it devicectl
+# `--user mobile` fails with error 7000 on current devicectl; without it the copy works.
 # reports "Failed to retrieve the file node ... error 7000", the same wording
 # it uses for a file that does not exist. The file is there;
 # `devicectl device info files --subdirectory Documents` lists it.
-xcrun devicectl device copy from --device "$UDID" --user mobile \
+xcrun devicectl device copy from --device "$UDID" \
   --domain-type appDataContainer --domain-identifier de.paulherter.swiftly \
   --source Documents/swiftly.log --destination "$TARGET"
 echo "Geholt nach $TARGET ($(wc -l < "$TARGET") Zeilen)"

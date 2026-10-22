@@ -3163,6 +3163,8 @@ final class App: @unchecked Sendable {
             return was == .seriesList ? translated("Alle Serien") : translated("Alle Filme")
         case .collections:
             return translated("Sammlungen")
+        case .playlists:
+            return translated("Wiedergabelisten")
         case .library(let id):
             // The name comes from the server and is not translated.
             return an.library(id)?.name ?? ""
@@ -4273,7 +4275,7 @@ final class App: @unchecked Sendable {
                     : nil
             case .library(let id):
                 return ShelfSource(parent: id, art: art(was))
-            case .collections:
+            case .collections, .playlists:
                 return nil
             }
         default:

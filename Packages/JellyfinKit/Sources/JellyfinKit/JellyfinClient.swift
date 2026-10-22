@@ -560,6 +560,26 @@ public actor JellyfinClient {
         return try await send(req, as: ItemsResponse.self).items
     }
 
+    /// The entries of a playlist **in the playlist's order**
+    /// (`GET /Playlists/{id}/Items`; the server keeps the order, so no sorting).
+    ///
+    /// - Parameter lean: without images and user data, for the directory that only
+    ///   needs the types.
+    public func playlistEntries(_ playlist: String, lean: Bool = false) async throws -> [Item] {
+        let s = try requireSession()
+        var query: [URLQueryItem] = [
+            .init(name: "userId", value: s.userID),
+            .init(name: "Limit", value: "2000"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
+        ]
+        if lean {
+            query.append(.init(name: "EnableImages", value: "false"))
+            query.append(.init(name: "EnableUserData", value: "false"))
+        }
+        let req = try request("Playlists/\(playlist)/Items", query: query)
+        return try await send(req, as: ItemsResponse.self).items.filter(VideoPlaylist.isVideoEntry)
+    }
+
     /// Asks the server how it would deliver this title.
     ///
     /// The DeviceProfile is sent along; the answer reveals whether it becomes Direct Play,

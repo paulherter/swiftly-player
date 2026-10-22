@@ -294,3 +294,38 @@ struct SectionLogicTests {
         }
     }
 }
+
+@Suite("Automatisch überspringen")
+struct SectionAutomaticTests {
+    private let parts = [Segment(art: .introSegment, from: 10, until: 70),
+                         Segment(art: .lookBack, from: 80, until: 120),
+                         Segment(art: .credits, from: 1300, until: 1400)]
+
+    @Test("Im Intro: ans Ende des Intros")
+    func intro() {
+        let a = SectionLogic.automatic(position: 12, duration: 1400, sections: parts, hasNextEpisode: true)
+        #expect(a?.offering == .skip(to: 70, art: .introSegment))
+    }
+
+    @Test("Rückblick wird nicht automatisch übersprungen")
+    func recap() {
+        #expect(SectionLogic.automatic(position: 90, duration: 1400, sections: parts, hasNextEpisode: true) == nil)
+    }
+
+    @Test("Abspann bis zum Dateiende: nächste Folge, ohne Folge nichts")
+    func credits() {
+        #expect(SectionLogic.automatic(position: 1301, duration: 1400, sections: parts, hasNextEpisode: true)?.offering == .nextEpisode)
+        #expect(SectionLogic.automatic(position: 1301, duration: 1400, sections: parts, hasNextEpisode: false) == nil)
+    }
+
+    @Test("Abspann mit Szene danach: springt ans Ende des Abspanns")
+    func creditsThenScene() {
+        let a = SectionLogic.automatic(position: 1301, duration: 1500, sections: parts, hasNextEpisode: true)
+        #expect(a?.offering == .skip(to: 1400, art: .credits))
+    }
+
+    @Test("Außerhalb der Abschnitte nichts")
+    func outside() {
+        #expect(SectionLogic.automatic(position: 500, duration: 1400, sections: parts, hasNextEpisode: true) == nil)
+    }
+}

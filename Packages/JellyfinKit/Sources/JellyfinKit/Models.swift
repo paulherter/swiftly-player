@@ -152,6 +152,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// Kind of an extra (`Clip`, `BehindTheScenes`, `Interview`, `Trailer` …);
     /// set only on entries from `SpecialFeatures`.
     public let extraType: String?
+    /// `Video`, `Audio` … Tells a video playlist from a music one.
+    public let mediaType: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -190,6 +192,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case productionLocations = "ProductionLocations"
         case providerIds = "ProviderIds"
         case extraType = "ExtraType"
+        case mediaType = "MediaType"
     }
 
     /// Names of the directors, for the line under the description.
@@ -328,7 +331,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 premiereDate: String? = nil,
                 productionLocations: [String]? = nil,
                 providerIds: [String: String]? = nil,
-                extraType: String? = nil) {
+                extraType: String? = nil,
+                mediaType: String? = nil) {
         self.id = id; self.name = name; self.type = type
         self.collectionType = collectionType; self.productionYear = productionYear
         self.overview = overview; self.runTimeTicks = runTimeTicks
@@ -352,6 +356,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.productionLocations = productionLocations
         self.providerIds = providerIds
         self.extraType = extraType
+        self.mediaType = mediaType
     }
 
 }

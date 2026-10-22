@@ -168,6 +168,15 @@ enum TitleActions {
             })
             }
         }
+        list.append(.init(symbol: "shuffle", text: "Zufällig abspielen") {
+            Task {
+                guard let first = await model.shuffleStart(series) else {
+                    report(AppModel.episodeNotLoaded)
+                    return
+                }
+                episodeStart(first, 0)
+            }
+        })
         if let season {
             list.append(.init(symbol: "checkmark.circle",
                                text: "\(season.name) als gesehen") {

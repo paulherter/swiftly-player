@@ -12,6 +12,9 @@ public enum SectionSelection: Hashable, Sendable, Identifiable {
     case all
     /// The collections (Jellyfin: `BoxSet`) with titles of this kind.
     case collections
+    /// The video playlists with entries of this kind. Only offered where the
+    /// account has any.
+    case playlists
     /// A single library, by its ID.
     case library(String)
 
@@ -26,6 +29,7 @@ public enum SectionSelection: Hashable, Sendable, Identifiable {
         switch self {
         case .all:               "alle"
         case .collections:         "sammlungen"
+        case .playlists:           "wiedergabelisten"
         case .library(let id): id
         }
     }
@@ -34,6 +38,7 @@ public enum SectionSelection: Hashable, Sendable, Identifiable {
         switch rememberValue {
         case nil, "", "alle": self = .all
         case "sammlungen":    self = .collections
+        case "wiedergabelisten": self = .playlists
         case let id?:         self = .library(id)
         }
     }
@@ -67,7 +72,8 @@ public struct LibraryShare: Sendable, Equatable {
 /// collections therefore sees exactly what they saw before: no chevron, no tap
 /// target.
 ///
-/// Order in the menu: "All", then "Collections", then under the heading
+/// Order in the menu: "All", then "Collections", then "Playlists" (only where the
+/// account has video playlists), then under the heading
 /// "Libraries" the single libraries in the server's order (it comes from the
 /// account's `OrderedViews`; `UserViews` returns it that way).
 public struct SectionOffering: Sendable, Equatable {
@@ -77,22 +83,28 @@ public struct SectionOffering: Sendable, Equatable {
     public let libraries: [Item]
     /// How many collections, from the threshold up, are in this section.
     public let collections: Int
+    /// How many video playlists have entries of this kind. Always 0 where the
+    /// platform does not show playlists.
+    public let playlists: Int
 
-    public init(art: String, libraries: [Item], collections: Int) {
+    public init(art: String, libraries: [Item], collections: Int, playlists: Int = 0) {
         self.art = art
         self.libraries = libraries
         self.collections = collections
+        self.playlists = playlists
     }
 
     /// **A single library is not a choice.** It showed the same as "All": two
     /// entries, one content.
     public var showsLibraries: Bool { libraries.count > 1 }
     public var showsCollections: Bool { collections > 0 }
-    public var isMenu: Bool { showsLibraries || showsCollections }
+    public var showsPlaylists: Bool { playlists > 0 }
+    public var isMenu: Bool { showsLibraries || showsCollections || showsPlaylists }
 
     public var entries: [SectionSelection] {
         var list: [SectionSelection] = [.all]
         if showsCollections { list.append(.collections) }
+        if showsPlaylists { list.append(.playlists) }
         if showsLibraries { list += libraries.map { .library($0.id) } }
         return list
     }
@@ -145,10 +157,12 @@ public struct SectionOffering: Sendable, Equatable {
     ///   - verzeichnis: The collections, `nil` while unknown.
     public static func compose(art: String, views: [Item],
                               shares: [String: LibraryShare],
-                              directory: CollectionDirectory?) -> SectionOffering {
+                              directory: CollectionDirectory?,
+                              playlists: PlaylistDirectory? = nil) -> SectionOffering {
         let matching = views.filter { belongs($0, toward: art, shares: shares) }
         return SectionOffering(art: art, libraries: matching,
-                               collections: directory?.collections(art: art).count ?? 0)
+                               collections: directory?.collections(art: art).count ?? 0,
+                               playlists: playlists?.playlists(art: art).count ?? 0)
     }
 
     /// **A mixed library appears in both sections**: under Movies with its

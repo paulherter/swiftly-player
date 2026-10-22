@@ -13968,6 +13968,74 @@
           }
         }
       }
+    },
+    "Intro und Abspann automatisch überspringen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intro und Abspann automatisch überspringen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip intro and credits automatically"
+          }
+        }
+      }
+    },
+    "Zufällig abspielen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zufällig abspielen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play shuffled"
+          }
+        }
+      }
+    },
+    "Wiedergabelisten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabelisten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playlists"
+          }
+        }
+      }
+    },
+    "Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As soon as there is something in this playlist, it shows up here."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

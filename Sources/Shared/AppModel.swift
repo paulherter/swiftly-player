@@ -264,6 +264,9 @@ final class AppModel {
 
     /// The account's collections; `nil` until asked.
     private(set) var collectionDirectory: CollectionDirectory?
+    /// The account's video playlists (iPhone and iPad only); `nil` until asked or
+    /// if the server did not answer.
+    private(set) var playlistDirectory: PlaylistDirectory?
     /// Movies and series per mixed library.
     private(set) var libraryShares: [String: LibraryShare] = [:]
     /// Which account and which libraries both apply to.
@@ -283,7 +286,8 @@ final class AppModel {
         let applies = offeringFor == offeringKey
         return SectionOffering.compose(art: art, views: views,
                                       shares: applies ? libraryShares : [:],
-                                      directory: applies ? collectionDirectory : nil)
+                                      directory: applies ? collectionDirectory : nil,
+                                      playlists: applies ? playlistDirectory : nil)
     }
 
     /// Fetches collections and shares of mixed libraries.
@@ -312,12 +316,21 @@ final class AppModel {
             }
             return try? await client.collectionDirectory(viewList: withHidden)
         }()
+        // Playlists only on iPhone and iPad. A server without an answer shows none;
+        // that must not hold back collections.
+        #if os(iOS)
+        async let playlists: PlaylistDirectory? = try? await client.playlistDirectory()
+        let newPlaylists = await playlists
+        #endif
         let newShares = await shares
         let newDirectory = await directory
         // The account changed in the meantime: the result belongs to nobody
         // anymore.
         guard of == offeringKey else { return }
         libraryShares = newShares
+        #if os(iOS)
+        playlistDirectory = newPlaylists
+        #endif
         // **Failed is not empty.** Without an answer the state stays invalid, and the
         // next page asks again.
         guard let newDirectory else { return }
@@ -1676,8 +1689,42 @@ final class AppModel {
         return imageURL(for: item, maxHeight: height, portrait: true)
     }
 
+    /// The running "Play shuffled" order, if there is one. It applies as long as the
+    /// playing episode belongs to it; any other episode ends it.
+    @ObservationIgnored private var shuffleRun: ShuffleRun?
+
+    /// Mix all episodes of the series once and return the first one. `nil` if the
+    /// series has no episodes or the server does not answer.
+    func shuffleStart(_ series: Item) async -> Item? {
+        guard let all = await episodes(series: series.id, season: nil), !all.isEmpty else { return nil }
+        let run = ShuffleRun.mixed(all)
+        shuffleRun = run
+        return run.episodes.first
+    }
+
+    /// Starts a playlist: the entries in their order are the run, and "next episode"
+    /// in the player walks along it, movies and episodes alike. Returns the first
+    /// entry; `nil` for an empty list.
+    func playlistStart(_ entries: [Item]) -> Item? {
+        guard let first = entries.first else { return nil }
+        shuffleRun = ShuffleRun(episodes: entries)
+        return first
+    }
+
+    /// The entries of a playlist in the playlist's order. `nil` if the server did
+    /// not answer.
+    func playlistEntries(_ playlist: Item) async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.playlistEntries(playlist.id)
+    }
+
     /// The episode after this one.
     func episodePost(_ item: Item) async -> Item? {
+        // **A shuffled run goes along its order**, to its end ("nothing after that").
+        if let run = shuffleRun {
+            if run.contains(item.id) { return run.next(after: item.id) }
+            shuffleRun = nil
+        }
         // **Without a server, the next downloaded episode**; with a server as
         // before. The rule lives in the package (`DownloadRules.episodePost`).
         let client = self.client

@@ -57,6 +57,11 @@ struct PlayerScreen: View {
     /// this logs whether a phone does the same.
     @State private var rotationRequested: Date?
     @State private var sinceStart = Date()
+    /// "Skip intro and outro automatically" (settings). Off by default.
+    @AppStorage("introAbspannAuto") private var autoSkip = false
+    /// Sections already skipped on their own in this episode (by start second): once
+    /// per section, so rewinding into one does not jump again.
+    @State private var autoSkipped: Set<Double> = []
     /// Once per title: apply the track preselection.
     @State private var tracksSet = false
     /// The server has been told this title started.
@@ -1369,6 +1374,18 @@ struct PlayerScreen: View {
                                        hasNextEpisode: nextEpisode != nil)
     }
 
+    /// The setting "Skip intro and outro automatically": the same step as the press on
+    /// the button, once per section.
+    private func autoSkipRun() {
+        guard autoSkip, !switches, running, imageFree, !atPush,
+              let step = SectionLogic.automatic(position: position, duration: duration,
+                                                sections: sections,
+                                                hasNextEpisode: nextEpisode != nil),
+              autoSkipped.insert(step.segment.from).inserted
+        else { return }
+        offeringRun()
+    }
+
     /// The press on it.
     private func offeringRun() {
         layer.pressed()
@@ -1818,6 +1835,7 @@ struct PlayerScreen: View {
         // jumped to the previous episode's positions.
         nextEpisode = nil
         sections = []
+        autoSkipped = []
         chapter = []
         layer.newEpisode()
         hubAdopt()
@@ -2065,6 +2083,8 @@ struct PlayerScreen: View {
                 print("[App] Position \(Int(position)) s · Dauer \(Int(duration)) s · läuft \(running) · schiebt \(atPush)")
                 #endif
             }
+
+            autoSkipRun()
 
             // **The overlay** (card countdown). It pauses while paused.
             let cardBefore = cardPresent

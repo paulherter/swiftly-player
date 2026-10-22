@@ -215,6 +215,30 @@ public enum SectionLogic {
             ? .nextEpisode : .nobody
     }
 
+    /// The section that the "skip intro and outro automatically" setting acts on now.
+    ///
+    /// **Only intro and outro**, and only exactly where the manual button would
+    /// appear: the result is that button's offering (skip to the end of the section,
+    /// or "Next episode" for an outro that reaches the end of the file). The caller
+    /// remembers the returned section and acts once per section, so rewinding into
+    /// it does not jump again.
+    public static func automatic(position: Double, duration: Double,
+                                 sections: [Segment],
+                                 hasNextEpisode: Bool) -> (segment: Segment, offering: ButtonOffering)? {
+        let now = offering(position: position, duration: duration, sections: sections,
+                           hasNextEpisode: hasNextEpisode)
+        guard now.visible,
+              let here = valid(sections).first(where: {
+                  ($0.art == .introSegment || $0.art == .credits) && $0.contains(position)
+              })
+        else { return nil }
+        switch now {
+        case let .skip(_, art) where art == here.art: return (here, now)
+        case .nextEpisode where here.art == .credits: return (here, now)
+        default: return nil
+        }
+    }
+
     /// Whether the "Next episode" card opens by itself.
     ///
     /// **Only with an outro section from the server that reaches the end:** then
