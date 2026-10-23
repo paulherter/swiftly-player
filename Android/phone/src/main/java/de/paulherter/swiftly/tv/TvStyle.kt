@@ -253,11 +253,38 @@ fun FocusArea(modifier: Modifier = Modifier, magnifier: Float = TvTheme.focusMag
         if (calm) Motion.fadeReduced() else tween(TvTheme.focusDuration, easing = TvTheme.focusCurve), label = "lupe")
     val ownFocus = remember { FocusRequester() }
     val withinPanel = LocalWithinPanel.current
+    /** The held OK has already opened the menu — repeats and the release no longer belong to the click. */
+    val longPressed = remember { booleanArrayOf(false) }
     Box(modifier
             .focusRequester(ownFocus)
             .onFocusChanged { if (focus != it.isFocused) { focus = it.isFocused; focusChanged(it.isFocused) } }
             .graphicsLayer { scaleX = mass; scaleY = mass }
             .then(if (lengthy == null) Modifier else Modifier.onPreviewKeyEvent { e ->
+                // **Long OK by hand.** `combinedClickable` (Compose 1.7) knows the long press only for touch; a held
+                // OK on the remote fired the click on release and started the episode. Android reports the held
+                // button as a repeat with `FLAG_LONG_PRESS` (measured on a TCL TV: after 400 ms) — then the menu,
+                // and the rest of the press does not count. Remotes without a menu key reach the menu only this way.
+                val n = e.nativeKeyEvent
+                if (n.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || n.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                    n.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                    if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown) {
+                        if (n.repeatCount == 0) { longPressed[0] = false; return@onPreviewKeyEvent false }
+                        if (longPressed[0]) return@onPreviewKeyEvent true
+                        if (n.isLongPress || n.eventTime - n.downTime >= android.view.ViewConfiguration.getLongPressTimeout()) {
+                            longPressed[0] = true
+                            FocusRemember.lastOne = ownFocus
+                            KeysLock.afterLongPress()
+                            lengthy()
+                            return@onPreviewKeyEvent true
+                        }
+                        return@onPreviewKeyEvent false
+                    }
+                    if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyUp && longPressed[0]) {
+                        longPressed[0] = false
+                        return@onPreviewKeyEvent true
+                    }
+                    return@onPreviewKeyEvent false
+                }
                 // **The remote's menu key** opens the tile menu, like a long press.
                 if (e.key != androidx.compose.ui.input.key.Key.Menu) return@onPreviewKeyEvent false
                 if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
