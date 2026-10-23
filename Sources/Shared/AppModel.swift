@@ -50,7 +50,13 @@ final class AppModel {
 
     /// Empty means: take whatever the server specifies.
     var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
-    var subtitleLanguage: String { didSet { remember(subtitleLanguage, "utSprache") } }
+    /// **Choosing a language switches "automatic" on.** On its own the language did nothing while the switch stayed off (the default), so a chosen language never showed at the start.
+    var subtitleLanguage: String {
+        didSet {
+            remember(subtitleLanguage, "utSprache")
+            if !subtitleLanguage.isEmpty, !subtitleAutomatic { subtitleAutomatic = true }
+        }
+    }
     /// Only enable subtitles if the audio is not in the preferred language.
     var subtitleAutomatic: Bool { didSet { remember(subtitleAutomatic, "utAuto") } }
     /// Whether playback continues on its own at the end. Rule in `Weiterschalten`:
@@ -597,8 +603,18 @@ final class AppModel {
         landscapeFixed = store.object(forKey: "querformatFest") as? Bool ?? true
         progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
-        subtitleLanguage = store.string(forKey: "utSprache") ?? ""
-        subtitleAutomatic = store.object(forKey: "utAuto") as? Bool ?? false
+        let languageStored = store.string(forKey: "utSprache") ?? ""
+        subtitleLanguage = languageStored
+        var automaticStored = store.object(forKey: "utAuto") as? Bool ?? false
+        // **Once:** a language chosen before the language started to switch "automatic" on never took effect. Set it now.
+        if !store.bool(forKey: "utAutoNachgezogen") {
+            store.set(true, forKey: "utAutoNachgezogen")
+            if !languageStored.isEmpty, !automaticStored {
+                automaticStored = true
+                store.set(true, forKey: "utAuto")
+            }
+        }
+        subtitleAutomatic = automaticStored
         // **Never set does not mean "on".** Then the Jellyfin account's setting
         // applies; whoever flipped the switch keeps it.
         nextAutomaticSelected = store.object(forKey: "naechsteAuto") as? Bool

@@ -369,8 +369,15 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     // later and therefore goes first.
     BackHandler {
         when {
-            seekTarget != null -> markDiscard()
-            openLayer != null -> layerClose()
+            // The layer lies on top, so it answers first; a stale marker must not swallow the press.
+            openLayer != null -> { if (seekTarget != null) markDiscard(); layerClose() }
+            // One press clears marker and bar together, otherwise Back seems dead until the bar times out.
+            seekTarget != null -> {
+                markDiscard()
+                runCatching { remoteHandset.requestFocus() }
+                visible = false
+                AppLog.writeOut("[Zurück] Marke verworfen, Steuerung aus")
+            }
             controlsTarget -> {
                 runCatching { remoteHandset.requestFocus() }
                 visible = false

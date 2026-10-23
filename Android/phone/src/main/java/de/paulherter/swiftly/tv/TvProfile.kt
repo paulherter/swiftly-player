@@ -223,7 +223,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             }
                             SeparatorLine()
                             TvAction(translated("Untertitel"), value = subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text) {
-                                sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it }
+                                sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
                             }
                         }
                         Compartment.Presentation -> {

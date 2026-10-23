@@ -473,10 +473,18 @@ struct PlayerScreen: View {
         }
         .onPlayPauseCommand { playbackKey() }
         .onExitCommand {
-            // Menu cancels scrubbing first, not playback. Someone who overshot wants to return to their place, not leave the film.
-            if seekTarget != nil { markDiscard() }
-            // An open layer is closed by Back, not the player.
-            else if openLayer != nil { layerClose() }
+            // **The layer lies on top, so it answers first.** A stale scrub marker used to take the press instead: the layer stayed and Back seemed dead.
+            if openLayer != nil {
+                if seekTarget != nil || probing { markDiscard() }
+                layerClose()
+                AppLog.writeOut("[Zurück] Ebene zu")
+            }
+            // **Menu cancels scrubbing and takes the bar with it**, not playback. Someone who overshot wants to return to their place, not leave the film; one press has to clear the picture, or Back seems to do nothing until the bar times out.
+            else if seekTarget != nil || probing {
+                markDiscard()
+                controlsVisible = false
+                AppLog.writeOut("[Zurück] Marke verworfen, Steuerung aus")
+            }
             // **If the controls are showing, they go first**; only the second press leaves the film. Whoever just woke them wants to keep watching.
             else if controlsPresent {
                 controlsVisible = false
@@ -1275,6 +1283,10 @@ struct PlayerScreen: View {
     ///
     /// The bar shows time and head at the marker while one is set, with the light stretch to the real position between. It was only confirmed or discarded with the middle button or Menu. Whoever rested a thumb on the surface while paused (swipe, marker at the current position) and then resumed with Play/Pause kept it for the rest of the film: time frozen, head at 4 %, the light stretch growing with the film. VLC and `TimeAssumption` were innocent: against a server that closes idle connections after 25 s, `time` kept advancing without gaps after the pause.
     private func markDiscard(resume: Bool = true) {
+        // A hold still running would set the marker again a tenth of a second later; `holdEnds` then has nothing to confirm.
+        sampleTask?.cancel()
+        sampleTask = nil
+        probing = false
         seekTask?.cancel()
         seekTask = nil
         rollOut?.cancel()

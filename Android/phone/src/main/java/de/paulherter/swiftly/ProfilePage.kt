@@ -231,7 +231,7 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
             }
             SeparatorLine()
             ValueRow(Glyph.Subtitle, translated("Untertitel"), value = subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text) {
-                sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it }
+                sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
             }
             SeparatorLine()
             ChoiceRow(Glyph.TextBlock, translated("Untertitel automatisch"), translated("Nur wenn der Ton nicht in der gewählten Sprache läuft"),

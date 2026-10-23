@@ -420,6 +420,8 @@ extension App {
             append(sp.space, valueList(LanguageSelection.all(from: translated("Aus")).map { ($0.name, $0.value) },
                                           selected: selection.subtitleLanguage) { [weak self] value in
                 self?.selection.subtitleLanguage = value
+                // A language alone does nothing while "automatic" is off.
+                if !value.isEmpty { self?.selection.subtitleAutomatic = true }
                 self?.selection.secure()
                 self?.listClose(.playback)
             })
