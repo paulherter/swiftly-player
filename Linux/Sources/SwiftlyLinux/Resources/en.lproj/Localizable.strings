@@ -81,8 +81,11 @@
 "Nur wenn der Ton nicht in der gewählten Sprache läuft" = "Only when the audio is in another language";
 "Nächste Folge" = "Next episode";
 "Nächste Folge abspielen" = "Play next episode";
+"Zufällig abspielen" = "Play shuffled";
 "Nächste Folge automatisch" = "Auto-play next episode";
+"Intro und Abspann automatisch überspringen" = "Skip intro and credits automatically";
 "Nächste Folge konnte nicht geladen werden." = "The next episode could not be loaded.";
+"Die Folge konnte nicht geladen werden." = "The episode could not be loaded.";
 "Passwort" = "Password";
 "Qualität" = "Quality";
 "Quick Connect" = "Quick Connect";
@@ -407,6 +410,7 @@
 "Sammlungen" = "Collections";
 "Wiedergabelisten" = "Playlists";
 "Sobald in dieser Sammlung etwas liegt, taucht es hier auf." = "As soon as there is something in this collection, it shows up here.";
+"Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf." = "As soon as there is something in this playlist, it shows up here.";
 "Teil der Sammlung" = "Part of the collection";
 "alles gesehen" = "all watched";
 "geladen" = "downloaded";

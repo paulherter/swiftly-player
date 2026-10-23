@@ -25,6 +25,18 @@ public struct VideoPlaylist: Sendable, Equatable, Identifiable {
         }
     }
 
+    /// What a section shows of a playlist's entries: movies under "Movies", episodes under
+    /// "Series"; without a section (search, watchlist) everything.
+    ///
+    /// - Parameter art: `movies`, `tvshows` or `nil`.
+    public static func shown(_ entries: [Item], art: String?) -> [Item] {
+        switch art {
+        case "movies":  entries.filter { $0.type == "Movie" || $0.type == "Video" }
+        case "tvshows": entries.filter { $0.type == "Episode" || $0.type == "Series" }
+        default:        entries
+        }
+    }
+
     /// Whether the list is video at all. Music playlists carry `Audio`; a server that
     /// leaves `MediaType` out of the answer is not trusted either way, then the
     /// members decide.

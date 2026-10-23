@@ -101,6 +101,8 @@ struct Choices: Codable {
     /// Stutter is noticed *while* watching. So the switch belongs in the player, not in
     /// settings; that is how the Apple versions do it.
     var techBadge = false
+    /// **Skip intro and outro automatically** (Apple: `@AppStorage("introAbspannAuto")`, default off).
+    var skipAutomatic = false
 
     /// **off until switched on.**
     ///
@@ -248,6 +250,7 @@ struct Choices: Codable {
         volume            = min(max(w(.volume, 1.0), 0), 1)
         volumePrior       = min(max(w(.volumePrior, 1.0), 0), 1)
         techBadge          = w(.techBadge, false)
+        skipAutomatic      = w(.skipAutomatic, false)
         downloadsAn            = w(.downloadsAn, false)
         onlyOverWLAN           = w(.onlyOverWLAN, true)
         bufferLevel            = w(.bufferLevel, BufferLevel.normal.rawValue)
@@ -288,7 +291,7 @@ struct Choices: Codable {
              nextAutomaticSelected = "naechsteAutomatischGewaehlt", backSeconds = "zurueckSekunden",
              forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", titleAsLogo = "titelAlsLogo",
              fillFrame = "bildfuellend", remainingTimeAsEnd = "restzeitAlsEnde", volume = "lautstaerke",
-             volumePrior = "lautstaerkeDavor", techBadge = "technikschild", downloadsAn, onlyOverWLAN = "nurUeberWLAN",
+             volumePrior = "lautstaerkeDavor", techBadge = "technikschild", skipAutomatic = "introAbspannAuto", downloadsAn, onlyOverWLAN = "nurUeberWLAN",
              bufferLevel = "pufferstufe", discordShow = "discordAnzeigen", searchHistory = "suchverlauf",
              searchHistoryPerAccount = "suchverlaufJeKonto", doneWatch = "fertigGeschaut",
              discordHintShown = "discordHinweisGezeigt", savedGenre = "merkgattung", startRails = "startReihen",
@@ -317,6 +320,7 @@ struct Choices: Codable {
         try c.encode(volume, forKey: .volume)
         try c.encode(volumePrior, forKey: .volumePrior)
         try c.encode(techBadge, forKey: .techBadge)
+        try c.encode(skipAutomatic, forKey: .skipAutomatic)
         try c.encode(downloadsAn, forKey: .downloadsAn)
         try c.encode(onlyOverWLAN, forKey: .onlyOverWLAN)
         try c.encode(bufferLevel, forKey: .bufferLevel)

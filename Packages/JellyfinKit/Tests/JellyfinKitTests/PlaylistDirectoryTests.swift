@@ -42,6 +42,20 @@ struct PlaylistDirectoryTests {
         #expect(list.filter(VideoPlaylist.isVideoEntry).map(\.id) == ["m", "e", "v"])
     }
 
+    @Test("Anzeige: Filme unter Filme, Folgen unter Serien, ohne Bereich alles, Reihenfolge bleibt")
+    func shown() throws {
+        let list = try decode("""
+        {"Items":[
+          {"Id":"e1","Name":"A","Type":"Episode"},
+          {"Id":"m1","Name":"B","Type":"Movie"},
+          {"Id":"e2","Name":"C","Type":"Episode"}
+        ]}
+        """)
+        #expect(VideoPlaylist.shown(list, art: "movies").map(\.id) == ["m1"])
+        #expect(VideoPlaylist.shown(list, art: "tvshows").map(\.id) == ["e1", "e2"])
+        #expect(VideoPlaylist.shown(list, art: nil).map(\.id) == ["e1", "m1", "e2"])
+    }
+
     private func playlist(_ id: String, movies: Int = 0, episodes: Int = 0) -> VideoPlaylist {
         VideoPlaylist(item: Item(id: id, name: id, type: "Playlist", mediaType: "Video"),
                       members: (0..<movies).map { Item(id: "\(id)f\($0)", name: "", type: "Movie") }

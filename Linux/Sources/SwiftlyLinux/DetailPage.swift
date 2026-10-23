@@ -25,6 +25,11 @@ extension App {
             collectionOpen(item, art: nil)
             return
         }
+        // **A playlist** (search, watchlist): its page, all entries (macOS `PlaylistPage(art: nil)`).
+        if item.type == "Playlist" {
+            playlistOpen(item, art: nil)
+            return
+        }
         // **An episode gets no page of its own.** Every path to an episode (from "Zuletzt
         // hinzugefügt", from "Nächste Folge") leads to the **series page**, with the
         // episode's season already selected. A page for a single episode would show nothing
@@ -91,6 +96,10 @@ extension App {
         // page no matter who takes it.
         if item.type == "Person" {
             personPageShow(item, push: push)
+            return
+        }
+        if item.type == "Playlist" {
+            playlistPageShow(item, push: push)
             return
         }
         detailTouched = false
@@ -1056,6 +1065,25 @@ extension App {
                 })
                 }
             }
+            // **"Zufällig abspielen"** (`TitleActions.forSeries`): all episodes mixed once, unwatched
+            // first (``ShuffleRun``); "Next episode" in the player then follows that order.
+            append(list, actionRow("media-playlist-shuffle-symbolic", translated("Zufällig abspielen")) {
+                [weak self] in
+                gtk_popover_popdown(asPanel(panel))
+                guard let self, let client = self.client else { return }
+                Task.detached { [self] in
+                    let all = try? await client.episodes(seriesID: title.id)
+                    onMainThread {
+                        guard let all, !all.isEmpty else {
+                            self.report(translated("Die Folge konnte nicht geladen werden."))
+                            return
+                        }
+                        let run = ShuffleRun.mixed(all)
+                        self.shuffleRun = run
+                        if let first = run.episodes.first { self.launch(first, since: 0) }
+                    }
+                }
+            })
             if let season = openSeason {
                 append(list, actionRow("object-select-symbolic",
                                                 String(format: translated("%@ als gesehen"), season.name)) {

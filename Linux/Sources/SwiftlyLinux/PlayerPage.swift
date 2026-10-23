@@ -1278,6 +1278,7 @@ extension App {
             fflush(nil)
             nextEpisode()
         }
+        autoSkipRun()
         offeringUpdate()
         // **Prepare the next episode** while this one still plays (iOS `tick`). Not in a
         // group (it advances by itself) and not from a file. Once per episode; when and
@@ -1669,6 +1670,21 @@ extension App {
 
     // Audio and subtitle selection at start: ``tracksPreSelect()`` in `TrackSelection.swift`.
 
+    /// **The setting "Intro und Abspann automatisch überspringen"**: the same step as a press on
+    /// the button (macOS `autoSkipRun`), once per section so that rewinding into it does not jump again.
+    func autoSkipRun() {
+        guard selection.skipAutomatic, !episodesSwitch.running, playState.running,
+              playerLoadingScreen == nil, !atSlider,
+              let step = SectionLogic.automatic(position: playState.position, duration: playState.duration,
+                                                sections: sections,
+                                                hasNextEpisode: prefetchedEpisode != nil),
+              autoSkipped.insert(step.segment.from).inserted
+        else { return }
+        AppLog.writeOut("[Angebot] automatisch: \(step.offering.label) bei \(Int(playState.position)) s")
+        fflush(nil)
+        offeringRun()
+    }
+
     /// What the button at the bottom right currently does.
     func offeringRun() {
         offeringLayer.pressed()
@@ -1849,6 +1865,7 @@ extension App {
         sinceOpen = Date()
         // **Nothing points to the old episode anymore.**
         sections = []
+        autoSkipped = []
         playerChapter = []
         prefetchedEpisode = nil
         offeringLayer.newEpisode()
@@ -1910,6 +1927,26 @@ extension App {
             }) { marks in
                 onMainThread { if applies(self) { self.sections = marks } }
             }
+        }
+        // **A shuffled run or a playlist goes along its order**, to its end (macOS `episodePost`);
+        // any other title ends it.
+        if let run = shuffleRun {
+            if run.contains(item.id) {
+                let episode = run.next(after: item.id)
+                Task.detached { [self] in
+                    await change.lookUp(fetch: { episode }) { episode in
+                        onMainThread {
+                            guard applies(self) else { return }
+                            self.prefetchedEpisode = self.gemeinsam.an ? nil : episode
+                            AppLog.writeOut("[Wechsel] naechste Folge (Reihenfolge) \(episode?.id ?? "keine") nach \(item.id)")
+                            fflush(nil)
+                            self.mediaStateReport()
+                        }
+                    }
+                }
+                return
+            }
+            shuffleRun = nil
         }
         guard let series = item.seriesId else { return }
         Task.detached { [self] in

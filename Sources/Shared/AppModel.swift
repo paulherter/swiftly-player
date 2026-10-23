@@ -1710,11 +1710,7 @@ final class AppModel {
     /// What a section shows of a playlist: movies in "Movies", episodes in "Series";
     /// without a section (search, watchlist) everything.
     static func playlistShown(_ entries: [Item], art: String?) -> [Item] {
-        switch art {
-        case "movies":  entries.filter { $0.type == "Movie" || $0.type == "Video" }
-        case "tvshows": entries.filter { $0.type == "Episode" || $0.type == "Series" }
-        default:        entries
-        }
+        VideoPlaylist.shown(entries, art: art)
     }
 
     /// The entries of a playlist in the playlist's order. `nil` if the server did

@@ -1023,6 +1023,7 @@ final class App: @unchecked Sendable {
         discardSearchResults()
         // Collections and shares belong to the previous account.
         collectionDirectory = nil
+        playlistDirectory = nil
         libraryShares = [:]
         offeringFor = nil
         // **The section stays, the stack goes.** Switching from "Filme" leaves the
@@ -1736,6 +1737,13 @@ final class App: @unchecked Sendable {
     /// the media key and the advance available; before, every episode counted as
     /// having a successor, including the finale.
     var prefetchedEpisode: Item?
+    /// Sections (by start second) already skipped on their own in this episode: once per section.
+    var autoSkipped: Set<Double> = []
+    /// The running "Zufällig abspielen" order or playlist, if any; it applies as long as the playing
+    /// title belongs to it.
+    var shuffleRun: ShuffleRun?
+    /// The section a playlist was opened from (`area|id`) -> its kind (`movies`, `tvshows`, empty: all).
+    var playlistArt: [String: String] = [:]
     /// Plan and file head of the next episode, fetched in the last minutes
     /// (``EpisodePreparation``, iOS `preparation`).
     let preparation = EpisodePreparation()
@@ -2081,6 +2089,8 @@ final class App: @unchecked Sendable {
     var titleSelection: [Region: (button: Widget, title: Widget, angle: Widget)] = [:]
     /// The account's collections; `nil` until requested.
     var collectionDirectory: CollectionDirectory?
+    /// The account's video playlists; `nil` until requested or if the server did not answer.
+    var playlistDirectory: PlaylistDirectory?
     /// Movies and series per mixed library.
     var libraryShares: [String: LibraryShare] = [:]
     /// For which account and which libraries both apply.
@@ -2944,7 +2954,7 @@ final class App: @unchecked Sendable {
     // MARK: Content pages
 
     /// The common frame of every page: 52 at the top, 24 at the sides (`contentTop` and `edgeSpacing` from macOS).
-    private func pagesFrame(_ kind: Widget!) -> Widget! {
+    func pagesFrame(_ kind: Widget!) -> Widget! {
         let scroller = pagesScroller()
         gtk_widget_set_margin_top(kind, Int32(Theme.contentTop))
         gtk_widget_set_margin_start(kind, Int32(Theme.edgeSpacing))
@@ -3217,7 +3227,7 @@ final class App: @unchecked Sendable {
     /// - Parameters:
     ///   - mitServer: Whether the server line appears under the title. **Only the library pages** have it; the watchlist (`WatchlistView.swift:42-49`) and the genre page (`GenreView.swift:29`, a plain `SubpageHeader`) do not.
     ///   - mitZahl: Whether the count badge appears on the right. The genre page has none.
-    private func pageHeader(_ title: String, figure: inout Widget!,
+    func pageHeader(_ title: String, figure: inout Widget!,
                             titleField: inout Widget!,
                             serverField: inout Widget!,
                             back: (() -> Void)? = nil,
@@ -3369,7 +3379,7 @@ final class App: @unchecked Sendable {
     }
 
     /// **Empty or failed**, after the response, taken literally from `LibraryView`, `WatchlistView` and `GenreView` on macOS.
-    private func gridStateShow(_ was: Region, disrupted: Bool, empty: Bool) {
+    func gridStateShow(_ was: Region, disrupted: Bool, empty: Bool) {
         guard let inputField = emptyField[was] else { return }
         wipe(inputField)
         guard empty else { gtk_widget_set_visible(inputField, 0); return }
@@ -3485,7 +3495,8 @@ final class App: @unchecked Sendable {
         append(row, selectionButton(symbolText: arrows, value: nowSort.label,
                                    entries: sortUp))
         // **For "Sammlungen" the row stays, just empty** (macOS `LibraryView`): the list of collections needs neither filtering nor sorting. If the row disappeared, the grid would jump by its height on switching.
-        let empty = (was == .movies || was == .seriesList) && sectionSelection(was) == .collections
+        let empty = (was == .movies || was == .seriesList)
+            && (sectionSelection(was) == .collections || sectionSelection(was) == .playlists)
         var kind = gtk_widget_get_first_child(row)
         while let k = kind {
             gtk_widget_set_opacity(k, empty ? 0 : 1)
@@ -3515,12 +3526,23 @@ final class App: @unchecked Sendable {
         guard let grid = gridField[was], let figure = numberField[was] else { return }
         gridFill(grid, [])
         let genre = art(was)
-        let list = collectionDirectory?.collections(art: genre) ?? []
-        for entryRecord in list {
-            gtk_flow_box_insert(OpaquePointer(grid), collectionTile(entryRecord, art: genre), -1)
+        let count: Int
+        if sectionSelection(was) == .playlists {
+            // Playlists in the same grid with the same tile (macOS `LibraryView.playlistTiles`).
+            let lists = playlistDirectory?.playlists(art: genre) ?? []
+            for list in lists {
+                gtk_flow_box_insert(OpaquePointer(grid), playlistTile(list, art: genre), -1)
+            }
+            count = lists.count
+        } else {
+            let list = collectionDirectory?.collections(art: genre) ?? []
+            for entryRecord in list {
+                gtk_flow_box_insert(OpaquePointer(grid), collectionTile(entryRecord, art: genre), -1)
+            }
+            count = list.count
         }
-        gtk_label_set_text(OpaquePointer(figure), String(list.count))
-        gtk_widget_set_visible(figure, list.isEmpty ? 0 : 1)
+        gtk_label_set_text(OpaquePointer(figure), String(count))
+        gtk_widget_set_visible(figure, count == 0 ? 0 : 1)
         // "Sammlungen" appears in the menu only if there are any; no loading, no empty state.
         gridStateShow(was, disrupted: false, empty: false)
     }
@@ -4192,7 +4214,8 @@ final class App: @unchecked Sendable {
         let applies = offeringFor == offeringKey
         return SectionOffering.compose(art: art(was), views: review,
                                       shares: applies ? libraryShares : [:],
-                                      directory: applies ? collectionDirectory : nil)
+                                      directory: applies ? collectionDirectory : nil,
+                                      playlists: applies ? playlistDirectory : nil)
     }
 
     /// The remembered choice of this area, checked against the offer. It is stored under the same name as the library choice before, so whoever had chosen one of two movie libraries stays there.
@@ -4225,13 +4248,17 @@ final class App: @unchecked Sendable {
                 }
                 return try? await client.collectionDirectory(viewList: withHidden)
             }
+            // A server without an answer shows no playlists; that must not hold back collections.
+            let playlists = besideFrom { () async -> PlaylistDirectory? in try? await client.playlistDirectory() }
             let newShares = await shares.value
             let newDirectory = await directory.value
+            let newPlaylists = await playlists.value
             onMainThread {
                 if self.offeringRuns == of { self.offeringRuns = nil }
                 // The account changed meanwhile: the result belongs to no one any more.
                 guard of == self.offeringKey else { return }
                 self.libraryShares = newShares
+                self.playlistDirectory = newPlaylists
                 // **Failed is not empty.** Without an answer the state stays invalid, and the next page asks again.
                 if let newDirectory {
                     self.collectionDirectory = newDirectory
@@ -4286,6 +4313,10 @@ final class App: @unchecked Sendable {
     private func sourceKey(_ was: Region) -> String {
         if (was == .movies || was == .seriesList), sectionSelection(was) == .collections {
             return "sammlungen|" + (collectionDirectory?.collections(art: art(was))
+                .map(\.id).joined(separator: ",") ?? "")
+        }
+        if (was == .movies || was == .seriesList), sectionSelection(was) == .playlists {
+            return "wiedergabelisten|" + (playlistDirectory?.playlists(art: art(was))
                 .map(\.id).joined(separator: ",") ?? "")
         }
         return shelfSource(was)?.key ?? "-"
@@ -4466,7 +4497,7 @@ final class App: @unchecked Sendable {
             titleSelectionDraw(was)
             gridSource[was] = sourceKey(was)
             // **"Sammlungen" loads nothing**: the list is in the directory.
-            if sectionSelection(was) == .collections {
+            if sectionSelection(was) == .collections || sectionSelection(was) == .playlists {
                 collectionsShow(was)
                 return
             }

@@ -442,6 +442,13 @@ extension App {
             self?.selection.nextAutomaticSelected = an
             self?.selection.secure()
         })
+        append(v.space, rowsLine())
+        append(v.space, toggleRow(symbol: "media-skip-forward-symbolic",
+                                        title: translated("Intro und Abspann automatisch überspringen"),
+                                        an: selection.skipAutomatic) { [weak self] an in
+            self?.selection.skipAutomatic = an
+            self?.selection.secure()
+        })
         // **The tech badge sits directly after "Next episode automatically"**, as in
         // `macOS/PlaybackSettingsView.swift` (second place, not after skip
         // forward/back).

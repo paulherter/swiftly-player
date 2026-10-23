@@ -84,8 +84,11 @@
 "Nur wenn der Ton nicht in der gewählten Sprache läuft" = "Nur wenn der Ton nicht in der gewählten Sprache läuft";
 "Nächste Folge" = "Nächste Folge";
 "Nächste Folge abspielen" = "Nächste Folge abspielen";
+"Zufällig abspielen" = "Zufällig abspielen";
 "Nächste Folge automatisch" = "Nächste Folge automatisch";
+"Intro und Abspann automatisch überspringen" = "Intro und Abspann automatisch überspringen";
 "Nächste Folge konnte nicht geladen werden." = "Nächste Folge konnte nicht geladen werden.";
+"Die Folge konnte nicht geladen werden." = "Die Folge konnte nicht geladen werden.";
 "Passwort" = "Passwort";
 "Qualität" = "Qualität";
 "Quick Connect" = "Quick Connect";
@@ -410,6 +413,7 @@
 "Sammlungen" = "Sammlungen";
 "Wiedergabelisten" = "Wiedergabelisten";
 "Sobald in dieser Sammlung etwas liegt, taucht es hier auf." = "Sobald in dieser Sammlung etwas liegt, taucht es hier auf.";
+"Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf." = "Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf.";
 "Teil der Sammlung" = "Teil der Sammlung";
 "alles gesehen" = "alles gesehen";
 "geladen" = "geladen";
