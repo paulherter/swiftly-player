@@ -520,7 +520,17 @@ public enum DownloadRules {
     /// must not be measured differently in the download list than on the detail
     /// page.
     public static func size(_ bytes: Int64) -> String {
-        bytes.formatted(.byteCount(style: .file))
+        bytes.formatted(.byteCount(style: .file).locale(sizeLocale(.current)))
+    }
+
+    /// **Units stay Latin: "18,6 GB", not "18,6 ГБ".**
+    ///
+    /// Next to the size stand codec names, Mbit/s and fps, all Latin; a Cyrillic
+    /// unit between them reads as a different kind of number. German formatting
+    /// gives the same decimal comma Russian uses, with Latin units.
+    static func sizeLocale(_ current: Locale) -> Locale {
+        ["ru", "uk", "be"].contains(String(current.identifier.prefix(2)))
+            ? Locale(identifier: "de_DE") : current
     }
 
     /// **When progress is shown: at most once per second.**

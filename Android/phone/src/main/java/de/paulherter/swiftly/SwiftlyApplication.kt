@@ -11,7 +11,6 @@ import coil3.request.crossfade
 import kotlinx.coroutines.future.await
 import org.swift.swiftkit.core.SwiftArena
 import java.io.File
-import java.util.Locale
 import java.util.UUID
 
 /**
@@ -401,7 +400,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         Certificates.observe(this)
         // **Before the session.** Behind a gateway even the first request needs the custom headers.
         Kern.ownHeadersLoad(store.vaultRead(OwnHeaders).orEmpty())
-        val language = if (Locale.getDefault().language == "de") "de" else "en"
+        val language = Texts.language
         // Before the first package string, or the keys show instead.
         Kern.packageLanguageSet(packageLanguageUnpack().absolutePath, language)
         // "Android" in the program name lets other devices recognise a phone (or the TV).

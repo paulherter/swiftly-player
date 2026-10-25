@@ -1,0 +1,142 @@
+/* Texte des Pakets. Der deutsche Wortlaut ist zugleich der
+   Schlüssel — so bleibt der Code ohne Kürzel lesbar. */
+
+"A–Z" = "A–Z";
+"Zuletzt" = "Недавние";
+"Bewertung" = "Рейтинг";
+"Jahr" = "Год";
+"Alle" = "Все";
+"Angefangen" = "Начато";
+"Merkliste" = "Список просмотра";
+"Ungesehen" = "Не просмотрено";
+"Direct Play — die Datei läuft unverändert." = "Direct Play — файл воспроизводится без изменений.";
+"Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet." = "Direct Stream — переупаковывается только контейнер, изображение не трогается.";
+"Der Server transkodiert. Grund unbekannt." = "Сервер перекодирует. Причина неизвестна.";
+"Der Server transkodiert: %@" = "Сервер перекодирует: %@";
+"Video" = "Video";
+"Audio" = "Звук";
+"Untertitel" = "Субтитры";
+"Container" = "Контейнер";
+"%@ „%@“ wird nicht direkt unterstützt (%@)." = "%@ «%@» не поддерживается напрямую (%@).";
+"%@ „%@“ steht nicht im Geräteprofil." = "%@ «%@» нет в профиле устройства.";
+"nicht im Profil deklariert" = "не объявлено в профиле";
+"%lld Kanäle" = "Каналов: %lld";
+"würde eingebrannt" = "будут вшиты";
+"Stereo" = "Stereo";
+"Mono" = "Mono";
+"Staffel %lld" = "Сезон %lld";
+"Folge %lld" = "Эпизод %lld";
+"Nicht angemeldet." = "Вход не выполнен.";
+"Das andere Gerät hat nicht reagiert." = "Другое устройство не ответило.";
+
+/* AirPlay und Abschnitte */
+"Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC." = "Видео в формате %@. AirPlay передаёт только H.264 и HEVC.";
+"Der Ton liegt als %@ vor. Apple-Geräte nehmen das über AirPlay nicht an." = "Звук в формате %@. Устройства Apple не принимают его через AirPlay.";
+"Die Datei liegt als %@ vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein." = "Файл в формате %@. Для AirPlay сервер должен его переупаковать, но не предлагает этого. В настройках сервера в разделе «Воспроизведение» должно быть разрешено перекодирование.";
+"Über Bildschirmsynchronisierung im Kontrollzentrum läuft der Film trotzdem auf dem Fernseher." = "Через «Повтор экрана» в Пункте управления фильм всё равно можно вывести на телевизор.";
+"Intro überspringen" = "Пропустить заставку";
+"Abspann überspringen" = "Пропустить титры";
+"Rückblick überspringen" = "Пропустить «Ранее»";
+"Vorschau überspringen" = "Пропустить превью";
+"Werbung überspringen" = "Пропустить рекламу";
+"Nächste Folge" = "Следующий эпизод";
+"Überspringen" = "Пропустить";
+"Der Server nennt keine abspielbare Fassung." = "Сервер не предлагает версию, которую можно воспроизвести.";
+"Der Server lässt dieses Konto den Titel nicht abspielen." = "Сервер не разрешает этой учётной записи воспроизводить этот тайтл.";
+"Der Server lässt gerade keine weitere Wiedergabe zu. Die Bandbreite für dieses Konto ist ausgeschöpft." = "Сервер сейчас не разрешает ещё одно воспроизведение. Лимит пропускной способности для этой учётной записи исчерпан.";
+"Der Server findet keine Fassung, die er an dieses Gerät schicken darf. Meist ist Umwandeln für dieses Konto abgeschaltet." = "У сервера нет версии, которую ему разрешено отправить на это устройство. Обычно для этой учётной записи отключено перекодирование.";
+
+/* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
+"%lld Std. %lld Min." = "%lld ч %lld мин";
+"%lld Min." = "%lld мин";
+
+/* Wiedergabewahlen — aus Sources/Shared hierher gehoben. */
+"Unbegrenzt" = "Без ограничений";
+"%lld Mbit/s" = "%lld Mbit/s";
+"Wie die Datei" = "Как в файле";
+
+"Film" = "Фильм";
+"Serie" = "Сериал";
+"Folge" = "Эпизод";
+"Keine" = "Нет";
+"Lädt…" = "Загрузка…";
+"Keine Folgen" = "Нет эпизодов";
+"Noch %lld Minuten" = "Осталось %lld мин";
+"Fortsetzen %@" = "Продолжить %@";
+"Abspielen %@" = "Смотреть %@";
+"%lld Staffeln" = "Сезонов: %lld";
+"Die Adresse konnte nicht gelesen werden." = "Не удалось распознать адрес.";
+"Benutzername oder Passwort stimmt nicht." = "Неверное имя пользователя или пароль.";
+"Dieses Konto darf das nicht." = "Этой учётной записи это запрещено.";
+"Das gibt es auf dem Server nicht." = "На сервере этого нет.";
+"Der Server hat einen Fehler gemeldet." = "Сервер сообщил об ошибке.";
+"Keine Verbindung." = "Нет подключения.";
+"Der Server hat nicht geantwortet." = "Сервер не ответил.";
+"Unter dieser Adresse ist kein Server erreichbar." = "По этому адресу сервер недоступен.";
+"Der Server hat mit %lld geantwortet." = "Сервер ответил кодом %lld.";
+"Die Antwort des Servers war unverständlich." = "Не удалось разобрать ответ сервера.";
+"unbekannt" = "неизвестно";
+"Normal" = "Normal";
+"Schlechte Verbindung" = "Плохое соединение";
+"Sehr schlechte Verbindung" = "Очень плохое соединение";
+
+/* Merkgattung und Wiedergabeplan — standen im Code, aber in keinem Katalog. */
+"Filme" = "Фильмы";
+"Serien" = "Сериалы";
+"Filme & Serien" = "Фильмы и сериалы";
+"Transkodiert" = "Перекодировано";
+"Direct Play" = "Direct Play";
+"Direct Stream" = "Direct Stream";
+
+/* Quick Connect */
+"Die Verbindung zum Server ist abgebrochen." = "Соединение с сервером прервалось.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "Срок действия кода истёк. Получите новый.";
+"Der Code ist abgelaufen oder falsch." = "Код истёк или неверен.";
+"Der Server hat Quick Connect abgeschaltet." = "На этом сервере Quick Connect отключён.";
+
+/* Zertifikat und Verbindung — was auf den curl-Plattformen als Code -1 ankommt. */
+"Dem Zertifikat des Servers wird nicht vertraut." = "Сертификату сервера нет доверия.";
+"Das Zertifikat des Servers ist abgelaufen." = "Срок действия сертификата сервера истёк.";
+"Das Zertifikat des Servers gilt noch nicht." = "Сертификат сервера ещё не действует.";
+"Das Zertifikat des Servers gehört zu einer anderen Adresse." = "Сертификат сервера выдан для другого адреса.";
+"Die verschlüsselte Verbindung kam nicht zustande." = "Не удалось установить защищённое соединение.";
+"Die Verbindung zum Server hat nicht geklappt." = "Не удалось подключиться к серверу.";
+"Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Сервер требует двухфакторное подтверждение. Разрешите это устройство в браузере или войдите с паролем приложения.";
+"Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein." = "Перед сервером стоит страница входа, например Cloudflare Access или Authelia. Добавьте требуемые ею заголовки в разделе «Дополнительно».";
+
+"Original" = "Original";
+"Direct Play · Originalqualität" = "Direct Play · исходное качество";
+
+/* Anzahlen in Kacheln und Sammlungen (fehlten bis 25.09.2026, englisch stand Deutsch). */
+"%lld Filme" = "Фильмов: %lld";
+"%lld Serien" = "Сериалов: %lld";
+"%lld neue Folgen" = "Новых эпизодов: %lld";
+/* Gemeinsam schauen (SyncPlaySitzung) */
+"%@ ist dabei" = "%@ присоединился(-ась)";
+"%@ ist gegangen" = "%@ вышел(-ла)";
+"Wartet auf alle" = "Ожидание всех участников";
+"Angehalten" = "На паузе";
+"Geht weiter" = "Воспроизведение продолжено";
+"Gesprungen" = "Перемотано";
+"Einem in der Gruppe fehlt dieser Titel." = "У кого-то в группе нет этого тайтла.";
+"Der Titel der Gruppe lässt sich hier nicht abspielen." = "Тайтл группы здесь не воспроизводится.";
+"Gemeinsam schauen ist für dein Konto auf dem Server nicht freigegeben." = "Совместный просмотр не разрешён для вашей учётной записи на этом сервере.";
+"Die Gruppe kam nicht zustande: vom Server kam keine Antwort über die Verbindung. Versuch es gleich noch einmal." = "Не удалось создать группу: сервер не ответил по соединению. Попробуйте ещё раз чуть позже.";
+"Diese Gruppe gibt es nicht mehr." = "Этой группы больше нет.";
+"Filmabend" = "Кино с друзьями";
+
+/* Erstbild: tech overlay when the decoder never delivered a picture */
+"Kein Bild vom Dekoder – Wiedergabe neu aufgebaut" = "Нет изображения от декодера — воспроизведение перезапущено";
+"Kein Bild vom Dekoder – Software-Dekoder aktiv" = "Нет изображения от декодера — используется программный декодер";
+"Kein Bild vom Dekoder – auch Software-Dekoder ohne Bild" = "Нет изображения от декодера — программный декодер тоже не справился";
+
+/* Weiterschauen-Kachel: Restzeit und Folgenkürzel */
+"noch %lld Min." = "осталось %lld мин";
+"noch %lld Std." = "осталось %lld ч";
+"noch %lld Std. %lld Min." = "осталось %lld ч %lld мин";
+"S%lld · F%lld" = "S%lld · E%lld";
+
+/* Staffel-/Folgenkürzel: Deutsch „F" wie Folge, Englisch „E" wie Episode */
+"F%lld" = "Э%lld";
+"S%lld • F%lld" = "S%lld • E%lld";
+"Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "Связь с группой прервалась и не восстановилась. Присоединитесь к группе снова.";

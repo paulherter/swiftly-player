@@ -343,6 +343,15 @@ struct DownloadRulesTests {
         #expect(text.uppercased().contains("GB"))
     }
 
+    @Test("Russisch: Komma wie dort, Einheit lateinisch")
+    func sizeRussianKeepsLatinUnit() {
+        let locale = DownloadRules.sizeLocale(Locale(identifier: "ru_RU"))
+        let text = Int64(18_600_000_000).formatted(.byteCount(style: .file).locale(locale))
+        #expect(text.contains("18,6"))
+        #expect(text.contains("GB"))
+        #expect(DownloadRules.sizeLocale(Locale(identifier: "en_US")).identifier == "en_US")
+    }
+
     @Test("Ohne Groesse vom Server gibt es keinen Anteil")
     func noShareWithoutSize() {
         var p = entries("a", bytes: 0)

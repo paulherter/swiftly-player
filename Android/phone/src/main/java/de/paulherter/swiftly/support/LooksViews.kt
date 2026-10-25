@@ -285,7 +285,7 @@ fun whatsNewShow(app: SwiftlyApplication, entry: JSONObject) {
 
 private fun JSONObject.localized(key: String): String {
     val o = optJSONObject(key) ?: return ""
-    val language = if (java.util.Locale.getDefault().language == "de") "de" else "en"
+    val language = de.paulherter.swiftly.shared.Texts.language
     return o.optString(language, o.optString("en"))
 }
 

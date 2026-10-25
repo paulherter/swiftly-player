@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.shared.PrimaryButton
+import de.paulherter.swiftly.shared.Texts
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
@@ -104,7 +105,7 @@ internal fun sharedStatusRead(o: JSONObject) = SharedStatus(
 
 /** "Anna und Ben", "Anna, Ben und Eva": `ListFormatter` as on Apple, in the text language. */
 internal fun namesList(names: List<String>): String =
-    android.icu.text.ListFormatter.getInstance(if (Locale.getDefault().language == "de") Locale.GERMAN else Locale.ENGLISH).format(names)
+    android.icu.text.ListFormatter.getInstance(Locale.forLanguageTag(Texts.language)).format(names)
 
 /** "Anna und Ben schauen gerade" (`SharedSheets.wer`). */
 internal fun werWatch(g: SharedGroup): String = when {

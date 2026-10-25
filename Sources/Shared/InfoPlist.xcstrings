@@ -15,6 +15,12 @@
             "state": "translated",
             "value": "Swiftly"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
         }
       }
     },
@@ -28,6 +34,12 @@
           }
         },
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly"
@@ -48,6 +60,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly looks for your Jellyfin server on your home network. Without this, the app cannot reach a server at an address like 192.168.1.5."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly ищет ваш сервер Jellyfin в домашней сети. Без этого разрешения приложение не найдёт сервер по адресу вроде 192.168.1.5."
           }
         }
       }

@@ -9,8 +9,9 @@ them with `uebersetzt("...")`. A second catalog maintained by hand would be a
 second source of truth -- hence generated, not maintained.
 
 Placeholders are rewritten for `String.format`: %@ -> %s, %lld/%ld -> %d,
-%1$@ -> %1$s. Plural forms: "other" applies (as on Linux, where stringsdict is
-missing).
+%1$@ -> %1$s. Plural forms: "other" is the plain entry; the others go under
+`key#eins`, `key#few`, `key#many` where they differ, and Kotlin picks one with
+`PluralRules` (Russian needs three).
 """
 import json, re, sys, pathlib
 
@@ -31,10 +32,13 @@ def value(entry: dict):
     different = plural.get("other") or next(iter(plural.values()), None)
     return different["stringUnit"]["value"] if different and "stringUnit" in different else None
 
-def singular(entry: dict):
-    """The form for exactly one, if the catalog has its own ("1 result" instead of "1 results")."""
-    one = entry.get("variations", {}).get("plural", {}).get("one")
-    return one["stringUnit"]["value"] if one and "stringUnit" in one else None
+def form(entry: dict, category: str):
+    """A plural form other than `other`, if the catalog has one ("1 result", "2 сезона")."""
+    found = entry.get("variations", {}).get("plural", {}).get(category)
+    return found["stringUnit"]["value"] if found and "stringUnit" in found else None
+
+# Suffix per CLDR category. `one` keeps its old name so the German and English tables stay as they were.
+SUFFIXES = {"one": "eins", "two": "two", "few": "few", "many": "many"}
 
 catalog = json.loads(SOURCE.read_text(encoding="utf-8"))
 quellsprache = catalog.get("sourceLanguage", "de")
@@ -48,10 +52,11 @@ for key, entry in catalog["strings"].items():
         w = value(places[s]) if s in places else (key if s == quellsprache else None)
         if w is not None:
             tabellen[s][kotlinformat(key)] = kotlinformat(w)
-        # Store the singular only if it differs -- `Texte.text` asks for `...#eins` when the count is exactly 1.
-        e = singular(places[s]) if s in places else None
-        if e is not None and e != w:
-            tabellen[s][kotlinformat(key) + "#eins"] = kotlinformat(e)
+        # Store a form only if it differs -- `Texts.text` asks for `...#<suffix>` by the count's category.
+        for category, suffix in SUFFIXES.items():
+            e = form(places[s], category) if s in places else None
+            if e is not None and e != w:
+                tabellen[s][kotlinformat(key) + "#" + suffix] = kotlinformat(e)
 
 # **"Support Swiftly" texts come from the package** (`SupportCopy` in JellyfinKit), not from the
 # app catalog: every platform copies the same pairs. The shared ones go into the normal tables;

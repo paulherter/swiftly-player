@@ -1,6 +1,7 @@
 package de.paulherter.swiftly.shared
 
 import android.content.Context
+import android.icu.text.PluralRules
 import org.json.JSONObject
 import java.util.Locale
 
@@ -11,17 +12,25 @@ import java.util.Locale
  * `Sources/Shared/Localizable.xcstrings`. Nothing is maintained by hand here: a second catalog
  * would be a second source of truth.
  *
- * German for German devices, English otherwise (same rule as the store).
+ * The device language if the catalog has it, English otherwise.
  */
 object Texts {
     private var table: Map<String, String> = emptyMap()
+    private var plurals: PluralRules = PluralRules.forLocale(Locale.ENGLISH)
+
+    /** The language the tables were loaded in. Everything else that picks a language follows it. */
+    var language: String = "en"
+        private set
 
     fun load(context: Context, language: String = Locale.getDefault().language) {
-        val file = if (language == "de") "de" else "en"
+        val available = context.assets.list("texts").orEmpty()
+        val file = if ("$language.json" in available) language else "en"
+        this.language = file
+        plurals = PluralRules.forLocale(Locale.forLanguageTag(file))
         // `<language>.json` from the catalog, plus `<language>.<part>.json` that only one build
         // flavor ships (the direct build's texts live in `phone/src/direct/assets`, so the Play
         // build does not contain them at all).
-        val parts = listOf("$file.json") + (context.assets.list("texts").orEmpty()
+        val parts = listOf("$file.json") + (available
             .filter { it.startsWith("$file.") && it.endsWith(".json") && it != "$file.json" }.sorted())
         val merged = HashMap<String, String>()
         parts.forEach { name ->
@@ -34,10 +43,12 @@ object Texts {
     fun text(key: String, vararg arguments: Any): String {
         // The script also stores the key rewritten for Java (`%d opened`), but callers pass Swift's form
         // (`%lld opened`), so look up both.
-        // At most one of them has its own singular form where the catalog has one: "1 result", not
-        // "1 results". The script stores it as `...#one`.
-        val one = (arguments.singleOrNull() as? Number)?.toLong() == 1L
-        val format = (if (one) table["$key#eins"] ?: table["${javaFormat(key)}#eins"] else null)
+        // A single number picks the plural form the catalog has for it ("1 result", "2 сезона",
+        // "5 сезонов"). The script stores them as `...#eins`, `...#few`, `...#many`; `other` is the
+        // plain entry.
+        val count = (arguments.singleOrNull() as? Number)?.toLong()
+        val suffix = count?.let { plurals.select(it.toDouble()) }?.let { if (it == "one") "eins" else it }
+        val format = (if (suffix != null) table["$key#$suffix"] ?: table["${javaFormat(key)}#$suffix"] else null)
             ?: table[key] ?: table[javaFormat(key)] ?: key
         if (arguments.isEmpty()) return format
         // If the entry is missing, the key itself is the template, and it carries Swift placeholders.
