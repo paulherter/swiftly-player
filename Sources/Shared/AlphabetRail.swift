@@ -66,16 +66,3 @@ struct AlphabetRail: View {
         .frame(width: Self.width)
     }
 }
-
-/// A request to scroll a grid to one title; the serial lets the same title be asked
-/// for twice in a row.
-struct ScrollJump: Equatable {
-    let id: String
-    let serial: Int
-}
-
-/// The tiles a grid has on screen. **A plain box, not observed**: it changes on every
-/// scroll, and only the letter derived from it is state.
-final class OnScreenTiles {
-    var ids: Set<String> = []
-}

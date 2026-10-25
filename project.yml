@@ -232,6 +232,7 @@ targets:
       # (`Sources/tvOS/TVLooks.swift`).
       - path: Sources/Shared/LookGiftSheet.swift
       - path: Sources/Shared/Motion.swift
+      - path: Sources/Shared/GridJump.swift
       # The flow around a purchase (looks panel, sheet, thank-you page) and SupportChoice.
       - path: Sources/Shared/SupportFlow.swift
       - path: Sources/Shared/Keychain.swift
@@ -562,6 +563,7 @@ targets:
       - path: Sources/Shared/SupportProfileParts.swift
       - path: Sources/Shared/LookAccentDots.swift
       - path: Sources/Shared/Motion.swift
+      - path: Sources/Shared/GridJump.swift
       - path: Sources/Shared/SeasonDecor.swift
       # Building blocks without platform dimensions - row title, badge, loader,
       # profile glyph. They used to exist three times.
