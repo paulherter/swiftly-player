@@ -157,7 +157,7 @@
 "Zeigt Ø" = "Показано, в ср.";
 
 /* Merkliste als eigene Seite (08.09.2026) */
-"Merkliste" = "Список просмотра";
+"Merkliste" = "Избранное";
 
 /* Seerr (08.09.2026) */
 "Adresse" = "Адрес";
@@ -306,8 +306,8 @@
 "Downloads warten, bis du im WLAN bist" = "Загрузки ждут подключения к Wi-Fi";
 
 /* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
-"Noch nichts gemerkt" = "В списке пока ничего нет";
-"Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "На странице каждого фильма и сериала в ряду кнопок есть «Список просмотра». Всё, что вы там отметите, собирается здесь.";
+"Noch nichts gemerkt" = "В избранном пока ничего нет";
+"Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "На странице каждого фильма и сериала в ряду кнопок есть «Избранное». Всё, что вы там отметите, собирается здесь.";
 "Nichts in diesem Genre" = "В этом жанре ничего нет";
 "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien." = "Сейчас на вашем сервере нет фильмов и сериалов этого жанра.";
 "Danach frei" = "Свободно после";
@@ -451,7 +451,7 @@
 "Gruppe öffnen" = "Открыть группу";
 "Pause und Springen gelten für alle." = "Пауза и перемотка действуют для всех.";
 "Beitreten" = "Присоединиться";
-"Läuft gerade" = "Сейчас идёт";
+"Läuft gerade" = "Воспроизводится";
 "Noch niemand dabei" = "Пока никого нет";
 "noch niemand dabei" = "пока никого нет";
 "%@ schaut gerade" = "Сейчас смотрит: %@";

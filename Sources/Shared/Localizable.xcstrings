@@ -478,12 +478,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld фильм"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -494,6 +488,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld фильмов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld фильм"
                 }
               },
               "other": {
@@ -548,12 +548,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld эпизод"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -564,6 +558,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld эпизодов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld эпизод"
                 }
               },
               "other": {
@@ -712,12 +712,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld минута"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -728,6 +722,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld минут"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld минута"
                 }
               },
               "other": {
@@ -851,12 +851,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld коллекция"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -867,6 +861,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld коллекций"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld коллекция"
                 }
               },
               "other": {
@@ -898,12 +898,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld сериал"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -914,6 +908,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld сериалов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld сериал"
                 }
               },
               "other": {
@@ -969,12 +969,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld сезон"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -985,6 +979,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld сезонов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld сезон"
                 }
               },
               "other": {
@@ -1015,12 +1015,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Запросить %lld сезон"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1031,6 +1025,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "Запросить %lld сезонов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Запросить %lld сезон"
                 }
               },
               "other": {
@@ -1108,12 +1108,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1124,6 +1118,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл"
                 }
               },
               "other": {
@@ -1154,12 +1154,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл на этом устройстве"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1170,6 +1164,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов на этом устройстве"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл на этом устройстве"
                 }
               },
               "other": {
@@ -1200,12 +1200,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл на этом Mac"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1216,6 +1210,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов на этом Mac"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл на этом Mac"
                 }
               },
               "other": {
@@ -1246,12 +1246,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл останется на устройстве"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1262,6 +1256,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов останутся на устройстве"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл останется на устройстве"
                 }
               },
               "other": {
@@ -1292,12 +1292,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл останется на этом Mac"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1308,6 +1302,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов останутся на этом Mac"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл останется на этом Mac"
                 }
               },
               "other": {
@@ -1339,12 +1339,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld тайтл можно смотреть"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1355,6 +1349,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld тайтлов можно смотреть"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld тайтл можно смотреть"
                 }
               },
               "other": {
@@ -1397,12 +1397,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld результат"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -1413,6 +1407,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld результатов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld результат"
                 }
               },
               "other": {
@@ -2929,7 +2929,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "На странице каждого фильма и сериала в ряду кнопок есть «Список просмотра». Всё, что вы там отметите, собирается здесь."
+            "value": "На странице каждого фильма и сериала в ряду кнопок есть «Избранное». Всё, что вы там отметите, собирается здесь."
           }
         }
       }
@@ -2952,7 +2952,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "На странице каждого фильма и сериала в ряду кнопок есть «Список просмотра». Всё, что вы там выберете, собирается здесь."
+            "value": "На странице каждого фильма и сериала в ряду кнопок есть «Избранное». Всё, что вы там выберете, собирается здесь."
           }
         }
       }
@@ -7735,7 +7735,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Список просмотра"
+            "value": "Избранное"
           }
         }
       }
@@ -8403,12 +8403,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Осталась %lld минута"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -8419,6 +8413,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "Осталось %lld минут"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Осталась %lld минута"
                 }
               },
               "other": {
@@ -8496,7 +8496,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "В списке пока ничего нет"
+            "value": "В избранном пока ничего нет"
           }
         }
       }
@@ -10334,12 +10334,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Начнётся через %lld секунду"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -10350,6 +10344,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "Начнётся через %lld секунд"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Начнётся через %lld секунду"
                 }
               },
               "other": {
@@ -13703,12 +13703,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "· %lld эпизод"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -13719,6 +13713,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "· %lld эпизодов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "· %lld эпизод"
                 }
               },
               "other": {
@@ -14876,7 +14876,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сейчас идёт"
+            "value": "Воспроизводится"
           }
         }
       }
@@ -16636,12 +16636,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Вы посмотрели в Swiftly %lld час."
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -16652,6 +16646,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "Вы посмотрели в Swiftly %lld часов."
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Вы посмотрели в Swiftly %lld час."
                 }
               },
               "other": {
@@ -19329,12 +19329,6 @@
         "ru": {
           "variations": {
             "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld плейлист"
-                }
-              },
               "few": {
                 "stringUnit": {
                   "state": "translated",
@@ -19345,6 +19339,12 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "%lld плейлистов"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld плейлист"
                 }
               },
               "other": {
