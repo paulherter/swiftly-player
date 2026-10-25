@@ -47,6 +47,8 @@ final class AppModel {
     var bitratesLimit: Int { didSet { remember(bitratesLimit, "bitratenGrenze" + serverKey) } }
     var landscapeFixed: Bool { didSet { remember(landscapeFixed, "querformatFest") } }
     var progressOnTiles: Bool { didSet { remember(progressOnTiles, "fortschritt") } }
+    /// **The letter strip beside A–Z grids** (``AlphabetIndex``), on by default.
+    var alphabetShown: Bool { didSet { remember(alphabetShown, "alphabetAn") } }
 
     /// Empty means: take whatever the server specifies.
     var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
@@ -602,6 +604,7 @@ final class AppModel {
         bitratesLimit = store.integer(forKey: "bitratenGrenze")
         landscapeFixed = store.object(forKey: "querformatFest") as? Bool ?? true
         progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
+        alphabetShown = store.object(forKey: "alphabetAn") as? Bool ?? true
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
         let languageStored = store.string(forKey: "utSprache") ?? ""
         subtitleLanguage = languageStored
@@ -1809,6 +1812,23 @@ final class AppModel {
                since startIndex: Int = 0,
                count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
         guard let client else { return nil }
+        // **"By name" is ordered here, not on the server** (``NaturalOrder``): the page is
+        // a slice of the naturally sorted list, fetched by ID. The first page fetches the
+        // list fresh, so titles added since show up.
+        if sorting == .name {
+            guard let list = await naturalList(from: source, filter: filter, fresh: startIndex == 0)
+            else { return nil }
+            let slice = Array(list.dropFirst(startIndex).prefix(count))
+            guard !slice.isEmpty else { return ([], list.count) }
+            do {
+                let answer = try await client.items(limit: slice.count, ids: slice.map(\.id))
+                let byID = Dictionary(answer.items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                return (slice.compactMap { byID[$0.id] }, list.count)
+            } catch {
+                Self.log.error("Bibliotheksabruf (Name) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
+        }
         do {
             let answer = try await client.items(parentID: source.parent,
                                                  limit: count,
@@ -1828,6 +1848,50 @@ final class AppModel {
             Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// One title of a naturally sorted list: enough to order it and to fetch it.
+    struct NaturalTitle: Sendable {
+        let id: String
+        let name: String
+        let sortName: String?
+    }
+
+    /// The naturally sorted lists, per source, filter and account. Not observed: a view
+    /// never reads them, only the paging does.
+    @ObservationIgnored private var naturalLists: [String: [NaturalTitle]] = [:]
+
+    /// **The whole list in "By name" order** (``NaturalOrder``), from one slim request:
+    /// names only, no images. Reused for every later page, the letter strip and its jumps;
+    /// `fresh` fetches it again.
+    func naturalList(from source: ShelfSource, filter: LibraryFilter = .all,
+                     fresh: Bool = false) async -> [NaturalTitle]? {
+        guard let client else { return nil }
+        let key = "\(source.key)|\(filter.rawValue)|\(accountSwitch)"
+        if !fresh, let cached = naturalLists[key] { return cached }
+        do {
+            let answer = try await client.items(parentID: source.parent,
+                                                 sortBy: Sorting.name.inputField,
+                                                 sortOrder: source.bearing(.name),
+                                                 filters: filter.jellyfinFilter,
+                                                 isWatched: filter.isWatched,
+                                                 recursive: source.recursive,
+                                                 includeItemTypes: source.types,
+                                                 slim: true)
+            let titles = answer.items.map { NaturalTitle(id: $0.id, name: $0.name, sortName: $0.sortName) }
+            let sorted = NaturalOrder.sorted(titles) { ($0.name, $0.sortName) }
+            naturalLists[key] = sorted
+            return sorted
+        } catch {
+            Self.log.error("Namensliste nicht geladen: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// **Name and sort name of the whole list, in "By name" order**, for the letter strip.
+    func sortNames(from source: ShelfSource,
+                   filter: LibraryFilter = .all) async -> [(name: String, sortName: String?)]? {
+        await naturalList(from: source, filter: filter)?.map { ($0.name, $0.sortName) }
     }
 
     /// Everything bookmarked, **across all libraries**.

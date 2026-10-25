@@ -77,6 +77,10 @@ struct PresentationView: View {
                       an: Binding(get: { model.progressOnTiles },
                                   set: { model.progressOnTiles = $0 }))
                 .row()
+            ChoiceRow(symbol: "textformat.abc", title: Text("Alphabetische Suche in Listen"),
+                      an: Binding(get: { model.alphabetShown },
+                                  set: { model.alphabetShown = $0 }))
+                .row()
             #if os(iOS)
             ChoiceRow(symbol: "textformat", title: Text("Titel als Logo"),
                       under: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),

@@ -13975,16 +13975,36 @@
         "de": {
           "variations": {
             "plural": {
-              "one": { "stringUnit": { "state": "translated", "value": "%lld Wiedergabeliste" } },
-              "other": { "stringUnit": { "state": "translated", "value": "%lld Wiedergabelisten" } }
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Wiedergabeliste"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Wiedergabelisten"
+                }
+              }
             }
           }
         },
         "en": {
           "variations": {
             "plural": {
-              "one": { "stringUnit": { "state": "translated", "value": "%lld playlist" } },
-              "other": { "stringUnit": { "state": "translated", "value": "%lld playlists" } }
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld playlist"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld playlists"
+                }
+              }
             }
           }
         }
@@ -14054,6 +14074,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "As soon as there is something in this playlist, it shows up here."
+          }
+        }
+      }
+    },
+    "Alphabet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alphabet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alphabet"
+          }
+        }
+      }
+    },
+    "Alphabetische Suche in Listen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alphabetische Suche in Listen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alphabetical search in lists"
           }
         }
       }

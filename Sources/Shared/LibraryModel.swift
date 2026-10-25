@@ -78,6 +78,62 @@ final class LibraryModel {
     /// If either changes, reload.
     var identifier: String { "\(sorting.rawValue)|\(filter.rawValue)" }
 
+    // MARK: Letter strip
+
+    /// The letters of this list (``AlphabetIndex``); `nil` unless sorted A–Z and loaded.
+    private(set) var alphabet: AlphabetIndex?
+    private var alphabetFor: String?
+
+    /// Fetches the sort names once per list (source, filter, account). Only for A–Z: any
+    /// other order has no letters to jump between.
+    func loadAlphabet(_ model: AppModel, from source: ShelfSource?) async {
+        guard let source, sorting == .name else { alphabet = nil; alphabetFor = nil; return }
+        let key = "\(source.key)|\(identifier)|\(model.accountSwitch)"
+        guard alphabetFor != key else { return }
+        guard let titles = await model.sortNames(from: source, filter: filter) else { return }
+        guard sorting == .name else { return }
+        alphabet = AlphabetIndex(titles: titles)
+        alphabetFor = key
+    }
+
+    /// The same for a library page that knows its kind, not its source.
+    func loadAlphabet(_ model: AppModel, art: String?, library: Item?) async {
+        let bib = await source(model, art: art, library: library)
+        await loadAlphabet(model, from: bib.map { ShelfSource(parent: $0.id, art: art ?? $0.collectionType) })
+    }
+
+    /// **The title to scroll to for a letter**, loading until it is there. Loads in steps
+    /// sized by where the letter starts on the server, so a jump to the end of a long
+    /// library takes a few requests, not dozens.
+    func jumpTarget(_ letter: String, model: AppModel, from source: ShelfSource) async -> String? {
+        guard let alphabet else { return nil }
+        let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
+        for _ in 0..<20 {
+            if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
+                return items[i].id
+            }
+            guard stillMorePresent else { break }
+            // A page being appended right now blocks `loadMore`; wait for it instead of
+            // giving up.
+            if loadsPost || loads {
+                try? await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+            let before = items.count
+            await loadMore(model, from: source,
+                           count: max(AppModel.pagesSize, start - items.count + AppModel.pagesSize))
+            if items.count == before { break }
+        }
+        return items.last?.id
+    }
+
+    /// The same for a library page that knows its kind, not its source.
+    func jumpTarget(_ letter: String, model: AppModel, art: String?, library: Item?) async -> String? {
+        guard let bib = await source(model, art: art, library: library) else { return nil }
+        return await jumpTarget(letter, model: model,
+                                from: ShelfSource(parent: bib.id, art: art ?? bib.collectionType))
+    }
+
     /// Whether there is more beyond what is already shown.
     /// **Loading more failed** (tunnel, server briefly down). Without this the
     /// skeleton row stayed forever as if more were coming; the view now shows a
@@ -195,7 +251,10 @@ final class LibraryModel {
         await loadMore(model, from: ShelfSource(parent: bib.id, art: art ?? bib.collectionType))
     }
 
-    func loadMore(_ model: AppModel, from source: ShelfSource) async {
+    /// - Parameter count: How many to fetch; a jump in the alphabet strip asks for more than
+    ///   a page so it does not walk there sixty titles at a time.
+    func loadMore(_ model: AppModel, from source: ShelfSource,
+                  count: Int = AppModel.pagesSize) async {
         // **Nothing is appended after an account switch.** What is shown belongs to
         // the previous account; the second page would come from the new one, and
         // together they would form a collection that exists nowhere. Loading more
@@ -210,7 +269,7 @@ final class LibraryModel {
         loadMoreFailed = false
         if source.isFiltering, var s = filterRef {
             let filled = await fill(model, from: source, filterRef: &s,
-                                         since: rawOffset, first: AppModel.pagesSize)
+                                         since: rawOffset, first: count)
             guard loadedFor == before else { return }
             guard let (new, offset, raw) = filled else {
                 if !Task.isCancelled { loadMoreFailed = true }
@@ -223,7 +282,7 @@ final class LibraryModel {
             return
         }
         guard let page = await model.items(from: source, sorting: sorting,
-                                            filter: filter, since: items.count)
+                                            filter: filter, since: items.count, count: count)
         else {
             if !Task.isCancelled { loadMoreFailed = true }
             return
