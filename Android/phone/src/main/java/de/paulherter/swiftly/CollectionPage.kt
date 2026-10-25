@@ -208,6 +208,9 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
     val state = remember(target.id, target.role) { CollectionState(target.id, target.role) }
     val section = rememberCoroutineScope()
     LaunchedEffect(state, state.sorting, state.filter) { state.load(app.kern) }
+    // Without the watchlist when it is switched off; a filter no longer offered falls back to "all".
+    val filterSelection = offeredFilters(state.filterSelection, app.settings.watchlist)
+    LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filter = "alle" }
     WatchStateChange(app) { state.load(app.kern) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
@@ -220,7 +223,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
             // `ShelfControls`: the same row as on the library page.
             ValueRail({ offset }, Modifier.padding(horizontal = Theme.edgeSpacing)) {
                 ValuePill(Glyph.Filter, Choices.text(Choices.filter, state.filter)) {
-                    app.sheet.value = SheetRequest(translated("Filtern"), Choices.filter.filter { it.value in state.filterSelection }, state.filter) {
+                    app.sheet.value = SheetRequest(translated("Filtern"), Choices.filter.filter { it.value in filterSelection }, state.filter) {
                         state.filter = it
                     }
                 }

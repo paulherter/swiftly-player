@@ -47,6 +47,10 @@ final class AppModel {
     var bitratesLimit: Int { didSet { remember(bitratesLimit, "bitratenGrenze" + serverKey) } }
     var landscapeFixed: Bool { didSet { remember(landscapeFixed, "querformatFest") } }
     var progressOnTiles: Bool { didSet { remember(progressOnTiles, "fortschritt") } }
+    /// **The watchlist can be switched off**: its page, its filter and the button on
+    /// detail pages disappear everywhere. The favourites stay on the server, so switching
+    /// it back on brings everything back.
+    var watchlistShown: Bool { didSet { remember(watchlistShown, "merklisteAn") } }
 
     /// Empty means: take whatever the server specifies.
     var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
@@ -602,6 +606,7 @@ final class AppModel {
         bitratesLimit = store.integer(forKey: "bitratenGrenze")
         landscapeFixed = store.object(forKey: "querformatFest") as? Bool ?? true
         progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
+        watchlistShown = store.object(forKey: "merklisteAn") as? Bool ?? true
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
         let languageStored = store.string(forKey: "utSprache") ?? ""
         subtitleLanguage = languageStored

@@ -235,6 +235,8 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             }
                             TvToggleRow(translated("Fortschritt auf Kacheln"), e.progress, modifier = if (looksShown) Modifier else first) { e.progress = !e.progress }
                             SeparatorLine()
+                            TvToggleRow(translated("Merkliste"), e.watchlist) { e.watchlist = !e.watchlist }
+                            SeparatorLine()
                             TvToggleRow(translated("Titel als Logo"), e.titleAsLogo) { e.titleAsLogo = !e.titleAsLogo }
                             SeparatorLine()
                             GroupsHeader(translated("Startseite"))

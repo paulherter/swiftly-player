@@ -564,7 +564,8 @@ struct HeaderBar: View {
                 // the profile picture, but two circles side by side looked muddy, so it
                 // came back. As a word in the bar it sits among the other sections, where
                 // people look for it.
-                ForEach(Region.allCases) { b in
+                // Switched off in Appearance, the watchlist has no tab.
+                ForEach(Region.allCases.filter { $0 != .watchlist || model.watchlistShown }) { b in
                     Button { section = b } label: { Text(b.name) }
                         .buttonStyle(TabStyle(selected: section == b))
                         .focused($atTab, equals: b)

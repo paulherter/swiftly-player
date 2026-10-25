@@ -494,6 +494,12 @@ extension EnvironmentValues {
     /// times, and the thirty-fourth call would not have it. It is read at the one
     /// place per platform where the bar is actually created.
     @Entry var progressOnTiles: Bool = true
+
+    /// **Whether the watchlist appears**: page, filter and the button on detail pages
+    /// (Profile → Appearance). Via the environment for the same reason as
+    /// `progressOnTiles`: the button sits on pages that do not otherwise know the model's
+    /// settings.
+    @Entry var watchlistShown: Bool = true
 }
 
 // MARK: - Watched

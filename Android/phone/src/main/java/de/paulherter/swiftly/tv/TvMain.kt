@@ -143,6 +143,10 @@ fun TvMain(app: SwiftlyApplication) {
     // "Zeig mir meine Startseite" after the thanks; a purchase or key changes what may be worn.
     SideEffect { app.looks.goHomeAction = { stack.clear(); section = TvSection.Start } }
     LaunchedEffect(app.support.source.value) { app.looks.syncSupporter() }
+    // Switched off while open, the watchlist must not stay on screen without its tab.
+    LaunchedEffect(app.settings.watchlist) {
+        if (!app.settings.watchlist && section == TvSection.Watchlist) section = TvSection.Start
+    }
 
     LaunchedEffect(Unit) {
         app.sessionCheck()
@@ -250,8 +254,8 @@ fun TvMain(app: SwiftlyApplication) {
                             when (b) {
                                 // Start draws no look glow at all (Paul: the extra glow must not be on Home).
                                 TvSection.Start -> TvStartPage(app, open)
-                                TvSection.Movies -> TvLibrary(app, "movies", listOf("alle", "angefangen", "merkliste", "ungesehen"), open)
-                                TvSection.Series -> TvLibrary(app, "tvshows", listOf("alle", "angefangen", "merkliste"), open)
+                                TvSection.Movies -> TvLibrary(app, "movies", de.paulherter.swiftly.offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
+                                TvSection.Series -> TvLibrary(app, "tvshows", de.paulherter.swiftly.offeredFilters(listOf("alle", "angefangen", "merkliste"), app.settings.watchlist), open)
                                 TvSection.Watchlist -> TvWatchlist(app, open)
                                 TvSection.Search -> TvSearch(app, open)
                             }
@@ -488,7 +492,9 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
         Wordmark(height = 18.dp)
         Spacer(Modifier.width(26.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TvSection.entries.forEach { b -> PageTab(translated(b.title), b == active) { select(b) } }
+            // Switched off in Appearance, the watchlist has no tab.
+            TvSection.entries.filter { it != TvSection.Watchlist || app.settings.watchlist }
+                .forEach { b -> PageTab(translated(b.title), b == active) { select(b) } }
         }
         Spacer(Modifier.weight(1f))
         // One badge for "Continue here" and open groups together.

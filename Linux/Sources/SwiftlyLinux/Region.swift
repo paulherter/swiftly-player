@@ -46,8 +46,8 @@ enum Region: CaseIterable {
     /// and what I downloaded to this machine.
     ///
     /// The downloads row only exists if the download switch is on.
-    static func mineGroup(downloads: Bool) -> [Region] {
-        downloads ? [.watchlist, .downloads] : [.watchlist]
+    static func mineGroup(downloads: Bool, watchlist: Bool = true) -> [Region] {
+        (watchlist ? [.watchlist] : []) + (downloads ? [.downloads] : [])
     }
 
     var label: String {

@@ -19449,6 +19449,28 @@
           }
         }
       }
+    },
+    "Seite, Filter und Knopf auf Film- und Serienseiten": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seite, Filter und Knopf auf Film- und Serienseiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page, filter and button on movie and show pages"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Раздел, фильтр и кнопка на страницах фильмов и сериалов"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

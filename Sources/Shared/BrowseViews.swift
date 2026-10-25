@@ -148,6 +148,7 @@ struct ItemDetailView: View {
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
     @Environment(\.broad) private var broad
+    @Environment(\.watchlistShown) private var watchlistShown
 
     /// How far it has scrolled; the header fades in accordingly.
     ///
@@ -531,15 +532,17 @@ struct ItemDetailView: View {
         // Narrow, the spacers distribute the buttons across the row; wide, they
         // sit next to the play button and should stay together.
         HStack(spacing: 8) {
-            ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                         title: "Merkliste", active: remembered, stretches: !broad) {
-                remembered.toggle()
-                // Switch immediately so the button responds, but revert if the server
-                // says no. Before, the display stayed put and lied.
-                Task {
-                    if let reason = await model.setWatchlist(current, an: remembered) {
-                        remembered.toggle()
-                        message = reason
+            if watchlistShown {
+                ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
+                             title: "Merkliste", active: remembered, stretches: !broad) {
+                    remembered.toggle()
+                    // Switch immediately so the button responds, but revert if the server
+                    // says no. Before, the display stayed put and lied.
+                    Task {
+                        if let reason = await model.setWatchlist(current, an: remembered) {
+                            remembered.toggle()
+                            message = reason
+                        }
                     }
                 }
             }

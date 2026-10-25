@@ -177,6 +177,10 @@ struct MainView: View {
                 .onChange(of: wide) { _, nowWide in
                     if !nowWide, section == .watchlist { section = .start }
                 }
+                // And when the watchlist is switched off in Appearance.
+                .onChange(of: model.watchlistShown) { _, shown in
+                    if !shown, section == .watchlist { section = .start }
+                }
             }
             .environment(\.downloadBar,
                          DownloadBar(an: model.downloadsAn,
@@ -392,7 +396,7 @@ struct MainView: View {
             sectionKey("Start", .start, "1")
             sectionKey("Filme", .movies, "2")
             sectionKey("Serien", .seriesList, "3")
-            if wide { sectionKey("Merkliste", .watchlist, "4") }
+            if wide, model.watchlistShown { sectionKey("Merkliste", .watchlist, "4") }
             if model.downloadsAn { sectionKey("Downloads", .downloads, "5") }
             sectionKey("Suchen", .search, "f")
             Button("Einstellungen") { toSettings() }
@@ -558,6 +562,12 @@ struct LibraryView: View {
     /// For series the third filter is named differently: "unwatched" helps
     /// little there, "new episodes" is the question people actually have.
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the pills offer: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
 
     /// Paging, filtering and sorting live in `LibraryModel`, shared with
     /// the tvOS version.
@@ -647,7 +657,7 @@ struct LibraryView: View {
         // sheet motion; it was unchanged after reverting to the verified state.
         // **Without `if`: the container stays, the sheet gates itself.** Only so
         // do the transitions of scrim and card run separately.
-        .shelfSheets(state: state, filter: filter,
+        .shelfSheets(state: state, filter: offeredFilter,
                        filterOpen: $filterListOpen, sortingOpen: $sortListOpen)
         // No `Menu`. The same `SelectionSheet` as for sorting; the
         // "Libraries" section separates the libraries from "All" and
@@ -925,7 +935,7 @@ struct LibraryView: View {
                 // sit in a sidebar composition with plenty of room, and the header does
                 // not take half a row of tiles. Collapsing solves a problem that does not
                 // exist wide.
-                ShelfControls(state: state, filter: filter,
+                ShelfControls(state: state, filter: offeredFilter,
                                filterOpen: $filterListOpen,
                                sortingOpen: $sortListOpen,
                                offset: offset,

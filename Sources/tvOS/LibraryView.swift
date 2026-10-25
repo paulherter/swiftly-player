@@ -30,6 +30,12 @@ struct LibraryView: View {
     /// remembered: a collection is a look into a series, not a place to return to.
     var collection: Item?
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the filter panel offers: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
 
     /// Paging, filtering and sorting live in `LibraryModel`, shared with the iPhone version.
     @State private var state: LibraryModel
@@ -145,6 +151,12 @@ struct LibraryView: View {
         // A different list: the remembered title no longer belongs to it.
         .onChange(of: state.identifier) { lastAtTitle = nil; switchedOver = true }
         .onChange(of: choice) { lastAtTitle = nil }
+        // A filter the panel no longer offers (the watchlist, switched off) must not keep
+        // narrowing the grid with no entry left to undo it.
+        .task(id: offeredFilter) {
+            let kept = state.filter.kept(in: offeredFilter)
+            if kept != state.filter { state.filter = kept }
+        }
         // Collections and mixed libraries arrive later (from `offeringLoad()`). If that changes
         // what "All" reads or what may be selected, reload.
         .onChange(of: offeringId) { _, _ in
@@ -207,7 +219,7 @@ struct LibraryView: View {
     private var panelContent: (actions: [TitleAction], selected: Int?) {
         switch openPanel {
         case .filter:
-            (filterActions, filter.firstIndex(of: state.filter))
+            (filterActions, offeredFilter.firstIndex(of: state.filter))
         case .sorting:
             (sortActions, Sorting.allCases.firstIndex(of: state.sorting))
         case .library, nil:
@@ -217,7 +229,7 @@ struct LibraryView: View {
 
     /// The filters as a panel: same icons as sorting and library choice, same entries as on the iPhone.
     private var filterActions: [TitleAction] {
-        filter.map { f in
+        offeredFilter.map { f in
             TitleAction(symbol: state.filter == f ? "checkmark.circle.fill" : "circle",
                           text: "\(f.label)") { state.filter = f }
         }

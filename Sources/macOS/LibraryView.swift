@@ -37,6 +37,12 @@ struct LibraryView: View {
     var collection: (item: Item, art: String?)?
     /// Which filters are available.
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the filter menu offers: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
     /// `nil` means this is a root, not a pushed page, so there is no back arrow.
     var back: (() -> Void)?
 
@@ -118,7 +124,7 @@ struct LibraryView: View {
                 HStack(spacing: 8) {
                     SelectionButton(symbol: "line.3.horizontal.decrease",
                               value: shelf.filter.label,
-                              entries: filter,
+                              entries: offeredFilter,
                               label: { $0.label },
                               isSelected: { $0 == shelf.filter },
                               select: { shelf.filter = $0 })
@@ -133,6 +139,12 @@ struct LibraryView: View {
                 .opacity(showsCollections ? 0 : 1)
                 .allowsHitTesting(!showsCollections)
                 .accessibilityHidden(showsCollections)
+                // A filter the menu no longer offers (the watchlist, switched off) must not
+                // keep narrowing the grid with no entry left to undo it.
+                .task(id: offeredFilter) {
+                    let kept = shelf.filter.kept(in: offeredFilter)
+                    if kept != shelf.filter { shelf.filter = kept }
+                }
                 .padding(.top, 14)
                 // It fades out on scroll: what you want to know before scrolling does not need to
                 // travel along. Opacity only, not height: a height tied to the scroll offset is a

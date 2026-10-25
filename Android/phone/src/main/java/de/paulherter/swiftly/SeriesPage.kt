@@ -314,8 +314,10 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
-                        toggle(!remembered, { remembered = it }) { id, an -> app.kern.remember(id, an).await() }
+                    if (app.settings.watchlist) {
+                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
+                            toggle(!remembered, { remembered = it }) { id, an -> app.kern.remember(id, an).await() }
+                        }
                     }
                     // **Download sits in the row, not in a hidden chip**, between Save and Watched, and always via
                     // the load selection, also for a season: single episodes must always be selectable. The trailer

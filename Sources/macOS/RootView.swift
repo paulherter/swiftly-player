@@ -59,6 +59,7 @@ struct RootView: View {
         // know. It is read where the bar is created. See
         // `EnvironmentValues.progressOnTiles`.
         .environment(\.progressOnTiles, model.progressOnTiles)
+        .environment(\.watchlistShown, model.watchlistShown)
         // **Only once the player is closed, with a short pause**, as on iPhone. An
         // episode change counts as the player being open.
         .onChange(of: model.ratingDue && !model.playerOpen) { _, now in

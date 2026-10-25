@@ -213,6 +213,8 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val state = remember { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val run = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    // A filter the panel no longer offers (the watchlist, switched off) falls back to "all".
+    LaunchedEffect(filter) { if (state.filter !in filter) state.filterSet("alle") }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)

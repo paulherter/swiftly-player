@@ -451,6 +451,10 @@ struct ProfileView: View {
             }
             .focused($right, equals: looksShown ? nil : .top)
             SeparatorLine()
+            ToggleRow(title: "Merkliste", an: model.watchlistShown) {
+                model.watchlistShown.toggle()
+            }
+            SeparatorLine()
             ToggleRow(title: "Titel als Logo", an: titleAsLogo) { titleAsLogo.toggle() }
             SeparatorLine()
 

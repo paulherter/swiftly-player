@@ -78,6 +78,7 @@ struct SeriesDetailView: View {
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
     @Environment(\.broad) private var broad
+    @Environment(\.watchlistShown) private var watchlistShown
     @Environment(\.displayScale) private var pixelMetric
     /// For the header image that goes along with a download.
     @State private var pagesWidth: CGFloat = 0
@@ -575,13 +576,15 @@ struct SeriesDetailView: View {
     /// two wide buttons, which made the two pages look different.
     private var actionRail: some View {
         HStack(spacing: 8) {
-            ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                         title: "Merkliste", active: remembered, stretches: !broad) {
-                remembered.toggle()
-                Task {
-                    if let reason = await model.setWatchlist(series, an: remembered) {
-                        remembered.toggle()
-                        message = reason
+            if watchlistShown {
+                ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
+                             title: "Merkliste", active: remembered, stretches: !broad) {
+                    remembered.toggle()
+                    Task {
+                        if let reason = await model.setWatchlist(series, an: remembered) {
+                            remembered.toggle()
+                            message = reason
+                        }
                     }
                 }
             }

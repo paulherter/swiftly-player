@@ -1340,6 +1340,8 @@ final class App: @unchecked Sendable {
     /// The "Meins" group and its rows; rebuilt when the downloads switch is
     /// toggled.
     private var myList: Widget!
+    /// Its heading; hidden when neither downloads nor the watchlist are on.
+    private var mineCategory: Widget!
     /// **Which collection is currently open as a subpage**, `nil` if none. `art`
     /// says whether its movies or its series are meant (Mac `CollectionDetailPage`).
     var openCollection: (item: Item, art: String?)?
@@ -1449,9 +1451,10 @@ final class App: @unchecked Sendable {
     }
 
     func filterFrom(_ was: Region) -> LibraryFilter {
-        if was == .collection { return collectionFilter }
+        // A stored filter the page no longer offers (the watchlist, switched off) reads as "All".
+        if was == .collection { return collectionFilter.kept(in: filterList(was)) }
         if let raw = selection.filterPerPlace[placeKey(was)],
-           let f = LibraryFilter(rawValue: raw) { return f }
+           let f = LibraryFilter(rawValue: raw) { return f.kept(in: filterList(was)) }
         return .all
     }
 
@@ -2413,7 +2416,7 @@ final class App: @unchecked Sendable {
         // **Below that, what belongs to the user.** The reasoning is at
         // `Region.mineGroup`; the measurements are those of the library group,
         // since it is the same kind of subheading.
-        let mineCategory = category(translated("Meins"))
+        mineCategory = category(translated("Meins"))
         gtk_widget_set_margin_top(mineCategory, 26)
         gtk_widget_set_margin_bottom(mineCategory, 8)
         gtk_widget_set_margin_start(mineCategory, 12)
@@ -2469,12 +2472,18 @@ final class App: @unchecked Sendable {
     func mineFill() {
         guard myList != nil else { return }
         wipe(myList)
-        for fall in Region.mineGroup(downloads: downloadsAn) {
+        let mine = Region.mineGroup(downloads: downloadsAn, watchlist: selection.watchlistShown)
+        for fall in mine {
             append(myList, sectionRow(fall))
         }
+        gtk_widget_set_visible(mineCategory, mine.isEmpty ? 0 : 1)
         if !downloadsAn {
             sectionButtons[.downloads] = nil
             if section == .downloads { show(.start) }
+        }
+        if !selection.watchlistShown {
+            sectionButtons[.watchlist] = nil
+            if section == .watchlist { show(.start) }
         }
     }
 
@@ -3506,11 +3515,11 @@ final class App: @unchecked Sendable {
     }
 
     /// Which filters are offered; for the series of a collection the same set as macOS (`CollectionDetailPage`).
+    /// Without the watchlist when it is switched off.
     private func filterList(_ was: Region) -> [LibraryFilter] {
-        if was == .collection, openCollection?.art == "tvshows" {
-            return [.all, .begun, .watchlist]
-        }
-        return LibraryFilter.allCases
+        let all: [LibraryFilter] = was == .collection && openCollection?.art == "tvshows"
+            ? [.all, .begun, .watchlist] : LibraryFilter.allCases
+        return LibraryFilter.offered(all, watchlist: selection.watchlistShown)
     }
 
     // MARK: Collections in the grid (macOS `LibraryView.collectionTiles`)

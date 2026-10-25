@@ -586,3 +586,6 @@
 "Dieser Schlüssel gehört zu einer anderen App." = "Этот ключ от другого приложения.";
 "Unterstützer im Monatsabo" = "Спонсор, ежемесячная подписка";
 "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft." = "С %@. Действует до %@ и продлевается автоматически, пока действует подписка.";
+
+/* Merkliste abschaltbar */
+"Seite, Filter und Knopf auf Film- und Serienseiten" = "Раздел, фильтр и кнопка на страницах фильмов и сериалов";

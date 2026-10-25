@@ -123,28 +123,33 @@ struct StateButtons: View {
     @Binding var remembered: Bool
     @Binding var watched: Bool
     @Binding var message: String?
+    @Environment(\.watchlistShown) private var watchlistShown
 
     var body: some View {
         Group {
-            Button {
-                remembered.toggle()
-                // Toggle at once so the button responds, but revert if the server says
-                // no.
-                Task {
-                    if let reason = await model.setWatchlist(item, an: remembered) {
-                        remembered.toggle()
-                        message = reason
+            // Switched off in Appearance, the bookmark is gone; the favourite itself stays
+            // on the server.
+            if watchlistShown {
+                Button {
+                    remembered.toggle()
+                    // Toggle at once so the button responds, but revert if the server says
+                    // no.
+                    Task {
+                        if let reason = await model.setWatchlist(item, an: remembered) {
+                            remembered.toggle()
+                            message = reason
+                        }
                     }
+                } label: {
+                    Image(systemName: remembered ? "bookmark.fill" : "bookmark")
+                        .font(Theme.button)
                 }
-            } label: {
-                Image(systemName: remembered ? "bookmark.fill" : "bookmark")
-                    .font(Theme.button)
+                .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
+                .accessibilityLabel(Text("Merkliste"))
+                // Filled versus empty symbol is the whole difference; for VoiceOver both
+                // read "Merkliste".
+                .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
             }
-            .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
-            .accessibilityLabel(Text("Merkliste"))
-            // Filled versus empty symbol is the whole difference; for VoiceOver both
-            // read "Merkliste".
-            .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
         }
     }
 }

@@ -282,6 +282,7 @@ struct TitleRail: View {
 /// differs: in the window the poster sits next to the title instead of above it,
 /// because a 1400 pt wide column with one line of text would be unreadable.
 struct DetailHero: View {
+    @Environment(\.watchlistShown) private var watchlistShown
     let model: AppModel
     let title: Item
     /// Where the page is: only needed to pull the image along.
@@ -627,13 +628,15 @@ struct DetailHero: View {
                     .tileMenu(title, model: model, afterwards: { await refresh() })
             }
 
-            ActionButton(mass: Theme.primaryButtonHeight, symbol: watchlist ? "bookmark.fill" : "bookmark",
-                       title: "Merkliste", active: watchlist) {
-                watchlist.toggle()
-                Task {
-                    if let reason = await model.setWatchlist(title, an: watchlist) {
-                        watchlist.toggle()
-                        notify(reason)
+            if watchlistShown {
+                ActionButton(mass: Theme.primaryButtonHeight, symbol: watchlist ? "bookmark.fill" : "bookmark",
+                           title: "Merkliste", active: watchlist) {
+                    watchlist.toggle()
+                    Task {
+                        if let reason = await model.setWatchlist(title, an: watchlist) {
+                            watchlist.toggle()
+                            notify(reason)
+                        }
                     }
                 }
             }

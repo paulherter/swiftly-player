@@ -264,8 +264,10 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 if (titleDisturbed && t == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                     retry = { titleDisturbed = false; section.launch { load() } })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
-                        toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
+                    if (app.settings.watchlist) {
+                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
+                            toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
+                        }
                     }
                     // The fifth field, only when the feature is on; next to the watchlist, as the "for later" pair.
                     if (app.settings.downloadButtonShow && t?.type != "Series") DownloadField(app, target.id, name)

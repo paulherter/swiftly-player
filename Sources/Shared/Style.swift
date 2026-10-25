@@ -1890,9 +1890,11 @@ enum Region: Int, CaseIterable, Identifiable {
     /// a row like Movies and Series. Before, it stood there as a `NavigationLink` at
     /// the bottom among the destinations and did **nothing**, because the sidebar lies
     /// outside the `NavigationStack` and a link without a stack points nowhere.
-    static func visibleOnes(downloads: Bool, wide: Bool = false) -> [Region] {
+    ///
+    /// Switched off in Appearance, the watchlist is not in the bar at all.
+    static func visibleOnes(downloads: Bool, wide: Bool = false, watchlist: Bool = true) -> [Region] {
         var list: [Region] = [.start, .movies, .seriesList]
-        if wide { list.append(.watchlist) }
+        if wide, watchlist { list.append(.watchlist) }
         if downloads { list.append(.downloads) }
         list.append(.search)
         return list
@@ -2067,6 +2069,7 @@ struct HeaderTargets<Front: View>: View {
     let name: String
     let image: URL?
     @ViewBuilder var front: () -> Front
+    @Environment(\.watchlistShown) private var watchlistShown
 
     /// **The offer belongs to the group, not to the home page.**
     ///
@@ -2095,18 +2098,20 @@ struct HeaderTargets<Front: View>: View {
             // profile. Gone for supporters.
             SupportHeart()
 
-            NavigationLink(value: WatchlistRoute()) {
-                // **Filled, not outlined.** A hollow bookmark at 20 pt is almost only contour. In
-                // the button row on detail pages, filled means "saved"; here it is not a state
-                // but a destination, and it stands alone there.
-                Image(systemName: "bookmark.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Theme.font)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if watchlistShown {
+                NavigationLink(value: WatchlistRoute()) {
+                    // **Filled, not outlined.** A hollow bookmark at 20 pt is almost only contour. In
+                    // the button row on detail pages, filled means "saved"; here it is not a state
+                    // but a destination, and it stands alone there.
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Theme.font)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(Theme.PressButton())
+                .accessibilityLabel(Text("Merkliste"))
             }
-            .buttonStyle(Theme.PressButton())
-            .accessibilityLabel(Text("Merkliste"))
 
             ProfileTarget(name: name, image: image)
         }
@@ -2383,6 +2388,7 @@ struct Sidebar: View {
     /// simply no offer.
     @Environment(TakeoverModel.self) private var takeover: TakeoverModel?
     @Environment(\.downloadBar) private var downloads
+    @Environment(\.watchlistShown) private var watchlistShown
     @Binding var selected: Region
     /// The profile page is open; then none of the four areas carries the selection,
     /// but the icon at the bottom does.
@@ -2397,7 +2403,8 @@ struct Sidebar: View {
                 .padding(.top, Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
                 .padding(.bottom, 32)
 
-            ForEach(Region.visibleOnes(downloads: downloads.an, wide: true)) { section in
+            ForEach(Region.visibleOnes(downloads: downloads.an, wide: true,
+                                       watchlist: watchlistShown)) { section in
                 SectionButton(section: section,
                               active: section == selected && !inProfile,
                               height: 64,

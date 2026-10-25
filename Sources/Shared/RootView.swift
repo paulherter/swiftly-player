@@ -49,6 +49,7 @@ struct RootView: View {
         // through should not have to know about it. It is read where the bar is
         // created. See `EnvironmentValues.progressOnTiles`.
         .environment(\.progressOnTiles, model.progressOnTiles)
+        .environment(\.watchlistShown, model.watchlistShown)
         #if os(iOS)
         // **Only after the player, and with a beat of delay.** The prompt comes
         // when someone has just finished watching something, not in the middle

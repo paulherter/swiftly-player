@@ -44,9 +44,13 @@ struct CollectionView: View {
         ShelfSource(parent: collection.id, art: art, collection: true)
     }
 
-    /// For series the same sentence as on the series library.
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// For series the same sentence as on the series library; without the watchlist when
+    /// it is switched off.
     private var filter: [LibraryFilter] {
-        art == "tvshows" ? [.all, .begun, .watchlist] : LibraryFilter.allCases
+        LibraryFilter.offered(art == "tvshows" ? [.all, .begun, .watchlist] : LibraryFilter.allCases,
+                              watchlist: watchlistShown)
     }
 
     var body: some View {
@@ -313,6 +317,12 @@ extension View {
                              label: { $0.label },
                              isSelected: { $0 == state.sorting },
                              select: { state.sorting = $0 })
+            }
+            // A filter the page no longer offers (the watchlist, switched off) must not
+            // keep narrowing the list with no pill left to undo it.
+            .task(id: filter) {
+                let kept = state.filter.kept(in: filter)
+                if kept != state.filter { state.filter = kept }
             }
     }
 }

@@ -69,11 +69,13 @@ struct SwiftlyApp: App {
 extension FocusedValues {
     @Entry var playerOpen: Bool?
     @Entry var downloadsAn: Bool?
+    @Entry var watchlistShown: Bool?
 }
 
 struct MenuBar: Commands {
     @FocusedValue(\.playerOpen) private var playerOpen
     @FocusedValue(\.downloadsAn) private var downloadsAn
+    @FocusedValue(\.watchlistShown) private var watchlistShown
 
     var body: some Commands {
         // Apple's defaults that are not needed: no filler items such as "Print" or "New".
@@ -109,6 +111,7 @@ struct MenuBar: Commands {
             CommandButton("Filme",     .movies,     "2")
             CommandButton("Serien",    .seriesList,    "3")
             CommandButton("Merkliste", .watchlist, "4")
+                .disabled(watchlistShown == false)
             CommandButton("Downloads", .downloads, "5")
                 .disabled(downloadsAn == false)
             Divider()

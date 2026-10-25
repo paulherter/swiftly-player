@@ -77,6 +77,8 @@ class Settings(store: Store) {
     var bitratesLimit by RememberValue(a, "bitratenGrenze", figure("bitratenGrenze", 0)) { it.toString() }
     var landscapeFixed by RememberValue(a, "querformatFest", bool("querformatFest", true), yesNo)
     var progress by RememberValue(a, "fortschritt", bool("fortschritt", true), yesNo)
+    /** Whether the watchlist appears: page, filter and the button on detail pages (mirrors `watchlistShown`). */
+    var watchlist by RememberValue(a, "merklisteAn", bool("merklisteAn", true), yesNo)
     /** Empty means: as the file. */
     var audioLanguage by RememberValue(a, "tonSprache", a.rememberValue("tonSprache").orEmpty()) { it }
     /** Empty means: off. */
@@ -208,6 +210,10 @@ fun selectionRead(json: String): List<Choice> = JSONArray(json).let { a ->
 
 /** Whether tiles show their progress bar ("Fortschritt auf Kacheln"). */
 val LocalProgressShow = compositionLocalOf { true }
+
+/** Mirrors `LibraryFilter.offered(_:watchlist:)`: the filters a page offers, without the watchlist when it is off. */
+fun offeredFilters(filters: List<String>, watchlist: Boolean): List<String> =
+    if (watchlist) filters else filters - "merkliste"
 
 // MARK: Subpage building blocks
 

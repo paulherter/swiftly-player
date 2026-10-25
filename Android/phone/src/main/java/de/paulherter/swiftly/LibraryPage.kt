@@ -273,6 +273,9 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     val state = remember(art) { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val section = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    // Mirrors `LibraryFilter.kept(in:)`: a filter the page no longer offers (the watchlist, switched off)
+    // must not keep narrowing the list with no pill left to undo it.
+    LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filterSet("alle") }
     WatchStateChange(app) { state.load(app.kern) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current

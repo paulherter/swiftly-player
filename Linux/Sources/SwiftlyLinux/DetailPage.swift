@@ -941,7 +941,8 @@ extension App {
         }
         // The drawing area holds its icon; without this access it dies when the call returns.
         signal(rememberCharacter.display, "destroy") { _ = rememberCharacter }
-        append(rail, memo)
+        // Switched off in Appearance, the bookmark is gone; the favourite stays on the server.
+        if selection.watchlistShown { append(rail, memo) }
 
         // **The download button only exists with the switch on**, and only if the account may
         // download (`DownloadPermission`). Anyone who has not enabled downloads sees nothing of it,
