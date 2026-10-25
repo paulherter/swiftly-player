@@ -154,6 +154,10 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let extraType: String?
     /// `Video`, `Audio` … Tells a video playlist from a music one.
     public let mediaType: String?
+    /// **The name the server sorts by**: lowercased, leading articles dropped ("adam
+    /// project" for "The Adam Project"). The alphabet index reads its letters from it so
+    /// they match the order of an A–Z list (``AlphabetIndex``).
+    public let sortName: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -193,6 +197,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case providerIds = "ProviderIds"
         case extraType = "ExtraType"
         case mediaType = "MediaType"
+        case sortName = "SortName"
     }
 
     /// Names of the directors, for the line under the description.
@@ -332,7 +337,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 productionLocations: [String]? = nil,
                 providerIds: [String: String]? = nil,
                 extraType: String? = nil,
-                mediaType: String? = nil) {
+                mediaType: String? = nil,
+                sortName: String? = nil) {
         self.id = id; self.name = name; self.type = type
         self.collectionType = collectionType; self.productionYear = productionYear
         self.overview = overview; self.runTimeTicks = runTimeTicks
@@ -357,6 +363,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.providerIds = providerIds
         self.extraType = extraType
         self.mediaType = mediaType
+        self.sortName = sortName
     }
 
 }

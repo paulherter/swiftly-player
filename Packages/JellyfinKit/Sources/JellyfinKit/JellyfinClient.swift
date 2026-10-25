@@ -418,7 +418,11 @@ public actor JellyfinClient {
         /// The download reconciliation needs both.
         ids: [String] = [],
         personIDs: [String] = [],
-        genres: [String] = []
+        genres: [String] = [],
+        /// **Only ID, name and sort name, all of them.** For the alphabet index
+        /// (``AlphabetIndex``): no images, no user data, no overview, so a library of
+        /// thousands stays a few hundred kilobytes. `limit` and `startIndex` are ignored.
+        slim: Bool = false
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -434,7 +438,7 @@ public actor JellyfinClient {
             // `item(id:)` anyway, and both are in there.
             // `ProviderIds` because ``TitleFilter`` uses them to recognize two entries as the
             // same movie; small, a handful of numbers.
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
@@ -458,6 +462,12 @@ public actor JellyfinClient {
         }
         if let isWatched {
             query.append(.init(name: "IsPlayed", value: isWatched ? "true" : "false"))
+        }
+        if slim {
+            query.removeAll { ["Limit", "StartIndex", "Fields"].contains($0.name) }
+            query += [.init(name: "Fields", value: "SortName"),
+                      .init(name: "EnableImages", value: "false"),
+                      .init(name: "EnableUserData", value: "false")]
         }
         return try await send(try request("Items", query: query), as: ItemsResponse.self)
     }
@@ -706,10 +716,13 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: "true"),
             .init(name: "IncludeItemTypes", value: "Movie,Series"),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
         ])
         // Across all libraries: one hit per work (``Items``).
-        return await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)
+        let hits = await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)
+        // **"By name", as in the libraries** (``NaturalOrder``): digits, Latin, then other
+        // scripts, instead of the server's order, which mixes transliterated titles in.
+        return NaturalOrder.sorted(hits) { ($0.name, $0.sortName) }
     }
 
     /// A title's playback state for this account: position, watched, last played. For the

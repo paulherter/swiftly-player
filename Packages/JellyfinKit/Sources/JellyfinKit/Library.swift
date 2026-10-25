@@ -7,7 +7,9 @@ public enum Sorting: String, CaseIterable, Sendable, Identifiable {
 
     public var label: String {
         switch self {
-        case .name:        translated("A–Z")
+        // "By name", not "A–Z": the order is natural (digits, Latin, then other
+        // scripts; ``NaturalOrder``), not just the Latin alphabet.
+        case .name:        translated("Nach Name")
         case .latest:     translated("Zuletzt")
         case .rating:   translated("Bewertung")
         case .erscheinung: translated("Jahr")
