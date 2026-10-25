@@ -634,7 +634,7 @@ public final class Kern: @unchecked Sendable {
             // **Android TV header zone only.** `HeaderInfo` on tvOS shows rating and certification on
             // the home page just as on the detail page (it reads straight from the `Item`), and the
             // description was not in the answer at all.
-            rating: i.communityRating, sharing: i.officialRating, description: i.description,
+            rating: i.communityRating, sharing: i.ageRating, description: i.description,
             backdrop: Kern.backdrop(i, episode: nil, addresses: a))
     }
 
@@ -703,7 +703,7 @@ public final class Kern: @unchecked Sendable {
                 yearRuntime: yearRuntime,
                 headerImage: ImageSelection.headerWithFallback(i, episode: nil, addresses: a)?.absoluteString,
                 logo: ImageSelection.logo(i, addresses: a)?.absoluteString,
-                rating: i.communityRating, sharing: i.officialRating,
+                rating: i.communityRating, sharing: i.ageRating,
                 planPresent: p != nil, lossless: p?.isLossless ?? false, method: p.map { $0.method.rawValue },
                 resumeFrom: since, resumeText: since.map { timeText($0) },
                 remainingTime: i.remainingTimeText, progress: i.userData?.playedPercentage.map { $0 / 100 },
@@ -765,7 +765,7 @@ public final class Kern: @unchecked Sendable {
                 // `state` is the next or first episode, the same one iOS looks for as the substitute.
                 headerImage: ImageSelection.headerWithFallback(series, episode: state, addresses: a)?.absoluteString,
                 logo: ImageSelection.logo(series, addresses: a)?.absoluteString,
-                rating: series.communityRating, sharing: series.officialRating, description: series.description,
+                rating: series.communityRating, sharing: series.ageRating, description: series.description,
                 remembered: series.userData?.isFavorite ?? false, watched: series.userData?.played ?? false,
                 trailer: series.remoteTrailers?.first?.url.map { "\($0)" },
                 planPresent: false, lossless: false, method: nil,

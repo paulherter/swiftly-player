@@ -1130,7 +1130,7 @@ struct DetailsRail<End: View>: View {
                             .monospacedDigit()
                     }
                     ProofMarks(rating: title.communityRating,
-                                sharing: title.officialRating)
+                                sharing: title.ageRating)
                 }
                 // **A title change is a cut, not a movement.** When focus moves from title
                 // to title on the home page, the change arrived in an animated transaction,

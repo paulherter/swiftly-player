@@ -541,7 +541,7 @@ struct DetailHero: View {
             //
             // All other measures come from the component itself and match iPhone: 13 medium,
             // padding 10/4, fill at 15 percent.
-            if let sharing = title.officialRating {
+            if let sharing = title.ageRating {
                 Badge(text: sharing, rounding: Theme.cornerSmall)
             }
             // The evidence goes last: year, runtime, stars, certification, Direct Play, as on

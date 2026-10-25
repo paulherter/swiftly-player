@@ -705,7 +705,7 @@ extension App {
             append(rail, pair)
         }
 
-        if let sharing = title.officialRating { append(rail, badge(sharing)) }
+        if let sharing = title.ageRating { append(rail, badge(sharing)) }
 
         // **The badge goes last**: year · runtime · stars · certification · Direct Play, as on
         // TV (`ProofMarks(proofLast:)`). It comes last, so its appearance moves nothing:

@@ -468,7 +468,7 @@ struct ItemDetailView: View {
         ProofRow(directPlayFlag: plan?.isLossless ?? false,
                    hint: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
                    rating: current.communityRating,
-                   sharing: current.officialRating)
+                   sharing: current.ageRating)
             // **Fixed height, even when empty.** The line only comes with the plan,
             // and from the list often without rating and age rating. Empty, it had no
             // height; the button below sat higher and dropped as soon as it filled.
