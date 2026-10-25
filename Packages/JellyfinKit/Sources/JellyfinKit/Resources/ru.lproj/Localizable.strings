@@ -9,11 +9,11 @@
 "Angefangen" = "Начато";
 "Merkliste" = "Список просмотра";
 "Ungesehen" = "Не просмотрено";
-"Direct Play — die Datei läuft unverändert." = "Direct Play — файл воспроизводится без изменений.";
-"Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet." = "Direct Stream — переупаковывается только контейнер, изображение не трогается.";
+"Direct Play — die Datei läuft unverändert." = "Без перекодировки — файл воспроизводится без изменений.";
+"Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet." = "Напрямую — переупаковывается только контейнер, изображение не трогается.";
 "Der Server transkodiert. Grund unbekannt." = "Сервер перекодирует. Причина неизвестна.";
 "Der Server transkodiert: %@" = "Сервер перекодирует: %@";
-"Video" = "Video";
+"Video" = "Видео";
 "Audio" = "Звук";
 "Untertitel" = "Субтитры";
 "Container" = "Контейнер";
@@ -22,8 +22,8 @@
 "nicht im Profil deklariert" = "не объявлено в профиле";
 "%lld Kanäle" = "Каналов: %lld";
 "würde eingebrannt" = "будут вшиты";
-"Stereo" = "Stereo";
-"Mono" = "Mono";
+"Stereo" = "Стерео";
+"Mono" = "Моно";
 "Staffel %lld" = "Сезон %lld";
 "Folge %lld" = "Эпизод %lld";
 "Nicht angemeldet." = "Вход не выполнен.";
@@ -76,7 +76,7 @@
 "Der Server hat mit %lld geantwortet." = "Сервер ответил кодом %lld.";
 "Die Antwort des Servers war unverständlich." = "Не удалось разобрать ответ сервера.";
 "unbekannt" = "неизвестно";
-"Normal" = "Normal";
+"Normal" = "Обычная";
 "Schlechte Verbindung" = "Плохое соединение";
 "Sehr schlechte Verbindung" = "Очень плохое соединение";
 
@@ -85,8 +85,8 @@
 "Serien" = "Сериалы";
 "Filme & Serien" = "Фильмы и сериалы";
 "Transkodiert" = "Перекодировано";
-"Direct Play" = "Direct Play";
-"Direct Stream" = "Direct Stream";
+"Direct Play" = "Без перекодировки";
+"Direct Stream" = "Напрямую";
 
 /* Quick Connect */
 "Die Verbindung zum Server ist abgebrochen." = "Соединение с сервером прервалось.";
@@ -104,8 +104,8 @@
 "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Сервер требует двухфакторное подтверждение. Разрешите это устройство в браузере или войдите с паролем приложения.";
 "Vor dem Server sitzt eine Anmeldeseite, etwa Cloudflare Access oder Authelia. Trag die Header, die sie verlangt, unter „Erweitert“ ein." = "Перед сервером стоит страница входа, например Cloudflare Access или Authelia. Добавьте требуемые ею заголовки в разделе «Дополнительно».";
 
-"Original" = "Original";
-"Direct Play · Originalqualität" = "Direct Play · исходное качество";
+"Original" = "Оригинальное";
+"Direct Play · Originalqualität" = "Без перекодировки · исходное качество";
 
 /* Anzahlen in Kacheln und Sammlungen (fehlten bis 25.09.2026, englisch stand Deutsch). */
 "%lld Filme" = "Фильмов: %lld";

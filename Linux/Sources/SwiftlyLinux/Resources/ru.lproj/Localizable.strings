@@ -39,7 +39,7 @@
 "Der Code stimmt nicht oder ist abgelaufen." = "Код неверен или истёк.";
 "Der Fortschritt ist zurückgesetzt." = "Прогресс сброшен.";
 "Die Anmeldung gilt nicht mehr. Bitte neu anmelden." = "Сеанс больше не действителен. Войдите снова.";
-"Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist." = "Максимальный битрейт можно задать, только если «Всегда Direct Play» выключено.";
+"Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist." = "Максимальный битрейт можно задать, только если «Всегда без перекодировки» выключено.";
 "Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen." = "Воспроизведение не удалось. От %@ не пришло данных для воспроизведения.";
 "Einstellungen" = "Настройки";
 "Erreichbar" = "Доступен";
@@ -58,8 +58,8 @@
 "Hier ist noch nichts" = "Здесь пока пусто";
 "Hier weiterschauen" = "Смотреть здесь";
 "Höchste Bitrate" = "Максимальный битрейт";
-"Direct Play" = "Direct Play";
-"Immer Direct Play" = "Всегда Direct Play";
+"Direct Play" = "Без перекодировки";
+"Immer Direct Play" = "Всегда без перекодировки";
 "Keine Besetzung hinterlegt." = "Актёрский состав не указан.";
 "Keine Folgen" = "Нет эпизодов";
 "Keine Staffeln gefunden." = "Сезоны не найдены.";
@@ -94,7 +94,7 @@
 "Player schließen" = "Закрыть плеер";
 "Schließen" = "Закрыть";
 "Serien" = "Сериалы";
-"Server" = "Server";
+"Server" = "Сервер";
 "Sobald der Server Titel hat, stehen sie hier." = "Как только на сервере появятся тайтлы, они будут здесь.";
 "Sprache" = "Язык";
 "Sprache, Untertitel, Tempo" = "Язык, субтитры, скорость";
@@ -107,7 +107,7 @@
 "Ton und Untertitel" = "Звук и субтитры";
 "Trag einen Benutzernamen ein." = "Введите имя пользователя.";
 "Trag erst eine Adresse ein." = "Сначала введите адрес.";
-"Trailer" = "Trailer";
+"Trailer" = "Трейлер";
 "Untertitel" = "Субтитры";
 "Untertitel automatisch" = "Субтитры автоматически";
 "Verbinde…" = "Подключение…";
@@ -135,7 +135,7 @@
 "Formatfüllend" = "Растянуть";
 "Füllen" = "Растянуть";
 "Ganzes Bild" = "По размеру";
-"Original" = "Original";
+"Original" = "Оригинальное";
 "Keine" = "Нет";
 
 /* Technikschild (08.09.2026) */
@@ -210,7 +210,7 @@
 "Nichts auf diesem Rechner" = "На этом компьютере ничего нет";
 "Noch nichts geladen" = "Пока ничего не загружено";
 "Nochmal versuchen" = "Попробовать снова";
-"Offline" = "Offline";
+"Offline" = "Офлайн";
 "Ohne Netz abspielen" = "Смотреть без сети";
 "Speicher" = "Хранилище";
 "Titel auf diesen Rechner laden und offline schauen" = "Загружайте на этот компьютер и смотрите офлайн";
@@ -228,7 +228,7 @@
 "Auf deinem Server" = "На вашем сервере";
 "Aufklappen" = "Ещё";
 "Auswählen" = "Выбрать";
-"Integration" = "Integration";
+"Integration" = "Интеграции";
 "Nicht auf deinem Server" = "Нет на вашем сервере";
 "Staffel %lld" = "Сезон %lld";
 "Staffel %lld · Folge %lld" = "Сезон %lld · Эпизод %lld";
@@ -250,7 +250,7 @@
 
 /* Personenseite */
 "Geboren %@" = "Дата рождения: %@";
-"%1$@ in %2$@" = "%1$@ in %2$@";
+"%1$@ in %2$@" = "%1$@ в %2$@";
 "Mehr" = "Ещё";
 "Weniger" = "Меньше";
 "Auf deinem Server gibt es sonst nichts mit %@." = "Больше ничего с участием %@ на вашем сервере нет.";
@@ -369,7 +369,7 @@
 "%@ laden" = "Загрузить %@";
 "1 Folge" = "1 эпизод";
 "Danach %@ frei" = "После этого свободно %@";
-"Direct Play · Originalqualität" = "Direct Play · исходное качество";
+"Direct Play · Originalqualität" = "Без перекодировки · исходное качество";
 "Entscheidet, was ein Haken auswählt." = "Определяет, что выбирает галочка.";
 "Ganze Serie" = "Весь сериал";
 "Nichts gewählt" = "Ничего не выбрано";
@@ -477,10 +477,10 @@
 "Wechselt zwischen Restzeit und Ende" = "Переключает между оставшимся временем и временем окончания";
 "Karte schließen" = "Закрыть карточку";
 "Nächste Folge abspielen: %@" = "Смотреть следующий эпизод: %@";
-"in %lld s" = "in %lld s";
+"in %lld s" = "через %lld с";
 "Aus Weiterschauen entfernen" = "Убрать из «Продолжить просмотр»";
 "Zur Übersicht" = "К обзору";
-"Titel als Logo" = "Название логотипом";
+"Titel als Logo" = "Использовать оригинальный постер";
 "Auf Film- und Serienseiten, wenn dein Server eins hat" = "На страницах фильмов и сериалов, если на сервере он есть";
 "Bibliothek hinzufügen" = "Добавить медиатеку";
 "Bibliotheken und Sammlungen" = "Медиатеки и коллекции";
@@ -537,7 +537,7 @@
 "Hilf Swiftly zu wachsen" = "Помогите Swiftly расти";
 "Kräftig" = "Яркий";
 "Look ausprobieren" = "Примерить тему";
-"Looks" = "Looks";
+"Looks" = "Тема приложения";
 "Looks für Unterstützer" = "Темы для спонсоров";
 "Looks kannst du jederzeit im Profil wechseln." = "Тему можно сменить в профиле в любой момент.";
 "Monatlich" = "Ежемесячно";
@@ -551,12 +551,12 @@
 "im Monat · jederzeit kündbar" = "в месяц · отмена в любой момент";
 "Ändern" = "Изменить";
 "Neon-Nacht" = "Неоновая ночь";
-"Halloween" = "Halloween";
-"Sunset" = "Sunset";
-"Aurora" = "Aurora";
+"Halloween" = "Хеллоуин";
+"Sunset" = "Закат";
+"Aurora" = "Аврора";
 "Eis" = "Лёд";
 "Glut" = "Угли";
-"Gold" = "Gold";
+"Gold" = "Золото";
 "Smaragd" = "Изумруд";
 "Dein Look" = "Ваша тема";
 "1,99 €" = "1,99 €";
@@ -578,7 +578,7 @@
 "Mit %@ unterstützen" = "Поддержать за %@";
 "Mit %@ Danke sagen" = "Сказать спасибо за %@";
 "Danke 🫶" = "Спасибо 🫶";
-"Zeig mir meine Startseite" = "Покажите мой главный экран";
+"Zeig mir meine Startseite" = "На главный экран";
 "Du hast Swiftly gerade beim Weitermachen geholfen. Die Looks gehören jetzt dir. Schau dich um." = "Вы только что помогли Swiftly развиваться дальше. Темы теперь ваши. Осмотритесь.";
 "Dieser Schlüssel ist abgelaufen. Mit dem Monatsabo auf der Website bekommst du einen neuen." = "Срок действия ключа истёк. С ежемесячной подпиской на сайте вы получите новый.";
 "Der Schlüssel ist unvollständig. Kopier ihn noch einmal ganz, er beginnt mit SS2-." = "Ключ неполный. Скопируйте его целиком ещё раз, он начинается с SS2-.";
