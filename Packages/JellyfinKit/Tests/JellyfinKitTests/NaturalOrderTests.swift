@@ -20,6 +20,13 @@ struct NaturalOrderTests {
                                   "Adam", "Venom", "Zootopia", "Выживший", "За бортом"])
     }
 
+    @Test("Anführungszeichen vorn zählen nicht: «Старый» Новый год steht bei С")
+    func quotes() {
+        #expect(order([("«Старый» Новый год", "staryi novyi god"), ("1+1", "1+1"),
+                       ("Сказка", "skazka"), ("Сталкер", "stalker")])
+                == ["1+1", "Сказка", "Сталкер", "«Старый» Новый год"])
+    }
+
     @Test("Lateinische Titel nach Sortiername, ohne Artikel")
     func article() {
         #expect(order([("The Batman", "batman"), ("The Adam Project", "adam project"), ("Alvin", "alvin")])

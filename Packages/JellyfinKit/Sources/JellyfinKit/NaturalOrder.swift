@@ -26,9 +26,12 @@ public enum NaturalOrder {
         return (0x41...0x5A).contains(v) ? 1 : 2
     }
 
-    /// The string a title is compared by within its block.
+    /// The string a title is compared by within its block, without the quotes or brackets
+    /// in front («Старый» Новый год compares as "Старый» Новый год").
     public static func key(name: String, sortName: String?) -> String {
-        group(name: name, sortName: sortName) == 1 ? (sortName ?? name) : name
+        let key = group(name: name, sortName: sortName) == 1 ? (sortName ?? name) : name
+        guard let start = key.firstIndex(where: { $0.isLetter || $0.isNumber }) else { return key }
+        return String(key[start...])
     }
 
     /// `true` when `a` comes before `b`.

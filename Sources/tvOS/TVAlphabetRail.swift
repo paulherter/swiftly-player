@@ -8,6 +8,11 @@ import SwiftUI
 /// press hands focus to the first title of that letter, left goes back into the grid.
 /// While focus is in the grid, the letter of the topmost title lights up, as on the
 /// iPhone.
+///
+/// **Every letter, scrolling.** A library in two alphabets has some 45 letters, more than
+/// fit at a size readable from the sofa; condensing them as on the iPhone left gaps ("#, C,
+/// K, O…") that read as a broken order. The column scrolls instead: tvOS keeps the
+/// focused letter in view, and without focus the current letter stays centred.
 struct TVAlphabetRail: View {
     let index: AlphabetIndex
     /// The letter of the topmost visible title.
@@ -21,22 +26,35 @@ struct TVAlphabetRail: View {
 
     /// Wide enough for a focused letter in its circle, narrow enough for the 80 pt margin.
     static let width: CGFloat = 56
-    /// The smallest row a letter gets; below it the strip condenses. A letter on a TV must
-    /// stay readable from the sofa.
-    static let minimumRow: CGFloat = 32
+    /// One letter's row, readable from the sofa.
+    static let row: CGFloat = 40
 
     var body: some View {
-        GeometryReader { frame in
-            let shown = index.condensed(fitting: max(2, Int(frame.size.height / Self.minimumRow)))
-            let row = frame.size.height / CGFloat(max(shown.count, 1))
-            VStack(spacing: 0) {
-                ForEach(shown) { entry in
-                    Button { choose(entry.letter) } label: {
-                        LetterLabel(letter: entry.letter, current: entry.letter == current, height: row)
+        ScrollViewReader { reader in
+            ScrollView(.vertical) {
+                VStack(spacing: 0) {
+                    ForEach(index.entries) { entry in
+                        Button { choose(entry.letter) } label: {
+                            LetterLabel(letter: entry.letter, current: entry.letter == current,
+                                        height: Self.row)
+                        }
+                        .buttonStyle(LetterStyle())
+                        .focused($focused, equals: entry.letter)
+                        .id(entry.letter)
                     }
-                    .buttonStyle(LetterStyle())
-                    .focused($focused, equals: entry.letter)
                 }
+                .padding(.vertical, Self.row)
+            }
+            .scrollIndicators(.hidden)
+            // A soft edge says there are more letters above or below.
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
+                                         .init(color: .black, location: 0.06),
+                                         .init(color: .black, location: 0.94),
+                                         .init(color: .clear, location: 1)],
+                                 startPoint: .top, endPoint: .bottom))
+            .onChange(of: current) { _, new in
+                guard focused == nil, let new else { return }
+                withAnimation(Motion.select) { reader.scrollTo(new, anchor: .center) }
             }
         }
         .frame(width: Self.width)

@@ -15,6 +15,10 @@ struct AlphabetIndexTests {
         #expect(AlphabetIndex.letter(for: "йети") == "Й")
         #expect(AlphabetIndex.letter(for: "Ärger") == "A")
         #expect(AlphabetIndex.letter(for: "  ") == "#")
+        // Quotes and brackets in front are skipped.
+        #expect(AlphabetIndex.letter(for: "«Старый» Новый год") == "С")
+        #expect(AlphabetIndex.letter(for: "\"Weird\" Al") == "W")
+        #expect(AlphabetIndex.letter(for: "...") == "#")
     }
 
     @Test("Lateinische Titel nach Sortiername, andere Schriften nach dem Titel")

@@ -53,13 +53,16 @@ public struct AlphabetIndex: Sendable, Equatable {
         return shown
     }
 
-    /// **The letter of one string.** Digits, punctuation and symbols share "#". Latin
+    /// **The letter of one string.** Digits share "#", and so does a name without letters
+    /// or digits; punctuation in front is skipped. Latin
     /// letters lose their accents ("É" under "E", as in every Latin index); other scripts
     /// keep theirs, since there they are letters of their own ("Й" is not "И"). Only "Ё"
     /// joins "Е": Russian sorts them together (``NaturalOrder``), and a letter of its own
     /// would jump back and forth inside the "Е" titles.
     public static func letter(for name: String) -> String {
-        guard let first = name.trimmingCharacters(in: .whitespacesAndNewlines).first,
+        // **Leading quotes and brackets are not the title**: «Старый» Новый год stands
+        // under "С", "(500) Days of Summer" under "#".
+        guard let first = name.first(where: { $0.isLetter || $0.isNumber }),
               first.isLetter else { return "#" }
         let upper = String(first).uppercased()
         // Latin accents and Arabic hamza or vowel marks belong to the letter, not beside it:
