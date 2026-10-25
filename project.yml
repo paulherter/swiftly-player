@@ -564,6 +564,7 @@ targets:
       - path: Sources/Shared/LookAccentDots.swift
       - path: Sources/Shared/Motion.swift
       - path: Sources/Shared/GridJump.swift
+      - path: Sources/Shared/AlphabetRail.swift
       - path: Sources/Shared/SeasonDecor.swift
       # Building blocks without platform dimensions - row title, badge, loader,
       # profile glyph. They used to exist three times.

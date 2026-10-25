@@ -38,8 +38,13 @@ extension ScrollJump {
         guard columns > 0 else { return .top }
         let tile = (usable - CGFloat(columns - 1) * spacing) / CGFloat(columns)
         let x0 = leading + CGFloat(index % columns) * (tile + spacing)
-        let width = leading + usable + trailing
-        guard width - tile > 0 else { return .top }
-        return UnitPoint(x: x0 / (width - tile), y: 0)
+        return anchor(tileStart: x0, tileWidth: tile, viewport: leading + usable + trailing)
+    }
+
+    /// The same for a grid whose tiles have a fixed width (the Mac's adaptive columns):
+    /// the tile starts at `tileStart` in a scroll view `viewport` wide.
+    static func anchor(tileStart: CGFloat, tileWidth: CGFloat, viewport: CGFloat) -> UnitPoint {
+        guard viewport - tileWidth > 0 else { return .top }
+        return UnitPoint(x: tileStart / (viewport - tileWidth), y: 0)
     }
 }

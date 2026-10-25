@@ -62,6 +62,10 @@ struct PresentationView: View {
                           title: Text("Fortschritt auf Kacheln"),
                           an: Binding(get: { model.progressOnTiles },
                                       set: { model.progressOnTiles = $0 }))
+            ToggleRow(symbol: "textformat.abc",
+                          title: Text("Alphabetische Suche in Listen"),
+                          an: Binding(get: { model.alphabetShown },
+                                      set: { model.alphabetShown = $0 }))
             ToggleRow(symbol: "textformat",
                           title: Text("Titel als Logo"),
                           under: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),

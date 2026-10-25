@@ -58,6 +58,13 @@ struct LibraryView: View {
     /// counter: a page opened after the switch starts with `false` and does not go
     /// through it again.
     @State private var change = false
+    /// The letter strip: where to scroll, which titles are on screen, the letter of the
+    /// topmost one, and how wide the scroll view is (the columns follow the window).
+    @State private var jump: ScrollJump?
+    @State private var onScreen = OnScreenTiles()
+    @State private var topLetter: String?
+    @State private var viewportWidth: CGFloat = 0
+    @State private var jumpTask: Task<Void, Never>?
 
     /// How far the value row has been closed, 0 to 1.
     private var pullGait: Double {
@@ -75,6 +82,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
+        ScrollViewReader { reader in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
@@ -177,6 +185,15 @@ struct LibraryView: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(entryRecord, model: model)
+                        .id(entryRecord.id)
+                        .onAppear {
+                            onScreen.ids.insert(entryRecord.id)
+                            updateTopLetter()
+                        }
+                        .onDisappear {
+                            onScreen.ids.remove(entryRecord.id)
+                            updateTopLetter()
+                        }
                         .task {
                             // More items are requested before the user reaches the bottom.
                             if shelf.solvesLoadMoreOut(entryRecord.id, columns: estimatedColumns),
@@ -240,6 +257,33 @@ struct LibraryView: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
             headerState.offset = new
         }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.width } action: { _, new in
+            viewportWidth = new
+        }
+        // Not moved sideways (``ScrollJump/anchor(tileStart:tileWidth:viewport:)``): the
+        // columns are adaptive, so the tile's column comes from the window's width.
+        .onChange(of: jump) { _, new in
+            guard let new, let index = shelf.items.firstIndex(where: { $0.id == new.id }) else { return }
+            let usable = viewportWidth - 2 * Theme.edgeSpacing
+            let columns = max(1, Int((usable + Theme.tileSpacing) / (Theme.tileWidth + Theme.tileSpacing)))
+            let start = Theme.edgeSpacing + CGFloat(index % columns) * (Theme.tileWidth + Theme.tileSpacing)
+            let anchor = ScrollJump.anchor(tileStart: start, tileWidth: Theme.tileWidth,
+                                           viewport: viewportWidth)
+            withAnimation(Motion.select) { reader.scrollTo(new.id, anchor: anchor) }
+        }
+        // In the right margin; 24 pt already fit the strip, so the grid does not move.
+        .overlay(alignment: .trailing) {
+            if let alphabet = shownAlphabet {
+                AlphabetRail(index: alphabet, current: topLetter) { letter in jumpTo(letter) }
+                    .padding(.trailing, max(0, (Theme.edgeSpacing - AlphabetRail.width) / 2))
+                    .padding(.top, Theme.contentTop + 96)
+                    .padding(.bottom, 24)
+            }
+        }
+        .task(id: "\(shelf.identifier)|\(source?.key ?? "")|\(model.accountSwitch)|\(model.alphabetShown)") {
+            guard model.alphabetShown, !showsCollections else { return }
+            await shelf.loadAlphabet(model, from: source)
+        }
         // A different filter or sorting scrolls to the top. Otherwise the view would stay
         // in the middle of the new list.
         .onChange(of: shelf.identifier) { _, _ in
@@ -295,6 +339,37 @@ struct LibraryView: View {
             choice = new
             newLoad()
         }
+        }
+    }
+
+    // MARK: Letter strip
+
+    /// Only where it means something: switched on, sorted by name, a grid of titles, and
+    /// more than one letter.
+    private var shownAlphabet: AlphabetIndex? {
+        guard model.alphabetShown, shelf.sorting == .name, !showsCollections,
+              let alphabet = shelf.alphabet, alphabet.isUseful else { return nil }
+        return alphabet
+    }
+
+    /// Scrolls to the first title of a letter, loading up to it. A newer letter cancels
+    /// the jump under way.
+    private func jumpTo(_ letter: String) {
+        jumpTask?.cancel()
+        jumpTask = Task {
+            guard let source, let id = await shelf.jumpTarget(letter, model: model, from: source),
+                  !Task.isCancelled else { return }
+            jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
+        }
+    }
+
+    /// The letter of the first loaded title on screen. **Written only when it changes**:
+    /// tiles come and go on every scroll.
+    private func updateTopLetter() {
+        guard shownAlphabet != nil,
+              let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        if letter != topLetter { topLetter = letter }
     }
 
     /// An estimate is enough for paging: whether the third-to-last row starts at six or
