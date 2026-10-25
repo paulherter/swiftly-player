@@ -68,3 +68,31 @@ public enum NaturalOrder {
             .map(\.element)
     }
 }
+
+// MARK: - Pages in natural order
+
+extension JellyfinClient {
+
+    /// **The whole list in "By name" order**: one slim request (ID, name, sort name, no
+    /// images), sorted here (``NaturalOrder``). The same parameters as the page query it
+    /// replaces; the caller keeps it for the later pages, the letter strip and its jumps.
+    public func naturalList(parentID: String?, sortOrder: String, filters: [String],
+                            isWatched: Bool?, recursive: Bool,
+                            includeItemTypes: [String]) async throws -> [Item] {
+        let answer = try await items(parentID: parentID, sortBy: Sorting.name.inputField,
+                                     sortOrder: sortOrder, filters: filters, isWatched: isWatched,
+                                     recursive: recursive, includeItemTypes: includeItemTypes,
+                                     slim: true)
+        return NaturalOrder.sorted(answer.items) { ($0.name, $0.sortName) }
+    }
+
+    /// **One page of such a list**, fetched by ID and put back into the list's order (the
+    /// server answers `Ids` in its own order). `totalRecordCount` is the list's length.
+    public func naturalPage(_ list: [Item], since: Int, count: Int) async throws -> ItemsResponse {
+        let slice = Array(list.dropFirst(since).prefix(count))
+        guard !slice.isEmpty else { return ItemsResponse(items: [], totalRecordCount: list.count) }
+        let answer = try await items(limit: slice.count, ids: slice.map(\.id))
+        let byID = Dictionary(answer.items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return ItemsResponse(items: slice.compactMap { byID[$0.id] }, totalRecordCount: list.count)
+    }
+}

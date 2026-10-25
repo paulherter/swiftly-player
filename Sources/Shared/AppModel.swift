@@ -1818,12 +1818,9 @@ final class AppModel {
         if sorting == .name {
             guard let list = await naturalList(from: source, filter: filter, fresh: startIndex == 0)
             else { return nil }
-            let slice = Array(list.dropFirst(startIndex).prefix(count))
-            guard !slice.isEmpty else { return ([], list.count) }
             do {
-                let answer = try await client.items(limit: slice.count, ids: slice.map(\.id))
-                let byID = Dictionary(answer.items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-                return (slice.compactMap { byID[$0.id] }, list.count)
+                let page = try await client.naturalPage(list, since: startIndex, count: count)
+                return (page.items, page.totalRecordCount)
             } catch {
                 Self.log.error("Bibliotheksabruf (Name) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
                 return nil
@@ -1850,36 +1847,25 @@ final class AppModel {
         }
     }
 
-    /// One title of a naturally sorted list: enough to order it and to fetch it.
-    struct NaturalTitle: Sendable {
-        let id: String
-        let name: String
-        let sortName: String?
-    }
-
-    /// The naturally sorted lists, per source, filter and account. Not observed: a view
-    /// never reads them, only the paging does.
-    @ObservationIgnored private var naturalLists: [String: [NaturalTitle]] = [:]
+    /// The naturally sorted lists (slim items), per source, filter and account. Not
+    /// observed: a view never reads them, only the paging does.
+    @ObservationIgnored private var naturalLists: [String: [Item]] = [:]
 
     /// **The whole list in "By name" order** (``NaturalOrder``), from one slim request:
     /// names only, no images. Reused for every later page, the letter strip and its jumps;
     /// `fresh` fetches it again.
     func naturalList(from source: ShelfSource, filter: LibraryFilter = .all,
-                     fresh: Bool = false) async -> [NaturalTitle]? {
+                     fresh: Bool = false) async -> [Item]? {
         guard let client else { return nil }
         let key = "\(source.key)|\(filter.rawValue)|\(accountSwitch)"
         if !fresh, let cached = naturalLists[key] { return cached }
         do {
-            let answer = try await client.items(parentID: source.parent,
-                                                 sortBy: Sorting.name.inputField,
-                                                 sortOrder: source.bearing(.name),
-                                                 filters: filter.jellyfinFilter,
-                                                 isWatched: filter.isWatched,
-                                                 recursive: source.recursive,
-                                                 includeItemTypes: source.types,
-                                                 slim: true)
-            let titles = answer.items.map { NaturalTitle(id: $0.id, name: $0.name, sortName: $0.sortName) }
-            let sorted = NaturalOrder.sorted(titles) { ($0.name, $0.sortName) }
+            let sorted = try await client.naturalList(parentID: source.parent,
+                                                      sortOrder: source.bearing(.name),
+                                                      filters: filter.jellyfinFilter,
+                                                      isWatched: filter.isWatched,
+                                                      recursive: source.recursive,
+                                                      includeItemTypes: source.types)
             naturalLists[key] = sorted
             return sorted
         } catch {
