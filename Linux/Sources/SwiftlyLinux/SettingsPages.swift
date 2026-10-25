@@ -939,6 +939,15 @@ extension App {
             self?.homeLoad()
         })
         append(ga.space, toggleRow(symbol: "format-text-bold-symbolic",
+                                         title: translated("Alphabetische Suche in Listen"),
+                                         an: selection.alphabetShown) { [weak self] an in
+            guard let self else { return }
+            self.selection.alphabetShown = an
+            self.selection.secure()
+            // The strips come and go at once on the grids that already exist.
+            for was in [Region.movies, .seriesList, .collection] { self.alphabetRailUpdate(was) }
+        })
+        append(ga.space, toggleRow(symbol: "format-text-bold-symbolic",
                                          title: translated("Titel als Logo"),
                                          under: translated("Auf Film- und Serienseiten, wenn dein Server eins hat"),
                                          an: selection.titleAsLogo) { [weak self] an in
