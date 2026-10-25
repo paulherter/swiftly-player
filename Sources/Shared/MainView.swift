@@ -807,8 +807,9 @@ struct LibraryView: View {
             // letter simply takes over the glide.
             .onChange(of: jump) { _, new in
                 guard let new else { return }
+                let anchor = jumpAnchor(for: new.id, columns: count, usableNow: usableNow)
                 withAnimation(Motion.select) {
-                    reader.scrollTo(new.id, anchor: .topLeading)
+                    reader.scrollTo(new.id, anchor: anchor)
                 }
             }
             .overlay(alignment: .trailing) {
@@ -1067,6 +1068,24 @@ struct LibraryView: View {
         guard model.alphabetShown, state.sorting == .name, !listChoice,
               let alphabet = state.alphabet, alphabet.isUseful else { return nil }
         return alphabet
+    }
+
+    /// **Where to hold a tile when jumping to it: its top at the top, and not moved sideways.**
+    ///
+    /// `scrollTo` lines up the anchor point of the tile with the same point of the scroll
+    /// view, horizontally too, even in a vertical scroll view: `.top` centred the tile,
+    /// `.topLeading` pushed it to the screen edge, and the whole grid stayed shifted by
+    /// that much. The horizontal part is therefore chosen so the tile's place in the grid
+    /// is already the lined-up one: for a tile starting at `x0` with width `w` in a view of
+    /// width `W`, `x = x0 / (W - w)`.
+    private func jumpAnchor(for id: String, columns: Int, usableNow: CGFloat) -> UnitPoint {
+        guard columns > 0, let index = state.items.firstIndex(where: { $0.id == id }) else { return .top }
+        let margin = Theme.margin(wide: wide)
+        let tile = (usableNow - CGFloat(columns - 1) * Theme.tileSpacing) / CGFloat(columns)
+        let x0 = margin + CGFloat(index % columns) * (tile + Theme.tileSpacing)
+        let width = margin + usableNow + trailingLane
+        guard width - tile > 0 else { return .top }
+        return UnitPoint(x: x0 / (width - tile), y: 0)
     }
 
     /// **The right margin makes room for the strip** and centres it, so the gap to the
