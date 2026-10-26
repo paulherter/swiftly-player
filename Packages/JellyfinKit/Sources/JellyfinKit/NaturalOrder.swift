@@ -88,11 +88,29 @@ extension JellyfinClient {
 
     /// **One page of such a list**, fetched by ID and put back into the list's order (the
     /// server answers `Ids` in its own order). `totalRecordCount` is the list's length.
+    ///
+    /// **In batches of ``naturalBatch`` IDs.** A jump in the letter strip asks for hundreds
+    /// of titles at once, and 800 IDs in one query make an address of some 26 KB that the
+    /// server refuses: the page came back empty and the jump stopped at the last loaded
+    /// title. The batches run side by side.
     public func naturalPage(_ list: [Item], since: Int, count: Int) async throws -> ItemsResponse {
         let slice = Array(list.dropFirst(since).prefix(count))
         guard !slice.isEmpty else { return ItemsResponse(items: [], totalRecordCount: list.count) }
-        let answer = try await items(limit: slice.count, ids: slice.map(\.id))
-        let byID = Dictionary(answer.items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let batches = stride(from: 0, to: slice.count, by: Self.naturalBatch).map {
+            Array(slice[$0..<min($0 + Self.naturalBatch, slice.count)]).map(\.id)
+        }
+        let fetched = try await withThrowingTaskGroup(of: [Item].self) { group in
+            for ids in batches {
+                group.addTask { try await self.items(limit: ids.count, ids: ids).items }
+            }
+            var all: [Item] = []
+            for try await part in group { all += part }
+            return all
+        }
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return ItemsResponse(items: slice.compactMap { byID[$0.id] }, totalRecordCount: list.count)
     }
+
+    /// IDs per request in ``naturalPage(_:since:count:)``: some 3.3 KB of address.
+    public static let naturalBatch = 100
 }

@@ -4682,28 +4682,32 @@ final class App: @unchecked Sendable {
         gridLoad(was, since: items.count, reach: max(100, start - items.count + 100))
     }
 
-    /// A short glide that puts the tile's row under the bar. The target is measured on the
-    /// first frame, when the freshly appended tiles have their place.
+    /// A short glide that puts the tile's row under the bar.
+    ///
+    /// **Measured only once the tile has its place.** Right after a page is appended the new
+    /// tiles have no allocation yet; their bounds read as zero and the glide went to the top
+    /// or nowhere useful. So it waits (up to a second, frame by frame) for a real height, and
+    /// only then glides.
     private func gridScroll(_ was: Region, to index: Int) {
         guard let grid = gridField[was], let scroller = gridScrollers[was],
               let content = gtk_scrolled_window_get_child(OpaquePointer(scroller)),
               let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
         else { return }
-        var target: Double?
-        var from = 0.0
-        runningCount(on: scroller, duration: 0.25, step: { t in
-            if target == nil {
-                guard let kind = gtk_flow_box_get_child_at_index(OpaquePointer(grid), Int32(index))
-                else { return }
-                var r = graphene_rect_t()
-                guard gtk_widget_compute_bounds(unsafeBitCast(kind, to: Widget.self), content, &r) != 0
-                else { return }
-                let atMost = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment)
-                target = min(max(Double(r.origin.y) - Double(Theme.headerBarHeight) - 12, 0), max(atMost, 0))
-                from = gtk_adjustment_get_value(adjustment)
-            }
-            guard let target else { return }
-            gtk_adjustment_set_value(adjustment, from + (target - from) * t)
+        var measured = false
+        runningCount(on: scroller, duration: 1.0, linear: true, step: { _ in
+            guard !measured,
+                  let kind = gtk_flow_box_get_child_at_index(OpaquePointer(grid), Int32(index))
+            else { return }
+            var r = graphene_rect_t()
+            guard gtk_widget_compute_bounds(unsafeBitCast(kind, to: Widget.self), content, &r) != 0,
+                  r.size.height > 0 else { return }
+            measured = true
+            let atMost = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment)
+            let target = min(max(Double(r.origin.y) - Double(Theme.headerBarHeight) - 12, 0), max(atMost, 0))
+            let from = gtk_adjustment_get_value(adjustment)
+            runningCount(on: scroller, duration: 0.25, step: { t in
+                gtk_adjustment_set_value(adjustment, from + (target - from) * t)
+            }, done: {})
         }, done: {})
     }
 

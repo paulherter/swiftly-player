@@ -64,6 +64,10 @@ struct LibraryView: View {
     @State private var onScreen = OnScreenTiles()
     @State private var topLetter: String?
     @State private var viewportWidth: CGFloat = 0
+    /// Where the grid starts in the scroll content, and how tall one tile is: the jump
+    /// computes the row's position from them (see ``jumpTo(_:)``).
+    @State private var gridTop: CGFloat = 0
+    @State private var tileHeight: CGFloat = 0
     @State private var jumpTask: Task<Void, Never>?
 
     /// How far the value row has been closed, 0 to 1.
@@ -82,7 +86,6 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        ScrollViewReader { reader in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
@@ -165,7 +168,7 @@ struct LibraryView: View {
                         .allowsHitTesting(false)
                 }
 
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: Self.rowSpacing) {
                     if showsCollections {
                         if choice == .playlists { playlistTiles } else { collectionTiles }
                     } else {
@@ -185,7 +188,9 @@ struct LibraryView: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(entryRecord, model: model)
-                        .id(entryRecord.id)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+                            if new > 0, new != tileHeight { tileHeight = new }
+                        }
                         .onAppear {
                             onScreen.ids.insert(entryRecord.id)
                             updateTopLetter()
@@ -204,6 +209,9 @@ struct LibraryView: View {
                     }
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.contentSpace)).minY
+                } action: { gridTop = $0 }
                 .padding(.top, 22)
 
                 // The page had neither an empty nor an error state. If nothing loaded, nothing
@@ -239,6 +247,7 @@ struct LibraryView: View {
             .padding(.horizontal, Theme.edgeSpacing)
             .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
+            .coordinateSpace(.named(Self.contentSpace))
         }
         // The look's glow, the same on every main page; goes up with the content.
         .lookGlow()
@@ -260,16 +269,18 @@ struct LibraryView: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.width } action: { _, new in
             viewportWidth = new
         }
-        // Not moved sideways (``ScrollJump/anchor(tileStart:tileWidth:viewport:)``): the
-        // columns are adaptive, so the tile's column comes from the window's width.
+        // **The row's position, computed, through the page's own `ScrollPosition`.** A
+        // `ScrollViewReader` next to it competed with the position the page keeps and
+        // restores, and for a tile the lazy grid had not built yet it only scrolled roughly
+        // there. Top of the grid plus rows of tile height and spacing, under the bar.
         .onChange(of: jump) { _, new in
-            guard let new, let index = shelf.items.firstIndex(where: { $0.id == new.id }) else { return }
+            guard let new, let index = shelf.items.firstIndex(where: { $0.id == new.id }),
+                  tileHeight > 0 else { return }
             let usable = viewportWidth - 2 * Theme.edgeSpacing
             let columns = max(1, Int((usable + Theme.tileSpacing) / (Theme.tileWidth + Theme.tileSpacing)))
-            let start = Theme.edgeSpacing + CGFloat(index % columns) * (Theme.tileWidth + Theme.tileSpacing)
-            let anchor = ScrollJump.anchor(tileStart: start, tileWidth: Theme.tileWidth,
-                                           viewport: viewportWidth)
-            withAnimation(Motion.select) { reader.scrollTo(new.id, anchor: anchor) }
+            let y = gridTop + CGFloat(index / columns) * (tileHeight + Self.rowSpacing)
+                - Theme.headerBarHeight - 8
+            withAnimation(Motion.select) { position.scrollTo(y: max(0, y)) }
         }
         // In the right margin; 24 pt already fit the strip, so the grid does not move.
         .overlay(alignment: .trailing) {
@@ -339,10 +350,14 @@ struct LibraryView: View {
             choice = new
             newLoad()
         }
-        }
     }
 
     // MARK: Letter strip
+
+    /// The scroll content's coordinate space, for ``gridTop``.
+    private static let contentSpace = "libraryContent"
+    /// Between two rows of the grid (`LazyVGrid(spacing:)`).
+    private static let rowSpacing: CGFloat = 20
 
     /// Only where it means something: switched on, sorted by name, a grid of titles, and
     /// more than one letter.
