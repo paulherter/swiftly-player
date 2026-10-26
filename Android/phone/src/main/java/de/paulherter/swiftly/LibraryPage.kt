@@ -265,19 +265,8 @@ class LibraryState(val art: String, private val store: Store) {
      * Mirrors `LibraryModel.jumpTarget`: the index of the first title of a letter, loading up to it
      * in steps sized by where the letter starts in the list.
      */
-    suspend fun jumpTarget(kern: Kern, letter: String): Int? {
-        val start = letters.firstOrNull { it.letter == letter }?.first ?: return null
-        repeat(20) {
-            items.indexOfFirst { it.letter == letter }.takeIf { it >= 0 }?.let { return it }
-            if (!stillMorePresent) return items.lastIndex.takeIf { it >= 0 }
-            // A page being appended right now blocks `loadMore`; wait for it.
-            if (loadsPost || loads) { kotlinx.coroutines.delay(100); return@repeat }
-            val before = items.size
-            loadMore(kern, maxOf(PAGE, (start - items.size).toLong() + PAGE))
-            if (items.size == before) return items.lastIndex.takeIf { it >= 0 }
-        }
-        return items.lastIndex.takeIf { it >= 0 }
-    }
+    suspend fun jumpTarget(kern: Kern, letter: String): Int? =
+        alphabetJumpTarget(letter, letters, { items }, { stillMorePresent }, { loadsPost || loads }) { loadMore(kern, it) }
 
     private suspend fun page(kern: Kern, since: Int, count: Long = PAGE): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {

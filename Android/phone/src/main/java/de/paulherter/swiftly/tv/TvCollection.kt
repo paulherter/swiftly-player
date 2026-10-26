@@ -55,8 +55,10 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
     LaunchedEffect(state, state.sorting, state.filter) { state.load(app.kern) }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
     val focus = firstFocus(!state.loads)
+    val lattice = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
-        TvGrid(state.items, { run.launch { state.loadMore(app.kern) } }, focus, open, loads = state.loads, withUnderRow = false, header = {
+        TvGrid(state.items, { run.launch { state.loadMore(app.kern) } }, focus, open, loads = state.loads, withUnderRow = false,
+                 lattice = lattice, header = {
             Column(Modifier.padding(bottom = 10.dp)) {
                 // The name comes from the server and is not translated, like the genre page title.
                 Text(target.name, style = TvTheme.rail, color = Theme.font, maxLines = 1,
@@ -78,6 +80,17 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
                 }
             }
         })
+        // The letter strip, as on the library page (`TvLibrary`); tile i is grid item i + 1.
+        if (app.settings.alphabet && state.sorting == "name" && state.letters.size > 1) {
+            val current by remember(state) {
+                derivedStateOf { state.items.getOrNull(maxOf(0, lattice.firstVisibleItemIndex - 1))?.letter }
+            }
+            TvAlphabetRail(state.letters, current,
+                           Modifier.align(Alignment.TopEnd)
+                               .padding(end = (TvTheme.edgePage - TvAlphabetRailWidth) / 2, top = 120.dp, bottom = 24.dp)) { letter ->
+                run.launch { state.jumpTarget(app.kern, letter)?.let { lattice.animateScrollToItem(it + 1) } }
+            }
+        }
     }
 }
 

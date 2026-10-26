@@ -48,6 +48,26 @@ fun condensed(letters: List<LetterEntry>, slots: Int): List<LetterEntry> {
         .distinct().map { letters[it] }
 }
 
+/**
+ * Mirrors `LibraryModel.jumpTarget`: the index of the first title of a letter, loading up to it in
+ * steps sized by where the letter starts in the list. Shared by the library and the collection.
+ */
+suspend fun alphabetJumpTarget(letter: String, letters: List<LetterEntry>, items: () -> List<GridTile>,
+                               stillMore: () -> Boolean, busy: () -> Boolean,
+                               loadMore: suspend (Long) -> Unit): Int? {
+    val start = letters.firstOrNull { it.letter == letter }?.first ?: return null
+    repeat(20) {
+        val now = items()
+        now.indexOfFirst { it.letter == letter }.takeIf { it >= 0 }?.let { return it }
+        if (!stillMore()) return now.lastIndex.takeIf { it >= 0 }
+        // A page being appended right now blocks loading more; wait for it.
+        if (busy()) { kotlinx.coroutines.delay(100); return@repeat }
+        loadMore(maxOf(60L, (start - now.size).toLong() + 60L))
+        if (items().size == now.size) return now.lastIndex.takeIf { it >= 0 }
+    }
+    return items().lastIndex.takeIf { it >= 0 }
+}
+
 /** Mirrors `AlphabetRail.width`. */
 val AlphabetRailWidth = 22.dp
 

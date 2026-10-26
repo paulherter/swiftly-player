@@ -3397,7 +3397,7 @@ public final class Kern: @unchecked Sendable {
         var letters: [LetterEntry]? = nil
     }
     /// One letter of the strip (``AlphabetIndex/Entry``): `{"buchstabe","ab"}`.
-    private struct LetterEntry: Encodable {
+    struct LetterEntry: Encodable {
     enum CodingKeys: String, CodingKey {
         case letter = "buchstabe"
         case first = "ab"
@@ -3729,6 +3729,20 @@ public final class Kern: @unchecked Sendable {
             let s = Sorting(rawValue: sorting) ?? .erscheinung
             let f = LibraryFilter(rawValue: filter) ?? .all
             let source = ShelfSource(parent: id, art: art.isEmpty ? nil : art, collection: true)
+            // "By name" as in the libraries: pages from the naturally sorted list, the strip's
+            // letters with the first page.
+            if s == .name {
+                let natural = try await naturalList(c, key: "\(ObjectIdentifier(c))|\(source.key)|\(f.rawValue)",
+                                                    since: since) {
+                    try await c.naturalList(parentID: source.parent, sortOrder: source.bearing(.name),
+                                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                            recursive: source.recursive, includeItemTypes: source.types)
+                }
+                let answer = try await c.naturalPage(natural, since: since, count: count)
+                return try json(GridPagesResponse(title: answer.items.map { gridTile($0, a) },
+                                                    total: answer.totalRecordCount,
+                                                    letters: since == 0 ? Self.letters(natural) : nil))
+            }
             let answer = try await c.items(parentID: source.parent, limit: count, startIndex: since,
                                             sortBy: s.inputField, sortOrder: source.bearing(s),
                                             filters: f.jellyfinFilter, isWatched: f.isWatched,
@@ -3814,8 +3828,11 @@ struct GridPagesResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case title = "titel"
         case total = "gesamt"
+        case letters = "buchstaben"
     }
- let title: [GridTileResponse]; let total: Int }
+ let title: [GridTileResponse]; let total: Int
+    /// The letter strip, with the first page of a "By name" list only.
+    var letters: [Kern.LetterEntry]? = nil }
 struct GridTileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
