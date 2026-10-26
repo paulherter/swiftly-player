@@ -29,7 +29,7 @@ final class AlphabetStrip {
     init() {
         widget = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
         // Every letter the same height, so the strip spreads over the whole page.
-        gtk_box_set_homogeneous(OpaquePointer(widget), 1)
+        gtk_box_set_homogeneous(asBox(widget), 1)
         gtk_widget_set_size_request(widget, Self.width, -1)
         gtk_widget_set_halign(widget, GTK_ALIGN_END)
         gtk_widget_set_valign(widget, GTK_ALIGN_FILL)
@@ -71,7 +71,7 @@ final class AlphabetStrip {
         entries = shown
         wipe(widget)
         labels = shown.map { entry in
-            let letter = label(entry.letter, style: "swiftly-buchstabe")
+            let letter: Widget = label(entry.letter, style: "swiftly-buchstabe")
             gtk_widget_set_vexpand(letter, 1)
             append(widget, letter)
             return letter
