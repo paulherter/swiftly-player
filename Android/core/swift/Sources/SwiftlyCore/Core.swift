@@ -3249,7 +3249,8 @@ public final class Kern: @unchecked Sendable {
             subline: episode ? i.episodeCode : i.productionYear.map(String.init),
             poster: ImageSelection.portrait(i, addresses: a)?.absoluteString,
             progress: i.userData?.playedPercentage.map { $0 / 100 },
-            mark: mark, markCount: figure)
+            mark: mark, markCount: figure,
+            letter: AlphabetIndex.letter(name: i.name, sortName: i.sortName))
     }
 
     private func json<T: Encodable>(_ value: T) throws -> String {
@@ -3389,8 +3390,33 @@ public final class Kern: @unchecked Sendable {
         case total = "gesamt"
         case filtered = "gesiebt"
         case evenMore = "nochMehr"
+        case letters = "buchstaben"
     }
         let title: [GridTileResponse]; let total: Int; let filtered, evenMore: Bool
+        /// The letter strip, with the first page of a "By name" list only.
+        var letters: [LetterEntry]? = nil
+    }
+    /// One letter of the strip (``AlphabetIndex/Entry``): `{"buchstabe","ab"}`.
+    private struct LetterEntry: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case letter = "buchstabe"
+        case first = "ab"
+    }
+        let letter: String; let first: Int
+    }
+
+    /// The naturally sorted list for a grid: fresh with the first page, kept for the next.
+    private func naturalList(_ c: JellyfinClient, key: String, since: Int,
+                             fetch: () async throws -> [Item]) async throws -> [Item] {
+        if since > 0, let kept = locked({ _natural }), kept.key == key { return kept.list }
+        let list = try await fetch()
+        locked { _natural = (key, list) }
+        return list
+    }
+
+    private static func letters(_ list: [Item]) -> [LetterEntry] {
+        AlphabetIndex(titles: list.map { ($0.name, $0.sortName) }).entries
+            .map { LetterEntry(letter: $0.letter, first: $0.first) }
     }
     private struct CollectionEntry: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -3423,6 +3449,9 @@ public final class Kern: @unchecked Sendable {
     /// "All" across several libraries: the filter plus state in server paging
     /// (`LibraryModel.filterRef`, `rawOffset`, `rawTotal`).
     private var _filter: (key: String, filterRef: TitleFilter, offset: Int, raw: Int)?
+    /// **"By name" in natural order** (``NaturalOrder``): the slim list of the open grid,
+    /// fetched with its first page, read by the later pages.
+    private var _natural: (key: String, list: [Item])?
 
     private func locked<T>(_ perform: () -> T) -> T {
         barrier.lock(); defer { barrier.unlock() }
@@ -3543,17 +3572,28 @@ public final class Kern: @unchecked Sendable {
             guard let source else {
                 return try json(SectionPagesResponse(title: [], total: 0, filtered: false, evenMore: false))
             }
+            // "By name": pages are slices of the naturally sorted list (``NaturalOrder``).
+            let natural: [Item]? = s == .name
+                ? try await naturalList(c, key: "\(ObjectIdentifier(c))|\(source.key)|\(f.rawValue)",
+                                        since: since) {
+                    try await c.naturalList(parentID: source.parent, sortOrder: source.bearing(.name),
+                                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                            recursive: source.recursive, includeItemTypes: source.types)
+                }
+                : nil
+            let letters = since == 0 ? natural.map(Self.letters) : nil
             func page(_ start: Int, _ amount: Int) async throws -> ItemsResponse {
-                try await c.items(parentID: source.parent, limit: amount, startIndex: start,
-                                  sortBy: s.inputField, sortOrder: source.bearing(s),
-                                  filters: f.jellyfinFilter, isWatched: f.isWatched,
-                                  recursive: source.recursive, includeItemTypes: source.types)
+                if let natural { return try await c.naturalPage(natural, since: start, count: amount) }
+                return try await c.items(parentID: source.parent, limit: amount, startIndex: start,
+                                         sortBy: s.inputField, sortOrder: source.bearing(s),
+                                         filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                         recursive: source.recursive, includeItemTypes: source.types)
             }
             guard source.isFiltering else {
                 let answer = try await page(since, count)
                 return try json(SectionPagesResponse(title: answer.items.map { gridTile($0, a) },
                                                       total: answer.totalRecordCount,
-                                                      filtered: false, evenMore: false))
+                                                      filtered: false, evenMore: false, letters: letters))
             }
             let key = "\(ObjectIdentifier(c))|\(source.key)|\(s.rawValue)|\(f.rawValue)"
             let before = locked { _filter }
@@ -3588,7 +3628,8 @@ public final class Kern: @unchecked Sendable {
             locked { _filter = done }
             return try json(SectionPagesResponse(title: new.map { gridTile($0, a) }, total: filterRef.total,
                                                   filtered: true,
-                                                  evenMore: ListRules.stillMorePresent(loaded: offset, total: raw)))
+                                                  evenMore: ListRules.stillMorePresent(loaded: offset, total: raw),
+                                                  letters: letters))
         }
     }
 
@@ -3785,6 +3826,7 @@ struct GridTileResponse: Encodable {
         case progress = "fortschritt"
         case mark = "marke"
         case markCount = "markenzahl"
+        case letter = "buchstabe"
     }
     let id, title, type: String
     let subline, poster: String?
@@ -3792,6 +3834,8 @@ struct GridTileResponse: Encodable {
     /// `watched`, `opened`, `seasons`, or nothing.
     let mark: String?
     let markCount: Int
+    /// The tile's letter in the strip of a "By name" grid (``AlphabetIndex``).
+    var letter: String? = nil
 }
 struct TitleResponse: Encodable {
     enum CodingKeys: String, CodingKey {

@@ -282,6 +282,8 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
             SeparatorLine()
             ChoiceRow(Glyph.BarFilled, translated("Fortschritt auf Kacheln"), an = e.progress) { e.progress = it }
             SeparatorLine()
+            ChoiceRow(Glyph.TextBlock, translated("Alphabetische Suche in Listen"), an = e.alphabet) { e.alphabet = it }
+            SeparatorLine()
             ChoiceRow(Glyph.TextBlock, translated("Titel als Logo"), translated("Auf Film- und Serienseiten, wenn dein Server eins hat"),
                       e.titleAsLogo) { e.titleAsLogo = it }
         }

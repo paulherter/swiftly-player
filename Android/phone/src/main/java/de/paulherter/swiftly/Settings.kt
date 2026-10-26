@@ -77,6 +77,8 @@ class Settings(store: Store) {
     var bitratesLimit by RememberValue(a, "bitratenGrenze", figure("bitratenGrenze", 0)) { it.toString() }
     var landscapeFixed by RememberValue(a, "querformatFest", bool("querformatFest", true), yesNo)
     var progress by RememberValue(a, "fortschritt", bool("fortschritt", true), yesNo)
+    /** The letter strip beside "By name" grids (mirrors `alphabetShown`). */
+    var alphabet by RememberValue(a, "alphabetAn", bool("alphabetAn", true), yesNo)
     /** Empty means: as the file. */
     var audioLanguage by RememberValue(a, "tonSprache", a.rememberValue("tonSprache").orEmpty()) { it }
     /** Empty means: off. */
