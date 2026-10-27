@@ -107,6 +107,8 @@ struct PlayerScreen: View {
     @State private var swipeEnd = Date.distantPast
     /// Where the marker came from. A grabbed marker waits for the middle button; a tapped one seeks by itself once tapping rests.
     @State private var markSwipe = false
+    /// **A marker was waiting when an edge was pressed**, so that click confirms it, like the middle; see `edgeClicked`. Noted on the press, because the release arrives twice, through GameController and as a tap, in no fixed order, and the first one to confirm clears the marker.
+    @State private var edgeConfirms = false
     /// Was the film playing before scrubbing paused it? Then it resumes after confirm or cancel, as in the system player.
     @State private var ranBeforeScrubbing = false
     /// The marker coasting after a fast swipe.
@@ -241,7 +243,7 @@ struct PlayerScreen: View {
                         wakeControls()
                     }
                 }
-                .onTapGesture { wakeControls() }
+                .onTapGesture { if clickRing.edge == nil || edgeConfirms { wakeControls() } }
 
             VideoSurface(url: startPlan.url, startAt: startAt,
                          container: startPlan.container,
@@ -1175,6 +1177,7 @@ struct PlayerScreen: View {
     ///
     /// **The marker, not the playback rate.** Apple plays faster when fast-forwarding; VLC cannot do that backwards at all, and with 4K HEVC in direct play forwards only stutteringly. This way both directions behave the same and the decoder is left alone.
     private func holdBegins(_ bearing: Int) {
+        edgeConfirms = markSwipe
         guard duration > 0, !layerOpen else { return }
         // **Not in the first moments.** Measured: right after opening a title the film paused by itself and the scrub bar came up, without anyone meaning to; Back then went dead. Whoever rests a thumb on the edge of the click ring while the player opens must lift it first.
         let since = imageSince.map { Date().timeIntervalSince($0) }
@@ -1209,12 +1212,29 @@ struct PlayerScreen: View {
         }
     }
 
-    private func holdEnds() {
+    private func holdEnds(_ edge: Int?) {
         sampleTask?.cancel()
         sampleTask = nil
-        guard probing else { return }
+        guard probing else {
+            if let edge { edgeClicked(edge) }
+            return
+        }
         probing = false
         if let target = seekTarget { jumpRun(target) }
+    }
+
+    /// **A click on the edge of the first Siri Remote's surface is a direction**, as in the system player: back on the left, forward on the right, by the distances from the settings.
+    ///
+    /// That remote has no ring. Its whole surface is one button, so tvOS reports every click as the middle button, and the edge paused the film instead of seeking. The later remotes send their ring as direction presses, which `onMoveCommand` already handles; ``ClickRing`` reports an edge only for the first one, so nothing seeks twice. What the direction does is left to the same handlers: on the idle layer it fetches the controls, on the bar it seeks.
+    private func edgeClicked(_ bearing: Int) {
+        // After a swipe the thumb often rests on an edge; the click that follows confirms the marker, as in the system player.
+        guard !layerOpen, !edgeConfirms else { return }
+        AppLog.writeOut("[Spulen] Klick \(bearing < 0 ? "links" : "rechts") (Fokus \(focus.map { "\($0)" } ?? "—"))")
+        switch focus {
+        case .idle: wakeControls()
+        case .bar:  jump(bearing < 0 ? -Double(model.backSeconds) : Double(model.forwardSeconds))
+        default:    break
+        }
     }
 
     // MARK: - Swiping
@@ -1287,6 +1307,8 @@ struct PlayerScreen: View {
     ///
     /// Before, the player seeked by itself once tapping rested for 350 ms. It then walked through the episode in steps instead of staying at one spot until you decided, and because VLC rebuilds the stream on every seek, it audibly stuttered.
     private func click() {
+        // An edge of the first Siri Remote is a direction, unless it confirms a marker; see `edgeClicked`.
+        guard clickRing.edge == nil || edgeConfirms else { return }
         if let target = seekTarget {
             jumpRun(target)
         } else {
@@ -2323,11 +2345,18 @@ struct SwipeField: UIViewRepresentable {
 @MainActor
 final class ClickRing {
     private var begins: ((Int) -> Void)?
-    private var ends: (() -> Void)?
+    /// Called on release with the edge of a first-generation remote's press (``edge``).
+    private var ends: ((Int?) -> Void)?
     private var observer: NSObjectProtocol?
     private var held = false
+    /// **The edge of the last press on a first-generation Siri Remote**: -1 left, 1 right, `nil` in the middle or on any other remote.
+    ///
+    /// Its surface is one button, so the click also arrives as the middle button on the focused view. The press reaches GameController first, so the view's tap handler can read here that it was an edge and stay out of the way.
+    private(set) var edge: Int?
+    /// Counts presses, so forgetting an edge late does not forget a newer press.
+    private var presses = 0
 
-    func observe(begins: @escaping (Int) -> Void, ends: @escaping () -> Void) {
+    func observe(begins: @escaping (Int) -> Void, ends: @escaping (Int?) -> Void) {
         self.begins = begins
         self.ends = ends
         allSetUp()
@@ -2348,6 +2377,7 @@ final class ClickRing {
         }
         begins = nil
         ends = nil
+        edge = nil
     }
 
     private func allSetUp() {
@@ -2357,23 +2387,38 @@ final class ClickRing {
     private func setUp(_ c: GCController) {
         guard let pad = c.microGamepad else { return }
         pad.reportsAbsoluteDpadValues = true
+        // Only the first remote has no ring; the later ones and the Control Center remote send edges as direction presses.
+        let firstGeneration = c.productCategory == GCProductCategorySiriRemote1stGen
+        AppLog.writeOut("[Spulen] Fernbedienung: \(c.productCategory)")
         // **Right here, not one turn later.** GameController calls on its `handlerQueue`, which is the main queue, the same guarantee as for the observer above. `DispatchQueue.main.async` pushed every press back by a turn and bypassed the check on which actor it arrives.
         pad.buttonA.pressedChangedHandler = { [weak self, weak pad] _, _, pressed in
             MainActor.assumeIsolated {
                 let x = pad?.dpad.xAxis.value ?? 0
-                self?.pressed(x: x, an: pressed)
+                self?.pressed(x: x, an: pressed, firstGeneration: firstGeneration)
             }
         }
     }
 
-    private func pressed(x: Float, an: Bool) {
+    private func pressed(x: Float, an: Bool, firstGeneration: Bool) {
         if an {
-            guard abs(x) > 0.5 else { return }
+            presses += 1
+            let bearing = abs(x) > 0.5 ? (x < 0 ? -1 : 1) : nil
+            edge = firstGeneration ? bearing : nil
+            guard let bearing else { return }
             held = true
-            begins?(x < 0 ? -1 : 1)
-        } else if held {
-            held = false
-            ends?()
+            begins?(bearing)
+        } else {
+            if held {
+                held = false
+                ends?(edge)
+            }
+            // **Forgotten after the tap has had its turn.** Kept longer, a later middle press from another remote (iPhone, the TV's own) would be taken for this edge and swallowed.
+            let press = presses
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, self.presses == press else { return }
+                self.edge = nil
+            }
         }
     }
 }
