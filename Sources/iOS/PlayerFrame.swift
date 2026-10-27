@@ -131,7 +131,7 @@ private struct PlayerCover<ContentBody: View>: ViewModifier {
     @AppStorage("querformatFest") private var landscapeFixed = true
 
     func body(content: Content) -> some View {
-        if Theme.atPad {
+        if Theme.roomy {
             content.fullScreenCover(item: $wish, content: coverContent)
         } else {
             content.onChange(of: wish?.id, initial: true) { _, id in

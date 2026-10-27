@@ -253,6 +253,12 @@ static var progressTravel: Animation? {
     /// 88 pt, because the wordmark at 20 pt height is 59 wide and fits with 14 pt
     /// of air on each side.
     static let sidebarWidth: CGFloat = 88
+    /// iPhone Duo: width of the symbol bar on the right edge, and the height the
+    /// system's status column (clock, Wi-Fi) takes at its top.
+    static let duoBarWidth: CGFloat = 96
+    /// Duo outer display: no top safe area, but the corner and camera sit at the edge.
+    static let duoTop: CGFloat = 30
+    static let duoStatusColumn: CGFloat = 160
 
     /// Side margin on the wide layout. Between iPhone (18) and TV (80); on the TV
     /// half of the 80 is overscan at the screen edge, which doesn't exist here.
@@ -370,6 +376,28 @@ static var progressTravel: Animation? {
     @MainActor
     static var atPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
+    /// **A phone whose screen is as roomy as a small tablet**: the inner display of
+    /// iPhone Duo. The idiom stays `.phone` there, so `atPad` says no, yet the
+    /// layout, rotation and player must behave like on an iPad.
+    ///
+    /// Measured by the shorter side of the current screen, not by a device name:
+    /// the widest iPhone is 440 points, the Duo's inner display well above 500,
+    /// and on its outer display this is false again, so it follows the fold.
+    @MainActor
+    static var innerDisplay: Bool {
+        guard UIDevice.current.userInterfaceIdiom == .phone,
+              let bounds = UIApplication.shared.connectedScenes
+                  .compactMap({ $0 as? UIWindowScene }).first?.screen.bounds
+        else { return false }
+        return min(bounds.width, bounds.height) >= 500
+    }
+
+    /// Layout, rotation and player of a tablet: an iPad, or the Duo's inner display.
+    /// **This, not `atPad`, answers "may I use the room"**; `atPad` stays for what
+    /// only an iPad has (window buttons, multitasking).
+    @MainActor
+    static var roomy: Bool { atPad || innerDisplay }
+
     // MARK: Type: iPhone
 
     // Everything one step larger than before; the text was too small.
@@ -473,6 +501,18 @@ extension EnvironmentValues {
         get { self[WideKey.self] }
         set { self[WideKey.self] = newValue }
     }
+
+    /// iPhone Duo: the system keeps a status column (clock, Wi-Fi) at the right edge
+    /// and the app's symbol bar stands in it instead of at the bottom. Set once in
+    /// `RootView` from the measured trailing safe area.
+    var duoColumn: Bool {
+        get { self[DuoColumnKey.self] }
+        set { self[DuoColumnKey.self] = newValue }
+    }
+}
+
+private struct DuoColumnKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 // MARK: - Font that scales
@@ -1228,6 +1268,7 @@ struct SubpageHeader<Right: View>: View {
     /// spacing come from the stack.
     var bottom: CGFloat = 18
     @ViewBuilder var right: () -> Right
+    @Environment(\.duoColumn) private var duoColumn
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1259,6 +1300,7 @@ struct SubpageHeader<Right: View>: View {
         // so nothing runs underneath it.
         .padding(.leading, 8)
         .padding(.trailing, 12)
+        .padding(.top, duoColumn ? Theme.duoTop : 0)
         .padding(.bottom, bottom)
     }
 }
@@ -1948,6 +1990,8 @@ private struct SectionButton: View {
     /// says "12" is invisible after two days; one that appears and disappears says
     /// something.
     var runningCount: Int = 0
+    /// Vertical bar on the Duo: symbols only, the name stays for VoiceOver.
+    var iconOnly = false
     let select: () -> Void
 
     var body: some View {
@@ -1960,7 +2004,7 @@ private struct SectionButton: View {
     @ViewBuilder private var content: some View {
         let kern = VStack(spacing: 4) {
             Image(systemName: section.symbol)
-                .font(.system(size: 20, weight: active ? .semibold : .regular))
+                .font(.system(size: iconOnly ? 25 : 20, weight: active ? .semibold : .regular))
                 .overlay(alignment: .topTrailing) {
                     if runningCount > 0 {
                         Text(verbatim: runningCount.formatted())
@@ -1977,8 +2021,10 @@ private struct SectionButton: View {
                             .accessibilityLabel(Text("\(runningCount) laden gerade"))
                     }
                 }
-            Text(section.name)
-                .font(.system(size: 10, weight: active ? .semibold : .medium))
+            if !iconOnly {
+                Text(section.name)
+                    .font(.system(size: 10, weight: active ? .semibold : .medium))
+            }
         }
         // **The one exception: here the accent carries the selection.**
         //
@@ -2083,20 +2129,33 @@ struct HeaderTargets<Front: View>: View {
     /// Optional so the block works without the environment: `nil` simply means "no
     /// offer".
     @Environment(TakeoverModel.self) private var takeover: TakeoverModel?
+    /// Duo: heart, watchlist, profile and the offer live in the bar at the right edge.
+    @Environment(\.duoColumn) private var duoColumn
 
     var body: some View {
+        if duoColumn {
+            // Keeps the row as tall as the profile picture was, so the page title stays
+            // where it is on the other pages.
+            HStack(spacing: 0) { front(); Color.clear.frame(width: 0, height: 44) }
+        } else { row }
+    }
+
+    private var row: some View {
         HStack(spacing: 0) {
             // **Left of the permanent destinations**: it comes and goes and
             // would shift watchlist and profile if placed between them.
             // Together with "Watch Together": **one** badge, with a counter for both
             // (design A).
-            OfferingBadge(takeover: takeover)
-
             front()
 
             // **The heart on every main page**, in the fixed header like watchlist and
-            // profile. Gone for supporters.
-            SupportHeart()
+            // profile. Gone for supporters. While something plays elsewhere (or a group
+            // exists), the offer takes its place instead of squeezing in another icon.
+            if OfferingBadge(takeover: takeover).count > 0 {
+                OfferingBadge(takeover: takeover)
+            } else {
+                SupportHeart()
+            }
 
             if watchlistShown {
                 NavigationLink(value: WatchlistRoute()) {
@@ -2341,12 +2400,13 @@ private struct SectionContent: ViewModifier {
 
 private struct SectionBar: ViewModifier {
     @Environment(\.wide) private var wide
+    @Environment(\.duoColumn) private var duoColumn
     @Environment(\.sectionSelection) private var choice
     @Environment(\.downloadBar) private var downloads
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
-            if !wide, let choice {
+            if !wide, !duoColumn, let choice {
                 NavBar(selected: choice, withDownloads: downloads.an,
                            runningCount: downloads.runningCount)
                     // **The full frame in front is not decoration.** The overlay measures itself
@@ -2395,20 +2455,30 @@ struct Sidebar: View {
     var inProfile = false
     let name: String
     var image: URL?
+    /// Duo: a narrow symbol column on the right edge, below the system's status
+    /// column (clock, Wi-Fi), instead of the iPad bar on the left.
+    var onRight = false
     let onProfile: () -> Void
+
+    private var width: CGFloat { onRight ? Theme.duoBarWidth : Theme.sidebarWidth }
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: 20)
-                .padding(.top, Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
-                .padding(.bottom, 32)
+            if onRight {
+                Color.clear.frame(height: Theme.duoStatusColumn)
+            } else {
+                Wordmark(height: 20)
+                    .padding(.top, Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
+                    .padding(.bottom, 32)
+            }
 
             ForEach(Region.visibleOnes(downloads: downloads.an, wide: true,
                                        watchlist: watchlistShown)) { section in
                 SectionButton(section: section,
                               active: section == selected && !inProfile,
                               height: 64,
-                              runningCount: section == .downloads ? downloads.runningCount : 0) {
+                              runningCount: section == .downloads ? downloads.runningCount : 0,
+                              iconOnly: onRight) {
                     selected = section
                 }
             }
@@ -2427,12 +2497,19 @@ struct Sidebar: View {
             // header destinations it dropped out entirely on iPad. Here it stands again with
             // what it belongs to: the same form as on iPhone, the same place as on Mac,
             // above the account.
-            OfferingBadge(takeover: takeover, bottom: 12)
+            // On the Duo bar there is room for one of the two: the offer takes the
+            // heart's place while it exists.
+            let offered = OfferingBadge(takeover: takeover).count > 0
+            if !onRight || offered {
+                OfferingBadge(takeover: takeover, bottom: 12)
+            }
 
             // **The heart of the home page header**, here because the wide layout has no
             // header; above the account, like the offer.
-            SupportHeart()
-                .padding(.bottom, 8)
+            if !(onRight && offered) {
+                SupportHeart()
+                    .padding(.bottom, 8)
+            }
 
             Button(action: onProfile) {
                 // **The account switch lands here** (design D, wide iPad): like ``Profilziel`` at
@@ -2446,7 +2523,7 @@ struct Sidebar: View {
                         // The image sits in the middle of the bar; its right edge lies half a bar width
                         // away.
                         AccountSwitchTransition.shared.targetInBarReport(
-                            frameRect, size: 34, contentOff: frameRect.midX + Theme.sidebarWidth / 2)
+                            frameRect, size: 34, contentOff: frameRect.midX + (onRight ? -width : width) / 2)
                     }
             }
             .buttonStyle(Theme.PressButton())
@@ -2455,14 +2532,14 @@ struct Sidebar: View {
 
         .animation(Theme.leap, value: takeover?.offering?.id)
         .animation(Theme.leap, value: SharedModel.shared.offerings.map(\.id))
-        .frame(width: Theme.sidebarWidth)
+        .frame(width: width)
         // As below: the background must run to both edges, not only to the safe area.
         .background {
             // Opaque like the bottom bar on iPhone and like both headers: the same
             // reasoning, the same color.
             Theme.reason.ignoresSafeArea()
         }
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: onRight ? .leading : .trailing) {
             Rectangle().fill(Theme.line).frame(width: 1).ignoresSafeArea()
         }
     }
@@ -2582,6 +2659,7 @@ struct BarGlass: View {
 /// runs underneath.
 struct BlurHeader<ContentBody: View>: View {
     @Environment(\.wide) private var wide
+    @Environment(\.duoColumn) private var duoColumn
     @Environment(\.windowButtons) private var windowButtons
     /// How far the page has scrolled. **Only whoever passes it gets the hairline.**
     /// On the home page tiles run through and an edge is wrong there. In the library
@@ -2613,6 +2691,7 @@ struct BlurHeader<ContentBody: View>: View {
         content()
             .padding(.horizontal, Theme.margin(wide: wide))
             .padding(.top, (wide ? Theme.headerTop : 0)
+                     + (duoColumn ? Theme.duoTop : 0)
                      + (windowButtons ? WindowButtons.height : 0))
             .padding(.bottom, 12)
             // **No hairline any more.** It was the bottom edge of the bar, and there is no
@@ -3030,6 +3109,7 @@ struct ProofRow: View {
 /// arrow floated over the text for no reason.
 struct DetailHeader: View {
     @Environment(\.windowButtons) private var windowButtons
+    @Environment(\.duoColumn) private var duoColumn
     let title: String
     /// How far it has scrolled. From `since` the bar is at full strength.
     let offset: CGFloat
@@ -3083,7 +3163,7 @@ struct DetailHeader: View {
         // pages and 30 on subpages, a jump of two points when navigating.
         .padding(.leading, 8)
         .padding(.trailing, Theme.edgeSpacing)
-        .padding(.top, windowButtons ? WindowButtons.height : 0)
+        .padding(.top, (windowButtons ? WindowButtons.height : 0) + (duoColumn ? Theme.duoTop : 0))
         .padding(.bottom, 6)
         .background(alignment: .bottom) {
             Rectangle().fill(Theme.line).frame(height: 1).opacity(strength)

@@ -19,11 +19,20 @@ struct RootView: View {
     /// and not in every view.
     @Environment(\.horizontalSizeClass) private var widthClass
 
-    private var wide: Bool { widthClass == .regular && Theme.atPad }
+    private var wide: Bool { widthClass == .regular && Theme.roomy && !openedUpright }
+
+    /// Duo opened and held upright: the phone layout with the bar at the bottom.
+    /// Landscape (and the closed Duo) keeps the bar on the right.
+    private var openedUpright: Bool {
+        Theme.innerDisplay && windowHeightValue > windowWidthValue && windowWidthValue > 0
+    }
+    @State private var windowHeightValue: CGFloat = 0
 
     /// Measured window width. The size class alone says nothing about whether
     /// a button row fits side by side.
     @State private var windowWidthValue: CGFloat = 0
+    /// Duo: width the system keeps free at the right edge for its status column.
+    @State private var trailingInset: CGFloat = 0
 
 
     /// The app shares the screen: iPadOS' traffic lights then lie on our top
@@ -116,7 +125,14 @@ struct RootView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { new in
             windowWidthValue = new
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+            windowHeightValue = new
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.trailing } action: { new in
+            trailingInset = new
+        }
         .environment(\.wide, wide)
+        .environment(\.duoColumn, trailingInset > 40 && !openedUpright)
         .environment(\.broad, wide && windowWidthValue >= Theme.landscapeHeaderOffWidth)
         .environment(\.windowButtons, inWindow)
     }

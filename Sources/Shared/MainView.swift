@@ -56,6 +56,22 @@ struct MainView: View {
     @State private var tileRequest = TileRequest.shared
 
     @Environment(\.wide) private var wide
+    @Environment(\.duoColumn) private var duoColumn
+
+    /// The symbol bar of the Duo, see ``Sidebar``.
+    private var rightBar: some View {
+        Sidebar(selected: Binding(
+                    get: { section },
+                    set: { new in
+                        if new == section { closeProfileBranch() }
+                        section = new
+                    }),
+                inProfile: inProfile,
+                name: model.session?.userName ?? "?",
+                image: model.userImageURL(),
+                onRight: true) { toProfile() }
+            .ignoresSafeArea(.keyboard)
+    }
 
     /// Stop it over there, continue here at the same position.
     ///
@@ -117,7 +133,7 @@ struct MainView: View {
             // `Seitenleiste` next to it got the default ("off") and dropped the wide
             // Downloads tab even when it was enabled in settings. Now it wraps both.
             HStack(spacing: 0) {
-                if wide {
+                if wide && !Theme.innerDisplay && !duoColumn {
                     // **Not `$section`.** A tap on the already open section writes the same
                     // value; only a custom binding sees it and can close the profile.
                     Sidebar(selected: Binding(
@@ -180,6 +196,19 @@ struct MainView: View {
                 // And when the watchlist is switched off in Appearance.
                 .onChange(of: model.watchlistShown) { _, shown in
                     if !shown, section == .watchlist { section = .start }
+                }
+
+
+                // **Duo landscape: the bar stands right of the content**, symbols only.
+                if wide && Theme.innerDisplay && !duoColumn { rightBar }
+            }
+            // **Duo upright: the system keeps a status column at the right edge and the
+            // bar stands in it**, below the clock, instead of at the bottom.
+            .overlay(alignment: .trailing) {
+                if duoColumn {
+                    rightBar
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .ignoresSafeArea()
                 }
             }
             .environment(\.downloadBar,

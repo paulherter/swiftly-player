@@ -20,8 +20,12 @@ final class Orientierung {
     private init() {}
 
     /// Nothing is restricted on iPad, so the full mask is set from the start.
-    private(set) var allowed: UIInterfaceOrientationMask = Theme.atPad
-        ? .all : .portrait
+    private var held: UIInterfaceOrientationMask = .portrait
+
+    /// All four on a tablet and on the Duo's inner display, where a locked
+    /// portrait would waste half the screen; read live because the Duo changes
+    /// display when it is folded.
+    var allowed: UIInterfaceOrientationMask { Theme.roomy ? .all : held }
 
     /// `demand: false` when a transition takes the rotation along itself
     /// (`PlayerFrame`); then only set the mask.
@@ -31,7 +35,7 @@ final class Orientierung {
         // multitasking-capable.
         guard Self.landscapeLockPossible else { return }
 
-        allowed = mask
+        held = mask
         guard demand else { return }
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }
@@ -112,7 +116,7 @@ final class Orientierung {
     /// **The single place that answers this.** It used to be spelled out three
     /// times (here, in `SettingsView` and `PlayerSettings`), each as its own
     /// `!Theme.atPad`, so a rule change would have left copies behind.
-    static var landscapeLockPossible: Bool { !Theme.atPad }
+    static var landscapeLockPossible: Bool { !Theme.roomy }
 
     /// **Whether opening the player triggers a visible rotation.**
     ///

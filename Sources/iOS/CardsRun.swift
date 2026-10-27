@@ -45,10 +45,10 @@ enum CardsRun {
     private struct Stage: View {
         @ObservedObject var state: Snapshot
         let episode: Item
-        private var mass: PlayerMetric { PlayerMetric(pad: Theme.atPad, inWindow: false) }
+        private var mass: PlayerMetric { PlayerMetric(pad: Theme.roomy, inWindow: false) }
 
         var body: some View {
-            EpisodeCardsView(episode: episode, imageAddress: nil, pad: Theme.atPad,
+            EpisodeCardsView(episode: episode, imageAddress: nil, pad: Theme.roomy,
                                 page: mass.page, present: !state.controls, zoom: 0, detailsPresent: true,
                                 image: 1, fillContent: FillClock(), rest: 5,
                                 onTap: {}, cancel: {})

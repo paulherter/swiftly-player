@@ -6,6 +6,7 @@ struct HomeView: View {
     let model: AppModel
 
     @Environment(\.wide) private var wide
+    @Environment(\.duoColumn) private var duoColumn
     @Environment(\.windowButtons) private var windowButtons
     @Environment(\.scenePhase) private var lifeStatus
     /// The home tab is the one in front.
@@ -332,6 +333,7 @@ struct HomeView: View {
         // When wide there is no bar at the bottom; it is on the left. The space
         // `stripHeight` keeps free would be an empty strip there.
         .contentMargins(.top, (wide ? Theme.headerTop + 20 : 58)
+                        + (duoColumn ? Theme.duoTop : 0)
                         + (windowButtons ? WindowButtons.height : 0),
                         for: .scrollContent)
         .contentMargins(.bottom, wide ? 24 : Theme.stripHeight + 12,

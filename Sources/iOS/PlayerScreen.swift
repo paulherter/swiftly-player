@@ -1083,8 +1083,8 @@ struct PlayerScreen: View {
 
     /// Measures for iPhone and iPad, shared with the layers so their X sits exactly on the player's X.
     private var mass: PlayerMetric {
-        PlayerMetric(pad: Theme.atPad, inWindow: inWindow,
-                   portrait: !Theme.atPad && heightClass == .regular)
+        PlayerMetric(pad: Theme.roomy, inWindow: inWindow,
+                   portrait: !Theme.roomy && heightClass == .regular)
     }
 
     /// For an episode the series, otherwise the title itself.
