@@ -30,6 +30,11 @@ struct CollectionView: View {
     @State private var offset: CGFloat = 0
     @State private var filterListOpen = false
     @State private var sortListOpen = false
+    /// The letter strip, as on the library page: where to scroll, which titles are on
+    /// screen, and the letter of the topmost one.
+    @State private var jump: ScrollJump?
+    @State private var onScreen = OnScreenTiles()
+    @State private var topLetter: String?
 
     init(model: AppModel, collection: Item, art: String?) {
         self.model = model
@@ -44,17 +49,21 @@ struct CollectionView: View {
         ShelfSource(parent: collection.id, art: art, collection: true)
     }
 
-    /// For series the same sentence as on the series library.
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// For series the same sentence as on the series library; without the watchlist when
+    /// it is switched off.
     private var filter: [LibraryFilter] {
-        art == "tvshows" ? [.all, .begun, .watchlist] : LibraryFilter.allCases
+        LibraryFilter.offered(art == "tvshows" ? [.all, .begun, .watchlist] : LibraryFilter.allCases,
+                              watchlist: watchlistShown)
     }
 
     var body: some View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             GeometryReader { frameRect in
-                grid(columns: Theme.columns(usableNow: frameRect.size.width - 2 * Theme.margin(wide: wide),
-                                             wide: wide))
+                let usable = frameRect.size.width - Theme.margin(wide: wide) - trailingLane
+                grid(columns: Theme.columns(usableNow: usable, wide: wide), usable: usable)
             }
             if state.disrupted {
                 EmptyState.serverDived(model, retry: { Task { await state.load(model, from: source) } })
@@ -77,6 +86,33 @@ struct CollectionView: View {
         .background(SwipeBack())
         #endif
         .task(id: "\(state.identifier)|\(model.accountSwitch)") { await state.load(model, from: source) }
+        .task(id: "\(state.identifier)|\(model.accountSwitch)|\(model.alphabetShown)") {
+            guard model.alphabetShown else { return }
+            await state.loadAlphabet(model, from: source)
+        }
+    }
+
+    // MARK: Letter strip
+
+    /// Only sorted by name, switched on, and with more than one letter.
+    private var shownAlphabet: AlphabetIndex? {
+        guard model.alphabetShown, state.sorting == .name,
+              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        return alphabet
+    }
+
+    /// The right margin makes room for the strip, as on the library page.
+    private var trailingLane: CGFloat {
+        let margin = Theme.margin(wide: wide)
+        return shownAlphabet == nil ? margin : max(margin, AlphabetRail.width)
+    }
+
+    /// The letter of the first loaded title on screen, written only when it changes.
+    private func updateTopLetter() {
+        guard shownAlphabet != nil,
+              let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        if letter != topLetter { topLetter = letter }
     }
 
     private var header: some View {
@@ -94,7 +130,8 @@ struct CollectionView: View {
         }
     }
 
-    private func grid(columns: Int) -> some View {
+    private func grid(columns: Int, usable: CGFloat) -> some View {
+        ScrollViewReader { reader in
         ScrollView {
             if state.items.isEmpty, state.loads {
                 GridPlaceholder(columns: columns)
@@ -111,13 +148,21 @@ struct CollectionView: View {
                     }
                     .buttonStyle(Theme.PressButton())
                     .tileMenu(item, model: model)
+                    .id(item.id)
                     .onAppear {
+                        onScreen.ids.insert(item.id)
+                        updateTopLetter()
                         guard state.solvesLoadMoreOut(item.id, columns: columns) else { return }
                         Task { await state.loadMore(model, from: source) }
                     }
+                    .onDisappear {
+                        onScreen.ids.remove(item.id)
+                        updateTopLetter()
+                    }
                 }
             }
-            .padding(.horizontal, Theme.margin(wide: wide))
+            .padding(.leading, Theme.margin(wide: wide))
+            .padding(.trailing, trailingLane)
             .padding(.top, 8)
             .padding(.bottom, 40)
             .opacity(state.items.isEmpty ? 0 : 1)
@@ -126,7 +171,28 @@ struct CollectionView: View {
         .animation(Theme.reveal, value: state.items.isEmpty)
         // The same measurement as in library and watchlist; see `HeaderScrollDistance`.
         .scrollDistance { offset = $0 }
+        // Not moved sideways (``ScrollJump/anchor(index:columns:leading:trailing:usable:spacing:)``).
+        .onChange(of: jump) { _, new in
+            guard let new, let index = state.items.firstIndex(where: { $0.id == new.id }) else { return }
+            let anchor = ScrollJump.anchor(index: index, columns: columns, leading: Theme.margin(wide: wide),
+                                           trailing: trailingLane, usable: usable, spacing: Theme.tileSpacing)
+            withAnimation(Motion.select) { reader.scrollTo(new.id, anchor: anchor) }
+        }
+        .overlay(alignment: .trailing) {
+            if let alphabet = shownAlphabet {
+                AlphabetRail(index: alphabet, current: topLetter) { letter in
+                    Task {
+                        guard let id = await state.jumpTarget(letter, model: model, from: source) else { return }
+                        jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
+                    }
+                }
+                .padding(.trailing, (trailingLane - AlphabetRail.width) / 2)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) { header }
+        }
     }
 }
 
@@ -313,6 +379,12 @@ extension View {
                              label: { $0.label },
                              isSelected: { $0 == state.sorting },
                              select: { state.sorting = $0 })
+            }
+            // A filter the page no longer offers (the watchlist, switched off) must not
+            // keep narrowing the list with no pill left to undo it.
+            .task(id: filter) {
+                let kept = state.filter.kept(in: filter)
+                if kept != state.filter { state.filter = kept }
             }
     }
 }

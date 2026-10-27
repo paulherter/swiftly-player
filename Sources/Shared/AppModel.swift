@@ -47,6 +47,12 @@ final class AppModel {
     var bitratesLimit: Int { didSet { remember(bitratesLimit, "bitratenGrenze" + serverKey) } }
     var landscapeFixed: Bool { didSet { remember(landscapeFixed, "querformatFest") } }
     var progressOnTiles: Bool { didSet { remember(progressOnTiles, "fortschritt") } }
+    /// **The watchlist can be switched off**: its page, its filter and the button on
+    /// detail pages disappear everywhere. The favourites stay on the server, so switching
+    /// it back on brings everything back.
+    var watchlistShown: Bool { didSet { remember(watchlistShown, "merklisteAn") } }
+    /// **The letter strip beside A–Z grids** (``AlphabetIndex``), on by default.
+    var alphabetShown: Bool { didSet { remember(alphabetShown, "alphabetAn") } }
 
     /// Empty means: take whatever the server specifies.
     var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
@@ -602,6 +608,8 @@ final class AppModel {
         bitratesLimit = store.integer(forKey: "bitratenGrenze")
         landscapeFixed = store.object(forKey: "querformatFest") as? Bool ?? true
         progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
+        watchlistShown = store.object(forKey: "merklisteAn") as? Bool ?? true
+        alphabetShown = store.object(forKey: "alphabetAn") as? Bool ?? true
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
         let languageStored = store.string(forKey: "utSprache") ?? ""
         subtitleLanguage = languageStored
@@ -1809,6 +1817,20 @@ final class AppModel {
                since startIndex: Int = 0,
                count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
         guard let client else { return nil }
+        // **"By name" is ordered here, not on the server** (``NaturalOrder``): the page is
+        // a slice of the naturally sorted list, fetched by ID. The first page fetches the
+        // list fresh, so titles added since show up.
+        if sorting == .name {
+            guard let list = await naturalList(from: source, filter: filter, fresh: startIndex == 0)
+            else { return nil }
+            do {
+                let page = try await client.naturalPage(list, since: startIndex, count: count)
+                return (page.items, page.totalRecordCount)
+            } catch {
+                Self.log.error("Bibliotheksabruf (Name) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
+        }
         do {
             let answer = try await client.items(parentID: source.parent,
                                                  limit: count,
@@ -1828,6 +1850,39 @@ final class AppModel {
             Self.log.error("Bibliotheksabruf fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// The naturally sorted lists (slim items), per source, filter and account. Not
+    /// observed: a view never reads them, only the paging does.
+    @ObservationIgnored private var naturalLists: [String: [Item]] = [:]
+
+    /// **The whole list in "By name" order** (``NaturalOrder``), from one slim request:
+    /// names only, no images. Reused for every later page, the letter strip and its jumps;
+    /// `fresh` fetches it again.
+    func naturalList(from source: ShelfSource, filter: LibraryFilter = .all,
+                     fresh: Bool = false) async -> [Item]? {
+        guard let client else { return nil }
+        let key = "\(source.key)|\(filter.rawValue)|\(accountSwitch)"
+        if !fresh, let cached = naturalLists[key] { return cached }
+        do {
+            let sorted = try await client.naturalList(parentID: source.parent,
+                                                      sortOrder: source.bearing(.name),
+                                                      filters: filter.jellyfinFilter,
+                                                      isWatched: filter.isWatched,
+                                                      recursive: source.recursive,
+                                                      includeItemTypes: source.types)
+            naturalLists[key] = sorted
+            return sorted
+        } catch {
+            Self.log.error("Namensliste nicht geladen: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// **Name and sort name of the whole list, in "By name" order**, for the letter strip.
+    func sortNames(from source: ShelfSource,
+                   filter: LibraryFilter = .all) async -> [(name: String, sortName: String?)]? {
+        await naturalList(from: source, filter: filter)?.map { ($0.name, $0.sortName) }
     }
 
     /// Everything bookmarked, **across all libraries**.
@@ -1879,7 +1934,7 @@ final class AppModel {
     ///
     /// `still`: an error lands only in the log, not as a message; for the background
     /// preparation (``EpisodePreparation``) nobody asked for.
-    func plan(for itemID: String, still: Bool = false) async -> PlaybackPlan? {
+    func plan(for itemID: String, still: Bool = false, sourceID: String? = nil) async -> PlaybackPlan? {
         // **if the file is here, the server is not needed.**
         //
         // Before the `guard`: without network `client` exists, but `playbackPlan` would
@@ -1896,7 +1951,8 @@ final class AppModel {
         guard let client else { return nil }
         do {
             let plan = try await client.playbackPlan(for: itemID,
-                                                       profile: .vlc(maxBitrate: profileBitrate))
+                                                       profile: .vlc(maxBitrate: profileBitrate),
+                                                       mediaSourceID: sourceID)
             if plan == nil {
                 // Occurs with series and seasons: they have no media file, only their
                 // episodes do.

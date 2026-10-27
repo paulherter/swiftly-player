@@ -1340,6 +1340,8 @@ final class App: @unchecked Sendable {
     /// The "Meins" group and its rows; rebuilt when the downloads switch is
     /// toggled.
     private var myList: Widget!
+    /// Its heading; hidden when neither downloads nor the watchlist are on.
+    private var mineCategory: Widget!
     /// **Which collection is currently open as a subpage**, `nil` if none. `art`
     /// says whether its movies or its series are meant (Mac `CollectionDetailPage`).
     var openCollection: (item: Item, art: String?)?
@@ -1449,9 +1451,10 @@ final class App: @unchecked Sendable {
     }
 
     func filterFrom(_ was: Region) -> LibraryFilter {
-        if was == .collection { return collectionFilter }
+        // A stored filter the page no longer offers (the watchlist, switched off) reads as "All".
+        if was == .collection { return collectionFilter.kept(in: filterList(was)) }
         if let raw = selection.filterPerPlace[placeKey(was)],
-           let f = LibraryFilter(rawValue: raw) { return f }
+           let f = LibraryFilter(rawValue: raw) { return f.kept(in: filterList(was)) }
         return .all
     }
 
@@ -2107,6 +2110,16 @@ final class App: @unchecked Sendable {
     /// **Several libraries are filtered** (``TitleFilter``): each title once. Also
     /// how far the server's raw pages have been read.
     var gridFilter: [Region: TitleFilter] = [:]
+    /// **"By name" in natural order** (``NaturalOrder``): the whole list, slim, per grid.
+    /// Fetched with the first page, read by every later page and by the letter strip.
+    var gridNatural: [Region: [Item]] = [:]
+    /// The letter strip of a "By name" grid (``AlphabetIndex``).
+    var gridAlphabet: [Region: AlphabetIndex] = [:]
+    /// The strip widgets and the scrollers they jump in.
+    var alphabetStrips: [Region: AlphabetStrip] = [:]
+    var gridScrollers: [Region: Widget] = [:]
+    /// A letter whose first title is still being loaded; the jump continues with the next page.
+    var pendingLetter: [Region: String] = [:]
     var gridRaw: [Region: (offset: Int, total: Int)] = [:]
     /// When the home screen last loaded, for reloading on return to the
     /// foreground.
@@ -2413,7 +2426,7 @@ final class App: @unchecked Sendable {
         // **Below that, what belongs to the user.** The reasoning is at
         // `Region.mineGroup`; the measurements are those of the library group,
         // since it is the same kind of subheading.
-        let mineCategory = category(translated("Meins"))
+        mineCategory = category(translated("Meins"))
         gtk_widget_set_margin_top(mineCategory, 26)
         gtk_widget_set_margin_bottom(mineCategory, 8)
         gtk_widget_set_margin_start(mineCategory, 12)
@@ -2469,12 +2482,18 @@ final class App: @unchecked Sendable {
     func mineFill() {
         guard myList != nil else { return }
         wipe(myList)
-        for fall in Region.mineGroup(downloads: downloadsAn) {
+        let mine = Region.mineGroup(downloads: downloadsAn, watchlist: selection.watchlistShown)
+        for fall in mine {
             append(myList, sectionRow(fall))
         }
+        gtk_widget_set_visible(mineCategory, mine.isEmpty ? 0 : 1)
         if !downloadsAn {
             sectionButtons[.downloads] = nil
             if section == .downloads { show(.start) }
+        }
+        if !selection.watchlistShown {
+            sectionButtons[.watchlist] = nil
+            if section == .watchlist { show(.start) }
         }
     }
 
@@ -3375,6 +3394,9 @@ final class App: @unchecked Sendable {
                                     } : nil,
                                     valueSeries: row)
         barTitle[was] = bar.title
+        if was == .movies || was == .seriesList || was == .collection {
+            alphabetStripBuild(was, over: bar.wrapper, scroller: frameRect)
+        }
         return bar.wrapper
     }
 
@@ -3506,11 +3528,11 @@ final class App: @unchecked Sendable {
     }
 
     /// Which filters are offered; for the series of a collection the same set as macOS (`CollectionDetailPage`).
+    /// Without the watchlist when it is switched off.
     private func filterList(_ was: Region) -> [LibraryFilter] {
-        if was == .collection, openCollection?.art == "tvshows" {
-            return [.all, .begun, .watchlist]
-        }
-        return LibraryFilter.allCases
+        let all: [LibraryFilter] = was == .collection && openCollection?.art == "tvshows"
+            ? [.all, .begun, .watchlist] : LibraryFilter.allCases
+        return LibraryFilter.offered(all, watchlist: selection.watchlistShown)
     }
 
     // MARK: Collections in the grid (macOS `LibraryView.collectionTiles`)
@@ -4526,14 +4548,33 @@ final class App: @unchecked Sendable {
                 return
             }
             if source.isFiltering {
-                filteredLoad(was, source: source, since: since, job: job, filter: f,
+                filteredLoad(was, source: source, since: since, reach: reach, job: job, filter: f,
                              sorting: sort, state: state, client: client)
                 return
             }
             gridFilter[was] = nil
             gridRaw[was] = nil
+            // "By name" pages come from the naturally sorted list; the first page fetches it
+            // fresh, later pages reuse it.
+            let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
             Task.detached { [self] in
-                let answer = try? await client.items(parentID: source.parent,
+                let answer: ItemsResponse?
+                if sort == .name {
+                    var list = cachedNatural
+                    if list == nil {
+                        list = try? await client.naturalList(
+                            parentID: source.parent, sortOrder: source.bearing(.name),
+                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                            recursive: source.recursive, includeItemTypes: source.types)
+                        if let fresh = list { onMainThread { self.naturalStore(was, fresh) } }
+                    }
+                    if let list {
+                        answer = try? await client.naturalPage(list, since: since, count: reach ?? 100)
+                    } else {
+                        answer = nil
+                    }
+                } else {
+                    answer = try? await client.items(parentID: source.parent,
                                                       limit: reach ?? 100,
                                                       startIndex: since,
                                                       sortBy: sort.inputField,
@@ -4542,6 +4583,7 @@ final class App: @unchecked Sendable {
                                                       isWatched: f.isWatched,
                                                       recursive: source.recursive,
                                                       includeItemTypes: source.types)
+                }
                 onMainThread {
                     self.gridResponse(was, since: since, job: job, state: state,
                                        items: answer?.items ?? [],
@@ -4591,6 +4633,117 @@ final class App: @unchecked Sendable {
         }
     }
 
+    // MARK: Letter strip
+
+    /// The strip in the right margin of a grid page; 24 already fit it, so the grid does not
+    /// move. The topmost title's letter follows the scrolling.
+    private func alphabetStripBuild(_ was: Region, over: Widget, scroller: Widget!) {
+        let strip = AlphabetStrip()
+        gtk_widget_set_margin_top(strip.widget, Int32(Theme.contentTop + 96))
+        gtk_widget_set_margin_bottom(strip.widget, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(strip.widget, max(0, (Int32(Theme.edgeSpacing) - AlphabetStrip.width) / 2))
+        strip.jump = { [weak self] letter in self?.alphabetJump(was, letter) }
+        gtk_overlay_add_overlay(OpaquePointer(over), strip.widget)
+        alphabetStrips[was] = strip
+        gridScrollers[was] = scroller
+        if let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller)) {
+            signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") { [weak self] in
+                self?.alphabetTopUpdate(was)
+            }
+        }
+    }
+
+    /// Shows the strip where it means something (switched on, "By name", a grid of titles),
+    /// hides it otherwise.
+    func alphabetRailUpdate(_ was: Region) {
+        guard let strip = alphabetStrips[was] else { return }
+        let titles = was == .collection
+            || (sectionSelection(was) != .collections && sectionSelection(was) != .playlists)
+        let on = selection.alphabetShown && sortingFrom(was) == .name && titles
+        let height = gridScrollers[was].map { Double(gtk_widget_get_height($0)) } ?? 0
+        strip.show(on ? gridAlphabet[was] : nil, height: height - Double(Theme.contentTop + 96 + Theme.edgeSpacing))
+        alphabetTopUpdate(was)
+    }
+
+    /// Whether more pages are left (`gridLoadMore`'s rule).
+    private func gridHasMore(_ was: Region) -> Bool {
+        if gridFilter[was] != nil, let raw = gridRaw[was] { return raw.offset < raw.total }
+        return ListRules.stillMorePresent(loaded: (gridItems[was] ?? []).count, total: gridTotal[was] ?? 0)
+    }
+
+    /// **Jumps to the first title of a letter**, loading up to it in steps sized by where
+    /// the letter starts in the list.
+    private func alphabetJump(_ was: Region, _ letter: String) {
+        guard let alphabet = gridAlphabet[was] else { return }
+        let items = gridItems[was] ?? []
+        if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
+            pendingLetter[was] = nil
+            gridScroll(was, to: i)
+            return
+        }
+        guard gridHasMore(was), !items.isEmpty else {
+            pendingLetter[was] = nil
+            if !items.isEmpty { gridScroll(was, to: items.count - 1) }
+            return
+        }
+        let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
+        pendingLetter[was] = letter
+        gridLoad(was, since: items.count, reach: max(100, start - items.count + 100))
+    }
+
+    /// A short glide that puts the tile's row under the bar.
+    ///
+    /// **Measured only once the tile has its place.** Right after a page is appended the new
+    /// tiles have no allocation yet; their bounds read as zero and the glide went to the top
+    /// or nowhere useful. So it waits (up to a second, frame by frame) for a real height, and
+    /// only then glides.
+    private func gridScroll(_ was: Region, to index: Int) {
+        guard let grid = gridField[was], let scroller = gridScrollers[was],
+              let content = gtk_scrolled_window_get_child(OpaquePointer(scroller)),
+              let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+        else { return }
+        var measured = false
+        runningCount(on: scroller, duration: 1.0, linear: true, step: { _ in
+            guard !measured,
+                  let kind = gtk_flow_box_get_child_at_index(OpaquePointer(grid), Int32(index))
+            else { return }
+            var r = graphene_rect_t()
+            guard gtk_widget_compute_bounds(unsafeBitCast(kind, to: Widget.self), content, &r) != 0,
+                  r.size.height > 0 else { return }
+            measured = true
+            let atMost = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment)
+            let target = min(max(Double(r.origin.y) - Double(Theme.headerBarHeight) - 12, 0), max(atMost, 0))
+            let from = gtk_adjustment_get_value(adjustment)
+            runningCount(on: scroller, duration: 0.25, step: { t in
+                gtk_adjustment_set_value(adjustment, from + (target - from) * t)
+            }, done: {})
+        }, done: {})
+    }
+
+    /// The letter of the topmost title under the bar, into the strip.
+    private func alphabetTopUpdate(_ was: Region) {
+        guard let strip = alphabetStrips[was], gtk_widget_get_visible(strip.widget) != 0,
+              let grid = gridField[was], let scroller = gridScrollers[was],
+              let content = gtk_scrolled_window_get_child(OpaquePointer(scroller)),
+              let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+        else { return }
+        var r = graphene_rect_t()
+        guard gtk_widget_compute_bounds(grid, content, &r) != 0 else { return }
+        let y = gtk_adjustment_get_value(adjustment) + Double(Theme.headerBarHeight) + 20 - Double(r.origin.y)
+        guard let kind = gtk_flow_box_get_child_at_pos(OpaquePointer(grid), 10, Int32(max(y, 0))) else { return }
+        let index = Int(gtk_flow_box_child_get_index(kind))
+        let items = gridItems[was] ?? []
+        guard items.indices.contains(index) else { return }
+        strip.highlight(AlphabetIndex.letter(name: items[index].name, sortName: items[index].sortName))
+    }
+
+    /// The naturally sorted list of a grid and its letter strip, on the main thread.
+    private func naturalStore(_ was: Region, _ list: [Item]) {
+        gridNatural[was] = list
+        gridAlphabet[was] = AlphabetIndex(titles: list.map { ($0.name, $0.sortName) })
+        alphabetRailUpdate(was)
+    }
+
     /// An answer into the grid, on the main thread.
     private func gridResponse(_ was: Region, since: Int, job: Int, state: Int,
                                items: [Item], total: Int?, disrupted: Bool,
@@ -4624,6 +4777,9 @@ final class App: @unchecked Sendable {
         }
         gtk_label_set_text(OpaquePointer(figure), String(numberValue))
         gtk_widget_set_visible(figure, numberValue > 0 ? 1 : 0)
+        // The strip follows sort and library; a jump that waited for this page goes on.
+        if since == 0 { alphabetRailUpdate(was) }
+        if let letter = pendingLetter[was], !disrupted { alphabetJump(was, letter) }
         // **After an account switch the new content arrives staggered**, like the home page rows (macOS: `AccountSwitchPart`, index 1).
         if since == 0, gridSeasons.remove(was) != nil, !(gridItems[was] ?? []).isEmpty {
             railOccur(grid, number: 1)
@@ -4642,13 +4798,23 @@ final class App: @unchecked Sendable {
     /// **From several libraries, one entry per title** (macOS `LibraryModel.filteredLoad`/`fill`).
     ///
     /// First the IDs of the chosen libraries, with the same filters (`TitleFilter`), which also fixes the count. Then pages without `ParentId` until something remains: a page can consist almost entirely of duplicates, and then no new tile would appear that the next reload could hang on.
-    private func filteredLoad(_ was: Region, source: ShelfSource, since: Int, job: Int,
+    private func filteredLoad(_ was: Region, source: ShelfSource, since: Int, reach: Int? = nil, job: Int,
                               filter f: LibraryFilter, sorting sort: Sorting,
                               state: Int, client: JellyfinClient) {
         let pagesSize = 60
         let oldFilter = since == 0 ? nil : gridFilter[was]
         let start = since == 0 ? 0 : (gridRaw[was]?.offset ?? 0)
+        let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
         Task.detached { [self] in
+            // "By name": the raw pages are slices of the naturally sorted list.
+            var natural: [Item]? = cachedNatural
+            if sort == .name, natural == nil {
+                natural = try? await client.naturalList(
+                    parentID: nil, sortOrder: source.bearing(.name), filters: f.jellyfinFilter,
+                    isWatched: f.isWatched, recursive: source.recursive,
+                    includeItemTypes: source.types)
+                if let fresh = natural { onMainThread { self.naturalStore(was, fresh) } }
+            }
             var filterRef: TitleFilter
             if let oldFilter {
                 filterRef = oldFilter
@@ -4668,17 +4834,25 @@ final class App: @unchecked Sendable {
             var offset = start
             var raw = 0
             var failed = false
+            // The first request may be larger: a jump in the letter strip asks for more.
+            var count = max(pagesSize, reach ?? pagesSize)
             repeat {
-                guard let page = try? await client.items(parentID: nil,
-                                                          limit: pagesSize,
-                                                          startIndex: offset,
-                                                          sortBy: sort.inputField,
-                                                          sortOrder: source.bearing(sort),
-                                                          filters: f.jellyfinFilter,
-                                                          isWatched: f.isWatched,
-                                                          recursive: source.recursive,
-                                                          includeItemTypes: source.types)
-                else { failed = true; break }
+                let fetched: ItemsResponse?
+                if let natural {
+                    fetched = try? await client.naturalPage(natural, since: offset, count: count)
+                } else {
+                    fetched = try? await client.items(parentID: nil,
+                                                       limit: count,
+                                                       startIndex: offset,
+                                                       sortBy: sort.inputField,
+                                                       sortOrder: source.bearing(sort),
+                                                       filters: f.jellyfinFilter,
+                                                       isWatched: f.isWatched,
+                                                       recursive: source.recursive,
+                                                       includeItemTypes: source.types)
+                }
+                guard let page = fetched else { failed = true; break }
+                count = pagesSize
                 new += filterRef.seven(page.items)
                 offset += page.items.count
                 raw = page.totalRecordCount

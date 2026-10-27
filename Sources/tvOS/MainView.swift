@@ -338,6 +338,10 @@ struct MainView: View {
             gemeinsam.finish()
         }
         .onChange(of: section) { _, new in visited.insert(new) }
+        // Switched off while open, the watchlist must not stay on screen without its tab.
+        .onChange(of: model.watchlistShown) { _, shown in
+            if !shown, section == .watchlist { section = .start }
+        }
         // the page stack is emptied on account switch.
         //
         // iPhone and iPad empty their `pfade` and the Mac calls `navigator.emptyAll()`; only

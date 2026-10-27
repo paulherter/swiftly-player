@@ -7,7 +7,9 @@ public enum Sorting: String, CaseIterable, Sendable, Identifiable {
 
     public var label: String {
         switch self {
-        case .name:        translated("A–Z")
+        // "By name", not "A–Z": the order is natural (digits, Latin, then other
+        // scripts; ``NaturalOrder``), not just the Latin alphabet.
+        case .name:        translated("Nach Name")
         case .latest:     translated("Zuletzt")
         case .rating:   translated("Bewertung")
         case .erscheinung: translated("Jahr")
@@ -54,6 +56,18 @@ public enum LibraryFilter: String, CaseIterable, Sendable, Identifiable {
     /// Only "Unwatched" needs its own switch: `Filters=IsUnplayed` exists but works per
     /// episode for series.
     public var isWatched: Bool? { self == .unwatched ? false : nil }
+
+    /// **The filters a page offers**: without the watchlist when it is switched off in
+    /// Appearance. The favourites stay on the server; only the way to them is gone.
+    public static func offered(_ filters: [LibraryFilter], watchlist: Bool) -> [LibraryFilter] {
+        watchlist ? filters : filters.filter { $0 != .watchlist }
+    }
+
+    /// **A stored filter the page no longer offers falls back to "All".** Otherwise a
+    /// library left on the watchlist filter stays narrowed to it with no pill to undo it.
+    public func kept(in offered: [LibraryFilter]) -> LibraryFilter {
+        offered.contains(self) ? self : .all
+    }
 }
 
 /// **What the watchlist shows**: movies, series or both.

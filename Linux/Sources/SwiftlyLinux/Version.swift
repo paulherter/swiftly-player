@@ -12,11 +12,11 @@ import Foundation
 /// `Linux/Install/PKGBUILD` (`pkgver`), which the build touches anyway.
 /// Whoever changes one changes the other.
 enum Version {
-    static let number = "1.0.6"
+    static let number = "1.0.9"
     /// **The build number counts when the same version is released again.**
     /// Without it, a bug report just says "1.0.4" and nobody knows whether the
     /// fix was included.
-    static let build = "1"
+    static let build = "31"
 
     /// "Swiftly Player 1.0.0 (Build 10)": the full name, as the other platforms
     /// show it in the profile.

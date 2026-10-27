@@ -21,10 +21,10 @@ enum Region: String, Hashable, CaseIterable {
     /// are **collections on the server**, these two are **mine** (what I saved and what I
     /// fetched to this machine). The separation was already there, just not visible.
     ///
-    /// Empty while downloads are off and nothing is saved; then the section does not
+    /// Empty while downloads and the watchlist are both off; then the section does not
     /// exist.
-    static func mineGroup(downloads: Bool) -> [Region] {
-        downloads ? [.watchlist, .downloads] : [.watchlist]
+    static func mineGroup(downloads: Bool, watchlist: Bool = true) -> [Region] {
+        (watchlist ? [.watchlist] : []) + (downloads ? [.downloads] : [])
     }
 
     var symbol: String {
@@ -244,6 +244,11 @@ struct MainView: View {
         //
         // Done here and not in each page: that would be five places, and the next new page
         // would forget it.
+        // **Switched off while open, the watchlist must not stay on screen** without its row
+        // in the sidebar.
+        .onChange(of: model.watchlistShown) { _, shown in
+            if !shown, section == .watchlist { sectionSelect(.start) }
+        }
         .onChange(of: model.accountSwitch) { _, _ in
             // Already cleared from the profile page, at the click (see below). Do not ask
             // `waits`: opening the profile mid-flight completes the flight, and clearing would
@@ -295,6 +300,7 @@ struct MainView: View {
         .animation(Theme.reveal, value: controls.wish?.id)
         .focusedSceneValue(\.playerOpen, controls.wish != nil)
         .focusedSceneValue(\.downloadsAn, model.downloadsAn)
+        .focusedSceneValue(\.watchlistShown, model.watchlistShown)
         .onReceive(NotificationCenter.default.publisher(for: CommandPost.name)) { post in
             guard let command = CommandPost.receive(post) else { return }
             execute(command)
@@ -644,7 +650,7 @@ struct MainView: View {
         case .start:  sectionSelect(.start)
         case .movies:  sectionSelect(.movies)
         case .seriesList: sectionSelect(.seriesList)
-        case .watchlist: sectionSelect(.watchlist)
+        case .watchlist: if model.watchlistShown { sectionSelect(.watchlist) }
         // **Only if it exists.** Without downloads switched on, the section is not in the
         // sidebar; then a shortcut must not open it either.
         case .downloads: if model.downloadsAn { sectionSelect(.downloads) }
@@ -755,21 +761,24 @@ struct Sidebar: View {
             }
             .padding(.horizontal, 12)
 
-            SidebarCategory(text: "Meins")
-                .padding(.horizontal, 12)
-                .padding(.top, 26)
-                .padding(.bottom, 8)
+            let mine = Region.mineGroup(downloads: model.downloadsAn, watchlist: model.watchlistShown)
+            if !mine.isEmpty {
+                SidebarCategory(text: "Meins")
+                    .padding(.horizontal, 12)
+                    .padding(.top, 26)
+                    .padding(.bottom, 8)
 
-            VStack(spacing: 2) {
-                ForEach(Region.mineGroup(downloads: model.downloadsAn), id: \.self) { fall in
-                    SidebarRow(symbol: fall.symbol,
-                                       label: fall.label,
-                                       active: section == fall && !inAccount) {
-                        sectionSelect(fall)
+                VStack(spacing: 2) {
+                    ForEach(mine, id: \.self) { fall in
+                        SidebarRow(symbol: fall.symbol,
+                                           label: fall.label,
+                                           active: section == fall && !inAccount) {
+                            sectionSelect(fall)
+                        }
                     }
                 }
+                .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 12)
 
             // **No "Bibliotheken" section anymore.** The other libraries were here and opened as
             // their own root. They are now in the title menu of Movies and Shows as on

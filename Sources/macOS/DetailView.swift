@@ -282,6 +282,7 @@ struct TitleRail: View {
 /// differs: in the window the poster sits next to the title instead of above it,
 /// because a 1400 pt wide column with one line of text would be unreadable.
 struct DetailHero: View {
+    @Environment(\.watchlistShown) private var watchlistShown
     let model: AppModel
     let title: Item
     /// Where the page is: only needed to pull the image along.
@@ -329,6 +330,8 @@ struct DetailHero: View {
     @State private var moreOpen = false
     @State private var loadPanelOpen = false
     @State private var message: String?
+    /// The start position waiting for the version choice; `nil` while no dialog is open.
+    @State private var versionSince: Double?
     @Environment(PlayControls.self) private var controls
 
     // MARK: Downloads
@@ -541,7 +544,7 @@ struct DetailHero: View {
             //
             // All other measures come from the component itself and match iPhone: 13 medium,
             // padding 10/4, fill at 15 percent.
-            if let sharing = title.officialRating {
+            if let sharing = title.ageRating {
                 Badge(text: sharing, rounding: Theme.cornerSmall)
             }
             // The evidence goes last: year, runtime, stars, certification, Direct Play, as on
@@ -627,13 +630,15 @@ struct DetailHero: View {
                     .tileMenu(title, model: model, afterwards: { await refresh() })
             }
 
-            ActionButton(mass: Theme.primaryButtonHeight, symbol: watchlist ? "bookmark.fill" : "bookmark",
-                       title: "Merkliste", active: watchlist) {
-                watchlist.toggle()
-                Task {
-                    if let reason = await model.setWatchlist(title, an: watchlist) {
-                        watchlist.toggle()
-                        notify(reason)
+            if watchlistShown {
+                ActionButton(mass: Theme.primaryButtonHeight, symbol: watchlist ? "bookmark.fill" : "bookmark",
+                           title: "Merkliste", active: watchlist) {
+                    watchlist.toggle()
+                    Task {
+                        if let reason = await model.setWatchlist(title, an: watchlist) {
+                            watchlist.toggle()
+                            notify(reason)
+                        }
                     }
                 }
             }
@@ -716,6 +721,15 @@ struct DetailHero: View {
             if let message { HintStrip(text: message) }
             Spacer(minLength: 0)
         }
+        .confirmationDialog("Fassung wählen", isPresented: Binding(
+            get: { versionSince != nil }, set: { if !$0 { versionSince = nil } }),
+                            titleVisibility: .visible) {
+            ForEach(versions, id: \.id) { version in
+                Button(versionLabel(version)) {
+                    controls.launch(title, since: versionSince ?? 0, sourceID: version.id)
+                }
+            }
+        }
     }
 
     /// Year, runtime and genre, from `Item.secondaryLine` in
@@ -727,8 +741,27 @@ struct DetailHero: View {
     /// second copy means it gets missed again next time.
     private var detailsRow: String { title.secondaryLine }
 
+    /// The versions to choose from; empty for a series, when there is no choice to make
+    /// or when the title is on the device (the downloaded file is the one that plays).
+    /// A download still running does not count: playback then streams from the server.
+    private var versions: [MediaSource] {
+        guard title.type != "Series", model.downloads.file(for: title.id) == nil else { return [] }
+        return MediaVersions.choices(title.mediaSources)
+    }
+
+    private func versionLabel(_ version: MediaSource) -> String {
+        let detail = version.versionDetail
+        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
+    }
+
+    /// **A title with several versions asks which one on press**, as on iPhone. One
+    /// version, or a copy on the device, starts at once.
     private func start(_ since: Double) {
-        controls.launch(playBarTitle ?? title, since: since)
+        if versions.isEmpty {
+            controls.launch(playBarTitle ?? title, since: since)
+        } else {
+            versionSince = since
+        }
     }
 
     /// The same actions as on the other platforms, from `TitleActions`, plus

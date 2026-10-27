@@ -15,7 +15,7 @@ param(
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
     [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
     [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
-    [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin',
+    [string]$SwiftLaufzeit = "$env:LOCALAPPDATA\Programs\Swift\Runtimes\6.3.3\usr\bin",
     [string]$Rlottie = 'C:\Werkzeuge\rlottie',
     # **Symbols for looking up crashes.** Without them no PDB is produced, and an
     # offset from the event log cannot be resolved to a function name. That is
@@ -85,7 +85,7 @@ Copy-Item -Path $mittel -Destination $mittelZiel -Recurse
 # texts there. libVLC is LGPL, so nothing may ship without these files.
 $lizenzen = Join-Path (Split-Path -Parent $hier) 'LICENSES'
 if (-not (Test-Path (Join-Path $lizenzen 'components.json'))) { throw "LICENSES\components.json fehlt: $lizenzen" }
-Copy-Item -Path $lizenzen -Destination (Join-Path $mittelZiel 'Lizenzen') -Recurse
+Copy-Item -Path $lizenzen -Destination (Join-Path $mittelZiel 'Licenses') -Recurse
 
 # ------------------------------------------------------------- Search paths
 #

@@ -314,10 +314,13 @@ fun HeaderTargets(app: SwiftlyApplication, open: (Destination) -> Unit, front: @
     Row(verticalAlignment = Alignment.CenterVertically) {
         TakeoverCharacter(app)
         front()
-        // Filled, but not a state: here the bookmark is a destination, not a marker.
-        Box(Modifier.size(44.dp).tapOn { open(Destination("merkliste", translated("Merkliste"), "Merkliste")) },
-            contentAlignment = Alignment.Center) {
-            Symbol(Glyph.BookmarkFilled, 20.dp, color = Theme.font, description = translated("Merkliste"))
+        // Filled, but not a state: here the bookmark is a destination, not a marker. Gone when the
+        // watchlist is switched off in Appearance.
+        if (app.settings.watchlist) {
+            Box(Modifier.size(44.dp).tapOn { open(Destination("merkliste", translated("Merkliste"), "Merkliste")) },
+                contentAlignment = Alignment.Center) {
+                Symbol(Glyph.BookmarkFilled, 20.dp, color = Theme.font, description = translated("Merkliste"))
+            }
         }
         // `ProfileTarget`: the 34 icon in a 44 hit area, shifted 7 outward so the circle sits flush at the
                 // edge, not the hit area.
@@ -619,6 +622,8 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                    * no tap beside it to close (the looks panel over the home page in the look).
                    */
                   val dimmed: Boolean = true,
+                  /** TV: long rows wrap instead of being cut off (the line of a version choice: name, size, codec). */
+                  val longRows: Boolean = false,
                   /** The generic heading; off when the content brings its own (looks panel, support). */
                   val heading: Boolean = true,
                   /**

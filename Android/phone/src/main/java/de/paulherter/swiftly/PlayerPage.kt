@@ -164,7 +164,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
 
 /** What to play and from where (iOS `PlayRequest`). `since == null` starts from the beginning. */
-data class PlayRequest(val id: String, val since: Double?)
+data class PlayRequest(val id: String, val since: Double?,
+                       /** The version the user picked when a title has several (`MediaSource.id`); empty = the best one. */
+                       val sourceID: String = "")
 
 /** Result of `Kern.playbackOpen`: the stream URL and the footer lines. */
 data class PlayPlan(val url: String, val lossless: Boolean, val method: String, val title: String,
@@ -1736,7 +1738,7 @@ class PlayItem(
             val answer = if (slab != null && entries != null) {
                 val image = app.downloads.imageFile(entries.id).takeIf { it.exists() }?.let { "file://" + it.absolutePath }.orEmpty()
                 app.kern.playbackFromTheSlab(entries.json().toString(), slab.absolutePath, image)
-            } else withContext(Dispatchers.IO) { app.kern.playbackOpen(wish.id).await() }
+            } else withContext(Dispatchers.IO) { app.kern.playbackOpen(wish.id, wish.sourceID).await() }
             launch(playPlanRead(answer), wish.since)
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             hint = translated("Die Folge konnte nicht geladen werden.")
@@ -1819,7 +1821,7 @@ class PlayItem(
             // After a seek the core returns the target position until VLC is there.
             if (!atPush && answer.has("position")) position = answer.getDouble("position")
             if (!restoring || length > 0) duration = length
-            if (imageFree && position > 0) app.playPoint = PlayRequest(plan?.itemId ?: wish.id, position)
+            if (imageFree && position > 0) app.playPoint = PlayRequest(plan?.itemId ?: wish.id, position, if ((plan?.itemId ?: wish.id) == wish.id) wish.sourceID else "")
             sessionReport()
             // If the card was up, it zooms into the picture on expiry (`toNextEpisode(fromCard: cardBefore)`).
             val cardBefore = overlay == "karte"

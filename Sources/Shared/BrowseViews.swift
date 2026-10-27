@@ -148,6 +148,7 @@ struct ItemDetailView: View {
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
     @Environment(\.broad) private var broad
+    @Environment(\.watchlistShown) private var watchlistShown
 
     /// How far it has scrolled; the header fades in accordingly.
     ///
@@ -159,6 +160,7 @@ struct ItemDetailView: View {
     @State private var distance = ScrollDistance()
 
     @State private var plan: PlaybackPlan?
+    @State private var pickVersion = false
     /// The plan has been answered, with or without a result. See `proofRow`.
     @State private var planPresent = false
     @State private var loadSheet = false
@@ -468,7 +470,7 @@ struct ItemDetailView: View {
         ProofRow(directPlayFlag: plan?.isLossless ?? false,
                    hint: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
                    rating: current.communityRating,
-                   sharing: current.officialRating)
+                   sharing: current.ageRating)
             // **Fixed height, even when empty.** The line only comes with the plan,
             // and from the list often without rating and age rating. Empty, it had no
             // height; the button below sat higher and dropped as soon as it filled.
@@ -499,7 +501,9 @@ struct ItemDetailView: View {
         // same question, the same answer: layout and spacing identical to
         // `SeriesView.primaryButton`.
         VStack(alignment: .leading, spacing: 9) {
-            Button { launch(since: resumeFrom ?? 0) } label: {
+            Button {
+                if versions.isEmpty { launch(since: resumeFrom ?? 0) } else { pickVersion = true }
+            } label: {
                 if let since = resumeFrom {
                     Label("Fortsetzen ab \(timeText(since))", systemImage: "play.fill")
                 } else {
@@ -509,6 +513,17 @@ struct ItemDetailView: View {
             .buttonStyle(PrimaryButtonStyle(stretches: !wide))
             // Long press: the title's tile menu, as on its tile.
             .tileMenu(current, model: model)
+            // **A title with several versions asks which one on press.** 4K next to
+            // 1080p, theatrical next to extended cut; the server lists them as
+            // sources of one item. One version, or a copy on the device, starts at once.
+            .confirmationDialog("Fassung wählen", isPresented: $pickVersion,
+                                titleVisibility: .visible) {
+                ForEach(versions, id: \.id) { version in
+                    Button(versionLabel(version)) {
+                        launch(since: resumeFrom ?? 0, sourceID: version.id)
+                    }
+                }
+            }
             // Only while the plan is on its way on press. Before, the button hung on
             // the preloaded plan: if that single request failed, it stayed gray
             // forever without a word.
@@ -531,15 +546,17 @@ struct ItemDetailView: View {
         // Narrow, the spacers distribute the buttons across the row; wide, they
         // sit next to the play button and should stay together.
         HStack(spacing: 8) {
-            ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                         title: "Merkliste", active: remembered, stretches: !broad) {
-                remembered.toggle()
-                // Switch immediately so the button responds, but revert if the server
-                // says no. Before, the display stayed put and lied.
-                Task {
-                    if let reason = await model.setWatchlist(current, an: remembered) {
-                        remembered.toggle()
-                        message = reason
+            if watchlistShown {
+                ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
+                             title: "Merkliste", active: remembered, stretches: !broad) {
+                    remembered.toggle()
+                    // Switch immediately so the button responds, but revert if the server
+                    // says no. Before, the display stayed put and lied.
+                    Task {
+                        if let reason = await model.setWatchlist(current, an: remembered) {
+                            remembered.toggle()
+                            message = reason
+                        }
                     }
                 }
             }
@@ -708,15 +725,27 @@ struct ItemDetailView: View {
         }
     }
 
-    private func launch(since: Double) {
+    /// The versions to choose from; empty when there is no choice to make or the
+    /// title is on the device (the downloaded file is the one that plays). A
+    /// download still running does not count: playback then streams from the server.
+    private var versions: [MediaSource] {
+        model.downloads.file(for: current.id) == nil ? MediaVersions.choices(current.mediaSources) : []
+    }
+
+    private func versionLabel(_ version: MediaSource) -> String {
+        let detail = version.versionDetail
+        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
+    }
+
+    private func launch(since: Double, sourceID: String? = nil) {
         Theme.jerk(.medium)
-        if let plan {
+        if sourceID == nil, let plan {
             play = PlayRequest(item: current, plan: plan, startAt: since)
             return
         }
         // **No preloaded plan**: still on its way or failed. Then fetch on
         // press, as on the series page, and say so if that fails too.
-        PlayRequest.start(current, since: since, model: model, prepares: $prepares,
+        PlayRequest.start(current, since: since, sourceID: sourceID, model: model, prepares: $prepares,
                               missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { wish in
                                   plan = wish.plan

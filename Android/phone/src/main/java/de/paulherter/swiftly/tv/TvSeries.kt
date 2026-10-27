@@ -183,14 +183,16 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         if (series?.planPresent == true) app.play.value = PlayRequest(st.id, null)
                         else message = translated("Der Server hat keine Datei zu dieser Folge.")
                     } }
-                    TvButton(null, if (series?.remembered == true) Glyph.BookmarkFilled else Glyph.Bookmark,
-                            description = translated("Merkliste"), active = series?.remembered == true) {
-                        val alt = series ?: return@TvButton
-                        s = alt.copy(remembered = !alt.remembered)
-                        // Like "Watched": roll back **and report**.
-                        run.launch {
-                            val reason = withContext(Dispatchers.IO) { app.kern.remember(alt.id, !alt.remembered).await() }
-                            if (reason.isNotEmpty()) { s = alt; message = errorString(reason) }
+                    if (app.settings.watchlist) {
+                        TvButton(null, if (series?.remembered == true) Glyph.BookmarkFilled else Glyph.Bookmark,
+                                description = translated("Merkliste"), active = series?.remembered == true) {
+                            val alt = series ?: return@TvButton
+                            s = alt.copy(remembered = !alt.remembered)
+                            // Like "Watched": roll back **and report**.
+                            run.launch {
+                                val reason = withContext(Dispatchers.IO) { app.kern.remember(alt.id, !alt.remembered).await() }
+                                if (reason.isNotEmpty()) { s = alt; message = errorString(reason) }
+                            }
                         }
                     }
                     // **`TvMoreButton` instead of `app.sheet`**: on tvOS the menu opens directly under the button,

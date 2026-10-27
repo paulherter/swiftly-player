@@ -28,10 +28,12 @@ extension PlayRequest {
     /// - ab: the start position; if omitted, the title's remembered one applies.
     /// - frisch: refetch the title first, since the position in the list entry is
     /// often stale.
+    /// - sourceID: the version the user picked when a title has several.
     /// - bereitet: blocks a second tap while the plan is in flight.
     /// - fehlt: if the server returns no plan.
     @MainActor
     static func start(_ item: Item, since: Double? = nil, freshValue: Bool = false,
+                        sourceID: String? = nil,
                         model: AppModel, prepares: Binding<Bool>,
                         missing: @escaping () -> Void = {},
                         play: @escaping (PlayRequest) -> Void) {
@@ -41,7 +43,7 @@ extension PlayRequest {
             defer { prepares.wrappedValue = false }
             // Side by side: the plan depends only on the id.
             async let freshTitle: Item? = freshValue ? model.item(id: item.id) : nil
-            async let planFetch = model.plan(for: item.id)
+            async let planFetch = model.plan(for: item.id, sourceID: sourceID)
             let target = await freshTitle ?? item
             guard let plan = await planFetch else { missing(); return }
             play(PlayRequest(item: target, plan: plan,

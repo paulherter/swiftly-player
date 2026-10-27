@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Noch %lld Minuten</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Осталась %lld минута</string>
+			<key>few</key>
+			<string>Осталось %lld минуты</string>
+			<key>many</key>
+			<string>Осталось %lld минут</string>
+			<key>other</key>
+			<string>Осталось %lld минуты</string>
+		</dict>
+	</dict>
+	<key>%lld neue Folgen</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld новый эпизод</string>
+			<key>few</key>
+			<string>%lld новых эпизода</string>
+			<key>many</key>
+			<string>%lld новых эпизодов</string>
+			<key>other</key>
+			<string>%lld нового эпизода</string>
+		</dict>
+	</dict>
+	<key>%lld Filme</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld фильм</string>
+			<key>few</key>
+			<string>%lld фильма</string>
+			<key>many</key>
+			<string>%lld фильмов</string>
+			<key>other</key>
+			<string>%lld фильма</string>
+		</dict>
+	</dict>
+	<key>%lld Serien</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld сериал</string>
+			<key>few</key>
+			<string>%lld сериала</string>
+			<key>many</key>
+			<string>%lld сериалов</string>
+			<key>other</key>
+			<string>%lld сериала</string>
+		</dict>
+	</dict>
+	<key>%lld Staffeln</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld сезон</string>
+			<key>few</key>
+			<string>%lld сезона</string>
+			<key>many</key>
+			<string>%lld сезонов</string>
+			<key>other</key>
+			<string>%lld сезона</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

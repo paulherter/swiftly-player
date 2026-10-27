@@ -37,6 +37,12 @@ struct LibraryView: View {
     var collection: (item: Item, art: String?)?
     /// Which filters are available.
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the filter menu offers: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
     /// `nil` means this is a root, not a pushed page, so there is no back arrow.
     var back: (() -> Void)?
 
@@ -58,6 +64,17 @@ struct LibraryView: View {
     /// counter: a page opened after the switch starts with `false` and does not go
     /// through it again.
     @State private var change = false
+    /// The letter strip: where to scroll, which titles are on screen, the letter of the
+    /// topmost one, and how wide the scroll view is (the columns follow the window).
+    @State private var jump: ScrollJump?
+    @State private var onScreen = OnScreenTiles()
+    @State private var topLetter: String?
+    @State private var viewportWidth: CGFloat = 0
+    /// Where the grid starts in the scroll content, and how tall one tile is: the jump
+    /// computes the row's position from them (see ``jumpTo(_:)``).
+    @State private var gridTop: CGFloat = 0
+    @State private var tileHeight: CGFloat = 0
+    @State private var jumpTask: Task<Void, Never>?
 
     /// How far the value row has been closed, 0 to 1.
     private var pullGait: Double {
@@ -118,7 +135,7 @@ struct LibraryView: View {
                 HStack(spacing: 8) {
                     SelectionButton(symbol: "line.3.horizontal.decrease",
                               value: shelf.filter.label,
-                              entries: filter,
+                              entries: offeredFilter,
                               label: { $0.label },
                               isSelected: { $0 == shelf.filter },
                               select: { shelf.filter = $0 })
@@ -133,6 +150,12 @@ struct LibraryView: View {
                 .opacity(showsCollections ? 0 : 1)
                 .allowsHitTesting(!showsCollections)
                 .accessibilityHidden(showsCollections)
+                // A filter the menu no longer offers (the watchlist, switched off) must not
+                // keep narrowing the grid with no entry left to undo it.
+                .task(id: offeredFilter) {
+                    let kept = shelf.filter.kept(in: offeredFilter)
+                    if kept != shelf.filter { shelf.filter = kept }
+                }
                 .padding(.top, 14)
                 // It fades out on scroll: what you want to know before scrolling does not need to
                 // travel along. Opacity only, not height: a height tied to the scroll offset is a
@@ -157,7 +180,7 @@ struct LibraryView: View {
                         .allowsHitTesting(false)
                 }
 
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: Self.rowSpacing) {
                     if showsCollections {
                         if choice == .playlists { playlistTiles } else { collectionTiles }
                     } else {
@@ -177,6 +200,17 @@ struct LibraryView: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(entryRecord, model: model)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+                            if new > 0, new != tileHeight { tileHeight = new }
+                        }
+                        .onAppear {
+                            onScreen.ids.insert(entryRecord.id)
+                            updateTopLetter()
+                        }
+                        .onDisappear {
+                            onScreen.ids.remove(entryRecord.id)
+                            updateTopLetter()
+                        }
                         .task {
                             // More items are requested before the user reaches the bottom.
                             if shelf.solvesLoadMoreOut(entryRecord.id, columns: estimatedColumns),
@@ -187,6 +221,9 @@ struct LibraryView: View {
                     }
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.contentSpace)).minY
+                } action: { gridTop = $0 }
                 .padding(.top, 22)
 
                 // The page had neither an empty nor an error state. If nothing loaded, nothing
@@ -222,6 +259,7 @@ struct LibraryView: View {
             .padding(.horizontal, Theme.edgeSpacing)
             .padding(.top, Theme.contentTop)
             .padding(.bottom, 40)
+            .coordinateSpace(.named(Self.contentSpace))
         }
         // The look's glow, the same on every main page; goes up with the content.
         .lookGlow()
@@ -239,6 +277,35 @@ struct LibraryView: View {
         .scrollPosition($position)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
             headerState.offset = new
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.width } action: { _, new in
+            viewportWidth = new
+        }
+        // **The row's position, computed, through the page's own `ScrollPosition`.** A
+        // `ScrollViewReader` next to it competed with the position the page keeps and
+        // restores, and for a tile the lazy grid had not built yet it only scrolled roughly
+        // there. Top of the grid plus rows of tile height and spacing, under the bar.
+        .onChange(of: jump) { _, new in
+            guard let new, let index = shelf.items.firstIndex(where: { $0.id == new.id }),
+                  tileHeight > 0 else { return }
+            let usable = viewportWidth - 2 * Theme.edgeSpacing
+            let columns = max(1, Int((usable + Theme.tileSpacing) / (Theme.tileWidth + Theme.tileSpacing)))
+            let y = gridTop + CGFloat(index / columns) * (tileHeight + Self.rowSpacing)
+                - Theme.headerBarHeight - 8
+            withAnimation(Motion.select) { position.scrollTo(y: max(0, y)) }
+        }
+        // In the right margin; 24 pt already fit the strip, so the grid does not move.
+        .overlay(alignment: .trailing) {
+            if let alphabet = shownAlphabet {
+                AlphabetRail(index: alphabet, current: topLetter) { letter in jumpTo(letter) }
+                    .padding(.trailing, max(0, (Theme.edgeSpacing - AlphabetRail.width) / 2))
+                    .padding(.top, Theme.contentTop + 96)
+                    .padding(.bottom, 24)
+            }
+        }
+        .task(id: "\(shelf.identifier)|\(source?.key ?? "")|\(model.accountSwitch)|\(model.alphabetShown)") {
+            guard model.alphabetShown, !showsCollections else { return }
+            await shelf.loadAlphabet(model, from: source)
         }
         // A different filter or sorting scrolls to the top. Otherwise the view would stay
         // in the middle of the new list.
@@ -295,6 +362,41 @@ struct LibraryView: View {
             choice = new
             newLoad()
         }
+    }
+
+    // MARK: Letter strip
+
+    /// The scroll content's coordinate space, for ``gridTop``.
+    private static let contentSpace = "libraryContent"
+    /// Between two rows of the grid (`LazyVGrid(spacing:)`).
+    private static let rowSpacing: CGFloat = 20
+
+    /// Only where it means something: switched on, sorted by name, a grid of titles, and
+    /// more than one letter.
+    private var shownAlphabet: AlphabetIndex? {
+        guard model.alphabetShown, shelf.sorting == .name, !showsCollections,
+              let alphabet = shelf.alphabet, alphabet.isUseful else { return nil }
+        return alphabet
+    }
+
+    /// Scrolls to the first title of a letter, loading up to it. A newer letter cancels
+    /// the jump under way.
+    private func jumpTo(_ letter: String) {
+        jumpTask?.cancel()
+        jumpTask = Task {
+            guard let source, let id = await shelf.jumpTarget(letter, model: model, from: source),
+                  !Task.isCancelled else { return }
+            jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
+        }
+    }
+
+    /// The letter of the first loaded title on screen. **Written only when it changes**:
+    /// tiles come and go on every scroll.
+    private func updateTopLetter() {
+        guard shownAlphabet != nil,
+              let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        if letter != topLetter { topLetter = letter }
     }
 
     /// An estimate is enough for paging: whether the third-to-last row starts at six or

@@ -353,11 +353,9 @@ public struct TextCatalog: Sendable {
     /// sentence would not come out right without the full CLDR rules anyway; they
     /// therefore fall back to the plain translation instead of being guessed.
     ///
-    /// **The rule `n == 1` is right for German and English**, and those are the two
-    /// languages in the catalog. If a third is added whose plural counts differently
-    /// (French counts 0 as singular, Polish has four forms), a real category
-    /// selection must go here. Until then it would be invented code for a case that
-    /// does not exist.
+    /// **The category comes from ``PluralCategory``**, per language: Russian needs
+    /// three forms where German and English need two. A missing category falls back
+    /// to `other`.
     private func moreNumberPreStatus(_ key: TextKey) -> String? {
         guard let rule = plural[key.format],
               rule.variables.count == 1,
@@ -368,7 +366,8 @@ public struct TextCatalog: Sendable {
               numbers.count == 1, let figure = numbers.first
         else { return nil }
 
-        guard let wording = (figure == 1 ? categoryTags["one"] : nil) ?? categoryTags["other"]
+        guard let wording = categoryTags[PluralCategory.of(figure, language: language)]
+                ?? categoryTags["other"]
         else { return nil }
         return rule.format.replacingOccurrences(of: "%#@\(name)@", with: wording)
     }

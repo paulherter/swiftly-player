@@ -28,7 +28,7 @@ Sag 'config.h schreiben'
 #define LOTTIE_CACHE_SUPPORT
 '@ | Set-Content "$quelle\src\vector\config.h" -Encoding ascii
 
-. C:\swiftly\Windows\environment.ps1
+. "$PSScriptRoot\..\Windows\environment.ps1"
 Set-Location $quelle
 $obj = "$quelle\obj"
 Remove-Item -Recurse -Force $obj -EA SilentlyContinue

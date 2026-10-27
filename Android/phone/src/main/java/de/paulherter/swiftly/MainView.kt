@@ -290,10 +290,10 @@ private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destina
             when (section) {
                 Region.Start -> StartPage(app, open)
                 Region.Movies -> LibraryPage(app, "movies", translated("Filme"),
-                                                 listOf("alle", "angefangen", "merkliste", "ungesehen"), open)
+                                                 offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
                 // For series "unwatched" helps little; the same list as on iOS.
                 Region.Series -> LibraryPage(app, "tvshows", translated("Serien"),
-                                                  listOf("alle", "angefangen", "merkliste"), open)
+                                                  offeredFilters(listOf("alle", "angefangen", "merkliste"), app.settings.watchlist), open)
                 Region.Downloads -> DownloadsPage(app, open)
                 Region.Search -> SuchPage(app, open)
             }

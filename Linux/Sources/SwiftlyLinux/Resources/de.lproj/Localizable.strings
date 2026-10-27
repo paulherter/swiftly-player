@@ -589,3 +589,12 @@
 "Dieser Schlüssel gehört zu einer anderen App." = "Dieser Schlüssel gehört zu einer anderen App.";
 "Unterstützer im Monatsabo" = "Unterstützer im Monatsabo";
 "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft." = "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft.";
+
+/* Merkliste abschaltbar */
+"Seite, Filter und Knopf auf Film- und Serienseiten" = "Seite, Filter und Knopf auf Film- und Serienseiten";
+/* Buchstabenleiste neben „Nach Name“ */
+"Alphabetische Suche in Listen" = "Alphabetische Suche in Listen";
+"Alphabet" = "Alphabet";
+
+/* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
+"Fassung wählen" = "Fassung wählen";

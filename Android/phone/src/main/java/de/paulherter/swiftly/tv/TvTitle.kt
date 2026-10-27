@@ -343,7 +343,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                     title?.let { it.backdrop ?: it.headerImage }, true, title?.secondaryLine,
                                     afterwards = { run.launch { newLoad() } }))
                             } }) {
-                        if (title?.planPresent == true) app.play.value = PlayRequest(target.id, title.resumeFrom)
+                        if (title?.planPresent == true) de.paulherter.swiftly.playOrChoose(app, title, target.id, title.resumeFrom)
                         // Without a title nobody knows whether a file exists; ask again first.
                         else if (title == null && disrupted) { disrupted = false; run.launch { load() } }
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
@@ -352,14 +352,16 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         if (title.planPresent) app.play.value = PlayRequest(target.id, null)
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
                     }
-                    TvButton(null, if (title?.remembered == true) Glyph.BookmarkFilled else Glyph.Bookmark,
-                            description = translated("Merkliste"), active = title?.remembered == true) {
-                        val an = !(title?.remembered ?: false)
-                        title?.let { t = it.copy(remembered = an) }
-                        // Like "Watched": revert and report. Before, the mark silently jumped back.
-                        run.launch {
-                            val reason = withContext(Dispatchers.IO) { app.kern.remember(target.id, an).await() }
-                            if (reason.isNotEmpty()) { title?.let { t = it }; message = errorString(reason) }
+                    if (app.settings.watchlist) {
+                        TvButton(null, if (title?.remembered == true) Glyph.BookmarkFilled else Glyph.Bookmark,
+                                description = translated("Merkliste"), active = title?.remembered == true) {
+                            val an = !(title?.remembered ?: false)
+                            title?.let { t = it.copy(remembered = an) }
+                            // Like "Watched": revert and report. Before, the mark silently jumped back.
+                            run.launch {
+                                val reason = withContext(Dispatchers.IO) { app.kern.remember(target.id, an).await() }
+                                if (reason.isNotEmpty()) { title?.let { t = it }; message = errorString(reason) }
+                            }
                         }
                     }
                     // `TvMoreButton` instead of `app.sheet`: on tvOS the menu opens directly below the button, not as

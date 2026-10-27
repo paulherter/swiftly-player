@@ -136,7 +136,7 @@ class PlayerActivity : ComponentActivity() {
     private fun againRecord(app: SwiftlyApplication, condition: Bundle?): PlayRequest? {
         val id = condition?.getString(PLAY_ID) ?: return null
         if (!app.sessionAgainFromSet() && app.downloads.file(id) == null) return null
-        val w = PlayRequest(id, condition.getDouble(PLAY_OFF, 0.0).takeIf { it > 1 })
+        val w = PlayRequest(id, condition.getDouble(PLAY_OFF, 0.0).takeIf { it > 1 }, condition.getString(PLAY_SOURCE).orEmpty())
         app.playHandOver = w
         app.play.value = w
         AppLog.writeOut("Player nach Prozessende wieder aufgenommen")
@@ -149,6 +149,7 @@ class PlayerActivity : ComponentActivity() {
         (app.playPoint?.takeIf { app.play.value != null } ?: app.play.value)?.let {
             outState.putString(PLAY_ID, it.id)
             it.since?.let { since -> outState.putDouble(PLAY_OFF, since) }
+            if (it.sourceID.isNotEmpty()) outState.putString(PLAY_SOURCE, it.sourceID)
         }
     }
 
@@ -206,6 +207,7 @@ internal fun imageImageAllowed(isTv: Boolean, canImageInImage: Boolean): Boolean
 
 private const val PLAY_ID = "spiel.id"
 private const val PLAY_OFF = "spiel.ab"
+private const val PLAY_SOURCE = "spiel.fassung"
 
 /**
  * As on iOS: while the film runs in the small window, the app below shows where it is, not itself.

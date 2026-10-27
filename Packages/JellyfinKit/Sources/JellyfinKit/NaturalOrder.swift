@@ -1,0 +1,116 @@
+import Foundation
+
+/// **"By name", in natural order**: digits first, then Latin titles, then titles in
+/// other scripts, each group in the order a reader expects.
+///
+/// Jellyfin cannot sort like this. It may sort by a transliterated name ("vyzhivshii"
+/// for "Выживший"), which mixes Cyrillic titles into the Latin ones; a Russian
+/// library then reads В, V, З, Z, Ж in turn. So the list is ordered here, from the slim
+/// list of all names (``JellyfinClient/items`` with `slim`), and the pages are fetched by
+/// ID in this order.
+///
+/// - **Digits and symbols** compare as numbers: "2+1" before "007" (7) before "12".
+/// - **Latin titles** compare by the server's sort name, so "The Adam Project" stays
+///   among the A's.
+/// - **Other scripts** (Cyrillic, Greek, Arabic, Chinese, …) compare first by their letter
+///   in the strip (``AlphabetIndex/order(_:)``), which keeps each script together and the
+///   grid in the strip's order; within one letter by the title in the device's language
+///   rules (in Russian, "Ё" sorts with "Е", as in a dictionary).
+public enum NaturalOrder {
+
+    /// Which block a title belongs to: 0 digits and symbols, 1 Latin, 2 other scripts.
+    public static func group(name: String, sortName: String?) -> Int {
+        let letter = AlphabetIndex.letter(name: name, sortName: sortName)
+        if letter == "#" { return 0 }
+        guard let v = letter.unicodeScalars.first?.value else { return 0 }
+        return (0x41...0x5A).contains(v) ? 1 : 2
+    }
+
+    /// The string a title is compared by within its block, without the quotes or brackets
+    /// in front («Старый» Новый год compares as "Старый» Новый год").
+    public static func key(name: String, sortName: String?) -> String {
+        let key = group(name: name, sortName: sortName) == 1 ? (sortName ?? name) : name
+        guard let start = key.firstIndex(where: { $0.isLetter || $0.isNumber }) else { return key }
+        return String(key[start...])
+    }
+
+    /// `true` when `a` comes before `b`.
+    public static func before(_ a: (name: String, sortName: String?),
+                              _ b: (name: String, sortName: String?),
+                              locale: Locale = .current) -> Bool {
+        let ga = group(name: a.name, sortName: a.sortName)
+        let gb = group(name: b.name, sortName: b.sortName)
+        if ga != gb { return ga < gb }
+        if ga == 2 {
+            let la = AlphabetIndex.order(AlphabetIndex.letter(name: a.name, sortName: a.sortName))
+            let lb = AlphabetIndex.order(AlphabetIndex.letter(name: b.name, sortName: b.sortName))
+            if la != lb { return la < lb }
+        }
+        let result = key(name: a.name, sortName: a.sortName)
+            .compare(key(name: b.name, sortName: b.sortName),
+                     options: [.numeric, .caseInsensitive, .widthInsensitive],
+                     range: nil, locale: locale)
+        if result != .orderedSame { return result == .orderedAscending }
+        // Same name twice (a remake): the server's order decides, kept by a stable sort.
+        return false
+    }
+
+    /// The titles in natural order. **Stable**: equal names keep the server's order.
+    public static func sorted<T>(_ titles: [T], locale: Locale = .current,
+                                 by title: (T) -> (name: String, sortName: String?)) -> [T] {
+        titles.enumerated()
+            .sorted { lhs, rhs in
+                let a = title(lhs.element), b = title(rhs.element)
+                if before(a, b, locale: locale) { return true }
+                if before(b, a, locale: locale) { return false }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+}
+
+// MARK: - Pages in natural order
+
+extension JellyfinClient {
+
+    /// **The whole list in "By name" order**: one slim request (ID, name, sort name, no
+    /// images), sorted here (``NaturalOrder``). The same parameters as the page query it
+    /// replaces; the caller keeps it for the later pages, the letter strip and its jumps.
+    public func naturalList(parentID: String?, sortOrder: String, filters: [String],
+                            isWatched: Bool?, recursive: Bool,
+                            includeItemTypes: [String]) async throws -> [Item] {
+        let answer = try await items(parentID: parentID, sortBy: Sorting.name.inputField,
+                                     sortOrder: sortOrder, filters: filters, isWatched: isWatched,
+                                     recursive: recursive, includeItemTypes: includeItemTypes,
+                                     slim: true)
+        return NaturalOrder.sorted(answer.items) { ($0.name, $0.sortName) }
+    }
+
+    /// **One page of such a list**, fetched by ID and put back into the list's order (the
+    /// server answers `Ids` in its own order). `totalRecordCount` is the list's length.
+    ///
+    /// **In batches of ``naturalBatch`` IDs.** A jump in the letter strip asks for hundreds
+    /// of titles at once, and 800 IDs in one query make an address of some 26 KB that the
+    /// server refuses: the page came back empty and the jump stopped at the last loaded
+    /// title. The batches run side by side.
+    public func naturalPage(_ list: [Item], since: Int, count: Int) async throws -> ItemsResponse {
+        let slice = Array(list.dropFirst(since).prefix(count))
+        guard !slice.isEmpty else { return ItemsResponse(items: [], totalRecordCount: list.count) }
+        let batches = stride(from: 0, to: slice.count, by: Self.naturalBatch).map {
+            Array(slice[$0..<min($0 + Self.naturalBatch, slice.count)]).map(\.id)
+        }
+        let fetched = try await withThrowingTaskGroup(of: [Item].self) { group in
+            for ids in batches {
+                group.addTask { try await self.items(limit: ids.count, ids: ids).items }
+            }
+            var all: [Item] = []
+            for try await part in group { all += part }
+            return all
+        }
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return ItemsResponse(items: slice.compactMap { byID[$0.id] }, totalRecordCount: list.count)
+    }
+
+    /// IDs per request in ``naturalPage(_:since:count:)``: some 3.3 KB of address.
+    public static let naturalBatch = 100
+}

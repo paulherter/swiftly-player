@@ -15,9 +15,9 @@
 ; shows a loading window meanwhile; see `Windows\Launcher\launcher.c`.
 
 #define Name "Swiftly"
-#define Fassung "1.0.6"
+#define Fassung "1.0.9"
 ; Build number, same as `Fassung.bau` in Linux/Sources/SwiftlyLinux/Version.swift.
-#define Bau "1"
+#define Bau "31"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"

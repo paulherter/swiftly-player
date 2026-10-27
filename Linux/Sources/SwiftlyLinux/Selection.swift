@@ -79,6 +79,12 @@ struct Choices: Codable {
     var backSeconds = 10
     var forwardSeconds = 30
     var progressOnTiles = true
+    /// **The watchlist can be switched off**: sidebar row, filter and the button on detail
+    /// pages. Same as `AppModel.watchlistShown`, default on.
+    var watchlistShown = true
+    /// **The letter strip beside "By name" grids**. Same as `AppModel.alphabetShown`,
+    /// default on.
+    var alphabetShown = true
     /// **Title as logo** on movie and series pages, when the server has one
     /// (Apple: `@AppStorage("titelAlsLogo")`, default off).
     var titleAsLogo = false
@@ -244,6 +250,8 @@ struct Choices: Codable {
         backSeconds        = w(.backSeconds, 10)
         forwardSeconds            = w(.forwardSeconds, 30)
         progressOnTiles  = w(.progressOnTiles, true)
+        watchlistShown   = w(.watchlistShown, true)
+        alphabetShown    = w(.alphabetShown, true)
         titleAsLogo           = w(.titleAsLogo, false)
         fillFrame           = w(.fillFrame, false)
         remainingTimeAsEnd        = w(.remainingTimeAsEnd, false)
@@ -289,7 +297,7 @@ struct Choices: Codable {
         case playbackPerServer = "wiedergabeJeServer"
         case audioLanguage = "tonSprache", subtitleLanguage = "untertitelSprache", subtitleAutomatic = "untertitelAutomatisch", newArrivalsDisconnected = "neuzugaengeGetrennt",
              nextAutomaticSelected = "naechsteAutomatischGewaehlt", backSeconds = "zurueckSekunden",
-             forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", titleAsLogo = "titelAlsLogo",
+             forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", watchlistShown = "merklisteAn", alphabetShown = "alphabetAn", titleAsLogo = "titelAlsLogo",
              fillFrame = "bildfuellend", remainingTimeAsEnd = "restzeitAlsEnde", volume = "lautstaerke",
              volumePrior = "lautstaerkeDavor", techBadge = "technikschild", skipAutomatic = "introAbspannAuto", downloadsAn, onlyOverWLAN = "nurUeberWLAN",
              bufferLevel = "pufferstufe", discordShow = "discordAnzeigen", searchHistory = "suchverlauf",
@@ -314,6 +322,8 @@ struct Choices: Codable {
         try c.encode(backSeconds, forKey: .backSeconds)
         try c.encode(forwardSeconds, forKey: .forwardSeconds)
         try c.encode(progressOnTiles, forKey: .progressOnTiles)
+        try c.encode(watchlistShown, forKey: .watchlistShown)
+        try c.encode(alphabetShown, forKey: .alphabetShown)
         try c.encode(titleAsLogo, forKey: .titleAsLogo)
         try c.encode(fillFrame, forKey: .fillFrame)
         try c.encode(remainingTimeAsEnd, forKey: .remainingTimeAsEnd)

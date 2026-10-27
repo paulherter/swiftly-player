@@ -30,6 +30,12 @@ struct LibraryView: View {
     /// remembered: a collection is a look into a series, not a place to return to.
     var collection: Item?
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the filter panel offers: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
 
     /// Paging, filtering and sorting live in `LibraryModel`, shared with the iPhone version.
     @State private var state: LibraryModel
@@ -59,6 +65,13 @@ struct LibraryView: View {
     /// Which tile has focus and which had it last, like `lastAtTitle` in `HomeView`.
     /// `atTitle` becomes `nil` when a detail page opens; `lastAtTitle` keeps the title.
     @FocusState private var atTitle: String?
+    /// The letter strip: where to scroll, which titles are on screen, and the letter of the
+    /// topmost one.
+    @State private var jump: ScrollJump?
+    @State private var onScreen = OnScreenTiles()
+    @State private var topLetter: String?
+    /// The jump under way; walking the letters quickly drops the older ones.
+    @State private var jumpTask: Task<Void, Never>?
     @State private var lastAtTitle: String?
     /// Sorting or filter changed and the response is pending: the grid keeps the old order, dimmed.
     @State private var switchedOver = false
@@ -96,6 +109,7 @@ struct LibraryView: View {
                     .padding(.top, Theme.gridTop)
                     .transition(.opacity)
             } else {
+                ScrollViewReader { reader in
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.capsuleRailPadding) {
                         if let collection {
@@ -140,11 +154,43 @@ struct LibraryView: View {
                 .onChange(of: atTitle) { _, now in
                     if let now { lastAtTitle = now }
                 }
+                // Not moved sideways (``ScrollJump/anchor``); a short glide per letter.
+                .onChange(of: jump) { _, new in
+                    guard let new, let index = state.items.firstIndex(where: { $0.id == new.id })
+                    else { return }
+                    let anchor = ScrollJump.anchor(index: index, columns: Theme.gridColumns,
+                                                   leading: Theme.edgePage, trailing: Theme.edgePage,
+                                                   usable: Theme.screenWidth - 2 * Theme.edgePage,
+                                                   spacing: Theme.gridColumn)
+                    withAnimation(Motion.select) { reader.scrollTo(new.id, anchor: anchor) }
+                }
+                }
             }
+        }
+        // In the right margin, beside the grid; the 80 pt margin already fits it.
+        .overlay(alignment: .trailing) {
+            if let alphabet = shownAlphabet {
+                TVAlphabetRail(index: alphabet, current: topLetter,
+                               preview: { letter in jumpTo(letter, focus: false) },
+                               choose: { letter in jumpTo(letter, focus: true) })
+                    .padding(.trailing, (Theme.edgePage - TVAlphabetRail.width) / 2)
+                    .padding(.top, Theme.contentTop + 40)
+                    .padding(.bottom, 60)
+            }
+        }
+        .task(id: "\(state.identifier)|\(source?.key ?? "")|\(model.accountSwitch)|\(model.alphabetShown)") {
+            guard model.alphabetShown, !listChoice else { return }
+            await state.loadAlphabet(model, from: source)
         }
         // A different list: the remembered title no longer belongs to it.
         .onChange(of: state.identifier) { lastAtTitle = nil; switchedOver = true }
         .onChange(of: choice) { lastAtTitle = nil }
+        // A filter the panel no longer offers (the watchlist, switched off) must not keep
+        // narrowing the grid with no entry left to undo it.
+        .task(id: offeredFilter) {
+            let kept = state.filter.kept(in: offeredFilter)
+            if kept != state.filter { state.filter = kept }
+        }
         // Collections and mixed libraries arrive later (from `offeringLoad()`). If that changes
         // what "All" reads or what may be selected, reload.
         .onChange(of: offeringId) { _, _ in
@@ -207,7 +253,7 @@ struct LibraryView: View {
     private var panelContent: (actions: [TitleAction], selected: Int?) {
         switch openPanel {
         case .filter:
-            (filterActions, filter.firstIndex(of: state.filter))
+            (filterActions, offeredFilter.firstIndex(of: state.filter))
         case .sorting:
             (sortActions, Sorting.allCases.firstIndex(of: state.sorting))
         case .library, nil:
@@ -217,7 +263,7 @@ struct LibraryView: View {
 
     /// The filters as a panel: same icons as sorting and library choice, same entries as on the iPhone.
     private var filterActions: [TitleAction] {
-        filter.map { f in
+        offeredFilter.map { f in
             TitleAction(symbol: state.filter == f ? "checkmark.circle.fill" : "circle",
                           text: "\(f.label)") { state.filter = f }
         }
@@ -353,11 +399,18 @@ struct LibraryView: View {
                 .buttonStyle(TileStyle())
                 .tileMenu(item, model: model)
                 .focused($atTitle, equals: item.id)
+                .id(item.id)
                 // Load more as soon as one of the last three rows appears, so the next page is there before focus reaches the bottom.
                 .onAppear {
+                    onScreen.ids.insert(item.id)
+                    updateTopLetter()
                     guard state.solvesLoadMoreOut(item.id, columns: Theme.gridColumns)
                     else { return }
                     Task { await loadMore() }
+                }
+                .onDisappear {
+                    onScreen.ids.remove(item.id)
+                    updateTopLetter()
                 }
             }
         }
@@ -532,6 +585,38 @@ struct LibraryView: View {
     private func loadMore() async {
         guard let source else { return }
         await state.loadMore(model, from: source)
+    }
+
+    // MARK: Letter strip
+
+    /// Only where it means something: switched on, sorted by name, a grid of titles, and
+    /// more than one letter.
+    private var shownAlphabet: AlphabetIndex? {
+        guard model.alphabetShown, state.sorting == .name, !listChoice,
+              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        return alphabet
+    }
+
+    /// Scrolls to the first title of a letter, loading up to it. With `focus` the title
+    /// also takes the focus (a press on the letter); without, focus stays on the strip
+    /// (walking the letters).
+    private func jumpTo(_ letter: String, focus: Bool) {
+        jumpTask?.cancel()
+        jumpTask = Task {
+            guard let source, let id = await state.jumpTarget(letter, model: model, from: source),
+                  !Task.isCancelled else { return }
+            jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
+            if focus { atTitle = id }
+        }
+    }
+
+    /// The letter of the first loaded title on screen. **Written only when it changes**:
+    /// tiles come and go on every scroll.
+    private func updateTopLetter() {
+        guard shownAlphabet != nil,
+              let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        if letter != topLetter { topLetter = letter }
     }
 }
 

@@ -34,6 +34,7 @@ struct RootView: View {
         .animation(.default, value: model.phase)
         // Once at the root, not on every tile. A setting decides which tile shows its progress bar, and call sites that pass `progress:` should not need to know. It is read where the bar is made; see `EnvironmentValues.progressOnTiles`.
         .environment(\.progressOnTiles, model.progressOnTiles)
+        .environment(\.watchlistShown, model.watchlistShown)
         // No light theme: the design is built for dark, which is the rule on tvOS anyway.
         .preferredColorScheme(.dark)
         .tint(Theme.accent)

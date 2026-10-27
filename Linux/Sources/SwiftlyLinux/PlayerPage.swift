@@ -34,7 +34,7 @@ extension App {
     /// - Parameter gruppe: the group (watch together) that opens this player.
     func playerOpen(_ item: Item, since: Double, fromFile file: URL? = nil,
                         pointFresh: Bool = false, prePlanned: PlaybackPlan? = nil,
-                        group: Bool = false) {
+                        group: Bool = false, sourceID: String? = nil) {
         guard client != nil || file != nil else { return }
         // Volume persists across titles (Mac: `playerLautstaerke`).
         mediaPlayer.volumeSet(Int((selection.volume * 100).rounded()))
@@ -164,7 +164,10 @@ extension App {
                 plan = prePlanned
             } else {
                 do {
-                    plan = try await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: limit))
+                    // The picked version beats the default; the plan preloaded on the
+                    // detail page (badge, file row) is never used here, it names the default.
+                    plan = try await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: limit),
+                                                         mediaSourceID: sourceID)
                 } catch let error as JellyfinError {
                     plan = nil
                     if case .playbackRejected = error { rejection = readableError(error) }

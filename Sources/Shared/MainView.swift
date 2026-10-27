@@ -177,6 +177,10 @@ struct MainView: View {
                 .onChange(of: wide) { _, nowWide in
                     if !nowWide, section == .watchlist { section = .start }
                 }
+                // And when the watchlist is switched off in Appearance.
+                .onChange(of: model.watchlistShown) { _, shown in
+                    if !shown, section == .watchlist { section = .start }
+                }
             }
             .environment(\.downloadBar,
                          DownloadBar(an: model.downloadsAn,
@@ -392,7 +396,7 @@ struct MainView: View {
             sectionKey("Start", .start, "1")
             sectionKey("Filme", .movies, "2")
             sectionKey("Serien", .seriesList, "3")
-            if wide { sectionKey("Merkliste", .watchlist, "4") }
+            if wide, model.watchlistShown { sectionKey("Merkliste", .watchlist, "4") }
             if model.downloadsAn { sectionKey("Downloads", .downloads, "5") }
             sectionKey("Suchen", .search, "f")
             Button("Einstellungen") { toSettings() }
@@ -558,10 +562,21 @@ struct LibraryView: View {
     /// For series the third filter is named differently: "unwatched" helps
     /// little there, "new episodes" is the question people actually have.
     var filter: [LibraryFilter] = LibraryFilter.allCases
+    @Environment(\.watchlistShown) private var watchlistShown
+
+    /// What the pills offer: without the watchlist when it is switched off.
+    private var offeredFilter: [LibraryFilter] {
+        LibraryFilter.offered(filter, watchlist: watchlistShown)
+    }
 
     /// Paging, filtering and sorting live in `LibraryModel`, shared with
     /// the tvOS version.
     @State private var state: LibraryModel
+    /// The letter strip: where to scroll, which titles are on screen, and the letter of
+    /// the topmost one.
+    @State private var jump: ScrollJump?
+    @State private var onScreen = OnScreenTiles()
+    @State private var topLetter: String?
     @State private var sortListOpen = false
     @State private var filterListOpen = false
 
@@ -631,7 +646,7 @@ struct LibraryView: View {
         // The width must be known before the grid: `LazyVGrid` takes its columns
         // as an argument, not as a result.
         GeometryReader { frameRect in
-            content(usableNow: frameRect.size.width - 2 * Theme.margin(wide: wide))
+            content(usableNow: frameRect.size.width - Theme.margin(wide: wide) - trailingLane)
         }
         // **Before the sheets.** The order is the whole point: content, bar,
         // sheet. The reason is at `sectionBar()`.
@@ -647,7 +662,7 @@ struct LibraryView: View {
         // sheet motion; it was unchanged after reverting to the verified state.
         // **Without `if`: the container stays, the sheet gates itself.** Only so
         // do the transitions of scrim and card run separately.
-        .shelfSheets(state: state, filter: filter,
+        .shelfSheets(state: state, filter: offeredFilter,
                        filterOpen: $filterListOpen, sortingOpen: $sortListOpen)
         // No `Menu`. The same `SelectionSheet` as for sorting; the
         // "Libraries" section separates the libraries from "All" and
@@ -717,6 +732,7 @@ struct LibraryView: View {
         return ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
 
+            ScrollViewReader { reader in
             ScrollView {
                 // **Placeholder instead of a spinner.** While nothing is there, the grid
                 // already shows its shape, so the page looks empty, not waiting. It
@@ -740,17 +756,25 @@ struct LibraryView: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(item, model: model)
+                        .id(item.id)
                         // Load more as soon as the third-to-last row appears, so the next batch
                         // is ready before the bottom is reached.
                         .onAppear {
+                            onScreen.ids.insert(item.id)
+                            updateTopLetter()
                             guard state.solvesLoadMoreOut(item.id, columns: count),
                                   let source else { return }
                             Task { await state.loadMore(model, from: source) }
                         }
+                        .onDisappear {
+                            onScreen.ids.remove(item.id)
+                            updateTopLetter()
+                        }
                     }
                     }
                 }
-                .padding(.horizontal, Theme.margin(wide: wide))
+                .padding(.leading, Theme.margin(wide: wide))
+                .padding(.trailing, trailingLane)
                 .padding(.top, 8)
                 .opacity(state.items.isEmpty && !listChoice ? 0 : 1)
 
@@ -785,6 +809,40 @@ struct LibraryView: View {
             // you are already in.
             .toTop(order: "\(state.identifier)|\(choice)", anotherTime: anotherTime,
                       active: sectionActive)
+            // **A plain reader, not scroll targets.** `scrollTargetLayout` made the scroll
+            // view anchor on tiles and, when the list changed (library, filter), centre them
+            // sideways: the grid ended up off to the left. `.topLeading` never moves it
+            // sideways either.
+            // A short glide from letter to letter; while sliding along the strip each new
+            // letter simply takes over the glide.
+            .onChange(of: jump) { _, new in
+                guard let new else { return }
+                let anchor = jumpAnchor(for: new.id, columns: count, usableNow: usableNow)
+                withAnimation(Motion.select) {
+                    reader.scrollTo(new.id, anchor: anchor)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if let alphabet = shownAlphabet {
+                    // **Appears at once, with the margin and the columns.** An animated relayout
+                    // of a long grid is what pushed it sideways.
+                    AlphabetRail(index: alphabet, current: topLetter) { letter in
+                        Task {
+                            guard let source,
+                                  let id = await state.jumpTarget(letter, model: model, from: source)
+                            else { return }
+                            jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
+                        }
+                    }
+                    .padding(.trailing, (trailingLane - AlphabetRail.width) / 2)
+                    .padding(.top, 8)
+                    .padding(.bottom, wide ? 24 : Theme.stripHeight + 12)
+                }
+            }
+            .task(id: "\(state.identifier)|\(source?.key ?? "")|\(model.accountSwitch)|\(model.alphabetShown)") {
+                guard model.alphabetShown, !listChoice else { return }
+                await state.loadAlphabet(model, from: source)
+            }
             // The finger's path, not the offset adjusted for the edge; why is
             // explained in `HeaderScrollDistance` in the package.
             .scrollDistance(active: sectionActive) { offset = $0 }
@@ -813,6 +871,7 @@ struct LibraryView: View {
             // adjusts the inset itself and lets content run underneath: the same
             // image without feedback. There is no number left that could be wrong.
             .safeAreaInset(edge: .top, spacing: 0) { header }
+            }
 
 
             if listChoice {
@@ -925,7 +984,7 @@ struct LibraryView: View {
                 // sit in a sidebar composition with plenty of room, and the header does
                 // not take half a row of tiles. Collapsing solves a problem that does not
                 // exist wide.
-                ShelfControls(state: state, filter: filter,
+                ShelfControls(state: state, filter: offeredFilter,
                                filterOpen: $filterListOpen,
                                sortingOpen: $sortListOpen,
                                offset: offset,
@@ -1012,6 +1071,42 @@ struct LibraryView: View {
 
     /// "Collections" and "Playlists" come from memory, not from a query.
     private var listChoice: Bool { choice == .collections || choice == .playlists }
+
+    /// The strip only where it means something: switched on, sorted A–Z, a grid of titles,
+    /// and more than one letter.
+    private var shownAlphabet: AlphabetIndex? {
+        guard model.alphabetShown, state.sorting == .name, !listChoice,
+              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        return alphabet
+    }
+
+    /// The anchor that jumps to a tile without moving the grid sideways
+    /// (``ScrollJump/anchor(index:columns:leading:trailing:usable:spacing:)``).
+    private func jumpAnchor(for id: String, columns: Int, usableNow: CGFloat) -> UnitPoint {
+        guard let index = state.items.firstIndex(where: { $0.id == id }) else { return .top }
+        return ScrollJump.anchor(index: index, columns: columns, leading: Theme.margin(wide: wide),
+                                 trailing: trailingLane, usable: usableNow, spacing: Theme.tileSpacing)
+    }
+
+    /// **The right margin makes room for the strip** and centres it, so the gap to the
+    /// screen edge and the gap to the posters are the same. On iPhone the margin grows
+    /// from 18 to the strip's width; on iPad the wide margin already fits it. Without the
+    /// strip (not "By name", or switched off) the margin is the usual one again.
+    private var trailingLane: CGFloat {
+        let margin = Theme.margin(wide: wide)
+        return shownAlphabet == nil ? margin : max(margin, AlphabetRail.width)
+    }
+
+    /// The letter of the first loaded title on screen (the grid keeps a row or so beyond
+    /// the edge alive, so the top row or the one just above it). **Written only when it
+    /// changes**: tiles come and go on every scroll, and a state change per tile would
+    /// redraw the whole page each time.
+    private func updateTopLetter() {
+        guard shownAlphabet != nil,
+              let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        if letter != topLetter { topLetter = letter }
+    }
 
     private var playlistList: [VideoPlaylist] {
         model.playlistDirectory?.playlists(art: art) ?? []

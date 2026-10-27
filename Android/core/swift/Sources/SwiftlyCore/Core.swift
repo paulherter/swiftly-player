@@ -634,7 +634,7 @@ public final class Kern: @unchecked Sendable {
             // **Android TV header zone only.** `HeaderInfo` on tvOS shows rating and certification on
             // the home page just as on the detail page (it reads straight from the `Item`), and the
             // description was not in the answer at all.
-            rating: i.communityRating, sharing: i.officialRating, description: i.description,
+            rating: i.communityRating, sharing: i.ageRating, description: i.description,
             backdrop: Kern.backdrop(i, episode: nil, addresses: a))
     }
 
@@ -703,7 +703,7 @@ public final class Kern: @unchecked Sendable {
                 yearRuntime: yearRuntime,
                 headerImage: ImageSelection.headerWithFallback(i, episode: nil, addresses: a)?.absoluteString,
                 logo: ImageSelection.logo(i, addresses: a)?.absoluteString,
-                rating: i.communityRating, sharing: i.officialRating,
+                rating: i.communityRating, sharing: i.ageRating,
                 planPresent: p != nil, lossless: p?.isLossless ?? false, method: p.map { $0.method.rawValue },
                 resumeFrom: since, resumeText: since.map { timeText($0) },
                 remainingTime: i.remainingTimeText, progress: i.userData?.playedPercentage.map { $0 / 100 },
@@ -713,7 +713,13 @@ public final class Kern: @unchecked Sendable {
                 },
                 remembered: i.userData?.isFavorite ?? false, watched: i.userData?.played ?? false,
                 trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, file: file,
-                backdrop: Kern.backdrop(i, episode: nil, addresses: a)))
+                backdrop: Kern.backdrop(i, episode: nil, addresses: a),
+                versions: MediaVersions.choices(i.mediaSources).compactMap { v in
+                    // Same label as `ItemDetailView.versionLabel` on iOS.
+                    guard let id = v.id else { return nil }
+                    let detail = v.versionDetail
+                    return VersionResponse(id: id, label: detail.isEmpty ? v.versionName : "\(v.versionName) · \(detail)")
+                }))
         }
     }
 
@@ -765,7 +771,7 @@ public final class Kern: @unchecked Sendable {
                 // `state` is the next or first episode, the same one iOS looks for as the substitute.
                 headerImage: ImageSelection.headerWithFallback(series, episode: state, addresses: a)?.absoluteString,
                 logo: ImageSelection.logo(series, addresses: a)?.absoluteString,
-                rating: series.communityRating, sharing: series.officialRating, description: series.description,
+                rating: series.communityRating, sharing: series.ageRating, description: series.description,
                 remembered: series.userData?.isFavorite ?? false, watched: series.userData?.played ?? false,
                 trailer: series.remoteTrailers?.first?.url.map { "\($0)" },
                 planPresent: false, lossless: false, method: nil,
@@ -1082,9 +1088,12 @@ public final class Kern: @unchecked Sendable {
     /// the handover otherwise broke silently.
     ///
     /// Every opened player gets its own `EpisodeSwitch`; its `geschlossen` is final.
-    public func playbackOpen(id: String) async throws -> String {
+    ///
+    /// `sourceID`: the version the user picked when a title has several (empty = the best one),
+    /// as `AppModel.plan(for:sourceID:)` on iOS.
+    public func playbackOpen(id: String, sourceID: String) async throws -> String {
         return try await throwReadable { () async throws -> String in
-            let w = try await playbackFetch(id: id)
+            let w = try await playbackFetch(id: id, sourceID: sourceID.isEmpty ? nil : sourceID)
             barrier.lock(); _playback = w; _episodesSwitch = EpisodeSwitch(); _chapter = []
             _prepared = nil; _preparation = nil; barrier.unlock()
             return try playbackPlanResponse(w)
@@ -1093,7 +1102,7 @@ public final class Kern: @unchecked Sendable {
 
     /// Fetch only, set nothing, so an episode switch can leave the old playback in place until
     /// the new one is safely there.
-    private func playbackFetch(id: String) async throws -> Playback {
+    private func playbackFetch(id: String, sourceID: String? = nil) async throws -> Playback {
         // **If the episode is on this device, no server is needed** (`AppModel.plan(for:)`).
         // Otherwise "Next episode" on a plane ran into the server timeout even though the file is there.
         if let w = lockRead({ slab(id: id) }) { return w }
@@ -1101,7 +1110,7 @@ public final class Kern: @unchecked Sendable {
         // Capabilities go with the start report (`reportRail`); here they used to wait before the plan.
         let item = try await c.item(id: id)
         let limit = profileBitrate
-        async let planned = c.playbackPlan(for: id, profile: .vlc(maxBitrate: limit))
+        async let planned = c.playbackPlan(for: id, profile: .vlc(maxBitrate: limit), mediaSourceID: sourceID)
         async let parts = sections(for: id, c)
         async let afterThat = nextEpisode(to: item, c)
         guard let plan = try await planned else { throw URLError(.resourceUnavailable) }
@@ -3249,7 +3258,8 @@ public final class Kern: @unchecked Sendable {
             subline: episode ? i.episodeCode : i.productionYear.map(String.init),
             poster: ImageSelection.portrait(i, addresses: a)?.absoluteString,
             progress: i.userData?.playedPercentage.map { $0 / 100 },
-            mark: mark, markCount: figure)
+            mark: mark, markCount: figure,
+            letter: AlphabetIndex.letter(name: i.name, sortName: i.sortName))
     }
 
     private func json<T: Encodable>(_ value: T) throws -> String {
@@ -3389,8 +3399,33 @@ public final class Kern: @unchecked Sendable {
         case total = "gesamt"
         case filtered = "gesiebt"
         case evenMore = "nochMehr"
+        case letters = "buchstaben"
     }
         let title: [GridTileResponse]; let total: Int; let filtered, evenMore: Bool
+        /// The letter strip, with the first page of a "By name" list only.
+        var letters: [LetterEntry]? = nil
+    }
+    /// One letter of the strip (``AlphabetIndex/Entry``): `{"buchstabe","ab"}`.
+    struct LetterEntry: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case letter = "buchstabe"
+        case first = "ab"
+    }
+        let letter: String; let first: Int
+    }
+
+    /// The naturally sorted list for a grid: fresh with the first page, kept for the next.
+    private func naturalList(_ c: JellyfinClient, key: String, since: Int,
+                             fetch: () async throws -> [Item]) async throws -> [Item] {
+        if since > 0, let kept = locked({ _natural }), kept.key == key { return kept.list }
+        let list = try await fetch()
+        locked { _natural = (key, list) }
+        return list
+    }
+
+    private static func letters(_ list: [Item]) -> [LetterEntry] {
+        AlphabetIndex(titles: list.map { ($0.name, $0.sortName) }).entries
+            .map { LetterEntry(letter: $0.letter, first: $0.first) }
     }
     private struct CollectionEntry: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -3423,6 +3458,9 @@ public final class Kern: @unchecked Sendable {
     /// "All" across several libraries: the filter plus state in server paging
     /// (`LibraryModel.filterRef`, `rawOffset`, `rawTotal`).
     private var _filter: (key: String, filterRef: TitleFilter, offset: Int, raw: Int)?
+    /// **"By name" in natural order** (``NaturalOrder``): the slim list of the open grid,
+    /// fetched with its first page, read by the later pages.
+    private var _natural: (key: String, list: [Item])?
 
     private func locked<T>(_ perform: () -> T) -> T {
         barrier.lock(); defer { barrier.unlock() }
@@ -3543,17 +3581,28 @@ public final class Kern: @unchecked Sendable {
             guard let source else {
                 return try json(SectionPagesResponse(title: [], total: 0, filtered: false, evenMore: false))
             }
+            // "By name": pages are slices of the naturally sorted list (``NaturalOrder``).
+            let natural: [Item]? = s == .name
+                ? try await naturalList(c, key: "\(ObjectIdentifier(c))|\(source.key)|\(f.rawValue)",
+                                        since: since) {
+                    try await c.naturalList(parentID: source.parent, sortOrder: source.bearing(.name),
+                                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                            recursive: source.recursive, includeItemTypes: source.types)
+                }
+                : nil
+            let letters = since == 0 ? natural.map(Self.letters) : nil
             func page(_ start: Int, _ amount: Int) async throws -> ItemsResponse {
-                try await c.items(parentID: source.parent, limit: amount, startIndex: start,
-                                  sortBy: s.inputField, sortOrder: source.bearing(s),
-                                  filters: f.jellyfinFilter, isWatched: f.isWatched,
-                                  recursive: source.recursive, includeItemTypes: source.types)
+                if let natural { return try await c.naturalPage(natural, since: start, count: amount) }
+                return try await c.items(parentID: source.parent, limit: amount, startIndex: start,
+                                         sortBy: s.inputField, sortOrder: source.bearing(s),
+                                         filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                         recursive: source.recursive, includeItemTypes: source.types)
             }
             guard source.isFiltering else {
                 let answer = try await page(since, count)
                 return try json(SectionPagesResponse(title: answer.items.map { gridTile($0, a) },
                                                       total: answer.totalRecordCount,
-                                                      filtered: false, evenMore: false))
+                                                      filtered: false, evenMore: false, letters: letters))
             }
             let key = "\(ObjectIdentifier(c))|\(source.key)|\(s.rawValue)|\(f.rawValue)"
             let before = locked { _filter }
@@ -3588,7 +3637,8 @@ public final class Kern: @unchecked Sendable {
             locked { _filter = done }
             return try json(SectionPagesResponse(title: new.map { gridTile($0, a) }, total: filterRef.total,
                                                   filtered: true,
-                                                  evenMore: ListRules.stillMorePresent(loaded: offset, total: raw)))
+                                                  evenMore: ListRules.stillMorePresent(loaded: offset, total: raw),
+                                                  letters: letters))
         }
     }
 
@@ -3688,6 +3738,20 @@ public final class Kern: @unchecked Sendable {
             let s = Sorting(rawValue: sorting) ?? .erscheinung
             let f = LibraryFilter(rawValue: filter) ?? .all
             let source = ShelfSource(parent: id, art: art.isEmpty ? nil : art, collection: true)
+            // "By name" as in the libraries: pages from the naturally sorted list, the strip's
+            // letters with the first page.
+            if s == .name {
+                let natural = try await naturalList(c, key: "\(ObjectIdentifier(c))|\(source.key)|\(f.rawValue)",
+                                                    since: since) {
+                    try await c.naturalList(parentID: source.parent, sortOrder: source.bearing(.name),
+                                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                            recursive: source.recursive, includeItemTypes: source.types)
+                }
+                let answer = try await c.naturalPage(natural, since: since, count: count)
+                return try json(GridPagesResponse(title: answer.items.map { gridTile($0, a) },
+                                                    total: answer.totalRecordCount,
+                                                    letters: since == 0 ? Self.letters(natural) : nil))
+            }
             let answer = try await c.items(parentID: source.parent, limit: count, startIndex: since,
                                             sortBy: s.inputField, sortOrder: source.bearing(s),
                                             filters: f.jellyfinFilter, isWatched: f.isWatched,
@@ -3773,8 +3837,11 @@ struct GridPagesResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case title = "titel"
         case total = "gesamt"
+        case letters = "buchstaben"
     }
- let title: [GridTileResponse]; let total: Int }
+ let title: [GridTileResponse]; let total: Int
+    /// The letter strip, with the first page of a "By name" list only.
+    var letters: [Kern.LetterEntry]? = nil }
 struct GridTileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
@@ -3785,6 +3852,7 @@ struct GridTileResponse: Encodable {
         case progress = "fortschritt"
         case mark = "marke"
         case markCount = "markenzahl"
+        case letter = "buchstabe"
     }
     let id, title, type: String
     let subline, poster: String?
@@ -3792,6 +3860,8 @@ struct GridTileResponse: Encodable {
     /// `watched`, `opened`, `seasons`, or nothing.
     let mark: String?
     let markCount: Int
+    /// The tile's letter in the strip of a "By name" grid (``AlphabetIndex``).
+    var letter: String? = nil
 }
 struct TitleResponse: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -3819,6 +3889,7 @@ struct TitleResponse: Encodable {
         case trailer
         case file = "datei"
         case backdrop = "kulisse"
+        case versions = "fassungen"
     }
     let id, name, type, secondaryLine: String
     /// "2026 · 1 h 52 min", without genre, for the TV.
@@ -3843,6 +3914,12 @@ struct TitleResponse: Encodable {
     let file: FileResponse?
     /// See `Kern.backdrop`: the same URL as `TileResponse.backdrop`.
     let backdrop: String?
+    /// The versions to choose from (`MediaVersions.choices`); empty when there is no choice.
+    let versions: [VersionResponse]
+}
+/// One version of a title: its source ID and the line shown in the choice ("Name · 1080p · HEVC · 18,6 GB").
+struct VersionResponse: Encodable {
+    let id, label: String
 }
 struct SeriesResponse: Encodable {
     enum CodingKeys: String, CodingKey {

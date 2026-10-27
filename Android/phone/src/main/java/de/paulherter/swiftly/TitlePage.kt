@@ -92,7 +92,26 @@ data class Title(
     val progress: Double? = null,
     /** Title logo if the server has one, see `TitleMark`. */
     val logo: String? = null,
+    /** The versions to choose from when the play button is pressed (`MediaVersions.choices`); empty = no choice. */
+    val versions: List<Version> = emptyList(),
 )
+
+/** One version of a title: its source ID and the line shown in the choice ("Name · 1080p · HEVC · 18,6 GB"). */
+data class Version(val id: String, val label: String)
+
+/**
+ * Mirrors the play button of `ItemDetailView` (iOS): **a title with several versions asks which one on
+ * press** (4K next to 1080p, theatrical next to extended cut). One version, or a finished copy on the
+ * device (the downloaded file is the one that plays), starts at once. A download still running does not
+ * count: playback then streams from the server.
+ */
+internal fun playOrChoose(app: SwiftlyApplication, t: Title?, id: String, since: Double?, beforePlay: () -> Unit = {}) {
+    val versions = if (app.downloads.file(id) == null) t?.versions.orEmpty() else emptyList()
+    if (versions.isEmpty()) { beforePlay(); app.play.value = PlayRequest(id, since); return }
+    app.sheet.value = SheetRequest(translated("Fassung wählen"), versions.map { Choice(it.id, it.label) }, null, longRows = true) { source ->
+        beforePlay(); app.play.value = PlayRequest(id, since, source)
+    }
+}
 
 internal fun JSONObject.fieldText(inputField: String): String? = if (isNull(inputField)) null else getString(inputField)
 internal fun JSONObject.fieldNumber(inputField: String): Double? = if (isNull(inputField)) null else getDouble(inputField)
@@ -113,7 +132,8 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
           o.optJSONObject("datei")?.let { d ->
               FileInfo(d.fieldText("container"), d.fieldText("video"), d.fieldTexts("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
           }, if (o.has("kulisse")) o.fieldText("kulisse") else null,
-          o.fieldText("restzeit"), o.fieldNumber("fortschritt"), o.fieldText("logo"))
+          o.fieldText("restzeit"), o.fieldNumber("fortschritt"), o.fieldText("logo"),
+          o.fieldList("fassungen") { Version(it.getString("id"), it.getString("label")) })
 }
 
 /** The facade reports "not signed in" as an identifier because the wording lives in the app catalog. */
@@ -260,12 +280,14 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                     lengthy = menu?.let { m -> {
                         m(TileMenuRequest(target.id, name, t?.type?.ifEmpty { null } ?: "Movie", t?.headerImage, landscape = true,
                                              t?.secondaryLine, afterwards = { section.launch { refresh() } }))
-                    } }) { since -> jerk(Jerk.Medium); app.play.value = PlayRequest(target.id, since) }
+                    } }) { since -> playOrChoose(app, t, target.id, since) { jerk(Jerk.Medium) } }
                 if (titleDisturbed && t == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                     retry = { titleDisturbed = false; section.launch { load() } })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
-                        toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
+                    if (app.settings.watchlist) {
+                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
+                            toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
+                        }
                     }
                     // The fifth field, only when the feature is on; next to the watchlist, as the "for later" pair.
                     if (app.settings.downloadButtonShow && t?.type != "Series") DownloadField(app, target.id, name)

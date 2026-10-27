@@ -586,3 +586,12 @@
 "Dieser Schlüssel gehört zu einer anderen App." = "This key belongs to another app.";
 "Unterstützer im Monatsabo" = "Supporter, monthly plan";
 "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft." = "Since %@. Valid until %@ and renews by itself while the plan runs.";
+
+/* Merkliste abschaltbar */
+"Seite, Filter und Knopf auf Film- und Serienseiten" = "Page, filter and button on movie and show pages";
+/* Buchstabenleiste neben „Nach Name“ */
+"Alphabetische Suche in Listen" = "Alphabetical search in lists";
+"Alphabet" = "Alphabet";
+
+/* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
+"Fassung wählen" = "Choose version";

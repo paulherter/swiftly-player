@@ -68,7 +68,9 @@ import org.json.JSONObject
 import java.text.NumberFormat
 
 data class GridTile(val id: String, val title: String, val type: String, val subline: String?, val poster: String?,
-                        val progress: Double?, val mark: String?, val markCount: Int)
+                        val progress: Double?, val mark: String?, val markCount: Int,
+                        /** The tile's letter in the strip of a "By name" grid (`AlphabetIndex`). */
+                        val letter: String? = null)
 
 /** Like `AppModel.pagesSize`. */
 private const val PAGE = 60L
@@ -78,7 +80,8 @@ private fun JSONObject.textOrNull(inputField: String): String? = if (isNull(inpu
 /** Reads a tile from `Kern.libraryPage` and `Kern.titleField`, same shape. */
 fun gridTileRead(k: JSONObject) = GridTile(
     k.getString("id"), k.getString("titel"), k.optString("typ"), k.textOrNull("unterzeile"), k.textOrNull("plakat"),
-    if (k.isNull("fortschritt")) null else k.getDouble("fortschritt"), k.textOrNull("marke"), k.optInt("markenzahl"))
+    if (k.isNull("fortschritt")) null else k.getDouble("fortschritt"), k.textOrNull("marke"), k.optInt("markenzahl"),
+    k.textOrNull("buchstabe"))
 
 /** The words for sorting and filtering come from the package, the same as on Apple and Linux. */
 object Choices {
@@ -120,6 +123,8 @@ class LibraryState(val art: String, private val store: Store) {
     /** The video playlists with entries in this scope (`PlaylistDirectory`); in memory like the collections. */
     var playlistList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
     var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: "name"); private set
+    /** The letter strip of a "By name" list (`LibraryModel.alphabet`); empty otherwise. */
+    var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     var filter by mutableStateOf(store.rememberValue("filter.$art") ?: "alle"); private set
     private var loadsPost = false
     /** What `items` were loaded for: equal means refresh, different means replace. */
@@ -239,12 +244,13 @@ class LibraryState(val art: String, private val store: Store) {
         loads = false
     }
 
-    suspend fun loadMore(kern: Kern) {
+    /** `count`: a jump in the letter strip asks for more than a page. */
+    suspend fun loadMore(kern: Kern, count: Long = PAGE) {
         if (!stillMorePresent || loadsPost || loads) return
         loadsPost = true
         try {
             val before = loadedFor
-            val (new, figure) = page(kern, items.size)
+            val (new, figure) = page(kern, items.size, count)
             // Meanwhile re-sorted, filtered or switched: the page belongs to another list.
             if (loadedFor != before) return
             // The server can add items between two pages; avoid duplicates.
@@ -255,11 +261,20 @@ class LibraryState(val art: String, private val store: Store) {
         } finally { loadsPost = false }
     }
 
+    /**
+     * Mirrors `LibraryModel.jumpTarget`: the index of the first title of a letter, loading up to it
+     * in steps sized by where the letter starts in the list.
+     */
+    suspend fun jumpTarget(kern: Kern, letter: String): Int? =
+        alphabetJumpTarget(letter, letters, { items }, { stillMorePresent }, { loadsPost || loads }) { loadMore(kern, it) }
+
     private suspend fun page(kern: Kern, since: Int, count: Long = PAGE): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.sectionPage(art, choice, sorting, filter, since.toLong(), count).await()
         })
         filterMore = if (o.optBoolean("gesiebt")) o.optBoolean("nochMehr") else null
+        // The strip comes with the first page of a "By name" list.
+        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { i ->
             gridTileRead(a.getJSONObject(i))
@@ -273,6 +288,9 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     val state = remember(art) { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val section = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    // Mirrors `LibraryFilter.kept(in:)`: a filter the page no longer offers (the watchlist, switched off)
+    // must not keep narrowing the list with no pill left to undo it.
+    LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filterSet("alle") }
     WatchStateChange(app) { state.load(app.kern) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
@@ -283,8 +301,13 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
 
     HeaderAndContent(header = { LibraryHeader(app, state, title, filterSelection, open) { offset } }) { headerDp ->
     BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
+        // The strip where it means something (switched on, "By name", a grid of titles), and the right
+        // margin making room for it so the gaps to the edge and to the posters match (`trailingLane`).
+        val shownLetters = if (app.settings.alphabet && state.sorting == "name" && !state.listSelected
+                               && state.letters.size > 1) state.letters else emptyList()
+        val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
         // `Theme.columns(usableNow:)`: three on every phone.
-        val count = Theme.columns((maxWidth - Theme.edgeSpacing * 2).value)
+        val count = Theme.columns((maxWidth - Theme.edgeSpacing - lane).value)
         // Load more once the third-to-last row appears (`ListRules.postLoadSection`).
         LaunchedEffect(grid, count) {
             snapshotFlow { (grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to state.items.size }
@@ -296,7 +319,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(count), state = grid,
-            contentPadding = PaddingValues(start = Theme.edgeSpacing, end = Theme.edgeSpacing, top = headerDp + 8.dp, bottom = 12.dp),
+            contentPadding = PaddingValues(start = Theme.edgeSpacing, end = lane, top = headerDp + 8.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.fillMaxSize().areaContent()
@@ -320,6 +343,21 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
                 items(state.items, key = { it.id }) { GridTileView(it) { open(Destination(it.id, it.title, it.type)) } }
                 // No spinner when loading more, a row of placeholders instead.
                 if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }) { TilePlaceholder() }
+            }
+        }
+
+        if (shownLetters.isNotEmpty()) {
+            // The letter of the topmost visible title lights up while the grid scrolls on its own.
+            val current by remember(state) {
+                derivedStateOf { state.items.getOrNull(grid.firstVisibleItemIndex)?.letter }
+            }
+            AlphabetRail(shownLetters, current,
+                         Modifier.align(Alignment.TopEnd).padding(end = (lane - AlphabetRailWidth) / 2,
+                                                                  top = headerDp + 8.dp, bottom = 12.dp)) { letter ->
+                section.launch {
+                    // A short glide to the first title of the letter (`ScrollJump`).
+                    state.jumpTarget(app.kern, letter)?.let { grid.animateScrollToItem(it) }
+                }
             }
         }
 

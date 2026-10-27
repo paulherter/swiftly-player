@@ -88,8 +88,9 @@ fun firstFocus(ready: Boolean = true): FocusRequester {
 fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequester? = null,
              open: (Destination) -> Unit, loads: Boolean = false, placeholderRails: Int = 2,
              withUnderRow: Boolean = true,
+             /** Passed in where the page scrolls the grid itself (the letter strip). */
+             lattice: androidx.compose.foundation.lazy.grid.LazyGridState = rememberLazyGridState(),
              header: @Composable () -> Unit, more: LazyGridScope.() -> Unit = {}) {
-    val lattice = rememberLazyGridState()
     // **Back means back to where one was** (tvOS: `lastAtTitle`). The grid keeps its scroll
     // position via `rememberLazyGridState` (saveable, `TvMain` restores the page), but `focus` was
     // always attached to tile 0: after returning, that tile was either not composed at all (focus
@@ -213,12 +214,15 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val state = remember { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val run = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    // A filter the panel no longer offers (the watchlist, switched off) falls back to "all".
+    LaunchedEffect(filter) { if (state.filter !in filter) state.filterSet("alle") }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
+    val lattice = rememberLazyGridState()
     Box(Modifier.fillMaxSize()) {
         TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.kern) } }, focus, open,
-                 loads = state.loads && !collections, withUnderRow = false, header = {
+                 loads = state.loads && !collections, withUnderRow = false, lattice = lattice, header = {
             Column(Modifier.padding(top = headerBottom + 14.dp, bottom = 10.dp)) {
                 // **A fixed height with and without capsules** (tvOS: `.frame(height: chipHeight)`): "Sammlungen"
                 // has no filter and sort, and the row would shift on switching.
@@ -286,6 +290,19 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                 }
             }
         })
+        // **The letter strip in the right margin** where it means something (switched on, "By name", a
+        // grid of titles). The grid's first item is the header, so tile i is item i + 1.
+        if (app.settings.alphabet && state.sorting == "name" && !collections && state.letters.size > 1) {
+            val current by remember(state) {
+                derivedStateOf { state.items.getOrNull(maxOf(0, lattice.firstVisibleItemIndex - 1))?.letter }
+            }
+            TvAlphabetRail(state.letters, current,
+                           Modifier.align(Alignment.TopEnd)
+                               .padding(end = (TvTheme.edgePage - TvAlphabetRailWidth) / 2,
+                                        top = headerBottom + 70.dp, bottom = 24.dp)) { letter ->
+                run.launch { state.jumpTarget(app.kern, letter)?.let { lattice.animateScrollToItem(it + 1) } }
+            }
+        }
     }
 }
 

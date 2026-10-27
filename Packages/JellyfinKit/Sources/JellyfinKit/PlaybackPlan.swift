@@ -114,10 +114,16 @@ public extension PlaybackPlan {
         itemID: String,
         profile: DeviceProfile,
         streamURL: (String, String?, String?) throws -> URL,
-        serverBase: URL
+        serverBase: URL,
+        preferredSourceID: String? = nil
     ) throws -> PlaybackPlan? {
 
-        guard let source = bestSource(response.mediaSources) else {
+        // **The version the user picked beats the cheapest one.** Only when it is
+        // named and the server still has it; otherwise the rule below applies.
+        let picked = preferredSourceID.flatMap { id in
+            response.mediaSources.first { $0.id == id }
+        }
+        guard let source = picked ?? bestSource(response.mediaSources) else {
             // With a reason it is a rejection, not "nothing there", and the user should
             // be able to read it.
             if let reason = response.errorCode, !reason.isEmpty {

@@ -2,6 +2,7 @@
    Schlüssel — so bleibt der Code ohne Kürzel lesbar. */
 
 "A–Z" = "A–Z";
+"Nach Name" = "By name";
 "Zuletzt" = "Recent";
 "Bewertung" = "Rating";
 "Jahr" = "Year";
@@ -140,3 +141,5 @@
 "F%lld" = "E%lld";
 "S%lld • F%lld" = "S%lld • E%lld";
 "Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "The connection to the group was lost and could not be restored. Please join the group again.";
+
+"Fassung" = "Version";

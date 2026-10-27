@@ -123,28 +123,33 @@ struct StateButtons: View {
     @Binding var remembered: Bool
     @Binding var watched: Bool
     @Binding var message: String?
+    @Environment(\.watchlistShown) private var watchlistShown
 
     var body: some View {
         Group {
-            Button {
-                remembered.toggle()
-                // Toggle at once so the button responds, but revert if the server says
-                // no.
-                Task {
-                    if let reason = await model.setWatchlist(item, an: remembered) {
-                        remembered.toggle()
-                        message = reason
+            // Switched off in Appearance, the bookmark is gone; the favourite itself stays
+            // on the server.
+            if watchlistShown {
+                Button {
+                    remembered.toggle()
+                    // Toggle at once so the button responds, but revert if the server says
+                    // no.
+                    Task {
+                        if let reason = await model.setWatchlist(item, an: remembered) {
+                            remembered.toggle()
+                            message = reason
+                        }
                     }
+                } label: {
+                    Image(systemName: remembered ? "bookmark.fill" : "bookmark")
+                        .font(Theme.button)
                 }
-            } label: {
-                Image(systemName: remembered ? "bookmark.fill" : "bookmark")
-                    .font(Theme.button)
+                .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
+                .accessibilityLabel(Text("Merkliste"))
+                // Filled versus empty symbol is the whole difference; for VoiceOver both
+                // read "Merkliste".
+                .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
             }
-            .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
-            .accessibilityLabel(Text("Merkliste"))
-            // Filled versus empty symbol is the whole difference; for VoiceOver both
-            // read "Merkliste".
-            .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
         }
     }
 }
@@ -205,6 +210,8 @@ struct DetailView: View {
     @State private var lastFocus: FocusTarget = .primaryButton
 
     @State private var prepares = false
+    /// The start position waiting for the version choice; `nil` while no dialog is open.
+    @State private var versionSince: Double?
     @State private var similar: [Item] = []
     @State private var extras: [Item] = []
     @State private var moreOpen = false
@@ -304,6 +311,17 @@ struct DetailView: View {
             focusBack()
         }
         .disabled(moreOpen)
+        // The remote's select opens the choice; the dialog takes the focus and gives
+        // it back to the button on close.
+        .confirmationDialog("Fassung wählen", isPresented: Binding(
+            get: { versionSince != nil }, set: { if !$0 { versionSince = nil } }),
+                            titleVisibility: .visible) {
+            ForEach(versions, id: \.id) { version in
+                Button(versionLabel(version)) {
+                    launch(since: versionSince ?? 0, sourceID: version.id)
+                }
+            }
+        }
         // Under the More button, at its edge; see `PanelAnchor`. The button sits at
         // the far right and the panel is wider, so `Handlungstafel.left` clamps it
         // to the button's right edge instead of letting it run off screen.
@@ -383,7 +401,7 @@ struct DetailView: View {
         DetailHeader(model: model, item: current, plan: plan) {
             HStack(spacing: 24) {
                 if let since = current.resumeFrom {
-                    Button { launch(since: since) } label: {
+                    Button { start(since: since) } label: {
                         Label("Fortsetzen", systemImage: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
@@ -393,14 +411,14 @@ struct DetailView: View {
 
                     // Explicit in the layout: otherwise someone who has started could only get
                     // back to the beginning through the panel.
-                    Button { launch(since: 0) } label: {
+                    Button { start(since: 0) } label: {
                         Image(systemName: "arrow.counterclockwise").font(Theme.button)
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))
                     .disabled(prepares)
                 } else {
-                    Button { launch(since: 0) } label: {
+                    Button { start(since: 0) } label: {
                         Label("Abspielen", systemImage: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
@@ -457,14 +475,35 @@ struct DetailView: View {
         watched = current.isWatched
     }
 
+    /// The versions to choose from; empty when there is no choice to make or the
+    /// title is on the device (the downloaded file is the one that plays). A
+    /// download still running does not count: playback then streams from the server.
+    private var versions: [MediaSource] {
+        model.downloads.file(for: current.id) == nil ? MediaVersions.choices(current.mediaSources) : []
+    }
+
+    private func versionLabel(_ version: MediaSource) -> String {
+        let detail = version.versionDetail
+        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
+    }
+
+    /// **A title with several versions asks which one on press**, as on iPhone. One
+    /// version, or a copy on the device, starts at once. The preloaded `plan` is only
+    /// the proof row's; playback always fetches its own through `PlayRequest.start`,
+    /// so a picked version never plays the cheapest one's plan.
+    private func start(since: Double) {
+        if versions.isEmpty { launch(since: since) } else { versionSince = since }
+    }
+
     /// Freshly fetched: the position in the list entry is often stale.
-    private func launch(since: Double) {
-        launch(current, since: since, freshValue: true)
+    private func launch(since: Double, sourceID: String? = nil) {
+        launch(current, since: since, freshValue: true, sourceID: sourceID)
     }
 
     /// Start a title, the same one or an extra.
-    private func launch(_ title: Item, since: Double, freshValue: Bool = false) {
-        PlayRequest.start(title, since: since, freshValue: freshValue, model: model, prepares: $prepares,
+    private func launch(_ title: Item, since: Double, freshValue: Bool = false, sourceID: String? = nil) {
+        PlayRequest.start(title, since: since, freshValue: freshValue, sourceID: sourceID,
+                              model: model, prepares: $prepares,
                               missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { play.wrappedValue = $0 })
     }

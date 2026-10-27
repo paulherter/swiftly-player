@@ -38,6 +38,8 @@ struct PlayerScreen: View {
     @State private var duration: Double = 0
     @State private var running = true
     @State private var firstImagePresent = false
+    /// When the first image appeared; a thumb still resting from the click that opened the title must not start scrubbing.
+    @State private var imageSince: Date?
     @State private var controlsVisible = true
     /// The picture is currently being cast to another device.
     @State private var handoverRuns = false
@@ -396,7 +398,7 @@ struct PlayerScreen: View {
         // As an overlay, the player is at first decoration to the focus engine: nothing in it is set, and focus stays where it was. The result was twofold: no direction key arrived, so the controls never appeared, and `onExitCommand` hung on no focused view and fell through to the system, which treated Menu as "leave app". In a navigation stack the player was handed focus; that was borrowed, not built.
         .focusSection()
         // Initially the rest layer: the bar exists only from the first frame, and assigning to something unfocusable does nothing.
-        .onAppear { focus = .idle }
+        .onAppear { focus = .idle; BackWatch.arm(back) }
         // **Focus moves with the controls** instead of vanishing with them. While a sheet opens the block applies: the sheet takes focus, and we would be taking it away.
         //
         // **And re-applied on appearance.** The assignment falls into the pass in which the controls first become focusable, and SwiftUI sometimes drops it. Measured: focus stayed on the rest layer, which became unfocusable in the same step, and sat there stuck: up, left and right found no target and nothing responded. As with the overlay (`cardPresent`), it is set again until it sticks.
@@ -471,32 +473,9 @@ struct PlayerScreen: View {
             layer.controls(opened: opened)
             fillSet()
         }
+        .onChange(of: firstImagePresent) { _, on in imageSince = on ? Date() : nil }
         .onPlayPauseCommand { playbackKey() }
-        .onExitCommand {
-            // **The layer lies on top, so it answers first.** A stale scrub marker used to take the press instead: the layer stayed and Back seemed dead.
-            if openLayer != nil {
-                if seekTarget != nil || probing { markDiscard() }
-                layerClose()
-                AppLog.writeOut("[Zurück] Ebene zu")
-            }
-            // **Menu cancels scrubbing and takes the bar with it**, not playback. Someone who overshot wants to return to their place, not leave the film; one press has to clear the picture, or Back seems to do nothing until the bar times out.
-            else if seekTarget != nil || probing {
-                markDiscard()
-                controlsVisible = false
-                AppLog.writeOut("[Zurück] Marke verworfen, Steuerung aus")
-            }
-            // **If the controls are showing, they go first**; only the second press leaves the film. Whoever just woke them wants to keep watching.
-            else if controlsPresent {
-                controlsVisible = false
-                AppLog.writeOut("[Zurück] Steuerung aus")
-            }
-            // Back closes only the overlay; the film keeps playing.
-            else if cardPresent {
-                layer.close()
-                AppLog.writeOut("[Angebot] Zurück schließt")
-            }
-            else { leave() }
-        }
+        .onExitCommand { BackWatch.answered(); back() }
         // **After a sheet the controls must come back.**
         //
         // A sheet takes focus. If it closes and nobody takes focus back, it sits nowhere, and then no motion command arrives to wake the controls. The bar was gone and stayed gone.
@@ -539,6 +518,7 @@ struct PlayerScreen: View {
         .onDisappear {
             HandoffStage.shared.playerDistance(item.id)
             clickRing.resolve()
+            BackWatch.disarm()
             sampleTask?.cancel()
             focusPostPull?.cancel()
             // The output goes back to the UI, which is drawn for 60 Hz.
@@ -935,6 +915,33 @@ struct PlayerScreen: View {
         showItem()
     }
 
+    /// Menu / Back. Called by `onExitCommand`, and by `BackWatch` when that stays silent.
+    private func back() {
+        // **The layer lies on top, so it answers first.** A stale scrub marker used to take the press instead: the layer stayed and Back seemed dead.
+        if openLayer != nil {
+            if seekTarget != nil || probing { markDiscard() }
+            layerClose()
+            AppLog.writeOut("[Zurück] Ebene zu")
+        }
+        // **Menu cancels scrubbing and takes the bar with it**, not playback. Someone who overshot wants to return to their place, not leave the film; one press has to clear the picture, or Back seems to do nothing until the bar times out.
+        else if seekTarget != nil || probing {
+            markDiscard()
+            controlsVisible = false
+            AppLog.writeOut("[Zurück] Marke verworfen, Steuerung aus")
+        }
+        // **If the controls are showing, they go first**; only the second press leaves the film. Whoever just woke them wants to keep watching.
+        else if controlsPresent {
+            controlsVisible = false
+            AppLog.writeOut("[Zurück] Steuerung aus")
+        }
+        // Back closes only the overlay; the film keeps playing.
+        else if cardPresent {
+            layer.close()
+            AppLog.writeOut("[Angebot] Zurück schließt")
+        }
+        else { leave() }
+    }
+
     private func showItem() {
         controlsVisible = true
         fadeOutMark += 1
@@ -1169,6 +1176,13 @@ struct PlayerScreen: View {
     /// **The marker, not the playback rate.** Apple plays faster when fast-forwarding; VLC cannot do that backwards at all, and with 4K HEVC in direct play forwards only stutteringly. This way both directions behave the same and the decoder is left alone.
     private func holdBegins(_ bearing: Int) {
         guard duration > 0, !layerOpen else { return }
+        // **Not in the first moments.** Measured: right after opening a title the film paused by itself and the scrub bar came up, without anyone meaning to; Back then went dead. Whoever rests a thumb on the edge of the click ring while the player opens must lift it first.
+        let since = imageSince.map { Date().timeIntervalSince($0) }
+        guard let since, since > 1.5 else {
+            AppLog.writeOut("[Spulen] Halten \(bearing < 0 ? "links" : "rechts") am Anfang ignoriert (Bild seit \(since.map { String(format: "%.1f", $0) } ?? "—") s)")
+            return
+        }
+        AppLog.writeOut("[Spulen] Halten \(bearing < 0 ? "links" : "rechts") nach \(String(format: "%.1f", since)) s")
         sampleTask?.cancel()
         sampleTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
@@ -1212,6 +1226,7 @@ struct PlayerScreen: View {
         // **Note before `show()`.** Afterwards `controlsPresent` is true and "was it already there?" can no longer be answered.
         swipeOnlyOpened = !controlsPresent
         swipes = true
+        AppLog.writeOut("[Spulen] Wischen beginnt (Steuerung \(controlsPresent ? "da" : "aus"), Bild seit \(imageSince.map { String(format: "%.1f", Date().timeIntervalSince($0)) } ?? "—") s)")
         showItem()
     }
 

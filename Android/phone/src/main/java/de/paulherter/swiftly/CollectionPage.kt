@@ -149,6 +149,8 @@ class CollectionState(val id: String, val art: String?) {
     var disrupted by mutableStateOf(false); private set
     var sorting by mutableStateOf("erscheinung")
     var filter by mutableStateOf("alle")
+    /** The letter strip of a "By name" list; empty otherwise. */
+    var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     private var loadsPost = false
     private var loadedFor: String? = null
 
@@ -175,12 +177,12 @@ class CollectionState(val id: String, val art: String?) {
         loads = false
     }
 
-    suspend fun loadMore(kern: Kern) {
+    suspend fun loadMore(kern: Kern, count: Long = 60L) {
         if (!stillMorePresent || loadsPost || loads) return
         loadsPost = true
         try {
             val before = loadedFor
-            val (new, figure) = page(kern, items.size)
+            val (new, figure) = page(kern, items.size, count)
             if (loadedFor != before) return
             val known = items.mapTo(HashSet()) { it.id }
             items = items + new.filter { known.add(it.id) }
@@ -189,10 +191,14 @@ class CollectionState(val id: String, val art: String?) {
         } finally { loadsPost = false }
     }
 
-    private suspend fun page(kern: Kern, since: Int): Pair<List<GridTile>, Int> {
+    suspend fun jumpTarget(kern: Kern, letter: String): Int? =
+        alphabetJumpTarget(letter, letters, { items }, { stillMorePresent }, { loadsPost || loads }) { loadMore(kern, it) }
+
+    private suspend fun page(kern: Kern, since: Int, count: Long = 60L): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {
-            kern.collectionPage(id, art.orEmpty(), sorting, filter, since.toLong(), 60L).await()
+            kern.collectionPage(id, art.orEmpty(), sorting, filter, since.toLong(), count).await()
         })
+        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } to o.getInt("gesamt")
     }
@@ -208,6 +214,9 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
     val state = remember(target.id, target.role) { CollectionState(target.id, target.role) }
     val section = rememberCoroutineScope()
     LaunchedEffect(state, state.sorting, state.filter) { state.load(app.kern) }
+    // Without the watchlist when it is switched off; a filter no longer offered falls back to "all".
+    val filterSelection = offeredFilters(state.filterSelection, app.settings.watchlist)
+    LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filter = "alle" }
     WatchStateChange(app) { state.load(app.kern) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
@@ -220,7 +229,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
             // `ShelfControls`: the same row as on the library page.
             ValueRail({ offset }, Modifier.padding(horizontal = Theme.edgeSpacing)) {
                 ValuePill(Glyph.Filter, Choices.text(Choices.filter, state.filter)) {
-                    app.sheet.value = SheetRequest(translated("Filtern"), Choices.filter.filter { it.value in state.filterSelection }, state.filter) {
+                    app.sheet.value = SheetRequest(translated("Filtern"), Choices.filter.filter { it.value in filterSelection }, state.filter) {
                         state.filter = it
                     }
                 }
@@ -235,7 +244,11 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
         }
     }) { headerDp ->
         BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
-            val count = Theme.columns((maxWidth - Theme.edgeSpacing * 2).value)
+            // The strip and its margin, as on the library page.
+            val shownLetters = if (app.settings.alphabet && state.sorting == "name" && state.letters.size > 1)
+                state.letters else emptyList()
+            val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
+            val count = Theme.columns((maxWidth - Theme.edgeSpacing - lane).value)
             LaunchedEffect(grid, count) {
                 snapshotFlow { (grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to state.items.size }
                     .collect { (lastOne, loaded) ->
@@ -243,13 +256,23 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
                     }
             }
             LazyVerticalGrid(GridCells.Fixed(count), state = grid,
-                contentPadding = PaddingValues(start = Theme.edgeSpacing, end = Theme.edgeSpacing, top = headerDp + 8.dp, bottom = 40.dp),
+                contentPadding = PaddingValues(start = Theme.edgeSpacing, end = lane, top = headerDp + 8.dp, bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
                 if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }) { TilePlaceholder() }
                 items(state.items, key = { it.id }) { k -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) } }
                 if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }) { TilePlaceholder() }
+            }
+            if (shownLetters.isNotEmpty()) {
+                val current by remember(state) {
+                    derivedStateOf { state.items.getOrNull(grid.firstVisibleItemIndex)?.letter }
+                }
+                AlphabetRail(shownLetters, current,
+                             Modifier.align(Alignment.TopEnd).navigationBarsPadding()
+                                 .padding(end = (lane - AlphabetRailWidth) / 2, top = headerDp + 8.dp, bottom = 40.dp)) { letter ->
+                    section.launch { state.jumpTarget(app.kern, letter)?.let { grid.animateScrollToItem(it) } }
+                }
             }
             if (state.disrupted) {
                 EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),

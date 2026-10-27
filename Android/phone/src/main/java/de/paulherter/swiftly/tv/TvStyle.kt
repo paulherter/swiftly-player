@@ -541,16 +541,19 @@ fun TvCapsule(text: String, modifier: Modifier = Modifier,
 fun TvRow(text: String, symbol: Glyph? = null, right: String? = null, checkmark: Boolean = false,
             modifier: Modifier = Modifier,
             /** The selected row of a selection panel carries its icon in the accent (`Handlungstafel.selected`). */
-            symbolColor: Color = Theme.font, perform: () -> Unit) {
+            symbolColor: Color = Theme.font,
+            /** A long text may wrap (up to 3 lines) and the row grows with it, instead of being cut off. */
+            wraps: Boolean = false, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
-        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().then(if (wraps) Modifier.heightIn(min = TvTheme.rowsHeight) else Modifier.height(TvTheme.rowsHeight)).clip(RoundedCornerShape(TvTheme.corner))
                 .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             symbol?.let { Symbol(it, 13.dp, color = symbolColor, strength = Strength.Medium) }
             // 15, and semibold when focused. A **vertical** list, so the weight change moves no neighbors
             // (as in `RowsStyle`).
             Text(text, style = if (focus) TvTheme.button else TvTheme.body.copy(fontWeight = FontWeight.Medium),
-                 color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                 color = Theme.font, maxLines = if (wraps) 3 else 1, overflow = TextOverflow.Ellipsis,
+                 modifier = Modifier.weight(1f).then(if (wraps) Modifier.padding(vertical = 8.dp) else Modifier))
             right?.let { Text(it, style = TvTheme.tile, color = Theme.fontQuiet, maxLines = 1) }
             if (checkmark) Symbol(Glyph.Checkmark, 13.dp, color = Theme.accent, strength = Strength.Semibold)
         }

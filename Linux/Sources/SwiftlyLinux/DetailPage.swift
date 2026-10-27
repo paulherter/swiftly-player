@@ -84,8 +84,71 @@ extension App {
     /// **Without `since`, the server's position applies, fetched fresh** (as iOS
     /// `HomeView.starte`): the position in the tile is often stale, and someone who
     /// continued on the phone would otherwise see a stretch twice.
-    func launch(_ item: Item, since: Double? = nil) {
-        playerOpen(item, since: since ?? item.resumeFrom ?? 0, pointFresh: since == nil)
+    ///
+    /// - sourceID: the version the user picked when a title has several (iOS
+    ///   `ItemDetailView.launch(since:sourceID:)`).
+    func launch(_ item: Item, since: Double? = nil, sourceID: String? = nil) {
+        playerOpen(item, since: since ?? item.resumeFrom ?? 0, pointFresh: since == nil,
+                   sourceID: sourceID)
+    }
+
+    /// The versions to choose from; empty when there is no choice to make or the title
+    /// is on this computer (the downloaded file is the one that plays). A download still
+    /// running does not count: playback then streams from the server (iOS `versions`).
+    private func versions(of title: Item) -> [MediaSource] {
+        guard title.type != "Series", downloads.file(for: title.id) == nil else { return [] }
+        return MediaVersions.choices(title.mediaSources)
+    }
+
+    /// "Name · 1080p · HEVC · 18,6 GB" (iOS `versionLabel`).
+    private func versionLabel(_ version: MediaSource) -> String {
+        let detail = version.versionDetail
+        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
+    }
+
+    /// **The main button: one version starts at once, several ask first.** The thin list
+    /// entry carries no `MediaSources`; the full record is then fetched before deciding,
+    /// otherwise a press in the first moments would silently take the default version.
+    private func startOrChoose(_ title: Item, since: Double, at button: Widget!) {
+        if title.type != "Series", title.mediaSources == nil, let client,
+           downloads.file(for: title.id) == nil {
+            let box = held(button)
+            Task.detached { [self] in
+                let full = try? await client.item(id: title.id)
+                onMainThread {
+                    defer { letGo(box) }
+                    guard gtk_widget_get_root(box.widget) != nil else { return }
+                    self.chooseVersion(full ?? title, since: since, at: box.widget)
+                }
+            }
+            return
+        }
+        chooseVersion(title, since: since, at: button)
+    }
+
+    private func chooseVersion(_ title: Item, since: Double, at button: Widget!) {
+        let choices = versions(of: title)
+        if choices.isEmpty { launch(title, since: since); return }
+        let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_size_request(list, 320, -1)
+        let panel = panelOpen(an: button)
+        gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
+        // The title of the choice, as `titleVisibility: .visible` on the iPhone.
+        let heading = label(translated("Fassung wählen"), style: "swiftly-zweitzeile")
+        gtk_label_set_xalign(OpaquePointer(heading), 0)
+        gtk_widget_set_margin_start(heading, 14)
+        gtk_widget_set_margin_end(heading, 14)
+        gtk_widget_set_margin_top(heading, 10)
+        gtk_widget_set_margin_bottom(heading, 6)
+        append(list, heading)
+        for version in choices {
+            append(list, actionRow("media-playback-start-symbolic", versionLabel(version)) {
+                [weak self] in
+                gtk_popover_popdown(asPanel(panel))
+                self?.launch(title, since: since, sourceID: version.id)
+            })
+        }
+        gtk_popover_popup(asPanel(panel))
     }
 
     // MARK: - Layout
@@ -705,7 +768,7 @@ extension App {
             append(rail, pair)
         }
 
-        if let sharing = title.officialRating { append(rail, badge(sharing)) }
+        if let sharing = title.ageRating { append(rail, badge(sharing)) }
 
         // **The badge goes last**: year · runtime · stars · certification · Direct Play, as on
         // TV (`ProofMarks(proofLast:)`). It comes last, so its appearance moves nothing:
@@ -834,7 +897,7 @@ extension App {
                                     Int32(Theme.primaryButtonHeight))
         signal(main, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
-            self.launch(was, since: was.resumeFrom ?? 0)
+            self.startOrChoose(was, since: was.resumeFrom ?? 0, at: main)
         }
         // While the target is not settled, there is nothing to start.
         gtk_widget_set_sensitive(main, target.title == nil ? 0 : 1)
@@ -853,7 +916,8 @@ extension App {
         gtk_widget_set_visible(front, begun != nil ? 1 : 0)
         signal(front, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
-            self.launch(was, since: 0)
+            // Asks for the version as well, like the Mac (`DetailHero.start(0)`).
+            self.startOrChoose(was, since: 0, at: front)
         }
         append(rail, front)
 
@@ -941,7 +1005,8 @@ extension App {
         }
         // The drawing area holds its icon; without this access it dies when the call returns.
         signal(rememberCharacter.display, "destroy") { _ = rememberCharacter }
-        append(rail, memo)
+        // Switched off in Appearance, the bookmark is gone; the favourite stays on the server.
+        if selection.watchlistShown { append(rail, memo) }
 
         // **The download button only exists with the switch on**, and only if the account may
         // download (`DownloadPermission`). Anyone who has not enabled downloads sees nothing of it,

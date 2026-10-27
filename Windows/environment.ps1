@@ -8,8 +8,8 @@
 # Dot-source it:  . .\environment.ps1
 
 param(
-    [string]$SwiftWurzel = 'C:\Swift',
-    [string]$SwiftFassung = '6.2.1',
+    [string]$SwiftWurzel = "$env:LOCALAPPDATA\Programs\Swift",
+    [string]$SwiftFassung = '6.3.3',
     [string]$BuildTools = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools'
 )
 
