@@ -195,6 +195,12 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                             }
                         }
                     }
+                    // "Senden an …": the episode the viewer is at, to another TV running Swiftly (`PlayOn.kt`).
+                    if (app.playTargets.value.isNotEmpty() && series?.state != null) {
+                        TvButton(null, Glyph.Tv, description = translated("Senden an …")) {
+                            app.sendToShow(target.id, "Series", name)
+                        }
+                    }
                     // **`TvMoreButton` instead of `app.sheet`**: on tvOS the menu opens directly under the button,
                     // not as a panel at the right edge (see the doc comment in `TvTitle.kt`).
                     val alt = series

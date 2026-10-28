@@ -302,6 +302,10 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched) {
                         toggle(!watched, { watched = it }, { app.kern.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
                     }
+                    // "Senden an", only while a TV running Swiftly is in reach (`PlayOn.kt`).
+                    if (app.playTargets.value.isNotEmpty() && t?.planPresent == true) {
+                        ActionButton(Glyph.Tv, translated("Senden an …"), false) { app.sendToShow(target.id, t.type, name) }
+                    }
                     ActionButton(Glyph.More, translated("Mehr"), false) {
                         // `TitleActions.forMovie`.
                         val entries = buildList {

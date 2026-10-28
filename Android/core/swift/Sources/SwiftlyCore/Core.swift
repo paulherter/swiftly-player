@@ -47,6 +47,14 @@ public final class Kern: @unchecked Sendable {
     /// The socket Jellyfin uses to send commands. Without it there are no buttons in the dashboard.
     private var _remote: RemoteControl?
     private let remoteStore = CommandStore()
+    /// **Where a film can be sent** (`PlayOutputs.targets` on Apple), from the same `/Sessions`
+    /// answer as the takeover offer (``takeoverOfferings()``), so there is no second timer.
+    private var _playTargets: [RemoteSession] = []
+    /// A title another device sent here (`RemoteControl.playHear`); Kotlin opens the player.
+    private let playRequest = WaitCompartment()
+    /// **The tracks that came with it**, for that title only. ``tracksSelect`` applies them over
+    /// the device's own rule; the player's end forgets them, so the next start follows the rule.
+    private var _ordered: (itemID: String, tracks: TrackIndices)?
     /// **Watch together:** the session from the package, one for the lifetime of the app
     /// (`SharedModel` on Apple). Created on first access (``gemeinsam``).
     private var _shared: SyncPlaySession?
@@ -1870,6 +1878,8 @@ public final class Kern: @unchecked Sendable {
         await withCheckedContinuation { (done: CheckedContinuation<String, Never>) in
             barrier.lock()
             watch.stopped()
+            // Sent tracks belong to one playback; a title sent while this one ends is not touched.
+            if let o = _ordered, o.itemID == _playback?.item.id { _ordered = nil }
             let change = _episodesSwitch
             let presentTimes = _playback.map(Self.key)
             let opened = change.phase != .closed
@@ -2038,9 +2048,15 @@ public final class Kern: @unchecked Sendable {
         let title = TrackMemory.title(for: w.item)
         var rememberedAudio: TrackImprint?
         if case .track(let imprint)? = Self.readMemory(audioMemory, title) { rememberedAudio = imprint }
+        // Tracks sent with this title from another device (``playArrived``); a different title
+        // forgets them.
+        let ordered: TrackIndices? = lockRead {
+            if let o = _ordered, o.itemID != w.item.id { _ordered = nil }
+            return _ordered?.tracks
+        }
 
         var audioIndex = TrackRule.audio(streams: streams, remembered: rememberedAudio, preferredLanguage: tonwunsch,
-                                     serverPreGift: source?.defaultAudioStreamIndex)
+                                     serverPreGift: source?.defaultAudioStreamIndex, ordered: ordered?.audio)
         var audioId: Int?
         if let searched = audioIndex, let position = z.audioPositionValue(index: searched) {
             audioId = audioTracks[position].id
@@ -2055,7 +2071,8 @@ public final class Kern: @unchecked Sendable {
 
         let choice = TrackRule.subtitle(streams: streams, remembered: Self.readMemory(subtitleMemory, title),
                                         serverPreGift: source?.defaultSubtitleStreamIndex, automatic: automatic,
-                                        audioIndex: audioIndex, tonwunsch: tonwunsch, preferredLanguage: subtitlePreference)
+                                        audioIndex: audioIndex, tonwunsch: tonwunsch, preferredLanguage: subtitlePreference,
+                                        ordered: ordered?.subtitle)
         var utId = -1
         var opened: Int?
         var utIndex = -1
@@ -2476,6 +2493,8 @@ public final class Kern: @unchecked Sendable {
         await controls.syncPlayHear { session.accept($0) }
         // The handover hint comes before the stop (`AppModel.handoffTarget` on Apple).
         await controls.handoffHear { store.hintStore($0) }
+        // A title sent from another device; Kotlin waits for it in ``playOrderWait()``.
+        await controls.playHear { [weak self] order in self?.playArrived(order) }
         await controls.start { command in store.stash(command) }
         await session.rightFetch()
     }
@@ -2485,8 +2504,12 @@ public final class Kern: @unchecked Sendable {
         barrier.lock(); let alt = _remote; _remote = nil; barrier.unlock()
         await alt?.syncPlayHear(nil)
         await alt?.handoffHear(nil)
+        await alt?.playHear(nil)
         await alt?.finish()
         _ = remoteStore.pickUp()
+        // A title sent to the previous account must not open under the new one.
+        playRequest.wipe()
+        barrier.lock(); _playTargets = []; _ordered = nil; barrier.unlock()
         // `setzen` already makes the group leave with the old account's client; an open request belongs to it as well.
         sharedRequest.wipe()
     }
@@ -2667,7 +2690,11 @@ public final class Kern: @unchecked Sendable {
     public func takeoverOfferings() async -> String {
         barrier.lock(); let c = _client; let s = _session; let a = _addresses; barrier.unlock()
         guard let c, let s, let all = try? await c.remoteSession() else { return "[]" }
+        // After a server restart nobody could reach this session (see `PlayTargets.mustReport`).
+        if PlayTargets.mustReport(all, ownDevicesIdentifier: devicesIdentifier) { try? await c.reportCapabilities() }
         let offerings = Takeover.offerings(from: all, ownDevicesIdentifier: devicesIdentifier, ownUserIdentifier: s.userID)
+        let targets = PlayTargets.targets(from: all, ownDevicesIdentifier: devicesIdentifier, ownUserIdentifier: s.userID)
+        barrier.lock(); _playTargets = targets; barrier.unlock()
         return Self.encoded(offerings.compactMap { f -> OfferingReply? in
             guard let title = f.running, !title.id.isEmpty else { return nil }
             let art: String
@@ -2682,8 +2709,18 @@ public final class Kern: @unchecked Sendable {
             return OfferingReply(id: f.id, itemID: title.id, device: f.deviceName, art: art,
                                   titleLine: f.titleLine, spot: spot, pointText: timeText(spot),
                                   image: a.flatMap { Self.cardImage(title, addresses: $0) }, name: title.name,
-                                  series: title.seriesName, seasonNr: title.parentIndexNumber, episodeNr: title.indexNumber)
+                                  series: title.seriesName, seasonNr: title.parentIndexNumber, episodeNr: title.indexNumber,
+                                  moving: Self.movingWord(Takeover.moving(f)))
         })
+    }
+
+    /// The word Kotlin picks the question's sentence by, see `Takeover.moving`.
+    static func movingWord(_ m: Takeover.Moving) -> String {
+        switch m {
+        case .episode: "folge"
+        case .movie: "film"
+        case .video: "video"
+        }
     }
 
     /// **Take over as on Apple** (`TakeoverModel.adopt`): first the hint to the giver
@@ -2726,6 +2763,104 @@ public final class Kern: @unchecked Sendable {
     /// only once: it applies to exactly this stop (`AppModel.handoffTargetTake`). Empty: an ordinary stop.
     public func handoffTargetTake() -> String {
         remoteStore.takeHint() ?? ""
+    }
+
+    // MARK: Play on (mirrors `PlayOutputs` in `Sources/Shared/TakeoverModel.swift`)
+
+    /// **Where a film can be sent**, from the last ``takeoverOfferings()`` answer: `[{"deviceId",
+    /// "name"}]`, the same shape Kotlin stores as the chosen output. No request of its own.
+    public func playTargets() -> String {
+        Self.encoded(lockRead { _playTargets }.compactMap(PlayOutput.init(session:)))
+    }
+
+    /// **"Play" on this device, played on the chosen one** (`PlayOutputs.send`). Only IDs, position
+    /// and track indices go out; the TV builds its own plan with its own profile, so nothing is
+    /// transcoded. The tracks are the ones this device would have opened with, from the same inputs
+    /// as ``tracksSelect``. `since` below zero: the title's own resume point.
+    ///
+    /// Answer `{"grund": "", "name": ...}`. `grund` `weg`: the device is gone, Kotlin falls back to
+    /// this device and says so, **without** playing here; otherwise a readable error.
+    public func playOn(deviceID: String, name: String, itemID: String, since: Double, sourceID: String,
+                       audioLanguage: String, subtitleLanguage: String, automatic: Bool,
+                       audioMemory: String, subtitleMemory: String) async -> String {
+        let output = PlayOutput(deviceID: deviceID, name: name)
+        let (session, reason) = await playTarget(output)
+        guard let c = client, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
+        let order: PlayOrder
+        if let item = try? await c.item(id: itemID) {
+            let title = TrackMemory.title(for: item)
+            var rememberedAudio: TrackImprint?
+            if case .track(let imprint)? = Self.readMemory(audioMemory, title) { rememberedAudio = imprint }
+            order = PlayOrder.title(item, start: since >= 0 ? since : item.resumeFrom ?? 0,
+                                    sourceID: sourceID.isEmpty ? nil : sourceID,
+                                    rememberedAudio: rememberedAudio,
+                                    rememberedSubtitle: Self.readMemory(subtitleMemory, title),
+                                    automatic: automatic, audioLanguage: audioLanguage,
+                                    subtitleLanguage: subtitleLanguage)
+        } else {
+            // Without the title the TV chooses position and tracks itself; still better than nothing.
+            order = PlayOrder(itemIDs: [itemID], start: max(0, since),
+                              mediaSourceID: sourceID.isEmpty ? nil : sourceID)
+        }
+        return Self.encoded(await playDeliver(order, to: session, client: c))
+    }
+
+    /// **The running title, handed over from the player** (`PlayOutputs.handOver`): same position,
+    /// same version, the tracks that are playing. Answer as ``playOn``; only with an empty `grund`
+    /// does the player leave.
+    public func playHandOver(deviceID: String, name: String, position: Double) async -> String {
+        let output = PlayOutput(deviceID: deviceID, name: name)
+        guard let w = lockRead({ _playback }) else {
+            return Self.encoded(PlayOnResponse(reason: "nichtVerbunden", name: name))
+        }
+        let (session, reason) = await playTarget(output)
+        guard let c = client, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
+        let order = PlayOrder(itemID: w.item.id, start: position, mediaSourceID: w.plan.mediaSourceID,
+                              tracks: w.tracks)
+        return Self.encoded(await playDeliver(order, to: session, client: c))
+    }
+
+    /// **Waits for a title another device sent here:** `{"titel", "ab", "fassung"}`. Empty if the
+    /// request was discarded (sign-out) or a second call replaced this one.
+    public func playOrderWait() async -> String {
+        await playRequest.fetch()
+    }
+
+    private func playArrived(_ order: PlayOrder) {
+        guard let id = order.itemID else { return }
+        barrier.lock(); _ordered = (id, order.tracks); barrier.unlock()
+        log("[Abspielen auf] Auftrag: \(id) ab \(Int(order.start)) s")
+        playRequest.put(Self.encoded(PlayOrderResponse(title: id, since: order.start,
+                                                       source: order.mediaSourceID ?? "")))
+    }
+
+    /// The current session of the chosen device from a fresh list; the one from the last tick may be
+    /// five seconds old and the TV may have restarted since. Reason `weg` if it is gone.
+    private func playTarget(_ output: PlayOutput) async -> (RemoteSession?, String) {
+        guard let c = client, let s = lockRead({ _session }) else { return (nil, "nichtVerbunden") }
+        let all: [RemoteSession]
+        do { all = try await c.remoteSession() }
+        catch { return (nil, coreErrorText(error)) }
+        let targets = PlayTargets.targets(from: all, ownDevicesIdentifier: devicesIdentifier, ownUserIdentifier: s.userID)
+        barrier.lock(); _playTargets = targets; barrier.unlock()
+        guard let session = PlayTargets.session(for: output, in: targets) else {
+            log("[Abspielen auf] \(output.name) nicht mehr da")
+            return (nil, "weg")
+        }
+        return (session, "")
+    }
+
+    private func playDeliver(_ order: PlayOrder, to session: RemoteSession, client c: JellyfinClient) async -> PlayOnResponse {
+        let name = PlayTargets.name(of: session)
+        do { try await c.playOn(session: session.id, order: order) }
+        catch {
+            log("[Abspielen auf] an \(name) fehlgeschlagen: \(error)")
+            return PlayOnResponse(reason: coreErrorText(error), name: name)
+        }
+        log("[Abspielen auf] \(order.itemID ?? "?") ab \(Int(order.start)) s an \(name)"
+            + " · Ton \(order.audioIndex.map(String.init) ?? "—")"
+            + " · Untertitel \(order.subtitleIndex.map(String.init) ?? "—")")
+        return PlayOnResponse(reason: "", name: name)
     }
 
     // MARK: Handover card (times, springs and dimensions from `HandoffCard` in the package)
@@ -4454,6 +4589,28 @@ struct TrickplayReply: Encodable {
         case interval = "intervall"
     }
  let width, height, tilesWide, tilesUp, count, interval: Int }
+/// Answer of ``Kern/playOn`` and ``Kern/playHandOver``.
+struct PlayOnResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case reason = "grund"
+        case name
+    }
+    let reason: String
+    let name: String
+}
+
+/// A title sent here, for Kotlin to open (``Kern/playOrderWait()``).
+struct PlayOrderResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case title = "titel"
+        case since = "ab"
+        case source = "fassung"
+    }
+    let title: String
+    let since: Double
+    let source: String
+}
+
 struct OfferingReply: Encodable {
     enum CodingKeys: String, CodingKey {
         case id
@@ -4468,6 +4625,7 @@ struct OfferingReply: Encodable {
         case series = "serie"
         case seasonNr = "staffelNr"
         case episodeNr = "folgeNr"
+        case moving = "titelart"
     }
     let id, itemID: String; let device: String?; let art, titleLine: String; let spot: Double; let pointText: String
     /// For the handover card: its image (`TakeoverModel.cardImageURL`) and the lines below it
@@ -4477,6 +4635,8 @@ struct OfferingReply: Encodable {
     var series: String? = nil
     var seasonNr: Int? = nil
     var episodeNr: Int? = nil
+    /// What the question before a takeover calls it (`Takeover.moving`): `folge`, `film`, `video`.
+    var moving: String = "video"
 }
 
 struct RemoteCommandResponse: Encodable {

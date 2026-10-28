@@ -961,6 +961,23 @@ class PlayItem(
         return ok
     }
 
+    /**
+     * **"Hand over to…": the running title goes to the TV** (`handOver(to:)` in the iOS
+     * `PlayerScreen`). Paused at once so the TV does not start behind where the phone has got to; if
+     * the TV does not take it, it plays on here. Then it leaves like a takeover from the TV.
+     */
+    suspend fun handOver(target: PlayOutputChoice, close: () -> Unit) {
+        if (givesOff) return
+        val spot = pointNow()
+        val wasRunning = player.isPlaying
+        vlcNowOrAfter("Pause") { if (player.isPlaying) player.pause() }
+        if (!app.playOnHandOver(target, spot)) {
+            if (wasRunning) vlcNowOrAfter("Weiter") { if (!player.isPlaying) player.play() }
+            return
+        }
+        if (!handIn(target.name, close)) finish(close)
+    }
+
     fun finish(close: () -> Unit) {
         val spot = endPoint()
         ended[0] = true
@@ -1869,6 +1886,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     // rotated back once more on close, and the bars flashed on teardown.
 
     val mediaWork = remember { PlayItem(app, context, run, jerk) }
+    LaunchedEffect(Unit) { app.playTargetsRefresh() }
     // **Re-attach the video surface** if Android tore it down on moving to the background; otherwise
     // audio kept playing and the picture stayed black until restart.
     val area = remember { arrayOfNulls<VLCVideoLayout>(1) }
@@ -2000,6 +2018,8 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
 
     val plan = mediaWork.plan
     val hasEpisodes = plan?.episode == true && plan.seriesIdentifier != null
+    // "Hand over to…": the TVs in reach, not in a group and not in the small window.
+    val handOver = if (!mediaWork.inGroup && !smallWindow) app.playTargets.value else emptyList()
     val title = plan?.headerLine?.takeIf { it.isNotEmpty() } ?: plan?.title.orEmpty()
     val meta = plan?.let {
         if (it.episode && it.seasonNr != null && it.episodeNr != null) translated("Staffel %lld · Folge %lld", it.seasonNr, it.episodeNr)
@@ -2194,7 +2214,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
                     }
                     Spacer(Modifier.width(12.dp))
                     IconRail(hasEpisodes, iconsPresent, Modifier.graphicsLayer { alpha = if (mediaWork.atPush) 0f else 1f },
-                                unfoldLayer) { mediaWork.finish(close) }
+                                unfoldLayer, handOver, { target -> run.launch { mediaWork.handOver(target, close) } }) { mediaWork.finish(close) }
                 }
                 mediaWork.hint?.let {
                     Text(it, style = Theme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
@@ -2282,7 +2302,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             Text(title, style = titleStyle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
                  modifier = Modifier.weight(1f))
             // Room for the icon row so the title gets the same width as in the header.
-            Spacer(Modifier.width(12.dp + iconRailsWidth(hasEpisodes)))
+            Spacer(Modifier.width(12.dp + iconRailsWidth(hasEpisodes, handOver.isNotEmpty())))
         }
     }
 }
@@ -2389,19 +2409,45 @@ private fun IconButton(symbol: Glyph, description: String, active: Boolean = tru
     }
 }
 
+/**
+ * **"Hand over to…"** (`handOverMenu` in the iOS `PlayerScreen`): the TVs in reach, see `PlayOn.kt`.
+ * Only offered outside a group, which watches here and would be left without a word.
+ */
+@Composable
+private fun HandOverButton(targets: List<PlayOutputChoice>, active: Boolean, choose: (PlayOutputChoice) -> Unit) {
+    var opened by remember { mutableStateOf(false) }
+    val label = translated("Übergeben an …")
+    Box {
+        IconButton(Glyph.Tv, label, active) { opened = true }
+        androidx.compose.material3.DropdownMenu(opened, onDismissRequest = { opened = false }, containerColor = Theme.raised,
+                     shape = RoundedCornerShape(Theme.cornerCard)) {
+            Text(label, style = Theme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            targets.forEach { c ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(c.name, style = Theme.listTitle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Symbol(Glyph.Tv, 17.dp, color = Theme.font) },
+                    onClick = { opened = false; choose(c) })
+            }
+        }
+    }
+}
+
 /** The buttons at the top right, spacing 2 like `iconRail` on the iPhone. */
 @Composable
-private fun IconRail(hasEpisodes: Boolean, active: Boolean, modifier: Modifier, open: (String) -> Unit, close: () -> Unit) {
+private fun IconRail(hasEpisodes: Boolean, active: Boolean, modifier: Modifier, open: (String) -> Unit,
+                     handOver: List<PlayOutputChoice> = emptyList(), handOverTo: (PlayOutputChoice) -> Unit = {},
+                     close: () -> Unit) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         IconButton(Glyph.Subtitle, translated("Audio & Untertitel"), active) { open("spuren") }
         if (hasEpisodes) IconButton(Glyph.Pile, translated("Folgen"), active) { open("folgen") }
         IconButton(Glyph.SliderControl, translated("Einstellungen"), active) { open("einstellungen") }
+        if (handOver.isNotEmpty()) HandOverButton(handOver, active, handOverTo)
         IconButton(Glyph.Cross, translated("Player schließen"), active) { close() }
     }
 }
 
-private fun iconRailsWidth(hasEpisodes: Boolean): Dp {
-    val count = if (hasEpisodes) 4 else 3
+private fun iconRailsWidth(hasEpisodes: Boolean, handOver: Boolean = false): Dp {
+    val count = (if (hasEpisodes) 4 else 3) + (if (handOver) 1 else 0)
     return PlayerMetric.button * count + 2.dp * (count - 1)
 }
 

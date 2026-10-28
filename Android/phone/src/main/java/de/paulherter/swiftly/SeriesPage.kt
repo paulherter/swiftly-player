@@ -332,6 +332,10 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched) {
                         toggle(!watched, { watched = it }) { id, an -> app.kern.watched(id, an).await() }
                     }
+                    // "Senden an", only while a TV running Swiftly is in reach (`PlayOn.kt`).
+                    if (app.playTargets.value.isNotEmpty()) {
+                        ActionButton(Glyph.Tv, translated("Senden an …"), false) { app.sendToShow(target.id, "Series", name) }
+                    }
                     ActionButton(Glyph.More, translated("Mehr"), false) {
                         val selectedSeason = s?.seasons?.firstOrNull { it.id == season }
                         // `TitleActions.forSeries`.

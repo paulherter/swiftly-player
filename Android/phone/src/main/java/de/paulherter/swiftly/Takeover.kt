@@ -57,7 +57,9 @@ data class Offering(val session: String, val itemID: String, val device: String?
                    val titleLine: String, val spot: Double, val pointText: String,
                    /** For the handover card (`Handoff.kt`): its image and the lines below. */
                    val image: String? = null, val name: String = "", val series: String? = null,
-                   val seasonNr: Int? = null, val episodeNr: Int? = null)
+                   val seasonNr: Int? = null, val episodeNr: Int? = null,
+                   /** What the question before a takeover calls it: `folge`, `film`, `video` (`Takeover.moving`). */
+                   val moving: String = "video")
 
 /** Mirrors `TakeoverModel.inTimesAsk`. Nothing is asked while something plays here. */
 suspend fun SwiftlyApplication.offeringsFetch() {
@@ -71,10 +73,13 @@ suspend fun SwiftlyApplication.offeringsFetch() {
                         it.getString("titelzeile"), it.optDouble("stelle", 0.0), it.optString("stelleText"),
                         it.fieldText("bild"), it.optString("name"), it.fieldText("serie"),
                         if (it.isNull("staffelNr")) null else it.optInt("staffelNr"),
-                        if (it.isNull("folgeNr")) null else it.optInt("folgeNr"))
+                        if (it.isNull("folgeNr")) null else it.optInt("folgeNr"),
+                        it.optString("titelart", "video"))
             }
         }
     }.getOrDefault(emptyList())
+    // The same answer feeds "Senden an"; the core kept it.
+    playTargetsTake()
 }
 
 /**
@@ -116,7 +121,8 @@ fun TakeoverCharacter(app: SwiftlyApplication) {
                 when {
                     // The card grows out of the badge: instead of a sheet from below it comes from the icon that
                     // was tapped and shrinks back into it.
-                    groups.isEmpty() -> if (offerings.size == 1) firstOne?.let { adopt(it) }
+                    // One offer asks first: the other device stops at once (`TakeoverModel.confirming`).
+                    groups.isEmpty() -> if (offerings.size == 1) firstOne?.let { takeoverConfirm(app, it) { adopt(it) } }
                         else app.takeoverSelection.value = TakeoverSelection(offerings, center[0]) { adopt(it) }
                     offerings.isEmpty() && groups.size == 1 -> sharedJoinOpen(app, groups.first())
                     else -> sharedSelectionOpen(app, ::adopt)
@@ -233,3 +239,19 @@ fun TakeoverStatus(app: SwiftlyApplication) {
         }
     }
 }
+
+/**
+ * **"Hier weiterschauen" asks first** (`TakeoverModel.confirming` on Apple): the other device stops at
+ * once, and a tap by mistake would stop someone's film. The title heads the sheet, the line says what
+ * moves; "Fortsetzen" takes it over.
+ */
+fun takeoverConfirm(app: SwiftlyApplication, a: Offering, adopt: () -> Unit) {
+    val moving = when (a.moving) {
+        "folge" -> translated("Die Folge läuft auf diesem Gerät weiter.")
+        "film" -> translated("Der Film läuft auf diesem Gerät weiter.")
+        else -> translated("Das Video läuft auf diesem Gerät weiter.")
+    }
+    app.sheet.value = SheetRequest(a.titleLine, listOf(Choice("weiter", translated("Fortsetzen"), moving)), null,
+        mapOf("weiter" to Glyph.Play)) { if (it == "weiter") adopt() }
+}
+

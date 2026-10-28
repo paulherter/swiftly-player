@@ -364,6 +364,12 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                             }
                         }
                     }
+                    // "Senden an …": the title to another TV running Swiftly, only while one is in reach (`PlayOn.kt`).
+                    if (app.playTargets.value.isNotEmpty() && title?.planPresent == true) {
+                        TvButton(null, Glyph.Tv, description = translated("Senden an …")) {
+                            app.sendToShow(target.id, title?.type, name)
+                        }
+                    }
                     // `TvMoreButton` instead of `app.sheet`: on tvOS the menu opens directly below the button, not as
                     // a panel on the right edge. See its doc comment.
                     val tt = title

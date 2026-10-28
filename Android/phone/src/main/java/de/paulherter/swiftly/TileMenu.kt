@@ -222,6 +222,8 @@ internal fun tileMenuEntries(app: SwiftlyApplication, w: TileMenuRequest): List<
     if (!isSeries && !w.inPlayer && !app.isTv && app.settings.downloadButtonShow && app.downloads.entries(w.id) == null)
         add(Triple("laden", translated("Laden"), Glyph.LoadCircle))
     if (!isSeries && !w.inPlayer && app.gemeinsam.value.mayCreate) add(Triple("gemeinsam", translated("Gemeinsam schauen"), Glyph.Cluster))
+    // "Senden an": the title to a TV running Swiftly, only while one is in reach (`PlayOn.kt`).
+    if (!w.inPlayer && app.playTargets.value.isNotEmpty()) add(Triple("senden", translated("Senden an …"), Glyph.Tv))
     if (w.continueWatching) add(Triple("entfernen", translated("Aus Weiterschauen entfernen"), Glyph.MinusCircle))
 }
 
@@ -268,6 +270,8 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
             }
             "laden" -> app.downloadsCreate(listOf(w.id), w.name)
             "gemeinsam" -> sharedCreateOpen(app, w.id, w.name)
+            // After the menu has gone, as "gemeinsam" does with its own sheet.
+            "senden" -> { kotlinx.coroutines.delay(SheetSwitch); app.sendToShow(w.id, w.type, w.name) }
         }
     }
 }

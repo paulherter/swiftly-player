@@ -142,6 +142,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** "Continue here": what is playing on another device of the same account. */
     val offerings = androidx.compose.runtime.mutableStateOf<List<Offering>>(emptyList())
+    /** "Senden an": the TVs a film can be sent to, from the same poll as [offerings] (`PlayOn.kt`). */
+    val playTargets = androidx.compose.runtime.mutableStateOf<List<PlayOutputChoice>>(emptyList())
     /** "Where to continue?" is open; the card grows out of the badge (`TakeoverStatus`). */
     val takeoverSelection = androidx.compose.runtime.mutableStateOf<TakeoverSelection?>(null)
 
@@ -408,6 +410,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                          if (isTv) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
         qualityReport()
         sharedListen(run)
+        playOrdersListen(run)
         support = de.paulherter.swiftly.support.Support(this)
         support.start()
         looks = de.paulherter.swiftly.support.Looks(this)
