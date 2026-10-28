@@ -5,8 +5,7 @@ import SwiftUI
 /// Episodes, Cast, Similar.
 ///
 /// Behavior matches the iPhone version:
-/// - The season pill opens a list directly below it, not a separate window or
-///   a sheet from the bottom. The current season has a checkmark.
+/// - The seasons are a row of chips under the tabs; see `SeasonChipRow`.
 /// - The tabs switch the section below without scrolling.
 /// - An episode starts at its own position.
 struct SeriesView: View {
@@ -36,7 +35,6 @@ struct SeriesView: View {
     @State private var similarDisturbed = false
     /// Extras of the series; empty means no tab.
     @State private var extras: [Item] = []
-    @State private var seasonOpen = false
     @State private var seasonPanelOpen = false
     @State private var loadItem: [DownloadItem] = []
     /// What the header panel shows: "Staffel 5" or the name of an episode.
@@ -195,7 +193,7 @@ struct SeriesView: View {
             .padding(.bottom, 40)
             // **The color of the header image under the page**, as on the movie page and the
             // iPhone (`MoodReason`). It sits on the content so it scrolls with the
-            // header; buttons, season pill and list pick it up through `onImageTint`.
+            // header; buttons and season chips pick it up through `onImageTint`.
             .background(alignment: .top) {
                 MoodReason(url: model.headerImageURL(for: series), since: Theme.heroHeightValue)
             }
@@ -321,7 +319,7 @@ struct SeriesView: View {
         // gate.
         //
         // What still matters is that switching itself must not jump. The loader fades
-        // into the list, and the season pill does not appear abruptly.
+        // into the list, and the season row does not appear abruptly.
         //
         // **No animation on data arrival.** Animating the change from the 200 pt loader
         // to the episode list is a height jump of about a thousand points. Over 250 ms
@@ -336,29 +334,19 @@ struct SeriesView: View {
         switch tab {
         case .episodes:
             VStack(alignment: .leading, spacing: 0) {
-                // **The picker shows as soon as there are seasons**, not only from two.
-                //
-                // It used to depend on `seasons.count > 1`, on the idea that a button with one
-                // choice is no button. The iPhone reference differs in two places:
-                // `SeriesView` shows it for `!seasons.isEmpty`, and so does the episode layer
-                // in the Mac player. The chip is not only for switching, it also says **which**
-                // season is showing. With a single season it would remove the only place that
-                // says so, and for "Specials" it would hide that the user is in the specials.
+                // **The row shows only from two seasons**, as on every platform: a single chip
+                // offers no choice, and the episodes below already say which season they belong to.
                 //
                 // **The download button is not a chip next to the season picker.** It would be
                 // the only way to download on this page, in a place nobody looks. On the iPhone
                 // it sits in the row below the play button, between Watchlist and Watched, and
                 // it opens the same `MacLadeauswahl` here. The row that held both side by side
                 // is gone; the picker stands alone, as on the iPhone.
-                if !seasons.isEmpty {
-                    SeasonSelection(seasons: seasons, selected: $selected,
-                                opened: $seasonOpen)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if seasons.count > 1 {
+                    SeasonChipRow(seasons: seasons, selected: $selected)
                         // 14 as on the iPhone (`episodesList`), plus the 12 of the row: 26 up to the
                         // first still image.
                         .padding(.bottom, 14)
-                        // The open list sits above the episodes.
-                        .zIndex(10)
                 }
                 if loads {
                     // Three rows in their final shape instead of a spinner.
@@ -709,6 +697,44 @@ struct SeasonSelection: View {
             }
         }
         .panelEscape(opened) { withAnimation(Theme.leap) { opened = false } }
+    }
+}
+
+/// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
+///
+/// The dropdown ended where the window ended: with ten seasons in a small window the
+/// lower entries were cut off and could not be reached. A row scrolls instead, and every
+/// season is one click away. It is the library's `Chip`, so selected reads the same in
+/// both places.
+///
+/// The selected season is centred when the row appears and when it changes: coming in via
+/// an episode of a late season, its chip would otherwise sit beyond the edge.
+struct SeasonChipRow: View {
+    let seasons: [Item]
+    @Binding var selected: Item?
+
+    var body: some View {
+        ScrollViewReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(seasons, id: \.id) { season in
+                        // From the server, so not translated: `Chip` shows it verbatim.
+                        Chip(label: season.name, active: season.id == selected?.id) {
+                            selected = season
+                        }
+                        .id(season.id)
+                    }
+                }
+            }
+            .onChange(of: selected?.id, initial: true) { before, now in
+                guard let now else { return }
+                if before == nil {
+                    reader.scrollTo(now, anchor: .center)
+                } else {
+                    withAnimation(Theme.leap) { reader.scrollTo(now, anchor: .center) }
+                }
+            }
+        }
     }
 }
 

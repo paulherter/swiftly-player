@@ -135,7 +135,6 @@ struct SeriesDetailView: View {
     /// Width of the grid under "Similar", from which the column count is derived,
     /// as in Library, Search and Watchlist.
     @State private var gridWidth: CGFloat = 0
-    @State private var seasonListOpen = false
     /// Has the user picked a season themselves? Then nothing overrides it anymore.
     @State private var selfSelected = false
 
@@ -232,16 +231,6 @@ struct SeriesDetailView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pagesWidth = $0 }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
                 distance.setDown(new)
-                // **Scrolling closes the season list, tapping no longer does.**
-                //
-                // A `simultaneousGesture` on the whole scroll area closed it on tap. Simultaneous
-                // means what it says: tapping the pill itself fired **both**, the gesture closed
-                // the list and the button then toggled from closed to open. It looked like the
-                // window closing and immediately reopening.
-                //
-                // Scrolling is the movement where an open list really gets in the way, and it
-                // cannot compete with any button for the same touch.
-                if seasonListOpen { seasonListOpen = false }
             }
             .ignoresSafeArea(edges: .top)
 
@@ -285,7 +274,6 @@ struct SeriesDetailView: View {
 
             DetailHeaderReader(title: series.name, distance: distance) { back() }
         }
-        .animation(Theme.leap, value: seasonListOpen)
         .animation(Theme.sectionSwitch, value: tab)
         // When wide, the panel hangs on the button instead of the bottom edge of the
         // screen. The anchor comes from `asActionAnchor()`; fixed coordinates would
@@ -642,6 +630,52 @@ struct SeriesDetailView: View {
         episodesList
     }
 
+    /// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
+    ///
+    /// The dropdown hung over the episodes and had no scrolling of its own: with ten
+    /// seasons the lower ones ran off the bottom of the screen and could not be reached.
+    /// A row has no such end; it scrolls, and every season is one tap away. It is the
+    /// same chip as the filters on the watchlist, so selected reads as selected there and
+    /// here.
+    ///
+    /// **Also with a single season.** The row then says which season is showing, as the
+    /// pill did; for "Specials" that is the only hint where the user is.
+    ///
+    /// The selected season is centred when the row appears and when it changes: coming in
+    /// via an episode of season eight, its chip would otherwise sit beyond the edge.
+    private var seasonRow: some View {
+        ScrollViewReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(seasons) { season in
+                        // From the server, so not translated: `SelectionChip` shows it verbatim.
+                        SelectionChip(text: season.name, an: season.id == selectedSeason?.id) {
+                            selfSelected = true
+                            seasonSwitch(season)
+                        }
+                        .id(season.id)
+                    }
+                }
+                #if os(iOS)
+                // **The pull from the left edge belongs to the page**; see `EdgeGesturePreRank`
+                // in the other horizontal rows.
+                .overlay(alignment: .topLeading) {
+                    EdgeGesturePreRank().frame(width: 0, height: 0)
+                }
+                #endif
+            }
+            .contentMargins(.horizontal, Theme.margin(wide: wide), for: .scrollContent)
+            .onChange(of: selectedSeason?.id, initial: true) { before, now in
+                guard let now else { return }
+                if before == nil {
+                    reader.scrollTo(now, anchor: .center)
+                } else {
+                    withAnimation(Theme.reveal) { reader.scrollTo(now, anchor: .center) }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var episodesList: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -650,37 +684,16 @@ struct SeriesDetailView: View {
                 // section, not under an empty season picker.
                 DisturbHint(model: model) { Task { await load() } }
             } else if !seasons.isEmpty {
-                // **The fallback must be translated, the name must not.**
-                //
-                // `label` is a `String` because to the left of it stands the season name
-                // from the server, which is not translated. To the right of `??` stood our own
-                // word, and a German word in a `String` never reaches the catalog:
-                // `Text(someString)` is verbatim. A season without a name was therefore shown as
-                // "Staffel" in English too.
-                //
-                // The key has long existed ("Staffel" -> "Season"); it just was not looked up
-                // here.
-                ExpandList(label: selectedSeason?.name
-                                  ?? String(localized: "Staffel"),
-                              entries: seasons,
-                              text: { $0.name },
-                              isSelected: { $0.id == selectedSeason?.id },
-                              select: { season in
-                                  selfSelected = true
-                                  seasonSwitch(season)
-                              },
-                              opened: $seasonListOpen)
-                    .padding(.leading, Theme.margin(wide: wide))
-                    .padding(.top, 14)
-                    .padding(.bottom, 14)
-                    .zIndex(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.opacity)
+                // **Only from two seasons**, as on every platform: a single chip offers no
+                // choice, and the episodes below already say which season they belong to.
+                if seasons.count > 1 {
+                    seasonRow
+                        .padding(.vertical, 14)
+                        .transition(.opacity)
+                }
             } else if loads {
-                // **Empty, but with space.** While the season picker loads, its height stays
-                // free (34 like `ExpandList`, 14 above and below); it fades in at that spot.
-                // A fixed-width placeholder was longer than the button and seemed to shrink on
-                // arrival.
+                // **Empty, but with space.** While the season row loads, its height stays
+                // free (34, 14 above and below); it fades in at that spot.
                 Color.clear.frame(height: 34 + 2 * 14)
             }
 

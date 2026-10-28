@@ -33,6 +33,21 @@ func railsSection<Header: View, ContentBody: View>(
     }
 }
 
+extension View {
+    /// **A horizontal row fades out in the left margin instead of being cut.**
+    /// See the mask in `strip`; the season row on the series page uses the same edge.
+    nonisolated func leadingEdgeFade() -> some View {
+        mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .white],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Theme.edgePage)
+                Color.white
+            }
+        }
+    }
+}
+
 /// The horizontal surface under a row header.
 /// `scrollClipDisabled` is a requirement, not polish: the focused tile grows
 /// by 1.08 beyond its layout size and the surface would clip it at its edge.
@@ -79,14 +94,7 @@ func strip<ContentBody: View>(state: Binding<String?>? = nil,
     // background is tinted, and a #0B0B0D surface would show as a patch. So a
     // mask as wide as the margin. It costs nothing when not scrolled: the first
     // tile starts at `edgePage`, exactly where the mask is fully opaque.
-    .mask {
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .white],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(width: Theme.edgePage)
-            Color.white
-        }
-    }
+    .leadingEdgeFade()
     .scrollClipDisabled()
     .scrollIndicators(.hidden)
     // **The side margin is a content margin, not padding.**

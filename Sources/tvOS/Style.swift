@@ -362,6 +362,8 @@ extension Theme {
 
     static let buttonHeight: CGFloat = 76
     static let chipHeight: CGFloat = 48
+    /// Between two chips in a row, as in the library's chip row.
+    static let chipSpacing: CGFloat = 20
     static let rowsHeight: CGFloat = 84
 
     // MARK: Focus

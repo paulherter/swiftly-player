@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -19,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
@@ -36,7 +39,7 @@ import org.json.JSONObject
 /**
  * Mirrors tvOS `SeriesView`. **No tabs**: episodes, cast and similar titles stack like the rows of
  * the home page. Episodes are a horizontal strip of landscape tiles like "Continue watching"; the
- * season changes via a pill next to the row title.
+ * season changes via a row of chips between the row title and the strip (`TvSeasonChips`).
  * **The first focus belongs to the main button, not to an episode.** The header is the same as on
  * the film page (`TvDetailHeader` in `TvTitle.kt`), otherwise the two pages drift apart again.
  */
@@ -262,17 +265,13 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 }
 
                 Column(Modifier.tvSection(a, "folgen").padding(top = TvTheme.railsSpacing - TvTheme.railsPadding).tvInFade(fadeInAlpha)) {
-                    Row(Modifier.padding(start = TvTheme.edgePage), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text(translated("Folgen"), style = TvTheme.rail, color = Theme.font)
-                        val list = series?.seasons.orEmpty()
-                        if (list.size > 1) {
-                            TvButton(list.firstOrNull { it.id == season }?.name ?: translated("Staffel"), Glyph.AngleDown, height = 30.dp) {
-                                app.sheet.value = SheetRequest(translated("Staffel"), list.map { Choice(it.id, it.name) }, season) { w ->
-                                    season = w; selfSelected = true
-                                    app.episodesCache[w]?.let { episodes = it }
-                                    series?.id?.let { sid -> run.launch { episodesLoad(sid, w) } }
-                                }
-                            }
+                    Text(translated("Folgen"), style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(start = TvTheme.edgePage))
+                    val list = series?.seasons.orEmpty()
+                    if (list.size > 1) {
+                        TvSeasonChips(list, season) { w ->
+                            season = w; selfSelected = true
+                            app.episodesCache[w]?.let { episodes = it }
+                            series?.id?.let { sid -> run.launch { episodesLoad(sid, w) } }
                         }
                     }
                     // One stack as on tvOS: loading / empty / strip share the same height, so the cast below does
@@ -317,6 +316,43 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
         }
         message?.let { text ->
             TvHintStrip(text, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { message = null }
+        }
+    }
+}
+
+/**
+ * **The seasons as a row of chips, not a sheet.** Mirrors `seasonRow` in tvOS `SeriesView`. A list of
+ * ten seasons is taller than the screen; a row is as wide as it needs and scrolls, and left and right
+ * is how the remote moves along a row anyway. `TvChip` because it is the chip that shows a selection:
+ * the selected season carries the accent. Only from two seasons, as the pill before.
+ *
+ * **Entering the row lands on the selected season**, not on the chip geometrically closest
+ * (`focusProperties.enter`, as the left column of `TvProfile`). Only while that chip is laid out: a
+ * requester without a node would have nothing to focus, and the default search takes over.
+ *
+ * The selected season is scrolled into view when the row appears and when it changes, as the episode
+ * strip does with the running episode.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TvSeasonChips(seasons: List<Season>, selected: String?, select: (String) -> Unit) {
+    val chips = rememberLazyListState()
+    val onSelected = remember { FocusRequester() }
+    val index = seasons.indexOfFirst { it.id == selected }
+    LaunchedEffect(index) {
+        if (index >= 0 && chips.layoutInfo.visibleItemsInfo.none { it.index == index }) chips.scrollToItem(index)
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides TvStaticRail) {
+        LazyRow(Modifier.focusProperties {
+                    enter = { if (chips.layoutInfo.visibleItemsInfo.any { it.index == index }) onSelected else FocusRequester.Default }
+                }.focusGroup(),
+                state = chips,
+                contentPadding = PaddingValues(start = TvTheme.edgePage, end = TvTheme.edgePage, top = TvTheme.railsPadding),
+                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            items(seasons, key = { it.id }) { st ->
+                val an = st.id == selected
+                TvChip(st.name, an, if (an) Modifier.focusRequester(onSelected) else Modifier) { select(st.id) }
+            }
         }
     }
 }

@@ -102,25 +102,27 @@ struct SeriesView: View {
     @State private var episodesDisturbed = false
     @State private var similarDisturbed = false
     @State private var moreOpen = false
-    @State private var seasonSelectionOpen = false
     /// Which episode tile has focus.
     @FocusState private var atEpisode: String?
     /// Whether the main button has focus; it is the page's starting point.
     @FocusState private var atPrimaryButton: Bool
     /// **Where focus returns when a panel closes.**
     /// It used to jump to the main button, the page's initial focus, even though
-    /// the user stood at the More button or season pill. A panel is not a change
-    /// of place but something that opens above its button; closing it
-    /// returns to the button that opened it.
+    /// the user stood at the More button. A panel is not a change of place but
+    /// something that opens above its button; closing it returns to the button
+    /// that opened it.
     @FocusState private var atMoreButton: Bool
-    @FocusState private var atSeasonPill: Bool
+    /// Which season chip has focus; see `seasonRow`.
+    @FocusState private var atSeason: String?
+    /// Which season sits in view in the season row; see `seasonRow`.
+    @State private var seasonFront: String?
     /// **Where focus returns when the player closes.**
-    /// Same reason as `atMoreButton`/`atSeasonPill`. The player is a sibling in
-    /// the frame and the page stays mounted during playback, only `disabled`,
-    /// which resets the three focus variables. Without this memory tvOS picks
-    /// something geometrically on removal and lands on the first tab of the
-    /// header bar instead of the episode or button that opened the player.
-    private enum FocusTarget: Equatable { case primaryButton, moreButton, episode(String) }
+    /// Same reason as `atMoreButton`. The player is a sibling in the frame and
+    /// the page stays mounted during playback, only `disabled`, which resets the
+    /// focus variables. Without this memory tvOS picks something geometrically
+    /// on removal and lands on the first tab of the header bar instead of the
+    /// episode, season or button where the user stood.
+    private enum FocusTarget: Equatable { case primaryButton, moreButton, season(String), episode(String) }
     @State private var lastFocus: FocusTarget = .primaryButton
 
     private var current: Item { freshValue ?? series }
@@ -132,16 +134,12 @@ struct SeriesView: View {
                 header
 
                 railsSection {
-                    HStack(spacing: 34) {
-                        RailTitle(text: "Folgen")
-                        if seasons.count > 1, let season = selectedSeason {
-                            SeasonPill(name: season.name, opened: $seasonSelectionOpen)
-                                .focused($atSeasonPill)
-                                .panelTrigger("staffel")
-                        }
-                    }
+                    RailTitle(text: "Folgen")
                 } content: {
-                    episodesStrip
+                    VStack(alignment: .leading, spacing: 0) {
+                        seasonRow
+                        episodesStrip
+                    }
                 }
                 .opacity(inFade ? 1 : 0)
 
@@ -205,28 +203,21 @@ struct SeriesView: View {
         // edge and a seam crosses the screen. See `ImageReason`.
         .imageReason(url: model.landscapeImageURL(for: current, width: 1600)
                         ?? model.headerImageURL(for: current))
-        // The season picker lives on the **page**, not on the pill button; see
-        // `Handlungstafel.unterDemReihenkopf`.
         // **While a panel is open, the rest is not a focus target.**
         // `focusSection` does not hold focus, it only orders it. A left or right
         // press used to jump out of the open panel into the episodes behind it, and
         // the panel stayed until the page was left.
         // Locking happens **before** the modifiers: the panels hang after and so
         // stay operable themselves.
-        .disabled(moreOpen || seasonSelectionOpen)
-        // Both sit under their button, at its edge; see `PanelAnchor`. Previously two
-        // numbers computed from the page layout landed offset by the safe margin and
-        // would have needed re-tuning with every added row.
-        .panel(under: seasonSelectionOpen ? "staffel" : nil) {
-            ActionPanel(actions: seasonActions, opened: $seasonSelectionOpen)
-                .transition(.opacity)
-        }
+        .disabled(moreOpen)
+        // It sits under its button, at its edge; see `PanelAnchor`. A number computed
+        // from the page layout landed offset by the safe margin and would have needed
+        // re-tuning with every added row.
         .panel(under: moreOpen ? "mehr" : nil) {
             ActionPanel(actions: moreActions, opened: $moreOpen)
                 .transition(.opacity)
         }
         .animation(Theme.motion(.easeInOut(duration: 0.18)), value: moreOpen)
-        .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)
         .overlay(alignment: .top) {
             if let message {
                 HintStrip(text: message) { self.message = nil }
@@ -245,12 +236,12 @@ struct SeriesView: View {
         // row. That is scroll position, not focus; the two had been confused.
         .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
         .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
-        .onChange(of: seasonSelectionOpen) { _, opened in if !opened { atSeasonPill = true } }
         .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
         .onChange(of: atMoreButton) { _, an in if an { lastFocus = .moreButton } }
+        .onChange(of: atSeason) { _, now in if let now { lastFocus = .season(now) } }
         .onChange(of: atEpisode) { _, now in if let now { lastFocus = .episode(now) } }
         // See `lastFocus`: the player leaves the same empty focus as an open
-        // panel or season picker, one level higher; the same assignment restores it.
+        // panel, one level higher; the same assignment restores it.
         .onChange(of: play.wrappedValue == nil) { before, closed in
             guard closed, before == false else { return }
             focusBack()
@@ -271,8 +262,8 @@ struct SeriesView: View {
         }
         // **`load()` also fetches the first season's episodes**, not a separate
         // `.task(id:)`. That ran alongside: the season header showed first and the
-        // episodes jerked in after. Later changes are loaded by the season picker
-        // itself; see `seasonActions`.
+        // episodes jerked in after. Later changes are loaded by the season row
+        // itself; see `seasonSelect`.
         // **Reload after the player.** It is a layer above this page, which never
         // disappears, and the `.task` above does not run twice, so progress and
         // "watched" would keep their pre-playback state. See
@@ -434,18 +425,63 @@ struct SeriesView: View {
         return state.id
     }
 
-    /// The seasons as a `Handlungstafel`, not a `Menu`, as everywhere in the app.
-    private var seasonActions: [TitleAction] {
-        seasons.map { season in
-            TitleAction(symbol: selectedSeason?.id == season.id
-                                  ? "checkmark.circle.fill" : "circle",
-                          text: "\(season.name)") {
-                guard selectedSeason?.id != season.id else { return }
-                seasonSelfSelected = true
-                selectedSeason = season
-                Task { await episodesLoad() }
+    /// **The seasons as a horizontal row of chips, not a panel under a pill.**
+    ///
+    /// A panel has the height of the screen and no more: with ten seasons the rows below
+    /// the picture edge could not be reached. Width is what the TV has, and left and right
+    /// is how the remote moves along a row anyway, so every season is one press away and
+    /// the row scrolls where it does not fit.
+    ///
+    /// `ChipStyle` because it is the one chip that shows a selection: the selected season
+    /// carries the accent, the others the calm surface, and focus is the usual lift.
+    ///
+    /// **Entering the row lands on the selected season**, not on the first or the one
+    /// geometrically below: `.userInitiated` because exactly the press into the row is
+    /// meant, as on the episode strip. The row is a `focusSection`, so down leaves it for
+    /// the episodes and up for the button row.
+    ///
+    /// Only with two or more seasons: with one there is nothing to choose.
+    @ViewBuilder
+    private var seasonRow: some View {
+        if seasons.count > 1 {
+            ScrollView(.horizontal) {
+                HStack(spacing: Theme.chipSpacing) {
+                    ForEach(seasons) { season in
+                        Button { seasonSelect(season) } label: {
+                            Text(verbatim: season.name)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(ChipStyle(an: selectedSeason?.id == season.id))
+                        .focused($atSeason, equals: season.id)
+                    }
+                }
+                // Inside the scroll surface so the focused chip grows without being clipped.
+                .padding(.vertical, Theme.railsPadding)
+                .scrollTargetLayout()
             }
+            // **The selected season in view on opening.** Coming in via an episode of a late
+            // season, its chip would otherwise sit beyond the right edge. A change of the
+            // binding scrolls, an initial value does not; see `EpisodesStrip.ahead`. Not
+            // while the user is in the row: there focus decides what is visible.
+            .scrollPosition(id: $seasonFront, anchor: .center)
+            .onChange(of: selectedSeason?.id, initial: true) { _, now in
+                if atSeason == nil { seasonFront = now }
+            }
+            .contentMargins(.horizontal, Theme.edgePage, for: .scrollContent)
+            .leadingEdgeFade()
+            .scrollIndicators(.hidden)
+            .focusSection()
+            .defaultFocus($atSeason, selectedSeason?.id, priority: .userInitiated)
         }
+    }
+
+    /// Selecting a season counts as the user's choice and loads its episodes; see
+    /// `seasonSelfSelected`.
+    private func seasonSelect(_ season: Item) {
+        guard selectedSeason?.id != season.id else { return }
+        seasonSelfSelected = true
+        selectedSeason = season
+        Task { await episodesLoad() }
     }
 
     // MARK: Labels and loading
@@ -584,6 +620,9 @@ struct SeriesView: View {
         switch lastFocus {
         case .primaryButton: atPrimaryButton = true
         case .moreButton: atMoreButton = true
+        case .season(let id):
+            if seasons.contains(where: { $0.id == id }) { atSeason = id }
+            else { atPrimaryButton = true }
         case .episode(let id):
             // The episode may have left the list (other season): then to the front
             // episode, otherwise the main button.

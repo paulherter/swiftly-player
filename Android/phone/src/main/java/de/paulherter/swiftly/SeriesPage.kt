@@ -18,6 +18,9 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -62,6 +65,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -148,7 +152,6 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     var remembered by remember(target.id) { mutableStateOf(series?.remembered ?: false) }
     var watched by remember(target.id) { mutableStateOf(series?.watched ?: false) }
     var tab by rememberSaveable(target.id) { mutableIntStateOf(0) }
-    var listOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     /** The schedule arrives after the page; until then the badge row keeps its place. */
     var planLoaded by remember(target.id) { mutableStateOf(series?.planPresent == true) }
@@ -255,8 +258,6 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     LaunchedEffect(target.id) { load() }
 
     val scroll = rememberScrollState()
-    // Scrolling closes the season list; a tap on the pill itself does not.
-    LaunchedEffect(scroll) { snapshotFlow { scroll.isScrollInProgress }.collect { if (it) listOpen = false } }
     val density = LocalDensity.current.density
     val s = series
     val name = s?.name ?: target.name
@@ -401,12 +402,13 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             Crossfade(tab, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
                     0 -> Column {
-                        // **No placeholders** (as on iOS): while the series loads, the season button is invisible and
+                        // **No placeholders** (as on iOS): while the series loads, the season row is invisible and
                         // keeps its height; it fades in at its place.
-                        val headerPresent = s?.seasons?.isNotEmpty() == true
+                        // Only from two seasons, as on every platform: a single chip offers no choice.
+                        val headerPresent = (s?.seasons?.size ?: 0) > 1
                         val headerVisibility by animateFloatAsState(if (headerPresent) 1f else 0f, Motion.reveal(), label = "staffelkopf")
                         if (headerPresent || s == null) Box(Modifier.alpha(headerVisibility)) {
-                            SeasonHeader(s?.seasons.orEmpty(), season, listOpen, { listOpen = it }) { new ->
+                            SeasonChips(s?.seasons.orEmpty(), season) { new ->
                                 selfSelected = true
                                 if (new != season) {
                                     season = new
@@ -489,6 +491,49 @@ private fun PageTab(title: List<String>, selected: Int, select: (Int) -> Unit) {
                              if (an) drawRect(Theme.font, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
                          }
                          .padding(bottom = 11.dp))
+            }
+        }
+    }
+}
+
+/**
+ * **The seasons as a row of chips that scrolls sideways, not a list that drops down.** Mirrors
+ * `seasonRow` in the shared `SeriesView.swift`. The dropdown had no scrolling of its own: with ten
+ * seasons the lower ones ran off the screen and could not be reached. A row scrolls, and every
+ * season is one tap away.
+ *
+ * The chip mirrors `SelectionChip`: selected is one step up the ladder (`raised`) with full text,
+ * otherwise `area` with quiet text, one weight in both so no neighbour shifts. Also with a single
+ * season, as on iOS: the row then says which season is showing. Names come from the server.
+ *
+ * The selected season is scrolled into view when the row appears and when it changes; coming in
+ * via an episode of season eight, its chip would otherwise sit beyond the edge.
+ */
+@Composable
+internal fun SeasonChips(seasons: List<Season>, selected: String?, select: (String) -> Unit) {
+    val list = rememberLazyListState()
+    LaunchedEffect(selected, seasons.size) {
+        val index = seasons.indexOfFirst { it.id == selected }
+        if (index < 0) return@LaunchedEffect
+        // Wait for the first layout; before it nothing is known about what is visible.
+        snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
+        val info = list.layoutInfo
+        val whole = info.visibleItemsInfo.any { it.index == index && it.offset >= info.viewportStartOffset
+                                                 && it.offset + it.size <= info.viewportEndOffset }
+        if (!whole) list.animateScrollToItem(index)
+    }
+    // The height stays while the series loads (`heightIn`), so the episodes do not jump when the row fades in.
+    LazyRow(Modifier.fillMaxWidth().padding(vertical = 14.dp).heightIn(min = Theme.pillsHeight), state = list,
+            contentPadding = PaddingValues(horizontal = Theme.edgeSpacing),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        items(seasons, key = { it.id }) { st ->
+            val an = st.id == selected
+            Box(Modifier.heightIn(min = Theme.pillsHeight).clip(CircleShape).background(if (an) Theme.raised else Theme.area)
+                    .tapOn { select(st.id) }
+                    .semantics { this.selected = an; role = Role.Tab }
+                    .padding(horizontal = 13.dp),
+                contentAlignment = Alignment.Center) {
+                Text(st.name, style = Theme.tile, color = if (an) Theme.font else Theme.fontQuiet, maxLines = 1)
             }
         }
     }

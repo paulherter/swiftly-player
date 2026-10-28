@@ -4,9 +4,8 @@ import JellyfinKit
 
 /// The series page's foundation: tabs, season picker, episode list.
 ///
-/// From `Sources/macOS/SeriesView.swift`. The season pill opens its list
-/// **directly below**, with no sheet or panel: a small choice opens where it was
-/// triggered.
+/// From `Sources/macOS/SeriesView.swift`. The seasons are a row of chips that
+/// scrolls sideways (``seasonsShow``), as `SeasonChipRow` on the Mac.
 extension App {
 
     enum PageTab: CaseIterable {
@@ -300,125 +299,81 @@ extension App {
         choice.now = selected ?? seasons[0]
         openSeason = choice.now
 
-        // **With a chevron, and it shows the state.** On the Mac the chip carries
-        // `chevron.down`, open `chevron.up` (`SeriesView.swift:548`); a bare text label
-        // gives no hint that it expands.
-        let pill: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(pill, "swiftly-chip")
-        gtk_widget_set_halign(pill, GTK_ALIGN_START)
-        let pillsContent = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
-        let pillsText = label(choice.now?.name ?? translated("Staffel"))
-        // A chevron, not an arrow; `chevron.down` on the Mac.
-        let pillsAngle: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
-        append(pillsContent, pillsText)
-        append(pillsContent, pillsAngle)
-        gtk_button_set_child(asButton(pill), pillsContent)
-        // A choice exists only with more than one season.
-        // **With one season there is nothing to choose.** The Mac hides the pill then;
-        // leaving it greyed out looks like a stuck button.
-        // The label stays even with one season; only the chevron is dropped, since there
-        // is nothing to choose.
-        gtk_widget_set_visible(pill, seasons.isEmpty ? 0 : 1)
-        gtk_image_set_pixel_size(OpaquePointer(pillsAngle), 11)
-
         let episodesSpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
 
-        // **An in-place list, not a sheet.**
+        // **A row of chips that scrolls sideways, not a list that drops down.**
         //
-        // A `GtkPopover` was used here, with a comment claiming the Mac shows a sheet. It
-        // does not: `Staffelwahl` (`Sources/macOS/SeriesView.swift:541`) opens the list
-        // **in the page flow** below the chip, and its doc comment says why: a `Menu` would
-        // be the obvious choice and exactly therefore wrong, as it brings system
-        // measurements, corners and material. A GTK popover brings the same three things.
-        // That everything below moves along is not a side effect but the template's
-        // behaviour.
+        // The list under the pill pushed the page down by one row per season; with ten
+        // seasons the lower ones sat below the window edge, far from the pill that opened
+        // them. A row is as wide as it needs, scrolls where it does not fit, and every
+        // season is one click away. Same as `SeasonChipRow` on the Mac, with the same
+        // `chip`: selected is `swiftly-aktiv`, one step up the ladder.
         //
-        // 220 wide, 4 vertical inner padding, `erhoeht` with `eckeFeld` and a hairline, all
-        // from `SeriesView.swift:554-566`.
-        let selectionBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_set_halign(selectionBlock, GTK_ALIGN_START)
-        append(selectionBlock, pill)
+        // Only from two seasons, as on every platform: a single chip offers no choice.
+        //
+        // `EXTERNAL`: scrolling yes, bar no, as in the other horizontal rows.
+        let scroller: Widget! = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
+                                       GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+        gtk_widget_set_margin_start(rail, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(rail, Int32(Theme.edgeSpacing))
 
-        let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_add_css_class(list, "swiftly-staffelliste")
-        gtk_widget_set_size_request(list, 220, -1)
-        gtk_widget_set_halign(list, GTK_ALIGN_START)
-
-        // The Mac slides it in from above with `Theme.zeitSprung` (snappy, 0.22 s) while
-        // fading it in; a `GtkRevealer` with `SLIDE_DOWN` is the closest counterpart.
-        let expand: Widget! = gtk_revealer_new()
-        gtk_revealer_set_transition_type(asExpand(expand),
-                                         // **Grows out of the button** (Mac): fade-in plus the expand animation in the
-                                         // stylesheet, no sliding down.
-                                         GTK_REVEALER_TRANSITION_TYPE_CROSSFADE)
-        gtk_revealer_set_transition_duration(asExpand(expand), 220)
-        gtk_revealer_set_child(asExpand(expand), list)
-        gtk_widget_set_margin_top(expand, 8)
-        gtk_widget_set_halign(expand, GTK_ALIGN_START)
-        // **When closed it is gone, not just transparent.** A revealer keeps the full
-        // height of its list when closed (measured headless: 336 points with eight
-        // seasons), which was the huge gap between season picker and first episode. It
-        // becomes visible on expanding and invisible once collapsing finishes.
-        gtk_widget_set_visible(expand, 0)
-        let expandBox = held(expand)
-        onProperty(UnsafeMutableRawPointer(expand), "notify::child-revealed") {
-            guard let a = expandBox.widget,
-                  gtk_revealer_get_child_revealed(asExpand(a)) == 0,
-                  gtk_revealer_get_reveal_child(asExpand(a)) == 0 else { return }
-            gtk_widget_set_visible(a, 0)
-        }
-        signal(expand, "destroy") { letGo(expandBox) }
-        append(selectionBlock, expand)
-
-        // **Created once, not on every click.** Previously each click created a new panel
-        // that stayed attached to the button; when leaving the page GTK reported
-        // "Finalizing GtkButton, but it still has children left" and left a dangling
-        // pointer. This is what crashed the app when opening a series.
-        var rows: [String: Widget?] = [:]
+        var chips: [String: Widget?] = [:]
         for season in seasons {
-            let row = seasonRow(season.name,
-                                     selected: season.id == choice.now?.id) { [weak self] in
+            let an = season.id == choice.now?.id
+            let button = chip(season.name, active: an)
+            help(button, selected: an)
+            signal(button, "clicked") { [weak self] in
                 guard let self else { return }
                 choice.now = season
                 self.openSeason = season
                 self.detailTouched = true
-                gtk_label_set_text(OpaquePointer(pillsText), season.name)
-                for (identifier, w) in rows {
-                    self.seasonRowDraw(w, selected: identifier == season.id)
+                for (identifier, w) in chips {
+                    guard let w else { continue }
+                    let now = identifier == season.id
+                    if now { gtk_widget_add_css_class(w, "swiftly-aktiv") }
+                    else { gtk_widget_remove_css_class(w, "swiftly-aktiv") }
+                    help(w, selected: now)
                 }
-                gtk_widget_remove_css_class(list, "swiftly-offen")
-                gtk_revealer_set_reveal_child(asExpand(expand), 0)
-                gtk_image_set_from_icon_name(OpaquePointer(pillsAngle), "pan-down-symbolic")
                 self.episodesLoad(series: series, season: season, in: episodesSpace)
             }
-            rows[season.id] = row
-            append(list, row)
+            chips[season.id] = button
+            append(rail, button)
+        }
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), rail)
+
+        // **The selected season in view on opening.** Coming in via an episode of a late
+        // season, its chip would otherwise sit beyond the right edge. Centred once the row
+        // is measured; the same wait as in `gridScroll`, since nothing has a size yet here.
+        if let now = choice.now, let target = chips[now.id] ?? nil {
+            let adjustment = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
+            var measured = false
+            runningCount(on: scroller, duration: 1.0, linear: true, step: { _ in
+                guard !measured else { return }
+                let page = gtk_adjustment_get_page_size(adjustment)
+                var r = graphene_rect_t()
+                guard page > 0, gtk_widget_compute_bounds(target, rail, &r) != 0,
+                      r.size.width > 0 else { return }
+                measured = true
+                // The rail's margin lies outside its own coordinates.
+                let middle = Double(Theme.edgeSpacing) + Double(r.origin.x)
+                    + Double(r.size.width) / 2 - page / 2
+                let atMost = gtk_adjustment_get_upper(adjustment) - page
+                gtk_adjustment_set_value(adjustment, min(max(middle, 0), max(atMost, 0)))
+            }, done: {})
         }
 
-        signal(pill, "clicked") {
-            // It opens even with a single season: the chip says which season is shown.
-            let opened = gtk_revealer_get_reveal_child(asExpand(expand)) == 0
-            if opened { gtk_widget_set_visible(expand, 1) }
-            // The class triggers the expand animation in the stylesheet.
-            if opened { gtk_widget_add_css_class(list, "swiftly-offen") }
-            else { gtk_widget_remove_css_class(list, "swiftly-offen") }
-            gtk_revealer_set_reveal_child(asExpand(expand), opened ? 1 : 0)
-            gtk_image_set_from_icon_name(OpaquePointer(pillsAngle),
-                                         opened ? "pan-up-symbolic" : "pan-down-symbolic")
-        }
-
-        // **The season picker stands alone and left-aligned**: the "Download season" chip
-        // is gone, and with it the row that held it next to the picker. Downloading goes
-        // through the button in the button row (``loadSelectionShow(_:an:)``). 18 below the
-        // picker.
+        // **The season row stands alone**: the "Download season" chip is gone, and with it
+        // the row that held it next to the picker. Downloading goes through the button in
+        // the button row (``loadSelectionShow(_:an:)``).
         seasonLoadButton = nil
-        gtk_widget_set_margin_start(selectionBlock, Int32(Theme.edgeSpacing))
         // 14 to the first row plus its 12 padding, as on the iPhone
         // (`SeriesView.episodesList`) and the Mac. The tab area's spacing (18) does not apply
         // here, otherwise both would stack.
         gtk_box_set_spacing(asBox(space), 0)
-        gtk_widget_set_margin_bottom(selectionBlock, 14)
-        append(space, selectionBlock)
+        gtk_widget_set_margin_bottom(scroller, 14)
+        if seasons.count > 1 { append(space, scroller) }
         append(space, episodesSpace)
         if let now = choice.now {
             episodesLoad(series: series, season: now, in: episodesSpace)
