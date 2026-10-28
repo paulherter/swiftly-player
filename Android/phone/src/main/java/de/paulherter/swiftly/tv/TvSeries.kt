@@ -337,7 +337,8 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
  * season the same way. `onSelected` lets the caller put focus on the selected chip itself, as the
  * layer does when it has no episodes to focus; `modifier` carries its focus tracking.
  */
-@OptIn(ExperimentalFoundationApi::class)
+// `focusProperties.enter` is still experimental in Compose UI (as in `TvProfile`).
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvSeasonChips(seasons: List<Season>, selected: String?, modifier: Modifier = Modifier,
                            onSelected: FocusRequester = remember { FocusRequester() }, select: (String) -> Unit) {
