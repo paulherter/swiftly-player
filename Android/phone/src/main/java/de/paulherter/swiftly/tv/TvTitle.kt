@@ -177,8 +177,7 @@ fun TvMoreButton(entries: List<Choice>, icons: Map<String, Glyph> = emptyMap(), 
             BackHandler(onBack = { close() })
             val first = remember { FocusRequester() }
             LaunchedEffect(Unit) { delay(TvTheme.focusDeadline); runCatching { first.requestFocus() } }
-            // 44 dp below the button, same as the season list on the phone (`SeasonHeader` in
-            // `SeriesPage.kt`). `focusable = true` as in `TvCapsuleWithPanel`, otherwise keys bypass the menu.
+            // 44 dp below the button. `focusable = true` as in `TvCapsuleWithPanel`, otherwise keys bypass the menu.
             Popup(offset = IntOffset(0, with(LocalDensity.current) { 44.dp.roundToPx() }),
                   onDismissRequest = { close() }, properties = PopupProperties(focusable = true)) {
                 // Inside the panel: a clicked row must not register itself as the trigger in `FocusRemember`,

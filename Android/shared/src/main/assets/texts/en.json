@@ -608,7 +608,6 @@
  "Staffel %d, Folge %d": "Season %d, Episode %d",
  "Staffel laden": "Download season",
  "Staffel wählen": "Choose a season",
- "Staffel wählen, %s": "Choose season, %s",
  "Staffeln wählen": "Choose seasons",
  "Standard": "Standard",
  "Start": "Home",
@@ -826,7 +825,6 @@
  "Ähnliche Titel": "Similar titles",
  "Ähnliches": "Similar",
  "Ändern": "Change",
- "Öffnet die Auswahl": "Opens the list",
  "Über Seerr anfragen": "Request via Seerr",
  "Übersicht öffnen": "Open overview",
  "−%d s": "−%d s"

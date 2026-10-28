@@ -2886,8 +2886,8 @@ private fun SettingsLayer(app: SwiftlyApplication, mediaWork: PlayItem, margin: 
 }
 
 /**
- * The series' episodes, the same rows as on the series page (`EpisodesRow`, `SeasonHeader`). The title
- * sits exactly where it sat in the player (`stateTitle`, does not fade); the season picker takes
+ * The series' episodes, the same rows as on the series page (`EpisodesRow`, `SeasonChips`). The title
+ * sits exactly where it sat in the player (`stateTitle`, does not fade); the season row takes
  * the place of the meta line. List preloaded (`episodesPreload`): on open it is already there, with the
  * current episode in the middle; only a season change fades in again.
  */
@@ -2901,7 +2901,6 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
     var seasons by remember(seriesIdentifier) { mutableStateOf(preloaded?.seasons.orEmpty()) }
     var selected by remember(seriesIdentifier) { mutableStateOf(preloaded?.let { matching(it.seasons, it.selected) }) }
     var episodes by remember(seriesIdentifier) { mutableStateOf(selected?.let { app.episodesCache[it] }.orEmpty()) }
-    var seasonListOpen by remember { mutableStateOf(false) }
     var seasonSwitched by remember { mutableStateOf(false) }
     val reveal = remember { Animatable(1f) }
     val run = rememberCoroutineScope()
@@ -2950,31 +2949,32 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
 
     Box(Modifier.fillMaxSize()) {
         LayersReason()
-        Column(Modifier.fillMaxSize().padding(start = margin.page, end = margin.page, top = margin.top)) {
-            // The expanded season list lies above the episodes.
-            Box(Modifier.zIndex(1f)) {
+        Column(Modifier.fillMaxSize().padding(top = margin.top)) {
+            Box(Modifier.padding(horizontal = margin.page)) {
                 LayersHeader(close) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        // Placeholder: the title itself is in the player (`stateTitle`) and does not fade.
-                        Text(title, style = titleStyle, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
-                        if (seasons.isNotEmpty()) SeasonHeader(seasons, selected, seasonListOpen, { seasonListOpen = it }, compact = true) { new ->
-                            if (new != selected) {
-                                selected = new
-                                seasonSwitched = true
-                                app.episodesCache[new]?.let { episodes = it }
-                                run.launch {
-                                    try {
-                                        val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, new).await() })
-                                        if (selected == new) { episodes = f; app.episodesCache[new] = f }
-                                    } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-                                }
-                            }
-                        }
+                    // Placeholder: the title itself is in the player (`stateTitle`) and does not fade.
+                    Text(title, style = titleStyle, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
+                }
+            }
+            // **The series page's row, edge to edge**, not inside the header: there the close button would
+            // cut it short, and it scrolls under the layer's margin. The first chip starts under the title
+            // (layer margin plus the header's own). Only from two seasons, as on the series page; 3 above as
+            // the meta line it replaces.
+            if (seasons.size > 1) SeasonChips(seasons, selected, edge = margin.page + PlayerMetric.page, spacing = Modifier.padding(top = 3.dp)) { new ->
+                if (new != selected) {
+                    selected = new
+                    seasonSwitched = true
+                    app.episodesCache[new]?.let { episodes = it }
+                    run.launch {
+                        try {
+                            val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, new).await() })
+                            if (selected == new) { episodes = f; app.episodesCache[new] = f }
+                        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
                     }
                 }
             }
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 12.dp + margin.bottom),
-                       modifier = Modifier.weight(1f).padding(top = 10.dp).graphicsLayer { alpha = reveal.value }) {
+                       modifier = Modifier.weight(1f).padding(top = 10.dp, start = margin.page, end = margin.page).graphicsLayer { alpha = reveal.value }) {
                 itemsIndexed(episodes, key = { _, f -> f.id }) { i, f ->
                     if (i > 0) Box(Modifier.padding(start = Theme.edgeSpacing).fillMaxWidth().height(1.dp).background(Theme.line))
                     Box(Modifier.background(if (f.id == runningId) Color.White.copy(alpha = 0.08f) else Color.Transparent)

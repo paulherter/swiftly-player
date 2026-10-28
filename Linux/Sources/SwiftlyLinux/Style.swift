@@ -921,31 +921,6 @@ enum Theme {
         .swiftly-bewertung label, .swiftly-bewertung image { color: \(fontQuiet); }
         .swiftly-belegmarke.swiftly-bewertung { background-color: alpha(\(fontQuiet), 0.15); }
 
-        /* **Die Staffelliste klappt im Seitenfluss auf**, nicht als Blatt —
-           `Sources/macOS/SeriesView.swift:554-566`. Deshalb `eckeFeld` (12)
-           und *kein* Schatten: sie liegt in der Seite, nicht darüber. */
-        .swiftly-staffelliste {
-            background-color: \(raised);
-            border: 1px solid \(margin);
-            border-radius: \(cornerArea)px;
-            padding: 4px 0;
-            transform-origin: top left;
-        }
-        .swiftly-staffelliste.swiftly-offen {
-            animation: swiftly-aufklappen 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-        }
-        button.swiftly-staffelzeile {
-            min-height: \(rowHeight)px;
-            padding: 0 12px;
-            border-radius: 0;
-        }
-        button.swiftly-staffelzeile:hover { background-color: rgba(255,255,255,0.06); }
-        /* Gewaehlt heisst Weiss (Mac cd91db75) — eine Wahl unter
-           Geschwistern ist Rangfolge, und die traegt der Akzent nie. */
-        button.swiftly-staffelzeile label { color: \(fontQuiet); }
-        button.swiftly-staffelzeile.swiftly-aktiv label,
-        button.swiftly-staffelzeile.swiftly-aktiv image { color: \(font); }
-
         /* **Die Seerr-Marke auf einer Kachel** — gefuellte Kapsel in der Farbe
            des Standes, dunkle Schrift, 11 halbfett, Innenrand 8 x 3
            (`Sources/macOS/SeerrTileAndPage.swift:56-70`). Die Klasse
@@ -1017,9 +992,6 @@ enum Theme {
         .swiftly-bildton button.swiftly-neben.swiftly-aktiv:hover,
         .swiftly-bildton button.swiftly-chip:hover,
         .swiftly-bildton button.swiftly-chip.swiftly-aktiv:hover { background-color: rgba(255,255,255,0.14); }
-        /* Die Staffelliste deckend, im Ton der Seite (``Tonblatt``), ohne
-           Ton `reason` plus Weiß 8 %. */
-        .swiftly-bildton .swiftly-staffelliste { background-color: #232323; }
         /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
            Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
         .swiftly-blank { background-color: transparent; background-image: none; }

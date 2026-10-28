@@ -332,18 +332,22 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
  *
  * The selected season is scrolled into view when the row appears and when it changes, as the episode
  * strip does with the running episode.
+ *
+ * **Shared by the series page and the player's episode layer** (`TvEpisodesLayer`), so both pick a
+ * season the same way. `onSelected` lets the caller put focus on the selected chip itself, as the
+ * layer does when it has no episodes to focus; `modifier` carries its focus tracking.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TvSeasonChips(seasons: List<Season>, selected: String?, select: (String) -> Unit) {
+internal fun TvSeasonChips(seasons: List<Season>, selected: String?, modifier: Modifier = Modifier,
+                           onSelected: FocusRequester = remember { FocusRequester() }, select: (String) -> Unit) {
     val chips = rememberLazyListState()
-    val onSelected = remember { FocusRequester() }
     val index = seasons.indexOfFirst { it.id == selected }
     LaunchedEffect(index) {
         if (index >= 0 && chips.layoutInfo.visibleItemsInfo.none { it.index == index }) chips.scrollToItem(index)
     }
     CompositionLocalProvider(LocalBringIntoViewSpec provides TvStaticRail) {
-        LazyRow(Modifier.focusProperties {
+        LazyRow(modifier.focusProperties {
                     enter = { if (chips.layoutInfo.visibleItemsInfo.any { it.index == index }) onSelected else FocusRequester.Default }
                 }.focusGroup(),
                 state = chips,

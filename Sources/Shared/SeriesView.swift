@@ -630,49 +630,13 @@ struct SeriesDetailView: View {
         episodesList
     }
 
-    /// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
-    ///
-    /// The dropdown hung over the episodes and had no scrolling of its own: with ten
-    /// seasons the lower ones ran off the bottom of the screen and could not be reached.
-    /// A row has no such end; it scrolls, and every season is one tap away. It is the
-    /// same chip as the filters on the watchlist, so selected reads as selected there and
-    /// here.
-    ///
-    /// **Also with a single season.** The row then says which season is showing, as the
-    /// pill did; for "Specials" that is the only hint where the user is.
-    ///
-    /// The selected season is centred when the row appears and when it changes: coming in
-    /// via an episode of season eight, its chip would otherwise sit beyond the edge.
+    /// The seasons as a row of chips; see `SeasonChipRow`. Picking one counts as the
+    /// user's choice, which nothing overrides afterwards.
     private var seasonRow: some View {
-        ScrollViewReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(seasons) { season in
-                        // From the server, so not translated: `SelectionChip` shows it verbatim.
-                        SelectionChip(text: season.name, an: season.id == selectedSeason?.id) {
-                            selfSelected = true
-                            seasonSwitch(season)
-                        }
-                        .id(season.id)
-                    }
-                }
-                #if os(iOS)
-                // **The pull from the left edge belongs to the page**; see `EdgeGesturePreRank`
-                // in the other horizontal rows.
-                .overlay(alignment: .topLeading) {
-                    EdgeGesturePreRank().frame(width: 0, height: 0)
-                }
-                #endif
-            }
-            .contentMargins(.horizontal, Theme.margin(wide: wide), for: .scrollContent)
-            .onChange(of: selectedSeason?.id, initial: true) { before, now in
-                guard let now else { return }
-                if before == nil {
-                    reader.scrollTo(now, anchor: .center)
-                } else {
-                    withAnimation(Theme.reveal) { reader.scrollTo(now, anchor: .center) }
-                }
-            }
+        SeasonChipRow(seasons: seasons, selected: selectedSeason?.id,
+                      margin: Theme.margin(wide: wide)) { season in
+            selfSelected = true
+            seasonSwitch(season)
         }
     }
 

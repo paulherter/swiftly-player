@@ -261,8 +261,7 @@ struct ValuesRow: View {
 }
 
 /// The value list. On iPhone a sheet from below; here it expands **under the
-/// row**. "A choice stays in place", the same rule as for the season pill and
-/// the More list.
+/// row**. "A choice stays in place", the same rule as for the More list.
 struct ValuesList<E: Identifiable>: View {
     let entries: [E]
     let label: (E) -> String

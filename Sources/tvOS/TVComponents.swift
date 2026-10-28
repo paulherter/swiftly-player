@@ -23,7 +23,7 @@ struct ThemedButtonStyle: ButtonStyle {
     var onlySymbol = false
     /// **Lower where the button is not the main thing.**
     ///
-    /// The season pill sits next to a row title, not in the header's button row; at the
+    /// A button beside a row title or in a chip row, not in the header's button row; at the
     /// full 76 it looked heavy there. Colors and focus behavior stay the same, which is why
     /// it uses this style at all.
     var height: CGFloat = Theme.buttonHeight
@@ -1415,39 +1415,66 @@ struct HeaderShadow: View {
 
 // MARK: - Season picker
 
-/// The pill next to "Folgen".
+/// **The seasons as a horizontal row of chips, not a panel under a pill.** Shared by the
+/// series page and the player's episode layer, so both pick a season the same way.
 ///
-/// From the design: 60 high, corner radius 30, `Theme.erhoeht` with a quiet
-/// border. No `Menu`: Apple's dropdown brings its own design, and the app uses no standard
-/// control anywhere. The list comes as a `Handlungstafel`, the same one the More button
-/// opens.
-struct SeasonPill: View {
-    let name: String
-    @Binding var opened: Bool
+/// A panel has the height of the screen and no more: with ten seasons the rows below the
+/// picture edge could not be reached. Width is what the TV has, and left and right is how
+/// the remote moves along a row anyway, so every season is one press away and the row
+/// scrolls where it does not fit.
+///
+/// `ChipStyle` because it is the one chip that shows a selection: the selected season
+/// carries the accent, the others the calm surface, and focus is the usual lift.
+///
+/// **Entering the row lands on the selected season**, not on the first or the one
+/// geometrically below: `.userInitiated` because exactly the press into the row is meant,
+/// as on the episode strip. The row is a `focusSection`, so down leaves it for the
+/// episodes and up for whatever stands above.
+///
+/// Only with two or more seasons: with one there is nothing to choose. The caller owns the
+/// focus state, so it can restore focus to a season after a panel or the player.
+struct SeasonChipRow: View {
+    let seasons: [Item]
+    let selected: String?
+    let atSeason: FocusState<String?>.Binding
+    let select: (Item) -> Void
+    /// Which season sits in view; see `scrollPosition` below.
+    @State private var front: String?
 
     var body: some View {
-        Button { opened.toggle() } label: {
-            HStack(spacing: 14) {
-                Text(name)
-                    .font(Theme.button)
-                // Opacity instead of a fixed color: the arrow inherits the button's text.
-                // Fixed half-white, it vanished on the white focus surface.
-                Image(systemName: "chevron.down")
-                    .font(Theme.group)
-                    .opacity(0.6)
-                    .accessibilityHidden(true)
+        if seasons.count > 1 {
+            ScrollView(.horizontal) {
+                HStack(spacing: Theme.chipSpacing) {
+                    ForEach(seasons) { season in
+                        // From the server, so not translated.
+                        Button { select(season) } label: {
+                            Text(verbatim: season.name)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(ChipStyle(an: selected == season.id))
+                        .focused(atSeason, equals: season.id)
+                    }
+                }
+                // Inside the scroll surface so the focused chip grows without being clipped.
+                .padding(.vertical, Theme.railsPadding)
+                .scrollTargetLayout()
             }
+            // **The selected season in view on opening.** Coming in via an episode of a late
+            // season, its chip would otherwise sit beyond the right edge. A change of the
+            // binding scrolls, an initial value does not; see `EpisodesStrip.ahead`. Not
+            // while the user is in the row: there focus decides what is visible.
+            .scrollPosition(id: $front, anchor: .center)
+            .onChange(of: selected, initial: true) { _, now in
+                if atSeason.wrappedValue == nil { front = now }
+            }
+            .contentMargins(.horizontal, Theme.edgePage, for: .scrollContent)
+            .leadingEdgeFade()
+            .scrollIndicators(.hidden)
+            .focusSection()
+            .defaultFocus(atSeason, selected, priority: .userInitiated)
         }
-        // **The same style as the buttons in the header.** It used to carry its own:
-        // different surface, border and rounding. But it **is** the same thing: a button
-        // that opens something, like the More button next to it.
-        .buttonStyle(ThemedButtonStyle(height: 60))
-        .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
 }
-
-/// Focus on the season pill: the calm surface, as for rows and chips. White stays reserved
-/// for action buttons.
 
 // MARK: - Handover: which device?
 

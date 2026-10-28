@@ -34,10 +34,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -77,7 +75,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.zIndex
 import de.paulherter.swiftly.PlayRequest
 import de.paulherter.swiftly.Episode
 import de.paulherter.swiftly.R
@@ -1062,9 +1059,9 @@ private fun TvSettingLayer(mediaWork: PlayItem, app: SwiftlyApplication,
 
 /**
  * The series' episodes: the same tile row as on the series page (`TvEpisodesTile`). The title sits
- * exactly where it was in the picture (placeholder here, the player draws the title); the season
- * pill takes the place of the meta line, the tiles follow with clear spacing. **On open the row is
- * already there** (preloaded) and focus is on the running episode.
+ * exactly where it was in the picture (placeholder here, the player draws the title); the series
+ * page's season row (`TvSeasonChips`) takes the place of the meta line, the tiles follow with clear
+ * spacing. **On open the row is already there** (preloaded) and focus is on the running episode.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -1082,20 +1079,15 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     val reveal = remember { Animatable(1f) }
     val strip = rememberLazyListState(episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0))
     val running = remember { FocusRequester() }
-    val pill = remember { FocusRequester() }
+    /** The selected season's chip; see `TvSeasonChips`. */
+    val seasonChip = remember { FocusRequester() }
     // **No sliding on open.** The row used to sit at the running episode on the left edge; the first
     // focus animated it to the pivot (30 %), so it slid in from the left. Until the first focus is set,
     // the row therefore jumps there without motion.
     var immediate by remember { mutableStateOf(true) }
     val focusLaid = remember { booleanArrayOf(false) }
-    val pillFocus = remember { booleanArrayOf(false) }
-
-    // **The season picker, entries built once on open**: rebuilt from the tick, the rows were replaced
-    // and focus jumped.
-    var choice by remember { mutableStateOf<List<Season>?>(null) }
-    val selectionOutput = remember { booleanArrayOf(false) }
-    fun choiceTo() { selectionOutput[0] = true; runCatching { pill.requestFocus() }; choice = null }
-    BackHandler(enabled = choice != null) { choiceTo() }
+    /** Whether focus is in the season row; then the running episode does not take it away. */
+    val seasonFocus = remember { booleanArrayOf(false) }
 
     // **After a change to the watch state** (tile menu) refetch, same follow-up as in the phone's
     // episode layer (`EpisodesLayer.episodesRefresh`).
@@ -1121,9 +1113,9 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
-    // Focus on the running episode once the row is there, but not if it is already on the pill.
+    // Focus on the running episode once the row is there, but not if it is already in the season row.
     LaunchedEffect(episodes.isNotEmpty()) {
-        if (episodes.isEmpty() || focusLaid[0] || pillFocus[0]) return@LaunchedEffect
+        if (episodes.isEmpty() || focusLaid[0] || seasonFocus[0]) return@LaunchedEffect
         focusLaid[0] = true
         val i = episodes.indexOfFirst { it.id == runningId }
         if (i >= 0 && strip.layoutInfo.visibleItemsInfo.none { it.index == i }) strip.scrollToItem(i)
@@ -1132,14 +1124,14 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
         repeat(2) { withFrameNanos { } }
         immediate = false
     }
-    // Without episodes the pill keeps focus, otherwise it would stay on the invisible button behind it.
+    // Without episodes the selected season takes focus, otherwise it would stay on the invisible button
+    // behind the layer. Only with a season row: with one season there is none.
     LaunchedEffect(Unit) {
         delay(300)
-        if (!focusLaid[0] && !pillFocus[0]) runCatching { pill.requestFocus() }
+        if (!focusLaid[0] && !seasonFocus[0]) runCatching { seasonChip.requestFocus() }
     }
 
     fun seasonSelect(s: Season) {
-        choiceTo()
         if (s.id == selected) return
         selected = s.id
         run.launch {
@@ -1161,36 +1153,15 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     }
 
     Column(Modifier.fillMaxSize().padding(top = TvTheme.edgeTop)) {
-        Column(Modifier.padding(horizontal = TvTheme.edgePage).zIndex(1f), verticalArrangement = Arrangement.spacedBy(TvPlayerMetric.titleSpacing)) {
-            // Placeholder: the title itself is in the player and does not fade with it.
-            Text(title, style = TvPlayerMetric.title, maxLines = 1, modifier = Modifier.alpha(0f))
-            if (seasons.isNotEmpty()) Box {
-                TvButton(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"), Glyph.AngleDown,
-                        Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
-                    if (choice != null) choiceTo() else { selectionOutput[0] = false; choice = seasons }
-                }
-                choice?.let { entries ->
-                    val first = remember { FocusRequester() }
-                    LaunchedEffect(Unit) { focusPut(first) }
-                    // Under the pill, without shifting the row below.
-                    Column(Modifier.layout { m, c ->
-                                val p = m.measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity, maxWidth = Constraints.Infinity))
-                                layout(0, 0) { p.place(0, 36.dp.roundToPx()) }
-                            }
-                            .width(260.dp).heightIn(max = 330.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area)
-                            .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)
-                            .focusProperties { exit = { if (selectionOutput[0]) FocusRequester.Default else FocusRequester.Cancel } }
-                            .focusGroup()) {
-                        val start = entries.indexOfFirst { it.id == selected }.coerceAtLeast(0)
-                        entries.forEachIndexed { i, s ->
-                            TvRow(s.name, if (s.id == selected) Glyph.CheckmarkCircleFilled else Glyph.Ring,
-                                    modifier = if (i == start) Modifier.focusRequester(first) else Modifier) { seasonSelect(s) }
-                        }
-                    }
-                }
-            }
+        // Placeholder: the title itself is in the player and does not fade with it.
+        Text(title, style = TvPlayerMetric.title, maxLines = 1, modifier = Modifier.padding(horizontal = TvTheme.edgePage).alpha(0f))
+        // **The series page's row, edge to edge**: it brings its own title-safe margin and scrolls under
+        // the left edge. Only from two seasons, as on the series page.
+        if (seasons.size > 1) {
+            TvSeasonChips(seasons, selected, Modifier.padding(top = TvPlayerMetric.titleSpacing).onFocusChanged { seasonFocus[0] = it.hasFocus },
+                          onSelected = seasonChip) { id -> seasons.firstOrNull { it.id == id }?.let { seasonSelect(it) } }
         }
-        // Clear space below the season pill, otherwise the row would stick to it.
+        // Clear space below the season row, otherwise the strip would stick to it.
         if (episodes.isNotEmpty()) CompositionLocalProvider(LocalBringIntoViewSpec provides if (immediate) TvRailWithoutMotion else TvRailsBringIntoView) {
             val start = episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0)
             LazyRow(Modifier.padding(top = 22.dp).graphicsLayer { alpha = reveal.value }, state = strip,

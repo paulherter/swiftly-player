@@ -634,7 +634,6 @@
  "Staffel %d, Folge %d": "Сезон %d, эпизод %d",
  "Staffel laden": "Загрузить сезон",
  "Staffel wählen": "Выберите сезон",
- "Staffel wählen, %s": "Выбор сезона, %s",
  "Staffeln wählen": "Выберите сезоны",
  "Standard": "Стандартный",
  "Start": "Главная",
@@ -854,7 +853,6 @@
  "Ähnliche Titel": "Похожие тайтлы",
  "Ähnliches": "Похожее",
  "Ändern": "Изменить",
- "Öffnet die Auswahl": "Открывает список",
  "Über Seerr anfragen": "Запросить через Seerr",
  "Übersicht öffnen": "Открыть обзор",
  "−%d s": "−%d с"

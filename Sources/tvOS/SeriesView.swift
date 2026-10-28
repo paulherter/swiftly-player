@@ -114,8 +114,6 @@ struct SeriesView: View {
     @FocusState private var atMoreButton: Bool
     /// Which season chip has focus; see `seasonRow`.
     @FocusState private var atSeason: String?
-    /// Which season sits in view in the season row; see `seasonRow`.
-    @State private var seasonFront: String?
     /// **Where focus returns when the player closes.**
     /// Same reason as `atMoreButton`. The player is a sibling in the frame and
     /// the page stays mounted during playback, only `disabled`, which resets the
@@ -425,54 +423,10 @@ struct SeriesView: View {
         return state.id
     }
 
-    /// **The seasons as a horizontal row of chips, not a panel under a pill.**
-    ///
-    /// A panel has the height of the screen and no more: with ten seasons the rows below
-    /// the picture edge could not be reached. Width is what the TV has, and left and right
-    /// is how the remote moves along a row anyway, so every season is one press away and
-    /// the row scrolls where it does not fit.
-    ///
-    /// `ChipStyle` because it is the one chip that shows a selection: the selected season
-    /// carries the accent, the others the calm surface, and focus is the usual lift.
-    ///
-    /// **Entering the row lands on the selected season**, not on the first or the one
-    /// geometrically below: `.userInitiated` because exactly the press into the row is
-    /// meant, as on the episode strip. The row is a `focusSection`, so down leaves it for
-    /// the episodes and up for the button row.
-    ///
-    /// Only with two or more seasons: with one there is nothing to choose.
-    @ViewBuilder
+    /// The seasons as a row of chips; see `SeasonChipRow`.
     private var seasonRow: some View {
-        if seasons.count > 1 {
-            ScrollView(.horizontal) {
-                HStack(spacing: Theme.chipSpacing) {
-                    ForEach(seasons) { season in
-                        Button { seasonSelect(season) } label: {
-                            Text(verbatim: season.name)
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(ChipStyle(an: selectedSeason?.id == season.id))
-                        .focused($atSeason, equals: season.id)
-                    }
-                }
-                // Inside the scroll surface so the focused chip grows without being clipped.
-                .padding(.vertical, Theme.railsPadding)
-                .scrollTargetLayout()
-            }
-            // **The selected season in view on opening.** Coming in via an episode of a late
-            // season, its chip would otherwise sit beyond the right edge. A change of the
-            // binding scrolls, an initial value does not; see `EpisodesStrip.ahead`. Not
-            // while the user is in the row: there focus decides what is visible.
-            .scrollPosition(id: $seasonFront, anchor: .center)
-            .onChange(of: selectedSeason?.id, initial: true) { _, now in
-                if atSeason == nil { seasonFront = now }
-            }
-            .contentMargins(.horizontal, Theme.edgePage, for: .scrollContent)
-            .leadingEdgeFade()
-            .scrollIndicators(.hidden)
-            .focusSection()
-            .defaultFocus($atSeason, selectedSeason?.id, priority: .userInitiated)
-        }
+        SeasonChipRow(seasons: seasons, selected: selectedSeason?.id,
+                      atSeason: $atSeason, select: seasonSelect)
     }
 
     /// Selecting a season counts as the user's choice and loads its episodes; see

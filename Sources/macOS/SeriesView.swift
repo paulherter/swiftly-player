@@ -631,75 +631,6 @@ struct TabButton: View {
 
 // MARK: - Season picker
 
-/// The season pill. Opens the list **in place**, no `Menu`, no sheet. A `Menu`
-/// would be the obvious choice and is wrong for that reason: it brings system
-/// metrics, system corners and a system material.
-struct SeasonSelection: View {
-    let seasons: [Item]
-    @Binding var selected: Item?
-    @Binding var opened: Bool
-    @Environment(\.onImageTint) private var onImage
-    @Environment(\.imageColorSource) private var imageTint
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Chip(label: selected?.name ?? String(localized: "Staffel"),
-                 symbol: opened ? "chevron.up" : "chevron.down",
-                 active: false) {
-                withAnimation(Theme.leap) { opened.toggle() }
-            }
-
-            if opened {
-                VStack(spacing: 0) {
-                    ForEach(seasons, id: \.id) { season in
-                        SeasonRow(season: season,
-                                     selected: season.id == selected?.id) {
-                            selected = season
-                            withAnimation(Theme.leap) { opened = false }
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-                .frame(width: 220, alignment: .leading)
-                .background {
-                    let form = RoundedRectangle(cornerRadius: Theme.cornerArea,
-                                                style: .continuous)
-                    form.fill(Theme.raised)
-                        .overlay {
-                            // **Over `ImageColor` in the page tone** (like the season list on the iPhone):
-                            // opaque because episodes sit below, but in the color the page has at this
-                            // point, with the white of the other surfaces over it. A fixed gray looked like
-                            // a foreign element.
-                            if onImage, let imageTint {
-                                ZStack {
-                                    Theme.reason
-                                    MoodLoader(url: imageTint) { tones in
-                                        ImageTone.color(tones, at: SIMD2<Float>(0.2, 0.55))
-                                    }
-                                    Theme.surfaceTranslucent
-                                }
-                                .clipShape(form)
-                            }
-                        }
-                        .overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
-                }
-                .padding(.top, 8)
-                .transition(.expand(from: .topLeading))
-            }
-        }
-        // A click outside and Escape close it, as with the other panels.
-        .background {
-            if opened {
-                Color.black.opacity(0.001)
-                    .contentShape(Rectangle())
-                    .frame(width: 4000, height: 4000)
-                    .onTapGesture { withAnimation(Theme.leap) { opened = false } }
-            }
-        }
-        .panelEscape(opened) { withAnimation(Theme.leap) { opened = false } }
-    }
-}
-
 /// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
 ///
 /// The dropdown ended where the window ended: with ten seasons in a small window the
@@ -709,9 +640,14 @@ struct SeasonSelection: View {
 ///
 /// The selected season is centred when the row appears and when it changes: coming in via
 /// an episode of a late season, its chip would otherwise sit beyond the edge.
+///
+/// **Shared by the series page and the player's episode layer**, so both pick a season the
+/// same way. `margin` is the side margin of the surrounding view where the row runs edge
+/// to edge, as content margin so the chips scroll under the edge instead of being cut.
 struct SeasonChipRow: View {
     let seasons: [Item]
     @Binding var selected: Item?
+    var margin: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { reader in
@@ -726,6 +662,7 @@ struct SeasonChipRow: View {
                     }
                 }
             }
+            .contentMargins(.horizontal, margin, for: .scrollContent)
             .onChange(of: selected?.id, initial: true) { before, now in
                 guard let now else { return }
                 if before == nil {
@@ -735,44 +672,6 @@ struct SeasonChipRow: View {
                 }
             }
         }
-    }
-}
-
-struct SeasonRow: View {
-    let season: Item
-    let selected: Bool
-    let pick: () -> Void
-
-    @State private var hovers = false
-
-    var body: some View {
-        Button(action: pick) {
-            HStack(spacing: 8) {
-                // **Selected means white, not accent.**
-                Text(verbatim: season.name)
-                    .font(Theme.body)
-                    .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
-                    // The season name comes from the server: "Specials — Die Weihnachtsfolgen"
-                    // would otherwise overflow the 220 pt wide panel.
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if selected {
-                    Image(systemName: "checkmark")
-                        .font(Theme.listTitle)
-                        .foregroundStyle(Theme.font)
-                        .frame(width: 14)
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(height: Theme.rowHeight)
-            .background(hovers ? Theme.hoverArea : .clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressRow())
-        .onHover { hovers = $0 }
-        .animation(Theme.timeFloat, value: hovers)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

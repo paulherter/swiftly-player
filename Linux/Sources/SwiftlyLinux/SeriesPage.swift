@@ -301,67 +301,14 @@ extension App {
 
         let episodesSpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
 
-        // **A row of chips that scrolls sideways, not a list that drops down.**
-        //
-        // The list under the pill pushed the page down by one row per season; with ten
-        // seasons the lower ones sat below the window edge, far from the pill that opened
-        // them. A row is as wide as it needs, scrolls where it does not fit, and every
-        // season is one click away. Same as `SeasonChipRow` on the Mac, with the same
-        // `chip`: selected is `swiftly-aktiv`, one step up the ladder.
-        //
-        // Only from two seasons, as on every platform: a single chip offers no choice.
-        //
-        // `EXTERNAL`: scrolling yes, bar no, as in the other horizontal rows.
-        let scroller: Widget! = gtk_scrolled_window_new()
-        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
-                                       GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
-        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
-        gtk_widget_set_margin_start(rail, Int32(Theme.edgeSpacing))
-        gtk_widget_set_margin_end(rail, Int32(Theme.edgeSpacing))
-
-        var chips: [String: Widget?] = [:]
-        for season in seasons {
-            let an = season.id == choice.now?.id
-            let button = chip(season.name, active: an)
-            help(button, selected: an)
-            signal(button, "clicked") { [weak self] in
-                guard let self else { return }
-                choice.now = season
-                self.openSeason = season
-                self.detailTouched = true
-                for (identifier, w) in chips {
-                    guard let w else { continue }
-                    let now = identifier == season.id
-                    if now { gtk_widget_add_css_class(w, "swiftly-aktiv") }
-                    else { gtk_widget_remove_css_class(w, "swiftly-aktiv") }
-                    help(w, selected: now)
-                }
-                self.episodesLoad(series: series, season: season, in: episodesSpace)
-            }
-            chips[season.id] = button
-            append(rail, button)
-        }
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), rail)
-
-        // **The selected season in view on opening.** Coming in via an episode of a late
-        // season, its chip would otherwise sit beyond the right edge. Centred once the row
-        // is measured; the same wait as in `gridScroll`, since nothing has a size yet here.
-        if let now = choice.now, let target = chips[now.id] ?? nil {
-            let adjustment = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
-            var measured = false
-            runningCount(on: scroller, duration: 1.0, linear: true, step: { _ in
-                guard !measured else { return }
-                let page = gtk_adjustment_get_page_size(adjustment)
-                var r = graphene_rect_t()
-                guard page > 0, gtk_widget_compute_bounds(target, rail, &r) != 0,
-                      r.size.width > 0 else { return }
-                measured = true
-                // The rail's margin lies outside its own coordinates.
-                let middle = Double(Theme.edgeSpacing) + Double(r.origin.x)
-                    + Double(r.size.width) / 2 - page / 2
-                let atMost = gtk_adjustment_get_upper(adjustment) - page
-                gtk_adjustment_set_value(adjustment, min(max(middle, 0), max(atMost, 0)))
-            }, done: {})
+        // See ``seasonChipRow(_:selected:edge:pick:)``.
+        let scroller = seasonChipRow(seasons, selected: choice.now,
+                                     edge: Int32(Theme.edgeSpacing)) { [weak self] season in
+            guard let self else { return }
+            choice.now = season
+            self.openSeason = season
+            self.detailTouched = true
+            self.episodesLoad(series: series, season: season, in: episodesSpace)
         }
 
         // **The season row stands alone**: the "Download season" chip is gone, and with it
@@ -372,6 +319,7 @@ extension App {
         // (`SeriesView.episodesList`) and the Mac. The tab area's spacing (18) does not apply
         // here, otherwise both would stack.
         gtk_box_set_spacing(asBox(space), 0)
+        // Only from two seasons, as on every platform: a single chip offers no choice.
         gtk_widget_set_margin_bottom(scroller, 14)
         if seasons.count > 1 { append(space, scroller) }
         append(space, episodesSpace)
@@ -388,45 +336,70 @@ extension App {
         gtk_widget_set_visible(button, (downloadButtonShow && !seasonEpisodes.isEmpty && opened) ? 1 : 0)
     }
 
-    /// A row in the season list: name on the left, checkmark for the selected one.
+    /// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
     ///
-    /// **The checkmark is always present and only hidden.** The selection must be able
-    /// to move without rebuilding the row now that the list is built once instead of on
-    /// every click; otherwise the list would show two checkmarks on the second open.
-    /// Internal: the player's episode layer (`PlayerLayers.swift`) builds its season
-    /// list from the same row, literally, not a copy.
-    func seasonRow(_ text: String, selected: Bool,
-                              _ pick: @escaping () -> Void) -> Widget! {
-        let button: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(button, "swiftly-handlung")
-        gtk_widget_add_css_class(button, "swiftly-staffelzeile")
-        if selected { gtk_widget_add_css_class(button, "swiftly-aktiv") }
-        help(button, selected: selected)
+    /// The list under the pill pushed the page down by one row per season; with ten seasons
+    /// the lower ones sat below the window edge, far from the pill that opened them. A row is
+    /// as wide as it needs, scrolls where it does not fit, and every season is one click away.
+    /// Same as `SeasonChipRow` on the Mac, with the same `chip`: selected is `swiftly-aktiv`,
+    /// one step up the ladder.
+    ///
+    /// **Shared by the series page and the player's episode layer**, so both pick a season the
+    /// same way. The row moves the selection itself; `pick` does what selecting means in the
+    /// caller. `edge` is the caller's side margin, inside the scroll surface so the chips scroll
+    /// under the edge instead of being cut. Whether the row shows at all (from two seasons) is
+    /// the caller's decision, as is the room above and below.
+    func seasonChipRow(_ seasons: [Item], selected: Item?, edge: Int32,
+                       pick: @escaping (Item) -> Void) -> Widget! {
+        // `EXTERNAL`: scrolling yes, bar no, as in the other horizontal rows.
+        let scroller: Widget! = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
+                                       GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
-        let l = label(text, style: "swiftly-koerper")
-        gtk_label_set_xalign(OpaquePointer(l), 0)
-        gtk_widget_set_hexpand(l, 1)
-        append(rail, l)
-        // 12 bold, like `SeasonRow` on the Mac (`SeriesView.swift:592`).
-        let checkmark: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(checkmark), 12)
-        gtk_widget_set_visible(checkmark, selected ? 1 : 0)
-        append(rail, checkmark)
-        gtk_button_set_child(asButton(button), rail)
-        signal(button, "clicked", pick)
-        return button
-    }
+        gtk_widget_set_margin_start(rail, edge)
+        gtk_widget_set_margin_end(rail, edge)
 
-    /// Moves the selection on an existing row: accent on, checkmark on.
-    func seasonRowDraw(_ row: Widget?, selected: Bool) {
-        guard let row else { return }
-        if selected { gtk_widget_add_css_class(row, "swiftly-aktiv") }
-        else        { gtk_widget_remove_css_class(row, "swiftly-aktiv") }
-        help(row, selected: selected)
-        // Button → row → (label, checkmark). The checkmark is the last child.
-        guard let rail = gtk_button_get_child(asButton(row)),
-              let checkmark = gtk_widget_get_last_child(rail) else { return }
-        gtk_widget_set_visible(checkmark, selected ? 1 : 0)
+        var chips: [String: Widget?] = [:]
+        for season in seasons {
+            let an = season.id == selected?.id
+            let button = chip(season.name, active: an)
+            help(button, selected: an)
+            signal(button, "clicked") {
+                for (identifier, w) in chips {
+                    guard let w else { continue }
+                    let now = identifier == season.id
+                    if now { gtk_widget_add_css_class(w, "swiftly-aktiv") }
+                    else { gtk_widget_remove_css_class(w, "swiftly-aktiv") }
+                    help(w, selected: now)
+                }
+                pick(season)
+            }
+            chips[season.id] = button
+            append(rail, button)
+        }
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), rail)
+
+        // **The selected season in view on opening.** Coming in via an episode of a late
+        // season, its chip would otherwise sit beyond the right edge. Centred once the row
+        // is measured; the same wait as in `gridScroll`, since nothing has a size yet here.
+        if let now = selected, let target = chips[now.id] ?? nil {
+            let adjustment = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
+            var measured = false
+            runningCount(on: scroller, duration: 1.0, linear: true, step: { _ in
+                guard !measured else { return }
+                let page = gtk_adjustment_get_page_size(adjustment)
+                var r = graphene_rect_t()
+                guard page > 0, gtk_widget_compute_bounds(target, rail, &r) != 0,
+                      r.size.width > 0 else { return }
+                measured = true
+                // The rail's margin lies outside its own coordinates.
+                let middle = Double(edge) + Double(r.origin.x)
+                    + Double(r.size.width) / 2 - page / 2
+                let atMost = gtk_adjustment_get_upper(adjustment) - page
+                gtk_adjustment_set_value(adjustment, min(max(middle, 0), max(atMost, 0)))
+            }, done: {})
+        }
+        return scroller
     }
 
     private func episodesLoad(series: Item, season: Item, in space: Widget!) {

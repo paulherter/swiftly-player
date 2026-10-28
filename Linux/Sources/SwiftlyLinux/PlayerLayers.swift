@@ -509,10 +509,12 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(slot), 0)
         gtk_widget_set_opacity(slot, 0)
         append(left, slot)
-        let seasonPickerRoom = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_set_halign(seasonPickerRoom, GTK_ALIGN_START)
-        append(left, seasonPickerRoom)
         append(pillar, layersHeader(left: left))
+        // **The season row runs edge to edge under the header**, not inside it: there the
+        // close button would cut it short. 3 below the title, as the meta line it replaces.
+        let seasonPickerRoom = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_margin_top(seasonPickerRoom, 3)
+        append(pillar, seasonPickerRoom)
 
         let role: Widget! = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(role), GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
@@ -626,8 +628,9 @@ extension App {
         }
     }
 
-    /// The series page's season picker, replacing the meta line. With only one
-    /// season, just its name is shown.
+    /// The series page's season row (``seasonChipRow(_:selected:edge:pick:)``), replacing
+    /// the meta line. Only from two seasons, as on the series page; the running season's
+    /// episodes load either way.
     private func seasonSelectionFill(_ seasons: [Item], ongoing: Item, seriesKeyID: String) {
         guard let space = playerSeasonSelection else { return }
         wipe(space)
@@ -636,47 +639,14 @@ extension App {
             ?? seasons.first { $0.indexNumber != nil && $0.indexNumber == ongoing.parentIndexNumber }
             ?? seasons[0]
 
-        let pill: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(pill, "swiftly-chip")
-        gtk_widget_set_halign(pill, GTK_ALIGN_START)
-        let content = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
-        let text = label(initialSelection.name)
-        append(content, text)
         if seasons.count > 1 {
-            append(content, PlayerCharacter("chevron", size: 12).display)
-        }
-        gtk_button_set_child(asButton(pill), content)
-        append(space, pill)
-
-        let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_add_css_class(list, "swiftly-staffelliste")
-        gtk_widget_set_size_request(list, 220, -1)
-        gtk_widget_set_halign(list, GTK_ALIGN_START)
-        let expand: Widget! = gtk_revealer_new()
-        gtk_revealer_set_transition_type(asExpand(expand), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN)
-        gtk_revealer_set_transition_duration(asExpand(expand), 220)
-        gtk_revealer_set_child(asExpand(expand), list)
-        gtk_widget_set_margin_top(expand, 8)
-        gtk_widget_set_halign(expand, GTK_ALIGN_START)
-        append(space, expand)
-
-        var rows: [String: Widget?] = [:]
-        for season in seasons {
-            let row = seasonRow(season.name, selected: season.id == initialSelection.id) {
-                [weak self] in
-                guard let self else { return }
-                gtk_label_set_text(OpaquePointer(text), season.name)
-                for (identifier, w) in rows { self.seasonRowDraw(w, selected: identifier == season.id) }
-                gtk_revealer_set_reveal_child(asExpand(expand), 0)
-                self.episodesSeasonLoad(season, seriesKeyID: seriesKeyID, ongoing: ongoing, crossfade: true)
+            // The first chip starts under the title, at the header's margin.
+            let row = seasonChipRow(seasons, selected: initialSelection,
+                                    edge: PlayerMetric.page) { [weak self] season in
+                self?.episodesSeasonLoad(season, seriesKeyID: seriesKeyID, ongoing: ongoing,
+                                         crossfade: true)
             }
-            rows[season.id] = row
-            append(list, row)
-        }
-        signal(pill, "clicked") {
-            guard seasons.count > 1 else { return }
-            let opened = gtk_revealer_get_reveal_child(asExpand(expand)) == 0
-            gtk_revealer_set_reveal_child(asExpand(expand), opened ? 1 : 0)
+            append(space, row)
         }
         episodesSeasonLoad(initialSelection, seriesKeyID: seriesKeyID, ongoing: ongoing, crossfade: false)
     }

@@ -490,7 +490,7 @@ struct QualitySelection {
 ///
 /// The title sits exactly where it sat in the player (`stateTitle` in
 /// `PlayerScreen.swift`); in place of the meta line is the series page's season
-/// picker (`Staffelwahl`, also there).
+/// row (`SeasonChipRow`, also there).
 ///
 /// Loading mirrors the iOS version (`EpisodesLayer` in `Sources/iOS/PlayerLayers.swift`):
 /// first the series page's cache, then fresh from the server, cross-fade only on a
@@ -509,31 +509,31 @@ struct EpisodesLayer: View {
     @State private var seasons: [Item] = []
     @State private var selectedSeason: Item?
     @State private var episodes: [Item] = []
-    @State private var seasonListOpen = false
 
     var body: some View {
         ZStack(alignment: .top) {
             LayersReason()
             VStack(alignment: .leading, spacing: 0) {
                 LayersHeader(mass: mass, close: close) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Placeholder: the title itself is shown by the player (`stateTitle`) and does
-                        // not fade with this.
-                        Text(verbatim: title)
-                            .font(.system(size: mass.title, weight: .bold))
-                            .lineLimit(1)
-                            .hidden()
-                        if !seasons.isEmpty {
-                            SeasonSelection(seasons: seasons, selected: $selectedSeason,
-                                        opened: $seasonListOpen)
-                                .onChange(of: selectedSeason?.id) { _, _ in
-                                    Task { await episodesLoad(seasonSwitched: true) }
-                                }
-                        }
-                    }
+                    // Placeholder: the title itself is shown by the player (`stateTitle`) and does
+                    // not fade with this.
+                    Text(verbatim: title)
+                        .font(.system(size: mass.title, weight: .bold))
+                        .lineLimit(1)
+                        .hidden()
                 }
-                // The expanded season list lies over the episodes.
-                .zIndex(1)
+
+                // **The series page's row, edge to edge**, not inside the header: there the
+                // close button would cut it short, and it scrolls under the page margin.
+                // Only from two seasons, as on the series page.
+                if seasons.count > 1 {
+                    SeasonChipRow(seasons: seasons, selected: $selectedSeason, margin: mass.page)
+                        .onChange(of: selectedSeason?.id) { _, _ in
+                            Task { await episodesLoad(seasonSwitched: true) }
+                        }
+                        // As close to the title as the meta line it replaces.
+                        .padding(.top, 3)
+                }
 
                 ScrollViewReader { reader in
                     ScrollView {

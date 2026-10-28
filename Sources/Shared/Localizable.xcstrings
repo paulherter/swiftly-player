@@ -10247,29 +10247,6 @@
         }
       }
     },
-    "Staffel wählen, %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Staffel wählen, %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose season, %@"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Выбор сезона, %@"
-          }
-        }
-      }
-    },
     "Staffeln wählen": {
       "localizations": {
         "de": {
@@ -13842,29 +13819,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Изменить"
-          }
-        }
-      }
-    },
-    "Öffnet die Auswahl": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Öffnet die Auswahl"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Opens the list"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Открывает список"
           }
         }
       }

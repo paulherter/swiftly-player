@@ -520,7 +520,7 @@ struct SettingLayer: View {
 /// The series' episodes: the same rows as on the series page.
 ///
 /// The title sits exactly where it sat in the player; in place of the meta
-/// line is the series page's season picker.
+/// line is the series page's season row (`SeasonChipRow`).
 struct EpisodesLayer: View {
     let model: AppModel
     /// The current episode.
@@ -533,7 +533,6 @@ struct EpisodesLayer: View {
     @State private var seasons: [Item] = []
     @State private var selectedSeason: Item?
     @State private var episodes: [Item] = []
-    @State private var seasonListOpen = false
 
     /// **The list is already there on opening.** What the store has (the
     /// player preloads it at start with `preload`) is in the states before
@@ -576,34 +575,26 @@ struct EpisodesLayer: View {
             LayersReason()
             VStack(alignment: .leading, spacing: 0) {
                 LayersHeader(mass: mass, close: close) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Placeholder: the title itself is in the player (`stateTitle`) and
-                        // does not fade along.
-                        Text(verbatim: title)
-                            .font(.system(size: mass.title, weight: .semibold))
-                            .lineLimit(1)
-                            .hidden()
-                        if !seasons.isEmpty {
-                            ExpandList(label: selectedSeason?.name
-                                              ?? String(localized: "Staffel"),
-                                          entries: seasons,
-                                          text: { $0.name },
-                                          isSelected: { $0.id == selectedSeason?.id },
-                                          select: { season in
-                                              selectedSeason = season
-                                              Task { await episodesLoad(seasonSwitched: true) }
-                                          },
-                                          opened: $seasonListOpen,
-                                          font: .system(size: mass.meta + 1, weight: .semibold),
-                                          height: 28,
-                                          // No surface in the player: it sits there in place of the meta line, and
-                                          // that carries none.
-                                          asField: false)
-                        }
-                    }
+                    // Placeholder: the title itself is in the player (`stateTitle`) and
+                    // does not fade along.
+                    Text(verbatim: title)
+                        .font(.system(size: mass.title, weight: .semibold))
+                        .lineLimit(1)
+                        .hidden()
                 }
-                // The expanded season list lies over the episodes.
-                .zIndex(1)
+
+                // **The series page's row, edge to edge**, not inside the header: there the
+                // close button would cut it short, and it scrolls under the page margin.
+                // Only from two seasons, as on the series page.
+                if seasons.count > 1 {
+                    SeasonChipRow(seasons: seasons, selected: selectedSeason?.id,
+                                  margin: mass.page) { season in
+                        selectedSeason = season
+                        Task { await episodesLoad(seasonSwitched: true) }
+                    }
+                    // As close to the title as the meta line it replaces.
+                    .padding(.top, 3)
+                }
 
                 ScrollViewReader { reader in
                     ScrollView {
@@ -647,9 +638,6 @@ struct EpisodesLayer: View {
                             }
                         }
                     }
-                    .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in
-                        if seasonListOpen { seasonListOpen = false }
-                    })
                 }
                 .padding(.top, 10)
             }

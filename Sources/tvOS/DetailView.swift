@@ -190,7 +190,7 @@ struct DetailView: View {
     @State private var collectionRails: [AppModel.CollectionRailsData] = []
     /// **Where focus returns when a panel closes.**
     /// It used to jump to the main button, the page's initial focus, though the
-    /// user stood at the More button or season pill. A panel is not a change of
+    /// user stood at the More button. A panel is not a change of
     /// place but opens above its button; closing it returns to the button
     /// that opened it.
     @FocusState private var atMoreButton: Bool

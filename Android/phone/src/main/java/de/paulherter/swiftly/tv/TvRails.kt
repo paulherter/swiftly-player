@@ -45,7 +45,7 @@ import de.paulherter.swiftly.shared.translated
  * **Unlike tvOS, the title is inside each strip**, not in a separate `railsSection`. The Kotlin
  * building blocks (`TvStrip` in `TvPages.kt`, the home rows) already do it that way; a second,
  * decoupled pattern just for this file would gain nothing. The one exception is
- * `TvEpisodesStrip`: the series page needs its own header with the season pill, as on tvOS, so it
+ * `TvEpisodesStrip`: the series page needs its own header with the season row, as on tvOS, so it
  * has no title of its own.
  */
 
@@ -112,7 +112,7 @@ fun TvExtraStrip(title: String = translated("Extras"), extras: List<Extra>, star
 /**
  * Mirrors `EpisodesStrip`: a season's episodes as landscape tiles, prescrolled to the one where
  * playback continues. **No title of its own**, unlike the three strips above: the series page sets
- * the header itself, with the season pill beside it, and a title here would duplicate it.
+ * the header itself, with the season row below it, and a title here would duplicate it.
  */
 @Composable
 fun TvEpisodesStrip(episodes: List<Episode>, nextWith: String?, start: (Episode) -> Unit, modifier: Modifier = Modifier) {

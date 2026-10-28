@@ -16,7 +16,7 @@ enum PlayerMetric {
     static let previewTime: CGFloat = 30
     /// Bar background, as in the design and the iPhone `Zeitregler`.
     static let barReason = Color.white.opacity(0.28)
-    /// Between title and meta line or season pill.
+    /// Between title and meta line.
     static let titleSpacing: CGFloat = 6
     /// The icon buttons at top right.
     static let button: CGFloat = 88
@@ -502,7 +502,7 @@ enum LayersFocus {
 /// cannot compare, so the whole layer with the episode strip was recomputed.
 /// With the tile menu, tvOS rebuilt the open context menu every tick, entries
 /// flickered between focused and not, and the Back button no longer reached the
-/// player. Same cause as the season picker (`panelActions`), one level up.
+/// player.
 /// Equality compares what the layer shows: the running episode and the title
 /// line. `start` reads its state when called, so an older closure does the same.
 extension EpisodesLayer: @MainActor Equatable {
@@ -514,7 +514,7 @@ extension EpisodesLayer: @MainActor Equatable {
 
 /// The episodes of the series: the same tile strip as on the series page. The
 /// title stands where it stood in the player (`stateTitle`, only a
-/// placeholder here); the season pill replaces the meta line, tiles below.
+/// placeholder here); the season row replaces the meta line, tiles below.
 struct EpisodesLayer: View {
     let model: AppModel
     /// The running episode.
@@ -527,14 +527,9 @@ struct EpisodesLayer: View {
     @State private var episodes: [Item] = []
     /// The server was silent and there is nothing to show.
     @State private var disrupted = false
-    @State private var seasonSelectionOpen = false
-    /// The entries of the open season picker, built once. Each `TitleAction`
-    /// carries a new id; computed in `body` the list was rebuilt every player tick
-    /// (0.5 s), rows were replaced, focus jumped between list and pill, and the
-    /// pill flickered while the picker was open.
-    @State private var panelActions: [TitleAction] = []
     @FocusState private var atEpisode: String?
-    @FocusState private var atSeasonPill: Bool
+    /// Which season chip has focus; see `SeasonChipRow`.
+    @FocusState private var atSeason: String?
 
     /// The row is already there on open. What the cache has (the player preloads it
     /// via `preload`) is in the state before the first frame; otherwise the tiles
@@ -568,23 +563,20 @@ struct EpisodesLayer: View {
         ZStack(alignment: .topLeading) {
             LayersReason()
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: PlayerMetric.titleSpacing) {
-                    // Placeholder: the title itself is in the player and does not fade with this.
-                    Text(verbatim: title)
-                        .font(PlayerMetric.title)
-                        .tracking(Theme.lockTitle)
-                        .lineLimit(1)
-                        .hidden()
-                        .accessibilityHidden(true)
-                    if !seasons.isEmpty {
-                        SeasonPill(name: selectedSeason?.name ?? String(localized: "Staffel"),
-                                     opened: $seasonSelectionOpen)
-                            .focused($atSeasonPill)
-                            .panelTrigger("staffel")
-                    }
-                }
-                .padding(.horizontal, Theme.edgePage)
-                .padding(.top, Theme.edgeTop)
+                // Placeholder: the title itself is in the player and does not fade with this.
+                Text(verbatim: title)
+                    .font(PlayerMetric.title)
+                    .tracking(Theme.lockTitle)
+                    .lineLimit(1)
+                    .hidden()
+                    .accessibilityHidden(true)
+                    .padding(.horizontal, Theme.edgePage)
+                    .padding(.top, Theme.edgeTop)
+
+                // **The same row as on the series page**, edge to edge: it brings its own
+                // title-safe margin and scrolls under the left edge.
+                SeasonChipRow(seasons: seasons, selected: selectedSeason?.id,
+                              atSeason: $atSeason, select: seasonSelect)
 
                 // Old and new row overlap on a season change and cross-fade, as on the series page.
                 ZStack(alignment: .topLeading) {
@@ -604,32 +596,18 @@ struct EpisodesLayer: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                // Clear gap to the season pill, otherwise the row stuck to it.
-                .padding(.top, 44)
+                // Clear gap to the season row, otherwise the strip stuck to it. The row
+                // already carries `railsPadding` below its chips for the focus lift.
+                .padding(.top, seasons.count > 1 ? 44 - Theme.railsPadding : 44)
 
                 Spacer(minLength: 0)
             }
-            // While the season picker is open the rest is not a focus target (see `SeriesView`).
-            .disabled(seasonSelectionOpen)
-            .panel(under: seasonSelectionOpen && !panelActions.isEmpty ? "staffel" : nil) {
-                ActionPanel(actions: panelActions, opened: $seasonSelectionOpen)
-                    .transition(.opacity)
-            }
-            .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)
         }
         .focusSection()
         // Focus starts on the running episode.
         .defaultFocus($atEpisode, item.id, priority: .userInitiated)
-        .onChange(of: seasonSelectionOpen) { _, opened in
-            if opened {
-                panelActions = seasonActions
-            } else {
-                panelActions = []
-                atSeasonPill = true
-            }
-        }
         .task {
-            await LayersFocus.put { if atEpisode == nil, !atSeasonPill { atEpisode = startEpisode } }
+            await LayersFocus.put { if atEpisode == nil, atSeason == nil { atEpisode = startEpisode } }
             await load()
         }
     }
@@ -639,16 +617,10 @@ struct EpisodesLayer: View {
         episodes.contains { $0.id == item.id } ? item.id : episodes.first?.id
     }
 
-    /// Seasons as an action panel, not a `Menu`, as everywhere in the app.
-    private var seasonActions: [TitleAction] {
-        seasons.map { season in
-            TitleAction(symbol: selectedSeason?.id == season.id
-                                  ? "checkmark.circle.fill" : "circle",
-                          text: "\(season.name)") {
-                selectedSeason = season
-                Task { await episodesLoad(seasonSwitched: true) }
-            }
-        }
+    /// Picking a season shows its episodes, cross-faded; focus stays on the chip.
+    private func seasonSelect(_ season: Item) {
+        selectedSeason = season
+        Task { await episodesLoad(seasonSwitched: true) }
     }
 
     /// First what the cache has (already set in `init`), then fresh from the server.
@@ -668,7 +640,7 @@ struct EpisodesLayer: View {
         let emptyOpened = episodes.isEmpty
         await episodesLoad()
         // If the row only arrives now, focus still belongs to the running episode.
-        if emptyOpened, atEpisode == nil, !atSeasonPill, !seasonSelectionOpen {
+        if emptyOpened, atEpisode == nil, atSeason == nil {
             await LayersFocus.put { atEpisode = startEpisode }
         }
     }

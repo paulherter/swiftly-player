@@ -1472,156 +1472,54 @@ struct CastTile: View {
     }
 }
 
-/// Pill under which a list expands directly, modeled on Netflix. Not a sheet from
-/// below: the decision stays at the place where it was triggered.
-struct ExpandList<Record: Identifiable>: View {
-    @Environment(\.onImageTint) private var onImage
-    @Environment(\.imageColorSource) private var imageTint
-    let label: String
-    let entries: [Record]
-    let text: (Record) -> String
-    let isSelected: (Record) -> Bool
-    let select: (Record) -> Void
-    @Binding var opened: Bool
-    /// In the player it takes the place of the meta line under the title; smaller
-    /// there, otherwise the same choice.
-    /// **15 semibold, not 13.** Netflix sets the season choice at the size of a list
-    /// row, not of a detail; it is the switch that changes the whole list below, and
-    /// 13 read like a footnote next to it. In the player it stays smaller: there it
-    /// replaces the meta line.
-    var font: Font = Theme.listTitle
-    var height: CGFloat = 34
-    /// **A field, not a bare heading.** In the player it sits between title and
-    /// episodes and carries no surface there.
-    var asField = true
+/// **The seasons as a row of chips that scrolls sideways, not a list that drops down.**
+/// Shared by the series page and the player's episode layer, so both pick a season the
+/// same way.
+///
+/// The dropdown hung over the episodes and had no scrolling of its own: with ten seasons
+/// the lower ones ran off the bottom of the screen and could not be reached. A row has no
+/// such end; it scrolls, and every season is one tap away. It is the same chip as the
+/// filters on the watchlist, so selected reads as selected there and here.
+///
+/// The selected season is centred when the row appears and when it changes: coming in via
+/// an episode of season eight, its chip would otherwise sit beyond the edge.
+///
+/// `margin` is the side margin of the surrounding page, as content margin so the chips
+/// scroll under the edge instead of being cut at it.
+struct SeasonChipRow: View {
+    let seasons: [Item]
+    let selected: String?
+    let margin: CGFloat
+    let select: (Item) -> Void
 
     var body: some View {
-        Button {
-            if entries.count > 1 { withAnimation(Theme.leap) { opened.toggle() } }
-        } label: {
-            // **A quiet field, not a heading.**
-            //
-            // First it was a filled box at row-heading size, then a bare heading at 20,
-            // which made it as loud as "Continue Watching" although it is only a filter.
-            // Feedback: "Why is Season 1 so huge?"
-            //
-            // Now the quiet step in a surface: you can see it can be pressed, and it doesn't
-            // shout. The same build on all devices; on the TV 26 / 60 and corner 14: the
-            // corner there is `cornerSmall`, which keeps the iPhone ratio 8 to 34 at 60 pt
-            // height instead of doubling with the font.
-            HStack(spacing: 7) {
-                Text(label)
-                    .font(font)
-                    .foregroundStyle(Theme.font)
-                if entries.count > 1 {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                        .rotationEffect(.degrees(opened ? 180 : 0))
-                }
-            }
-            .padding(.horizontal, asField ? 11 : 0)
-            // The hit area stays, even without a surface beneath it.
-            .frame(height: height)
-            .background(asField ? Theme.buttonArea(onImage: onImage) : .clear,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .accessibilityLabel(label)
-        .accessibilityHint(entries.count > 1 ? "Öffnet die Auswahl" : "")
-        .buttonStyle(Theme.PressButton())
-        .overlay(alignment: .topLeading) {
-            if opened {
-                VStack(spacing: 0) {
-                    ForEach(entries) { entryRecord in
-                        Button {
-                            select(entryRecord)
-                            withAnimation(Theme.leap) { opened = false }
-                        } label: {
-                            HStack(spacing: 12) {
-                                // **Selected means white and weight, not color.** The accent carries state,
-                                // never ranking, and "this is the one" is ranking. That is how it is in the
-                                // player, and the player sets the tone.
-                                // **The checkmark marks, the weight doesn't.**
-                                //
-                                // Selected used to be additionally in semibold. That is a second statement for
-                                // the same thing, and semibold is wider, so the choice changed the width of the
-                                // panel. Netflix sets only the checkmark.
-                                //
-                                // The column is 18 wide as in the selection sheet; 14 was the third checkmark
-                                // width in the app.
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(isSelected(entryRecord) ? Theme.font : .clear)
-                                    .frame(width: 18)
-                                    .accessibilityHidden(true)
-                                Text(text(entryRecord))
-                                    .font(Theme.listTitle)
-                                    .foregroundStyle(isSelected(entryRecord) ? Theme.font
-                                                                          : Theme.fontQuiet)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 14)
-                            // 9 instead of 12: with 12 every row became 43 tall, and with eight seasons the
-                            // panel took half the screen. Netflix's rows are just over 30, the same number a
-                            // selection row carries in a list.
-                            .padding(.vertical, 9)
-                            .contentShape(Rectangle())
+        ScrollViewReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(seasons) { season in
+                        // From the server, so not translated: `SelectionChip` shows it verbatim.
+                        SelectionChip(text: season.name, an: season.id == selected) {
+                            select(season)
                         }
-                        // Rows in a selection are buttons and must respond to the press, not only to the
-                        // choice.
-                        .buttonStyle(Theme.PressRow())
-                        // The checkmark is only an image; VoiceOver reports the selected state.
-                        .accessibilityAddTraits(isSelected(entryRecord) ? .isSelected : [])
+                        .id(season.id)
                     }
                 }
-                // **As wide as the longest name, not a fixed 200.**
-                //
-                // "Season 1" needs 140, "Specials" too, and 200 left a gap on the right that
-                // looked like a bug. With a season with a long name it was truncated instead.
-                // `fixedSize` takes what the text needs; the lower bound keeps narrow panels from
-                // looking like a mistake.
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(minWidth: 180, alignment: .leading)
-                // **The brand color, not a hand-typed one.** It used 0.090/0.090/0.102;
-                // `Theme.area` is 0.086/0.086/0.098. The difference was invisible and for that
-                // very reason dangerous: a color that should follow the brand but doesn't.
-                // Corner `corner` (10), not `eckeFlaeche` (16): the panel is small and sits at a
-                // button, not a surface of its own. At 16 it looked unfittingly round next to
-                // its trigger (8).
-                // **Over artwork in the page's color** (experiment `experiment-glas`): opaque,
-                // because episodes sit below that would otherwise show through the list, but in
-                // the tone of the page at this spot (the same net, `ImageTone.farbe`), with the
-                // white of the other surfaces on top. A fixed gray stood there like a foreign
-                // body.
-                .background {
-                    RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                        .fill(Theme.area)
-                        .overlay {
-                            if onImage, let imageTint {
-                                ZStack {
-                                    Theme.reason
-                                    MoodLoader(url: imageTint) { tones in
-                                        ImageTone.color(tones, at: SIMD2<Float>(0.2, 0.55))
-                                    }
-                                    Theme.surfaceTranslucent
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                            }
-                        }
+                #if os(iOS)
+                // **The pull from the left edge belongs to the page**; see `EdgeGesturePreRank`
+                // in the other horizontal rows.
+                .overlay(alignment: .topLeading) {
+                    EdgeGesturePreRank().frame(width: 0, height: 0)
                 }
-                // **No shadow.** Depth comes from surface brightness, not from drop shadows;
-                // `erhoeht` already sits one step above the card beneath. The shadow was also the
-                // only one in the entire iPhone version.
-                .offset(y: height + 6)
-                .zIndex(10)
-                // **It grows out of its trigger.** Before, it appeared abruptly: no transition,
-                // no origin. A list from nowhere leaves open what it belongs to; one that grows
-                // out of the button answers that without a word. The anchor is top left because
-                // that is where it hangs, and 0.94 instead of 0, since nothing in reality
-                // appears from nothing.
-                .transition(.scale(scale: 0.94, anchor: .topLeading)
-                    .combined(with: .opacity))
+                #endif
+            }
+            .contentMargins(.horizontal, margin, for: .scrollContent)
+            .onChange(of: selected, initial: true) { before, now in
+                guard let now else { return }
+                if before == nil {
+                    reader.scrollTo(now, anchor: .center)
+                } else {
+                    withAnimation(Theme.reveal) { reader.scrollTo(now, anchor: .center) }
+                }
             }
         }
     }

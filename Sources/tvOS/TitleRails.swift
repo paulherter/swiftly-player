@@ -360,7 +360,7 @@ struct EpisodesStrip: View {
 /// new blocks on every pass of the page, SwiftUI cannot compare them and
 /// recomputed the whole strip with its tile menus, on the series page for
 /// every state set on opening: focus, plan, watchlist, watched, fade-in. See
-/// the comment on `panelActions` in `PlayerLayers.swift`.
+/// the comment on `EpisodesLayer`'s `Equatable` in `PlayerLayers.swift`.
 /// What the strip shows is compared. `start` and `nachher` read their state
 /// at call time, so an older block does the same as a new one. `nextWith`
 /// counts: the fresh state must come through.

@@ -1,20 +1,11 @@
 package de.paulherter.swiftly
 
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.IntrinsicSize
 import de.paulherter.swiftly.shared.Glyph
-import de.paulherter.swiftly.shared.Symbol
-import de.paulherter.swiftly.shared.Strength
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -37,8 +28,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -47,16 +36,10 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.window.Popup
-import androidx.compose.animation.core.MutableTransitionState
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Motion
@@ -503,14 +486,20 @@ private fun PageTab(title: List<String>, selected: Int, select: (Int) -> Unit) {
  * season is one tap away.
  *
  * The chip mirrors `SelectionChip`: selected is one step up the ladder (`raised`) with full text,
- * otherwise `area` with quiet text, one weight in both so no neighbour shifts. Also with a single
- * season, as on iOS: the row then says which season is showing. Names come from the server.
+ * otherwise `area` with quiet text, one weight in both so no neighbour shifts. Names come from the
+ * server.
  *
  * The selected season is scrolled into view when the row appears and when it changes; coming in
  * via an episode of season eight, its chip would otherwise sit beyond the edge.
+ *
+ * **Shared by the series page and the player's episode layer**, so both pick a season the same way.
+ * `edge` is the side margin of the surrounding view, as content padding so the chips scroll under the
+ * edge instead of being cut; `spacing` is the room above and below, which differs between the page
+ * and the layer.
  */
 @Composable
-internal fun SeasonChips(seasons: List<Season>, selected: String?, select: (String) -> Unit) {
+internal fun SeasonChips(seasons: List<Season>, selected: String?, edge: Dp = Theme.edgeSpacing,
+                         spacing: Modifier = Modifier.padding(vertical = 14.dp), select: (String) -> Unit) {
     val list = rememberLazyListState()
     LaunchedEffect(selected, seasons.size) {
         val index = seasons.indexOfFirst { it.id == selected }
@@ -523,8 +512,8 @@ internal fun SeasonChips(seasons: List<Season>, selected: String?, select: (Stri
         if (!whole) list.animateScrollToItem(index)
     }
     // The height stays while the series loads (`heightIn`), so the episodes do not jump when the row fades in.
-    LazyRow(Modifier.fillMaxWidth().padding(vertical = 14.dp).heightIn(min = Theme.pillsHeight), state = list,
-            contentPadding = PaddingValues(horizontal = Theme.edgeSpacing),
+    LazyRow(Modifier.fillMaxWidth().then(spacing).heightIn(min = Theme.pillsHeight), state = list,
+            contentPadding = PaddingValues(horizontal = edge),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         items(seasons, key = { it.id }) { st ->
             val an = st.id == selected
@@ -534,75 +523,6 @@ internal fun SeasonChips(seasons: List<Season>, selected: String?, select: (Stri
                     .padding(horizontal = 13.dp),
                 contentAlignment = Alignment.Center) {
                 Text(st.name, style = Theme.tile, color = if (an) Theme.font else Theme.fontQuiet, maxLines = 1)
-            }
-        }
-    }
-}
-
-/**
- * Mirrors `ExpandList`: season name in row type, arrow only from two seasons. The list grows
- * from top left, 200 wide, 44 below the pill, and sits above the episodes.
- */
-@Composable
-internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Boolean, setOpen: (Boolean) -> Unit,
-                         compact: Boolean = false, select: (String) -> Unit) {
-    val multiple = seasons.size > 1
-    val rotation by animateFloatAsState(if (opened) 180f else 0f, Motion.leap(), label = "pfeil")
-    // **A tap on the pill only closes the open list.** It arrived twice: the popup first closed it
-    // as a tap outside, then the pill reopened it in the same step (fixed on iOS).
-    val closedAround = remember { longArrayOf(0L) }
-    // **Compact** in the player's episode layer (mirrors `ExpandList(font: meta + 1, height: 28)`):
-    // in place of the meta line, without its own margin; the layer header provides that.
-    // `ExpandList(asField:)`: on the series page a field, 34 high, `area`, corner 8, 11 inside,
-    // 15 semibold; in the player no surface, 28 high, in meta type.
-    val height = if (compact) 28.dp else 34.dp
-    Box(if (compact) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Theme.edgeSpacing, top = 14.dp, bottom = 14.dp)) {
-        Row(Modifier.tapOn { if (multiple && android.os.SystemClock.uptimeMillis() - closedAround[0] > 300) setOpen(!opened) }
-                .heightIn(min = height)
-                .then(if (compact) Modifier else Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(buttonArea(LocalImageColor.current)).padding(horizontal = 11.dp)),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"),
-                 style = if (compact) Theme.small.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold) else Theme.listTitle,
-                 color = Theme.font)
-            if (multiple) Symbol(Glyph.AngleDown, 11.dp, Modifier.graphicsLayer { rotationZ = rotation },
-                                color = Theme.fontVeryQuiet, strength = Strength.Semibold, description = translated("Öffnet die Auswahl"))
-        }
-        // **Above the episodes, not between them.** A popup has no height in the page and stays
-        // tappable; a drawing outside the header row would get no taps.
-        val condition = remember { MutableTransitionState(false) }
-        condition.targetState = opened
-        if (condition.currentState || condition.targetState) {
-            val density = LocalDensity.current
-            // 16 margin in the popup for the motion; the list sits 6 below the field.
-            val margin = with(density) { 16.dp.roundToPx() }
-            val bottom = with(density) { (height + 6.dp).roundToPx() }
-            Popup(offset = IntOffset(-margin, bottom - margin), onDismissRequest = { closedAround[0] = android.os.SystemClock.uptimeMillis(); setOpen(false) },
-                  properties = PopupProperties(focusable = false)) {
-                AnimatedVisibility(condition, Modifier.padding(16.dp),
-                    enter = fadeIn(Motion.leap()) + scaleIn(Motion.leap(), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
-                    exit = fadeOut(Motion.leap()) + scaleOut(Motion.leap(), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
-                // **As wide as the longest name, at least 180**; a fixed 200 left a gap on the right.
-                // Corner 10, no shadows.
-                // **Over an image colour, in the page's colour:** opaque because episodes sit below, but in the
-                // page's tone at this spot, with the white of the other surfaces on top. A fixed grey looked
-                // foreign.
-                val tones = LocalImageAudio.current
-                val reason = if (LocalImageColor.current && tones.isNotEmpty()) remember(tones) { imageColor(tones, 0.2, 0.55) } else null
-                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).clip(RoundedCornerShape(Theme.corner))
-                        .background(Theme.area).then(if (reason != null) Modifier.background(reason).background(surfaceTranslucent) else Modifier)) {
-                    seasons.forEach { st ->
-                        val an = st.id == selected
-                        // Tick on the left, always reserved; selected white, otherwise quiet: 15 semibold, 14/9 inside.
-                        Row(Modifier.fillMaxWidth().pressRow { setOpen(false); select(st.id) }.padding(horizontal = 14.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
-                                if (an) Symbol(Glyph.Checkmark, 15.dp, color = Theme.font, strength = Strength.Semibold)
-                            }
-                            Text(st.name, style = Theme.listTitle, color = if (an) Theme.font else Theme.fontQuiet, maxLines = 1)
-                        }
-                    }
-                }
-                }
             }
         }
     }

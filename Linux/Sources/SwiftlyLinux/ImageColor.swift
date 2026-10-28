@@ -173,11 +173,6 @@ enum AudioSheet {
         guard points.count == columns * rows,
               let audio = pngData(points.map { UInt32(bitPattern: $0) }, width: columns, height: rows)
         else { return nil }
-        // The season list lies opaque over the episodes, in the page's hue at this
-        // position, with 8 % white on top (iOS/Mac `SeriesView`,
-        // `ImageTone.farbe(tones, at: (0,2, 0,55))`).
-        let f = AvComputation.color(tones, x: 0.2, y: 0.55)
-        func k(_ w: Double) -> Int { Int((min(max(w * 0.92 + 0.08, 0), 1) * 255).rounded()) }
         return """
         .swiftly-seitenton.\(classKind) {
             background-color: \(Theme.reason);
@@ -187,7 +182,6 @@ enum AudioSheet {
             background-size: 96px 96px, 100% \(Int(height))px;
             background-position: 0 0, 0 0;
         }
-        .\(classKind) .swiftly-staffelliste { background-color: rgb(\(k(f.r)),\(k(f.g)),\(k(f.b))); }
         """
     }
 

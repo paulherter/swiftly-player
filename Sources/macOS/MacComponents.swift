@@ -770,7 +770,7 @@ struct DisturbHint: View {
 ///
 /// The content comes from `TitleAction` in `Sources/Shared` and is the same on all
 /// platforms; only the presentation differs. Here the list opens **in place**,
-/// directly under the button, like the season pill. A sheet from below would be
+/// directly under the button. A sheet from below would be
 /// foreign on the Mac, and a `Menu` brings system metrics.
 struct ActionList: View {
     let actions: [TitleAction]
