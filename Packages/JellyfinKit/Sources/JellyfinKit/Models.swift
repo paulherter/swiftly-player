@@ -773,12 +773,10 @@ public struct MediaStream: Codable, Sendable, Equatable {
         return parts.isEmpty ? (displayTitle ?? "—") : parts.joined(separator: " · ")
     }
 
-    /// Language in the device's language, from the three-letter code.
+    /// Language in the interface's language, from the three-letter code; the rule is
+    /// ``TrackLabel/language(_:locale:)``, so the details page and the player agree.
     public var languageName: String? {
-        guard let language, !language.isEmpty else { return nil }
-        let locale = Locale.current
-        return locale.localizedString(forLanguageCode: language)?.capitalized
-            ?? language.uppercased()
+        TrackLabel.language(language)
     }
 
     /// Also usable from outside.

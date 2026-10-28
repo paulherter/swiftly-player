@@ -40,9 +40,9 @@ struct TechDetailsTests {
 
     @Test("Tonspurname: Sprache aus Kürzel oder Wort, Codec, Kanäle")
     func audioTrackName() {
-        let deutsch = Locale.current.localizedString(forLanguageCode: "deu") ?? "Deutsch"
-        #expect(TechDetails.audioTrackName(language: "deu", codec: "AAC", channels: 6) == "\(deutsch) · AAC · 5.1")
-        #expect(TechDetails.audioTrackName(language: "German", codec: "DTS", channels: 2) == "Deutsch · DTS · Stereo")
+        let de = Locale(identifier: "de_DE")
+        #expect(TechDetails.audioTrackName(language: "deu", codec: "AAC", channels: 6, locale: de) == "Deutsch · AAC · 5.1")
+        #expect(TechDetails.audioTrackName(language: "German", codec: "DTS", channels: 2, locale: de) == "Deutsch · DTS · Stereo")
         #expect(TechDetails.audioTrackName(language: nil, codec: "AAC", channels: 2) == "AAC · Stereo")
         #expect(TechDetails.audioTrackName(language: "", codec: nil, channels: 0) == nil)
         #expect(TechDetails.audioTrackName(language: "ger", codec: nil, channels: nil)?.isEmpty == false)

@@ -293,7 +293,8 @@ extension App {
     // MARK: Names in the sheet
 
     /// **"Deutsch · AAC · 5.1" instead of VLC's "Track 2 - [German]"**: the
-    /// same format as the tech badge (`prettyName`).
+    /// same format as the tech badge (`prettyName`), with the language in the
+    /// interface's language (``TrackLabel/language(_:locale:)``).
     func audioTrackNames() -> [(identifier: Int32, name: String)] {
         let audio = mediaPlayer.audioTracks.filter { $0.identifier >= 0 }
         let details = mediaPlayer.trackDetails()
@@ -307,27 +308,24 @@ extension App {
         }
     }
 
-    /// Subtitles with identical names and added files get language, format,
-    /// "Erzwungen", "Hörgeschädigt" and "Datei"; otherwise they cannot be told
-    /// apart in the list (Apple: `subtitleNames()`).
+    /// **Built by ``TrackLabel``, like the audio rows**, so one list has one
+    /// style: "English · Forced · SRT" (Apple: `subtitleNames()`). The server's
+    /// fields first, since only the server knows forced, SDH and added files;
+    /// then what libVLC knows; its raw name only where neither knows a language.
     func subtitleNames() -> [(identifier: Int32, name: String)] {
-        let (_, ut, z, _) = trackState()
+        let (_, ut, z, details) = trackState()
         let streams = trackStatus.source?.mediaStreams ?? []
-        return ut.enumerated().map { position, track in
-            let double = ut.filter { $0.name == track.name }.count > 1
-            guard let index = z.subtitle[position],
-                  let feed = streams.first(where: { $0.type == "Subtitle" && $0.index == index }),
-                  double || feed.isExternal == true || feed.isHearingImpaired == true else {
-                return (track.identifier, track.name)
+        let tracks = playerTracks(ut, art: "spu", details: details)
+        let labels = ut.indices.map { position in
+            let feed = z.subtitle[position].flatMap { index in
+                streams.first { $0.type == "Subtitle" && $0.index == index }
             }
-            let parts: [String?] = [
-                TechDetails.language(feed.language) ?? track.name,
-                TechDetails.codecNameValue(feed.codec),
-                feed.isForced == true ? translated("Erzwungen") : nil,
-                feed.isHearingImpaired == true ? translated("Hörgeschädigt") : nil,
-                feed.isExternal == true ? translated("Datei") : nil,
-            ]
-            return (track.identifier, parts.compactMap { $0 }.joined(separator: " · "))
+            return feed.flatMap { TrackLabel.subtitle($0) }
+                ?? TrackLabel.subtitle(tracks[position])
+                ?? ut[position].name
+        }
+        return zip(ut, TrackLabel.distinct(labels)).map { track, name in
+            (identifier: track.identifier, name: name)
         }
     }
 }

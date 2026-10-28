@@ -86,17 +86,10 @@ public enum TechDetails {
 
     /// An audio track in one line, e.g. "German · AAC · 5.1".
     ///
-    /// For tracks the player reports itself. The language comes as "ger", "deu" or "German"
-    /// depending on the file; what `Locale` does not know is resolved by
-    /// ``Sprache/erkannt(in:)``.
-    public static func audioTrackName(language raw: String?, codec: String?, channels: Int?) -> String? {
-        var languageWord: String?
-        if let raw, !raw.isEmpty {
-            let hasRead = language(raw)
-            languageWord = hasRead != raw ? hasRead : (Language.detected(in: raw) ?? raw)
-        }
-        let parts = [languageWord, codec, channelWord(channels)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    /// For tracks the player reports itself. The rule lives in ``TrackLabel/audio(language:codec:channels:locale:)``.
+    public static func audioTrackName(language raw: String?, codec: String?, channels: Int?,
+                                      locale: Locale = TrackLabel.displayLocale) -> String? {
+        TrackLabel.audio(language: raw, codec: codec, channels: channels, locale: locale)
     }
 
     /// How many channels, in the notation everyone knows.
@@ -117,15 +110,10 @@ public enum TechDetails {
     ///
     /// The server returns the ISO code, and `und` there is not the conjunction but
     /// "undetermined", the value a file carries when nobody set a language. The badge used
-    /// to read "Audio AAC · 5.1 · und", which looks like a truncated sentence.
+    /// to read "Audio AAC · 5.1 · und", which looks like a truncated sentence. The rule
+    /// lives in ``TrackLabel/language(_:locale:)``, so the badge and the track list agree.
     public static func language(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let code = raw.lowercased()
-        // `mis` means "miscellaneous", `zxx` "no linguistic content".
-        if ["und", "unknown", "unbekannt", "mis", "zxx"].contains(code) {
-            return translated("unbekannt")
-        }
-        return Locale.current.localizedString(forLanguageCode: code) ?? raw
+        TrackLabel.language(raw)
     }
 
     // MARK: Numbers

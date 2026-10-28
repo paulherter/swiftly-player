@@ -42,11 +42,15 @@ struct DelayTests {
     @Test("Anzeige mit Vorzeichen, zwei Stellen und Komma nach Sprache")
     func text() {
         let de = Locale(identifier: "de_DE"), en = Locale(identifier: "en_US")
-        #expect(Delay(milliseconds: 200).text(locale: de) == "+0,20 s")
-        #expect(Delay(milliseconds: -1_550).text(locale: de) == "\u{2212}1,55 s")
-        #expect(Delay(milliseconds: 50).text(locale: en) == "+0.05 s")
-        #expect(Delay.null.text(locale: de) == "0,00 s")
-        #expect(Delay(milliseconds: 10_000).text(locale: de) == "+10,00 s")
+        // The unit comes from the catalog ("s", in Russian "с"), so the expectation asks
+        // the catalog too instead of assuming the test machine's language.
+        let unit = translated("\("") s")
+        #expect(unit == " s" || unit == " с")
+        #expect(Delay(milliseconds: 200).text(locale: de) == "+0,20" + unit)
+        #expect(Delay(milliseconds: -1_550).text(locale: de) == "\u{2212}1,55" + unit)
+        #expect(Delay(milliseconds: 50).text(locale: en) == "+0.05" + unit)
+        #expect(Delay.null.text(locale: de) == "0,00" + unit)
+        #expect(Delay(milliseconds: 10_000).text(locale: de) == "+10,00" + unit)
     }
 
     @Test("Gedrueckt halten wird schneller, nie langsamer")

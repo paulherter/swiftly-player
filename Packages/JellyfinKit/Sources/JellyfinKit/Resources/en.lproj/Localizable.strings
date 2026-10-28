@@ -143,3 +143,9 @@
 "Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "The connection to the group was lost and could not be restored. Please join the group again.";
 
 "Fassung" = "Version";
+
+/* Spurnamen im Player und Einheit der Verzögerung */
+"Erzwungen" = "Forced";
+"Hörgeschädigt" = "SDH";
+"Datei" = "File";
+"%@ s" = "%@ s";

@@ -181,8 +181,12 @@ struct ServerView: View {
             }
 
             // The label says that a check is running, as on iPhone.
+            // **As wide as the field above it.** `PrimaryButton` fills what it is given, and
+            // here that was the whole window: a bar from edge to edge under a centred field.
+            // On iPhone the button sits in the same column as the field.
             PrimaryButton(label: model.phase == .connecting ? "Verbinden…" : "Verbinden",
                        symbol: "arrow.right", pick: linkUp)
+                .frame(width: Theme.formWidth)
                 .padding(.top, 24)
                 .disabled(address.isEmpty || model.isWorking || model.phase == .connecting)
                 .opacity(address.isEmpty ? 0.4 : 1)
@@ -248,8 +252,10 @@ struct SignInView: View {
                     .padding(.top, 12)
             }
 
+            // As wide as the fields, like "Verbinden" on the page before.
             PrimaryButton(label: "Anmelden", symbol: "arrow.right",
                        pick: signIn)
+                .frame(width: Theme.formWidth)
                 .padding(.top, 24)
                 .disabled(user.isEmpty || model.isWorking)
                 .opacity(user.isEmpty ? 0.4 : 1)

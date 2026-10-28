@@ -117,10 +117,12 @@ extension App {
 
     /// A column with a fixed heading; only the rows below scroll on their own,
     /// so with 50 or more subtitles the other column stays still (Mac:
-    /// `Wahlspalte`, 200 wide).
-    func layersColumn(_ title: String, _ fill: (Widget?) -> Void) -> Widget! {
+    /// `SelectionColumn`). Short choices take `Theme.layerColumnWidth`, the track
+    /// columns `Theme.trackColumnWidth`.
+    func layersColumn(_ title: String, width: Int = Theme.layerColumnWidth,
+                      _ fill: (Widget?) -> Void) -> Widget! {
         let outer = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_set_size_request(outer, 200, -1)
+        gtk_widget_set_size_request(outer, Int32(width), -1)
         gtk_widget_set_vexpand(outer, 1)
 
         let header = label(title, style: "swiftly-spaltentitel")
@@ -164,7 +166,7 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
         // One character of width requested, so a long name does not push the column
-        // beyond its 200; `hexpand` gives it the rest.
+        // beyond its width; `hexpand` gives it the rest.
         gtk_label_set_max_width_chars(OpaquePointer(l), 1)
         gtk_widget_set_hexpand(l, 1)
         append(rail, l)
@@ -281,7 +283,7 @@ extension App {
     private func tracksLayerBuild() -> Widget! {
         let audioNow = mediaPlayer.audioTrack
         let audioGroup = SelectionGroup()
-        let audio = layersColumn(translated("Audio")) { space in
+        let audio = layersColumn(translated("Audio"), width: Theme.trackColumnWidth) { space in
             for track in audioTrackNames() {
                 append(space, layerRow(track.name, identifier: "\(track.identifier)", group: audioGroup,
                                             selected: track.identifier == audioNow) {
@@ -292,7 +294,7 @@ extension App {
         }
         let subtitleNow = mediaPlayer.subtitleTrack
         let subGroup = SelectionGroup()
-        let subtitle = layersColumn(translated("Untertitel")) { space in
+        let subtitle = layersColumn(translated("Untertitel"), width: Theme.trackColumnWidth) { space in
             append(space, layerRow(translated("Aus"), identifier: "aus", group: subGroup,
                                         selected: subtitleNow < 0) {
                 [weak self] in self?.subtitleSelected(nil)

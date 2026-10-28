@@ -188,6 +188,13 @@ enum Theme {
     /// `formWidth` applies to profile, Seerr and every settings column too. A list of
     /// rows is a form, not running text.
     static let formWidth = 420
+    /// **Width of a column on the player's layers** (picture, sleep timer, quality),
+    /// as on the Mac (`Sources/macOS/Style.swift`).
+    static let layerColumnWidth = 200
+    /// **Width of the audio and subtitle columns**, as on the Mac. A track row carries
+    /// language, flags, format and file; at 200 such rows truncated while most of the
+    /// layer stood empty.
+    static let trackColumnWidth = 360
     /// **1366, as in `Sources/macOS/Style.swift`.** This used to be 1100 for no reason, and
     /// the number was never used because GTK has no maximum size. The cap is now set by
     /// `Einstellungsseiten.cap(_:in:on:)`.

@@ -97,15 +97,20 @@ public struct Delay: Equatable, Hashable, Sendable {
 
     // MARK: Display
 
-    /// "+0.20 s", "−1.50 s", "0.00 s": decimal separator per `locale`, the minus as
-    /// a real minus sign, two decimals because a step is 0.05.
-    public func text(locale: Locale = .current) -> String {
+    /// "+0.20 s", "−1.50 s", "0,00 с": the minus as a real minus sign, two decimals
+    /// because a step is 0.05.
+    ///
+    /// **Separator and unit follow the interface, not the system.** The default is
+    /// ``TrackLabel/displayLocale``: on Windows `Locale.current` is English whatever the
+    /// display language, so a Russian interface read "0.00 s". The unit comes from the
+    /// catalog because Russian abbreviates seconds as "с".
+    public func text(locale: Locale = TrackLabel.displayLocale) -> String {
         let magnitude = abs(milliseconds)
         let comma = locale.decimalSeparator ?? "."
         let hundredths = (magnitude % 1000) / 10
         let figure = "\(magnitude / 1000)\(comma)\(hundredths < 10 ? "0" : "")\(hundredths)"
         let preCharacter = milliseconds > 0 ? "+" : (milliseconds < 0 ? "\u{2212}" : "")
-        return "\(preCharacter)\(figure) s"
+        return translated("\(preCharacter + figure) s")
     }
 
     // MARK: Keeping
