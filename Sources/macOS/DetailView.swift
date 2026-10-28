@@ -690,6 +690,15 @@ struct DetailHero: View {
                 }
             }
 
+            // **"Senden an": this title to a TV running Swiftly** (``PlayOutputs``), only
+            // while one is in reach. Opens the same window as "Läuft gerade"; a series goes
+            // as the episode the viewer is at.
+            if !PlayOutputs.shared.targets.isEmpty {
+                ActionButton(mass: Theme.primaryButtonHeight, symbol: "tv", title: "Senden an …") {
+                    PlayOutputs.shared.sendFor = playBarTitle ?? title
+                }
+            }
+
             ActionButton(mass: Theme.primaryButtonHeight, symbol: "ellipsis", title: "Mehr", active: moreOpen) {
                 withAnimation(Theme.leap) { moreOpen.toggle() }
             }

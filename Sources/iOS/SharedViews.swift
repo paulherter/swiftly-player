@@ -135,8 +135,14 @@ struct OfferingBadge: View {
 struct SharedSheets: View {
     let takeover: [RemoteSession]
     let continueWatching: (RemoteSession) -> Void
+    /// The single offer waiting for a yes (``TakeoverModel/confirming``).
+    let confirming: RemoteSession?
+    let endConfirm: () -> Void
+    /// "Senden an": the title to the chosen TV, see ``PlayOutputs``.
+    let send: (Item, PlayOutput) -> Void
 
     @State private var gemeinsam = SharedModel.shared
+    @State private var outputs = PlayOutputs.shared
     @State private var name = ""
     @FocusState private var taps: Bool
 
@@ -173,6 +179,32 @@ struct SharedSheets: View {
                     .accessibilityAction(.escape) { gemeinsam.sheet = nil }
                     .transition(.outPoint(BadgeOrigin.point))
             }
+            // **"Hier weiterschauen" asks first**, in the card the picker uses.
+            if let s = confirming {
+                TakeoverSelection.scrim { endConfirm() }
+                    .transition(.opacity)
+                VStack(spacing: 0) { confirmBody(s) }
+                    .padding(.top, 15)
+                    .background(Theme.area,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+                    .frame(maxWidth: 420)
+                    .padding(.horizontal, 24)
+                    .accessibilityAction(.escape) { endConfirm() }
+                    .transition(.outPoint(BadgeOrigin.point))
+            }
+            // **"Senden an" in the same card**, the other direction.
+            if outputs.sendFor != nil {
+                TakeoverSelection.scrim { outputs.sendFor = nil }
+                    .transition(.opacity)
+                VStack(spacing: 0) { sendList }
+                    .padding(.top, 15)
+                    .background(Theme.area,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+                    .frame(maxWidth: 420)
+                    .padding(.horizontal, 24)
+                    .accessibilityAction(.escape) { outputs.sendFor = nil }
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
 
             if let alt = gemeinsam.lastLeave {
                 ReturnPathStrip(name: alt.name) { gemeinsam.againJoin() }
@@ -183,6 +215,8 @@ struct SharedSheets: View {
             }
         }
         .animation(Theme.spring, value: selectionOpen)
+        .animation(Theme.spring, value: outputs.sendFor?.id)
+        .animation(Theme.spring, value: confirming?.id)
         .animation(Theme.reveal, value: gemeinsam.lastLeave?.id)
         .animation(Theme.reveal, value: gemeinsam.error)
         .onChange(of: gemeinsam.createFor?.id) { _, new in
@@ -328,6 +362,57 @@ struct SharedSheets: View {
         SheetCancel { gemeinsam.sheet = nil }
     }
 
+    // MARK: Confirm
+
+    /// **"Hier weiterschauen" asks first**: the other device stops at once, and a
+    /// tap by mistake would stop someone's film.
+    @ViewBuilder private func confirmBody(_ s: RemoteSession) -> some View {
+        SheetCategory(text: Text(verbatim: s.titleLine))
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: s.confirmText)
+                .font(Theme.body)
+                .foregroundStyle(Theme.font)
+                .padding(.top, -10)
+                .padding(.bottom, 18)
+            Button {
+                endConfirm()
+                continueWatching(s)
+            } label: {
+                Text("Fortsetzen")
+            }
+            .buttonStyle(PrimaryButtonStyle(lockedArea: Theme.raised))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.edgeSpacing)
+        .padding(.bottom, 12)
+        SheetLine()
+        SheetCancel { endConfirm() }
+    }
+
+    // MARK: Send
+
+    /// **The same card as "Läuft gerade", the other direction**: the TVs in reach,
+    /// each with what it plays right now, and "Senden" to put this title there.
+    @ViewBuilder private var sendList: some View {
+        // **The title heads the card**; "Senden an" was on the button that opened it.
+        if let title = outputs.sendFor {
+            SheetCategory(text: Text(verbatim: SharedModel.titleLine(title)))
+            ForEach(outputs.targets) { s in
+                if let output = PlayOutput(session: s) {
+                    SheetLine()
+                    row(symbol: s.devicesCharacter, title: output.name,
+                        under: s.running == nil ? "" : s.titleLine,
+                        action: Text("Senden")) {
+                        outputs.sendFor = nil
+                        send(title, output)
+                    }
+                }
+            }
+        }
+        SheetLine()
+        SheetCancel { outputs.sendFor = nil }
+    }
+
     private func row(symbol: String, title: String, under: String, action: Text,
                        perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
@@ -340,10 +425,13 @@ struct SharedSheets: View {
                     Text(verbatim: title)
                         .font(Theme.listTitle)
                         .foregroundStyle(Theme.font)
-                    Text(verbatim: under)
-                        .font(Theme.small)
-                        .foregroundStyle(Theme.fontQuiet)
-                        .lineLimit(1)
+                    // A TV that plays nothing has no second line.
+                    if !under.isEmpty {
+                        Text(verbatim: under)
+                            .font(Theme.small)
+                            .foregroundStyle(Theme.fontQuiet)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 0)
                 action

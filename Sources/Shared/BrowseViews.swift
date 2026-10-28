@@ -586,6 +586,7 @@ struct ItemDetailView: View {
                     }
                 }
             }
+            SendField(title: current, stretches: !broad)
             ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad) { moreOpen = true }
                 .asActionAnchor()
         }

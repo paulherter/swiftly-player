@@ -239,7 +239,12 @@ struct MainView: View {
             // Create, join, selection and the way back after leaving. On top of
             // everything because every page can open them.
             SharedSheets(takeover: takeover.offerings,
-                              continueWatching: { hereContinueWatching($0) })
+                              continueWatching: { hereContinueWatching($0) },
+                              confirming: takeover.confirming,
+                              endConfirm: { takeover.confirming = nil },
+                              send: { title, output in
+                                  Task { await PlayOutputs.shared.send(title, to: output, model: model) }
+                              })
                 .zIndex(6)
 
             // **What a tile menu ordered** (``TileMenu``): the loading sheet and a
@@ -264,7 +269,7 @@ struct MainView: View {
             guard an else { return }
             takeover.tapped = false
             if takeover.multiplePresent { selectionOpen = true }
-            else if let a = takeover.offering { hereContinueWatching(a) }
+            else if let a = takeover.offering { takeover.confirming = a }
         }
         .task { takeover.start(model) }
         // **"Go to the home page"** (the looks from the profile, "Show me my Home" on the
@@ -307,6 +312,12 @@ struct MainView: View {
             tileRequest.play = nil
             takeoverRequest = wish
         }
+        // **Sent from another device**: the same player again, from every section.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { takeoverRequest = $0 } }
+        }
         #if DEBUG && os(iOS)
         .task {
             guard JumpRun.an else { return }
@@ -343,7 +354,7 @@ struct MainView: View {
         .onDisappear { takeover.finish() }
         .playerCover(item: $takeoverRequest) { wish in
             PlayerScreen(model: model, item: wish.item,
-                         plan: wish.plan, startAt: wish.startAt)
+                         plan: wish.plan, startAt: wish.startAt, tracks: wish.tracks)
         }
         // Deliberately without a transition: the bar should stay fixed and
         // simply be there again on return, like the content behind it. Faded in,

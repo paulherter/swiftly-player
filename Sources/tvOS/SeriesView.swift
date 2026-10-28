@@ -352,6 +352,8 @@ struct SeriesView: View {
                                 remembered: $remembered, watched: $watched,
                                 message: $message)
 
+                TVSendButton(title: nextWith ?? current)
+
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")

@@ -159,16 +159,24 @@ struct OfferingRow: View {
 struct SharedPanel: View {
     let takeover: [RemoteSession]
     let continueWatching: (RemoteSession) -> Void
+    /// The single offer waiting for a yes (``TakeoverModel/confirming``).
+    let confirming: RemoteSession?
+    let endConfirm: () -> Void
+    /// "Senden an": the title to the chosen TV, see ``PlayOutputs``.
+    let send: (Item, PlayOutput) -> Void
 
     @State private var gemeinsam = SharedModel.shared
+    @State private var outputs = PlayOutputs.shared
     @State private var name = ""
     @FocusState private var taps: Bool
 
     /// Which panel is shown. Create takes priority since it comes from a click on this
     /// machine; join and picker come from the sidebar.
-    private enum Panel: Equatable { case create, join, pick }
+    private enum Panel: Equatable { case create, send, confirm, join, pick }
     private var panel: Panel? {
         if gemeinsam.createFor != nil { return .create }
+        if outputs.sendFor != nil { return .send }
+        if confirming != nil { return .confirm }
         switch gemeinsam.sheet {
         case .join?: return .join
         case .pick?: return .pick
@@ -190,6 +198,8 @@ struct SharedPanel: View {
                 VStack(spacing: 0) {
                     switch panel {
                     case .create: create
+                    case .send: sendList
+                    case .confirm: confirmBody
                     case .join: join
                     case .pick: pick
                     }
@@ -210,11 +220,11 @@ struct SharedPanel: View {
                 .accessibilityAction(.escape, cancel)
                 // **The picker grows out of the badge** in the sidebar (as on iPhone and as
                 // "Wo weiterschauen?"); create and join come from elsewhere and fade as before.
-                .transition(panel == .pick ? .outPoint(BadgeOrigin.point)
+                .transition(panel == .pick || panel == .confirm ? .outPoint(BadgeOrigin.point)
                                               : .opacity.combined(with: .scale(scale: 0.97)))
             }
         }
-        .animation(panel == .pick || panel == nil ? Theme.spring : Theme.leap, value: panel)
+        .animation(panel == .pick || panel == .confirm || panel == nil ? Theme.spring : Theme.leap, value: panel)
         .onChange(of: gemeinsam.createFor?.id, initial: true) { _, new in
             guard new != nil else { taps = false; return }
             name = String(localized: "Filmabend")
@@ -230,6 +240,8 @@ struct SharedPanel: View {
         taps = false
         gemeinsam.createFor = nil
         gemeinsam.sheet = nil
+        outputs.sendFor = nil
+        endConfirm()
     }
 
     // MARK: Create
@@ -277,6 +289,52 @@ struct SharedPanel: View {
         guard !gemeinsam.works else { return }
         taps = false
         Task { await gemeinsam.create(name: name, title: title) }
+    }
+
+    // MARK: Confirm
+
+    /// **"Hier weiterschauen" asks first**: the other device stops at once, and a
+    /// press by mistake would stop someone's film.
+    @ViewBuilder private var confirmBody: some View {
+        if let s = confirming {
+            PanelCategory(text: Text(verbatim: s.titleLine))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: s.confirmText)
+                    .font(Theme.body)
+                    .padding(.bottom, 18)
+                PrimaryButton(label: "Fortsetzen") {
+                    endConfirm()
+                    continueWatching(s)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+    }
+
+    // MARK: Send
+
+    /// **The same window as "Läuft gerade", the other direction**: the TVs in
+    /// reach, each with what it plays right now, and "Senden" to put this title
+    /// there.
+    @ViewBuilder private var sendList: some View {
+        // **The title heads the window**; "Senden an" was on the button that opened it.
+        if let title = outputs.sendFor {
+            PanelCategory(text: Text(verbatim: Self.titleLine(title)))
+            ForEach(outputs.targets) { s in
+                if let output = PlayOutput(session: s) {
+                    SheetLine()
+                    SelectionRow(symbol: s.devicesCharacter, title: output.name,
+                                 under: s.running == nil ? "" : s.titleLine,
+                                 action: Text("Senden")) {
+                        outputs.sendFor = nil
+                        send(title, output)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Join
@@ -404,14 +462,18 @@ private struct SelectionRow: View {
                     .foregroundStyle(Theme.accent)
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 1) {
+                    // Two lines: device names such as "Apple TV 4K (3rd generation)" run long.
                     Text(verbatim: title)
                         .font(Theme.listTitle)
                         .foregroundStyle(Theme.font)
-                        .lineLimit(1)
-                    Text(verbatim: under)
-                        .font(Theme.small)
-                        .foregroundStyle(Theme.fontQuiet)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                    // A TV that plays nothing has no second line.
+                    if !under.isEmpty {
+                        Text(verbatim: under)
+                            .font(Theme.small)
+                            .foregroundStyle(Theme.fontQuiet)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 0)
                 action

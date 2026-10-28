@@ -430,6 +430,8 @@ struct DetailView: View {
                 StateButtons(model: model, item: current,
                                 remembered: $remembered, watched: $watched, message: $message)
 
+                TVSendButton(title: current)
+
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")

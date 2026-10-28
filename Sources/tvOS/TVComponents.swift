@@ -1520,8 +1520,7 @@ struct TVTakeoverSelection: View {
                 }
                 .focusSection()
 
-                Button("Abbrechen", action: cancel)
-                    .buttonStyle(BadgeStyle())
+                cancelButton(cancel)
             }
             .padding(48)
         }
@@ -1532,6 +1531,133 @@ struct TVTakeoverSelection: View {
     }
 }
 
+/// **"Abbrechen" with room around the word**: ``BadgeStyle`` alone hugs the text,
+/// and next to the wide rows above it read as a small tag.
+private func cancelButton(_ cancel: @escaping () -> Void) -> some View {
+    Button(action: cancel) {
+        Text("Abbrechen")
+            .padding(.horizontal, 40)
+            .padding(.vertical, 12)
+    }
+    .buttonStyle(BadgeStyle())
+}
+
+/// **"Hier weiterschauen" asks first** on the TV too: the other device stops at
+/// once, and a press by mistake would stop someone's film.
+struct TVTakeoverConfirm: View {
+    let session: RemoteSession
+    var confirm: () -> Void
+    var cancel: () -> Void
+    @FocusState private var onConfirm: Bool
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 34) {
+                VStack(spacing: 10) {
+                    Text(verbatim: session.titleLine)
+                        .font(Theme.subpageTitle)
+                        .tracking(Theme.lockSubpage)
+                        .multilineTextAlignment(.center)
+                    Text(verbatim: session.confirmText)
+                        .font(Theme.small)
+                }
+                .multilineTextAlignment(.center)
+                HStack(spacing: 24) {
+                    Button(action: confirm) {
+                        Text("Fortsetzen")
+                            .padding(.horizontal, 40)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(BadgeStyle(otherDevice: true))
+                    .focused($onConfirm)
+                    cancelButton(cancel)
+                }
+                .focusSection()
+            }
+            .padding(48)
+        }
+        .onExitCommand(perform: cancel)
+        .defaultFocus($onConfirm, true)
+        .task { onConfirm = true }
+    }
+}
+
+/// **"Senden an …" on a detail page**: opens the TV's "Senden an" window
+/// (``TVSendSelection``). Only while another TV running Swiftly is in reach.
+struct TVSendButton: View {
+    let title: Item
+    @State private var outputs = PlayOutputs.shared
+
+    var body: some View {
+        if !outputs.targets.isEmpty {
+            Button { outputs.sendFor = title } label: {
+                Image(systemName: "tv").font(Theme.button)
+            }
+            .buttonStyle(ThemedButtonStyle(onlySymbol: true))
+            .accessibilityLabel(Text("Senden an …"))
+        }
+    }
+}
+
+/// **"Senden an": the title to another TV**, in the form of ``TVTakeoverSelection``,
+/// the other direction. The title heads it; each row is a TV with what it plays.
+struct TVSendSelection: View {
+    let title: Item
+    let targets: [RemoteSession]
+    var send: (PlayOutput) -> Void
+    var cancel: () -> Void
+    @FocusState private var focus: String?
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 34) {
+                Text(verbatim: SharedModel.titleLine(title))
+                    .font(Theme.subpageTitle)
+                    .tracking(Theme.lockSubpage)
+                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 14) {
+                    ForEach(targets) { s in
+                        if let output = PlayOutput(session: s) {
+                            Button { send(output) } label: {
+                                HStack(spacing: 20) {
+                                    Image(systemName: s.devicesCharacter)
+                                        .font(.system(size: 28, weight: .medium))
+                                        .frame(width: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(verbatim: output.name)
+                                            .font(Theme.listTitle)
+                                        if s.running != nil {
+                                            Text(s.titleLine)
+                                                .font(Theme.small)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                    Text("Senden")
+                                        .font(Theme.small)
+                                }
+                                .padding(.horizontal, 28)
+                                .frame(height: 88)
+                                .frame(maxWidth: 760)
+                            }
+                            .buttonStyle(BadgeStyle(otherDevice: true))
+                            .focused($focus, equals: s.id)
+                        }
+                    }
+                }
+                .focusSection()
+
+                cancelButton(cancel)
+            }
+            .padding(48)
+        }
+        .onExitCommand(perform: cancel)
+        .defaultFocus($focus, targets.first?.id)
+        .task { focus = targets.first?.id }
+    }
+}
 
 // MARK: - Placeholder instead of a spinner
 

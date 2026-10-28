@@ -164,6 +164,13 @@ struct TileMenu: ViewModifier {
             }
         }
         #endif
+        // **"Senden an", a title straight to a TV** (``PlayOutputs``), in the window the
+        // root page shows. Only while a TV running Swiftly is in reach.
+        if !inPlayer, !PlayOutputs.shared.targets.isEmpty {
+            Button { PlayOutputs.shared.sendFor = item } label: {
+                Label("Senden an …", systemImage: "tv")
+            }
+        }
         if !isSeries, !inPlayer, SharedModel.shared.mayCreate {
             Button { SharedModel.shared.createFor = item } label: {
                 Label("Gemeinsam schauen", systemImage: "person.2")

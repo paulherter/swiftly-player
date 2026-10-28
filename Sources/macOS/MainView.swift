@@ -223,7 +223,12 @@ struct MainView: View {
         // Create, join and the selection. Above everything except the player, because any
         // page can open it.
         .overlay { SharedPanel(takeover: takeover.offerings,
-                                   continueWatching: { hereContinueWatching($0) }) }
+                                   continueWatching: { hereContinueWatching($0) },
+                                   confirming: takeover.confirming,
+                                   endConfirm: { takeover.confirming = nil },
+                                   send: { title, output in
+                                       Task { await PlayOutputs.shared.send(title, to: output, model: model) }
+                                   }) }
         .task { gemeinsam.start(model) }
         .onDisappear { gemeinsam.finish() }
         // **The group starts the player, not the page.** Whoever creates it, whoever joins,
@@ -233,6 +238,12 @@ struct MainView: View {
             guard new != nil, let wish = gemeinsam.wish else { return }
             gemeinsam.wish = nil
             controls.wish = wish
+        }
+        // **Sent from another device**: the same player, replacing a running one.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { controls.wish = $0 } }
         }
         .environment(navigator)
         .environment(\.section, section)
@@ -681,7 +692,7 @@ extension MainView {
         let groups = gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
         if groups.isEmpty {
             if takeover.multiplePresent { selectionOpen = true }
-            else if let a = takeover.offering { hereContinueWatching(a) }
+            else if let a = takeover.offering { takeover.confirming = a }
         } else if takeover.offerings.isEmpty, groups.count == 1, let g = groups.first {
             gemeinsam.sheet = .join(g)
         } else {

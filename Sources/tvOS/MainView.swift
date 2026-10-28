@@ -114,7 +114,7 @@ struct MainView: View {
     private func badgePressed() {
         if groupsOfferings.isEmpty {
             if takeover.multiplePresent { fromEmblem = true; selectionOpen = true }
-            else if let a = takeover.offering { hereContinueWatching(a) }
+            else if let a = takeover.offering { fromEmblem = true; takeover.confirming = a }
         } else if takeover.offerings.isEmpty, groupsOfferings.count == 1,
                   let g = groupsOfferings.first {
             fromEmblem = true
@@ -135,6 +135,10 @@ struct MainView: View {
     private var groupsOfferings: [SyncPlayGroup] {
         gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
     }
+
+    /// The "Senden an" window is open (``PlayOutputs/sendFor``), or the question
+    /// before a takeover (``TakeoverModel/confirming``).
+    private var sending: Bool { PlayOutputs.shared.sendFor != nil || takeover.confirming != nil }
 
     /// A sheet for "Watch together" is open.
     private var sharedPanel: Bool {
@@ -218,12 +222,12 @@ struct MainView: View {
             // unreachable on a TV, since the focus engine searches geometrically and knows no
             // layers.
             frameRect
-                .disabled(play != nil || selectionOpen || sharedPanel)
+                .disabled(play != nil || selectionOpen || sharedPanel || sending)
 
             // The scrim fades, the selection grows out of the badge (as on iPhone): if it came from
             // there, it emerges from its center and shrinks back on closing. The background catches
             // the press so nothing behind reacts; the frame is locked anyway.
-            if selectionOpen || sharedPanel {
+            if selectionOpen || sharedPanel || sending {
                 Color.black.opacity(0.72)
                     .ignoresSafeArea()
                     .transition(.opacity)
@@ -235,6 +239,28 @@ struct MainView: View {
                                   select: { hereContinueWatching($0) },
                                   cancel: { selectionOpen = false })
                     .transition(panelEntrance)
+                    .zIndex(3)
+            }
+
+            if let s = takeover.confirming {
+                TVTakeoverConfirm(session: s,
+                                  confirm: {
+                                      takeover.confirming = nil
+                                      hereContinueWatching(s)
+                                  },
+                                  cancel: { takeover.confirming = nil })
+                    .transition(panelEntrance)
+                    .zIndex(3)
+            }
+
+            if let title = PlayOutputs.shared.sendFor {
+                TVSendSelection(title: title, targets: PlayOutputs.shared.targets,
+                                send: { output in
+                                    PlayOutputs.shared.sendFor = nil
+                                    Task { await PlayOutputs.shared.send(title, to: output, model: model) }
+                                },
+                                cancel: { PlayOutputs.shared.sendFor = nil })
+                    .transition(.opacity)
                     .zIndex(3)
             }
 
@@ -258,7 +284,7 @@ struct MainView: View {
 
             if let wish = play {
                 PlayerScreen(model: model, item: wish.item, plan: wish.plan,
-                             startAt: wish.startAt) { play = nil }
+                             startAt: wish.startAt, tracks: wish.tracks) { play = nil }
                 // The fade belongs to the shell (`.animation` below), not the content: whatever in the
                 // player changes size or position on entry or exit (safe area, video area) would
                 // otherwise open and close with the fade.
@@ -301,6 +327,13 @@ struct MainView: View {
             guard new != nil, let wish = gemeinsam.wish else { return }
             gemeinsam.wish = nil
             play = wish
+        }
+        // **Sent from a phone, a Mac or the dashboard**: the reason the TV listens at
+        // all. Replaces whatever is playing.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { play = $0 } }
         }
         .task { await model.remoteControlStart() }
         // Once per launch; without an answer nothing happens.

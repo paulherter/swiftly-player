@@ -1368,6 +1368,24 @@ struct ActionButton: View {
     }
 }
 
+/// **"Senden an" in the row of a detail page**: a field like its neighbours that
+/// opens the "Senden an" card (``PlayOutputs/sendFor``). Only while a TV running
+/// Swiftly is in reach, so the row stays as it was everywhere else. A series goes
+/// as the episode the viewer is at.
+struct SendField: View {
+    let title: Item
+    var stretches = true
+    @State private var outputs = PlayOutputs.shared
+
+    var body: some View {
+        if !outputs.targets.isEmpty {
+            ActionButton(symbol: "tv", title: "Senden an …", stretches: stretches) {
+                outputs.sendFor = title
+            }
+        }
+    }
+}
+
 /// Tab row with an accent line under the active entry.
 struct PageTab: View {
     let title: [LocalizedStringKey]

@@ -1293,6 +1293,9 @@ final class VLCPlayerView: BaseView {
         let automatic: Bool
         let source: MediaSource?
         let title: String?
+        /// Sent by another device with the title (``PlayOrder``). Belongs to this
+        /// request only: the next episode gets a new one without it.
+        var ordered: TrackIndices? = nil
     }
 
     /// - Parameter softwareDekoder: open with the software decoder right away:
@@ -1680,12 +1683,14 @@ final class VLCPlayerView: BaseView {
         let audioIndex = TrackRule.audio(streams: streams,
                                      remembered: w.title.flatMap { memory.audio(for: $0) },
                                      preferredLanguage: w.audio,
-                                     serverPreGift: w.source?.defaultAudioStreamIndex)
+                                     serverPreGift: w.source?.defaultAudioStreamIndex,
+                                     ordered: w.ordered?.audio)
         let choice = TrackRule.subtitle(streams: streams,
                                         remembered: w.title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: w.source?.defaultSubtitleStreamIndex,
                                         automatic: w.automatic, audioIndex: audioIndex,
-                                        tonwunsch: w.audio, preferredLanguage: w.subtitle)
+                                        tonwunsch: w.audio, preferredLanguage: w.subtitle,
+                                        ordered: w.ordered?.subtitle)
         let status = TrackMapping.startPositions(streams: streams, audio: audioIndex, subtitle: choice)
         var options: [String] = []
         if let audio = status.audio { options.append(":audio-track=\(audio)") }
@@ -2166,7 +2171,8 @@ final class VLCPlayerView: BaseView {
         var audioIndex = TrackRule.audio(streams: streams,
                                      remembered: title.flatMap { memory.audio(for: $0) },
                                      preferredLanguage: audio,
-                                     serverPreGift: source?.defaultAudioStreamIndex)
+                                     serverPreGift: source?.defaultAudioStreamIndex,
+                                     ordered: trackRequest?.ordered?.audio)
         // **Only select what is not already playing.** At start the wanted track is
         // usually the file's own already; setting it anyway sends a track selection
         // through player and input in the middle of the first pictures, for
@@ -2190,7 +2196,8 @@ final class VLCPlayerView: BaseView {
                                         remembered: title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: source?.defaultSubtitleStreamIndex,
                                         automatic: automatic, audioIndex: audioIndex,
-                                        tonwunsch: audio, preferredLanguage: subtitle)
+                                        tonwunsch: audio, preferredLanguage: subtitle,
+                                        ordered: trackRequest?.ordered?.subtitle)
         AppLog.writeOut("[Spuren] Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)"
             + " · Vorgaben \(source?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
             + "\(source?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"

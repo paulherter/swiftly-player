@@ -622,6 +622,7 @@ struct SeriesDetailView: View {
                     // Refetching goes through `model.pagesRefresh`.
                 }
             }
+            SendField(title: state ?? series, stretches: !broad)
             ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad) { moreOpen = true }
                 .asActionAnchor()
         }

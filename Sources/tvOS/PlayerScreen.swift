@@ -164,9 +164,13 @@ struct PlayerScreen: View {
 
     enum FocusTarget: Hashable { case idle, bar, tracks, settings, episodes, offering }
 
+    /// Tracks sent by the device that sent the first title, see ``PlayRequest/tracks``.
+    private let ordered: (itemID: String, tracks: TrackIndices)?
+
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double,
-         close: @escaping () -> Void) {
+         tracks: TrackIndices? = nil, close: @escaping () -> Void) {
         self.model = model
+        self.ordered = tracks.map { (item.id, $0) }
         self.startPlan = plan
         self.startAt = startAt
         self.close = close
@@ -1611,7 +1615,8 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title))
+                                 title: TrackMemory.title(for: title),
+                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil)
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {
