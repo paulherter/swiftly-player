@@ -25,6 +25,17 @@ struct TakeoverTests {
                      lastActivity: forwardSeconds.map { now.addingTimeInterval(-$0) })
     }
 
+    @Test("Die Rückfrage nennt Folge, Film oder Video")
+    func moving() throws {
+        func item(_ type: String) throws -> Item {
+            try JSONDecoder().decode(Item.self, from: Data("{\"Id\":\"x\",\"Name\":\"Офис\",\"Type\":\"\(type)\"}".utf8))
+        }
+        #expect(Takeover.moving(session(running: try item("Episode"))) == .episode)
+        #expect(Takeover.moving(session(running: try item("Movie"))) == .movie)
+        #expect(Takeover.moving(session(running: try item("Video"))) == .video)
+        #expect(Takeover.moving(session()) == .video)
+    }
+
     // MARK: - The normal case
 
     @Test("Ein anderes Gerät mit laufendem Titel wird angeboten")

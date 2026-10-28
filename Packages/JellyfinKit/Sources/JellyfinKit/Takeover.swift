@@ -24,6 +24,13 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
     public let running: Item?
     public let state: PlayState?
     public let lastActivity: Date?
+    /// `Video`, `Audio`: what the session said it can play when it reported its
+    /// capabilities.
+    ///
+    /// **Read from the server only, never stored.** It decides whether a device is
+    /// offered as a place to send a film to (``PlayTargets``); Swiftly Music reports
+    /// `Audio` alone.
+    public let playableMediaTypes: [String]
 
     public struct PlayState: Sendable, Equatable, Decodable {
         public let halted: Bool?
@@ -53,6 +60,7 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
         case running = "NowPlayingItem"
         case state = "PlayState"
         case lastActivity = "LastActivityDate"
+        case playableMediaTypes = "PlayableMediaTypes"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -66,13 +74,17 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
         running = try c.decodeIfPresent(Item.self, forKey: .running)
         state = try c.decodeIfPresent(PlayState.self, forKey: .state)
         lastActivity = try c.decodeIfPresent(Date.self, forKey: .lastActivity)
+        // `try?`: a value from a newer server that does not read as a list of strings
+        // must not cost the whole session, and with it the takeover badge.
+        playableMediaTypes = (try? c.decodeIfPresent([String].self, forKey: .playableMediaTypes)) ?? []
     }
 
     public init(id: String, userIdentifier: String? = nil, devicesIdentifier: String?,
                 deviceName: String?, program: String?,
                 takesCommands: Bool, running: Item?, state: PlayState?,
-                lastActivity: Date? = nil) {
+                lastActivity: Date? = nil, playableMediaTypes: [String] = []) {
         self.id = id; self.userIdentifier = userIdentifier
+        self.playableMediaTypes = playableMediaTypes
         self.devicesIdentifier = devicesIdentifier; self.deviceName = deviceName
         self.program = program; self.takesCommands = takesCommands
         self.running = running; self.state = state; self.lastActivity = lastActivity
@@ -215,6 +227,22 @@ public enum Takeover {
         guard let afterwards = savedAfterwards, afterwards != savedBefore else { return session }
         let seconds = Double(afterwards) / 10_000_000
         return seconds >= session - 1 ? seconds : session
+    }
+
+    /// **What the confirmation before a takeover calls the title.**
+    ///
+    /// A badge with a single offer used to take over on the first press. The other
+    /// device stops at once, so a press by mistake stops someone's film. The
+    /// question names what moves, "the episode" or "the film", the way the viewer
+    /// thinks of it; anything else is "the video".
+    public enum Moving: Sendable, Equatable { case episode, movie, video }
+
+    public static func moving(_ s: RemoteSession) -> Moving {
+        switch s.running?.type {
+        case "Episode": .episode
+        case "Movie": .movie
+        default: .video
+        }
     }
 
     /// The one, if there is only one; otherwise the most recent.
