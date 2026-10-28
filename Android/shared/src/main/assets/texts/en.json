@@ -50,6 +50,7 @@
  "%s ist dabei": "%s joined",
  "%s ist gegangen": "%s left",
  "%s laden": "Download %s",
+ "%s s": "%s s",
  "%s schauen gerade": "%s are watching",
  "%s schaut gerade": "%s is watching",
  "%s und %s gehören dir.": "%1$s and %2$s are yours.",

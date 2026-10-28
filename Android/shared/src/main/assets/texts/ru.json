@@ -73,6 +73,7 @@
  "%s ist dabei": "%s присоединился(-ась)",
  "%s ist gegangen": "%s вышел(-ла)",
  "%s laden": "Загрузить %s",
+ "%s s": "%s с",
  "%s schauen gerade": "Сейчас смотрят: %s",
  "%s schaut gerade": "Сейчас смотрит: %s",
  "%s und %s gehören dir.": "%1$s и %2$s теперь ваши.",
