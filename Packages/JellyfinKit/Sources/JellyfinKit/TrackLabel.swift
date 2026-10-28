@@ -61,7 +61,7 @@ public enum TrackLabel {
     public static func language(_ raw: String?, locale: Locale = displayLocale) -> String? {
         guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty
         else { return nil }
-        if undetermined.contains(raw.lowercased()) { return translated("unbekannt") }
+        if undetermined.contains(raw.lowercased()) { return capitalised(translated("unbekannt")) }
         let name = looksLikeCode(raw)
             ? locale.localizedString(forLanguageCode: raw.lowercased())
             : Language.detected(in: raw).flatMap(code(of:))

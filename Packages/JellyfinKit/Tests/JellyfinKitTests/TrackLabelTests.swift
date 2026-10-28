@@ -39,7 +39,7 @@ struct TrackLabelTests {
 
     @Test("Unbekanntes bleibt sichtbar, ohne Sprache gibt es nichts")
     func unknownLanguage() {
-        #expect(TrackLabel.language("und", locale: en) == translated("unbekannt"))
+        #expect(TrackLabel.language("und", locale: en) == TrackLabel.capitalised(translated("unbekannt")))
         #expect(TrackLabel.language("qaa", locale: en) == "QAA")
         #expect(TrackLabel.language("", locale: en) == nil)
         #expect(TrackLabel.language(nil, locale: en) == nil)

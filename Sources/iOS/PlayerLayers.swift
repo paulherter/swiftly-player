@@ -165,7 +165,8 @@ private struct SelectionColumn<ContentBody: View>: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxWidth: mass.pad ? 260 : 210, alignment: .leading)
+        .frame(maxWidth: mass.pad ? Theme.trackColumnWidthPad : Theme.trackColumnWidth,
+               alignment: .leading)
     }
 }
 
@@ -195,7 +196,7 @@ private struct LayersRow: View {
             //
             // This had `pad ? 17 : 15` and `selected ? .semibold : .regular`. The first
             // part was a second scale: 15 is the list row, on iPad as on iPhone
-            //. The second was worse: the column is 210 pt wide and the row
+            //. The second was worse: the column is narrow and the row
             // carries `lineLimit(1)`, so **a long track name truncated more on
             // selection than before**. Selected is now expressed by tone.
             .font(Theme.listTitle)

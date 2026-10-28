@@ -197,6 +197,12 @@ static var progressTravel: Animation? {
     static let cornerTile: CGFloat = 10
     /// Search and input fields.
     static let cornerField: CGFloat = 12
+    /// **Width of the audio and subtitle columns in the player.** "Russian · AC-3 · 5.1"
+    /// and "English · Forced · SRT · File" fit; 210 cut them after the codec. Two
+    /// columns of 300 stand side by side in a landscape iPhone. The Mac has its own
+    /// value (`Sources/macOS/Style.swift`).
+    static let trackColumnWidth: CGFloat = 300
+    static let trackColumnWidthPad: CGFloat = 360
 
     /// **The small corner, for things under 34 pt height.** The corner grows with
     /// the thing: 10 on a height of 48 is 0.21, and the same ratio gives 8 on a
