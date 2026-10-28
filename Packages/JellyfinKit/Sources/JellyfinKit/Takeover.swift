@@ -24,6 +24,13 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
     public let running: Item?
     public let state: PlayState?
     public let lastActivity: Date?
+    /// `Video`, `Audio`: what the session said it can play when it reported its
+    /// capabilities.
+    ///
+    /// **Read from the server only, never stored.** It decides whether a device is
+    /// offered as a place to send a film to (``PlayTargets``); Swiftly Music reports
+    /// `Audio` alone.
+    public let playableMediaTypes: [String]
 
     public struct PlayState: Sendable, Equatable, Decodable {
         public let halted: Bool?
@@ -53,6 +60,7 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
         case running = "NowPlayingItem"
         case state = "PlayState"
         case lastActivity = "LastActivityDate"
+        case playableMediaTypes = "PlayableMediaTypes"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -66,13 +74,17 @@ public struct RemoteSession: Sendable, Equatable, Decodable, Identifiable {
         running = try c.decodeIfPresent(Item.self, forKey: .running)
         state = try c.decodeIfPresent(PlayState.self, forKey: .state)
         lastActivity = try c.decodeIfPresent(Date.self, forKey: .lastActivity)
+        // `try?`: a value from a newer server that does not read as a list of strings
+        // must not cost the whole session, and with it the takeover badge.
+        playableMediaTypes = (try? c.decodeIfPresent([String].self, forKey: .playableMediaTypes)) ?? []
     }
 
     public init(id: String, userIdentifier: String? = nil, devicesIdentifier: String?,
                 deviceName: String?, program: String?,
                 takesCommands: Bool, running: Item?, state: PlayState?,
-                lastActivity: Date? = nil) {
+                lastActivity: Date? = nil, playableMediaTypes: [String] = []) {
         self.id = id; self.userIdentifier = userIdentifier
+        self.playableMediaTypes = playableMediaTypes
         self.devicesIdentifier = devicesIdentifier; self.deviceName = deviceName
         self.program = program; self.takesCommands = takesCommands
         self.running = running; self.state = state; self.lastActivity = lastActivity

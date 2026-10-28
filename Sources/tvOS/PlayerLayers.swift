@@ -612,7 +612,8 @@ struct EpisodesLayer: View {
             // While the season picker is open the rest is not a focus target (see `SeriesView`).
             .disabled(seasonSelectionOpen)
             .panel(under: seasonSelectionOpen && !panelActions.isEmpty ? "staffel" : nil) {
-                ActionPanel(actions: panelActions, opened: $seasonSelectionOpen)
+                ActionPanel(actions: panelActions, opened: $seasonSelectionOpen,
+                            start: seasons.firstIndex { $0.id == selectedSeason?.id } ?? 0)
                     .transition(.opacity)
             }
             .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)

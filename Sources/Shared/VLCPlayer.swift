@@ -1293,6 +1293,9 @@ final class VLCPlayerView: BaseView {
         let automatic: Bool
         let source: MediaSource?
         let title: String?
+        /// Sent by another device with the title (``PlayOrder``). Belongs to this
+        /// request only: the next episode gets a new one without it.
+        var ordered: TrackIndices? = nil
     }
 
     /// - Parameter softwareDekoder: open with the software decoder right away:
@@ -1680,12 +1683,14 @@ final class VLCPlayerView: BaseView {
         let audioIndex = TrackRule.audio(streams: streams,
                                      remembered: w.title.flatMap { memory.audio(for: $0) },
                                      preferredLanguage: w.audio,
-                                     serverPreGift: w.source?.defaultAudioStreamIndex)
+                                     serverPreGift: w.source?.defaultAudioStreamIndex,
+                                     ordered: w.ordered?.audio)
         let choice = TrackRule.subtitle(streams: streams,
                                         remembered: w.title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: w.source?.defaultSubtitleStreamIndex,
                                         automatic: w.automatic, audioIndex: audioIndex,
-                                        tonwunsch: w.audio, preferredLanguage: w.subtitle)
+                                        tonwunsch: w.audio, preferredLanguage: w.subtitle,
+                                        ordered: w.ordered?.subtitle)
         let status = TrackMapping.startPositions(streams: streams, audio: audioIndex, subtitle: choice)
         var options: [String] = []
         if let audio = status.audio { options.append(":audio-track=\(audio)") }
@@ -2166,7 +2171,8 @@ final class VLCPlayerView: BaseView {
         var audioIndex = TrackRule.audio(streams: streams,
                                      remembered: title.flatMap { memory.audio(for: $0) },
                                      preferredLanguage: audio,
-                                     serverPreGift: source?.defaultAudioStreamIndex)
+                                     serverPreGift: source?.defaultAudioStreamIndex,
+                                     ordered: trackRequest?.ordered?.audio)
         // **Only select what is not already playing.** At start the wanted track is
         // usually the file's own already; setting it anyway sends a track selection
         // through player and input in the middle of the first pictures, for
@@ -2190,7 +2196,8 @@ final class VLCPlayerView: BaseView {
                                         remembered: title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: source?.defaultSubtitleStreamIndex,
                                         automatic: automatic, audioIndex: audioIndex,
-                                        tonwunsch: audio, preferredLanguage: subtitle)
+                                        tonwunsch: audio, preferredLanguage: subtitle,
+                                        ordered: trackRequest?.ordered?.subtitle)
         AppLog.writeOut("[Spuren] Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)"
             + " · Vorgaben \(source?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
             + "\(source?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"
@@ -2315,33 +2322,24 @@ final class VLCPlayerView: BaseView {
 
     /// Names for the subtitle list, per `trackId`.
     ///
-    /// VLC's track name, unless the server knows more: a side-loaded file is
-    /// just "Track 1" to VLC, and two tracks named "German" cannot be told apart
-    ///. Then language, format and whether it is forced or a separate
-    /// file.
+    /// **Built by ``TrackLabel``, like the audio rows**, so one list has one style:
+    /// "English · Forced · SRT". The server's fields come first, since only the server
+    /// knows forced, SDH and side-loaded files; then what VLC knows itself. VLC's raw
+    /// name ("Forced - [Russian]", "Track 1") only where neither knows a language.
     func subtitleNames() -> [String: String] {
         let tracks = player.textTracks
         let z = mapping(audio: [], subtitle: tracks)
         let streams = trackSource?.mediaStreams ?? []
-        var names: [String: String] = [:]
-        for (position, track) in tracks.enumerated() {
-            let double = tracks.filter { $0.trackName == track.trackName }.count > 1
-            guard let index = z.subtitle[position],
-                  let feed = streams.first(where: { $0.type == "Subtitle" && $0.index == index }),
-                  double || feed.isExternal == true || feed.isHearingImpaired == true else {
-                names[track.trackId] = track.trackName
-                continue
+        let labels = tracks.enumerated().map { position, track in
+            let feed = z.subtitle[position].flatMap { index in
+                streams.first { $0.type == "Subtitle" && $0.index == index }
             }
-            let parts: [String?] = [
-                feed.languageName ?? track.trackName,
-                TechDetails.codecNameValue(feed.codec),
-                feed.isForced == true ? String(localized: "Erzwungen") : nil,
-                feed.isHearingImpaired == true ? String(localized: "Hörgeschädigt") : nil,
-                feed.isExternal == true ? String(localized: "Datei") : nil,
-            ]
-            names[track.trackId] = parts.compactMap { $0 }.joined(separator: " · ")
+            return feed.flatMap { TrackLabel.subtitle($0) }
+                ?? TrackLabel.subtitle(Self.playerTrack(track))
+                ?? track.trackName
         }
-        return names
+        return Dictionary(zip(tracks.map(\.trackId), TrackLabel.distinct(labels)),
+                          uniquingKeysWith: { first, _ in first })
     }
 
 

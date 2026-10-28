@@ -307,6 +307,13 @@ struct MainView: View {
             tileRequest.play = nil
             takeoverRequest = wish
         }
+        // **Sent from another client** (dashboard, web client): the same player again, from
+        // every section; a running one is replaced.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { takeoverRequest = $0 } }
+        }
         #if DEBUG && os(iOS)
         .task {
             guard JumpRun.an else { return }
@@ -343,7 +350,7 @@ struct MainView: View {
         .onDisappear { takeover.finish() }
         .playerCover(item: $takeoverRequest) { wish in
             PlayerScreen(model: model, item: wish.item,
-                         plan: wish.plan, startAt: wish.startAt)
+                         plan: wish.plan, startAt: wish.startAt, tracks: wish.tracks)
         }
         // Deliberately without a transition: the bar should stay fixed and
         // simply be there again on return, like the content behind it. Faded in,

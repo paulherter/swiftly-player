@@ -144,6 +144,17 @@ extension Theme {
     /// iPhone, wide variant.
     static let formWidth: CGFloat = 420
 
+    /// **Width of a column on the player's layers** (picture, sleep timer, quality):
+    /// short words such as "Original" or "30 Min.", five columns side by side in the
+    /// smallest window.
+    static let layerColumnWidth: CGFloat = 200
+
+    /// **Width of the audio and subtitle columns.** A track row carries language, flags,
+    /// format and file ("Английский · Принудительные · SRT · Файл"); at 200 such rows
+    /// truncated while most of the layer stood empty. 360 fits that row at body size, and
+    /// two columns with their spacing stay well inside `windowMinWidth`.
+    static let trackColumnWidth: CGFloat = 360
+
     /// Space for the window traffic lights, **in the sidebar only.**
     ///
     /// The three dots sit at the top left of the window, above the sidebar. They end

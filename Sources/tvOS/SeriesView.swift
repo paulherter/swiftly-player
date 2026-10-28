@@ -218,7 +218,8 @@ struct SeriesView: View {
         // numbers computed from the page layout landed offset by the safe margin and
         // would have needed re-tuning with every added row.
         .panel(under: seasonSelectionOpen ? "staffel" : nil) {
-            ActionPanel(actions: seasonActions, opened: $seasonSelectionOpen)
+            ActionPanel(actions: seasonActions, opened: $seasonSelectionOpen,
+                        start: seasons.firstIndex { $0.id == selectedSeason?.id } ?? 0)
                 .transition(.opacity)
         }
         .panel(under: moreOpen ? "mehr" : nil) {

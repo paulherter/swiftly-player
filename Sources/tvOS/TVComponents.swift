@@ -847,11 +847,49 @@ struct ActionPanel: View {
     /// `SelectionSheet` on iPhone.
     var category: (Int) -> LocalizedStringKey? = { _ in nil }
 
+    /// **The row focus starts on, and the list scrolls to.** The first one unless the caller
+    /// knows better: with ten seasons the panel opens on the running one, which may sit
+    /// below the edge. Unlike `selected` it changes nothing about how a row looks.
+    var start = 0
+
     /// Focus has to move in when the panel opens. tvOS does not move it by itself while the
     /// trigger stays, and it does.
-    @FocusState private var first: Bool
+    @FocusState private var focus: Int?
+    /// How far down the page the panel may reach, set by `panel(under:)`.
+    @Environment(\.panelRoom) private var room
 
     var body: some View {
+        // **Scrolls only when it has to.** A short list is laid out as before; once it is
+        // taller than the room under the trigger, the same rows go into a scroll view that
+        // ends at the title-safe edge. Focus then pulls the off-screen rows in by itself.
+        ViewThatFits(in: .vertical) {
+            rows
+            ScrollViewReader { reader in
+                ScrollView(showsIndicators: false) { rows }
+                    .task { reader.scrollTo(start, anchor: .center) }
+            }
+        }
+        .frame(maxHeight: room)
+        // **No padding at all.** First 14, then 6, and both times the panel background
+        // showed through at the top and bottom. The rows bring their own rounding, so no
+        // distance to the panel's rounding is needed; it was only a border around the
+        // border.
+        //
+        // Clipped so the top and bottom rows end inside the panel's rounding instead of
+        // sticking out.
+        .frame(width: Self.width)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        // **No border, no shadow.** Depth comes from surface brightness: `erhoeht` is
+        // already one step above the background. With radius 40 the shadow was the largest
+        // in the app, contradicts the brand rule "no shadows, anywhere", and turns to mud
+        // at three meters anyway.
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        .focusSection()
+        .task { focus = start }
+        .onExitCommand { opened = false }
+    }
+
+    private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(actions.enumerated()), id: \.element.id) { pair in
                 if let over = category(pair.offset) {
@@ -887,26 +925,11 @@ struct ActionPanel: View {
                 }
                 .buttonStyle(RowsStyle())
                 .accessibilityAddTraits(pair.offset == selected ? .isSelected : [])
-                .focused($first, equals: pair.offset == 0)
+                .focused($focus, equals: pair.offset)
+                .id(pair.offset)
             }
         }
-        // **No padding at all.** First 14, then 6, and both times the panel background
-        // showed through at the top and bottom. The rows bring their own rounding, so no
-        // distance to the panel's rounding is needed; it was only a border around the
-        // border.
-        //
-        // Clipped so the top and bottom rows end inside the panel's rounding instead of
-        // sticking out.
         .frame(width: Self.width)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-        // **No border, no shadow.** Depth comes from surface brightness: `erhoeht` is
-        // already one step above the background. With radius 40 the shadow was the largest
-        // in the app, contradicts the brand rule "no shadows, anywhere", and turns to mud
-        // at three meters anyway.
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-        .focusSection()
-        .task { first = true }
-        .onExitCommand { opened = false }
     }
 
     /// **The width is fixed, the position is not.**
@@ -937,6 +960,19 @@ struct ActionPanel: View {
 }
 
 // MARK: - Panels hang from their trigger
+
+/// How much height is left for a panel under its trigger, down to the page's bottom edge.
+/// `nil` outside `panel(under:)`: then the panel takes what its parent offers.
+private struct PanelRoom: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    fileprivate var panelRoom: CGFloat? {
+        get { self[PanelRoom.self] }
+        set { self[PanelRoom.self] = newValue }
+    }
+}
 
 /// Where a page's triggers are, measured rather than computed.
 ///
@@ -983,10 +1019,12 @@ extension View {
             GeometryReader { area in
                 if let name, let section = anchor[name] {
                     let firer = area[section]
+                    let top = firer.maxY + ActionPanel.padding
                     content()
+                        .environment(\.panelRoom, max(0, area.size.height - top))
                         .offset(x: ActionPanel.left(firer: firer,
                                                         in: area.size),
-                                y: firer.maxY + ActionPanel.padding)
+                                y: top)
                 }
             }
         }

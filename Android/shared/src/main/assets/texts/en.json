@@ -50,6 +50,7 @@
  "%s ist dabei": "%s joined",
  "%s ist gegangen": "%s left",
  "%s laden": "Download %s",
+ "%s s": "%s s",
  "%s schauen gerade": "%s are watching",
  "%s schaut gerade": "%s is watching",
  "%s und %s gehören dir.": "%1$s and %2$s are yours.",
@@ -596,6 +597,7 @@
  "Sortieren": "Sort by",
  "Sortierung, %s": "Sorting, %s",
  "Speicher": "Storage",
+ "Spielt auf „%s“": "Playing on “%s”",
  "Sprache": "Language",
  "Sprache, Untertitel, Tempo": "Language, subtitles, speed",
  "Sprache, Untertitel, Tempo, Puffer": "Language, subtitles, speed, buffer",
@@ -828,6 +830,8 @@
  "Ändern": "Change",
  "Öffnet die Auswahl": "Opens the list",
  "Über Seerr anfragen": "Request via Seerr",
+ "Übergeben an …": "Hand over to …",
  "Übersicht öffnen": "Open overview",
+ "„%s“ ist nicht mehr erreichbar.": "“%s” is no longer reachable.",
  "−%d s": "−%d s"
 }

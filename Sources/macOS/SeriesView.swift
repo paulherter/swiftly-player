@@ -650,8 +650,13 @@ struct SeasonSelection: View {
     let seasons: [Item]
     @Binding var selected: Item?
     @Binding var opened: Bool
+    /// In the player the list lies over the episodes and must not run past the window: it
+    /// scrolls once it is taller than the room left. On the series page the page scrolls.
+    var limited = false
     @Environment(\.onImageTint) private var onImage
     @Environment(\.imageColorSource) private var imageTint
+    /// How far down the list may reach before it scrolls. `nil` until measured.
+    @State private var room: CGFloat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -662,41 +667,47 @@ struct SeasonSelection: View {
             }
 
             if opened {
-                VStack(spacing: 0) {
+                let rows = VStack(spacing: 0) {
                     ForEach(seasons, id: \.id) { season in
                         SeasonRow(season: season,
                                      selected: season.id == selected?.id) {
                             selected = season
                             withAnimation(Theme.leap) { opened = false }
                         }
+                        .id(season.id)
                     }
                 }
-                .padding(.vertical, 4)
-                .frame(width: 220, alignment: .leading)
-                .background {
-                    let form = RoundedRectangle(cornerRadius: Theme.cornerArea,
-                                                style: .continuous)
-                    form.fill(Theme.raised)
-                        .overlay {
-                            // **Over `ImageColor` in the page tone** (like the season list on the iPhone):
-                            // opaque because episodes sit below, but in the color the page has at this
-                            // point, with the white of the other surfaces over it. A fixed gray looked like
-                            // a foreign element.
-                            if onImage, let imageTint {
-                                ZStack {
-                                    Theme.reason
-                                    MoodLoader(url: imageTint) { tones in
-                                        ImageTone.color(tones, at: SIMD2<Float>(0.2, 0.55))
-                                    }
-                                    Theme.surfaceTranslucent
+                if limited {
+                    // Short lists are laid out as before; only a taller one scrolls, and it
+                    // opens on the selected season.
+                    ViewThatFits(in: .vertical) {
+                        rows
+                        ScrollViewReader { reader in
+                            ScrollView(showsIndicators: false) { rows }
+                                .onAppear {
+                                    if let id = selected?.id { reader.scrollTo(id, anchor: .center) }
                                 }
-                                .clipShape(form)
-                            }
                         }
-                        .overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
+                    }
+                    .frame(maxHeight: room)
+                    .padding(.vertical, 4)
+                    .frame(width: 220, alignment: .leading)
+                    .background(listBackground)
+                    .padding(.top, 8)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                        // Window height from the content view; 24 stays free at the bottom.
+                        let bottom = NSApp.keyWindow?.contentView?.bounds.height ?? 0
+                        room = max(0, bottom - top - 24 - 8 - 8)
+                    }
+                    .transition(.expand(from: .topLeading))
+                } else {
+                    rows
+                        .padding(.vertical, 4)
+                        .frame(width: 220, alignment: .leading)
+                        .background(listBackground)
+                        .padding(.top, 8)
+                        .transition(.expand(from: .topLeading))
                 }
-                .padding(.top, 8)
-                .transition(.expand(from: .topLeading))
             }
         }
         // A click outside and Escape close it, as with the other panels.
@@ -709,6 +720,29 @@ struct SeasonSelection: View {
             }
         }
         .panelEscape(opened) { withAnimation(Theme.leap) { opened = false } }
+    }
+
+    @ViewBuilder private var listBackground: some View {
+        let form = RoundedRectangle(cornerRadius: Theme.cornerArea,
+                                    style: .continuous)
+        form.fill(Theme.raised)
+            .overlay {
+                // **Over `ImageColor` in the page tone** (like the season list on the iPhone):
+                // opaque because episodes sit below, but in the color the page has at this
+                // point, with the white of the other surfaces over it. A fixed gray looked like
+                // a foreign element.
+                if onImage, let imageTint {
+                    ZStack {
+                        Theme.reason
+                        MoodLoader(url: imageTint) { tones in
+                            ImageTone.color(tones, at: SIMD2<Float>(0.2, 0.55))
+                        }
+                        Theme.surfaceTranslucent
+                    }
+                    .clipShape(form)
+                }
+            }
+            .overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
     }
 }
 

@@ -1683,6 +1683,16 @@ final class App: @unchecked Sendable {
     /// The counter, once there is more than one offer.
     private var takeoverCounter: Widget!
     private var takeoverOfferings: [RemoteSession] = []
+    /// Devices a film can be handed to, from the same poll (`PlayOn.swift`).
+    ///
+    /// **The player's TV button follows the list**: the poll keeps running while a
+    /// film plays, so a TV switched on later must show up in the icon row too.
+    var playTargets: [RemoteSession] = [] { didSet { playHandOverRefresh() } }
+    /// **Tracks sent along with a title from another device**, for that title only;
+    /// `tracksPreSelect` takes them once and forgets them.
+    var playOrderedTracks: (itemID: String, tracks: TrackIndices)?
+    /// Counts incoming orders, so that only the latest one opens.
+    private var playReceivedCount = 0
     private var takeoverRun: Task<Void, Never>?
     /// Intro and outro markers of the running title, from the server.
     var sections: [Segment] = [] {
@@ -1824,6 +1834,10 @@ final class App: @unchecked Sendable {
         openPanel = nil
         gtk_widget_unparent(alt)
     }
+    /// The centered window (``panelWindowOpen(_:content:closed:)``) while it is
+    /// open, and what runs when it closes.
+    var panelWindow: Widget?
+    var panelWindowClosed: (() -> Void)?
     var detailTouched = false
     /// The last result of "Verbindung prüfen".
     var checkResult = ""
@@ -1922,7 +1936,9 @@ final class App: @unchecked Sendable {
     var updateSpace: Widget?
     #endif
     var runningTitle: Item?
-    var runningPlan: PlaybackPlan?
+    /// **The TV button waits for the plan**: the icon row is built before it
+    /// arrives, and only a stream from the server can be handed over.
+    var runningPlan: PlaybackPlan? { didSet { playHandOverRefresh() } }
     /// The next plan comes from a quality choice, for the hint.
     var qualitySwitched = false
     /// Audio, subtitles and sideloaded files of the running title; see
@@ -1956,6 +1972,15 @@ final class App: @unchecked Sendable {
     /// page exists.
     var playerSliderCharacter: SliderCharacter?
     var playerFullButton: Widget!
+    /// **"Übergeben an …" in the icon row.** Built with the row and only shown
+    /// while a hand-over is possible (``playHandOverRefresh()``).
+    var playerHandOverButton: Widget!
+    /// The empty slot beside the standing title that keeps the icon row free; it
+    /// changes width with the TV button.
+    var playerRailsSlot: Widget!
+    /// **The TV window is open**: the controls stay, as while the volume handle is
+    /// dragged, so the film does not lose its controls behind the window.
+    var handOverOpen = false
     var playerLoadingScreen: Widget!
     /// Whether the time slider is currently being dragged.
     var atSlider = false
@@ -2268,6 +2293,7 @@ final class App: @unchecked Sendable {
     func keyButton(_ value: UInt32, ctrl: Bool) -> Bool {
         // A support dialog on top of the window takes Escape before anything else.
         if value == 0xFF1B, supportEscape() { return true }
+        if value == 0xFF1B, panelWindowEscape() { return true }
         // **The shortcuts under the buttons must be right.**
         //
         // Under the player's three buttons stand "←", "Leertaste" and "→", and they
@@ -2589,12 +2615,20 @@ final class App: @unchecked Sendable {
             TrackSupport.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
             return
         }
+        // After a server restart nobody could reach this session (see `PlayTargets.mustReport`).
+        if PlayTargets.mustReport(sessions, ownDevicesIdentifier: Device.identifier) {
+            AppLog.writeOut("[Abspielen auf] eigene Sitzung fehlt, Fähigkeiten neu gemeldet")
+            try? await client.reportCapabilities()
+        }
         let offerings = Takeover.offerings(from: sessions,
                                            ownDevicesIdentifier: Device.identifier,
                                            ownUserIdentifier: userIdentifier)
         onMainThread {
             self.takeoverOfferings = offerings
             self.takeoverShow()
+            // **The same answer feeds "Übergeben an …"**: a second timer asking the
+            // same question would double the requests for nothing.
+            self.playTargetsTake(sessions)
         }
     }
 
@@ -3958,8 +3992,45 @@ final class App: @unchecked Sendable {
                     AppLog.writeOut("[Uebergabe] Hinweis: übernimmt \(name)")
                 }
             }
+            // **A title sent from another device** opens like a click on "play" here.
+            await far.playHear { order in
+                onMainThread { self.playReceived(order) }
+            }
             await far.start { command in
                 onMainThread { self.remoteCommandRun(command) }
+            }
+        }
+    }
+
+    /// **A title another device sent here** (dashboard, web client): the same path as a click
+    /// on "play", with position, version and tracks from the order, loaded with this user.
+    ///
+    /// - **Not while watching together**: the group owns the player and the title, so the
+    ///   order is ignored and logged.
+    /// - **A running film is replaced, but only once the new title has loaded**: if it cannot
+    ///   be loaded, the film keeps playing. The old one closes through its own stop, so its end
+    ///   is reported like any other, and the latest order wins.
+    func playReceived(_ order: PlayOrder) {
+        guard let client, let id = order.itemID else { return }
+        guard gemeinsam.status.group == nil else {
+            AppLog.writeOut("[Abspielen auf] Auftrag ignoriert: Gruppe aktiv (\(id))")
+            return
+        }
+        playReceivedCount += 1
+        let mine = playReceivedCount
+        Task.detached { [self] in
+            guard let item = try? await client.item(id: id) else {
+                AppLog.writeOut("[Abspielen auf] Titel nicht ladbar: \(id)")
+                return
+            }
+            onMainThread {
+                guard mine == self.playReceivedCount, self.gemeinsam.status.group == nil else { return }
+                if self.runningTitle != nil {
+                    AppLog.writeOut("[Abspielen auf] laufender Player wird ersetzt")
+                    self.playerClose()
+                }
+                self.playOrderedTracks = (id, order.tracks)
+                self.launch(item, since: order.start, sourceID: order.mediaSourceID)
             }
         }
     }

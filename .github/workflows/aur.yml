@@ -18,6 +18,9 @@ on:
 
 jobs:
   veroeffentlichen:
+    # Betas are not offered there, and nothing runs until the package exists
+    # (repository variable AUR_READY = true, see Distribution/SETUP.md).
+    if: ${{ vars.AUR_READY == 'true' && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

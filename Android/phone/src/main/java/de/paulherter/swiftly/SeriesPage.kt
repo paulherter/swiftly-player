@@ -37,6 +37,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -511,7 +515,10 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
     // `ExpandList(asField:)`: on the series page a field, 34 high, `area`, corner 8, 11 inside,
     // 15 semibold; in the player no surface, 28 high, in meta type.
     val height = if (compact) 28.dp else 34.dp
-    Box(if (compact) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Theme.edgeSpacing, top = 14.dp, bottom = 14.dp)) {
+    // Where the field sits in the window, read when the list opens: it may only reach down to the screen's edge.
+    val fieldTop = remember { floatArrayOf(0f) }
+    Box((if (compact) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Theme.edgeSpacing, top = 14.dp, bottom = 14.dp))
+            .onGloballyPositioned { fieldTop[0] = it.positionInWindow().y }) {
         Row(Modifier.tapOn { if (multiple && android.os.SystemClock.uptimeMillis() - closedAround[0] > 300) setOpen(!opened) }
                 .heightIn(min = height)
                 .then(if (compact) Modifier else Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(buttonArea(LocalImageColor.current)).padding(horizontal = 11.dp)),
@@ -543,12 +550,26 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
                 // foreign.
                 val tones = LocalImageAudio.current
                 val reason = if (LocalImageColor.current && tones.isNotEmpty()) remember(tones) { imageColor(tones, 0.2, 0.55) } else null
-                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).clip(RoundedCornerShape(Theme.corner))
-                        .background(Theme.area).then(if (reason != null) Modifier.background(reason).background(surfaceTranslucent) else Modifier)) {
+                // **Scrolls only when it has to:** a short list is as tall as before; a taller one (ten seasons, a
+                // phone on its side in the player) stops at the screen's edge and opens with the selected one in view.
+                val room = (LocalConfiguration.current.screenHeightDp.dp - with(density) { fieldTop[0].toDp() } - height - 6.dp - 32.dp - 24.dp)
+                    .coerceAtLeast(0.dp)
+                val scroll = rememberScrollState()
+                // Top and height of the selected row, measured in the first layout; then the list scrolls it to the middle.
+                val selectedRow = remember { IntArray(2) }
+                val roomPx = with(density) { room.roundToPx() }
+                LaunchedEffect(Unit) {
+                    withFrameNanos { }
+                    scroll.scrollTo(selectedRow[0] + selectedRow[1] / 2 - roomPx / 2)
+                }
+                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).heightIn(max = room).clip(RoundedCornerShape(Theme.corner))
+                        .background(Theme.area).then(if (reason != null) Modifier.background(reason).background(surfaceTranslucent) else Modifier)
+                        .verticalScroll(scroll)) {
                     seasons.forEach { st ->
                         val an = st.id == selected
                         // Tick on the left, always reserved; selected white, otherwise quiet: 15 semibold, 14/9 inside.
-                        Row(Modifier.fillMaxWidth().pressRow { setOpen(false); select(st.id) }.padding(horizontal = 14.dp, vertical = 9.dp),
+                        Row(Modifier.fillMaxWidth().then(if (an) Modifier.onGloballyPositioned { selectedRow[0] = it.positionInParent().y.toInt(); selectedRow[1] = it.size.height } else Modifier)
+                                .pressRow { setOpen(false); select(st.id) }.padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
                                 if (an) Symbol(Glyph.Checkmark, 15.dp, color = Theme.font, strength = Strength.Semibold)

@@ -112,6 +112,8 @@ private struct LayersHeader<Left: View>: View {
 /// subtitles the other column stays still.
 private struct SelectionColumn<ContentBody: View>: View {
     let title: LocalizedStringKey
+    /// Short choices take `layerColumnWidth`; the track columns pass `trackColumnWidth`.
+    var width: CGFloat = Theme.layerColumnWidth
     @ViewBuilder let content: ContentBody
 
     var body: some View {
@@ -133,7 +135,7 @@ private struct SelectionColumn<ContentBody: View>: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(width: 200, alignment: .leading)
+        .frame(width: width, alignment: .leading)
     }
 }
 
@@ -161,6 +163,8 @@ private struct LayersRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+            // The full name on hover, for the rare row that still does not fit.
+            .help(Text(verbatim: text))
             // One weight. Selected means full color, not a second weight, which would change
             // the width.
             .font(Theme.body)
@@ -318,7 +322,7 @@ struct TracksLayer: View {
         ZStack(alignment: .top) {
             LayersReason()
             ColumnsRail(mass: mass) {
-                SelectionColumn(title: "Audio") {
+                SelectionColumn(title: "Audio", width: Theme.trackColumnWidth) {
                     ForEach(area?.audioTracks ?? [], id: \.trackId) { track in
                         LayersRow(text: track.prettyName, selected: audioNow == track.trackId) {
                             audioSelection = track.trackId
@@ -332,7 +336,7 @@ struct TracksLayer: View {
                     }
                     .padding(.top, Theme.tileSpacing)
                 }
-                SelectionColumn(title: "Untertitel") {
+                SelectionColumn(title: "Untertitel", width: Theme.trackColumnWidth) {
                     LayersRow(text: String(localized: "Aus"), selected: subtitleNow == nil) {
                         subtitleSelection = .some(nil)
                         area?.selectSubtitle(nil)
@@ -525,7 +529,7 @@ struct EpisodesLayer: View {
                             .hidden()
                         if !seasons.isEmpty {
                             SeasonSelection(seasons: seasons, selected: $selectedSeason,
-                                        opened: $seasonListOpen)
+                                        opened: $seasonListOpen, limited: true)
                                 .onChange(of: selectedSeason?.id) { _, _ in
                                     Task { await episodesLoad(seasonSwitched: true) }
                                 }

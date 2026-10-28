@@ -450,6 +450,8 @@ struct PlayerScreen: View {
             // device. The Mac was missing the second half entirely.
             model.remoteCommand = execute
             holder.setPlayer(true)
+            // The poll rests while a player is open; one question for "Übergeben an …".
+            Task { await PlayOutputs.shared.refresh(model) }
         }
         .onChange(of: state.running) { _, new in
             fillSet()
@@ -635,8 +637,62 @@ struct PlayerScreen: View {
                                                     : "arrow.up.left.and.arrow.down.right",
                         label: holder.isFullscreen ? "Vollbild verlassen" : "Vollbild",
                         mass: mass) { holder.fullscreenToggle() }
+            handOverMenu
             IconButton(symbol: "xmark", label: "Player schließen",
                         mass: mass) { finish() }
+        }
+    }
+
+    /// **"Übergeben an …"**: the TVs a film can be sent to, see ``PlayOutputs``.
+    /// Not in a group: the group watches here, and handing over would leave it
+    /// without a word.
+    @ViewBuilder private var handOverMenu: some View {
+        let targets = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+        if !inGroup, !targets.isEmpty {
+            Menu {
+                Section {
+                    ForEach(targets, id: \.deviceID) { target in
+                        Button { handOver(to: target) } label: {
+                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                        }
+                    }
+                } header: {
+                    Text("Übergeben an …")
+                }
+            } label: {
+                Image(systemName: "tv")
+                    .font(.system(size: mass.symbol, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: mass.button, height: mass.button)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(Text("Übergeben an …"))
+            .accessibilityLabel(Text("Übergeben an …"))
+        }
+    }
+
+    /// **Send the running title to the TV and leave**, at this position, with these
+    /// tracks. Paused at once so the TV does not start behind where this device has
+    /// got to; if the TV does not take it, it plays on here. The exit is the
+    /// takeover's (``HandoffExit``).
+    private func handOver(to target: PlayOutput) {
+        guard !handoverRuns, let area else { return }
+        let spot = state.position
+        let wasRunning = state.running
+        area.pause()
+        Task {
+            let taken = await PlayOutputs.shared.handOver(title, plan: plan, at: spot,
+                                                          tracks: model.playingTracks,
+                                                          to: target, model: model)
+            guard taken else {
+                if wasRunning { resume() }
+                return
+            }
+            handIn(an: target.name, area: area)
         }
     }
 
@@ -1389,7 +1445,8 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title))
+                                 title: TrackMemory.title(for: title),
+                                 ordered: title.id == beginning.item.id ? beginning.tracks : nil)
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {

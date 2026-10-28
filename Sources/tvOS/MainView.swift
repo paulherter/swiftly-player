@@ -258,7 +258,7 @@ struct MainView: View {
 
             if let wish = play {
                 PlayerScreen(model: model, item: wish.item, plan: wish.plan,
-                             startAt: wish.startAt) { play = nil }
+                             startAt: wish.startAt, tracks: wish.tracks) { play = nil }
                 // The fade belongs to the shell (`.animation` below), not the content: whatever in the
                 // player changes size or position on entry or exit (safe area, video area) would
                 // otherwise open and close with the fade.
@@ -301,6 +301,12 @@ struct MainView: View {
             guard new != nil, let wish = gemeinsam.wish else { return }
             gemeinsam.wish = nil
             play = wish
+        }
+        // **Sent from another client** (dashboard, web client): replaces whatever is playing.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { play = $0 } }
         }
         .task { await model.remoteControlStart() }
         // Once per launch; without an answer nothing happens.

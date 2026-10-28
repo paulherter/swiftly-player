@@ -197,6 +197,12 @@ static var progressTravel: Animation? {
     static let cornerTile: CGFloat = 10
     /// Search and input fields.
     static let cornerField: CGFloat = 12
+    /// **Width of the audio and subtitle columns in the player.** "Russian · AC-3 · 5.1"
+    /// and "English · Forced · SRT · File" fit; 210 cut them after the codec. Two
+    /// columns of 300 stand side by side in a landscape iPhone. The Mac has its own
+    /// value (`Sources/macOS/Style.swift`).
+    static let trackColumnWidth: CGFloat = 300
+    static let trackColumnWidthPad: CGFloat = 360
 
     /// **The small corner, for things under 34 pt height.** The corner grows with
     /// the thing: 10 on a height of 48 is 0.21, and the same ratio gives 8 on a
@@ -1494,6 +1500,8 @@ struct ExpandList<Record: Identifiable>: View {
     /// **A field, not a bare heading.** In the player it sits between title and
     /// episodes and carries no surface there.
     var asField = true
+    /// How far down the dropdown may reach before it scrolls. `nil` until measured.
+    @State private var room: CGFloat?
 
     var body: some View {
         Button {
@@ -1532,7 +1540,7 @@ struct ExpandList<Record: Identifiable>: View {
         .buttonStyle(Theme.PressButton())
         .overlay(alignment: .topLeading) {
             if opened {
-                VStack(spacing: 0) {
+                let rows = VStack(spacing: 0) {
                     ForEach(entries) { entryRecord in
                         Button {
                             select(entryRecord)
@@ -1573,6 +1581,22 @@ struct ExpandList<Record: Identifiable>: View {
                         .buttonStyle(Theme.PressRow())
                         // The checkmark is only an image; VoiceOver reports the selected state.
                         .accessibilityAddTraits(isSelected(entryRecord) ? .isSelected : [])
+                        .id(entryRecord.id)
+                    }
+                }
+                // **Scrolls only when it has to.** A short list is laid out as before. Once
+                // it is taller than the room under the trigger (ten seasons, or a phone on
+                // its side in the player), the same rows go into a scroll view that ends at
+                // the screen's bottom edge and opens on the selected one.
+                ViewThatFits(in: .vertical) {
+                    rows
+                    ScrollViewReader { reader in
+                        ScrollView(showsIndicators: false) { rows }
+                            .onAppear {
+                                if let current = entries.first(where: isSelected) {
+                                    reader.scrollTo(current.id, anchor: .center)
+                                }
+                            }
                     }
                 }
                 // **As wide as the longest name, not a fixed 200.**
@@ -1613,7 +1637,20 @@ struct ExpandList<Record: Identifiable>: View {
                 // **No shadow.** Depth comes from surface brightness, not from drop shadows;
                 // `erhoeht` already sits one step above the card beneath. The shadow was also the
                 // only one in the entire iPhone version.
+                // **The room is the proposal, not a cap.** An overlay proposes its trigger's
+                // height (34), so `ViewThatFits` alone always picked a 34 pt scroller. This
+                // frame hands it the room below instead; the background sits inside, so a
+                // short list keeps its own height.
+                .frame(height: room ?? 10_000, alignment: .top)
                 .offset(y: height + 6)
+                // Measured where it hangs: the room below is what the screen has left. The
+                // frame reports the trigger's top, `offset` doesn't move it, so the gap to
+                // the list comes off here.
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                    #if canImport(UIKit)
+                    room = max(0, Self.screenBottom - top - height - 6 - 12)
+                    #endif
+                }
                 .zIndex(10)
                 // **It grows out of its trigger.** Before, it appeared abruptly: no transition,
                 // no origin. A list from nowhere leaves open what it belongs to; one that grows
@@ -1625,6 +1662,16 @@ struct ExpandList<Record: Identifiable>: View {
             }
         }
     }
+
+    #if canImport(UIKit)
+    /// The window's bottom edge above the home indicator, in the same coordinates as
+    /// `.global`.
+    @MainActor private static var screenBottom: CGFloat {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        return (window?.bounds.height ?? 0) - (window?.safeAreaInsets.bottom ?? 0)
+    }
+    #endif
 }
 
 /// Spinning ring for waiting times.

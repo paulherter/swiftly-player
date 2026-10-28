@@ -188,6 +188,13 @@ enum Theme {
     /// `formWidth` applies to profile, Seerr and every settings column too. A list of
     /// rows is a form, not running text.
     static let formWidth = 420
+    /// **Width of a column on the player's layers** (picture, sleep timer, quality),
+    /// as on the Mac (`Sources/macOS/Style.swift`).
+    static let layerColumnWidth = 200
+    /// **Width of the audio and subtitle columns**, as on the Mac. A track row carries
+    /// language, flags, format and file; at 200 such rows truncated while most of the
+    /// layer stood empty.
+    static let trackColumnWidth = 360
     /// **1366, as in `Sources/macOS/Style.swift`.** This used to be 1100 for no reason, and
     /// the number was never used because GTK has no maximum size. The cap is now set by
     /// `Einstellungsseiten.cap(_:in:on:)`.
@@ -1379,6 +1386,15 @@ enum Theme {
         .swiftly-akzentschrift { color: \(accent); }
         /* Eine Zeile der Auswahl „Läuft gerade": 58 hoch wie im Blatt. */
         button.swiftly-handlung.swiftly-angebotszeile { min-height: 58px; padding: 0 14px; }
+        /* **Das mittige Fenster** (Mac `SharedPanel`): „Übergeben an …“. Fläche
+           `area`, Ecke 16, die eine Kante in `rand` wie die Tafeln; die Zeilen 20
+           seitlich wie `SelectionRow`, bündig mit der Überschrift. */
+        .swiftly-wahlfenster {
+            background-color: \(area);
+            border: 1px solid \(margin);
+            border-radius: \(cornerArea)px;
+        }
+        .swiftly-wahlfenster button.swiftly-angebotszeile { padding: 0 20px; }
         /* Der Hinweis oben im Player: Kapsel auf `area`, 44 hoch, 16 innen. */
         .swiftly-gruppenereignis {
             background-color: \(area);

@@ -200,7 +200,6 @@ async function appendApk(versionCode, versionDefault, dryRun) {
     }
   }
   if (!version) throw new Error(`Keine Fassung zu Versionscode ${versionCode} gefunden — mit --fassung angeben.`);
-  const tag = `v${version}`;
   const name = `Swiftly-${version}.apk`;
 
   // Which APKs Google generated -- one group per signing key, containing the universal APK.
@@ -210,16 +209,20 @@ async function appendApk(versionCode, versionDefault, dryRun) {
   if (universal.length > 1) throw new Error(`${universal.length} Signaturschluessel mit Universal-APK — nicht eindeutig.`);
   console.log(`Universal-APK zu Versionscode ${versionCode}: vorhanden (von Play signiert).`);
 
-  // The release must already exist -- none is created here.
+  // The release must already exist -- none is created here. A beta release is tagged
+  // `v<version>-beta`; the final `v<version>` wins when both exist.
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  let present = [];
-  try {
-    const release = JSON.parse(execFileSync("gh", ["release", "view", tag, "--json", "assets"],
-                                            { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
-    present = (release.assets ?? []).map((a) => a.name);
-  } catch {
-    throw new Error(`Kein GitHub-Release „${tag}". Erst das Release anlegen, dann die APK anhaengen.`);
+  let tag, present = [];
+  for (const candidate of [`v${version}`, `v${version}-beta`]) {
+    try {
+      const release = JSON.parse(execFileSync("gh", ["release", "view", candidate, "--json", "assets"],
+                                              { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+      tag = candidate;
+      present = (release.assets ?? []).map((a) => a.name);
+      break;
+    } catch {}
   }
+  if (!tag) throw new Error(`Kein GitHub-Release „v${version}" oder „v${version}-beta". Erst das Release anlegen, dann die APK anhaengen.`);
   console.log(`GitHub-Release „${tag}": ${present.length} Anhaenge${present.includes(name) ? `, ${name} schon dabei` : ""}.`);
   if (present.includes(name)) throw new Error(`${name} haengt schon an „${tag}" — nichts ersetzt.`);
 

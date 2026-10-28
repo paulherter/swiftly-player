@@ -140,6 +140,10 @@ private struct LayersHeader<Left: View>: View {
 private struct SelectionColumn<ContentBody: View>: View {
     let title: LocalizedStringKey
     let mass: PlayerMetric
+    /// Only the track columns are wide: their labels carry language, title and codec. The short
+    /// choices (picture, sleep timer, badge, quality) keep the narrow column, or three of them no
+    /// longer fit side by side on a landscape iPhone.
+    var wide = false
     @ViewBuilder let content: ContentBody
 
     var body: some View {
@@ -165,7 +169,9 @@ private struct SelectionColumn<ContentBody: View>: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxWidth: mass.pad ? 260 : 210, alignment: .leading)
+        .frame(maxWidth: wide ? (mass.pad ? Theme.trackColumnWidthPad : Theme.trackColumnWidth)
+                              : (mass.pad ? 260 : 210),
+               alignment: .leading)
     }
 }
 
@@ -195,7 +201,7 @@ private struct LayersRow: View {
             //
             // This had `pad ? 17 : 15` and `selected ? .semibold : .regular`. The first
             // part was a second scale: 15 is the list row, on iPad as on iPhone
-            //. The second was worse: the column is 210 pt wide and the row
+            //. The second was worse: the column is narrow and the row
             // carries `lineLimit(1)`, so **a long track name truncated more on
             // selection than before**. Selected is now expressed by tone.
             .font(Theme.listTitle)
@@ -353,7 +359,7 @@ struct TracksLayer: View {
         ZStack(alignment: .top) {
             LayersReason()
             ColumnsRail(mass: mass) {
-                SelectionColumn(title: "Audio", mass: mass) {
+                SelectionColumn(title: "Audio", mass: mass, wide: true) {
                     ForEach(surface?.audioTracks ?? [], id: \.trackId) { track in
                         LayersRow(text: track.prettyName, selected: audioNow == track.trackId,
                                   mass: mass) {
@@ -368,7 +374,7 @@ struct TracksLayer: View {
                     }
                     .padding(.top, Theme.tileSpacing)
                 }
-                SelectionColumn(title: "Untertitel", mass: mass) {
+                SelectionColumn(title: "Untertitel", mass: mass, wide: true) {
                     LayersRow(text: String(localized: "Aus"), selected: subtitleNow == nil,
                               mass: mass) {
                         subtitleSelection = .some(nil)

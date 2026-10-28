@@ -16,7 +16,7 @@ enum Version {
     /// **The build number counts when the same version is released again.**
     /// Without it, a bug report just says "1.0.4" and nobody knows whether the
     /// fix was included.
-    static let build = "31"
+    static let build = "33"
 
     /// "Swiftly Player 1.0.0 (Build 10)": the full name, as the other platforms
     /// show it in the profile.

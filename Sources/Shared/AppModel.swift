@@ -1189,6 +1189,22 @@ final class AppModel {
     /// only in the log.
     @ObservationIgnored var handoffTarget: (name: String, time: Date)?
 
+    /// **A title another client sent here** (dashboard, web client), see
+    /// ``PlayRequest/received(_:model:play:)``.
+    ///
+    /// Observed, unlike ``remoteCommand``: no player is open when it arrives, so
+    /// whoever can open one (`MainView`) has to notice it. Wrapped with an id so the
+    /// same title sent twice in a row arrives twice.
+    var playArrival: PlayArrival?
+
+    struct PlayArrival: Identifiable {
+        let id = UUID()
+        let order: PlayOrder
+    }
+
+    /// The tracks that are playing, for handing the title over to another device.
+    var playingTracks: TrackIndices { runningTracks }
+
     /// The name of the taking-over device if the last hint is fresh, and only
     /// once: the hint applies to exactly this stop.
     func handoffTargetTake() -> String? {
@@ -1241,6 +1257,17 @@ final class AppModel {
             Task { @MainActor in
                 self?.handoffTarget = (name, Date())
                 AppLog.writeOut("[Uebergabe] Hinweis: übernimmt \(name)")
+            }
+        }
+        await controls.playHear { [weak self] order in
+            Task { @MainActor in
+                // **Not while watching together:** the group owns the player and the
+                // title; a stray "Play" would pull this device out of it unnoticed.
+                guard SharedModel.shared.group == nil else {
+                    AppLog.writeOut("[Abspielen auf] Auftrag ignoriert: Gruppe aktiv (\(order.itemID ?? "?"))")
+                    return
+                }
+                self?.playArrival = PlayArrival(order: order)
             }
         }
         await controls.start { [weak self] command in

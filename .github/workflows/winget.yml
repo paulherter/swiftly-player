@@ -18,6 +18,9 @@ on:
 
 jobs:
   veroeffentlichen:
+    # Betas are not offered there, and nothing runs until the package exists
+    # (repository variable WINGET_READY = true, see Distribution/SETUP.md).
+    if: ${{ vars.WINGET_READY == 'true' && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - name: Ins winget-pkgs-Repository stellen

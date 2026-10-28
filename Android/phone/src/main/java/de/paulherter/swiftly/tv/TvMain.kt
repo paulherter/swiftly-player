@@ -648,6 +648,8 @@ fun TvPanel(app: SwiftlyApplication) {
     BackHandler(onBack = close)
     var pick by remember(w) { mutableStateOf(w.moreCompartment) }
     val firstOne = remember(w) { FocusRequester() }
+    // Focus starts on the selected entry (the running season of ten), the first one otherwise.
+    val startRow = remember(w) { w.entries.indexOfFirst { it.value == w.selected }.coerceAtLeast(0) }
     LaunchedEffect(w) { delay(TvTheme.focusDeadline); runCatching { firstOne.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))) {
         CompositionLocalProvider(LocalWithinPanel provides true) {
@@ -673,7 +675,7 @@ fun TvPanel(app: SwiftlyApplication) {
                         TvRow(e.text, w.icons[e.value], right = w.locked[e.value],
                                 checkmark = if (amount != null) e.value in amount else e.value == w.selected,
                                 wraps = w.longRows,
-                                modifier = if (i == 0) Modifier.focusRequester(firstOne) else Modifier) {
+                                modifier = if (i == startRow) Modifier.focusRequester(firstOne) else Modifier) {
                             if (w.locked[e.value] != null) return@TvRow
                             if (amount != null) pick = if (e.value in amount) amount - e.value else amount + e.value
                             else selectAndClose { w.select(e.value) }

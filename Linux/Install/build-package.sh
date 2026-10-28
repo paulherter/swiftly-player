@@ -27,6 +27,15 @@ PROGRAM="swiftly-jellyfin"
 ID="de.paulherter.swiftly"
 mkdir -p "$out"
 
+# **Only a build with the Swift runtime inside.** The user has no Swift
+# installed. A plain `swift build` (instead of `-Xswiftc -static-stdlib`)
+# links against libswiftCore.so with a RUNPATH into the build machine's
+# toolchain; the package installs fine and the program does not start.
+if readelf -d "$build/SwiftlyLinux" | grep -q 'libswiftCore\.so'; then
+    echo "SwiftlyLinux needs libswiftCore.so: build with -Xswiftc -static-stdlib" >&2
+    exit 1
+fi
+
 # ------------------------------------------------------------ Common
 #
 # Binary and resource bundle stay together: Swift locates `Bundle.module`

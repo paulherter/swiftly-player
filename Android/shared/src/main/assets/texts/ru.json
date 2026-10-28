@@ -73,6 +73,7 @@
  "%s ist dabei": "%s присоединился(-ась)",
  "%s ist gegangen": "%s вышел(-ла)",
  "%s laden": "Загрузить %s",
+ "%s s": "%s с",
  "%s schauen gerade": "Сейчас смотрят: %s",
  "%s schaut gerade": "Сейчас смотрит: %s",
  "%s und %s gehören dir.": "%1$s и %2$s теперь ваши.",
@@ -622,6 +623,7 @@
  "Sortieren": "Сортировка",
  "Sortierung, %s": "Сортировка, %s",
  "Speicher": "Хранилище",
+ "Spielt auf „%s“": "Играет на «%s»",
  "Sprache": "Язык",
  "Sprache, Untertitel, Tempo": "Язык, субтитры, скорость",
  "Sprache, Untertitel, Tempo, Puffer": "Язык, субтитры, скорость, буфер",
@@ -856,6 +858,8 @@
  "Ändern": "Изменить",
  "Öffnet die Auswahl": "Открывает список",
  "Über Seerr anfragen": "Запросить через Seerr",
+ "Übergeben an …": "Передать на…",
  "Übersicht öffnen": "Открыть обзор",
+ "„%s“ ist nicht mehr erreichbar.": "Устройство «%s» недоступно.",
  "−%d s": "−%d с"
 }

@@ -17,7 +17,9 @@ param(
     [string]$Ziel = '',
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
     [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
-    [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin'
+    # The per-user Swift install (the one `build.ps1` compiles with); the runtime
+    # DLLs must match that compiler version.
+    [string]$SwiftLaufzeit = "$env:LOCALAPPDATA\Programs\Swift\Runtimes\6.3.3\usr\bin"
 )
 
 $ErrorActionPreference = 'Stop'

@@ -598,3 +598,7 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Fassung wählen";
+"Übergeben an …" = "Übergeben an …";
+"Senden" = "Senden";
+"Spielt auf „%@“" = "Spielt auf „%@“";
+"„%@“ ist nicht mehr erreichbar." = "„%@“ ist nicht mehr erreichbar.";

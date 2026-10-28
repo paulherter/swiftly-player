@@ -345,6 +345,11 @@ extension App {
         controlsOpen = false
         playerCenter = nil
         playerIconRail = nil
+        playerHandOverButton = nil
+        playerRailsSlot = nil
+        // The TV window belongs to this film; a choice in it would find none.
+        if handOverOpen { panelWindowClose() }
+        handOverOpen = false
         playerVolume = nil
         volumePulls = false
         playerLayersButtons = [:]
@@ -633,6 +638,16 @@ extension App {
         playerFullscreenImage = fullscreenGlyph
         append(rail, fullscreen)
 
+        // **"Übergeben an …" between fullscreen and close**, as on the Mac. Always
+        // built, shown only while a hand-over is possible: the TVs come from the
+        // poll and the plan arrives after the row.
+        let (handOver, _) = iconButton("tv", label: translated("Übergeben an …")) {
+            [weak self] in self?.playHandOverShow()
+        }
+        playerHandOverButton = handOver
+        gtk_widget_set_visible(handOver, playHandOverShown ? 1 : 0)
+        append(rail, handOver)
+
         let (close, _) = iconButton("close", label: translated("Player schließen")) {
             [weak self] in self?.playerClose()
         }
@@ -662,6 +677,7 @@ extension App {
 
         let slot = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
         gtk_widget_set_size_request(slot, iconRailsWidth(), 1)
+        playerRailsSlot = slot
         append(state, slot)
 
         playerTitleState = state
@@ -2067,7 +2083,8 @@ extension App {
 
     func controlsHide() {
         guard runningTitle != nil, playerControls != nil,
-              openLayer == nil, playState.running, !atSlider, !volumePulls else { return }
+              openLayer == nil, playState.running, !atSlider, !volumePulls,
+              !handOverOpen else { return }
         controlsTick += 1
         controlsOpen = false
         controlsVisibility()
@@ -2105,7 +2122,7 @@ extension App {
             onMainThread {
                 guard self.runningTitle != nil, self.playerControls != nil,
                       self.openLayerArt == nil, !self.atSlider, !self.volumePulls,
-                      self.controlsTick == mine, self.playState.running else { return }
+                      !self.handOverOpen, self.controlsTick == mine, self.playState.running else { return }
                 self.controlsOpen = false
                 self.controlsVisibility()
                 self.showPointer(false)

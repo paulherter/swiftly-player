@@ -27,6 +27,11 @@ import Foundation
 ///    default: VLC used to adopt that silently.
 ///
 /// External subtitle files count everywhere.
+///
+/// **Above all of these stands a choice sent along with a "Play" from another
+/// device** (``PlayOrder``): whoever sends a film to the TV has already decided
+/// on the phone, and the TV's own memory must not overrule that. It applies to
+/// the one title it came with, never to the next episode.
 public enum TrackRule {
 
     public enum Subtitle: Equatable, Sendable {
@@ -35,9 +40,13 @@ public enum TrackRule {
         case feed(Int)
     }
 
+    /// - Parameter ordered: the index sent by another device, see ``PlayOrder``. One
+    ///   the file does not have is ignored rather than trusted.
     public static func audio(streams: [MediaStream], remembered: TrackImprint?,
-                           preferredLanguage: String, serverPreGift: Int?) -> Int? {
+                           preferredLanguage: String, serverPreGift: Int?,
+                           ordered: Int? = nil) -> Int? {
         let tracks = streams.filter { $0.type == "Audio" }
+        if let ordered, tracks.contains(where: { $0.index == ordered }) { return ordered }
         if let remembered, let hit = remembered.bester(under: streams, art: "Audio") {
             return hit.index
         }
@@ -56,11 +65,17 @@ public enum TrackRule {
     ///     automatic subtitles are needed and which forced ones fit.
     ///   - tonwunsch: audio language from the settings, empty means none.
     ///   - wunschsprache: subtitle language from the settings.
+    ///   - ordered: the index sent by another device, `-1` for "off", see ``PlayOrder``.
     public static func subtitle(streams: [MediaStream], remembered: TrackMemory.Choice?,
                                   serverPreGift: Int?, automatic: Bool,
                                   audioIndex: Int?, tonwunsch: String,
-                                  preferredLanguage: String) -> Subtitle {
+                                  preferredLanguage: String,
+                                  ordered: Int? = nil) -> Subtitle {
         let tracks = streams.filter { $0.type == "Subtitle" }
+        if let ordered {
+            if ordered < 0 { return .off }
+            if tracks.contains(where: { $0.index == ordered }) { return .feed(ordered) }
+        }
         let forced = tracks.filter { $0.isForced == true }
 
         switch remembered {
@@ -121,6 +136,30 @@ public enum TrackRule {
         }
         if let index = forced.first?.index { return .feed(index) }
         return .off
+    }
+}
+
+public extension TrackRule {
+
+    /// **The tracks this device would start with, as Jellyfin indices**, for a
+    /// "Play" sent to another device.
+    ///
+    /// The same two rules the player applies when it opens, with the same inputs,
+    /// so what goes to the TV is what would have played here. Subtitle `-1` is
+    /// "off": without it the TV would fall back to its own choice where the phone
+    /// chose none.
+    static func startIndices(streams: [MediaStream], rememberedAudio: TrackImprint?,
+                             rememberedSubtitle: TrackMemory.Choice?,
+                             serverAudio: Int?, serverSubtitle: Int?, automatic: Bool,
+                             audioLanguage: String, subtitleLanguage: String) -> TrackIndices {
+        let audioIndex = audio(streams: streams, remembered: rememberedAudio,
+                               preferredLanguage: audioLanguage, serverPreGift: serverAudio)
+        let choice = subtitle(streams: streams, remembered: rememberedSubtitle,
+                              serverPreGift: serverSubtitle, automatic: automatic,
+                              audioIndex: audioIndex, tonwunsch: audioLanguage,
+                              preferredLanguage: subtitleLanguage)
+        if case .feed(let index) = choice { return TrackIndices(audio: audioIndex, subtitle: index) }
+        return TrackIndices(audio: audioIndex, subtitle: -1)
     }
 }
 

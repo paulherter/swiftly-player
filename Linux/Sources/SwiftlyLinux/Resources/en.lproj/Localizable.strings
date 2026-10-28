@@ -595,3 +595,7 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Choose version";
+"Übergeben an …" = "Hand over to …";
+"Senden" = "Send";
+"Spielt auf „%@“" = "Playing on “%@”";
+"„%@“ ist nicht mehr erreichbar." = "“%@” is no longer reachable.";

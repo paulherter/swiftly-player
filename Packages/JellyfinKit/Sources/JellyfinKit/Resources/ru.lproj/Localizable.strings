@@ -142,3 +142,9 @@
 "Die Verbindung zur Gruppe ist abgerissen und ließ sich nicht wiederherstellen. Tritt der Gruppe bitte erneut bei." = "Связь с группой прервалась и не восстановилась. Присоединитесь к группе снова.";
 
 "Fassung" = "Версия";
+
+/* Spurnamen im Player und Einheit der Verzögerung */
+"Erzwungen" = "Принудительные";
+"Hörgeschädigt" = "Для слабослышащих";
+"Datei" = "Файл";
+"%@ s" = "%@ с";

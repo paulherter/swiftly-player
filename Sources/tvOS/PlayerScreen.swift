@@ -164,9 +164,13 @@ struct PlayerScreen: View {
 
     enum FocusTarget: Hashable { case idle, bar, tracks, settings, episodes, offering }
 
+    /// Tracks sent by the device that sent the first title, see ``PlayRequest/tracks``.
+    private let ordered: (itemID: String, tracks: TrackIndices)?
+
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double,
-         close: @escaping () -> Void) {
+         tracks: TrackIndices? = nil, close: @escaping () -> Void) {
         self.model = model
+        self.ordered = tracks.map { (item.id, $0) }
         self.startPlan = plan
         self.startAt = startAt
         self.close = close
@@ -243,7 +247,16 @@ struct PlayerScreen: View {
                         wakeControls()
                     }
                 }
-                .onTapGesture { if clickRing.edge == nil || edgeConfirms { wakeControls() } }
+                // **A click while the overlay shows means the overlay**, even if focus never reached it. Measured complaint: the card was up, OK opened the controls instead of the next episode, and a second trip up to the pill was needed. Back is the only way to decline it.
+                .onTapGesture {
+                    guard clickRing.edge == nil || edgeConfirms else { return }
+                    if cardPresent {
+                        AppLog.writeOut("[Angebot] Klick auf der Ruheebene geht ans Angebot")
+                        offerClick()
+                    } else {
+                        wakeControls()
+                    }
+                }
 
             VideoSurface(url: startPlan.url, startAt: startAt,
                          container: startPlan.container,
@@ -437,11 +450,14 @@ struct PlayerScreen: View {
             AppLog.writeOut("[Angebot] \(present ? "ein" : "aus") \(layer.display)")
             if present {
                 focus = .offering
+                // The card zooms in with a lag, so one retry was not always enough: focus stayed on the rest layer. Keep setting it while the overlay is up and focus is elsewhere.
                 focusCatchUp {
-                    try? await Task.sleep(for: .milliseconds(80))
-                    guard !Task.isCancelled, cardPresent else { return }
-                    focus = .offering
-                    AppLog.writeOut("[Angebot] Fokus \(String(describing: focus))")
+                    for wait in [80, 250, 600] {
+                        try? await Task.sleep(for: .milliseconds(wait))
+                        guard !Task.isCancelled, cardPresent else { return }
+                        if focus != .offering { focus = .offering }
+                        AppLog.writeOut("[Angebot] Fokus \(String(describing: focus)) nach \(wait) ms")
+                    }
                 }
             } else if !controlsPresent, !layerOpen {
                 focus = .idle
@@ -870,6 +886,21 @@ struct PlayerScreen: View {
               autoSkipped.insert(step.segment.from).inserted
         else { return }
         offeringRun()
+    }
+
+    private func cardClick(_ episode: Item) {
+        layer.pressed()
+        AppLog.writeOut("[Karte] geklickt")
+        changeInto(episode, fromCard: true)
+    }
+
+    /// The overlay's action without its button: the card if it shows, otherwise the pill.
+    private func offerClick() {
+        if episodesCardPresent, cardsSwitch == nil, let episode = cardsEpisode ?? next, !inGroup {
+            cardClick(episode)
+        } else {
+            offeringRun()
+        }
     }
 
     private func offeringRun() {
@@ -1594,11 +1625,7 @@ struct PlayerScreen: View {
                 fillContent: cardsClock ?? fillClock,
                 rest: layer.countdownRest,
                 focus: $focus,
-                onTap: {
-                    layer.pressed()
-                    AppLog.writeOut("[Karte] geklickt")
-                    changeInto(episode, fromCard: true)
-                })
+                onTap: { cardClick(episode) })
             .animation(episodesCardPresent ? Self.spring(EpisodeCard.appearOmega)
                                         .delay(cardsSwitch == nil ? EpisodeCard.appearLag : 0)
                                      : Self.spring(EpisodeCard.distanceOmega),
@@ -1611,7 +1638,8 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title))
+                                 title: TrackMemory.title(for: title),
+                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil)
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {

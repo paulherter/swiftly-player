@@ -234,6 +234,13 @@ struct MainView: View {
             gemeinsam.wish = nil
             controls.wish = wish
         }
+        // **Sent from another client** (dashboard, web client): the same player, replacing a
+        // running one.
+        .onChange(of: model.playArrival?.id) { _, new in
+            guard new != nil, let arrival = model.playArrival else { return }
+            model.playArrival = nil
+            Task { await PlayRequest.received(arrival.order, model: model) { controls.wish = $0 } }
+        }
         .environment(navigator)
         .environment(\.section, section)
         // **the page stack belongs to the account.** After a switch, whatever lies on it

@@ -76,9 +76,10 @@ extension App {
     }
 
     /// Width of the icon row at the top right; the fixed title keeps that space
-    /// free, like `iconRail.hidden()` on the Mac.
+    /// free, like `iconRail.hidden()` on the Mac. **The TV button counts only
+    /// while it is shown**, otherwise the title would stop short of nothing.
     func iconRailsWidth() -> Int32 {
-        let count: Int32 = hasEpisodesLayer ? 6 : 5
+        let count: Int32 = (hasEpisodesLayer ? 6 : 5) + (playHandOverShown ? 1 : 0)
         return count * PlayerMetric.button + (count - 1) * PlayerMetric.railsSpacing
     }
 
@@ -117,10 +118,12 @@ extension App {
 
     /// A column with a fixed heading; only the rows below scroll on their own,
     /// so with 50 or more subtitles the other column stays still (Mac:
-    /// `Wahlspalte`, 200 wide).
-    func layersColumn(_ title: String, _ fill: (Widget?) -> Void) -> Widget! {
+    /// `SelectionColumn`). Short choices take `Theme.layerColumnWidth`, the track
+    /// columns `Theme.trackColumnWidth`.
+    func layersColumn(_ title: String, width: Int = Theme.layerColumnWidth,
+                      _ fill: (Widget?) -> Void) -> Widget! {
         let outer = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_set_size_request(outer, 200, -1)
+        gtk_widget_set_size_request(outer, Int32(width), -1)
         gtk_widget_set_vexpand(outer, 1)
 
         let header = label(title, style: "swiftly-spaltentitel")
@@ -164,7 +167,7 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
         // One character of width requested, so a long name does not push the column
-        // beyond its 200; `hexpand` gives it the rest.
+        // beyond its width; `hexpand` gives it the rest.
         gtk_label_set_max_width_chars(OpaquePointer(l), 1)
         gtk_widget_set_hexpand(l, 1)
         append(rail, l)
@@ -281,7 +284,7 @@ extension App {
     private func tracksLayerBuild() -> Widget! {
         let audioNow = mediaPlayer.audioTrack
         let audioGroup = SelectionGroup()
-        let audio = layersColumn(translated("Audio")) { space in
+        let audio = layersColumn(translated("Audio"), width: Theme.trackColumnWidth) { space in
             for track in audioTrackNames() {
                 append(space, layerRow(track.name, identifier: "\(track.identifier)", group: audioGroup,
                                             selected: track.identifier == audioNow) {
@@ -292,7 +295,7 @@ extension App {
         }
         let subtitleNow = mediaPlayer.subtitleTrack
         let subGroup = SelectionGroup()
-        let subtitle = layersColumn(translated("Untertitel")) { space in
+        let subtitle = layersColumn(translated("Untertitel"), width: Theme.trackColumnWidth) { space in
             append(space, layerRow(translated("Aus"), identifier: "aus", group: subGroup,
                                         selected: subtitleNow < 0) {
                 [weak self] in self?.subtitleSelected(nil)
@@ -649,22 +652,34 @@ extension App {
         append(space, pill)
 
         let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_add_css_class(list, "swiftly-staffelliste")
-        gtk_widget_set_size_request(list, 220, -1)
-        gtk_widget_set_halign(list, GTK_ALIGN_START)
+        // **The surface sits on the scroller, not on the list**, so a long list is clipped
+        // by the rounded border instead of running out of it. Without a scrollbar and with
+        // the natural height propagated, a short list is as tall as before; only past the
+        // maximum (set on opening, down to the window's edge) it scrolls.
+        let scroller: Widget! = gtk_scrolled_window_new()
+        gtk_widget_add_css_class(scroller, "swiftly-staffelliste")
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(scroller), 1)
+        gtk_scrolled_window_set_max_content_height(OpaquePointer(scroller), 100_000)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), list)
+        gtk_widget_set_overflow(scroller, GTK_OVERFLOW_HIDDEN)
+        gtk_widget_set_size_request(scroller, 220, -1)
+        gtk_widget_set_halign(scroller, GTK_ALIGN_START)
         let expand: Widget! = gtk_revealer_new()
         gtk_revealer_set_transition_type(asExpand(expand), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN)
         gtk_revealer_set_transition_duration(asExpand(expand), 220)
-        gtk_revealer_set_child(asExpand(expand), list)
+        gtk_revealer_set_child(asExpand(expand), scroller)
         gtk_widget_set_margin_top(expand, 8)
         gtk_widget_set_halign(expand, GTK_ALIGN_START)
         append(space, expand)
 
         var rows: [String: Widget?] = [:]
+        var chosen = initialSelection.id
         for season in seasons {
             let row = seasonRow(season.name, selected: season.id == initialSelection.id) {
                 [weak self] in
                 guard let self else { return }
+                chosen = season.id
                 gtk_label_set_text(OpaquePointer(text), season.name)
                 for (identifier, w) in rows { self.seasonRowDraw(w, selected: identifier == season.id) }
                 gtk_revealer_set_reveal_child(asExpand(expand), 0)
@@ -676,6 +691,31 @@ extension App {
         signal(pill, "clicked") {
             guard seasons.count > 1 else { return }
             let opened = gtk_revealer_get_reveal_child(asExpand(expand)) == 0
+            if opened {
+                // Room down to the window's bottom edge, from the pill's lower edge.
+                var r = graphene_rect_t()
+                if let root = gtk_widget_get_root(pill) {
+                    let window = unsafeBitCast(root, to: Widget.self)
+                    if gtk_widget_compute_bounds(pill, window, &r) != 0 {
+                        let room = Double(gtk_widget_get_height(window))
+                            - Double(r.origin.y + r.size.height) - 8 - 24
+                        gtk_scrolled_window_set_max_content_height(OpaquePointer(scroller),
+                                                                   Int32(max(room, 120)))
+                    }
+                }
+                // Once the list is laid out, bring the selected season to the middle.
+                runningCount(on: scroller, duration: 0.05, step: { _ in }, done: {
+                    var r = graphene_rect_t()
+                    guard let w = rows[chosen] ?? nil,
+                          gtk_widget_compute_bounds(w, list, &r) != 0,
+                          let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+                    else { return }
+                    let middle = Double(r.origin.y + r.size.height / 2)
+                    let target = middle - gtk_adjustment_get_page_size(adjustment) / 2
+                    let atMost = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment)
+                    gtk_adjustment_set_value(adjustment, min(max(target, 0), max(atMost, 0)))
+                })
+            }
             gtk_revealer_set_reveal_child(asExpand(expand), opened ? 1 : 0)
         }
         episodesSeasonLoad(initialSelection, seriesKeyID: seriesKeyID, ongoing: ongoing, crossfade: false)

@@ -55,6 +55,13 @@ jobs:
           else
             echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
+          # **A beta (`v1.0.9-beta`) gets packages, not the repositories.** rpm and
+          # dpkg forbid "-" in a version; "~" sorts before the final 1.0.9 in both.
+          # The apt/rpm sources stay on the last final release, since that is how
+          # users get updates.
+          w="$(grep '^wert=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)"
+          echo "paket=$(printf '%s' "$w" | sed 's/-/~/g')" >> "$GITHUB_OUTPUT"
+          case "$w" in *-*) echo "beta=true" >> "$GITHUB_OUTPUT" ;; *) echo "beta=false" >> "$GITHUB_OUTPUT" ;; esac
 
       - name: rlottie
         run: |
@@ -75,7 +82,7 @@ jobs:
       - name: Pakete schnueren
         run: |
           bash Linux/Install/build-package.sh \
-            "${{ steps.f.outputs.wert }}" \
+            "${{ steps.f.outputs.paket }}" \
             "$BAUORDNER" \
             "$PWD/pakete" \
             "$(bash Linux/Install/package-revision.sh '${{ github.event.inputs.paketstand }}')"
@@ -84,6 +91,7 @@ jobs:
       # complains on every call, so packages are signed as soon as the secret
       # SIGNIERSCHLUESSEL exists.
       - name: Paketquelle bauen
+        if: steps.f.outputs.beta != 'true'
         env:
           SCHLUESSEL: ${{ secrets.SIGNIERSCHLUESSEL }}
         run: |
@@ -120,6 +128,7 @@ jobs:
           echo "swiftly-player" > seite/.nojekyll
 
       - name: Auf Pages stellen
+        if: steps.f.outputs.beta != 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -149,6 +158,8 @@ jobs:
     runs-on: ubuntu-24.04
     container: archlinux:base-devel
     needs: bauen
+    # It only feeds the pacman repository, which carries final releases only.
+    if: ${{ !contains(github.ref_name, '-') && !contains(github.event.inputs.fassung, '-') }}
 
     steps:
       - name: Werkzeuge

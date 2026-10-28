@@ -125,7 +125,7 @@ just as on the Mac.
 ```powershell
 .\build.ps1 -Konfiguration release
 .\Install\package.ps1
-& "C:\Program Files\Inno Setup 7\ISCC.exe" .\Install\Swiftly.iss
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" .\Install\Swiftly.iss
 ```
 
 The result is `Output\Swiftly-1.0.0-Setup.exe`, about 80 MB from 356 MB of

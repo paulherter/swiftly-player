@@ -75,6 +75,8 @@ suspend fun SwiftlyApplication.offeringsFetch() {
             }
         }
     }.getOrDefault(emptyList())
+    // The same answer feeds "Übergeben an …"; the core kept it.
+    playTargetsTake()
 }
 
 /**

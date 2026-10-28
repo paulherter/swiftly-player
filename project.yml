@@ -36,7 +36,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "32"
+    CURRENT_PROJECT_VERSION: "33"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9

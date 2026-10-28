@@ -117,9 +117,16 @@ final class TakeoverModel {
             offerings = []
             return
         }
+        if PlayTargets.mustReport(sessions, ownDevicesIdentifier: AppModel.deviceID) {
+            AppLog.writeOut("[Abspielen auf] eigene Sitzung fehlt, Fähigkeiten neu gemeldet")
+            try? await client.reportCapabilities()
+        }
         offerings = Takeover.offerings(from: sessions,
                                        ownDevicesIdentifier: AppModel.deviceID,
                                        ownUserIdentifier: user)
+        // **The same answer feeds "Übergeben an"**: a second timer asking the same
+        // question for the player's list would double the requests for nothing.
+        PlayOutputs.shared.take(sessions, user: user)
         // **Why nothing is offered must be readable.** Five reasons look the same from
         // outside: the badge is simply missing. In release builds this drops out.
         if offerings.isEmpty {
@@ -283,6 +290,106 @@ final class TakeoverModel {
     func wish(for session: RemoteSession, model: AppModel) async -> PlayRequest? {
         guard let (title, since, plan) = await adopt(session, model: model) else { return nil }
         return PlayRequest(item: title, plan: plan, startAt: since)
+    }
+}
+
+/// **"Übergeben an": the running title from the player to a TV running Swiftly.**
+///
+/// An action in the player, not a mode: "play" always plays on this device. A
+/// remembered output would send every tap to a TV with nothing on the screen in
+/// front of the viewer saying so.
+///
+/// One for the whole app, like ``TileRequest``. **The list comes from
+/// ``TakeoverModel``'s poll**, not from a timer of its own. The player stops that
+/// poll, so it asks once when it opens (``refresh(_:)``).
+///
+/// **A TV hands over too**, to another TV: from the living room to the bedroom.
+@MainActor
+@Observable
+final class PlayOutputs {
+    static let shared = PlayOutputs()
+
+    /// Devices a film can be handed to right now, see ``PlayTargets``.
+    private(set) var targets: [RemoteSession] = []
+
+    private init() {}
+
+    /// From the takeover poll.
+    func take(_ sessions: [RemoteSession], user: String) {
+        let fresh = PlayTargets.targets(from: sessions, ownDevicesIdentifier: AppModel.deviceID,
+                                        ownUserIdentifier: user)
+        if fresh.map(\.id) != targets.map(\.id) {
+            AppLog.writeOut("[Abspielen auf] \(fresh.count) Ziele: "
+                + fresh.map { PlayTargets.name(of: $0) }.joined(separator: ", "))
+        }
+        targets = fresh
+    }
+
+    /// One question outside the poll, for the player, which stops the poll.
+    func refresh(_ model: AppModel) async {
+        guard let client = model.client, let user = model.session?.userID,
+              let sessions = try? await client.remoteSession() else { return }
+        take(sessions, user: user)
+    }
+
+    /// **The current session of the chosen device**, from a fresh list: the one in
+    /// the menu may be five seconds old, and the TV may have restarted since.
+    ///
+    /// `nil` with a message when it is gone or the question failed. Nothing plays
+    /// here instead: a film starting on the phone while the viewer looks at the TV
+    /// is not what was asked for.
+    private func current(_ output: PlayOutput, model: AppModel) async -> RemoteSession? {
+        guard let client = model.client, let user = model.session?.userID else { return nil }
+        let sessions: [RemoteSession]
+        do {
+            sessions = try await client.remoteSession()
+        } catch {
+            // Not "gone": the server did not answer.
+            AppLog.writeOut("[Abspielen auf] Abfrage fehlgeschlagen: \(error)")
+            Self.say(readableError(error))
+            return nil
+        }
+        take(sessions, user: user)
+        if let session = PlayTargets.session(for: output, in: targets) { return session }
+        AppLog.writeOut("[Abspielen auf] \(output.name) nicht mehr da")
+        Self.say(String(localized: "„\(output.name)“ ist nicht mehr erreichbar."))
+        return nil
+    }
+
+    /// **Hands the running title over from the player**: same position, same
+    /// version, the tracks that are playing. Only IDs, position and track indices
+    /// go out: the TV fetches its own plan with its own profile (``PlayOrder``).
+    ///
+    /// - Returns: whether the TV took it; only then does the player close.
+    func handOver(_ item: Item, plan: PlaybackPlan, at seconds: Double, tracks: TrackIndices,
+                  to output: PlayOutput, model: AppModel) async -> Bool {
+        guard let client = model.client,
+              let session = await current(output, model: model) else { return false }
+        let order = PlayOrder(itemID: item.id, start: seconds, mediaSourceID: plan.mediaSourceID,
+                              tracks: tracks)
+        let name = PlayTargets.name(of: session)
+        do {
+            try await client.playOn(session: session.id, order: order)
+        } catch {
+            AppLog.writeOut("[Abspielen auf] an \(name) fehlgeschlagen: \(error)")
+            Self.say(readableError(error))
+            return false
+        }
+        AppLog.writeOut("[Abspielen auf] \(order.itemID ?? "?") ab \(Int(order.start)) s an \(name)"
+            + " · Ton \(order.audioIndex.map(String.init) ?? "—")"
+            + " · Untertitel \(order.subtitleIndex.map(String.init) ?? "—")")
+        Self.say(String(localized: "Spielt auf „\(name)“"))
+        return true
+    }
+
+    /// The short strip at the bottom: ``TileRequest`` on iPhone and iPad,
+    /// ``TileMessage`` on the Mac.
+    static func say(_ text: String) {
+        #if os(macOS)
+        TileMessage.shared.text = text
+        #else
+        TileRequest.shared.message = text
+        #endif
     }
 }
 

@@ -471,8 +471,9 @@ extension App {
     }
 
     /// Icon, name with a line below, the action on the right in the accent
-    /// color; 58 high like the row in the sheet on iPhone.
-    private func sharedOfferingRow(symbol: String, title: String, under: String,
+    /// color; 58 high like the row in the sheet on iPhone. **An empty line below
+    /// is left out** (Mac `SelectionRow`): a TV that plays nothing has none.
+    func sharedOfferingRow(symbol: String, title: String, under: String,
                                         action: String,
                                         perform: @escaping () -> Void) -> Widget! {
         let button: Widget! = gtk_button_new()
@@ -496,13 +497,14 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(bottomRow), 0)
         gtk_label_set_ellipsize(OpaquePointer(bottomRow), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(bottomRow), 1)
+        gtk_widget_set_visible(bottomRow, under.isEmpty ? 0 : 1)
         append(text, bottomRow)
         append(rail, text)
         let actionLabel = label(action, style: "swiftly-kacheltitel")
         gtk_widget_add_css_class(actionLabel, "swiftly-akzentschrift")
         append(rail, actionLabel)
         gtk_button_set_child(asButton(button), rail)
-        caption(button, "\(title), \(under), \(action)")
+        caption(button, [title, under, action].filter { !$0.isEmpty }.joined(separator: ", "))
         signal(button, "clicked", perform)
         return button
     }
@@ -604,6 +606,8 @@ extension App {
         guard state != gemeinsam.metaState else { return }
         gemeinsam.metaState = state
         metaRowRefresh()
+        // Joining a group takes the TV button away; leaving brings it back.
+        playHandOverRefresh()
     }
 
     /// The "Gemeinsam · Filmabend" column in the player settings: who is in,

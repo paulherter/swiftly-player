@@ -596,3 +596,7 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Выберите версию";
+"Übergeben an …" = "Передать на…";
+"Senden" = "Отправить";
+"Spielt auf „%@“" = "Играет на «%@»";
+"„%@“ ist nicht mehr erreichbar." = "Устройство «%@» недоступно.";

@@ -48,6 +48,7 @@
  "%s ist dabei": "%s ist dabei",
  "%s ist gegangen": "%s ist gegangen",
  "%s laden": "%s laden",
+ "%s s": "%s s",
  "%s schauen gerade": "%s schauen gerade",
  "%s schaut gerade": "%s schaut gerade",
  "%s und %s gehören dir.": "%s und %s gehören dir.",
@@ -594,6 +595,7 @@
  "Sortieren": "Sortieren",
  "Sortierung, %s": "Sortierung, %s",
  "Speicher": "Speicher",
+ "Spielt auf „%s“": "Spielt auf „%s“",
  "Sprache": "Sprache",
  "Sprache, Untertitel, Tempo": "Sprache, Untertitel, Tempo",
  "Sprache, Untertitel, Tempo, Puffer": "Sprache, Untertitel, Tempo, Puffer",
@@ -826,6 +828,8 @@
  "Ändern": "Ändern",
  "Öffnet die Auswahl": "Öffnet die Auswahl",
  "Über Seerr anfragen": "Über Seerr anfragen",
+ "Übergeben an …": "Übergeben an …",
  "Übersicht öffnen": "Übersicht öffnen",
+ "„%s“ ist nicht mehr erreichbar.": "„%s“ ist nicht mehr erreichbar.",
  "−%d s": "−%d s"
 }

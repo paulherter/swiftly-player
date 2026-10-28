@@ -52,6 +52,8 @@ public actor RemoteControl {
     /// Who takes over playback right away, see
     /// ``JellyfinClient/handoffHint(an:geraet:)``.
     private var handoffNextGift: (@Sendable (String) -> Void)?
+    /// Who opens a title another device sent here, see ``playHear(_:)``.
+    private var playNextGift: (@Sendable (PlayOrder) -> Void)?
     /// How many times in a row the connection has dropped. Controls the wait before
     /// the next attempt and is reset on success.
     private var teardowns = 0
@@ -103,6 +105,16 @@ public actor RemoteControl {
     /// Sets who receives the handoff notice (the device name).
     public func handoffHear(_ nextGift: (@Sendable (String) -> Void)?) {
         handoffNextGift = nextGift
+    }
+
+    /// **Sets who receives a `Play` from another device** (``PlayOrder``).
+    ///
+    /// **A listener of its own, not a ``RemoteCommand``.** Remote commands reach
+    /// the open player only, and a `Play` mostly arrives while no player is open:
+    /// it has to reach whoever can open one. It would also have added a case to
+    /// every exhaustive `switch` over the commands on every platform.
+    public func playHear(_ nextGift: (@Sendable (PlayOrder) -> Void)?) {
+        playNextGift = nextGift
     }
 
     /// Connects and calls `at` for every incoming command.
@@ -387,6 +399,14 @@ public actor RemoteControl {
                   let command = content["Command"] as? String else { return }
             let target = content["SeekPositionTicks"] as? Int64
             if let far = Self.translate(command, target: target) { nextGift?(far) }
+
+        case "Play":
+            if let order = PlayOrder.read(text) {
+                TrackSupport.sag("[Abspielen auf] Auftrag: \(order.itemID ?? "?") ab \(Int(order.start)) s")
+                playNextGift?(order)
+            } else {
+                TrackSupport.sag("[Abspielen auf] nicht lesbar: \(text.prefix(300))")
+            }
 
         default:
             break

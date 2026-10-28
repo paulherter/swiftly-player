@@ -7,7 +7,7 @@ import JellyfinKit
 /// **The player icons are SVG files in `Resources/icons/player`.**
 ///
 /// Redrawn after the Mac symbols (`captions.bubble`, `rectangle.stack`,
-/// `slider.horizontal.3`, fullscreen, `xmark`, `gobackward`/`goforward`,
+/// `slider.horizontal.3`, fullscreen, `tv`, `xmark`, `gobackward`/`goforward`,
 /// `pause.fill`/`play.fill`): thin round lines, no system symbols. Breeze and
 /// Adwaita show something different for the same names, and GTK's recoloring
 /// of symbolic SVGs fills paths instead of stroking them, so a line drawing

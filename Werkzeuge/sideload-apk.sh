@@ -37,7 +37,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 dry=0; [ "${1:-}" = "--dry-run" ] && dry=1
 version=$(sed -n 's/^ *versionName = "\(.*\)".*/\1/p' "$root/Android/phone/build.gradle.kts" | head -1)
 [ -n "$version" ] || { echo "versionName not found" >&2; exit 1; }
+# A beta release is tagged `v<version>-beta`; the final one `v<version>` wins when both exist.
 tag="v$version"
+gh release view "$tag" >/dev/null 2>&1 || ! gh release view "$tag-beta" >/dev/null 2>&1 || tag="$tag-beta"
 name="Swiftly-$version-upload-signed.apk"
 
 # shellcheck disable=SC1091
