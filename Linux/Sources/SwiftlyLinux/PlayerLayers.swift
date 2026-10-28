@@ -76,9 +76,10 @@ extension App {
     }
 
     /// Width of the icon row at the top right; the fixed title keeps that space
-    /// free, like `iconRail.hidden()` on the Mac.
+    /// free, like `iconRail.hidden()` on the Mac. **The TV button counts only
+    /// while it is shown**, otherwise the title would stop short of nothing.
     func iconRailsWidth() -> Int32 {
-        let count: Int32 = hasEpisodesLayer ? 6 : 5
+        let count: Int32 = (hasEpisodesLayer ? 6 : 5) + (playHandOverShown ? 1 : 0)
         return count * PlayerMetric.button + (count - 1) * PlayerMetric.railsSpacing
     }
 

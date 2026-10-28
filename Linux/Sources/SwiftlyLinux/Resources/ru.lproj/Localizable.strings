@@ -596,3 +596,12 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Выберите версию";
+"Senden an …" = "Отправить на…";
+"Übergeben an …" = "Передать на…";
+"Senden" = "Отправить";
+"Spielt auf „%@“" = "Играет на «%@»";
+"„%@“ ist nicht mehr erreichbar." = "Устройство «%@» недоступно.";
+"Der Titel vom anderen Gerät ließ sich nicht laden." = "Не удалось загрузить тайтл с другого устройства.";
+"Die Folge läuft auf diesem Gerät weiter." = "Серия продолжится на этом устройстве.";
+"Der Film läuft auf diesem Gerät weiter." = "Фильм продолжится на этом устройстве.";
+"Das Video läuft auf diesem Gerät weiter." = "Видео продолжится на этом устройстве.";

@@ -126,11 +126,15 @@ extension App {
         let streams = status.source?.mediaStreams ?? []
         let (audio, ut, z, _) = trackState()
         let memory = trackMemory()
+        // Sent along with this title from another device; never for the next one.
+        let ordered = playOrderedTracks.flatMap { $0.itemID == runningTitle?.id ? $0.tracks : nil }
+        playOrderedTracks = nil
 
         var audioIndex = TrackRule.audio(streams: streams,
                                      remembered: status.title.flatMap { memory.audio(for: $0) },
                                      preferredLanguage: selection.audioLanguage,
-                                     serverPreGift: status.source?.defaultAudioStreamIndex)
+                                     serverPreGift: status.source?.defaultAudioStreamIndex,
+                                     ordered: ordered?.audio)
         if let searched = audioIndex, let position = z.audioPositionValue(index: searched) {
             mediaPlayer.setAudioTrack(audio[position].identifier)
         } else {
@@ -147,7 +151,8 @@ extension App {
                                         remembered: status.title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: status.source?.defaultSubtitleStreamIndex,
                                         automatic: selection.subtitleAutomatic, audioIndex: audioIndex,
-                                        tonwunsch: selection.audioLanguage, preferredLanguage: selection.subtitleLanguage)
+                                        tonwunsch: selection.audioLanguage, preferredLanguage: selection.subtitleLanguage,
+                                        ordered: ordered?.subtitle)
         trackLog("Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)"
             + " · Vorgaben \(status.source?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
             + "\(status.source?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"

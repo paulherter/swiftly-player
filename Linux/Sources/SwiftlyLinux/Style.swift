@@ -1379,6 +1379,16 @@ enum Theme {
         .swiftly-akzentschrift { color: \(accent); }
         /* Eine Zeile der Auswahl „Läuft gerade": 58 hoch wie im Blatt. */
         button.swiftly-handlung.swiftly-angebotszeile { min-height: 58px; padding: 0 14px; }
+        /* **Das mittige Fenster** (Mac `SharedPanel`): „Senden an …",
+           „Übergeben an …" und die Frage vor dem Übernehmen. Fläche `area`,
+           Ecke 16, die eine Kante in `rand` wie die Tafeln; die Zeilen 20
+           seitlich wie `SelectionRow`, bündig mit der Überschrift. */
+        .swiftly-wahlfenster {
+            background-color: \(area);
+            border: 1px solid \(margin);
+            border-radius: \(cornerArea)px;
+        }
+        .swiftly-wahlfenster button.swiftly-angebotszeile { padding: 0 20px; }
         /* Der Hinweis oben im Player: Kapsel auf `area`, 44 hoch, 16 innen. */
         .swiftly-gruppenereignis {
             background-color: \(area);

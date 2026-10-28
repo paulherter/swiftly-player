@@ -1683,6 +1683,14 @@ final class App: @unchecked Sendable {
     /// The counter, once there is more than one offer.
     private var takeoverCounter: Widget!
     private var takeoverOfferings: [RemoteSession] = []
+    /// Devices a film can be sent to, from the same poll (`PlayOn.swift`).
+    ///
+    /// **The player's TV button follows the list**: the poll keeps running while a
+    /// film plays, so a TV switched on later must show up in the icon row too.
+    var playTargets: [RemoteSession] = [] { didSet { playHandOverRefresh() } }
+    /// **Tracks sent along with a title from another device**, for that title only;
+    /// `tracksPreSelect` takes them once and forgets them.
+    var playOrderedTracks: (itemID: String, tracks: TrackIndices)?
     private var takeoverRun: Task<Void, Never>?
     /// Intro and outro markers of the running title, from the server.
     var sections: [Segment] = [] {
@@ -1824,6 +1832,10 @@ final class App: @unchecked Sendable {
         openPanel = nil
         gtk_widget_unparent(alt)
     }
+    /// The centered window (``panelWindowOpen(_:content:closed:)``) while it is
+    /// open, and what runs when it closes.
+    var panelWindow: Widget?
+    var panelWindowClosed: (() -> Void)?
     var detailTouched = false
     /// The last result of "Verbindung prüfen".
     var checkResult = ""
@@ -1922,7 +1934,9 @@ final class App: @unchecked Sendable {
     var updateSpace: Widget?
     #endif
     var runningTitle: Item?
-    var runningPlan: PlaybackPlan?
+    /// **The TV button waits for the plan**: the icon row is built before it
+    /// arrives, and only a stream from the server can be handed over.
+    var runningPlan: PlaybackPlan? { didSet { playHandOverRefresh() } }
     /// The next plan comes from a quality choice, for the hint.
     var qualitySwitched = false
     /// Audio, subtitles and sideloaded files of the running title; see
@@ -1956,6 +1970,15 @@ final class App: @unchecked Sendable {
     /// page exists.
     var playerSliderCharacter: SliderCharacter?
     var playerFullButton: Widget!
+    /// **"Übergeben an …" in the icon row.** Built with the row and only shown
+    /// while a hand-over is possible (``playHandOverRefresh()``).
+    var playerHandOverButton: Widget!
+    /// The empty slot beside the standing title that keeps the icon row free; it
+    /// changes width with the TV button.
+    var playerRailsSlot: Widget!
+    /// **The TV window is open**: the controls stay, as while the volume handle is
+    /// dragged, so the film does not lose its controls behind the window.
+    var handOverOpen = false
     var playerLoadingScreen: Widget!
     /// Whether the time slider is currently being dragged.
     var atSlider = false
@@ -2266,8 +2289,9 @@ final class App: @unchecked Sendable {
 
     /// True means consumed, do not pass on.
     func keyButton(_ value: UInt32, ctrl: Bool) -> Bool {
-        // A support dialog on top of the window takes Escape before anything else.
+        // A support dialog or a centered window on top takes Escape before anything else.
         if value == 0xFF1B, supportEscape() { return true }
+        if value == 0xFF1B, panelWindowEscape() { return true }
         // **The shortcuts under the buttons must be right.**
         //
         // Under the player's three buttons stand "←", "Leertaste" and "→", and they
@@ -2589,12 +2613,20 @@ final class App: @unchecked Sendable {
             TrackSupport.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
             return
         }
+        // After a server restart nobody could reach this session (see `PlayTargets.mustReport`).
+        if PlayTargets.mustReport(sessions, ownDevicesIdentifier: Device.identifier) {
+            AppLog.writeOut("[Abspielen auf] eigene Sitzung fehlt, Fähigkeiten neu gemeldet")
+            try? await client.reportCapabilities()
+        }
         let offerings = Takeover.offerings(from: sessions,
                                            ownDevicesIdentifier: Device.identifier,
                                            ownUserIdentifier: userIdentifier)
         onMainThread {
             self.takeoverOfferings = offerings
             self.takeoverShow()
+            // **The same answer feeds "Senden an"**: a second timer asking the same
+            // question would double the requests for nothing.
+            self.playTargetsTake(sessions)
         }
     }
 
@@ -2645,7 +2677,8 @@ final class App: @unchecked Sendable {
         if offerings.count > 1 {
             takeoverSelectionShow(offerings)
         } else if let a = offerings.first {
-            adopt(a)
+            // One offer asks first: the other device stops at once (`TakeoverModel.confirming`).
+            takeoverConfirmShow(a)
         }
     }
 
@@ -2667,6 +2700,37 @@ final class App: @unchecked Sendable {
         }
     }
     #endif
+
+    /// **"Hier weiterschauen" asks first** (Apple `TakeoverModel.confirming`): the
+    /// other device stops at once, and a click by mistake would stop someone's film.
+    private func takeoverConfirmShow(_ session: RemoteSession) {
+        let body = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_margin_start(body, 20)
+        gtk_widget_set_margin_end(body, 20)
+        gtk_widget_set_margin_bottom(body, 20)
+        let moving: String = switch Takeover.moving(session) {
+        case .episode: translated("Die Folge läuft auf diesem Gerät weiter.")
+        case .movie: translated("Der Film läuft auf diesem Gerät weiter.")
+        case .video: translated("Das Video läuft auf diesem Gerät weiter.")
+        }
+        let hint = label(moving, style: "swiftly-koerper", wrap: true)
+        gtk_label_set_xalign(OpaquePointer(hint), 0)
+        gtk_label_set_max_width_chars(OpaquePointer(hint), 1)
+        gtk_widget_set_margin_bottom(hint, 18)
+        append(body, hint)
+        let main = primaryButton(translated("Fortsetzen"), symbol: "media-playback-start-symbolic")
+        gtk_widget_set_size_request(main, -1, Int32(Theme.primaryButtonHeight))
+        gtk_widget_set_halign(main, GTK_ALIGN_FILL)
+        signal(main, "clicked") { [weak self] in
+            self?.panelWindowClose()
+            self?.adopt(session)
+        }
+        append(body, main)
+        // The title the other device plays heads the window, as on the Mac.
+        panelWindowOpen(session.titleLine, content: body)
+        // Return continues, as `.defaultAction` on the Mac.
+        gtk_widget_grab_focus(main)
+    }
 
     private func takeoverSelectionShow(_ offerings: [RemoteSession]) {
         let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
@@ -3957,6 +4021,10 @@ final class App: @unchecked Sendable {
                     self.handoffTarget = (name, Date())
                     AppLog.writeOut("[Uebergabe] Hinweis: übernimmt \(name)")
                 }
+            }
+            // **A title sent from another device** opens like a click on "play" here.
+            await far.playHear { order in
+                onMainThread { self.playReceived(order) }
             }
             await far.start { command in
                 onMainThread { self.remoteCommandRun(command) }

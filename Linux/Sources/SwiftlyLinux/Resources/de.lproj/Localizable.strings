@@ -598,3 +598,12 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Fassung wählen";
+"Senden an …" = "Senden an …";
+"Übergeben an …" = "Übergeben an …";
+"Senden" = "Senden";
+"Spielt auf „%@“" = "Spielt auf „%@“";
+"„%@“ ist nicht mehr erreichbar." = "„%@“ ist nicht mehr erreichbar.";
+"Der Titel vom anderen Gerät ließ sich nicht laden." = "Der Titel vom anderen Gerät ließ sich nicht laden.";
+"Die Folge läuft auf diesem Gerät weiter." = "Die Folge läuft auf diesem Gerät weiter.";
+"Der Film läuft auf diesem Gerät weiter." = "Der Film läuft auf diesem Gerät weiter.";
+"Das Video läuft auf diesem Gerät weiter." = "Das Video läuft auf diesem Gerät weiter.";

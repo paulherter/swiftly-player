@@ -595,3 +595,12 @@
 
 /* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Choose version";
+"Senden an …" = "Send to…";
+"Übergeben an …" = "Hand over to …";
+"Senden" = "Send";
+"Spielt auf „%@“" = "Playing on “%@”";
+"„%@“ ist nicht mehr erreichbar." = "“%@” is no longer reachable.";
+"Der Titel vom anderen Gerät ließ sich nicht laden." = "The title from the other device could not be loaded.";
+"Die Folge läuft auf diesem Gerät weiter." = "The episode continues on this device.";
+"Der Film läuft auf diesem Gerät weiter." = "The movie continues on this device.";
+"Das Video läuft auf diesem Gerät weiter." = "The video continues on this device.";

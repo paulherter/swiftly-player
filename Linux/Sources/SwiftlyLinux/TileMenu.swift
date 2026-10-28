@@ -133,6 +133,12 @@ extension App {
                 self?.sharedCreateShow(item, an: button)
             }
         }
+        // "Senden an": the title to a TV running Swiftly, only while one is in reach (`PlayOn.swift`).
+        if !inPlayer, !playTargets.isEmpty {
+            entryRecord("video-display-symbolic", translated("Senden an …")) { [weak self] in
+                self?.playSendShow(item)
+            }
+        }
         if detail.continueWatching {
             entryRecord("list-remove-symbolic", translated("Aus Weiterschauen entfernen")) { [weak self] in
                 self?.fromContinueWatchingTake(item)

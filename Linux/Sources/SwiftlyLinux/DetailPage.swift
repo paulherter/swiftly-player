@@ -1033,6 +1033,14 @@ extension App {
 
         // **Four targets, not five.** "Gesehen" and "Trailer" moved into the More list; five
         // labeled buttons were too many for one row. This matches Apple TV and the Mac.
+        // **"Senden an"**: this title to a TV running Swiftly, only while one is in reach
+        // (`PlayOn.swift`). A series goes as the episode the viewer is at.
+        if !playTargets.isEmpty {
+            let send = secondaryButton("video-display-symbolic", name: translated("Senden an …"))
+            signal(send, "clicked") { [weak self] in self?.playSendShow(title) }
+            append(rail, send)
+        }
+
         let more = secondaryButton("view-more-horizontal-symbolic", name: translated("Mehr"))
         signal(more, "clicked") { [weak self] in self?.moreShow(title, an: more) }
         append(rail, more)
