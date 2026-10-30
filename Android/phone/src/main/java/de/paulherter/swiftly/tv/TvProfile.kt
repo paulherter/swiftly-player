@@ -332,9 +332,17 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // **"Weiteres Konto hinzufuegen" is the plus in the account card**, where the accounts are, as on
                             // tvOS. In its place here the second server: the same action as "Server hinzufuegen" in the server
                             // section, the same catalog key and the same target (`ServerAufnahme` -> `TvServerOnboarding`).
-                            TvAction(translated("Server hinzufügen"), modifier = first) {
+                            // Settings follow the account to every device (`SettingsSyncRun`).
+                            TvToggleRow(translated("Einstellungen auf allen Geräten gleich halten"), app.settingsSync.on.value, modifier = first) {
+                                app.settingsSync.onSet(!app.settingsSync.on.value)
+                            }
+                            SeparatorLine()
+                            TvAction(translated("Server hinzufügen")) {
                                 open(Destination("serveraufnahme", translated("Server hinzufügen"), "ServerAufnahme"))
                             }
+                            SeparatorLine()
+                            // The way back from "off" in the cold-start picker.
+                            AskAtLaunchRow(app)
                             SeparatorLine()
                             TvAction(translated("Abmelden")) { app.signOff() }
                         }
@@ -442,7 +450,7 @@ private fun TvAction(title: String = "", name: String? = null, value: String? = 
 /** The drawn switch. Mirrors `Schalter` (tvOS). Not a Material `Switch`: own size, own radius, own
  *  motion. Focus sits on the row, not on the switch. */
 @Composable
-private fun TvToggle(an: Boolean) {
+internal fun TvToggle(an: Boolean) {
     val width = 42.dp; val height = 25.dp; val circle = 20.dp; val inset = 2.5.dp
     val offset by animateDpAsState(if (an) width - circle - inset else inset,
                                      tween(150), label = "schalterVersatz")
@@ -458,7 +466,7 @@ private fun TvToggle(an: Boolean) {
 
 /** Row with a switch on the right. Mirrors `ToggleRow`. The whole row is pressed. */
 @Composable
-private fun TvToggleRow(title: String, an: Boolean, modifier: Modifier = Modifier, perform: () -> Unit) {
+internal fun TvToggleRow(title: String, an: Boolean, modifier: Modifier = Modifier, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
         Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
                 .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),
@@ -570,7 +578,7 @@ private fun AccountsStrip(cards: List<JSONObject>, record: () -> Unit, switchTo:
 /** The image of another account, otherwise its initial: the same pattern as `ProfileImage`, only for
  *  an account that is not the current one (own address instead of `app.kern`). */
 @Composable
-private fun AccountCircle(name: String, image: String?, size: Dp) {
+internal fun AccountCircle(name: String, image: String?, size: Dp) {
     SubcomposeAsyncImage(model = image, contentDescription = name, contentScale = ContentScale.Crop,
         modifier = Modifier.size(size).clip(CircleShape),
         error = {

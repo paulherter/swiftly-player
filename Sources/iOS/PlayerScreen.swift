@@ -1616,7 +1616,7 @@ struct PlayerScreen: View {
         guard !switches else { return false }
         var new = layer
         let done = new.tick(offering: offering,
-                                cardDue: SectionLogic.cardDue(position: position, duration: duration,
+                                cardDue: model.nextAutomatic && SectionLogic.cardDue(position: position, duration: duration,
                                                                            sections: sections,
                                                                            hasNextEpisode: nextEpisode != nil,
                                                                            remainingWindow: EpisodeCard.remainingWindow),
@@ -2124,7 +2124,8 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: item))
+                                        title: TrackMemory.title(for: item),
+                                        originalLanguage: item.originalLanguage)
             }
             if job.tracksApply { surface.channelsPostMeasure() }
             // Stay silent during the switch. Otherwise progress goes out for the **old**
@@ -2167,8 +2168,8 @@ struct PlayerScreen: View {
             }
 
             // Advance by itself at the end, only with a card (outro segment from the
-            // server), and not if it was cancelled. The "next episode automatically" switch no
-            // longer matters here.
+            // server), and not if it was cancelled. With "next episode automatically" off there
+            // is no card (see `offeringCatchUp`), so nothing advances.
             // **If the card counts, advancing belongs to it** (seeked to the end, and
             // `position >= dauer - 1` switched immediately).
             if layer.nextAtEnd, let episode = nextEpisode, !switches,

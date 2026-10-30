@@ -303,14 +303,13 @@ class PlayItem(
     // (`aout_OutputNew`); AC3/E-AC3/DTS/TrueHD still pass through raw (`digitalAudioApply`).
     //
     // **Subtitles like on Apple** (`SubtitleStyle` in `Sources/Shared/VLCPlayer.swift`): white, thin
-    // outline (3 % of text height instead of VLC's 4), light shadow, smaller than VLC's default of 6.25 %
+    // outline (3 % of text height instead of VLC's 4), no shadow (VLC draws a hard, offset copy that looked like a slanted outline behind straight text), smaller than VLC's default of 6.25 %
     // of the video height, slightly larger on TV. The font stays Roboto: libVLC 3 on Android only reads
     // `/system/etc/fonts.xml`, which lists only weights 400 and 700, so a bundled font or Roboto Medium
     // is not picked up. ASS with its own style and bitmap subtitles are left alone.
     val vlc = LibVLC(context, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") +
         listOf("--freetype-color=16777215", "--freetype-outline-thickness=3",
-            "--freetype-outline-opacity=230", "--freetype-shadow-opacity=120",
-            "--freetype-shadow-distance=0.04", "--freetype-shadow-angle=-70",
+            "--freetype-outline-opacity=230", "--freetype-shadow-opacity=0",
             "--sub-text-scale=" + (if (app.isTv) 88 else 82)) +
         listOfNotNull("--stereo-mode=1".takeUnless { app.settings.multiChannelAudio }) +
         listOfNotNull(Certificates.folder?.let { "--gnutls-dir-trust=$it" })))
@@ -1814,6 +1813,8 @@ class PlayItem(
             val length = (player.length / 1000.0).coerceAtLeast(0.0)
             // During the rebuild the last good position, not VLC's time: after a drop that jumps to the end.
             val reported = if (restoring) lastGoodPoint else (player.time / 1000.0).coerceAtLeast(0.0)
+            // "Next episode automatically" off: the core offers no card, so nothing advances by itself.
+            app.kern.nextAutomaticSet(app.settings.nextAutomatic)
             val answer = JSONObject(app.kern.playbackTick(
                 if (restoring) maxOf(length, duration) else length, reported, showsImage[0], player.isPlaying,
                 player.audioTracksCount > 0, atPush, app.settings.introOutroAutomatic))

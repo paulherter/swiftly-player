@@ -51,6 +51,7 @@ final class TileRequest {
         let entries: DownloadItem
         let title: String
         let images: [String: URL]
+        var audioStreams: [MediaStream] = []
     }
 
     var play: PlayRequest?
@@ -164,6 +165,24 @@ struct TileMenu: ViewModifier {
             }
         }
         #endif
+        // "Abspielen auf …": the TVs in reach, only for something that can start right away.
+        if !isSeries, !inPlayer {
+            let targets = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+            if !targets.isEmpty {
+                Menu {
+                    ForEach(targets, id: \.deviceID) { target in
+                        Button {
+                            let item = item, model = model
+                            Task { await PlayOutputs.shared.play(item, to: target, model: model) }
+                        } label: {
+                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                        }
+                    }
+                } label: {
+                    Label("Abspielen auf …", systemImage: "tv")
+                }
+            }
+        }
         if !isSeries, !inPlayer, SharedModel.shared.mayCreate {
             Button { SharedModel.shared.createFor = item } label: {
                 Label("Gemeinsam schauen", systemImage: "person.2")
@@ -258,7 +277,8 @@ struct TileMenu: ViewModifier {
                                                    mark: title.imageTags?["Primary"]) {
                 images[title.id] = poster
             }
-            TileRequest.shared.load = .init(entries: entries, title: title.name, images: images)
+            TileRequest.shared.load = .init(entries: entries, title: title.name, images: images,
+                                            audioStreams: source?.mediaStreams ?? [])
             TileRequest.shared.loadSheetOpen = true
         }
     }

@@ -32,16 +32,37 @@ struct LoadSheet: View {
     /// series comes from `Ladeauswahl` and brings its choice along; then it is only
     /// displayed here.
     var qualitySelect = false
+    /// **The audio tracks of a film**, to choose one before loading. Empty or a single
+    /// track: no choice. A series brings its choice from the selection, like the quality.
+    var audioStreams: [MediaStream] = []
 
     @State private var choice: DownloadQuality = .original
+    /// `nil` until someone picks: then the audio language from the settings applies.
+    @State private var audioChosen: DownloadAudioChoice?
 
     private var management: DownloadManager { model.downloads }
     /// The items in the chosen quality, with estimated size once converting.
     private var version: [DownloadItem] {
-        qualitySelect ? entries.map { $0.inQuality(choice) } : entries
+        let base = qualitySelect ? entries.map { $0.inQuality(choice) } : entries
+        guard audioSelect else { return base }
+        return base.map { $0.withAudio(audio, streams: audioStreams) }
+    }
+    /// Is the audio chosen here? Only for a film with several tracks, on an account
+    /// the server lets rebuild files for.
+    private var audioSelect: Bool {
+        qualitySelect && model.downloadQualitySelectable
+            && DownloadAudio.offered(streams: audioStreams)
+    }
+    private var audioOptions: [DownloadAudioOption] { DownloadAudio.trackOptions(streams: audioStreams) }
+    private var audio: DownloadAudioChoice {
+        audioChosen ?? DownloadAudio.preselected(options: audioOptions, streams: audioStreams,
+                                                 preferredLanguage: model.audioLanguage)
     }
     private var bytes: Int64 { version.reduce(0) { $0 + $1.bytes } }
-    private var converted: Bool { version.contains(where: \.converted) }
+    /// Built by the server: the size is an estimate.
+    private var converted: Bool { version.contains(where: \.streamed) }
+    /// Converted, not only cut down to one audio track.
+    private var recomputed: Bool { version.contains(where: \.converted) }
     private var offered: [DownloadQuality] {
         DownloadQuality.offered(
             selectable: model.downloadQualitySelectable,
@@ -79,11 +100,18 @@ struct LoadSheet: View {
             } else if let g = guete {
                 detail("sparkles", "Qualität", g)
             }
+            if audioSelect {
+                audioRow
+            } else if let a = audioName {
+                detail("speaker.wave.2", "Ton", a)
+            }
             detail("externaldrive", "Danach frei", DownloadRules.size(inquiry.freeAfter))
             button("Laden", filled: true) { start() }
             // **Explains the number instead of apologizing.**
-            if converted {
+            if recomputed {
                 hint("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
+            } else if converted {
+                hint("Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
             } else {
                 hint("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
             }
@@ -116,6 +144,7 @@ struct LoadSheet: View {
             if qualitySelect, model.downloadQualitySelectable, offered.count > 1 {
                 qualityRow
             }
+            if audioSelect { audioRow }
             detail("externaldrive", "Frei auf dem Gerät",
                    DownloadRules.size(management.free), cautionary: true)
 
@@ -194,6 +223,35 @@ struct LoadSheet: View {
         .overlay(alignment: .top) { SheetLine() }
     }
 
+    /// **Audio as a row with the choice on the right**, built like the quality row.
+    private var audioRow: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "speaker.wave.2")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.fontQuiet)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text("Ton")
+                .growing(15)
+                .foregroundStyle(Theme.font)
+            Spacer(minLength: 12)
+            AudioBadge(choice: Binding(get: { audio }, set: { audioChosen = $0 }),
+                       options: audioOptions)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, Theme.edgeSpacing)
+        .frame(minHeight: 52)
+        .overlay(alignment: .top) { SheetLine() }
+    }
+
+    /// What the audio row says when it is not a choice: a series brings the language
+    /// along from its selection.
+    private var audioName: String? {
+        guard let key = version.first?.audioLanguage, version.first?.audioIndex != nil
+        else { return nil }
+        return TrackLabel.language(key) ?? key
+    }
+
     private func button(_ text: LocalizedStringKey, filled: Bool,
                        perform: @escaping () -> Void) -> some View {
         Button(action: perform) { Text(text) }
@@ -225,6 +283,7 @@ struct LoadSheet: View {
 
     private func start() {
         opened = false
+        defer { audioChosen = nil }
         // Only what newly joins: an already failed item with the same ID would
         // otherwise count as "failed" immediately.
         let new = version.map(\.id).filter { id in !management.entries.contains { $0.id == id } }

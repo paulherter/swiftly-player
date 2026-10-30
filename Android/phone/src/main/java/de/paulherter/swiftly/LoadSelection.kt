@@ -92,6 +92,8 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
     var free by remember { mutableLongStateOf(v.free()) }
     /** Original until someone taps the badge and picks something else. */
     var quality by remember { mutableStateOf("original") }
+    /** `null` until someone picks: then the audio language from the settings applies. */
+    var audioChosen by remember { mutableStateOf<String?>(null) }
 
     val allEpisodes = seasons.flatMap { episodes[it.id].orEmpty() }
     fun lies(f: LoadEpisode) = v.entries(f.id) != null
@@ -121,6 +123,17 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
     }
     // If the chosen tier disappears, the original applies again.
     LaunchedEffect(offered) { if (offered.none { it.id == quality }) quality = "original" }
+
+    // **Audio as languages**, because the same language sits at a different index in every file. Only
+    // offered when the selected files hold more than one.
+    val selectedIds = selectedEpisodes.map { it.id }
+    var offer by remember { mutableStateOf(AudioOffer.none) }
+    LaunchedEffect(selectedIds) {
+        offer = if (selectedIds.isEmpty()) AudioOffer.none
+                else audioOfferRead(runCatching { app.kern.downloadAudioOptions(selectedIds.toTypedArray(), app.settings.audioLanguage).await() }.getOrNull())
+    }
+    /** The chosen language, or the one from the settings, or all tracks; never one the selection does not hold. */
+    val audio = (audioChosen ?: offer.preset).takeIf { c -> offer.offered && offer.options.any { it.id == c } } ?: "all"
 
     fun toggle(list: List<LoadEpisode>) {
         val take = takeable(list)
@@ -261,6 +274,9 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
             QualityBadge(quality, offered, selectable,
                                size = { q -> if (selected.isEmpty()) 0L else bytesIn(q) }) { quality = it }
         }
+        if (offer.offered) {
+            Box(Modifier.padding(horizontal = 16.dp)) { AudioBadge(audio, offer.options) { audioChosen = it } }
+        }
         // **With arrow**, as in the series' button row. Disabled on `erhoeht`: on a sheet in `area`
         // a disabled button in `area` would be just quiet text.
         Box(Modifier.padding(horizontal = 16.dp)) {
@@ -270,7 +286,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
                 val ids = allEpisodes.filter { it.id in selected }.map { it.id }
                 close()
                 // One sheet at a time: the loading sheet comes when this one is down.
-                app.downloadsCreate(ids, name, waitFor = 260, quality = quality)
+                app.downloadsCreate(ids, name, waitFor = 260, quality = quality, audio = audio)
             }
         }
     }
@@ -388,6 +404,54 @@ fun QualityBadge(choice: String, offered: List<QualityLevel>, selectable: Boolea
         if (!selectable) {
             Text(translated("Kleinere Fassungen gibt der Server für dieses Konto nicht frei."),
                  style = Theme.small, color = Theme.fontVeryQuiet)
+        }
+    }
+}
+
+/** One audio option from `Kern.downloadAudioOptions`: `all`, `track:N` or `lang:xx`. */
+data class AudioOption(val id: String, val text: String)
+
+/** Whether to ask at all, the options and the start value. */
+data class AudioOffer(val offered: Boolean, val options: List<AudioOption>, val preset: String) {
+    companion object { val none = AudioOffer(false, emptyList(), "all") }
+}
+
+fun audioOfferRead(json: String?): AudioOffer {
+    if (json.isNullOrEmpty()) return AudioOffer.none
+    val o = JSONObject(json)
+    val a = o.getJSONArray("optionen")
+    return AudioOffer(o.optBoolean("angeboten"), (0 until a.length()).map { a.getJSONObject(it).let { x -> AudioOption(x.getString("id"), x.getString("text")) } },
+                      o.optString("vorgabe", "all"))
+}
+
+/**
+ * Mirrors iOS `AudioBadge`: the audio choice as a pill like the quality one. A menu with a checkmark,
+ * "All audio tracks" first. Used in the series selection and in the load sheet of a film.
+ */
+@Composable
+fun AudioBadge(choice: String, options: List<AudioOption>, select: (String) -> Unit) {
+    var opened by remember { mutableStateOf(false) }
+    val current = options.firstOrNull { it.id == choice }?.text ?: options.firstOrNull()?.text.orEmpty()
+    Box {
+        Row(Modifier.heightIn(min = 44.dp).tapOn { opened = true }
+                .semantics { contentDescription = translated("Ton") + ", " + current },
+            verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Symbol(Glyph.Speaker, 13.dp, color = Theme.accent, strength = Strength.Semibold)
+                Text(current, style = Theme.small, color = Theme.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Symbol(Glyph.AngleDown, 11.dp, color = Theme.accent, strength = Strength.Semibold)
+            }
+        }
+        DropdownMenu(opened, onDismissRequest = { opened = false }, containerColor = Theme.raised,
+                     shape = RoundedCornerShape(Theme.cornerCard)) {
+            options.forEach { o ->
+                DropdownMenuItem(
+                    text = { Text(o.text, style = Theme.listTitle, color = Theme.font) },
+                    trailingIcon = if (o.id == choice) ({ Symbol(Glyph.Checkmark, 15.dp, color = Theme.accent, strength = Strength.Semibold) }) else null,
+                    onClick = { opened = false; select(o.id) })
+            }
         }
     }
 }

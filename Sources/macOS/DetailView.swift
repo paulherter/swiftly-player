@@ -670,6 +670,7 @@ struct DetailHero: View {
                         LoadPanel(model: model, entries: [p], title: title.name,
                                   images: loadImages, opened: $loadPanelOpen,
                                   qualitySelect: true,
+                                  audioStreams: (plan?.source ?? title.mediaSources?.first)?.mediaStreams ?? [],
                                   failed: { notify($0) })
                             .offset(y: Theme.primaryButtonHeight + 8)
                             .transition(.expand(from: .topLeading))
@@ -790,6 +791,8 @@ struct DetailHero: View {
                 gemeinsam: SharedModel.shared.mayCreate
                     ? { [title] in SharedModel.shared.createFor = title } : nil)
         }
+        list.insert(contentsOf: TitleActions.playOn(title.type == "Series" ? playBarTitle : title, model: model),
+                    at: 0)
         return list
     }
 

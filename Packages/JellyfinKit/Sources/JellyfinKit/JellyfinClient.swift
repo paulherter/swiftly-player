@@ -1320,13 +1320,25 @@ public actor JellyfinClient {
     ///
     /// The bolt is the same as for the original: without the download permission, no
     /// address.
+    ///
+    /// **`audioStreamIndex` cuts the file down to one track.** On the original quality it
+    /// is a remux (picture and sound copied, `Accept-Ranges: none` as above), on a lower
+    /// level it only says which track is recomputed.
     public func downloadURL(itemID: String, mediaSourceID: String?,
-                            quality: DownloadQuality) throws -> URL {
-        guard !quality.isOriginal,
-              let image = quality.imageBitrate, let audio = quality.audioBitrate,
-              let height = quality.height, let width = quality.width,
-              let channels = quality.audioChannels
-        else { return try downloadURL(itemID: itemID, mediaSourceID: mediaSourceID) }
+                            quality: DownloadQuality,
+                            audioStreamIndex: Int? = nil) throws -> URL {
+        let converting: (image: Int, audio: Int, height: Int, width: Int, channels: Int)?
+        if !quality.isOriginal, let image = quality.imageBitrate, let audio = quality.audioBitrate,
+           let height = quality.height, let width = quality.width,
+           let channels = quality.audioChannels {
+            converting = (image, audio, height, width, channels)
+        } else {
+            converting = nil
+        }
+        // The original with every track is the plain file.
+        if converting == nil, audioStreamIndex == nil {
+            return try downloadURL(itemID: itemID, mediaSourceID: mediaSourceID)
+        }
         guard downloadRightState.mayLoad else {
             throw JellyfinError.http(status: 403, body: "EnableContentDownloading")
         }
@@ -1339,13 +1351,31 @@ public actor JellyfinClient {
         var query: [URLQueryItem] = [
             .init(name: "static", value: "false"),
             .init(name: "container", value: c),
-            .init(name: "videoCodec", value: "h264"),
-            .init(name: "audioCodec", value: "aac"),
-            .init(name: "videoBitRate", value: String(image)),
-            .init(name: "audioBitRate", value: String(audio)),
-            .init(name: "maxAudioChannels", value: String(channels)),
-            .init(name: "maxHeight", value: String(height)),
-            .init(name: "maxWidth", value: String(width)),
+        ]
+        if let converting {
+            query += [
+                .init(name: "videoCodec", value: "h264"),
+                .init(name: "audioCodec", value: "aac"),
+                .init(name: "videoBitRate", value: String(converting.image)),
+                .init(name: "audioBitRate", value: String(converting.audio)),
+                .init(name: "maxAudioChannels", value: String(converting.channels)),
+                .init(name: "maxHeight", value: String(converting.height)),
+                .init(name: "maxWidth", value: String(converting.width)),
+            ]
+        } else {
+            // **Only the choice of track, nothing recomputed.** Picture and sound are
+            // copied; the server just leaves the other tracks out of the container.
+            query += [
+                .init(name: "videoCodec", value: "copy"),
+                .init(name: "audioCodec", value: "copy"),
+                .init(name: "allowVideoStreamCopy", value: "true"),
+                .init(name: "allowAudioStreamCopy", value: "true"),
+            ]
+        }
+        if let audioStreamIndex {
+            query.append(.init(name: "AudioStreamIndex", value: String(audioStreamIndex)))
+        }
+        query += [
             // The device ID keeps the conversion job apart on the server; two downloads of
             // the same title from two devices would otherwise share one job.
             .init(name: "deviceId", value: deviceID),

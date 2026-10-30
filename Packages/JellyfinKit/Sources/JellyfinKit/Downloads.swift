@@ -62,6 +62,10 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
         case pointTicks = "stelleTicks"
         case recent = "zuletzt"
         case videoCodec = "bildcodec"
+        case audioIndex = "tonIndex"
+        case audioLanguage = "tonSprache"
+        case replaces = "ersetzt"
+        case nextPending = "naechsteOffen"
     }
 
     public enum Art: String, Codable, Sendable, Equatable {
@@ -124,6 +128,24 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
     /// converted before this field existed; free choice applies then.
     public var videoCodec: String?
 
+    // MARK: Audio and the next episode
+    //
+    // Also optional and at the end, for the same reason as above: older lists decode
+    // them as `nil`, which means "all audio tracks, nothing pending".
+
+    /// The one audio track the file holds (the server's stream index). `nil`: the
+    /// original file with all tracks.
+    public var audioIndex: Int?
+    /// The language the audio track was chosen by, for a series: the next episode is
+    /// loaded with the same language, its index may differ. See ``DownloadAudio``.
+    public var audioLanguage: String?
+    /// The ID of the watched episode this one was loaded to follow. Once this
+    /// episode is on the device, that one is removed. See ``DownloadRules/replacedOne(by:in:)``.
+    public var replaces: String?
+    /// Set when this episode was watched to the end and its successor could not be
+    /// looked up yet (no server). The next contact with the server does it.
+    public var nextPending: Bool?
+
     public init(id: String, account: String, art: Art, title: String,
                 series: String? = nil, seriesIdentifier: String? = nil,
                 season: Int? = nil, episode: Int? = nil,
@@ -134,7 +156,9 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
                 reason: String? = nil, watched: Bool = false,
                 created: Date = Date(), stillOnTheServer: Bool = true,
                 sections: [Segment]? = nil, pointTicks: Int64? = nil,
-                recent: Date? = nil, videoCodec: String? = nil) {
+                recent: Date? = nil, videoCodec: String? = nil,
+                audioIndex: Int? = nil, audioLanguage: String? = nil,
+                replaces: String? = nil, nextPending: Bool? = nil) {
         self.id = id; self.account = account; self.art = art; self.title = title
         self.series = series; self.seriesIdentifier = seriesIdentifier
         self.season = season; self.episode = episode
@@ -148,6 +172,8 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
         self.recent = recent
         // A converted file has the server's video codec, not the original's.
         self.videoCodec = self.quality == nil ? videoCodec : nil
+        self.audioIndex = audioIndex; self.audioLanguage = audioLanguage
+        self.replaces = replaces; self.nextPending = nextPending
     }
 
     /// **A title's watch state as the server knows it**, passed along when creating
@@ -174,12 +200,18 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
         // **An estimate never quite reaches the end.** If the converted file ends up
         // larger than calculated, the ring would otherwise sit full for a long time
         // while still loading.
-        return converted && state != .done ? min(value, 0.99) : value
+        return streamed && state != .done ? min(value, 0.99) : value
     }
 
     /// Is the file converted by the server? Then ``bytes`` is estimated until the
     /// end.
     public var converted: Bool { quality.map { !$0.isOriginal } ?? false }
+
+    /// **Is the file built by the server while it is loaded?** Converted, or cut down
+    /// to one audio track. Either way there is no length up front and no resuming
+    /// (`Accept-Ranges: none`), ``bytes`` is an estimate until the end, and
+    /// subtitles come as separate files because the built file carries none.
+    public var streamed: Bool { converted || audioIndex != nil }
 
     /// The chosen quality; `nil` counts as original.
     public var guete: DownloadQuality { quality ?? .original }
@@ -195,13 +227,14 @@ public struct DownloadItem: Codable, Sendable, Equatable, Identifiable {
         DownloadItem(
             id: id, account: account, art: art, title: title, series: series, seriesIdentifier: seriesIdentifier,
             season: season, episode: episode, runtimeTicks: runtimeTicks,
-            container: q.isOriginal ? container : DownloadQuality.container,
+            container: q.isOriginal && audioIndex == nil ? container : DownloadQuality.container,
             source: source,
             bytes: q.estimatedBytes(original: bytes, runtimeTicks: runtimeTicks),
             quality: q, loaded: loaded, state: state, reason: reason, watched: watched,
             created: created, stillOnTheServer: stillOnTheServer,
             sections: sections, pointTicks: pointTicks, recent: recent,
-            videoCodec: videoCodec)
+            videoCodec: videoCodec, audioIndex: audioIndex, audioLanguage: audioLanguage,
+            replaces: replaces, nextPending: nextPending)
     }
 
     /// An `Item` from what is stored here, **for playback without network.**
@@ -604,6 +637,70 @@ public enum DownloadRules {
                     && ($0.season ?? 0, $0.episode ?? 0) > here
             }
             .min { ($0.season ?? 0, $0.episode ?? 0, $0.id) < ($1.season ?? 0, $1.episode ?? 0, $1.id) }
+    }
+
+    // MARK: Next episode
+
+    /// **Has this playback reached the end?** The same line as ``postPlayback``: from
+    /// 90 % a title counts as watched.
+    public static func reachedEnd(ticks: Int64, runtimeTicks: Int64?) -> Bool {
+        guard let runtime = runtimeTicks, runtime > 0 else { return false }
+        return Double(ticks) / Double(runtime) >= watchedOff
+    }
+
+    /// Does this entry have a successor to look for: a finished episode with a series
+    /// and a number?
+    public static func hasSuccessor(_ item: DownloadItem) -> Bool {
+        item.state == .done && item.art == .episode
+            && item.seriesIdentifier != nil && item.episode != nil
+    }
+
+    /// **The episode after this one in the series**, from the server's list: by season
+    /// and number, specials (season 0) before everything, so a regular episode never
+    /// leads to one. `nil` after the last episode.
+    public static func followingEpisode(after item: DownloadItem, in episodes: [Item]) -> Item? {
+        guard let number = item.episode else { return nil }
+        let here = (item.season ?? 0, number)
+        return episodes
+            .filter { $0.id != item.id && $0.indexNumber != nil
+                && ($0.parentIndexNumber ?? 0, $0.indexNumber ?? 0) > here }
+            .min { ($0.parentIndexNumber ?? 0, $0.indexNumber ?? 0, $0.id)
+                < ($1.parentIndexNumber ?? 0, $1.indexNumber ?? 0, $1.id) }
+    }
+
+    /// **The download that follows a watched one**: same series and account, **same
+    /// quality and same audio language**, and the link back that removes the watched
+    /// one once this is on the device (``replacedOne(by:in:)``).
+    ///
+    /// If the next episode lacks the language, it is loaded with every track; the
+    /// language is still carried along, so the episode after it can use it again.
+    public static func followUp(to watched: DownloadItem, next: Item) -> DownloadItem {
+        let source = next.mediaSources?.first
+        var follower = DownloadItem(
+            id: next.id, account: watched.account, art: .episode, title: next.name,
+            series: watched.series, seriesIdentifier: watched.seriesIdentifier,
+            season: next.parentIndexNumber ?? watched.season, episode: next.indexNumber,
+            runtimeTicks: next.runTimeTicks, container: source?.container,
+            source: source?.id, bytes: source?.size ?? 0,
+            watchState: next.userData, videoCodec: source?.videoCodec)
+            .inQuality(watched.guete)
+        if let language = watched.audioLanguage {
+            follower = follower.withAudio(.language(language), streams: source?.mediaStreams ?? [])
+            follower.audioLanguage = language
+        }
+        follower.replaces = watched.id
+        return follower
+    }
+
+    /// **Which watched episode to remove now that this one is finished**, if any: the
+    /// one it was loaded to follow, as long as it is still on the device, finished and
+    /// watched. Anything else (removed by hand, started over, not watched after all)
+    /// stays.
+    public static func replacedOne(by item: DownloadItem, in entries: [DownloadItem]) -> String? {
+        guard item.state == .done, let old = item.replaces,
+              let entry = entries.first(where: { $0.id == old && $0.account == item.account }),
+              entry.state == .done, entry.watched else { return nil }
+        return old
     }
 
     /// **The segments of a title, stored ones first.**

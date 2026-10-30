@@ -29,9 +29,10 @@ import VLCKit
 /// - **Size:** factor on VLC's default (6.25 % of the picture height), a bit
 /// larger on TV because viewers sit farther away.
 /// - **Outline/shadow:** `outline-thickness` is a percentage of the font
-/// height; 3 instead of VLC's 4. VLC cannot do a soft shadow, so only a short,
-/// semi-transparent downward offset. Compared against a 2 % outline on a
-/// bright picture: that looked hollow and was hard to read.
+/// height; 3 instead of VLC's 4. Compared against a 2 % outline on a bright
+/// picture: that looked hollow and was hard to read. **No shadow:** VLC cannot
+/// do a soft one, only a hard copy of glyph and outline, offset at an angle,
+/// and that read as a slanted outline behind upright text.
 /// - **Margin:** `sub-margin` in video pixels; VLC 4 otherwise places the
 /// text closer to the bottom edge than VLC 3.
 ///
@@ -45,9 +46,7 @@ enum SubtitleStyle {
         "--freetype-color=16777215",
         "--freetype-outline-thickness=3",
         "--freetype-outline-opacity=230",
-        "--freetype-shadow-opacity=120",
-        "--freetype-shadow-distance=0.04",
-        "--freetype-shadow-angle=-70",
+        "--freetype-shadow-opacity=0",
         "--sub-margin=30",
     ]
 
@@ -1371,6 +1370,7 @@ final class VLCPlayerView: BaseView {
         lastContainer = container
         subtitleFiles = subtitle
         trackSource = nil
+        trackOriginal = nil
         firstFrameLevel = .no
         softwareDecoder = initialSoftware
         player.videoAspectRatio = nil
@@ -2084,6 +2084,9 @@ final class VLCPlayerView: BaseView {
     private var trackTitle: String?
     /// The server's information on the running file: `MediaStream`s and defaults.
     private var trackSource: MediaSource?
+    /// The title's original language (`Item.originalLanguage`), for "(Original)" on audio
+    /// tracks. Set together with `trackSource`.
+    private var trackOriginal: String?
     /// Subtitle files attached to the media. Set before `play(url:)` and
     /// reattached after a rebuild.
     private var subtitleFiles: [SubtitleFile] = []
@@ -2138,6 +2141,23 @@ final class VLCPlayerView: BaseView {
                       channels: track.audio.map { Int($0.channelsNumber) })
     }
 
+    /// **The label of an audio track in the track menus**: "German - AAC - 5.1", and
+    /// "(Original)" behind it when the track is the title's original language
+    /// (``OriginalAudio``). Without a server source nothing is added.
+    func audioLabel(_ track: VLCMediaPlayer.Track) -> String {
+        let base = track.prettyName
+        guard let streams = trackSource?.mediaStreams, !streams.isEmpty else { return base }
+        let tracks = player.audioTracks
+        var stream: MediaStream?
+        if let position = tracks.firstIndex(where: { $0.trackId == track.trackId }),
+           let index = mapping(audio: tracks, subtitle: []).audio[position] {
+            stream = streams.first { $0.index == index && $0.type == "Audio" }
+        }
+        // The track's own language first; the matched stream may be missing.
+        return OriginalAudio.label(base, language: track.language ?? stream?.language,
+                                   stream: stream, originalLanguage: trackOriginal)
+    }
+
     private func mapping(audio: [VLCMediaPlayer.Track], subtitle: [VLCMediaPlayer.Track]) -> TrackMapping {
         TrackMapping.compose(audio: audio.map(Self.playerTrack),
                              subtitle: subtitle.map(Self.playerTrack),
@@ -2152,9 +2172,10 @@ final class VLCPlayerView: BaseView {
     /// ``Spurzuordnung``. Before, both went by track name, and audio was
     /// not remembered at all.
     func wendeLanguagesAn(audio: String, subtitle: String, automatic: Bool,
-                         source: MediaSource?, title: String?) {
+                         source: MediaSource?, title: String?, originalLanguage: String? = nil) {
         trackTitle = title
         trackSource = source
+        trackOriginal = originalLanguage
         let streams = source?.mediaStreams ?? []
         let audioTracks = player.audioTracks
         let subTracks = player.textTracks

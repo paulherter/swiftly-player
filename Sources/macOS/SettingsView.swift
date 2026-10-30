@@ -45,6 +45,14 @@ struct SettingsView: View {
                     .frame(maxWidth: Theme.formWidth, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) {
                         server
+                        // Settings follow the account to every device (`SettingsSyncRun`).
+                        SettingGroup(title: "Konto") {
+                            ToggleRow(symbol: "arrow.triangle.2.circlepath",
+                                      title: Text("Einstellungen auf allen Geräten gleich halten"),
+                                      under: Text("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
+                                      an: Binding(get: { model.settingsSync.on },
+                                                  set: { model.settingsSync.on = $0 }))
+                        }
                         // Custom headers for a service in front of the server (issue #4), collapsed under
                         // the group.
                         MacOwnHeaders(model: model)
@@ -107,6 +115,11 @@ struct SettingsView: View {
                               under: Text("Downloads warten, bis du im WLAN bist"),
                               an: Binding(get: { model.onlyOverWLAN },
                                           set: { model.onlyOverWLAN = $0 }))
+                ToggleRow(symbol: "play.square.stack",
+                              title: Text("Nächste Folge laden"),
+                              under: Text("Lädt die nächste, löscht die gesehene"),
+                              an: Binding(get: { model.downloads.nextAuto },
+                                          set: { model.downloads.nextAuto = $0 }))
                 ValuesRow(symbol: "internaldrive",
                            title: Text("Speicher"),
                            under: Text("\(model.downloads.entries.count) Titel auf diesem Mac"),

@@ -9,8 +9,14 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -55,6 +61,11 @@ class TvActivity : ComponentActivity() {
             LaunchedEffect(app.signedOut.intValue) { if (app.signedOut.intValue > 0) phase = Phase.Server }
             var started by rememberSaveable { mutableStateOf(false) }
             // The screen as a recorded layer, source of the still frame for the account switch (`AccountSwitchTransition`).
+            var pickerOpen by remember { mutableStateOf(ProfilePickerRule.opensAtLaunch(app, phase == Phase.Start)) }
+            var pickerNotice by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(pickerNotice) { if (pickerNotice != null) { delay(4000); pickerNotice = null } }
+            // Server names for the picker, kept per address (`Session` has none).
+            LaunchedEffect(app.serverName.value) { ProfilePickerRule.remember(app, app.serverName.value) }
             val screen = androidx.compose.ui.graphics.rememberGraphicsLayer()
             SideEffect { de.paulherter.swiftly.AccountSwitchTransition.screen = screen }
             Box(Modifier.fillMaxSize().background(Theme.reason)) {
@@ -69,8 +80,23 @@ class TvActivity : ComponentActivity() {
                     is Phase.Login -> TvLoginPage(app, p.serverName, p.version,
                         otherServer = { phase = Phase.Server }) { phase = Phase.Start }
                     // Fresh after an account switch: the stacks belong to the previous account.
-                    Phase.Start -> key(app.accountSwitch.intValue) { TvMain(app) }
+                    Phase.Start -> {
+                        // **Decided once per process** (`ProfilePickerRule`): a return, a switch or a sign-in never opens it.
+                        // The page below is blurred from the first frame, dimmed, and out of reach of focus.
+                        Box(Modifier.fillMaxSize()
+                                .then(if (pickerOpen) Modifier.blur(30.dp).focusProperties { canFocus = false } else Modifier)) {
+                            key(app.accountSwitch.intValue) { TvMain(app) }
+                            if (pickerOpen) Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = 0.6f)))
+                        }
+                        if (pickerOpen) TvProfilePicker(app, entered = started, close = { pickerOpen = false; ProfilePickerRule.answered() }) { pickerNotice = it }
+                    }
                 }
+                }
+                pickerNotice?.let { text ->
+                    Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.TopCenter) {
+                        Text(text, style = TvTheme.small, color = Theme.font,
+                             modifier = Modifier.background(Theme.area, RoundedCornerShape(TvTheme.corner)).padding(horizontal = 14.dp, vertical = 8.dp))
+                    }
                 }
                 // The account switch: still frame, flying profile image, ring, above everything.
                 de.paulherter.swiftly.AccountSwitchLayer()

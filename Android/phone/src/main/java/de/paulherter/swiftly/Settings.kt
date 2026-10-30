@@ -176,6 +176,45 @@ class Settings(store: Store) {
     val downloadQualitySelectable: Boolean
         get() = downloadQualityAccount != "0"
     /** Original files are large, so wait on mobile data. */
+    /**
+     * Takes values from the server (`SettingsSync` encoding: `true`/`false`, JSON lists) into the settings.
+     * Only what the server sent. In the order of the list: the language comes before "automatic".
+     */
+    fun applySynced(values: Map<String, String>) {
+        fun bool(n: String) = values[n]?.let { if (it == "true") true else if (it == "false") false else null }
+        fun lst(n: String) = values[n]?.let { raw ->
+            runCatching { JSONArray(raw).let { j -> (0 until j.length()).map { j.getString(it) } } }.getOrNull()
+        }
+        values["tonSprache"]?.let { audioLanguage = it }
+        values["utSprache"]?.let { subtitleLanguage = it }
+        bool("utAuto")?.let { subtitleAutomatic = it }
+        bool("naechsteAuto")?.let { nextAutomatic = it }
+        bool("introAbspannAuto")?.let { introOutroAutomatic = it }
+        bool("restzeitAlsEnde")?.let { a.remember("restzeitAlsEnde", if (it) "1" else "0") }
+        values["vorSek"]?.toIntOrNull()?.let { forwardSeconds = it }
+        values["zurueckSek"]?.toIntOrNull()?.let { backSeconds = it }
+        bool("titelAlsLogo")?.let { titleAsLogo = it }
+        bool("fortschritt")?.let { progress = it }
+        bool("merklisteAn")?.let { watchlist = it }
+        bool("alphabetAn")?.let { alphabet = it }
+        bool("neuGetrennt")?.let { newAccessDisconnected = it }
+        bool("genreChips")?.let { genreChips = it }
+        lst("startReihen")?.let { startRails = it }
+        lst("startAus")?.let { startOut = it }
+        lst("startGenres")?.let { startGenres = it }
+        values["startBibliotheken"]?.let { raw ->
+            runCatching {
+                val j = JSONArray(raw)
+                startLibraries = (0 until j.length()).mapNotNull { i ->
+                    val o = j.optJSONObject(i) ?: return@mapNotNull null
+                    val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                    StartLibraryItem(id, o.optString("name"), o.optBoolean("sammlung", false))
+                }
+            }
+        }
+    }
+    /** "Load next episode": off by default; the next episode of a watched download is loaded and the watched one removed (`naechsteFolgeLaden`). */
+    var loadNextEpisode by RememberValue(a, "naechsteFolgeLaden", bool("naechsteFolgeLaden", false), yesNo)
     var onlyOverWLAN by RememberValue(a, "nurUeberWLAN", bool("nurUeberWLAN", true), yesNo)
     /**
          * Output decoded multichannel audio (AAC/FLAC 5.1, 7.1) unchanged. Off: libVLC downmixes it

@@ -426,6 +426,13 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
                 open(Destination("eigenkoepfe", translated("Eigene Header"), "EigeneKoepfe"))
             }
         }
+        // Settings follow the account to every device (`SettingsSyncRun`). On by default.
+        SettingGroup(translated("Konto")) {
+            ChoiceRow(Glyph.Rotate, translated("Einstellungen auf allen Geräten gleich halten"),
+                      translated("Sprachen, Überspringen und Startseite liegen auf deinem Server"), app.settingsSync.on.value) {
+                app.settingsSync.onSet(it)
+            }
+        }
         // "Support Swiftly" and the app icon, last, as on iPhone.
         de.paulherter.swiftly.support.SupportSettingsGroup(app, open)
         de.paulherter.swiftly.support.VersionLine(app, "${SwiftlyApplication.VersionRow} · libVLC 3.6.3",

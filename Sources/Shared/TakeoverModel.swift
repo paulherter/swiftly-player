@@ -318,10 +318,10 @@ final class PlayOutputs {
     func take(_ sessions: [RemoteSession], user: String) {
         let fresh = PlayTargets.targets(from: sessions, ownDevicesIdentifier: AppModel.deviceID,
                                         ownUserIdentifier: user)
-        if fresh.map(\.id) != targets.map(\.id) {
-            AppLog.writeOut("[Abspielen auf] \(fresh.count) Ziele: "
-                + fresh.map { PlayTargets.name(of: $0) }.joined(separator: ", "))
-        }
+        // Only on a change: every assignment redraws each page that reads the list.
+        guard fresh.map(\.id) != targets.map(\.id) else { return }
+        AppLog.writeOut("[Abspielen auf] \(fresh.count) Ziele: "
+            + fresh.map { PlayTargets.name(of: $0) }.joined(separator: ", "))
         targets = fresh
     }
 
@@ -363,10 +363,24 @@ final class PlayOutputs {
     /// - Returns: whether the TV took it; only then does the player close.
     func handOver(_ item: Item, plan: PlaybackPlan, at seconds: Double, tracks: TrackIndices,
                   to output: PlayOutput, model: AppModel) async -> Bool {
-        guard let client = model.client,
-              let session = await current(output, model: model) else { return false }
         let order = PlayOrder(itemID: item.id, start: seconds, mediaSourceID: plan.mediaSourceID,
                               tracks: tracks)
+        return await send(order, to: output, model: model)
+    }
+
+    /// **Starts a title on the chosen device straight from a detail page or a tile
+    /// menu**, without opening the player here. Only the ID and the resume position go
+    /// out (nothing at all for a title not begun); version and tracks are left to the
+    /// TV, which fetches its own plan (``PlayOrder``).
+    func play(_ item: Item, to output: PlayOutput, model: AppModel) async {
+        let order = PlayOrder(itemIDs: [item.id], start: item.resumeFrom ?? 0)
+        _ = await send(order, to: output, model: model)
+    }
+
+    /// The one path to the TV for both ways: fresh session, order, log, message.
+    private func send(_ order: PlayOrder, to output: PlayOutput, model: AppModel) async -> Bool {
+        guard let client = model.client,
+              let session = await current(output, model: model) else { return false }
         let name = PlayTargets.name(of: session)
         do {
             try await client.playOn(session: session.id, order: order)

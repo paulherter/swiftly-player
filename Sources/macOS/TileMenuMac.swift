@@ -80,6 +80,24 @@ struct TileMenu: ViewModifier {
                 Label("Als ungesehen markieren", systemImage: "eye.slash")
             }
         }
+        // "Abspielen auf …": the TVs in reach, only for something that can start right away.
+        if !isSeries, !inPlayer {
+            let targets = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+            if !targets.isEmpty {
+                Menu {
+                    ForEach(targets, id: \.deviceID) { target in
+                        Button {
+                            let item = item, model = model
+                            Task { await PlayOutputs.shared.play(item, to: target, model: model) }
+                        } label: {
+                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                        }
+                    }
+                } label: {
+                    Label("Abspielen auf …", systemImage: "tv")
+                }
+            }
+        }
         if !isSeries, !inPlayer, SharedModel.shared.mayCreate {
             Button { SharedModel.shared.createFor = item } label: {
                 Label("Gemeinsam schauen", systemImage: "person.2")

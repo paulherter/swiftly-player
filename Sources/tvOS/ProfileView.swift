@@ -612,15 +612,24 @@ struct ProfileView: View {
             .focused($right, equals: .top)
 
         case .account:
+            // Settings follow the account to every device (`SettingsSyncRun`).
+            ToggleRow(title: "Einstellungen auf allen Geräten gleich halten",
+                      an: model.settingsSync.on) {
+                model.settingsSync.on.toggle()
+            }
+            .focused($right, equals: .top)
+            SeparatorLine()
             // **"Add another account" is the plus in the account card**, where the accounts
             // stand. "Add server" in the Server area is the same path.
             ActionRow(title: "Server hinzufügen") { serverRecord = true }
+            SeparatorLine()
+            // The way back from "off" in the cold-start picker.
+            AskAtLaunchRow()
             SeparatorLine()
             // **Affects only the active account.** If others exist, the app switches to the
             // next one; only at the last one does it go back to sign-in. That logic lives in
             // the state holder, not here.
             ActionRow(title: "Abmelden") { model.signOut() }
-                .focused($right, equals: .top)
         }
     }
 

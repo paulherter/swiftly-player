@@ -35,10 +35,31 @@ suspend fun SwiftlyApplication.playTargetsRefresh() {
  * **The running title from the player to the TV** (`PlayOutputs.handOver`): same position, version and
  * tracks. `true` only if the TV took it; then the player leaves.
  */
-suspend fun SwiftlyApplication.playOnHandOver(output: PlayOutputChoice, position: Double): Boolean {
-    val answer = runCatching {
-        JSONObject(withContext(Dispatchers.IO) { kern.playHandOver(output.deviceID, output.name, position).await() })
-    }.getOrNull()
+suspend fun SwiftlyApplication.playOnHandOver(output: PlayOutputChoice, position: Double): Boolean =
+    playOnAnswer(output) { kern.playHandOver(output.deviceID, output.name, position).await() }
+
+/**
+ * **A title started on the TV from a detail page or a menu** (`PlayOutputs.play`), without opening the
+ * player here. `position` < 0: the core takes the server's resume position.
+ */
+suspend fun SwiftlyApplication.playOnStart(itemID: String, output: PlayOutputChoice, position: Double = -1.0): Boolean =
+    playOnAnswer(output) { kern.playOn(itemID, output.deviceID, output.name, position).await() }
+
+/** The entries "Abspielen auf …" of a sheet: (value, text) per TV in reach; the value starts with [PLAY_ON_PREFIX]. */
+internal const val PLAY_ON_PREFIX = "abspielenAuf:"
+internal fun SwiftlyApplication.playOnChoices(): List<Pair<String, String>> =
+    playTargets.value.map { PLAY_ON_PREFIX + it.deviceID to translated("Abspielen auf „%@“", it.name) }
+
+/** Runs a sheet choice made of [playOnChoices]; `false` if it was not one. */
+internal fun SwiftlyApplication.playOnChosen(value: String, itemID: String, position: Double = -1.0): Boolean {
+    if (!value.startsWith(PLAY_ON_PREFIX)) return false
+    val target = playTargets.value.firstOrNull { it.deviceID == value.removePrefix(PLAY_ON_PREFIX) } ?: return true
+    applicationRun.launch { playOnStart(itemID, target, position) }
+    return true
+}
+
+private suspend fun SwiftlyApplication.playOnAnswer(output: PlayOutputChoice, ask: suspend () -> String): Boolean {
+    val answer = runCatching { JSONObject(withContext(Dispatchers.IO) { ask() }) }.getOrNull()
     val reason = answer?.optString("grund") ?: "nichtVerbunden"
     val name = answer?.optString("name")?.takeIf { it.isNotEmpty() } ?: output.name
     when (reason) {

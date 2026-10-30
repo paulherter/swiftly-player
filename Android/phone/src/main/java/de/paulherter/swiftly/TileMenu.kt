@@ -221,6 +221,8 @@ internal fun tileMenuEntries(app: SwiftlyApplication, w: TileMenuRequest): List<
     add(Triple("ungesehen", translated("Als ungesehen markieren"), Glyph.Auge))
     if (!isSeries && !w.inPlayer && !app.isTv && app.settings.downloadButtonShow && app.downloads.entries(w.id) == null)
         add(Triple("laden", translated("Laden"), Glyph.LoadCircle))
+    // "Abspielen auf …": the TVs in reach, for something that can start right away.
+    if (!isSeries && !w.inPlayer) app.playOnChoices().forEach { add(Triple(it.first, it.second, Glyph.Tv)) }
     if (!isSeries && !w.inPlayer && app.gemeinsam.value.mayCreate) add(Triple("gemeinsam", translated("Gemeinsam schauen"), Glyph.Cluster))
     if (w.continueWatching) add(Triple("entfernen", translated("Aus Weiterschauen entfernen"), Glyph.MinusCircle))
 }
@@ -243,6 +245,7 @@ fun WatchStateChange(app: SwiftlyApplication, perform: suspend () -> Unit) {
 
 internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: String, open: (Destination) -> Unit) {
     val afterwards = w.afterwards
+    if (app.playOnChosen(was, w.id)) return
     app.applicationRun.launch {
         when (was) {
             "abspielen" -> {

@@ -361,7 +361,7 @@ struct TracksLayer: View {
             ColumnsRail(mass: mass) {
                 SelectionColumn(title: "Audio", mass: mass, wide: true) {
                     ForEach(surface?.audioTracks ?? [], id: \.trackId) { track in
-                        LayersRow(text: track.prettyName, selected: audioNow == track.trackId,
+                        LayersRow(text: surface?.audioLabel(track) ?? track.prettyName, selected: audioNow == track.trackId,
                                   mass: mass) {
                             audioSelection = track.trackId
                             surface?.selectAudioTrack(track)

@@ -367,7 +367,8 @@ struct MainView: View {
             var without = Transaction()
             without.disablesAnimations = true
             withTransaction(without) { emptyStack() }
-            profileFocus += 1
+            // From the cold-start picker you came to watch: focus stays with the page.
+            if !ProfilePickerHandoff.consume() { profileFocus += 1 }
             #if DEBUG
             if AccountSwitchRun.an, let ms = AccountSwitchRun.profileTip {
                 Task {

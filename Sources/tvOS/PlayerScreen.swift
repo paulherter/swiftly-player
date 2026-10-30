@@ -1456,7 +1456,7 @@ struct PlayerScreen: View {
         guard !switches else { return false }
         var new = layer
         let done = new.tick(offering: offering,
-                          cardDue: SectionLogic.cardDue(position: position, duration: duration,
+                          cardDue: model.nextAutomatic && SectionLogic.cardDue(position: position, duration: duration,
                                                                      sections: sections,
                                                                      hasNextEpisode: next != nil,
                                                                      remainingWindow: EpisodeCard.remainingWindow),
@@ -1887,7 +1887,8 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: item))
+                                        title: TrackMemory.title(for: item),
+                                        originalLanguage: item.originalLanguage)
             }
             // Stay silent during the switch, as on iOS: otherwise progress for the old episode goes out after the stop.
             //
@@ -1943,7 +1944,7 @@ struct PlayerScreen: View {
                 changeInto(episode, fromCard: cardBefore)
             }
 
-            // Continue by itself at the end, only with the card (outro section from the server) and not if it was cancelled. "Next episode automatically" no longer matters here.
+            // Continue by itself at the end, only with the card (outro section from the server) and not if it was cancelled. With "Next episode automatically" off there is no card (see `offeringCatchUp`), so nothing advances.
             if layer.nextAtEnd, let episode = next, !switches,
                // Only once the new episode is really up. Otherwise the old one's time still counts, and that is naturally at the end.
                firstImagePresent,

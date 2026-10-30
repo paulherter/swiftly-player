@@ -272,8 +272,11 @@ struct SeriesDetailView: View {
             // collects episodes; space, Wi-Fi and size are still computed by `LoadSheet`.
             LoadSelection(opened: $selectionOpen, model: model, series: series,
                         seasons: seasons,
-                        preloaded: selectedSeason.map { [$0.id: episodes] } ?? [:]) { selected, quality in
-                let newOne = selected.compactMap { entries($0)?.inQuality(quality) }
+                        preloaded: selectedSeason.map { [$0.id: episodes] } ?? [:]) { selected, quality, audio in
+                let newOne = selected.compactMap { episode in
+                    entries(episode)?.inQuality(quality)
+                        .withAudio(audio, streams: episode.mediaSources?.first?.mediaStreams ?? [])
+                }
                 guard !newOne.isEmpty else { return }
                 sheetShow(newOne, title: series.name)
             }
@@ -1321,6 +1324,7 @@ extension SeriesDetailView {
                                               report: { message = $0 },
                                               gemeinsam: SharedModel.shared.mayCreate
                                                   ? { SharedModel.shared.createFor = $0 } : nil)
+        list.insert(contentsOf: TitleActions.playOn(state, model: model), at: 0)
         // The trailer, when Download has its place in the row. Not the other way round,
         // or it would appear twice.
         if model.downloadButtonShow {

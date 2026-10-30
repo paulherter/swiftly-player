@@ -176,22 +176,45 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
     val v = app.downloads
     var choice by remember { mutableStateOf("original") }
     // The items in the chosen quality: Matroska and estimated size once converting.
-    val newOne = remember(choice) {
-        if (!qualitySelect || choice == "original") original
+    val selectable = app.settings.downloadQualitySelectable
+    // **The audio tracks of a film**, to choose one before loading. A series brings its choice from the selection.
+    var offer by remember { mutableStateOf(AudioOffer.none) }
+    LaunchedEffect(Unit) {
+        if (qualitySelect && selectable && original.size == 1)
+            offer = audioOfferRead(runCatching { app.kern.downloadAudioOptions(arrayOf(original[0].id), app.settings.audioLanguage).await() }.getOrNull())
+    }
+    var audioChosen by remember { mutableStateOf<String?>(null) }
+    val audioSelect = qualitySelect && selectable && offer.offered
+    val audio = audioChosen ?: offer.preset
+    // The items in the chosen quality and audio: Matroska and estimated size once converting.
+    val newOne = remember(choice, audio, audioSelect) {
+        val base = if (!qualitySelect || choice == "original") original
         else JSONArray(Kern.downloadInQuality(DownloadItem.list(original), choice)).let { a ->
+            (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) }
+        }
+        if (!audioSelect) base
+        else JSONArray(app.kern.downloadWithAudio(DownloadItem.list(base), audio)).let { a ->
             (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) }
         }
     }
     val bytes = newOne.sumOf { it.bytes }
-    val converted = newOne.any { it.converted }
+    // Built by the server: the size is an estimate. Converted, not only cut down to one audio track.
+    val converted = newOne.any { it.streamed }
+    val recomputed = newOne.any { it.converted }
     val slot = remember(bytes) { JSONObject(Kern.downloadSpace(bytes, free, DownloadItem.list(v.entries.value))) }
-    val selectable = app.settings.downloadQualitySelectable
     val offered = remember(selectable) {
         qualitiesRead(Kern.downloadQualities(selectable, JSONArray(original.map { JSONArray(listOf(it.bytes, it.runtimeTicks ?: 0L)) }).toString()))
     }
     val selectionShow = qualitySelect && selectable && offered.size > 1
     /** The size with "≈" when estimated. */
     fun sizeText(b: Long) = (if (converted) "≈ " else "") + size(b)
+    @Composable fun audioRow() {
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(translated("Ton"), style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+            AudioBadge(audio, offer.options) { audioChosen = it }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
+    }
     @Composable fun qualityRow() {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(translated("Qualität"), style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
@@ -207,6 +230,7 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
                 SheetRow(translated("Diese Datei"), sizeText(bytes))
                 // The obvious way out is a smaller version; if that is enough, the sheet switches.
                 if (selectionShow) qualityRow()
+                if (audioSelect) audioRow()
                 SheetRow(translated("Frei auf dem Gerät"), size(free), cautionary = true)
                 if (slot.getBoolean("reichtNachAufraeumen")) {
                     SheetRow(translated("Gesehene Titel"), size(slot.getLong("entbehrlichBytes")))
@@ -244,9 +268,15 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
                     val c = newOne.singleOrNull()?.container?.uppercase()
                     listOfNotNull(q, c).takeIf { it.isNotEmpty() }?.let { SheetRow(translated("Qualität"), it.joinToString(" · ")) }
                 }
+                // A series brings the language along from its selection; a film chooses here.
+                if (audioSelect) audioRow()
+                else newOne.firstOrNull()?.takeIf { it.audioIndex != null }?.audioLanguage?.let {
+                    SheetRow(translated("Ton"), Kern.downloadLanguageName(it))
+                }
                 SheetRow(translated("Danach frei"), size(slot.getLong("freiDanach")))
                 ButtonRail { PlayButton(Glyph.ArrowDown, translated("Laden"), true, main = true) { close(); load() } }
-                if (converted) SheetHint(translated("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt."))
+                if (recomputed) SheetHint(translated("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt."))
+                else if (converted) SheetHint(translated("Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."))
                 else SheetHint(translated("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."))
             }
         }
@@ -298,7 +328,7 @@ private fun subline(p: DownloadItem, loaded: Long = p.loaded): String {
         // "845 MB" to "1 GB" and "1,01 GB", and the row changed width at every step. When
         // converting, the end is estimated, so "≈" precedes it.
         "laedt" -> return JSONArray(Kern.downloadProgress(loaded, p.bytes)).let { f ->
-            translated("%@ von %@", f.getString(0), (if (p.converted) "≈ " else "") + f.getString(1))
+            translated("%@ von %@", f.getString(0), (if (p.streamed) "≈ " else "") + f.getString(1))
         }
         "wartet" -> { parts += translated("wartet"); if (p.converted) parts += rung(p) }
         "angehalten" -> { parts += translated("angehalten"); if (p.converted) parts += rung(p) }
@@ -686,6 +716,10 @@ fun OfflineGroup(app: SwiftlyApplication) {
             ChoiceRow(Glyph.Wlan, translated("Nur über WLAN"), translated("Downloads warten, bis du im WLAN bist"), e.onlyOverWLAN) {
                 e.onlyOverWLAN = it
                 v.tick()
+            }
+            SeparatorLine()
+            ChoiceRow(Glyph.Pile, translated("Nächste Folge laden"), translated("Lädt die nächste, löscht die gesehene"), e.loadNextEpisode) {
+                e.loadNextEpisode = it
             }
             SeparatorLine()
             val done = v.entries.value.filter { it.state == "fertig" }

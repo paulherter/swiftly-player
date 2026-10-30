@@ -360,14 +360,18 @@ struct RowsStyle: ButtonStyle {
     /// so the row you are standing on was the least readable one. It belongs here because
     /// only the style knows about focus.
     var quiet = false
+    /// Intrinsic width instead of the full row, and the press answers with 0.97: a single
+    /// switch standing alone (the profile picker's "Immer fragen").
+    var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, quiet: quiet)
+        ContentBody(configuration: configuration, quiet: quiet, compact: compact)
     }
 
     private struct ContentBody: View {
         let configuration: ButtonStyleConfiguration
         let quiet: Bool
+        let compact: Bool
         @Environment(\.isFocused) private var focus
         @Environment(\.isEnabled) private var released
 
@@ -377,7 +381,7 @@ struct RowsStyle: ButtonStyle {
                 .foregroundStyle(foreground)
                 .padding(.horizontal, 26)
                 .frame(height: Theme.rowsHeight)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
                 // **Padding and height first, then the surface.** The other way round, the
                 // surface wraps the text instead of the row: the outline sticks to the text
                 // and the padding ends up outside. On the wide settings rows this is hardly
@@ -387,7 +391,9 @@ struct RowsStyle: ButtonStyle {
                 // for action buttons.
                 .background(focus ? Theme.focusArea : Color.clear,
                             in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                .scaleEffect(compact && configuration.isPressed ? 0.97 : 1)
                 .animation(Theme.focusAnimation, value: focus)
+                .animation(Theme.pressCurve(configuration.isPressed), value: configuration.isPressed)
         }
 
         /// **Disabled means muted**, the same rule as `ThemedButtonStyle` next to it. It was
@@ -399,6 +405,40 @@ struct RowsStyle: ButtonStyle {
             guard released else { return Theme.fontVeryQuiet }
             if focus { return Theme.font }
             return quiet ? Theme.fontQuiet : Theme.font
+        }
+    }
+}
+
+// MARK: - Profile picker
+
+/// **A large profile picture in the cold-start picker.** Focus is the white ring with a
+/// gap (the backdrop shows through) and the tile's magnification; at rest the picture is
+/// dimmed. Never the accent: see the header rule in `Style.swift`.
+struct ProfilePickerStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ContentBody(configuration: configuration)
+    }
+
+    private struct ContentBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var focus
+        @Environment(\.isEnabled) private var released
+
+        var body: some View {
+            let on = focus && released
+            configuration.label
+                .overlay {
+                    Circle().fill(Theme.reason.opacity(!released ? 0.6 : (focus ? 0 : 0.35)))
+                }
+                .overlay {
+                    Circle().strokeBorder(Theme.font, lineWidth: 6)
+                        .padding(-14)
+                        .opacity(on ? 1 : 0)
+                }
+                .scaleEffect(configuration.isPressed && released ? 0.97 : (on ? Theme.focusMagnifier : 1))
+                .animation(Theme.focusAnimation, value: focus)
+                .animation(Theme.focusAnimation, value: released)
+                .animation(Theme.pressCurve(configuration.isPressed), value: configuration.isPressed)
         }
     }
 }
@@ -891,7 +931,11 @@ struct ActionPanel: View {
 
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(actions.enumerated()), id: \.element.id) { pair in
+            // **By position, not by `TitleAction.id`.** That id is a fresh UUID every time the
+            // list is built, and the page builds it on every redraw (the play-on poll redraws it
+            // every few seconds). New ids mean new rows, inserted mid slide-up, and an inserted
+            // row does not ride along with the card: it stands at its end place and fades in.
+            ForEach(Array(actions.enumerated()), id: \.offset) { pair in
                 if let over = category(pair.offset) {
                     VStack(alignment: .leading, spacing: 0) {
                         SeparatorLine()

@@ -133,17 +133,36 @@ struct LoadPanel: View {
     /// before it. A series comes from `MacLadeauswahl` and brings its choice with
     /// it. Like `LoadSheet` on iPhone.
     var qualitySelect = false
+    /// The audio tracks of a film, to choose one before loading. A series brings
+    /// its choice from the selection.
+    var audioStreams: [MediaStream] = []
     /// If the download fails right after starting. Same as on iPhone.
     var failed: (String) -> Void = { _ in }
 
     @State private var choice: DownloadQuality = .original
+    /// `nil` until someone picks: then the audio language from the settings applies.
+    @State private var audioChosen: DownloadAudioChoice?
 
     private var management: DownloadManager { model.downloads }
     private var version: [DownloadItem] {
-        qualitySelect ? entries.map { $0.inQuality(choice) } : entries
+        let base = qualitySelect ? entries.map { $0.inQuality(choice) } : entries
+        guard audioSelect else { return base }
+        return base.map { $0.withAudio(audio, streams: audioStreams) }
+    }
+    private var audioSelect: Bool {
+        qualitySelect && model.downloadQualitySelectable
+            && DownloadAudio.offered(streams: audioStreams)
+    }
+    private var audioOptions: [DownloadAudioOption] { DownloadAudio.trackOptions(streams: audioStreams) }
+    private var audio: DownloadAudioChoice {
+        audioChosen ?? DownloadAudio.preselected(options: audioOptions, streams: audioStreams,
+                                                 preferredLanguage: model.audioLanguage)
     }
     private var bytes: Int64 { version.reduce(0) { $0 + $1.bytes } }
-    private var converted: Bool { version.contains(where: \.converted) }
+    /// Built by the server: the size is an estimate.
+    private var converted: Bool { version.contains(where: \.streamed) }
+    /// Converted, not only cut down to one audio track.
+    private var recomputed: Bool { version.contains(where: \.converted) }
     private var offered: [DownloadQuality] {
         DownloadQuality.offered(
             selectable: model.downloadQualitySelectable,
@@ -173,6 +192,7 @@ struct LoadPanel: View {
                 if qualitySelect, model.downloadQualitySelectable, offered.count > 1 {
                     qualityRow
                 }
+                if audioSelect { audioRow }
                 detail("externaldrive", "Frei auf diesem Mac",
                        DownloadRules.size(management.free), cautionary: true)
                 if inquiry.sufficesToCleanUp, !inquiry.dispensable.isEmpty {
@@ -199,11 +219,18 @@ struct LoadPanel: View {
                 } else if let g = guete {
                     detail("sparkles", "Qualität", g)
                 }
+                if audioSelect {
+                    audioRow
+                } else if let a = audioName {
+                    detail("speaker.wave.2", "Ton", a)
+                }
                 detail("externaldrive", "Danach frei",
                        DownloadRules.size(inquiry.freeAfter))
                 button("Laden") { start() }
-                if converted {
+                if recomputed {
                     hint("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
+                } else if converted {
+                    hint("Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.")
                 } else {
                     hint("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
                 }
@@ -293,6 +320,33 @@ struct LoadPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
+    }
+
+    /// The audio with the choice on the right, built like the quality row.
+    private var audioRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.wave.2")
+                .font(Theme.body)
+                .foregroundStyle(Theme.fontQuiet)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text("Ton")
+                .font(Theme.body)
+                .foregroundStyle(Theme.font)
+            Spacer(minLength: 10)
+            MacAudioBadge(choice: Binding(get: { audio }, set: { audioChosen = $0 }),
+                          options: audioOptions)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+    }
+
+    /// What the audio row says when it is not a choice: a series brings the language
+    /// along from its selection.
+    private var audioName: String? {
+        guard let key = version.first?.audioLanguage, version.first?.audioIndex != nil
+        else { return nil }
+        return TrackLabel.language(key) ?? key
     }
 
     private func button(_ text: LocalizedStringKey, perform: @escaping () -> Void) -> some View {
@@ -670,7 +724,7 @@ struct MacDownloadRow: View {
             // step. The total size now dictates the unit.
             let f = DownloadRules.progress(loaded: loaded, from: now.bytes)
             // If transcoded, the end result is an estimate, so "≈" goes in front.
-            parts = [String(localized: "\(f.loaded) von \((entries.converted ? "≈ " : "") + f.total)")]
+            parts = [String(localized: "\(f.loaded) von \((entries.streamed ? "≈ " : "") + f.total)")]
         case .waits:
             parts.append(String(localized: "wartet"))
             if entries.converted { parts.append(entries.guete.name) }
@@ -970,9 +1024,11 @@ struct MacLoadSelection: View {
     @Binding var opened: Bool
     /// What the selection yields: the episodes to download, and in which
     /// quality.
-    let proceed: ([Item], DownloadQuality) -> Void
+    let proceed: ([Item], DownloadQuality, DownloadAudioChoice) -> Void
 
     @State private var episodes: [String: [Item]] = [:]
+    /// `nil` until someone picks: then the audio language from the settings applies.
+    @State private var audioChosen: DownloadAudioChoice?
     @State private var selected: Set<String> = []
     @State private var openSeason: String?
     @State private var onlyUnwatched = false
@@ -1054,6 +1110,18 @@ struct MacLoadSelection: View {
     }
 
     private var selectedEpisodes: [Item] { allEpisodes.filter { selected.contains($0.id) } }
+    /// Audio as languages, because the same language sits at a different index in
+    /// every file. Only offered when the selected files hold more than one.
+    private var audioOptions: [DownloadAudioOption] {
+        DownloadAudio.languageOptions(selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
+    }
+    private var audioOffered: Bool {
+        DownloadAudio.offered(selection: selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
+    }
+    private var audio: DownloadAudioChoice {
+        let wished = audioChosen ?? .language(model.audioLanguage)
+        return audioOffered && audioOptions.contains { $0.choice == wished } ? wished : .all
+    }
     /// The footer calculates in the chosen quality, as on iPhone.
     private var bytes: Int64 { bytes(in: quality) }
 
@@ -1237,12 +1305,18 @@ struct MacLoadSelection: View {
                 .onChange(of: offered) { _, new in
                     if !new.contains(quality) { quality = .original }
                 }
+            if audioOffered {
+                MacAudioBadge(choice: Binding(get: { audio }, set: { audioChosen = $0 }),
+                              options: audioOptions)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+            }
 
             PrimaryButton(label: selected.isEmpty ? "Laden"
                                                      : LocalizedStringKey("\(selectedNumber) laden"),
                        symbol: "arrow.down") {
                 opened = false
-                proceed(selectedEpisodes, quality)
+                proceed(selectedEpisodes, quality, audio)
             }
             .disabled(selected.isEmpty)
             .padding(.horizontal, 16)
@@ -1523,5 +1597,54 @@ struct MacQualityBadge: View {
         .background(Theme.accent.opacity(0.15),
                     in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
         .contentShape(Rectangle())
+    }
+}
+
+/// **The audio choice, as a pill like the quality one.** A menu with a checkmark,
+/// "All audio tracks" first. Same as `AudioBadge` on iPhone.
+struct MacAudioBadge: View {
+    @Binding var choice: DownloadAudioChoice
+    let options: [DownloadAudioOption]
+
+    private var current: String {
+        options.first { $0.choice == choice }?.label ?? options.first?.label ?? ""
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    withAnimation(Theme.toggle) { choice = option.choice }
+                } label: {
+                    if option.choice == choice {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(verbatim: current).font(Theme.small).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Theme.accent.opacity(0.15),
+                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(Text("Ton"))
+        .accessibilityValue(Text(verbatim: current))
     }
 }

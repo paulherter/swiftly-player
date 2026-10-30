@@ -22,6 +22,9 @@ public final class Kern: @unchecked Sendable {
     private var _addresses: ImageAddress?
     private var _session: Session?
     private var _playback: Playback?
+    /// "Next episode automatically" as Kotlin last reported it (``nextAutomaticSet(_:)``). Off: no
+    /// card, so nothing advances by itself; the button in the controls stays.
+    private var _nextAutomatic = true
     /// The chapters of the current version (``Kapitelleiste/brauchbar(_:)``). Empty until
     /// ``chapterLoad()`` returns, and reset on every title change.
     private var _chapter: [Chapter] = []
@@ -87,6 +90,8 @@ public final class Kern: @unchecked Sendable {
     private var _shuffleRun: ShuffleRun?
     /// What accumulated at each stop. Kotlin collects it (`stoppsProcess`).
     private var _stopps: [StopRemember] = []
+    /// Audio streams of the titles seen by `downloadItem` / `downloadAudioOptions`, by item id.
+    private var _audioStreams: [String: [MediaStream]] = [:]
     /// Never two catch-up passes at once; otherwise the same position would be sent twice.
     private var _reportLaterRuns = false
     /// **The next episode, prepared in the last minutes** (`Prebuffer`, like `EpisodePreparation`
@@ -1318,7 +1323,8 @@ public final class Kern: @unchecked Sendable {
         watch.progress(isPlaying: running && showsImage && !atPush)
         // **The overlay** (countdown) pauses while stopped, while scrubbing and before the first
         // frame. `tickLength` is the interval at which Kotlin asks.
-        let countdownReady = Self.offeringCatchUp(&w, running: running && showsImage && !atPush,
+        let countdownReady = Self.offeringCatchUp(&w, automatic: _nextAutomatic,
+                                                     running: running && showsImage && !atPush,
                                                      elapsed: PlaybackTick.tickLength / .seconds(1),
                                                      atEnd: EpisodeEnd.atEnd(position: spot, duration: w.state.duration)
                                                          && !atPush)
@@ -1361,14 +1367,14 @@ public final class Kern: @unchecked Sendable {
 
     /// Adjust offer and overlay to the state's position: on the tick, and with `elapsed: 0`
     /// right after a seek. `true` if the countdown has now run out.
-    private static func offeringCatchUp(_ w: inout Playback, running: Bool, elapsed: Double,
+    private static func offeringCatchUp(_ w: inout Playback, automatic: Bool, running: Bool, elapsed: Double,
                                           atEnd: Bool = false) -> Bool {
         let spot = w.state.position, duration = w.state.duration
         let offering = SectionLogic.offering(position: spot, duration: duration,
                                               sections: w.sections, hasNextEpisode: w.next != nil)
         // **Without an outro section the last 30 s** (`EpisodeCard.remainingWindow`, as on iPhone and
         // TV); then the countdown runs to the end of the file.
-        let due = SectionLogic.cardDue(position: spot, duration: duration,
+        let due = automatic && SectionLogic.cardDue(position: spot, duration: duration,
                                                    sections: w.sections, hasNextEpisode: w.next != nil,
                                                    remainingWindow: EpisodeCard.remainingWindow)
         return w.layer.tick(offering: offering, cardDue: due, running: running, elapsed: elapsed,
@@ -1434,6 +1440,11 @@ public final class Kern: @unchecked Sendable {
         _playback = w
         if toward { log("Angebot: geschlossen") }
         return toward
+    }
+
+    /// "Next episode automatically" for the open player; Kotlin sets it before every start.
+    public func nextAutomaticSet(on: Bool) {
+        barrier.lock(); _nextAutomatic = on; barrier.unlock()
     }
 
     /// The button was pressed: the overlay goes away, Kotlin executes.
@@ -1658,7 +1669,7 @@ public final class Kern: @unchecked Sendable {
         PlaybackTick.jumped(&w.state, target: target)
         // A seek into the outro or to the end: the card's countdown restarts.
         w.layer.jumped()
-        _ = Self.offeringCatchUp(&w, running: false, elapsed: 0)
+        _ = Self.offeringCatchUp(&w, automatic: _nextAutomatic, running: false, elapsed: 0)
         _playback = w
         barrier.unlock()
         if let m = reportable() {
@@ -2179,7 +2190,11 @@ public final class Kern: @unchecked Sendable {
                 TechDetails.audioTrackName(language: $0.language, codec: TechDetails.codecNameValue($0.codec), channels: $0.channels)
             }
             let text = track.codec == nil ? (fromServer ?? own) : (own ?? fromServer)
-            return TrackName(id: typedInput.id, text: text ?? typedInput.name, forced: false, file: false)
+            let name = text ?? typedInput.name
+            // "(Original)" on the title's original language, like the player menus on Apple.
+            let labelled = OriginalAudio.label(name, language: track.language ?? feed?.language, stream: feed,
+                                               originalLanguage: w?.item.originalLanguage)
+            return TrackName(id: typedInput.id, text: labelled, forced: false, file: false)
         }
         let utStreams = subTracks.indices.map { position in
             z.subtitle[position].flatMap { i in streams.first { $0.type == "Subtitle" && $0.index == i } }
@@ -2800,6 +2815,19 @@ public final class Kern: @unchecked Sendable {
         return Self.encoded(sent)
     }
 
+    /// **A title started on the TV straight from a detail page or a menu** (`PlayOutputs.play`), without
+    /// opening the player here: only the ID and the resume position go out (`position` < 0: fetched here), the TV builds its own plan.
+    /// Same answer as ``playHandOver(deviceID:name:position:)``.
+    public func playOn(itemID: String, deviceID: String, name: String, position: Double) async -> String {
+        let output = PlayOutput(deviceID: deviceID, name: name)
+        let (session, reason) = await playTarget(output)
+        guard let c = client, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
+        // Negative: from where the server last saw the viewer (a tile menu has no fresh position).
+        let start = position >= 0 ? position : ((try? await c.item(id: itemID))?.resumeFrom ?? 0)
+        let order = PlayOrder(itemIDs: [itemID], start: start)
+        return Self.encoded(await playDeliver(order, to: session, client: c))
+    }
+
     /// The current session of the chosen device from a fresh list; the one from the last tick may be
     /// five seconds old and the TV may have restarted since. Reason `weg` if it is gone.
     private func playTarget(_ output: PlayOutput) async -> (RemoteSession?, String) {
@@ -2876,6 +2904,7 @@ public final class Kern: @unchecked Sendable {
             }
             for await r in group { if let r { fetched[r.0] = (r.1, r.2) } }
         }
+        barrier.lock(); for (k, v) in fetched { _audioStreams[k] = v.1?.mediaStreams ?? [] }; barrier.unlock()
         var answer: [DownloadResponse] = []
         for id in ids {
             guard let (i, q) = fetched[id] else { continue }
@@ -2898,11 +2927,182 @@ public final class Kern: @unchecked Sendable {
     /// "playing now" on the server. Not `/Items/{id}/Download`: that needs its own right.
     /// `quality` is the raw value of `DownloadQuality` (`"original"`, `"hd720"` ...); empty
     /// or unknown counts as original. Converted, it is `/Videos/{id}/stream.mkv` with `static=false`.
-    public func downloadAddress(id: String, source: String, quality: String) async throws -> String {
+    public func downloadAddress(id: String, source: String, quality: String, audioIndex: Int) async throws -> String {
         return try await throwReadable { () async throws -> String in
             guard let c = client else { throw CoreError.notConnected }
             return try await c.downloadURL(itemID: id, mediaSourceID: source.isEmpty ? nil : source,
-                                           quality: DownloadQuality(rawValue: quality) ?? .original).absoluteString
+                                           quality: DownloadQuality(rawValue: quality) ?? .original,
+                                           audioStreamIndex: audioIndex >= 0 ? audioIndex : nil).absoluteString
+        }
+    }
+
+    // MARK: Audio when downloading
+
+    private struct AudioOptionResponse: Encodable { let id, text: String }
+    private struct AudioOffer: Encodable {
+        enum CodingKeys: String, CodingKey { case offered = "angeboten", options = "optionen", preset = "vorgabe" }
+        let offered: Bool; let options: [AudioOptionResponse]; let preset: String
+    }
+
+    private static func audioChoiceID(_ c: DownloadAudioChoice) -> String {
+        switch c {
+        case .all: return "all"
+        case .track(let i): return "track:\(i)"
+        case .language(let k): return "lang:\(k)"
+        }
+    }
+
+    private static func audioChoice(_ id: String) -> DownloadAudioChoice {
+        if id.hasPrefix("track:"), let i = Int(id.dropFirst(6)) { return .track(i) }
+        if id.hasPrefix("lang:") { return .language(String(id.dropFirst(5))) }
+        return .all
+    }
+
+    /// The streams of the given titles; missing ones are fetched and kept.
+    private func audioStreamsOf(_ ids: [String]) async -> [[MediaStream]] {
+        barrier.lock(); let c = _client; let have = _audioStreams; barrier.unlock()
+        var missing = ids.filter { have[$0] == nil }
+        if let c, !missing.isEmpty {
+            missing = Array(Set(missing))
+            let fetched = await withTaskGroup(of: (String, [MediaStream])?.self) { group -> [(String, [MediaStream])] in
+                for id in missing {
+                    group.addTask {
+                        guard let i = try? await c.item(id: id) else { return nil }
+                        return (id, i.mediaSources?.first?.mediaStreams ?? [])
+                    }
+                }
+                var out: [(String, [MediaStream])] = []
+                for await r in group { if let r { out.append(r) } }
+                return out
+            }
+            barrier.lock(); for (k, v) in fetched { _audioStreams[k] = v }; barrier.unlock()
+        }
+        barrier.lock(); let now = _audioStreams; barrier.unlock()
+        return ids.map { now[$0] ?? [] }
+    }
+
+    /// **The audio choice before a download** (`DownloadAudio`): one title offers its tracks, a
+    /// selection of episodes offers languages. `preferred` is the audio language from the settings.
+    public func downloadAudioOptions(ids: [String], preferred: String) async -> String {
+        let all = await audioStreamsOf(ids)
+        if ids.count == 1, let streams = all.first {
+            let options = DownloadAudio.trackOptions(streams: streams)
+            let preset = DownloadAudio.preselected(options: options, streams: streams, preferredLanguage: preferred)
+            return Self.encoded(AudioOffer(offered: DownloadAudio.offered(streams: streams),
+                options: options.map { AudioOptionResponse(id: Self.audioChoiceID($0.choice), text: $0.label) },
+                preset: Self.audioChoiceID(preset)))
+        }
+        let options = DownloadAudio.languageOptions(all)
+        let wished = DownloadAudioChoice.language(preferred)
+        let offered = DownloadAudio.offered(selection: all)
+        let preset: DownloadAudioChoice = offered && options.contains { $0.choice == wished } ? wished : .all
+        return Self.encoded(AudioOffer(offered: offered,
+            options: options.map { AudioOptionResponse(id: Self.audioChoiceID($0.choice), text: $0.label) },
+            preset: Self.audioChoiceID(preset)))
+    }
+
+    /// The items (JSON list) cut down to the chosen audio, resolved per file.
+    public func downloadWithAudio(list: String, choice: String) -> String {
+        let c = Self.audioChoice(choice)
+        barrier.lock(); let cache = _audioStreams; barrier.unlock()
+        return Self.encoded(Self.itemRead(list).map { $0.withAudio(c, streams: cache[$0.id] ?? []) })
+    }
+
+    /// "German" for a language key, for the load sheet's audio row.
+    public static func downloadLanguageName(key: String) -> String { TrackLabel.language(key) ?? key }
+
+    // MARK: Next episode (smart downloads)
+
+    /// The download that follows a watched, downloaded episode. Empty: no answer (offline), the
+    /// entry stays pending. `{}`: nothing follows. Otherwise a `DownloadResponse` for the follower.
+    public func downloadFollowing(item: String) async -> String {
+        barrier.lock(); let c = _client; barrier.unlock()
+        guard let c, let watched = try? JSONDecoder().decode(DownloadItem.self, from: Data(item.utf8)),
+              let seriesID = watched.seriesIdentifier,
+              let all = try? await c.episodes(seriesID: seriesID) else { return "" }
+        guard let next = DownloadRules.followingEpisode(after: watched, in: all) else { return "{}" }
+        let follower = DownloadRules.followUp(to: watched, next: next)
+        let image = await c.imageURL(for: next, maxHeight: 220)
+        return Self.encoded(DownloadResponse(entries: follower, image: image?.absoluteString, seriesImage: nil))
+    }
+
+    /// The id of the watched episode to remove now that `item` is finished, or empty.
+    public static func downloadReplaced(item: String, list: String) -> String {
+        guard let it = try? JSONDecoder().decode(DownloadItem.self, from: Data(item.utf8)) else { return "" }
+        return DownloadRules.replacedOne(by: it, in: itemRead(list)) ?? ""
+    }
+
+    // MARK: Settings sync (`SettingsSync`)
+
+    private struct SyncAnswer: Encodable {
+        let decision: String; let remote: Double; let stamp: Double; let values: [String: String]
+        /// Seerr: "adopt" (take `seerrAccess`, "" = disconnected), "push" or "nothing"; `seerrStamp` to keep.
+        var seerr = "nothing"; var seerrAccess = ""; var seerrStamp: Double = 0
+    }
+
+    /// One round of the settings sync. `local`: JSON `{name: encoded}` of the device's values;
+    /// `localChanged` and `remoteSeen` in milliseconds (0 = never). Decides who wins; on `push`
+    /// writes the display preferences, on `apply` returns the server's values for Kotlin to take.
+    /// `seerr`: this server's Seerr access as stored ("" = none), `seerrChanged` when it last changed
+    /// here (ms, 0 = never); it travels like on iOS (`SettingsSyncRun.seerrRun`), in the same write.
+    public func settingsSyncRun(local: String, localChanged: Double, remoteSeen: Double, otherAccount: Bool,
+                                seerr: String, seerrChanged: Double) async -> String {
+        barrier.lock(); let c = _client; barrier.unlock()
+        var seerrPart = (step: "nothing", access: "", stamp: 0.0)
+        var seerrFields: [String: String] = [:]
+        func answer(_ d: String, _ r: Double = 0, _ s: Double = 0, _ v: [String: String] = [:]) -> String {
+            var a = SyncAnswer(decision: d, remote: r, stamp: s, values: v)
+            (a.seerr, a.seerrAccess, a.seerrStamp) = seerrPart
+            return Self.encoded(a)
+        }
+        guard let c else { return answer("error") }
+        do {
+            let copy = try await c.displayPreferences()
+            let mineSeerr: Date? = seerrChanged > 0 ? Date(timeIntervalSince1970: seerrChanged / 1000) : nil
+            let access = try? JSONDecoder().decode(SeerrAccess.self, from: Data(seerr.utf8))
+            switch SettingsSync.seerrStep(remote: copy.customPrefs, localChanged: mineSeerr, hasLocal: access != nil) {
+            case .adopt(let theirs, let changed):
+                let text = theirs.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                seerrPart = ("adopt", text, changed.timeIntervalSince1970 * 1000)
+            case .push:
+                let stamp = mineSeerr ?? Date()
+                seerrPart = ("push", "", stamp.timeIntervalSince1970 * 1000)
+                seerrFields = SettingsSync.seerrFields(access, changed: stamp)
+            case .nothing:
+                break
+            }
+            let remote = SettingsSync.remote(from: copy.customPrefs)
+            let remoteMs = remote.changed.map { $0.timeIntervalSince1970 * 1000 } ?? 0
+            let mine: Date? = localChanged > 0 ? Date(timeIntervalSince1970: localChanged / 1000) : nil
+            let decision = SettingsSync.decide(remote: remote, localChanged: mine, otherAccount: otherAccount)
+            // Each write replaces all of CustomPrefs from the copy: Seerr goes alone only without a push.
+            if decision != .push, !seerrFields.isEmpty {
+                try await c.saveDisplayPreferences(copy, setting: seerrFields)
+            }
+            switch decision {
+            case .apply:
+                return answer("apply", remoteMs, remoteMs, remote.values.mapValues(\.encoded))
+            case .nothing:
+                return answer("nothing", remoteMs)
+            case .push:
+                let raw = (try? JSONDecoder().decode([String: String].self, from: Data(local.utf8))) ?? [:]
+                var values: [String: SettingsSync.Value] = [:]
+                for e in SettingsSync.entries {
+                    if let t = raw[e.name], let v = SettingsSync.Value.decode(t, as: e.kind) { values[e.name] = v }
+                }
+                guard !values.isEmpty else {
+                    if !seerrFields.isEmpty { try await c.saveDisplayPreferences(copy, setting: seerrFields) }
+                    return answer("empty", remoteMs)
+                }
+                let last: Date? = remoteSeen > 0 ? Date(timeIntervalSince1970: remoteSeen / 1000) : nil
+                let stamp = mine ?? SettingsSync.changeTime(now: Date(), lastKnownRemote: last)
+                try await c.saveDisplayPreferences(copy, setting: SettingsSync.fields(for: values, changed: stamp)
+                    .merging(seerrFields) { _, seerr in seerr })
+                let ms = stamp.timeIntervalSince1970 * 1000
+                return answer("push", ms, ms)
+            }
+        } catch {
+            return answer("error")
         }
     }
 
@@ -3047,7 +3247,7 @@ public final class Kern: @unchecked Sendable {
     /// (`DownloadItem.postPlayback`), and one that arrived clears the pending catch-up
     /// report of the same title (`PostReportRules.ueberholt`). Answer: `store` (the new catch-up
     /// reports) and `entries` (only the changed ones).
-    public func stoppsProcess(store: String, list: String) -> String {
+    public func stoppsProcess(store: String, list: String, nextAuto: Bool) -> String {
         barrier.lock(); let stopps = _stopps; _stopps = []; barrier.unlock()
         var messages = Self.pendingReportsRead(store)
         var entries = Self.itemRead(list)
@@ -3056,6 +3256,12 @@ public final class Kern: @unchecked Sendable {
             if s.sent { messages = PostReportRules.overFetches(itemID: s.itemID, account: s.account, in: messages) }
             if let i = entries.firstIndex(where: { $0.id == s.itemID && $0.account == s.account }) {
                 entries[i] = entries[i].postPlayback(ticks: s.ticks, moment: s.moment)
+                // Watched to the end: the next episode is due. Marked first, so a lookup that
+                // finds no server is repeated on the next contact.
+                if nextAuto, DownloadRules.hasSuccessor(entries[i]),
+                   DownloadRules.reachedEnd(ticks: s.ticks, runtimeTicks: entries[i].runtimeTicks) {
+                    entries[i].nextPending = true
+                }
                 changed.insert(entries[i].id)
             }
         }

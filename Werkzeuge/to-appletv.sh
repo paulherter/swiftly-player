@@ -41,7 +41,7 @@ xcrun devicectl list devices --json-output "$DEVICES" >/dev/null 2>&1 || true
 read -r ID UDID NAME <<<"$(python3 -c 'import json,sys
 for g in json.load(open(sys.argv[1]))["result"]["devices"]:
     h = g.get("hardwareProperties", {})
-    if h.get("platform") != "tvOS": continue
+    if h.get("platform") != "tvOS" or h.get("reality") != "physical": continue
     print(g["identifier"], h.get("udid",""), g.get("deviceProperties",{}).get("name",""))
     break' "$DEVICES" 2>/dev/null || true)"
 

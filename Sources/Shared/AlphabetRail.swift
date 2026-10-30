@@ -44,6 +44,8 @@ struct AlphabetRail: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        // Before layout the height can be 0; `Int(.infinity)` would trap.
+                        guard row > 0, !shown.isEmpty else { return }
                         let at = Int(value.location.y / row)
                         let letter = shown[min(max(at, 0), shown.count - 1)].letter
                         guard letter != touched else { return }

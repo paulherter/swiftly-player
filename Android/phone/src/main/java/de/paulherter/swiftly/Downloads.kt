@@ -55,6 +55,14 @@ data class DownloadItem(
     val sections: String? = null,
     val pointTicks: Long? = null,
     val recent: Double? = null,
+    /** Stream index of the one audio track the server builds into the file; `null`: every track. */
+    val audioIndex: Int? = null,
+    /** Language key of that track, handed on to the next episode. */
+    val audioLanguage: String? = null,
+    /** The watched episode this one replaces once it has arrived (smart downloads). */
+    val replaces: String? = null,
+    /** Watched to the end, successor not looked up yet. */
+    val nextPending: Boolean? = null,
 ) {
     /**
      * Account and id, plus the container extension so VLC guesses the demuxer. Must match
@@ -65,9 +73,11 @@ data class DownloadItem(
         (PathPart.suffix(container)?.let { ".$it" } ?: "")
     /** Transcoded by the server: `bytes` is an estimate until the end. */
     val converted: Boolean get() = quality != null && quality != "original"
+    /** Built by the server (converted or cut to one audio track): the size is an estimate and there is no `Range`. */
+    val streamed: Boolean get() = converted || audioIndex != null
     /** Like `DownloadItem.share`: an estimate never quite reaches full before the end. */
     val share: Double? get() = if (bytes > 0) (loaded.toDouble() / bytes).coerceIn(0.0, 1.0)
-        .let { if (converted && state != "fertig") it.coerceAtMost(0.99) else it } else null
+        .let { if (streamed && state != "fertig") it.coerceAtMost(0.99) else it } else null
 
     fun json(): JSONObject = JSONObject().apply {
         put("id", id); put("konto", account); put("art", art); put("titel", title)
@@ -78,6 +88,8 @@ data class DownloadItem(
         putOpt("qualitaet", quality)
         sections?.let { put("abschnitte", JSONArray(it)) }
         putOpt("stelleTicks", pointTicks); putOpt("zuletzt", recent)
+        putOpt("tonIndex", audioIndex); putOpt("tonSprache", audioLanguage); putOpt("ersetzt", replaces)
+        putOpt("naechsteOffen", nextPending)
     }
 
     /** Where the list starts playing (`DownloadItem.resumeFrom`); `null` means from the start. */
@@ -100,7 +112,10 @@ data class DownloadItem(
             o.fieldText("qualitaet"),
             o.optJSONArray("abschnitte")?.toString(),
             o.optLong("stelleTicks").takeIf { o.has("stelleTicks") && !o.isNull("stelleTicks") },
-            o.optDouble("zuletzt").takeIf { o.has("zuletzt") && !o.isNull("zuletzt") })
+            o.optDouble("zuletzt").takeIf { o.has("zuletzt") && !o.isNull("zuletzt") },
+            o.optInt("tonIndex").takeIf { o.has("tonIndex") && !o.isNull("tonIndex") },
+            o.fieldText("tonSprache"), o.fieldText("ersetzt"),
+            o.optBoolean("naechsteOffen").takeIf { o.has("naechsteOffen") && !o.isNull("naechsteOffen") })
 
         fun list(entries: List<DownloadItem>): String = JSONArray().apply { entries.forEach { put(it.json()) } }.toString()
     }
@@ -323,9 +338,10 @@ class DownloadManager(private val app: SwiftlyApplication) {
                 error == null -> {
                     change(p.id) {
                         val real = result.getOrDefault(it.bytes)
-                        it.copy(state = "fertig", loaded = real, bytes = if (it.converted) real else it.bytes, reason = null)
+                        it.copy(state = "fertig", loaded = real, bytes = if (it.streamed) real else it.bytes, reason = null)
                     }
                     sectionsFetch(p.id)
+                    replacedRemove(p.id)
                 }
                 // Without network and with a partial file: paused, no error text, it continues there.
                 error is IOException && error !is LoadError && part(p).length() > 0 ->
@@ -337,7 +353,7 @@ class DownloadManager(private val app: SwiftlyApplication) {
     }
 
     private suspend fun load(p: DownloadItem): Long {
-        val address = app.kern.downloadAddress(p.id, p.source.orEmpty(), p.quality ?: "original").await()
+        val address = app.kern.downloadAddress(p.id, p.source.orEmpty(), p.quality ?: "original", (p.audioIndex ?: -1).toLong()).await()
         val part = part(p)
         val already = if (part.exists()) part.length() else 0L
         val v = URL(address).openConnection() as HttpURLConnection
@@ -346,7 +362,7 @@ class DownloadManager(private val app: SwiftlyApplication) {
         ownHeadersFields(address).forEach { (name, value) -> v.setRequestProperty(name, value) }
         // A transcoded file accepts no range requests (`Accept-Ranges: none`) and restarts; the server
         // then answers 200 and the `.part` file is overwritten below.
-        if (already > 0 && !p.converted) v.setRequestProperty("Range", "bytes=$already-")
+        if (already > 0 && !p.streamed) v.setRequestProperty("Range", "bytes=$already-")
         try {
             val code = v.responseCode
             // An error page is not a finished file.
@@ -405,12 +421,57 @@ class DownloadManager(private val app: SwiftlyApplication) {
         }
     }
 
+    // MARK: Next episode (smart downloads, `DownloadManager.smartNext` on Apple)
+
+    private val searching = mutableSetOf<String>()
+
+    /**
+     * Queue the successor of a watched, downloaded episode. Wi-Fi only needs no extra code: the entry
+     * joins the queue like any other and `tick()` holds it back until the rule allows it.
+     */
+    fun smartNext(id: String) {
+        if (!app.settings.loadNextEpisode || id in searching) return
+        val watched = entries(id)?.takeIf { it.nextPending == true } ?: return
+        searching += id
+        run.launch {
+            val raw = runCatching { app.kern.downloadFollowing(watched.json().toString()).await() }.getOrNull().orEmpty()
+            searching -= id
+            // No answer (offline): stays pending.
+            if (raw.isEmpty()) return@launch
+            change(id) { it.copy(nextPending = null) }
+            // After the last episode the watched one simply stays.
+            val o = JSONObject(raw)
+            if (!o.has("posten")) return@launch
+            val follower = DownloadItem.read(o.getJSONObject("posten"))
+            if (entries(follower.id) != null || follower.bytes > free()) return@launch
+            val images = mutableMapOf<String, String>()
+            o.fieldText("bild")?.let { images[follower.id] = it }
+            insert(listOf(follower), images)
+            AppLog.writeOut("[Download] nächste Folge ${follower.id} nach $id")
+        }
+    }
+
+    /** Pick up what could not be looked up yet. Called on contact with the server. */
+    fun smartCatchUp() {
+        entries.value.filter { it.nextPending == true }.forEach { smartNext(it.id) }
+    }
+
+    /** The watched episode goes only now, with its successor safely on the device. */
+    private fun replacedRemove(id: String) {
+        val done = entries(id) ?: return
+        if (done.replaces == null) return
+        val old = if (app.settings.loadNextEpisode) Kern.downloadReplaced(done.json().toString(), listJson()) else ""
+        change(id) { it.copy(replaces = null) }
+        if (old.isNotEmpty()) remove(listOf(old))
+    }
+
     /** What the stops changed in the watch state (`Kern.stoppsProcess`), with and without network. */
     fun watchStateAdopt(new: List<DownloadItem>) {
         if (new.isEmpty()) return
         val card = new.associateBy { it.id }
-        all = all.map { p -> if (p.account != account) p else card[p.id]?.let { p.withWatchState(it) } ?: p }
+        all = all.map { p -> if (p.account != account) p else card[p.id]?.let { p.withWatchState(it).copy(nextPending = it.nextPending ?: p.nextPending) } ?: p }
         showItem(); persist()
+        new.filter { it.nextPending == true }.forEach { smartNext(it.id) }
     }
 
     /** The current account's items as JSON, for the core. */
@@ -432,6 +493,7 @@ class DownloadManager(private val app: SwiftlyApplication) {
         showItem(); persist()
         // For everything downloaded before these fields existed or that got no response while loading.
         entries.value.filter { it.state == "fertig" && it.sections == null }.forEach { sectionsFetch(it.id) }
+        smartCatchUp()
     }
 }
 

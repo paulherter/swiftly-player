@@ -473,8 +473,12 @@ final class AppModel {
             // The group belongs to the account: on switch and sign-out it is left with
             // the old client (`SharedModel.accountSwitched`).
             if client !== oldValue { SharedModel.shared.accountSwitched(alt: oldValue) }
+            // Settings follow the account (`SettingsSyncRun`); runs aside, never in the way.
+            settingsSync.bind(client: client, session: session)
         }
     }
+    /// Keeps the settings equal across devices through the account's display preferences.
+    let settingsSync = SettingsSyncRun()
     private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { playbackLoad() } } }
 
     /// All accounts on this server, in the order of the strip above the profile
@@ -669,6 +673,7 @@ final class AppModel {
         // container; the package does not know it. But the quietest places in the whole
         // app are exactly there: a connection that does not come up, a response nobody
         // looks at.
+        settingsSync.attach(self)
         TrackSupport.write = { AppLog.writeOut($0) }
         StreamForwarder.log = { AppLog.writeOut($0) }
         // First launch, the App Store listener and the supporter status. Here because

@@ -171,17 +171,37 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     val seerrHit = mutableMapOf<String, SeerrTile>()
 
     /** One access per Jellyfin server, so Seerr survives a switch to another server. */
-    private fun seerrKey(): String = "seerr|" + store.accounts?.let { Kern.bundleActive(it) }?.let {
+    private fun seerrKey(): String = "seerr|" + seerrServer()
+    /** The active server as the Seerr entries name it: lower case, no trailing slash (`SeerrModel.serverForm`). */
+    fun seerrServer(): String = store.accounts?.let { Kern.bundleActive(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("serverURL") }.getOrNull()
     }.orEmpty().lowercase().trimEnd('/')
+    /** This server's access as stored, for the settings sync. */
+    fun seerrStored(): String? = store.vaultRead(seerrKey())
+    /** Called on connect and disconnect here; the sync carries it to the other devices. */
+    var seerrChanged: (() -> Unit)? = null
+
+    /** The server's connection was newer: take it over, as `SeerrModel.adopt`. "" = disconnected. */
+    fun seerrAdopt(access: String) {
+        val old = store.vaultRead(seerrKey())
+        if (old == access || (old == null && access.isEmpty())) return
+        val address = { a: String? -> a?.let { runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull() } }
+        // Another address: the old one's cookies must not stay behind.
+        if (old != null && address(old) != address(access.ifEmpty { null })) kern.seerrDisconnect()
+        if (access.isEmpty()) {
+            store.vaultWrite(seerrKey(), null); kern.seerrDisconnect(); seerrConnected.value = false
+        } else {
+            store.vaultWrite(seerrKey(), access); kern.seerrSet(access); seerrConnected.value = true
+        }
+    }
 
     fun seerrLoad() {
         val access = store.vaultRead(seerrKey())
         if (access != null) kern.seerrSet(access) else kern.seerrDisconnect()
         seerrConnected.value = access != null
     }
-    fun seerrRemember(access: String) { store.vaultWrite(seerrKey(), access); seerrConnected.value = true }
-    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); kern.seerrDisconnect(); seerrConnected.value = false }
+    fun seerrRemember(access: String) { store.vaultWrite(seerrKey(), access); seerrConnected.value = true; seerrChanged?.invoke() }
+    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); kern.seerrDisconnect(); seerrConnected.value = false; seerrChanged?.invoke() }
     fun seerrAddress(): String? = store.vaultRead(seerrKey())?.let {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }
@@ -197,6 +217,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
             getSystemService(android.app.UiModeManager::class.java)?.currentModeType ==
                 android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     }
+
+    /** Keeps the synced settings equal across devices (`SettingsSyncRun`). */
+    val settingsSync by lazy { SettingsSyncRun(this, run) }
 
     /** Downloads; the list lives as long as the app, like `DownloadManager` on iOS. */
     val downloads by lazy { DownloadManager(this) }
@@ -237,7 +260,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     fun toStop(message: String?) {
         if (!message.isNullOrEmpty()) pendingReportStore(message)
         val o = runCatching {
-            org.json.JSONObject(kern.stoppsProcess(store.rememberValue(PendingReports) ?: "[]", downloads.listJson()))
+            org.json.JSONObject(kern.stoppsProcess(store.rememberValue(PendingReports) ?: "[]", downloads.listJson(), settings.loadNextEpisode))
         }.getOrNull() ?: return
         store.remember(PendingReports, o.getString("ablage"))
         val a = o.getJSONArray("posten")
@@ -263,6 +286,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         }
         logWrite()
         downloads.follow()
+        settingsSync.rebind()
+        settingsSync.request(null)
     }
 
     /**
@@ -288,7 +313,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         ask()
     }
 
-    fun downloadsCreate(ids: List<String>, title: String, waitFor: Long = 0, quality: String = "original") {
+    fun downloadsCreate(ids: List<String>, title: String, waitFor: Long = 0, quality: String = "original", audio: String = "all") {
         messageRightInTimesAsk()
         val beginning = android.os.SystemClock.uptimeMillis()
         run.launch {
@@ -303,7 +328,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                 val p = if (quality == "original") DownloadItem.read(raw1)
                         else DownloadItem.read(org.json.JSONArray(Kern.downloadInQuality("[$raw1]", quality)).getJSONObject(0))
                 if (downloads.entries(p.id) != null) continue
-                newOne += p
+                // The audio choice from the selection: the server builds the file with that one track.
+                newOne += if (audio == "all") p
+                          else DownloadItem.read(org.json.JSONArray(kern.downloadWithAudio("[${p.json()}]", audio)).getJSONObject(0))
                 o.fieldText("bild")?.let { images[p.id] = it }
                 p.seriesIdentifier?.let { sid -> o.fieldText("serienbild")?.let { images[sid] = it } }
             }
@@ -394,6 +421,17 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         store = Store(this)
         settings = Settings(store)
         settings.serverKey = { activeServer().orEmpty().lowercase().trimEnd('/') }
+        settingsSync.attach()
+        var started = 0
+        registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) { if (started++ == 0) settingsSync.toFront() }
+            override fun onActivityStopped(activity: android.app.Activity) { started-- }
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
+            override fun onActivityResumed(activity: android.app.Activity) {}
+            override fun onActivityPaused(activity: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) {}
+        })
         Texts.load(this)
         // Beta redirect build: nothing else starts (no core, no billing, no network).
         if (BuildConfig.BETA_REDIRECT) return
@@ -698,7 +736,9 @@ class Store(context: Context) {
 
     /** Sort order, filter, selected library; same keys as in UserDefaults on Apple. */
     fun rememberValue(key: String): String? = prefs.getString(key, null)
-    fun remember(key: String, value: String) { prefs.edit().putString(key, value).apply() }
+    fun remember(key: String, value: String) { prefs.edit().putString(key, value).apply(); onChange?.invoke(key) }
+    /** Told after every `remember`; the settings sync watches its keys through it. */
+    @Volatile var onChange: ((String) -> Unit)? = null
 
     fun devicesIdentifier(): String = prefs.getString("de.paulherter.swiftly.deviceID", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("de.paulherter.swiftly.deviceID", it).apply() }

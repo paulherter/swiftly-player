@@ -309,13 +309,17 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                                 add(Choice("vonvorn", translated("Von vorn abspielen")))
                                 add(Choice("zuruecksetzen", translated("Fortschritt zurücksetzen")))
                             }
+                            // "Abspielen auf …": one entry per TV in reach (`TitleActions.playOn`).
+                            if (t != null && t.planPresent) app.playOnChoices().forEach { add(Choice(it.first, it.second)) }
                             // Only with a file and the right (`TitleActions.forMovie`, `gemeinsam`).
                             if (t != null && t.planPresent && app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         app.sheet.value = SheetRequest(name, entries, null,
                             mapOf("vonvorn" to Glyph.Rewind, "zuruecksetzen" to Glyph.ResetCircle,
-                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload)) { choice ->
+                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload) +
+                                app.playOnChoices().associate { it.first to Glyph.Tv }) { choice ->
+                            if (app.playOnChosen(choice, target.id, t?.resumeFrom ?: -1.0)) return@SheetRequest
                             // The next sheet once this one is out; swapping in place jumped in height.
                             if (choice == "gemeinsam") { section.launch { kotlinx.coroutines.delay(SheetSwitch); sharedCreateOpen(app, target.id, name) }; return@SheetRequest }
                             section.launch {

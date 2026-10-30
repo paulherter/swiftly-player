@@ -100,8 +100,12 @@ struct SeriesView: View {
 
     /// **The selection result goes to the download panel.** The panel still handles
     /// free space, Wi-Fi and the normal case; the selection is a step before it.
-    private func selectionLoad(_ selectedEpisodes: [Item], _ quality: DownloadQuality) {
-        loadItem = selectedEpisodes.compactMap { entries($0)?.inQuality(quality) }
+    private func selectionLoad(_ selectedEpisodes: [Item], _ quality: DownloadQuality,
+                               _ audio: DownloadAudioChoice) {
+        loadItem = selectedEpisodes.compactMap { episode in
+            entries(episode)?.inQuality(quality)
+                .withAudio(audio, streams: episode.mediaSources?.first?.mediaStreams ?? [])
+        }
         guard !loadItem.isEmpty else { return }
         loadTitle = series.name
         withAnimation(Theme.leap) { seasonPanelOpen = true }
@@ -235,8 +239,8 @@ struct SeriesView: View {
                         MacLoadSelection(model: model, series: series, seasons: seasons,
                                        preloaded: selected.map { [$0.id: episodes] } ?? [:],
                                        opened: $selectionOpen,
-                                       proceed: { selectedEpisodes, quality in
-                                           selectionLoad(selectedEpisodes, quality)
+                                       proceed: { selectedEpisodes, quality, audio in
+                                           selectionLoad(selectedEpisodes, quality, audio)
                                        })
                             .padding(.leading, Theme.edgeSpacing)
                             .padding(.top, Theme.heroHeightValue + 8)

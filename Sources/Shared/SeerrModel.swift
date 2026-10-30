@@ -22,7 +22,7 @@ final class SeerrModel {
 
     /// **Seerr is tied to the server.** The Jellyfin server the currently loaded
     /// account belongs to; each has its own keychain entry.
-    private var server: String?
+    private(set) var server: String?
     private var key: String {
         server.map { Self.key + "|" + $0 } ?? Self.key
     }
@@ -43,7 +43,29 @@ final class SeerrModel {
         access.map { SeerrClient(access: $0) }
     }
 
+    /// Connecting or disconnecting here; the settings sync takes it to the other devices.
+    @ObservationIgnored var changed: (() -> Void)?
+
     init() { access = loaded() }
+
+    /// The server's form of an address, as `server` holds it.
+    static func serverForm(_ url: URL) -> String {
+        var form = url.absoluteString.lowercased()
+        while form.hasSuffix("/") { form.removeLast() }
+        return form
+    }
+
+    /// **From another device, through the settings sync.** `nil` is a disconnect made
+    /// there. Not reported back as a change of this device's.
+    func adopt(_ new: SeerrAccess?) {
+        guard new != access else { return }
+        if let old = access?.address, old != new?.address { Seerr.cookiesForget(for: old) }
+        if let new { secure(new) } else { Keychain.delete(key: key) }
+        access = new
+        sessionState = .invalid
+        error = nil
+        if new != nil { Task { await lookUp() } }
+    }
 
     /// When switching to an account on another server, that server's credentials
     /// apply.
@@ -101,6 +123,7 @@ final class SeerrModel {
                 access = new
                 sessionState = .valid
                 error = nil
+                changed?()
                 return
             } catch {
                 // The first failure stays when the second attempt only trips over the
@@ -125,6 +148,7 @@ final class SeerrModel {
         access = nil
         sessionState = .invalid
         error = nil
+        changed?()
     }
 
     /// When opening settings: is the session still valid?

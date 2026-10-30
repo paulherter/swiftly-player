@@ -1004,7 +1004,7 @@ struct PlayerScreen: View {
         guard !switches else { return false }
         var new = layer
         let done = new.tick(offering: offering,
-                          cardDue: SectionLogic.cardDue(position: state.position,
+                          cardDue: model.nextAutomatic && SectionLogic.cardDue(position: state.position,
                                                                      duration: state.duration,
                                                                      sections: sections,
                                                                      hasNextEpisode: nextEpisode != nil,
@@ -1589,7 +1589,8 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: title))
+                                        title: TrackMemory.title(for: title),
+                                        originalLanguage: title.originalLanguage)
             }
             // Stay silent during the switch, as on iOS. Dispatched, not awaited (see tvOS).
             if job.startReport, !switches {

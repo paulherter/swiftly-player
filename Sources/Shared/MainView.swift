@@ -248,7 +248,8 @@ struct MainView: View {
             if let job = tileRequest.load {
                 LoadSheet(opened: $tileRequest.loadSheetOpen, model: model,
                           entries: [job.entries], title: job.title,
-                          images: job.images, qualitySelect: true)
+                          images: job.images, qualitySelect: true,
+                          audioStreams: job.audioStreams)
                     .zIndex(7)
             }
             if let message = tileRequest.message {

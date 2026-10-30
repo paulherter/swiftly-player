@@ -102,6 +102,18 @@ enum TrailerStart {
 @MainActor
 enum TitleActions {
 
+    /// **"Abspielen auf …"**: one entry per TV in reach (``PlayOutputs``), starting the
+    /// title there without opening the player here. No entries while the poll knows
+    /// no targets.
+    static func playOn(_ title: Item?, model: AppModel) -> [TitleAction] {
+        guard let title else { return [] }
+        return PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:)).map { target in
+            TitleAction(symbol: "tv", wording: String(localized: "Abspielen auf „\(target.name)“")) {
+                Task { await PlayOutputs.shared.play(title, to: target, model: model) }
+            }
+        }
+    }
+
     /// For a movie.
     ///
     /// `gemeinsam` exists only where watching together is possible

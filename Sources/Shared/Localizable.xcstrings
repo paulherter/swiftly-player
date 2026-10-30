@@ -5088,6 +5088,29 @@
         }
       }
     },
+    "Einstellungen auf allen Geräten gleich halten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen auf allen Geräten gleich halten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep settings the same on all devices"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Одинаковые настройки на всех устройствах"
+          }
+        }
+      }
+    },
     "Entfernen": {
       "extractionState": "manual",
       "localizations": {
@@ -8731,6 +8754,75 @@
         }
       }
     },
+    "Nächste Folge laden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nächste Folge laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load next episode"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загружать следующую серию"
+          }
+        }
+      }
+    },
+    "Lädt die nächste, löscht die gesehene": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt die nächste, löscht die gesehene"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gets the next one, deletes the watched one"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загружает следующую, удаляет просмотренную"
+          }
+        }
+      }
+    },
+    "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server builds the file with a single audio track while loading. The size is estimated, subtitles come as separate files."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервер собирает файл с одной звуковой дорожкой при загрузке. Размер примерный, субтитры идут отдельными файлами."
+          }
+        }
+      }
+    },
     "Nächste Folge": {
       "extractionState": "manual",
       "localizations": {
@@ -9141,6 +9233,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Плеер"
+          }
+        }
+      }
+    },
+    "Sprachen, Überspringen und Startseite liegen auf deinem Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprachen, Überspringen und Startseite liegen auf deinem Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Languages, skipping and home page are stored on your server"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Языки, пропуск и главная страница хранятся на твоём сервере"
           }
         }
       }
@@ -19562,6 +19677,52 @@
         }
       }
     },
+    "Abspielen auf …": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abspielen auf …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play on …"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Играть на…"
+          }
+        }
+      }
+    },
+    "Abspielen auf „%@“": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abspielen auf „%@“"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play on “%@”"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Играть на «%@»"
+          }
+        }
+      }
+    },
     "Übergeben an …": {
       "extractionState": "manual",
       "localizations": {
@@ -19627,6 +19788,121 @@
           "stringUnit": {
             "state": "translated",
             "value": "Устройство «%@» недоступно."
+          }
+        }
+      }
+    },
+    "Immer fragen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Immer fragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always ask"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всегда спрашивать"
+          }
+        }
+      }
+    },
+    "Dann gehts direkt ins letzte Profil. Wieder an unter Profil › Konto.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dann gehts direkt ins letzte Profil. Wieder an unter Profil › Konto."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next time it opens the last profile. Turn it back on under Profile › Account."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дальше откроется последний профиль. Снова включить: Профиль › Аккаунт."
+          }
+        }
+      }
+    },
+    "Beim Start fragen, wer schaut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beim Start fragen, wer schaut"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask who is watching at launch"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "При запуске спрашивать, кто смотрит"
+          }
+        }
+      }
+    },
+    "Mit diesem Profil weiter": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit diesem Profil weiter"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue with this profile"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продолжить с этим профилем"
+          }
+        }
+      }
+    },
+    "Das Profil gibts nicht mehr. Du bist bei %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Profil gibts nicht mehr. Du bist bei %@."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That profile no longer exists. You are %@."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этого профиля больше нет. Вы — %@."
           }
         }
       }

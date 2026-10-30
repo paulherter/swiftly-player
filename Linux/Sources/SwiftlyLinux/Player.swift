@@ -1035,9 +1035,8 @@ enum SubtitleStyle {
             "--freetype-color=16777215",
             "--freetype-outline-thickness=3",
             "--freetype-outline-opacity=230",
-            "--freetype-shadow-opacity=120",
-            "--freetype-shadow-distance=0.04",
-            "--freetype-shadow-angle=-70",
+            // No shadow: VLC draws a hard copy offset at an angle, which read as a slanted outline.
+            "--freetype-shadow-opacity=0",
             "--sub-text-scale=78",
         ]
     }

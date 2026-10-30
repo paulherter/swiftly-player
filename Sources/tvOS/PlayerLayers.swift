@@ -180,10 +180,7 @@ private struct LayersRow: View {
                     // The check mark is only an image; VoiceOver reads the selection from the button (`.isSelected`).
                     .accessibilityHidden(true)
                 // Track names come from the file; use them verbatim.
-                Text(verbatim: text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
+                Marquee(text: text, running: focus)
             }
             .font(.system(size: 30, weight: selected ? .semibold : .regular))
             .foregroundStyle(selected || focus ? Theme.font : Theme.fontQuiet)
@@ -191,6 +188,59 @@ private struct LayersRow: View {
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// **A name that does not fit runs through once while focused**, like the system's
+/// focused labels: a pause to start reading, the text slides to its end, holds, then
+/// jumps back and starts over. Unfocused or fitting, it is a plain truncated line.
+private struct Marquee: View {
+    let text: String
+    let running: Bool
+    @State private var box: CGFloat = 0
+    @State private var full: CGFloat = 0
+    @State private var shift: CGFloat = 0
+
+    private var overflow: CGFloat { max(0, full - box) }
+
+    var body: some View {
+        Text(verbatim: text)
+            .lineLimit(1)
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { full = $0 }
+            .hidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .leading) {
+                if running && overflow > 0 && !Theme.motionReduced {
+                    Text(verbatim: text)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .offset(x: -shift)
+                } else {
+                    Text(verbatim: text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .clipped()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { box = $0 }
+            .task(id: running && overflow > 0) { await run() }
+    }
+
+    private func run() async {
+        shift = 0
+        guard running, overflow > 0, !Theme.motionReduced else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(1.2))
+            let travel = overflow
+            // A steady reading pace, whatever the length.
+            let time = Double(travel / 110)
+            withAnimation(.linear(duration: time)) { shift = travel }
+            try? await Task.sleep(for: .seconds(time + 1.5))
+            guard !Task.isCancelled else { break }
+            shift = 0
+        }
+        shift = 0
     }
 }
 
@@ -321,7 +371,7 @@ struct TracksLayer: View {
             ColumnsRail {
                 SelectionColumn(title: "Audio") {
                     ForEach(area?.audioTracks ?? [], id: \.trackId) { track in
-                        LayersRow(text: track.prettyName, selected: audioNow == track.trackId) {
+                        LayersRow(text: area?.audioLabel(track) ?? track.prettyName, selected: audioNow == track.trackId) {
                             audioSelection = track.trackId
                             area?.selectAudioTrack(track)
                         }

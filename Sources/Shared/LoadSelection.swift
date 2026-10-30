@@ -34,7 +34,7 @@ struct LoadSelection: View {
     /// The episodes the series page already has, usually the selected season.
     let preloaded: [String: [Item]]
     /// What the selection yields: the episodes to download and in what quality.
-    let proceed: ([Item], DownloadQuality) -> Void
+    let proceed: ([Item], DownloadQuality, DownloadAudioChoice) -> Void
 
     @State private var episodes: [String: [Item]] = [:]
     @State private var selected: Set<String> = []
@@ -42,6 +42,8 @@ struct LoadSelection: View {
     @State private var onlyUnwatched = false
     /// Original, until someone taps the badge and picks something else.
     @State private var quality: DownloadQuality = .original
+    /// `nil` until someone picks: then the audio language from the settings applies.
+    @State private var audioChosen: DownloadAudioChoice?
     @State private var loads = true
     /// **The failure case belongs here**, as on the Mac. If the request fails the
     /// selection must not stand empty; nobody would know whether the series has no
@@ -65,6 +67,21 @@ struct LoadSelection: View {
     /// otherwise the estimate from bitrate times runtime. "Free afterwards" follows
     /// when another level is chosen.
     private var bytes: Int64 { bytes(in: quality) }
+
+    /// **Audio as languages**, because the same language sits at a different index in
+    /// every file. Only offered when the selected files hold more than one.
+    private var audioOptions: [DownloadAudioOption] {
+        DownloadAudio.languageOptions(selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
+    }
+    private var audioOffered: Bool {
+        DownloadAudio.offered(selection: selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
+    }
+    /// The chosen language, or the one from the settings, or all tracks; never one the
+    /// selection does not hold.
+    private var audio: DownloadAudioChoice {
+        let wished = audioChosen ?? .language(model.audioLanguage)
+        return audioOffered && audioOptions.contains { $0.choice == wished } ? wished : .all
+    }
 
     private func bytes(in q: DownloadQuality) -> Int64 {
         selectedEpisodes.reduce(0) {
@@ -324,6 +341,12 @@ struct LoadSelection: View {
                 .onChange(of: offered) { _, new in
                     if !new.contains(quality) { quality = .original }
                 }
+            if audioOffered {
+                AudioBadge(choice: Binding(get: { audio }, set: { audioChosen = $0 }),
+                           options: audioOptions)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+            }
 
             // **With arrow, as on the Mac.** The same arrow is in the series' button row,
             // which is where you came from. If space is insufficient the button stays on:
@@ -331,7 +354,7 @@ struct LoadSelection: View {
             // watched titles.
             Button {
                 opened = false
-                proceed(selectedEpisodes, quality)
+                proceed(selectedEpisodes, quality, audio)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down")
@@ -666,5 +689,55 @@ struct QualityBadge: View {
         //.
         .frame(minHeight: expandable ? 44 : nil)
         .contentShape(Rectangle())
+    }
+}
+
+/// **The audio choice, as a pill like the quality one.** A system menu with a
+/// checkmark, "All audio tracks" first. Used in the series selection and in the load
+/// sheet of a film.
+struct AudioBadge: View {
+    @Binding var choice: DownloadAudioChoice
+    let options: [DownloadAudioOption]
+
+    private var current: String {
+        options.first { $0.choice == choice }?.label ?? options.first?.label ?? ""
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    withAnimation(Theme.toggle) { choice = option.choice }
+                } label: {
+                    if option.choice == choice {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2")
+                    .font(Theme.group)
+                    .accessibilityHidden(true)
+                Text(verbatim: current)
+                    .font(Theme.small)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Theme.accent.opacity(0.15),
+                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text("Ton"))
+        .accessibilityValue(Text(verbatim: current))
     }
 }

@@ -23,8 +23,8 @@ import Foundation
 /// - **Next episode** as a card exists only with a credits section from the server
 ///   (``Abschnittslogik/cardDue(position:dauer:abschnitte:hatNaechsteFolge:)``).
 ///   It stays, the fill runs for ``countdown``, and when it looks full, the next
-///   episode starts after ``nachlauf``, **always**, regardless of “Next episode
-///   automatically” and the account default. Opening the controls **deliberately**
+///   episode starts after ``nachlauf``. With “Next episode automatically” off
+///   (``Advance``) the platforms pass `cardDue: false`: no card, no advance. Opening the controls **deliberately**
 ///   meanwhile cancels it; then only the normal button in the controls remains. Without
 ///   a credits section playback never continues by itself.
 /// - **Pointer movement is not a cancel**: on Mac, Linux and Windows every mouse

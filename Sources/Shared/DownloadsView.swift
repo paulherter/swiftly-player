@@ -386,7 +386,7 @@ struct DownloadRow: View {
             // under a gigabyte. The total size dictates the unit.
             let f = DownloadRules.progress(loaded: loaded, from: now.bytes)
             // When converted the end is estimated - then "~" precedes it.
-            parts = [String(localized: "\(f.loaded) von \((entries.converted ? "≈ " : "") + f.total)")]
+            parts = [String(localized: "\(f.loaded) von \((entries.streamed ? "≈ " : "") + f.total)")]
         case .waits:
             parts.append(String(localized: "wartet"))
             if entries.converted { parts.append(entries.guete.name) }

@@ -102,15 +102,21 @@ final class LibraryModel {
         await loadAlphabet(model, from: bib.map { ShelfSource(parent: $0.id, art: art ?? $0.collectionType) })
     }
 
+    @ObservationIgnored private var jumpAsked = 0
+
     /// **The title to scroll to for a letter**, loading until it is there. Loads in steps
     /// sized by where the letter starts on the server, so a jump to the end of a long
     /// library takes a few requests, not dozens.
     func jumpTarget(_ letter: String, model: AppModel, from source: ShelfSource) async -> String? {
         guard let alphabet else { return nil }
+        // Swiping over the rail asks for many letters; only the newest may scroll, even when
+        // an older one finishes loading later.
+        jumpAsked += 1
+        let asked = jumpAsked
         let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
         for _ in 0..<20 {
             if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
-                return items[i].id
+                return asked == jumpAsked ? items[i].id : nil
             }
             guard stillMorePresent else { break }
             // A page being appended right now blocks `loadMore`; wait for it instead of

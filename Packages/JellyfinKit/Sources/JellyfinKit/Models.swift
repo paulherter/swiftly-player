@@ -149,6 +149,9 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let productionLocations: [String]?
     /// `Tmdb`, `Imdb` … Seerr finds a person via the TMDB id.
     public let providerIds: [String: String]?
+    /// The language the title was made in (`en`, `ja`, …). Jellyfin 12 and later; older
+    /// servers do not send it, then `nil`. See ``OriginalAudio``.
+    public let originalLanguage: String?
     /// Kind of an extra (`Clip`, `BehindTheScenes`, `Interview`, `Trailer` …);
     /// set only on entries from `SpecialFeatures`.
     public let extraType: String?
@@ -195,6 +198,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case premiereDate = "PremiereDate"
         case productionLocations = "ProductionLocations"
         case providerIds = "ProviderIds"
+        case originalLanguage = "OriginalLanguage"
         case extraType = "ExtraType"
         case mediaType = "MediaType"
         case sortName = "SortName"
@@ -336,6 +340,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 premiereDate: String? = nil,
                 productionLocations: [String]? = nil,
                 providerIds: [String: String]? = nil,
+                originalLanguage: String? = nil,
                 extraType: String? = nil,
                 mediaType: String? = nil,
                 sortName: String? = nil) {
@@ -361,6 +366,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.premiereDate = premiereDate
         self.productionLocations = productionLocations
         self.providerIds = providerIds
+        self.originalLanguage = originalLanguage
         self.extraType = extraType
         self.mediaType = mediaType
         self.sortName = sortName
@@ -616,7 +622,9 @@ public struct MediaStream: Codable, Sendable, Equatable {
                 dvProfile: Int? = nil, dvBlSignalCompatibilityId: Int? = nil,
                 isForced: Bool? = nil, isExternal: Bool? = nil,
                 title: String? = nil, deliveryUrl: String? = nil,
-                isHearingImpaired: Bool? = nil, aspectRatio: String? = nil) {
+                isHearingImpaired: Bool? = nil, aspectRatio: String? = nil,
+                isOriginal: Bool? = nil) {
+        self.isOriginal = isOriginal
         self.title = title; self.deliveryUrl = deliveryUrl
         self.isHearingImpaired = isHearingImpaired; self.aspectRatio = aspectRatio
         self.codec = codec; self.type = type; self.language = language
@@ -651,6 +659,9 @@ public struct MediaStream: Codable, Sendable, Equatable {
     /// this field "Deutsch" and "Deutsch" stand side by side, and automatic
     /// selection took whichever came first.
     public let isHearingImpaired: Bool?
+    /// The audio track is in the title's original language. Jellyfin 12 and later; older
+    /// servers do not send it, then `nil`. See ``OriginalAudio``.
+    public let isOriginal: Bool?
     /// The aspect ratio in which the picture is **displayed** ("16:9"); for
     /// anamorphic material not width to height of the pixels.
     public let aspectRatio: String?
@@ -747,6 +758,7 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case isForced = "IsForced"
         case isExternal = "IsExternal"
         case isHearingImpaired = "IsHearingImpaired"
+        case isOriginal = "IsOriginal"
         case aspectRatio = "AspectRatio"
         case title = "Title"
         case deliveryUrl = "DeliveryUrl"

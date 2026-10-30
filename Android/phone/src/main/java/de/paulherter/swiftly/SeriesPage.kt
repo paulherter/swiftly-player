@@ -349,6 +349,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                 if (app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                                 else add(Choice("naechste", translated("Nächste Folge abspielen")))
                             }
+                            if (s?.state != null) app.playOnChoices().forEach { add(Choice(it.first, it.second)) }
                             add(Choice("zufaellig", translated("Zufällig abspielen")))
                             selectedSeason?.let { add(Choice("staffel", translated("%@ als gesehen", it.name))) }
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
@@ -358,7 +359,9 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                         val abbreviation = s?.state?.let { st -> if (st.season != null && st.episode != null) " · " + translated("S%d F%d", st.season, st.episode) else "" }.orEmpty()
                         app.sheet.value = SheetRequest(name + abbreviation, entries, null,
                             mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle, "staffel" to Glyph.CheckmarkCircle,
-                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload)) { choice ->
+                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload) +
+                                app.playOnChoices().associate { it.first to Glyph.Tv }) { choice ->
+                            if (s?.state?.let { st -> app.playOnChosen(choice, st.id) } == true) return@SheetRequest
                             if (choice == "gemeinsam") {
                                 s?.state?.let { st -> section.launch { kotlinx.coroutines.delay(SheetSwitch)
                                     sharedCreateOpen(app, st.id, if (st.season != null && st.episode != null) sharedTitleRow("", s.name, st.season, st.episode) else s.name) } }

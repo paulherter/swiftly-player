@@ -149,3 +149,7 @@
 "Hörgeschädigt" = "SDH";
 "Datei" = "File";
 "%@ s" = "%@ s";
+
+"Alle Tonspuren" = "All audio tracks";
+"Tonspur" = "Track";
+"(Original)" = "(Original)";

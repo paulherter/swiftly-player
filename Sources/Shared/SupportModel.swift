@@ -293,6 +293,8 @@ final class SupportModel {
         store.status = new
         if new.isSupporter { cardVisible = false }
         LookStore.shared.setSupporter(isSupporter)
+        // Refunded or expired: a look's own app icon goes back with the look.
+        if !new.isSupporter { Task { await LookIcon.restore() } }
         AppLog.writeOut("[Support] Status: \(new.isSupporter ? "Unterstuetzer" : "keiner")")
     }
 
@@ -378,7 +380,8 @@ final class SupportModel {
                 showsThanks = true
                 // Closed while the App Store dialog ran: the thank-you waits for the next visit.
                 if !presented { thanksPending = true }
-                SupportFlow.shared.purchaseCompleted()
+                // A tip unlocks no look either; a look waiting for it stays waiting.
+                if choice.plan != .tip { SupportFlow.shared.purchaseCompleted() }
             case let .success(.unverified(transaction, error)):
                 AppLog.writeOut("[Support] Unbestaetigter Kauf: \(error)")
                 await transaction.finish()

@@ -10,6 +10,26 @@ struct RootView: View {
     @State private var started = false
     /// The one-time Discord hint, after the fifth title.
     @State private var discordHint = false
+    /// The profile picker above the blurred home page. **Decided once, when the process
+    /// starts**: a return from the background, a switch or a sign-in never opens it.
+    @State private var pickerOpen: Bool
+    /// "Das Profil gibts nicht mehr": the chosen account vanished while the picker was open.
+    @State private var pickerNotice: String?
+
+    init() {
+        let model = AppModel.only
+        _pickerOpen = State(initialValue: ProfilePickerRule.opensAtLaunch(
+            ready: model.phase == .ready, accounts: model.accounts.count))
+    }
+
+    /// Closes the picker with nothing animated: under the still image of the account
+    /// switch, or straight into the active profile.
+    private func closePicker() {
+        guard pickerOpen else { return }
+        var without = Transaction()
+        without.disablesAnimations = true
+        withTransaction(without) { pickerOpen = false }
+    }
 
     var body: some View {
         ZStack {
@@ -22,7 +42,46 @@ struct RootView: View {
                 SignInView(model: model, serverName: serverName, version: version)
             case .ready:
                 MainView(model: model)
+                    // **Blur from the first frame**, never animated: a radius animation
+                    // would run on the main thread while the home page builds.
+                    // Not `opaque`: it clips to the safe area and left a hard dark band in
+                    // the overscan margin. Faded edges land on the dark base instead.
+                    // No material, no glass.
+                    .blur(radius: pickerOpen ? 60 : 0)
+                    .overlay {
+                        if pickerOpen { Theme.reason.opacity(0.6).ignoresSafeArea() }
+                    }
+                    // Neither focus nor VoiceOver reach the page below; its Menu handler
+                    // stays silent, so Menu leaves to the Home Screen.
+                    .disabled(pickerOpen)
+                    .accessibilityHidden(pickerOpen)
+                    .animation(nil, value: pickerOpen)
+                if pickerOpen {
+                    ProfilePicker(model: model, entered: started) {
+                        pickerNotice = String(localized: "Das Profil gibts nicht mehr. Du bist bei \(model.session?.userName ?? "").")
+                        closePicker()
+                    }
+                }
             }
+        }
+        .overlay(alignment: .top) {
+            if let pickerNotice {
+                HintStrip(text: pickerNotice) { self.pickerNotice = nil }
+                    .padding(.top, Theme.barBottom + 20)
+            }
+        }
+        // The press in the picker: the still image lies on top by now, the picker goes
+        // away underneath it.
+        .onChange(of: AccountSwitchTransition.shared.back) { _, _ in closePicker() }
+        // A Top Shelf item belongs to the last profile; asking and then ignoring the answer
+        // would be wrong.
+        .onOpenURL { _ in closePicker() }
+        .onChange(of: model.accounts.count) { _, count in
+            if count < ProfilePickerRule.minimum { closePicker() }
+        }
+        // Server names for the picker, kept per address (`Session` has none).
+        .onChange(of: model.serverName, initial: true) { _, name in
+            if let name, let url = model.session?.serverURL { ServerNameCache.store(name, for: url) }
         }
         .overlay {
             if !started {

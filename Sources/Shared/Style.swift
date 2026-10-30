@@ -4011,7 +4011,11 @@ struct ActionSheet: View {
             .sheet(opened: $opened) {
                 SheetCategory(text: Text(verbatim: title))
 
-                ForEach(Array(actions.enumerated()), id: \.element.id) { pair in
+                // **By position, not by `TitleAction.id`.** That id is a fresh UUID every time the
+                // list is built, and the page builds it on every redraw (the play-on poll redraws it
+                // every few seconds). New ids mean new rows, inserted mid slide-up, and an inserted
+                // row does not ride along with the card: it stands at its end place and fades in.
+                ForEach(Array(actions.enumerated()), id: \.offset) { pair in
                     // Continuous; the reasoning is at `SheetLine`.
                     if pair.offset > 0 { SheetLine() }
                     Button {

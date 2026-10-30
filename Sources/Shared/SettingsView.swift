@@ -80,13 +80,14 @@ struct SettingsView: View {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) { offline; integration }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) { server }
+                    VStack(alignment: .leading, spacing: 0) { server; sync }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 offline
                 integration
                 server
+                sync
             }
             // **Support, always reachable.** Below the device settings, before the
             // version line: it concerns the app, not this device or the server.
@@ -139,6 +140,12 @@ struct SettingsView: View {
                           under: Text("Downloads warten, bis du im WLAN bist"),
                           an: Binding(get: { model.onlyOverWLAN },
                                       set: { model.onlyOverWLAN = $0 }))
+                SheetLine()
+                ChoiceRow(symbol: "play.square.stack",
+                          title: Text("Nächste Folge laden"),
+                          under: Text("Lädt die nächste, löscht die gesehene"),
+                          an: Binding(get: { model.downloads.nextAuto },
+                                      set: { model.downloads.nextAuto = $0 }))
                 SheetLine()
                 // **The number is in the row, not behind it.** Anyone who wants to know how
                 // much is used should not have to tap; it is the only piece of information
@@ -205,6 +212,17 @@ struct SettingsView: View {
                               ? nil : String(model.ownHeaders(for: model.session?.serverURL).count))
             }
             .buttonStyle(Theme.PressRow())
+        }
+    }
+
+    /// **Settings follow the account to every device** (`SettingsSyncRun`). On by default.
+    private var sync: some View {
+        SettingGroup(title: "Konto") {
+            ChoiceRow(symbol: "arrow.triangle.2.circlepath",
+                      title: Text("Einstellungen auf allen Geräten gleich halten"),
+                      under: Text("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
+                      an: Binding(get: { model.settingsSync.on },
+                                  set: { model.settingsSync.on = $0 }))
         }
     }
 

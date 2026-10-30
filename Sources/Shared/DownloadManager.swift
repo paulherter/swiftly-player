@@ -191,7 +191,7 @@ final class DownloadManager {
                                                    itemID: p.id, source: p.source ?? plan.source?.id,
                                                    server: session.serverURL,
                                                    key: session.accessToken,
-                                                   converted: p.converted)
+                                                   converted: p.streamed)
             guard !files.isEmpty else { return }
             let target = Self.subtitleFolder(to: file)
             try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
@@ -242,7 +242,66 @@ final class DownloadManager {
     func playbackRemember(_ id: String, ticks: Int64, moment: Date = Date()) {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i] = entries[i].postPlayback(ticks: ticks, moment: moment)
+        // Watched to the end: the next episode is due. Marked first, so a lookup that
+        // finds no server is repeated on the next contact (``smartCatchUp()``).
+        if nextAuto, DownloadRules.hasSuccessor(entries[i]),
+           DownloadRules.reachedEnd(ticks: ticks, runtimeTicks: entries[i].runtimeTicks) {
+            entries[i].nextPending = true
+            smartNext(id)
+        }
         secure()
+    }
+
+    // MARK: - Next episode
+
+    /// **"Load next episode".** Off by default; whoever switches it on gets the next
+    /// episode of a series loaded when a downloaded one was watched to the end, in
+    /// the same quality and audio, and the watched one removed once the new one has
+    /// arrived. Kept here and not in `AppModel`: nothing else needs to know.
+    var nextAuto = UserDefaults.standard.bool(forKey: DownloadManager.nextAutoKey) {
+        didSet { UserDefaults.standard.set(nextAuto, forKey: DownloadManager.nextAutoKey) }
+    }
+    static let nextAutoKey = "naechsteFolgeLaden"
+
+    /// Episodes whose successor is being looked up, so one lookup runs at a time.
+    @ObservationIgnored private var successorSearches: Set<String> = []
+
+    /// Queue the successor of a watched, downloaded episode. **Wi-Fi-only needs no
+    /// extra code**: the entry joins the queue like any other and ``tick()`` holds it
+    /// back until the rule allows it.
+    private func smartNext(_ id: String) {
+        guard nextAuto, let client, !successorSearches.contains(id),
+              let watched = entries.first(where: { $0.id == id }),
+              watched.nextPending == true, DownloadRules.hasSuccessor(watched),
+              let seriesID = watched.seriesIdentifier else { return }
+        successorSearches.insert(id)
+        Task { [weak self] in
+            let all = try? await client.episodes(seriesID: seriesID)
+            guard let self else { return }
+            self.successorSearches.remove(id)
+            // No answer (offline): stays pending.
+            guard let all, let i = self.entries.firstIndex(where: { $0.id == id }) else { return }
+            let current = self.entries[i]
+            self.entries[i].nextPending = nil
+            self.secure()
+            // After the last episode the watched one simply stays. An episode already on
+            // the device or in the queue is not loaded again.
+            guard let next = DownloadRules.followingEpisode(after: current, in: all),
+                  !self.entries.contains(where: { $0.id == next.id }) else { return }
+            let follower = DownloadRules.followUp(to: current, next: next)
+            guard self.inquiry(for: follower.bytes).suffices else { return }
+            var images: [String: URL] = [:]
+            if let landscape = await client.imageURL(for: next, maxHeight: 220) {
+                images[next.id] = landscape
+            }
+            self.trigger(follower, images: images)
+            AppLog.writeOut("[Download] nächste Folge \(next.id) nach \(id)")
+        }
+    }
+
+    /// Pick up what could not be looked up yet. Called on contact with the server.
+    func smartCatchUp() {
+        for p in entries where p.nextPending == true { smartNext(p.id) }
     }
 
     // MARK: Konto
@@ -692,16 +751,17 @@ final class DownloadManager {
 
         let resume = resumeData[p.id]
         resumeData[p.id] = nil
-        // **A transcoded file starts from scratch.** The server accepts no range
-        // requests for it (`Accept-Ranges: none`), so there is no resume data; what was
+        // **A built file starts from scratch** (converted, or cut down to one audio
+        // track). The server accepts no range requests for it (`Accept-Ranges: none`), so there is no resume data; what was
         // downloaded before no longer counts.
-        if resume == nil, entries[i].converted { entries[i].loaded = 0 }
+        if resume == nil, entries[i].streamed { entries[i].loaded = 0 }
         live[p.id] = DownloadProgress(loaded: entries[i].loaded, total: entries[i].bytes)
 
         Task { [weak self] in
             guard let address = try? await client.downloadURL(itemID: p.id,
                                                               mediaSourceID: p.source,
-                                                              quality: p.guete) else {
+                                                              quality: p.guete,
+                                                              audioStreamIndex: p.audioIndex) else {
                 self?.failed(.init(id: p.id, generation: now, file: p.fileName),
                                         reason: String(localized: "Keine Adresse vom Server."),
                                         resume: nil)
@@ -798,7 +858,7 @@ final class DownloadManager {
             entries[i].state = .done
             // **The estimate yields to the real size** once the transcoded file exists,
             // otherwise usage would keep counting a calculated number.
-            if entries[i].converted,
+            if entries[i].streamed,
                let real = try? Self.folder().appendingPathComponent(entries[i].fileName)
                    .resourceValues(forKeys: [.fileSizeKey]).fileSize, real > 0 {
                 entries[i].bytes = Int64(real)
@@ -806,6 +866,11 @@ final class DownloadManager {
             entries[i].loaded = entries[i].bytes
             subtitleFetch(entries[i])
             sectionsFetch(entries[i].id)
+            // **The watched episode goes only now**, with its successor safely on the
+            // device. Never before: a failed download must not leave a gap.
+            let replaced = nextAuto ? DownloadRules.replacedOne(by: entries[i], in: entries) : nil
+            entries[i].replaces = nil
+            if let replaced { removeWithoutSafe(replaced) }
         } else {
             entries[i].state = .error
             entries[i].reason = String(localized: "Die Datei liess sich nicht ablegen.")
@@ -936,6 +1001,7 @@ final class DownloadManager {
             if available.contains(id) { self.watchState(id, watchState[id]) }
             onServer(id, available.contains(id))
         }
+        smartCatchUp()
     }
 }
 

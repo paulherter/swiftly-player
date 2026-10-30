@@ -335,7 +335,8 @@ struct ItemDetailView: View {
                               itemID: current.id,
                               mark: current.imageTags?["Primary"])].compactMapValues { $0 },
                           failed: { message = $0 },
-                          qualitySelect: true)
+                          qualitySelect: true,
+                          audioStreams: (plan?.source ?? current.mediaSources?.first)?.mediaStreams ?? [])
                     .zIndex(20)
             }
             if let message {
@@ -819,7 +820,7 @@ extension ItemDetailView {
     }
 
     var moreActions: [TitleAction] {
-        TitleActions.forMovie(current, plan: plan, model: model,
+        TitleActions.playOn(plan == nil ? nil : current, model: model) + TitleActions.forMovie(current, plan: plan, model: model,
                                  start: { launch(since: $0) },
                                  report: { message = $0 },
                                  gemeinsam: SharedModel.shared.mayCreate

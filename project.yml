@@ -36,7 +36,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "33"
+    CURRENT_PROJECT_VERSION: "37"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -217,6 +217,7 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
       # sits idle here: `downloadsAn` is off, so neither the network watcher nor
@@ -517,6 +518,7 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
       # sits idle here: `downloadsAn` is off, so neither the network watcher nor
