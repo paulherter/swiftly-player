@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Swiftly <swiftly@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 15:00:00 +0100
+Subject: [PATCH] freetype: clip glyphs to the region picture
+
+A glyph can reach past the box the subtitle region was sized from. The
+blend functions do not clip, so its top row was read and written above
+the picture. This corrupts the heap, and crashes in BlendGlyphToARGB when
+the picture sits at the start of a malloc region.
+---
+diff --git a/modules/text_renderer/freetype/freetype.c b/modules/text_renderer/freetype/freetype.c
+index ea67c8a..2d12b77 100644
+--- a/modules/text_renderer/freetype/freetype.c
++++ b/modules/text_renderer/freetype/freetype.c
+@@ -642,8 +642,23 @@ static void RenderCharAXYZ( filter_t *p_filter,
+             i_glyph_y += sy;
+         }
+ 
+-        draw->blend( p_picture, i_glyph_x, i_glyph_y,
+-                    i_a, i_x, i_y, i_z, p_glyph );
++        /* Clip to the picture: a glyph can reach past the box the region was
++         * sized from, and blending there touches memory outside the picture. */
++        const int i_skip_x = __MAX( 0, -i_glyph_x );
++        const int i_skip_y = __MAX( 0, -i_glyph_y );
++        const int i_end_x = __MIN( (int)p_glyph->bitmap.width,
++                                   (int)p_picture->format.i_visible_width - i_glyph_x );
++        const int i_end_y = __MIN( (int)p_glyph->bitmap.rows,
++                                   (int)p_picture->format.i_visible_height - i_glyph_y );
++        if( i_end_x > i_skip_x && i_end_y > i_skip_y )
++        {
++            FT_BitmapGlyphRec clipped = *p_glyph;
++            clipped.bitmap.buffer += i_skip_y * p_glyph->bitmap.pitch + i_skip_x;
++            clipped.bitmap.width = i_end_x - i_skip_x;
++            clipped.bitmap.rows = i_end_y - i_skip_y;
++            draw->blend( p_picture, i_glyph_x + i_skip_x, i_glyph_y + i_skip_y,
++                        i_a, i_x, i_y, i_z, &clipped );
++        }
+ 
+         /* underline/strikethrough are only rendered for the normal glyph */
+         if( g == 2 && ch->i_line_thickness > 0 )
+-- 
+2.39.0

@@ -34,7 +34,14 @@ import VLCKit
 /// do a soft one, only a hard copy of glyph and outline, offset at an angle,
 /// and that read as a slanted outline behind upright text.
 /// - **Margin:** `sub-margin` in video pixels; VLC 4 otherwise places the
-/// text closer to the bottom edge than VLC 3.
+/// text closer to the bottom edge than VLC 3. 16 instead of 30, because the
+/// padding below already lifts the text by a quarter of the font height.
+/// - **Background opacity 1 of 255:** invisible, but above 0 VLC pads the
+/// subtitle picture by a quarter of the font height. Without padding a glyph
+/// can reach above the picture, and libVLC 4 has no clipping there: playback
+/// crashed in `BlendGlyphToARGB` when the picture sat at the start of a malloc
+/// region. Patch 0039 in `Werkzeuge/vlckit-patches` fixes the cause; this
+/// stays until a VLCKit build with that patch ships.
 ///
 /// ASS with its own style is drawn by libass, and picture subtitles (PGS,
 /// VobSub, DVB) are finished images; both stay as they are.
@@ -47,7 +54,8 @@ enum SubtitleStyle {
         "--freetype-outline-thickness=3",
         "--freetype-outline-opacity=230",
         "--freetype-shadow-opacity=0",
-        "--sub-margin=30",
+        "--freetype-background-opacity=1",
+        "--sub-margin=16",
     ]
 
     /// Factor on VLC's default (1 = 6.25 % of the picture height).
