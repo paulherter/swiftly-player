@@ -9,7 +9,7 @@
 
 pkgname=swiftly-jellyfin
 pkgver=1.0.9
-pkgrel=1
+pkgrel=2
 pkgdesc="Jellyfin-Client, der niemals transkodiert"
 arch=('x86_64' 'aarch64')
 # **Why the current name matters.** `swiftly-for-jellyfin` is a separate,

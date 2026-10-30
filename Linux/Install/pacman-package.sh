@@ -78,7 +78,7 @@ options=('!strip' '!debug')
 package() {
     install -Dm755 "\$startdir/inhalt/$PROGRAM" "\$pkgdir/usr/lib/$PROGRAM/$PROGRAM"
     for bundle in "\$startdir/inhalt"/*.resources "\$startdir/inhalt"/*.bundle; do
-        [ -d "\$buendel" ] && cp -r "\$buendel" "\$pkgdir/usr/lib/$PROGRAM/"
+        [ -d "\$bundle" ] && cp -r "\$bundle" "\$pkgdir/usr/lib/$PROGRAM/"
     done
     cp -r "\$startdir/inhalt/Resources" "\$pkgdir/usr/lib/$PROGRAM/Resources"
     install -d "\$pkgdir/usr/bin"
@@ -111,6 +111,15 @@ if [ "$(id -u)" = "0" ]; then
 else
     ( cd "$work" && makepkg -f --nodeps --noconfirm )
 fi
+
+# **Check the finished package, not the input.** The checks above only see
+# `inhalt/`. A misspelled loop variable in `package()` above once dropped both
+# bundles after those checks had passed, and the package crashed at startup.
+contents="$(tar -tf "$work"/*.pkg.tar.zst)"
+for z in SwiftlyLinux JellyfinKit; do
+    grep -Eq "^usr/lib/$PROGRAM/${z}_${z}\.(resources|bundle)/" <<<"$contents" ||
+        { echo "Ressourcenbuendel fehlt im fertigen Paket: ${z}_${z}" >&2; exit 1; }
+done
 
 cp "$work"/*.pkg.tar.zst "$out/"
 rm -rf "$work"
