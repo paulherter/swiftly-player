@@ -101,6 +101,9 @@ struct LibraryView: View {
                     // shortcut.
                     VStack(alignment: .leading, spacing: 3) {
                         titleLine
+                            // The library menu hangs from the title; the server line below would
+                            // otherwise draw over the open menu.
+                            .zIndex(1)
                         // Where am I? The server name was not shown on any page; with several accounts
                         // that have identically named libraries it is the only difference.
                         if let server = model.serverName, !server.isEmpty {
@@ -115,6 +118,10 @@ struct LibraryView: View {
                     // character for character.
                     if shown > 0 { CountMark(count: shown) }
                 }
+                // **Above the value row**, which has its own `zIndex` for its panels: the library
+                // menu opens downward over it, and below it the "All" and order buttons showed
+                // through the open menu.
+                .zIndex(30)
 
                 // Two buttons instead of eight chips.
                 //
