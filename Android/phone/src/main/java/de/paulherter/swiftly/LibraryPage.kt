@@ -69,7 +69,7 @@ import java.text.NumberFormat
 
 data class GridTile(val id: String, val title: String, val type: String, val subline: String?, val poster: String?,
                         val progress: Double?, val mark: String?, val markCount: Int,
-                        /** The tile's letter in the strip of a "By name" grid (`AlphabetIndex`). */
+                        /** The tile's key in the index strip (`AlphabetIndex.key(of:sorting:)`). */
                         val letter: String? = null)
 
 /** Like `AppModel.pagesSize`. */
@@ -123,7 +123,7 @@ class LibraryState(val art: String, private val store: Store) {
     /** The video playlists with entries in this scope (`PlaylistDirectory`); in memory like the collections. */
     var playlistList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
     var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: "name"); private set
-    /** The letter strip of a "By name" list (`LibraryModel.alphabet`); empty otherwise. */
+    /** The index strip of the list (`LibraryModel.alphabet`); empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     var filter by mutableStateOf(store.rememberValue("filter.$art") ?: "alle"); private set
     private var loadsPost = false
@@ -274,7 +274,7 @@ class LibraryState(val art: String, private val store: Store) {
         })
         filterMore = if (o.optBoolean("gesiebt")) o.optBoolean("nochMehr") else null
         // The strip comes with the first page of a "By name" list.
-        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
+        if (since == 0) letters = lettersRead(o.optJSONArray("buchstaben"))
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { i ->
             gridTileRead(a.getJSONObject(i))
@@ -303,7 +303,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
         // The strip where it means something (switched on, "By name", a grid of titles), and the right
         // margin making room for it so the gaps to the edge and to the posters match (`trailingLane`).
-        val shownLetters = if (app.settings.alphabet && state.sorting == "name" && !state.listSelected
+        val shownLetters = if (app.settings.alphabet && !state.listSelected
                                && state.letters.size > 1) state.letters else emptyList()
         val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
         // `Theme.columns(usableNow:)`: three on every phone.

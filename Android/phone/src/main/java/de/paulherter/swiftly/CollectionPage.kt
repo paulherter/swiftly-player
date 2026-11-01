@@ -149,7 +149,7 @@ class CollectionState(val id: String, val art: String?) {
     var disrupted by mutableStateOf(false); private set
     var sorting by mutableStateOf("erscheinung")
     var filter by mutableStateOf("alle")
-    /** The letter strip of a "By name" list; empty otherwise. */
+    /** The index strip of the list; empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     private var loadsPost = false
     private var loadedFor: String? = null
@@ -198,7 +198,7 @@ class CollectionState(val id: String, val art: String?) {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.collectionPage(id, art.orEmpty(), sorting, filter, since.toLong(), count).await()
         })
-        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
+        if (since == 0) letters = lettersRead(o.optJSONArray("buchstaben"))
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } to o.getInt("gesamt")
     }
@@ -245,7 +245,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
     }) { headerDp ->
         BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
             // The strip and its margin, as on the library page.
-            val shownLetters = if (app.settings.alphabet && state.sorting == "name" && state.letters.size > 1)
+            val shownLetters = if (app.settings.alphabet && state.letters.size > 1)
                 state.letters else emptyList()
             val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
             val count = Theme.columns((maxWidth - Theme.edgeSpacing - lane).value)

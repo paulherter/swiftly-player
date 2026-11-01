@@ -294,7 +294,7 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
         })
         // **The letter strip in the right margin** where it means something (switched on, "By name", a
         // grid of titles). The grid's first item is the header, so tile i is item i + 1.
-        if (app.settings.alphabet && state.sorting == "name" && !collections && state.letters.size > 1) {
+        if (app.settings.alphabet && !collections && state.letters.size > 1) {
             val current by remember(state) {
                 derivedStateOf { state.items.getOrNull(maxOf(0, lattice.firstVisibleItemIndex - 1))?.letter }
             }
