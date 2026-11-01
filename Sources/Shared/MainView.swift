@@ -1116,11 +1116,11 @@ struct LibraryView: View {
     /// "Collections" and "Playlists" come from memory, not from a query.
     private var listChoice: Bool { choice == .collections || choice == .playlists }
 
-    /// The strip only where it means something: switched on, sorted A–Z, a grid of titles,
-    /// and more than one letter.
+    /// The strip only where it means something: switched on, a grid of titles, and more
+    /// than one entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
-        guard model.alphabetShown, state.sorting == .name, !listChoice,
-              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        guard model.alphabetShown, !listChoice,
+              let alphabet = state.currentAlphabet else { return nil }
         return alphabet
     }
 
@@ -1146,9 +1146,9 @@ struct LibraryView: View {
     /// changes**: tiles come and go on every scroll, and a state change per tile would
     /// redraw the whole page each time.
     private func updateTopLetter() {
-        guard shownAlphabet != nil,
+        guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        let letter = alphabet.key(of: item)
         if letter != topLetter { topLetter = letter }
     }
 

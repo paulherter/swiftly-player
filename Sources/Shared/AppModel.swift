@@ -2041,6 +2041,25 @@ final class AppModel {
         await naturalList(from: source, filter: filter)?.map { ($0.name, $0.sortName) }
     }
 
+    /// **The whole list in any order, as slim as the server allows**, for the index beside
+    /// the grid (``AlphabetIndex``). "By name" is the natural list; the others ask the
+    /// server in the grid's own order, with year, rating and date added but no images.
+    func indexList(from source: ShelfSource, sorting: Sorting,
+                   filter: LibraryFilter = .all) async -> [Item]? {
+        if sorting == .name { return await naturalList(from: source, filter: filter) }
+        guard let client else { return nil }
+        do {
+            return try await client.items(parentID: source.parent, limit: 0, startIndex: 0,
+                                          sortBy: sorting.inputField, sortOrder: source.bearing(sorting),
+                                          filters: filter.jellyfinFilter, isWatched: filter.isWatched,
+                                          recursive: source.recursive, includeItemTypes: source.types,
+                                          ids: [], personIDs: [], genres: [], slim: true).items
+        } catch {
+            Self.log.error("Indexliste nicht geladen: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     /// Everything bookmarked, **across all libraries**.
     ///
     /// Hence without `parentID`: the watchlist is not a library, its boundary is the
