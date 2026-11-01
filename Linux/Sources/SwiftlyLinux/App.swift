@@ -4903,6 +4903,9 @@ final class App: @unchecked Sendable {
             }
             gridFilter[was] = nil
             gridRaw[was] = nil
+            if sort != .name, since == 0 {
+                indexLoad(was, parent: source.parent, source: source, sorting: sort, filter: f, client: client)
+            }
             // "By name" pages come from the naturally sorted list; the first page fetches it
             // fresh, later pages reuse it.
             let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
@@ -5008,7 +5011,9 @@ final class App: @unchecked Sendable {
         guard let strip = alphabetStrips[was] else { return }
         let titles = was == .collection
             || (sectionSelection(was) != .collections && sectionSelection(was) != .playlists)
-        let on = selection.alphabetShown && sortingFrom(was) == .name && titles
+        // Only the index of the order on screen: right after switching, the old one would
+        // point at the wrong titles.
+        let on = selection.alphabetShown && gridAlphabet[was]?.sorting == sortingFrom(was) && titles
         let height = gridScrollers[was].map { Double(gtk_widget_get_height($0)) } ?? 0
         strip.show(on ? gridAlphabet[was] : nil, height: height - Double(Theme.contentTop + 96 + Theme.edgeSpacing))
         alphabetTopUpdate(was)
@@ -5025,7 +5030,7 @@ final class App: @unchecked Sendable {
     private func alphabetJump(_ was: Region, _ letter: String) {
         guard let alphabet = gridAlphabet[was] else { return }
         let items = gridItems[was] ?? []
-        if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
+        if let i = alphabet.target(for: letter, in: items) {
             pendingLetter[was] = nil
             gridScroll(was, to: i)
             return
@@ -5083,14 +5088,33 @@ final class App: @unchecked Sendable {
         let index = Int(gtk_flow_box_child_get_index(kind))
         let items = gridItems[was] ?? []
         guard items.indices.contains(index) else { return }
-        strip.highlight(AlphabetIndex.letter(name: items[index].name, sortName: items[index].sortName))
+        strip.highlight(gridAlphabet[was]?.key(of: items[index]))
     }
 
     /// The naturally sorted list of a grid and its letter strip, on the main thread.
     private func naturalStore(_ was: Region, _ list: [Item]) {
         gridNatural[was] = list
-        gridAlphabet[was] = AlphabetIndex(titles: list.map { ($0.name, $0.sortName) })
+        gridAlphabet[was] = AlphabetIndex(items: list, sorting: .name)
         alphabetRailUpdate(was)
+    }
+
+    /// **The index strip for any other order**: the whole list once, slim, in the grid's
+    /// order, beside the first page (``AlphabetIndex/init(items:sorting:)``). Kept only if
+    /// the order is still the same when it arrives.
+    private func indexLoad(_ was: Region, parent: String?, source: ShelfSource, sorting sort: Sorting,
+                           filter f: LibraryFilter, client: any MediaServer) {
+        Task.detached { [self] in
+            guard let list = try? await client.items(
+                parentID: parent, limit: 0, startIndex: 0, sortBy: sort.inputField,
+                sortOrder: source.bearing(sort), filters: f.jellyfinFilter, isWatched: f.isWatched,
+                recursive: source.recursive, includeItemTypes: source.types,
+                ids: [], personIDs: [], genres: [], slim: true).items else { return }
+            onMainThread {
+                guard self.sortingFrom(was) == sort, self.filterFrom(was) == f else { return }
+                self.gridAlphabet[was] = AlphabetIndex(items: list, sorting: sort)
+                self.alphabetRailUpdate(was)
+            }
+        }
     }
 
     /// An answer into the grid, on the main thread.
@@ -5154,6 +5178,9 @@ final class App: @unchecked Sendable {
         let oldFilter = since == 0 ? nil : gridFilter[was]
         let start = since == 0 ? 0 : (gridRaw[was]?.offset ?? 0)
         let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
+        if sort != .name, since == 0 {
+            indexLoad(was, parent: nil, source: source, sorting: sort, filter: f, client: client)
+        }
         Task.detached { [self] in
             // "By name": the raw pages are slices of the naturally sorted list.
             var natural: [Item]? = cachedNatural

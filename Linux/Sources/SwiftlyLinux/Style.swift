@@ -904,10 +904,12 @@ enum Theme {
         .swiftly-beschreibung { color: \(fontQuiet); font-size: \(body)px; }
         .swiftly-leistentitel { font-size: \(categoryLarge)px; font-weight: 600; letter-spacing: -0.14px; }
         .swiftly-beleg label, .swiftly-beleg image { color: \(accent); }
-        /* The letter strip beside a "By name" grid (`AlphabetStrip`): quiet letters, the
-           current one in the accent. */
+        /* The index strip beside a grid (`AlphabetStrip`): quiet entries, the current one
+           in the accent. */
         .swiftly-buchstabe { font-size: 11px; font-weight: 600; color: \(fontQuiet); }
         .swiftly-buchstabe-aktiv { color: \(accent); }
+        /* Between the steps of a scale in the strip (`AlphabetStrip`). */
+        .swiftly-buchstabe-punkt { font-size: 8px; color: \(fontVeryQuiet); }
         .swiftly-warnung label, .swiftly-warnung image { color: \(warning); }
 
         /* **Der Beleg ist eine Marke, kein loser Text.**

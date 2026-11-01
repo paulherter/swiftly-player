@@ -17,8 +17,14 @@ final class AlphabetStrip {
 
     private var entries: [AlphabetIndex.Entry] = []
     private var labels: [Widget] = []
+    /// The strip's rows top to bottom: the key of an entry, or for a dot the key of the entry
+    /// after it (a dot belongs to the group it opens).
+    private var rows: [String] = []
     private var current: String?
     private var touched: String?
+    /// The last entry jumped to, until the grid is there (`AlphabetRail.held` on Apple).
+    private var held: String?
+    private var heldSince = 0
     private var pressY = 0.0
     fileprivate var lives = true
 
@@ -56,24 +62,38 @@ final class AlphabetStrip {
         gtk_widget_add_controller(widget, gesture)
     }
 
-    /// Shows the letters of `index` (or hides the strip for `nil`), condensed to what fits
-    /// into `height`.
+    /// Shows the entries of `index` (letters, years or ratings), or hides the strip
+    /// for `nil`, condensed to what fits into `height`.
     func show(_ index: AlphabetIndex?, height: Double) {
         guard lives else { return }
         guard let index, index.isUseful else {
             gtk_widget_set_visible(widget, 0)
             return
         }
-        let slots = max(2, Int((height > 0 ? height : 600) / Self.minimumRow))
+        var slots = max(2, Int((height > 0 ? height : 600) / Self.minimumRow))
+        // Here a dot takes a whole row, not half of one (`AlphabetIndex.gapShare`).
+        if index.entries.contains(where: \.gap) {
+            slots = max(2, Int(Double(slots) * (1 + AlphabetIndex.gapShare) / 2))
+        }
         let shown = index.condensed(fitting: slots)
         gtk_widget_set_visible(widget, 1)
         guard shown != entries else { return }
         entries = shown
         wipe(widget)
+        rows = []
         labels = shown.map { entry in
-            let letter: Widget = label(entry.letter, style: "swiftly-buchstabe")
+            // The next step of a scale. A whole row here, since the rows are homogeneous.
+            if entry.gap {
+                let dot: Widget = label("•", style: "swiftly-buchstabe-punkt")
+                gtk_widget_set_vexpand(dot, 1)
+                append(widget, dot)
+                rows.append(entry.letter)
+            }
+            // The label, not the key: "26" for "2026".
+            let letter: Widget = label(entry.label, style: "swiftly-buchstabe")
             gtk_widget_set_vexpand(letter, 1)
             append(widget, letter)
+            rows.append(entry.letter)
             return letter
         }
         paint()
@@ -83,13 +103,14 @@ final class AlphabetStrip {
     func highlight(_ letter: String?) {
         guard lives, letter != current else { return }
         current = letter
+        if let held, letter == held { self.held = nil }
         paint()
     }
 
     private func paint() {
-        let lit = touched ?? current
+        let key = touched ?? held ?? current
         for (entry, letter) in zip(entries, labels) {
-            if entry.letter == lit { gtk_widget_add_css_class(letter, "swiftly-buchstabe-aktiv") }
+            if entry.letter == key { gtk_widget_add_css_class(letter, "swiftly-buchstabe-aktiv") }
             else { gtk_widget_remove_css_class(letter, "swiftly-buchstabe-aktiv") }
         }
     }
@@ -102,16 +123,25 @@ final class AlphabetStrip {
     fileprivate func pullState(dy: Double) { pointer(at: pressY + dy) }
 
     fileprivate func pullEnd() {
+        held = touched
         touched = nil
         paint()
+        // Let go at the latest after a few seconds, should the grid never get there.
+        heldSince += 1
+        let mark = heldSince
+        postDeadline(Double(AlphabetIndex.holdSeconds)) { [weak self] in
+            guard let self, self.lives, self.heldSince == mark, self.held != nil else { return }
+            self.held = nil
+            self.paint()
+        }
     }
 
     private func pointer(at y: Double) {
-        guard lives, !entries.isEmpty else { return }
+        guard lives, !rows.isEmpty else { return }
         let height = Double(gtk_widget_get_height(widget))
         guard height > 0 else { return }
-        let row = Int(y / (height / Double(entries.count)))
-        let letter = entries[min(max(row, 0), entries.count - 1)].letter
+        let row = Int(y / (height / Double(rows.count)))
+        let letter = rows[min(max(row, 0), rows.count - 1)]
         guard letter != touched else { return }
         touched = letter
         paint()
