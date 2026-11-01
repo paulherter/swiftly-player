@@ -33,6 +33,8 @@ Android	FieldResponse	codable	aehnliche,extras
 Android	FieldResponse.CodingKeys	codingkey	aehnliche,extras
 Android	FileResponse	codable	container,hatUntertitel,ton,untertitel,video
 Android	FileResponse.CodingKeys	codingkey	container,hatUntertitel,ton,untertitel,video
+Android	FoundServerResponse	codable	adresse,id,kurz,name
+Android	FoundServerResponse.CodingKeys	codingkey	adresse,id,kurz,name
 Android	GridPagesResponse	codable	buchstaben,gesamt,titel
 Android	GridPagesResponse.CodingKeys	codingkey	buchstaben,gesamt,titel
 Android	GridTileResponse	codable	buchstabe,fortschritt,id,marke,markenzahl,plakat,titel,typ,unterzeile
@@ -224,6 +226,8 @@ Kit	DownloadPermission	raw	erlaubt,unbekannt,verboten
 Kit	DownloadQuality	raw	hd1080,hd720,original,sd480
 Kit	DownloadState	raw	angehalten,fehler,fertig,laedt,wartet
 Kit	ForeignCommand	raw	Pause,Stop,Unpause
+Kit	FoundServer	codable	Address,Id,Name
+Kit	FoundServer.CodingKeys	codingkey	Address,Id,Name
 Kit	HomeStore	codable	bibliotheken,fassung,gattungsreihen,naechsteFolge,neueFilme,neueSerien,weiterschauen,zuletzt
 Kit	HomeStore.CodingKeys	codingkey	bibliotheken,fassung,gattungsreihen,naechsteFolge,neueFilme,neueSerien,weiterschauen,zuletzt
 Kit	HomeStore.Rail	codable	items,name

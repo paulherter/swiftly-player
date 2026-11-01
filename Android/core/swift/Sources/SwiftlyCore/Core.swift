@@ -379,6 +379,27 @@ public final class Kern: @unchecked Sendable {
         }
     }
 
+    /// **One round of ``ServerDiscovery``**: ask the local network, listen, merge with what
+    /// earlier rounds found. Kotlin repeats it while the page is open and passes the last
+    /// answer back as `known`, so the core keeps no state for a page.
+    /// `except` (JSON `["address", …]`): servers already offered elsewhere on the page.
+    /// Answer: `[{"id","name","adresse","kurz"}]`, sorted by name.
+    public func serverSearch(known: String, except: String) async -> String {
+        let before = ((try? JSONDecoder().decode([FoundServerResponse].self, from: Data(known.utf8))) ?? [])
+            .map { FoundServer(id: $0.id, name: $0.name, address: $0.address) }
+        let taken = (try? JSONDecoder().decode([String].self, from: Data(except.utf8))) ?? []
+        let now = ServerDiscovery.shown(ServerDiscovery.merged(before, await ServerDiscovery.search()),
+                                        except: taken)
+        return (try? json(now.map {
+            FoundServerResponse(id: $0.id, name: $0.name, address: $0.address, short: $0.shortAddress)
+        })) ?? "[]"
+    }
+
+    /// The pause between two rounds of ``serverSearch(known:except:)``, in milliseconds.
+    public func serverSearchPause() -> Int {
+        Int(ServerDiscovery.pause.components.seconds * 1000)
+    }
+
     /// Answer: the session as JSON. Kotlin stores it encrypted and passes it back to
     /// ``sessionSet(json:)`` at the next start.
     public func signIn(user: String, password: String) async throws -> String {
@@ -637,6 +658,12 @@ public final class Kern: @unchecked Sendable {
 
     public static func bundleActiveId(bundle: String) -> String {
         readBundles(bundle).active?.activeOne.accountKey ?? ""
+    }
+
+    /// The addresses of the bundle's servers, JSON `["…"]`: what "Server hinzufügen" does
+    /// not offer as a found server.
+    public static func bundleServers(bundle: String) -> String {
+        encoded(readBundles(bundle).bundles.values.flatMap { $0.server.map(\.absoluteString) })
     }
 
     /// Migration: the old single session as a bundle.
@@ -4319,6 +4346,16 @@ struct ServerResponse: Encodable {
         case address = "adresse"
     }
  let name, version, address: String }
+struct FoundServerResponse: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case address = "adresse"
+        case short = "kurz"
+    }
+    let id, name, address: String
+    var short = ""
+}
 struct HomeResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case rails = "reihen"

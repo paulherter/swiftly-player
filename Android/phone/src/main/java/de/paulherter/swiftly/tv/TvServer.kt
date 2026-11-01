@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import de.paulherter.swiftly.core.Kern
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -44,6 +46,10 @@ fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, kindPicked: Boo
     val run = rememberCoroutineScope()
     /** "Advanced": custom headers for a service in front of the server. */
     val headers = de.paulherter.swiftly.rememberHeaderRow()
+    // Without the servers already in the bundle: another account there is "Konto hinzufügen".
+    val found = de.paulherter.swiftly.rememberFoundServers(app, remember {
+        JSONArray(app.store.accounts?.let { Kern.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
+    })
 
     fun cancel() { app.kern.onboardingCancel(); back() }
     fun record(session: String) { app.kern.onboardingCancel(); app.sessionRecord(session); back() }
@@ -93,6 +99,9 @@ fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, kindPicked: Boo
                     Text(translated("https:// kannst du weglassen."), style = TvTheme.small, color = Theme.fontVeryQuiet)
                     TvAdvanced(headers)
                     TvButton(translated(if (examine) "Moment…" else "Weiter"), released = address.isNotBlank() && !examine) { check() }
+                    if (preset == null) {
+                        TvFoundServers(found, Modifier.width(TvSpec.formWidth).padding(top = TvSpec.onboardingFoundTop)) { address = it.address; check() }
+                    }
                 }
             } else {
                 Column(Modifier.padding(top = TvSpec.onboardingBlockTop)) {

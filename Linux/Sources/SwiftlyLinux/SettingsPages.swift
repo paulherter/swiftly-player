@@ -1514,6 +1514,20 @@ extension App {
             gtk_widget_set_sensitive(button, self.text(inputField).isEmpty ? 0 : 1)
         }
 
+        // Without the servers already in the bundle: another account there is
+        // "Weiteres Konto", not a new server.
+        if newServer {
+            let found = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+            append(block, found)
+            foundOnOnboarding = found
+            // The page is rebuilt on every step and dropped on leaving; the search must not
+            // ask a destroyed widget whether it is on screen.
+            signal(found, "destroy") { [weak self] in
+                if self?.foundOnOnboarding == found { self?.foundOnOnboarding = nil }
+            }
+            foundServersFill()
+        }
+
         // If the address was passed in there is nothing to type, so check right away.
         if serverOnboardingPreGiven, !serverOnboardingAddress.isEmpty {
             let address = serverOnboardingAddress

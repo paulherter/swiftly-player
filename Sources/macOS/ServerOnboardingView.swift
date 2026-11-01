@@ -31,6 +31,7 @@ struct ServerOnboardingView: View {
     @State private var passphrase = ""
     /// "Erweitert" (Advanced): custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
     /// Switched to the code flow. The flow only starts then; otherwise every visit to
     /// this page would request a code from the server that nobody needs.
     ///
@@ -125,6 +126,17 @@ struct ServerOnboardingView: View {
             .padding(.top, 22)
             .disabled(address.isEmpty || examine)
             .opacity(address.isEmpty ? 0.4 : 1)
+
+        // Without the servers already in the bundle: another account there is
+        // "Weiteres Konto", not a new server.
+        FoundServersSection(
+            found: ServerDiscovery.shown(found, except: model.server.map(\.absoluteString))
+        ) { server in
+            address = server.address
+            check()
+        }
+        .padding(.top, 26)
+        .serverSearch($found)
     }
 
     /// While the entered address is being checked, the shape of the result stands here
@@ -181,42 +193,7 @@ struct ServerOnboardingView: View {
 
     @ViewBuilder
     private var codePart: some View {
-        if let preGait = state.preGait {
-            Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du an diesem Server schon angemeldet bist.")
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 26)
-
-            Text(verbatim: preGait.code)
-                // 28 bold is the highest step of the scale; 40 was above it.
-                .font(Theme.titleLarge.monospacedDigit())
-                .tracking(6)
-                .foregroundStyle(Theme.font)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(Theme.area,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
-                // A click copies the code to the clipboard; it is usually pasted right next to it
-                // in a browser window.
-                .copyable(preGait.code)
-                .padding(.top, 14)
-
-            Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .padding(.top, 14)
-        } else if let error = state.error {
-            Text(verbatim: error)
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.warning)
-                .padding(.top, 26)
-        } else {
-            // The code is coming; until then its shape is shown.
-            LoadField(corner: Theme.cornerField)
-                .frame(width: 240, height: 64)
-                .padding(.top, 26)
-        }
+        QuickConnectCode(state: state, hint: "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du an diesem Server schon angemeldet bist.")
 
         errorRow
 

@@ -31,11 +31,17 @@ final class App: @unchecked Sendable {
 
     // Sign-in, two steps
     private var loginStep: Widget!     // GtkStack: server -> account
-    private var serverField: Widget!
+    var serverField: Widget!
     /// "Advanced" under the address: custom headers (issue #4).
     private var loginReader: HeaderRowReader?
     private var connectButton: Widget!
     private var serverState: Widget!
+    /// The servers on the local network: one search for both pages that offer them,
+    /// sign-in and "Server hinzufügen". See `ServerSearch.swift`.
+    var foundServers: [FoundServer] = []
+    var foundOnLogin: Widget!
+    var foundOnOnboarding: Widget?
+    var serverSearchRun: Task<Void, Never>?
     private var serverRow: Widget!
     private var versionRow: Widget!
     private var serverURL: URL?
@@ -605,6 +611,12 @@ final class App: @unchecked Sendable {
             gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "art")
         }
 
+        foundOnLogin = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_size_request(foundOnLogin, Int32(Theme.loginWidth), -1)
+        gtk_widget_set_halign(foundOnLogin, GTK_ALIGN_CENTER)
+        append(center, foundOnLogin)
+        serverSearchStart()
+
         signal(connectButton, "clicked") { [weak self] in self?.linkUp() }
         signal(serverField, "activate") { [weak self] in self?.linkUp() }
         // The Mac disables the button while the field is empty
@@ -863,7 +875,7 @@ final class App: @unchecked Sendable {
 
     // MARK: Step one: connect
 
-    private func linkUp() {
+    func linkUp() {
         guard !reportCurrent else { return }
         let typedInput = text(serverField).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typedInput.isEmpty else { serverStateShow(translated("Trag erst eine Adresse ein.")); return }

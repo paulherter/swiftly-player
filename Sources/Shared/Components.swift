@@ -543,3 +543,79 @@ extension View {
         modifier(WatchedCheckmark(an: an, border: border, spacing: spacing))
     }
 }
+
+// MARK: - Servers on the network
+
+extension View {
+    /// **The Jellyfin servers on the local network, while the page is open.**
+    ///
+    /// The search itself is in the package (``ServerDiscovery``); the page only says
+    /// how long it runs. `.task` ends it when the page goes away.
+    func serverSearch(_ found: Binding<[FoundServer]>) -> some View {
+        task {
+            for await list in ServerDiscovery.watch() { found.wrappedValue = list }
+        }
+    }
+}
+
+// The rows are for pointer and touch. On tvOS a row needs the focus style of
+// `RowsStyle`, so the TV has its own `TVFoundServers`.
+#if !os(tvOS)
+/// **The servers that answered on the local network**, under the address field.
+/// Nothing while none has answered: no spinner, no "searching", because on a
+/// network without a server the page should look as it always did.
+struct FoundServersSection: View {
+    let found: [FoundServer]
+    let pick: (FoundServer) -> Void
+
+    var body: some View {
+        if !found.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                GroupsTitle(text: "Im Netzwerk gefunden")
+                SeparatorLine()
+                ForEach(found) { server in
+                    ServerRow(name: server.name, detail: server.shortAddress) { pick(server) }
+                    SeparatorLine()
+                }
+            }
+        }
+    }
+}
+
+/// One server as a row: dot, name, address below, chevron. "Zuletzt verbunden" and
+/// "Im Netzwerk gefunden" look the same, because both do the same thing on a tap.
+struct ServerRow: View {
+    let name: String
+    let detail: String
+    let pick: () -> Void
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 12) {
+                Circle().fill(Theme.accent).frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: name)
+                        // List row from the scale; before it was a literal 15.
+                        .font(Theme.listTitle)
+                        .foregroundStyle(Theme.font)
+                    Text(verbatim: detail)
+                        // The scale's info grade, 12 Regular. Before it was a literal 12 at the
+                        // call site.
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    // 13 semibold: the chevron on the right of a row, as in `ValueRow` and
+                    // `ProfileRow`. 12 was the second number for the same symbol.
+                    .font(.system(size: 13, weight: .semibold))
+                    // White at 28 percent is 2.50:1; for a control symbol the limit is 3:1.
+                    .foregroundStyle(Theme.fontVeryQuiet)
+            }
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressRow())
+    }
+}
+#endif

@@ -601,7 +601,7 @@ final class Splitter: NSObject, URLSessionDataDelegate, @unchecked Sendable {
 enum Plug {
     #if os(Windows)
     typealias Handle = SOCKET
-    private static let winsock: Void = {
+    static let winsock: Void = {
         var d = WSADATA()
         _ = WSAStartup(0x0202, &d)
     }()

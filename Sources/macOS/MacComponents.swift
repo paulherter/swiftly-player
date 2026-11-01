@@ -1640,3 +1640,57 @@ extension AnyTransition {
             : .scale(scale: 0.94, anchor: anchor).combined(with: .opacity)
     }
 }
+
+// MARK: - Quick Connect code
+
+/// **The code while this Mac waits for someone to approve it.**
+///
+/// Three pages sign in with a code: the first sign-in, "Server hinzufügen" and
+/// "Weiteres Konto". Each shows it in the window instead of a sheet, so the server
+/// it belongs to stays visible; the block is the same on all three, only the
+/// sentence above differs.
+struct QuickConnectCode: View {
+    let state: QuickConnectModel
+    let hint: LocalizedStringKey
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let preGait = state.preGait {
+                Text(hint)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 26)
+
+                Text(verbatim: preGait.code)
+                    // 28 bold is the highest step of the scale; 40 was above it.
+                    .font(Theme.titleLarge.monospacedDigit())
+                    .tracking(6)
+                    .foregroundStyle(Theme.font)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(Theme.area,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+                    // A click copies the code to the clipboard; it is usually pasted right next to it
+                    // in a browser window.
+                    .copyable(preGait.code)
+                    .padding(.top, 14)
+
+                Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                    .padding(.top, 14)
+            } else if let error = state.error {
+                Text(verbatim: error)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.warning)
+                    .padding(.top, 26)
+            } else {
+                // The code is coming; until then its shape is shown.
+                LoadField(corner: Theme.cornerField)
+                    .frame(width: 240, height: 64)
+                    .padding(.top, 26)
+            }
+        }
+    }
+}

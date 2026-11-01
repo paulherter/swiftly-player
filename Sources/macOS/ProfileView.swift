@@ -466,43 +466,7 @@ struct AccountAddView: View {
 
     @ViewBuilder
     private var codePart: some View {
-        if let preGait = state.preGait {
-            Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 26)
-
-            Text(verbatim: preGait.code)
-                .font(Theme.titleLarge.monospacedDigit())
-                .tracking(6)
-                .foregroundStyle(Theme.font)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(Theme.area,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
-                // A click puts the code on the clipboard; it is usually pasted right away
-                // into a browser window next to it.
-                .copyable(preGait.code)
-                .padding(.top, 14)
-
-            HStack(spacing: 10) {
-                Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
-                    .font(Theme.secondLine)
-                    .foregroundStyle(Theme.fontVeryQuiet)
-            }
-            .padding(.top, 14)
-        } else if let error = state.error {
-            Text(verbatim: error)
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.warning)
-                .padding(.top, 26)
-        } else {
-            // The code arrives shortly; until then its shape is shown.
-            LoadField(corner: Theme.cornerField)
-                .frame(width: 240, height: 64)
-                .padding(.top, 26)
-        }
+        QuickConnectCode(state: state, hint: "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
 
         errorRow
 

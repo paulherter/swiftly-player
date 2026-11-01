@@ -245,6 +245,10 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
     /** "Advanced": custom headers for a service in front of the server. */
     val headers = rememberHeaderRow()
     val run = rememberCoroutineScope()
+    // Without the servers already in the bundle: another account there is "Konto hinzufügen".
+    val found = rememberFoundServers(app, remember {
+        JSONArray(app.store.accounts?.let { Kern.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
+    })
 
     fun cancel() { app.kern.onboardingCancel(); back() }
     fun record(session: String) { app.kern.onboardingCancel(); app.sessionRecord(session) }
@@ -325,6 +329,9 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
                         AdvancedSection(headers)
                         PrimaryButton(translated(if (examine) "Verbinden…" else "Verbinden"), released = address.isNotBlank() && !examine,
                                    modifier = Modifier.padding(top = 10.dp).alpha(if (address.isBlank()) 0.4f else 1f)) { check() }
+                        if (preset == null) {
+                            FoundServers(found, Modifier.padding(top = 16.dp)) { address = it.address; check() }
+                        }
                     }
                 }
                 // `error`, not `warning`: a rejected sign-in went wrong.

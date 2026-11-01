@@ -42,6 +42,7 @@ struct ServerOnboardingView: View {
     @State private var quickConnect = false
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
 
     /// What sits next to the back button - it changes with the state.
     private var pagesTitle: String {
@@ -151,8 +152,19 @@ struct ServerOnboardingView: View {
                 .padding(.top, 10)
                 .disabled(examine || address.isEmpty)
                 .opacity(address.isEmpty ? 0.4 : 1)
+
+            // Without the servers already in the bundle: those are added from the
+            // profile as "Weiteres Konto", not as a new server.
+            FoundServersSection(
+                found: ServerDiscovery.shown(found, except: model.server.map(\.absoluteString))
+            ) { server in
+                address = server.address
+                check()
+            }
+            .padding(.top, 26)
         }
         .padding(.top, 28)
+        .serverSearch($found)
     }
 
     private var loginPart: some View {
