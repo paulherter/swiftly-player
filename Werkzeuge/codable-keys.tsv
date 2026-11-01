@@ -63,8 +63,8 @@ Android	Kern.CollectionRailsResponse.CodingKeys	codingkey	art,id,name,titel
 Android	Kern.Events	codable	moved,revoked
 Android	Kern.FootSpaceResponse	codable	bytes,reicht
 Android	Kern.FootSpaceResponse.CodingKeys	codingkey	bytes,reicht
-Android	Kern.LetterEntry	codable	ab,buchstabe
-Android	Kern.LetterEntry.CodingKeys	codingkey	ab,buchstabe
+Android	Kern.LetterEntry	codable	ab,anzeige,buchstabe,luecke
+Android	Kern.LetterEntry.CodingKeys	codingkey	ab,anzeige,buchstabe,luecke
 Android	Kern.LoadSelectionEpisode	codable	bytes,gesehen,id,name,ticks
 Android	Kern.LoadSelectionEpisode.CodingKeys	codingkey	bytes,gesehen,id,name,ticks
 Android	Kern.NextEpisodeResponse	codable	id,knopftext
@@ -228,8 +228,8 @@ Kit	HomeStore	codable	bibliotheken,fassung,gattungsreihen,naechsteFolge,neueFilm
 Kit	HomeStore.CodingKeys	codingkey	bibliotheken,fassung,gattungsreihen,naechsteFolge,neueFilme,neueSerien,weiterschauen,zuletzt
 Kit	HomeStore.Rail	codable	items,name
 Kit	ImageKind	raw	Backdrop,Logo,Primary,Thumb
-Kit	Item	codable	BackdropImageTags,ChildCount,CollectionType,CommunityRating,CriticRating,ExtraType,Genres,Id,ImageTags,IndexNumber,LocalTrailerCount,MediaSources,MediaType,Name,OfficialRating,OriginalLanguage,Overview,ParentBackdropImageTags,ParentBackdropItemId,ParentIndexNumber,ParentLogoImageTag,ParentThumbImageTag,ParentThumbItemId,People,PremiereDate,ProductionLocations,ProductionYear,ProviderIds,RemoteTrailers,RunTimeTicks,SeasonId,SeriesId,SeriesName,SeriesPrimaryImageTag,SortName,Studios,Taglines,Type,UserData
-Kit	Item.CodingKeys	codingkey	BackdropImageTags,ChildCount,CollectionType,CommunityRating,CriticRating,ExtraType,Genres,Id,ImageTags,IndexNumber,LocalTrailerCount,MediaSources,MediaType,Name,OfficialRating,OriginalLanguage,Overview,ParentBackdropImageTags,ParentBackdropItemId,ParentIndexNumber,ParentLogoImageTag,ParentThumbImageTag,ParentThumbItemId,People,PremiereDate,ProductionLocations,ProductionYear,ProviderIds,RemoteTrailers,RunTimeTicks,SeasonId,SeriesId,SeriesName,SeriesPrimaryImageTag,SortName,Studios,Taglines,Type,UserData
+Kit	Item	codable	BackdropImageTags,ChildCount,CollectionType,CommunityRating,CriticRating,DateCreated,ExtraType,Genres,Id,ImageTags,IndexNumber,LocalTrailerCount,MediaSources,MediaType,Name,OfficialRating,OriginalLanguage,Overview,ParentBackdropImageTags,ParentBackdropItemId,ParentIndexNumber,ParentLogoImageTag,ParentThumbImageTag,ParentThumbItemId,People,PremiereDate,ProductionLocations,ProductionYear,ProviderIds,RemoteTrailers,RunTimeTicks,SeasonId,SeriesId,SeriesName,SeriesPrimaryImageTag,SortName,Studios,Taglines,Type,UserData
+Kit	Item.CodingKeys	codingkey	BackdropImageTags,ChildCount,CollectionType,CommunityRating,CriticRating,DateCreated,ExtraType,Genres,Id,ImageTags,IndexNumber,LocalTrailerCount,MediaSources,MediaType,Name,OfficialRating,OriginalLanguage,Overview,ParentBackdropImageTags,ParentBackdropItemId,ParentIndexNumber,ParentLogoImageTag,ParentThumbImageTag,ParentThumbItemId,People,PremiereDate,ProductionLocations,ProductionYear,ProviderIds,RemoteTrailers,RunTimeTicks,SeasonId,SeriesId,SeriesName,SeriesPrimaryImageTag,SortName,Studios,Taglines,Type,UserData
 Kit	ItemsResponse	codable	Items,TotalRecordCount
 Kit	ItemsResponse.CodingKeys	codingkey	Items,TotalRecordCount
 Kit	JellyfinClient.Body@JellyfinClient.swift	codable	AudioStreamIndex,AutoOpenLiveStream,DeviceProfile,EnableDirectPlay,EnableDirectStream,EnableTranscoding,MaxStreamingBitrate,MediaSourceId,SubtitleStreamIndex,UserId

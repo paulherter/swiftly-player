@@ -491,7 +491,9 @@ public actor JellyfinClient {
             // `item(id:)` anyway, and both are in there.
             // `ProviderIds` because ``TitleFilter`` uses them to recognize two entries as the
             // same movie; small, a handful of numbers.
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
+            // `DateCreated` for the index beside a "Zuletzt" grid (``AlphabetIndex``): the
+            // loaded titles must say which year they belong to.
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated"),
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
@@ -518,7 +520,8 @@ public actor JellyfinClient {
         }
         if slim {
             query.removeAll { ["Limit", "StartIndex", "Fields"].contains($0.name) }
-            query += [.init(name: "Fields", value: "SortName"),
+            // Premiere date, year and rating come without asking; the date added does not.
+            query += [.init(name: "Fields", value: "SortName,DateCreated"),
                       .init(name: "EnableImages", value: "false"),
                       .init(name: "EnableUserData", value: "false")]
         }
@@ -772,7 +775,9 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: "true"),
             .init(name: "IncludeItemTypes", value: "Movie,Series"),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
+            // `DateCreated` for the index beside a "Zuletzt" grid (``AlphabetIndex``): the
+            // loaded titles must say which year they belong to.
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated"),
         ])
         // Across all libraries: one hit per work (``Items``).
         let hits = await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)
