@@ -1,5 +1,5 @@
 // Sanitized real responses of an Emby 4.10 server (token, device, paths and dates removed).
-// Refresh with the live test server described in Notizen/Mehrserver/EMBY.md.
+// Refresh against a live Emby server.
 enum EmbyFixtures {
     static let authenticate = #"""
 {

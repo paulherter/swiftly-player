@@ -31,8 +31,6 @@ struct ProfileView: View {
     /// Connect Seerr, as a page of its own above everything: three fields and an
     /// on-screen keyboard need room that a row does not have.
     @State private var seerrOpen = false
-    /// Connect Trakt: the code and QR code need the same full page.
-    @State private var traktOpen = false
     @State private var communityTarget: CommunityTarget?
     /// Open-source licenses: full page, building blocks on the left, text on the right.
     @State private var licensesOpen = false
@@ -102,12 +100,13 @@ struct ProfileView: View {
     }
 
     enum SectionSelection: String, CaseIterable, Identifiable {
-        case playback = "wiedergabe", languages = "sprachen", presentation = "darstellung", integration, server, account = "konto", community = "gemeinschaft"
+        case playback = "wiedergabe", presentation = "darstellung", integration, server, account = "konto", community = "gemeinschaft"
         var id: String { rawValue }
+        /// Areas that compose their own boxes (see `rows`).
+        var hasGroups: Bool { self == .playback || self == .presentation }
         var name: LocalizedStringKey {
             switch self {
             case .playback:  "Wiedergabe"
-            case .languages:    "Sprachen"
             case .presentation: "Darstellung"
             case .integration: "Integration"
             case .server:      "Server"
@@ -192,24 +191,15 @@ struct ProfileView: View {
                 // row into view.
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            GroupsTitle(text: section.name)
-                            // **On a card, as on iPhone, iPad and Mac.**
-                            //
-                            // **Clipped to the card, otherwise the names stand in front of their box.** When
-                            // a value row expands, card and list grow to the new height over 0.28 s, but the
-                            // inserted names are fully there at once with their own, unanimated height.
-                            // Without a mask they draw past the lower edge of the still-small card and stand
-                            // on the bare background for a moment.
-                            //
-                            // The clip hangs on the same surface as the fill, so on the same growing height:
-                            // the content opens with the box. It comes before the fill, not after, otherwise
-                            // it would cut away the fill too and the card would have no reason left.
-                            VStack(alignment: .leading, spacing: 0) { rows }
-                                .padding(TVSpec.listCardInset)
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
-                                .background(Theme.area,
-                                            in: RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
+                        // **Each group is its own box with its title above on the bare background,
+                        // like the groups on iPhone** ("Startseite", "Genres" were titles inside one
+                        // big box). Areas with a single group get the area name as the title.
+                        VStack(alignment: .leading, spacing: TVSpec.groupGap) {
+                            if section.hasGroups {
+                                rows
+                            } else {
+                                TVGroup(title: section.name) { rows }
+                            }
                         }
                     }
                     .scrollIndicators(.hidden)
@@ -271,9 +261,6 @@ struct ProfileView: View {
         }
         .fullScreenCover(isPresented: $seerrOpen) {
             SeerrConnectView(model: model, seerr: model.seerr) { seerrOpen = false }
-        }
-        .fullScreenCover(isPresented: $traktOpen) {
-            TraktConnectView(trakt: model.trakt) { traktOpen = false }
         }
         .fullScreenCover(item: $communityTarget) { target in
             CodeSheet(target: target) { communityTarget = nil }
@@ -362,9 +349,9 @@ struct ProfileView: View {
     /// The kind of the active server as the user reads it ("Plex (Beta)"), as on the iPhone.
     private var kindName: String { (model.session?.kind ?? .jellyfin).shownName }
 
-    /// Seerr signs in with the media server's account, which not every kind has; Trakt needs
-    /// the build's credentials. Without both the area would be empty (`SettingsView`).
-    private var showsIntegration: Bool { model.can(.seerr) || model.trakt.available }
+    /// Seerr signs in with the media server's account, which not every kind has.
+    /// Without it the area would be empty (`SettingsView`).
+    private var showsIntegration: Bool { model.can(.seerr) }
 
     // MARK: Rows per area
 
@@ -384,6 +371,8 @@ struct ProfileView: View {
             //
             // If it is disabled here, Direct Play and bitrate move out together
             // (`directPlay` is then fixed on) and "Buffer" is the first row you can touch.
+            // Same three boxes as on iPhone: quality, language, behaviour.
+            TVGroup(title: "Qualität") {
             ToggleRow(title: "Immer Direct Play", an: directPlay) {
                 model.alwaysDirectPlay.toggle()
             }
@@ -395,28 +384,6 @@ struct ProfileView: View {
                       an: { $0.value == model.bitratesLimit },
                       select: { model.bitratesLimit = $0.value })
             .disabled(directPlay)
-            SeparatorLine()
-            // **Sits next to the bitrate because it is the same kind of decision:** what the
-            // viewer knows about their connection and the app cannot measure.
-            //
-            // The labels come from `BufferLevel.name` and so from the package catalog.
-            // Nothing is rebuilt here, otherwise the same three words would stand in two
-            // catalogs and drift apart.
-            valueRow("Puffer", value: model.bufferLevel.name,
-                      entries: BufferLevel.allCases, label: \.name,
-                      an: { $0 == model.bufferLevel },
-                      select: { model.bufferLevel = $0 })
-            .focused($right, equals: free ? .proceed : .top)
-            SeparatorLine()
-            // Same place and words as on iPhone and Android. Applies from the next title.
-            valueRow("Player", value: model.playerEngine.name,
-                      entries: PlayerEngineSetting.allCases, label: \.name,
-                      an: { $0 == model.playerEngine },
-                      select: { model.playerEngine = $0 })
-            SeparatorLine()
-            ToggleRow(title: "Untertitel automatisch", an: model.subtitleAutomatic) {
-                model.subtitleAutomatic.toggle()
-            }
             SeparatorLine()
             // **The switch for frame-rate matching.**
             //
@@ -432,7 +399,33 @@ struct ProfileView: View {
                           an: frameRateAdapt) {
                 frameRateAdapt.toggle()
             }
+            }
+            TVGroup(title: "Sprache") {
+            // The topmost row you can touch when Direct Play is fixed (`free` is false).
+            valueRow("Ton",
+                      value: model.audioLanguage.isEmpty ? String(localized: "Wie die Datei")
+                                                     : model.audioLanguage,
+                      entries: LanguageSelection.all, label: \.name,
+                      an: { $0.value == model.audioLanguage },
+                      select: { model.audioLanguage = $0.value }, top: !free)
             SeparatorLine()
+            valueRow("Untertitel",
+                      value: model.subtitleLanguage.isEmpty ? String(localized: "Aus")
+                                                            : model.subtitleLanguage,
+                      entries: LanguageSelection.all(from: String(localized: "Aus")),
+                      label: \.name,
+                      an: { $0.value == model.subtitleLanguage },
+                      select: { model.subtitleLanguage = $0.value })
+            SeparatorLine()
+            ToggleRow(title: "Untertitel automatisch", an: model.subtitleAutomatic) {
+                model.subtitleAutomatic.toggle()
+            }
+            SeparatorLine()
+            ActionRow(title: "Aussehen der Untertitel", value: model.subtitleLook.entryValue) {
+                subtitleLookOpen = true
+            }
+            }
+            TVGroup(title: "Verhalten") {
             ToggleRow(title: "Nächste Folge automatisch", an: model.nextAutomatic) {
                 model.nextAutomatic.toggle()
             }
@@ -450,30 +443,23 @@ struct ProfileView: View {
                       entries: Span.levels, label: { "\($0.value) s" },
                       an: { $0.value == model.forwardSeconds },
                       select: { model.forwardSeconds = $0.value })
-
-        case .languages:
-            valueRow("Ton",
-                      value: model.audioLanguage.isEmpty ? String(localized: "Wie die Datei")
-                                                     : model.audioLanguage,
-                      entries: LanguageSelection.all, label: \.name,
-                      an: { $0.value == model.audioLanguage },
-                      select: { model.audioLanguage = $0.value }, top: true)
             SeparatorLine()
-            valueRow("Untertitel",
-                      value: model.subtitleLanguage.isEmpty ? String(localized: "Aus")
-                                                            : model.subtitleLanguage,
-                      entries: LanguageSelection.all(from: String(localized: "Aus")),
-                      label: \.name,
-                      an: { $0.value == model.subtitleLanguage },
-                      select: { model.subtitleLanguage = $0.value })
+            // Applies from the next title; the same place and words as on iPhone.
+            valueRow("Puffer", value: model.bufferLevel.name,
+                      entries: BufferLevel.allCases, label: \.name,
+                      an: { $0 == model.bufferLevel },
+                      select: { model.bufferLevel = $0 })
             SeparatorLine()
-            ActionRow(title: "Aussehen der Untertitel", value: model.subtitleLook.entryValue) {
-                subtitleLookOpen = true
+            valueRow("Player", value: model.playerEngine.name,
+                      entries: PlayerEngineSetting.allCases, label: \.name,
+                      an: { $0 == model.playerEngine },
+                      select: { model.playerEngine = $0 })
             }
 
         case .presentation:
             // **"Your look" first**, where the profile has one to show (see `TVLookEntry`).
             let looksShown = TVLookEntry.shown
+            TVGroup(title: "Darstellung") {
             if looksShown {
                 TVLookEntryRow()
                     .focused($right, equals: .top)
@@ -493,14 +479,12 @@ struct ProfileView: View {
             }
             SeparatorLine()
             ToggleRow(title: "Titel als Logo", an: titleAsLogo) { titleAsLogo.toggle() }
-            SeparatorLine()
+            }
 
             // **Which rows are on the home page, and in which order.** They are moved with
             // the arrows on the right: dragging a row by a handle is a pointer gesture, and
             // the remote has none. Focus goes right to the arrows and a press moves the row.
-            GroupsTitle(text: "Startseite")
-                .padding(.horizontal, TVSpec.rowInset)
-                .padding(.top, 18)
+            TVGroup(title: "Startseite") {
             ForEach(visibleRails) { rail in
                 RailsRow(name: rail.name,
                             an: !model.startOut.contains(rail),
@@ -516,13 +500,11 @@ struct ProfileView: View {
             ToggleRow(title: "Neuzugänge getrennt", an: model.newAccessDisconnected) {
                 model.newAccessDisconnected.toggle()
             }
-            SeparatorLine()
+            }
 
             // **Own rows from the server**: libraries and collections, in the order of this
             // list, after the fixed rows.
-            GroupsTitle(text: "Bibliotheken und Sammlungen")
-                .padding(.horizontal, TVSpec.rowInset)
-                .padding(.top, 18)
+            TVGroup(title: "Bibliotheken und Sammlungen") {
             ForEach(model.startLibraries) { entryRecord in
                 StartLibraryRow(
                     name: entryRecord.name,
@@ -542,13 +524,11 @@ struct ProfileView: View {
                       label: \.name,
                       an: { _ in false },
                       select: { model.startLibraries.append(StartLibrary($0)) })
-            SeparatorLine()
+            }
 
             // **One list, two forms.** Which genres is set once; whether they show as rows
             // below or as chips on top is only the form.
-            GroupsTitle(text: "Genres")
-                .padding(.horizontal, TVSpec.rowInset)
-                .padding(.top, 18)
+            TVGroup(title: "Genres") {
             valueRow("Form", value: model.genreChips ? String(localized: "Als Chips")
                                                      : String(localized: "Als Reihen"),
                       entries: GenreShape.allCases, label: \.name,
@@ -571,6 +551,7 @@ struct ProfileView: View {
                       label: \.name,
                       an: { _ in false },
                       select: { model.startGenres.append($0.name) })
+            }
 
         case .integration:
             // **A second service, not a second server**, hence a category of its own and not
@@ -585,19 +566,6 @@ struct ProfileView: View {
                     seerrOpen = true
                 }
                 .focused($right, equals: .top)
-            }
-            // **One row, not two as with Seerr.** Two "Connect" rows stacked would leave
-            // open which service is meant; here the name stands first and the state behind
-            // it. Only with credentials in the build (`TraktAccess`).
-            if model.trakt.available {
-                if model.can(.seerr) { SeparatorLine() }
-                ActionRow(name: "Trakt",
-                               value: model.trakt.connected
-                                   ? (model.trakt.user ?? String(localized: "Verbunden"))
-                                   : String(localized: "Nicht verbunden")) {
-                    traktOpen = true
-                }
-                .focused($right, equals: model.can(.seerr) ? nil : .top)
             }
 
         case .community:
@@ -730,6 +698,27 @@ struct ProfileView: View {
         }
         // Target for the reader so the expanded row comes into view.
         .id(key)
+    }
+}
+
+// MARK: - Group
+
+/// **One box of settings with its title above on the bare background**, like a group on
+/// iPhone. Clipped to the box, otherwise the names of an expanding row stand on the bare
+/// background for a moment while the box is still growing.
+private struct TVGroup<Content: View>: View {
+    let title: LocalizedStringKey
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GroupsTitle(text: title)
+            VStack(alignment: .leading, spacing: 0) { content }
+                .padding(TVSpec.listCardInset)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
+                .background(Theme.area,
+                            in: RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
+        }
     }
 }
 

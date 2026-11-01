@@ -194,6 +194,10 @@ func framedImage(width: Int, height: Int, style: String) -> (wrapper: Widget, im
 func profileCharacter(name: String, border: Int, style: String,
                    fontStyle: String) -> (wrapper: Widget, image: Widget, symbolText: Widget) {
     let (wrapper, image) = framedImage(width: border, height: border, style: style)
+    // **A fixed size, not stretched.** Left at the default (fill), a badge in a row grew to the
+    // height of its neighbour: 56 wide next to a 63 high text column became an oval.
+    gtk_widget_set_halign(wrapper, GTK_ALIGN_START)
+    gtk_widget_set_valign(wrapper, GTK_ALIGN_CENTER)
     let symbolText = label(String(name.prefix(1)).uppercased(), style: fontStyle)
     gtk_widget_set_halign(symbolText, GTK_ALIGN_CENTER)
     gtk_widget_set_valign(symbolText, GTK_ALIGN_CENTER)

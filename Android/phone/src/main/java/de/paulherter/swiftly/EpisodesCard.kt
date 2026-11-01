@@ -365,5 +365,9 @@ fun cardsFill(mediaWork: PlayItem, counts: Boolean): Float {
         val rest = ((1f - since) * mediaWork.countdownLength * 1000).toInt().coerceAtLeast(1)
         value.animateTo(1f, tween(rest, easing = androidx.compose.animation.core.LinearEasing))
     }
-    return value.value
+    // 30 steps per second, not one per display frame (iPhone: the countdown redraws 30 times a second): the
+    // caller only recomposes when a step changes.
+    val steps = (mediaWork.countdownLength * 30).toFloat().coerceAtLeast(1f)
+    val stepped by remember(steps) { androidx.compose.runtime.derivedStateOf { kotlin.math.floor(value.value * steps) / steps } }
+    return stepped
 }

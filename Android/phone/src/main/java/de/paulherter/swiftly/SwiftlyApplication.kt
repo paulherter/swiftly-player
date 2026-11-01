@@ -602,9 +602,31 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     /** Takes a fresh session; if accounts already existed, this is a switch. */
     fun sessionRecord(session: String) {
         val before = store.accounts
-        store.accounts = Kern.bundleRecord(session, before.orEmpty())
-        kern.sessionSet(session)
-        if (before != null) afterSwitch() else { settings.librariesNewRead(); accountPreGiftFetch() }
+        val bundle = Kern.bundleRecord(session, before.orEmpty())
+        fun adopt() {
+            store.accounts = bundle
+            kern.sessionSet(session)
+            if (before != null) afterSwitch() else { settings.librariesNewRead(); accountPreGiftFetch() }
+        }
+        // A further account plays the switch motion on the phone, like iPhone. The first sign-in adopts at
+        // once: the main view is built right after it and needs the session.
+        val account = if (before != null && !isTv) runCatching { signedInAccount(bundle) }.getOrNull() else null
+        if (account == null || !AccountSwitchTransition.startSignIn(this, account.first, account.second, account.third, ::adopt)) adopt()
+    }
+
+    /** Identifier, name and picture of the active account of a bundle. */
+    private fun signedInAccount(bundle: String): Triple<String, String, String?>? {
+        val cards = org.json.JSONArray(Kern.bundleOverview(bundle))
+        for (i in 0 until cards.length()) {
+            val card = cards.getJSONObject(i)
+            if (!card.getBoolean("aktiv")) continue
+            val accounts = card.getJSONArray("konten")
+            for (j in 0 until accounts.length()) {
+                val e = accounts.getJSONObject(j)
+                if (e.getBoolean("aktiv")) return Triple(e.getString("kennung"), e.getString("name"), if (e.isNull("bild")) null else e.getString("bild"))
+            }
+        }
+        return null
     }
 
     /**

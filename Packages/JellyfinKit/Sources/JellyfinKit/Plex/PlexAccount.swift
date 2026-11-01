@@ -159,13 +159,26 @@ public struct PlexAccountService: Sendable {
                            limit: Duration = .seconds(1800)) async throws -> String {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: limit)
+        var failures = 0
         while clock.now < deadline {
             try Task.checkCancellation()
             do {
                 if let token = try await checkPin(pin).authToken { return token }
+                failures = 0
             } catch JellyfinError.http(let status, _) where status == 404 || status == 410 {
                 // Plex forgets an expired code: 404 (measured elsewhere: 410).
                 throw PlexError.pinExpired
+            } catch let error as JellyfinError {
+                // One dropped request or a plex.tv hiccup must not end a sign-in the user is
+                // confirming in the browser right now; a run of them does.
+                try Task.checkCancellation()
+                failures += 1
+                switch error {
+                case .network, .transport: break
+                case .http(let status, _) where status >= 500 || status == 429: break
+                default: throw error
+                }
+                if failures >= 5 { throw error }
             }
             try await Task.sleep(for: pause)
         }

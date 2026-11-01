@@ -1,6 +1,7 @@
 package de.paulherter.swiftly
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -92,7 +93,9 @@ object AccountSwitchTransition {
 
     /** What is on stage. All frames in root coordinates (px). */
     class Stage(val stillImage: ImageBitmap?, val cap: Rect?, val area: Color, val curve: Curve?,
-                 val name: String, val image: String?, val start: Long, val calm: Boolean, val number: Int)
+                 val name: String, val image: String?, val start: Long, val calm: Boolean, val number: Int,
+                 /** TV fades the still out instead of pushing it away (`AccountSwitchStageUIKit` on tvOS). */
+                 val fades: Boolean = calm)
 
     var stage by mutableStateOf<Stage?>(null); private set
     var transition by mutableStateOf<Transition?>(null); private set
@@ -129,12 +132,33 @@ object AccountSwitchTransition {
      * the card (it covers the spot on the still, since the picture is already flying).
      */
     fun start(app: SwiftlyApplication, identifier: String, name: String, image: String?, from: Rect, area: Color,
-                density: Float, calm: Boolean) {
+                density: Float, calm: Boolean) =
+        play(app, identifier, name, image, from, area, density, calm) { app.switchAccount(identifier) }
+
+    /**
+     * **Signing in plays the same motion as the switch in the profile** (`signInTransition` in
+     * `AppModel+Servers.swift`): the new account's picture starts in the middle of the window, as
+     * a sign-in has no circle to lift it from. `adopt` takes the account in at the point where the
+     * switch would happen. Returns `false` if nothing plays (still running, no window yet); then
+     * the caller adopts at once.
+     */
+    fun startSignIn(app: SwiftlyApplication, identifier: String, name: String, image: String?, adopt: () -> Unit): Boolean {
+        val size = screen?.size
+        if (waits || size == null || size.width <= 0 || size.height <= 0) return false
+        val density = app.resources.displayMetrics.density
+        val side = 96f * density
+        val from = Rect((size.width - side) / 2, (size.height - side) / 2, (size.width + side) / 2, (size.height + side) / 2)
+        play(app, identifier, name, image, from, Color.Transparent, density, Motion.reduced(app), adopt)
+        return true
+    }
+
+    private fun play(app: SwiftlyApplication, identifier: String, name: String, image: String?, from: Rect, area: Color,
+                       density: Float, calm: Boolean, adopt: () -> Unit) {
         if (waits) { note("zweiter Tipp ignoriert"); return }
         runCount++
         val myOwn = runCount
         waits = true
-        switchTo = { app.switchAccount(identifier) }
+        switchTo = adopt
         app.applicationRun.launch {
             val beginning = System.nanoTime()
             val stillImage = runCatching { screen?.toImageBitmap() }.getOrNull()
@@ -145,7 +169,7 @@ object AccountSwitchTransition {
                     (target.width / density).toDouble()))
             }.getOrNull() else null
             stage = Stage(stillImage, from.takeIf { curve != null }?.inflate(3 * density), area, curve, name, image,
-                            beginning, calm, myOwn)
+                            beginning, calm, myOwn, fades = calm || app.isTv)
             if (curve != null) transition = Transition(identifier)
             note("1: Tipp, Flug ${if (curve == null) "aus" else "an"}, Standbild in ${(System.nanoTime() - beginning) / 1_000_000} ms")
             // One frame later: under the still the stack jumps back before anything moves.
@@ -228,6 +252,8 @@ fun AccountSwitchLayer() {
     val distance = remember(b.number) { Animatable(0f) }
     LaunchedEffect(b.number) {
         if (b.calm) { distance.animateTo(1f, tween(200, easing = LinearEasing)); return@LaunchedEffect }
+        // TV: fades out over 0.3 s after 80 ms, ease out, as on tvOS.
+        if (b.fades) { delay(80); distance.animateTo(1f, tween(300, easing = FastOutSlowInEasing)); return@LaunchedEffect }
         // Like a normal back: spring 0.42, no overshoot, 80 ms after the tap.
         // (2π / 0.42)² ≈ 224.
         delay(80)
@@ -237,7 +263,7 @@ fun AccountSwitchLayer() {
         // 1. The still; on it the card colour covers the tapped picture, which is already flying.
         b.stillImage?.let { s ->
             Box(Modifier.fillMaxSize().graphicsLayer {
-                if (b.calm) alpha = 1f - distance.value else translationX = distance.value * size.width
+                if (b.fades) alpha = 1f - distance.value else translationX = distance.value * size.width
             }) {
                 Image(s, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                 b.cap?.let { d -> Canvas(Modifier.fillMaxSize()) { drawCircle(b.area, d.width / 2, d.center) } }

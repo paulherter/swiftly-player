@@ -581,7 +581,7 @@ fun TvGenre(app: SwiftlyApplication, target: Destination, open: (Destination) ->
             Column {
                 Text(target.name, style = TvTheme.rail, color = Theme.font, maxLines = 1,
                      modifier = Modifier.padding(top = 48.dp, bottom = TvTheme.titleSpacing))
-                if (disrupted) TvDisruption(app, retry = { attempt++ })
+                if (disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { attempt++ })
                 else if (list != null && list.isEmpty()) {
                     TvEmpty(translated("Nichts in diesem Genre"),
                            translated("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),

@@ -6,6 +6,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Glyph
@@ -44,18 +45,20 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
                         if (state.items.isEmpty() || prepares) return@TvCapsule
                         prepares = true
                         run.launch {
-                            val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
-                            if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, null)
-                            prepares = false
+                            // `finally`: if asking or starting fails, the button must not stay dead.
+                            try {
+                                val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
+                                if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, null)
+                            } finally { prepares = false }
                         }
                     }
                     Spacer(Modifier.weight(1f))
                     if (state.items.isNotEmpty()) Text(playlistCount(state.items.size), style = TvTheme.small, color = Theme.fontVeryQuiet)
                 }
-                if (state.disrupted) TvDisruption(app, retry = { run.launch { state.load(app.kern) } })
+                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
                 else if (!state.loads && state.items.isEmpty())
                     TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } })
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
             }
         })
     }

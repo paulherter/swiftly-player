@@ -63,11 +63,6 @@ Jellyfin-Theme
 .impeccable
 __pycache__/
 
-# **Credentials of the Trakt application** (client_id, client_secret). They
-# exist only on the build machines; without the file the app has no Trakt.
-# Format: see `TraktAccess` in `Trakt.swift`.
-Packages/JellyfinKit/Sources/JellyfinKit/Resources/Trakt.json
-
 # Copied from LICENSES/ during the build (Linux/build.sh) - never edit by hand.
 Linux/Resources/Licenses/
 Assets/SupporterIcons/ios/

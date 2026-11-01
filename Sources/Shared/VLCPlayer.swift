@@ -1455,11 +1455,18 @@ final class VLCPlayerView: BaseView {
         // `currentRoute.outputs.channels` is what it currently carries. Two channels
         // are right on the iPhone speaker; it gets interesting on HDMI, AirPlay and
         // Apple TV.
+        // **Ask the route for every channel it can carry.** The session asks for stereo until told
+        // otherwise, and a 7.1 track (TrueHD, DTS-HD) then reaches an HDMI receiver as silence or a
+        // downmix. The maximum is what the route reports; two on a speaker, so nothing changes there.
+        let wanted = min(session.maximumOutputNumberOfChannels, 8)
+        if wanted > 2, session.preferredOutputNumberOfChannels != wanted {
+            try? session.setPreferredOutputNumberOfChannels(wanted)
+        }
         let output = session.currentRoute.outputs.first
         AppLog.writeOut("[Audio] beim Öffnen: \(Int(session.sampleRate)) Hz"
             + " · Ausgang \(output?.portType.rawValue ?? "—")"
             + " führt \(output?.channels?.count ?? 0) Kanäle"
-            + ", könnte \(session.maximumOutputNumberOfChannels)")
+            + ", könnte \(session.maximumOutputNumberOfChannels), gewünscht \(session.preferredOutputNumberOfChannels)")
         #endif
 
         #if DEBUG

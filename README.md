@@ -77,6 +77,8 @@ a running film that follows you from one device to the next.
 - **Android TV matches Apple TV**, screen by screen: row layout, detail pages,
   search, profile and player.
 - **Search on Apple TV and Android TV.**
+- **Voice search on Apple TV.** The microphone key next to the keyboard opens dictation.
+- **Android TV settings** sit in separate boxes with titles; account switches fade instead of jumping.
 - **Faster Android start.** The home screen loads its rows once at launch and
   reloads on return only when the data is older than 30 seconds.
 - **Trailers** try every available source in order before giving up.

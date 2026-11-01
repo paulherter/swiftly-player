@@ -71,12 +71,12 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
                         app.sheet.value = SheetRequest(translated("Sortieren"), Choices.sortings, state.sorting) { state.sorting = it }
                     }
                 }
-                if (state.disrupted) TvDisruption(app, retry = { run.launch { state.load(app.kern) } })
+                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
                 else if (!state.loads && state.items.isEmpty()) {
                     if (state.filter == "alle") TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Sammlung etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } })
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
                     else TvEmpty(translated("Nichts gefunden"), translated("Unter diesem Filter liegt gerade nichts."),
-                        symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filter = "alle" })
+                        symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filter = "alle" }, buttonModifier = Modifier.focusRequester(focus))
                 }
             }
         })

@@ -18,12 +18,17 @@ public struct SubtitleCue: Sendable, Equatable {
 /// hands out as text. Markup (`<i>`, `{\an8}`, ASS overrides) is dropped, the look decides.
 public struct SubtitleCues: Sendable, Equatable {
     public let cues: [SubtitleCue]
+    /// `latestEnd[i]` is the largest end among `cues[0...i]`; lets a lookup stop walking back
+    /// as soon as no earlier cue can still be showing.
+    private let latestEnd: [Double]
 
     /// Sorted by start; the order the file has is kept for equal starts.
     public init(cues: [SubtitleCue]) {
         self.cues = cues.enumerated()
             .sorted { ($0.element.start, $0.offset) < ($1.element.start, $1.offset) }
             .map(\.element)
+        var running = -Double.infinity
+        self.latestEnd = self.cues.map { running = max(running, $0.end); return running }
     }
 
     public var isEmpty: Bool { cues.isEmpty }
@@ -37,14 +42,12 @@ public struct SubtitleCues: Sendable, Equatable {
             let middle = (low + high) / 2
             if cues[middle].start <= seconds { low = middle + 1 } else { high = middle }
         }
-        // Overlapping cues are rare and short; looking back a few entries is enough.
+        // Walk back while some earlier cue may still be showing.
         var found: [String] = []
         var position = low - 1
-        var looked = 0
-        while position >= 0, looked < 8 {
+        while position >= 0, latestEnd[position] > seconds {
             if cues[position].end > seconds { found.append(cues[position].text) }
             position -= 1
-            looked += 1
         }
         return found.isEmpty ? nil : found.reversed().joined(separator: "\n")
     }
@@ -55,6 +58,8 @@ public struct SubtitleCues: Sendable, Equatable {
         var text = raw
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         text = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        // A "blank" line holding spaces still ends a block; otherwise the next cue is lost.
+        text = text.replacingOccurrences(of: "\n[ \\t]+(?=\n)", with: "\n", options: .regularExpression)
         var cues: [SubtitleCue] = []
         for block in text.components(separatedBy: "\n\n") {
             let lines = block.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)

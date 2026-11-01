@@ -103,11 +103,18 @@ public enum HomeLoader {
         /// “next up” filters against this state.
         public var untilFromContinueWatching: [Item]
 
+        private static func library(_ stored: String?) -> String? {
+            guard let stored, !["", "alle", "sammlungen", "wiedergabelisten"].contains(stored) else { return nil }
+            return stored
+        }
+
         public init(disconnected: Bool, filmLibrary: String? = nil, seriesLibrary: String? = nil,
                     genres: [String]? = nil, untilFromContinueWatching: [Item] = []) {
             self.disconnected = disconnected
-            self.filmLibrary = filmLibrary
-            self.seriesLibrary = seriesLibrary
+            // The section choice also stores "All", "Collections" and "Playlists" under the
+            // library name; none of them is a library, so the row asks every library.
+            self.filmLibrary = Self.library(filmLibrary)
+            self.seriesLibrary = Self.library(seriesLibrary)
             self.genres = genres
             self.untilFromContinueWatching = untilFromContinueWatching
         }

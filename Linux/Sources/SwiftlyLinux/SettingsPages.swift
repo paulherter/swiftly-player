@@ -14,7 +14,7 @@ import JellyfinKit
 /// the Mac.
 extension App {
 
-    enum Subpage: Hashable { case subtitleLook, profile, quickConnect, playback, seerr, trakt, settings, accountAdd, serverOnboarding, kindPicker, plexSignIn, presentation, genreSelection, librarySelection, licenses, licenseText(String) }
+    enum Subpage: Hashable { case subtitleLook, profile, quickConnect, playback, seerr, settings, accountAdd, serverOnboarding, kindPicker, plexSignIn, presentation, genreSelection, librarySelection, licenses, licenseText(String) }
 
     /// **Settings cross-fade, they do not slide.**
     ///
@@ -73,7 +73,7 @@ extension App {
         // **Profile and Seerr belong here too.** `readWidth` is the width for running
         // text.
         let formSheet: Set<Subpage> = [.serverOnboarding, .kindPicker, .plexSignIn, .accountAdd, .quickConnect,
-                                          .profile, .seerr, .trakt]
+                                          .profile, .seerr]
         if twoColumned.contains(was) {
             gtk_widget_set_halign(block, GTK_ALIGN_FILL)
             gtk_widget_set_hexpand(block, 1)
@@ -101,7 +101,6 @@ extension App {
         case .quickConnect:   quickConnectBuild(block)
         case .playback:     playbackBuild(block)
         case .seerr:          seerrPageBuild(block)
-        case .trakt:          traktPageBuild(block)
         case .settings:  settingsBuild(block)
         case .accountAdd: accountAddBuild(block)
         case .serverOnboarding:   serverOnboardingBuild(block)
@@ -634,8 +633,6 @@ extension App {
                                      arrow: !seerrPresent) { [weak self] in
             self?.subpageOpen(.seerr)
         })
-        // Trakt next to Seerr; only with credentials in the build (`Trakt.swift`).
-        traktRow(i.space)
         // **Here and not under "Playback".** The rows there say *how* something runs;
         // this one is the only one that gives something to the outside. It belongs next to
         // the other external service.

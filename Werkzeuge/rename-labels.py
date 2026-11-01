@@ -58,7 +58,7 @@ attempts newlines chars popup shifted replacing libs realtime formatter pictures
 shortcut coordinator takeable passphrase nanoseconds pointee editable occurrences resolving provides
 obstacles substring uppercased typealias grep argv starts insets popdown google beats animations modifiers
 filters stops needed hunts returning payload mkdir lowercase github darwin minmax generated foreach
-samsung bitmap htaccess sudo hdr vlc dts tmdb jellyfin seerr trakt discord quickconnect syncplay airplay
+samsung bitmap htaccess sudo hdr vlc dts tmdb jellyfin seerr discord quickconnect syncplay airplay
 mkv hevc rlottie lottie gtk gdk glib wlan wifi tvos ios macos ipados android windows sdk apk ndk jni gradle
 xcode swiftui uikit appkit held username demuxer taglines""".split())
 

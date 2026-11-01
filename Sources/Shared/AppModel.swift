@@ -281,9 +281,14 @@ final class AppModel {
     /// showed that one library (Kids on top, the rest missing). Nothing was ever chosen, so
     /// the row asks all of them, like the "All" list on the tab.
     func startLibrary(art: String) -> Item? {
-        let remembered = UserDefaults.standard.string(forKey: Self.libraryName(art))
-        if remembered == nil, libraries(art: art).count > 1 { return nil }
-        return selectedLibrary(art: art)
+        // **"All" is a choice too.** The tab stores `alle` when someone picks "All"; that is
+        // not a library ID, so `selectedLibrary` fell back to the first one (Kids on top again).
+        let available = libraries(art: art)
+        if let remembered = UserDefaults.standard.string(forKey: Self.libraryName(art)),
+           let hit = available.first(where: { $0.id == remembered }) {
+            return hit
+        }
+        return available.count > 1 ? nil : available.first
     }
 
     func librarySelect(_ library: Item, art: String) {
@@ -534,9 +539,6 @@ final class AppModel {
     /// owns it loses it on closing, and a second model alongside would have a second
     /// access.
     let seerr = SeerrModel()
-    /// Trakt: lives here for the same reason as `seerr`, and because the reports
-    /// to Trakt arise alongside those to Jellyfin (`reportStart` and following).
-    let trakt = TraktAccount()
 
     /// What is stored on the device. **Lives here for the same reason as
     /// `seerr`:** it holds a background session, and a view that owned it would
@@ -594,8 +596,6 @@ final class AppModel {
             // Seerr is tied to a server: on switching to another, its access applies.
             // Within one server nothing changes.
             seerr.serverSwitched(session?.serverIdentity)
-            // Trakt is tied to the account, not the server (`TraktAccount`).
-            trakt.accountSwitched(session?.accountKey)
             profileImagePrefetch()
         }
     }
@@ -2258,7 +2258,6 @@ final class AppModel {
         reportedPaused = false
         StartMeasurement.shared.mark("Start an den Server")
         messages.report(message(.start, item: item, plan: plan, seconds: seconds))
-        trakt.start(item: item, client: client, seconds: seconds)
     }
 
     private nonisolated static func startSend(client: any MediaServer, item: Item,
@@ -2330,7 +2329,6 @@ final class AppModel {
     func runStateReported(running: Bool, seconds: Double) {
         guard let runningTitle, reportedPaused == running else { return }
         AppLog.writeOut("[Melden] sofort: \(running ? "weiter" : "Pause") bei \(Int(seconds)) s")
-        trakt.runState(running: running, seconds: seconds)
         reportProgress(item: runningTitle.item, plan: runningTitle.plan,
                        seconds: seconds, paused: !running)
     }
@@ -2341,7 +2339,6 @@ final class AppModel {
         guard let runningTitle else { return }
         reportProgress(item: runningTitle.item, plan: runningTitle.plan,
                        seconds: max(0, target), paused: reportedPaused)
-        trakt.leap(seconds: max(0, target))
     }
 
     /// **The app goes to the background:** report the state now, not at the next
@@ -2422,9 +2419,6 @@ final class AppModel {
         defer { if !playerOpen { playbackEnded += 1 } }
         SupportModel.shared.playbackStopped()
         let entryRecord = message(.stop, item: item, plan: plan, seconds: seconds)
-        // Before awaiting: Trakt has its own queue and does not wait for Jellyfin, nor
-        // Jellyfin for Trakt.
-        trakt.stop(item: item, seconds: seconds)
         // Immediately, not after the response: a remote command in the meantime no
         // longer belongs to any title.
         if let runningTitle,

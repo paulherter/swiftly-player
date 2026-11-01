@@ -36,7 +36,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "40"
+    CURRENT_PROJECT_VERSION: "41"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -281,8 +281,6 @@ targets:
       # Offline self-test (`-offlinelauf`), only active in Debug builds.
       - path: Sources/Shared/OfflineRun.swift
       - path: Sources/Shared/DiscordIndicator.swift
-      # Trakt: keychain, sign-in state, the calls from AppModel.
-      - path: Sources/Shared/TraktAccount.swift
       - path: Sources/Shared/HomePageModel.swift
       # Seerr - the integration itself; views stay platform-specific.
       - path: Sources/Shared/SeerrModel.swift
@@ -608,8 +606,6 @@ targets:
       # under `#if !os(macOS)` - macOS mixes and routes audio itself.
       - path: Sources/Shared/PlaybackHub.swift
       - path: Sources/Shared/DiscordIndicator.swift
-      # Trakt: keychain, sign-in state, the calls from AppModel.
-      - path: Sources/Shared/TraktAccount.swift
       # Base type alias for UIView or NSView. Without it the player would exist
       # twice.
       - path: Sources/Shared/BaseView.swift

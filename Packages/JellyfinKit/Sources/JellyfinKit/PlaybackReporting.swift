@@ -63,6 +63,19 @@ public extension JellyfinClient {
                               positionTicks: positionTicks, paused: false)
     }
 
+    /// **Ends the conversion job of a play session.** `Sessions/Playing/Stopped` only ends the
+    /// job of the session the player reported; the AVPlayer engine asks the server for its own
+    /// copy address (a session of its own, and a new one per audio track), and nothing else
+    /// would end those jobs. Needs both IDs: the server matches the job by device and session.
+    func stopEncoding(playSessionID: String) async {
+        guard !playSessionID.isEmpty, (try? requireSessionForReporting()) != nil,
+              let req = try? rawRequest("Videos/ActiveEncodings", method: "DELETE", query: [
+                  .init(name: "deviceId", value: devicesId),
+                  .init(name: "playSessionId", value: playSessionID),
+              ]) else { return }
+        try? await sendIgnoringBody(req)
+    }
+
     private func postSession(_ path: String, itemID: String, plan: PlaybackPlan,
                              positionTicks: Int64, paused: Bool,
                              tracks: TrackIndices = .init()) async throws {

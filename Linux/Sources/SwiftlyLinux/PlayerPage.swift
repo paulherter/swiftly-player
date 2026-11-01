@@ -1381,7 +1381,6 @@ extension App {
         reportTitle = (client, title, plan)
         reportedPaused = false
         messages.report(message(.start, client, title: title, plan: plan, ticks: ticks))
-        traktStart(client, title: title, ticks: ticks)
     }
 
     func notifyProgress(_ client: any MediaServer, title: Item, plan: PlaybackPlan,
@@ -1406,7 +1405,6 @@ extension App {
         let spot = playState.leap?.target ?? mediaPlayer.position
         AppLog.writeOut("[Melden] sofort: \(running ? "weiter" : "Pause") bei \(Int(spot)) s")
         fflush(nil)
-        traktRunState(running: running, spot: spot)
         notifyProgress(reportTitle.client, title: reportTitle.title, plan: reportTitle.plan,
                          ticks: Int64(spot * 10_000_000), paused: !running)
     }
@@ -1445,7 +1443,6 @@ extension App {
               episodesSwitch.messagesAllowed else { return }
         AppLog.writeOut("[Melden] sofort: Sprung auf \(Int(target)) s")
         fflush(nil)
-        traktJump(on: target)
         notifyProgress(reportTitle.client, title: reportTitle.title, plan: reportTitle.plan,
                          ticks: Int64(target * 10_000_000), paused: reportedPaused)
     }
@@ -1494,8 +1491,6 @@ extension App {
     func reportStop(_ client: any MediaServer, title: Item, plan: PlaybackPlan,
                     ticks: Int64, account: String) async {
         let entryRecord = message(.stop, client, title: title, plan: plan, ticks: ticks)
-        // Trakt has its own queue and does not wait for Jellyfin.
-        traktStop(title: title, ticks: ticks)
         // **With and without network: the download knows its own state**: flag, remembered
         // position, timestamp (as `AppModel.reportStopped`). The list lives on the main thread.
         let moment = Date()

@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
@@ -138,9 +139,13 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
     val series = s
     // The running episode first: whoever keeps watching should not have to search for it.
     val strip = rememberLazyListState()
+    // **Not while focus is in the row**: `episodes` is replaced after every reload (back from the player,
+    // watched state, tile menu), and the jump to the running episode would pull the row away from under
+    // the focused tile.
+    var stripFocused by remember { mutableStateOf(false) }
     LaunchedEffect(episodes, series?.state?.id) {
         val i = episodes.indexOfFirst { it.id == series?.state?.id }
-        if (i > 0) strip.scrollToItem(i)
+        if (i > 0 && !stripFocused) strip.scrollToItem(i)
     }
     val main = firstFocus()
     // As `TvDetail`: until `Kern.series` answers, the header from the home page (`TvPreOff`).
@@ -297,7 +302,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         // fully visible episode does not move the row, otherwise it would drift one episode further out
                         // of the header line with every Down.
                         else -> CompositionLocalProvider(LocalBringIntoViewSpec provides TvStaticRail) {
-                            LazyRow(state = strip, contentPadding = PaddingValues(start = TvTheme.edgePage, end = TvTheme.edgePage, top = TvTheme.titleSpacing, bottom = TvTheme.railsPadding),
+                            LazyRow(state = strip, modifier = Modifier.onFocusChanged { stripFocused = it.hasFocus }, contentPadding = PaddingValues(start = TvTheme.edgePage, end = TvTheme.edgePage, top = TvTheme.titleSpacing, bottom = TvTheme.railsPadding),
                                     horizontalArrangement = Arrangement.spacedBy(TvTheme.tileSpacing)) {
                                 items(episodes, key = { it.id }) { f ->
                                     // Long OK or the menu key: the tile menu, as on every other episode.

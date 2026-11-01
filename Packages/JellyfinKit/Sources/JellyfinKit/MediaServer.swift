@@ -270,6 +270,14 @@ public extension QuickSignIn {
     }
 }
 
+/// A server that keeps a conversion job per play session and lets the client end it
+/// (Jellyfin and Emby: `DELETE Videos/ActiveEncodings`).
+public protocol ActiveEncodingServer: MediaServer {
+    /// Ends the job of one play session. Best effort; a job nobody asks for is dropped by the
+    /// server after a while anyway.
+    func stopEncoding(playSessionID: String) async
+}
+
 /// Sessions of the account on the server: this device as a remote, handing playback over
 /// (`.remoteControl`, `.playOnOtherDevice`).
 public protocol RemoteSessionServer: MediaServer {

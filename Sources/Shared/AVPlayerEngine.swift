@@ -55,6 +55,8 @@ struct EngineRequest: Sendable {
     /// The copy-only address for an audio track (`nil` takes the source's default), or `nil` if
     /// the server has none.
     let plan: @Sendable (Int?) async -> PlaybackPlan?
+    /// Ends the server's conversion job of a plan the engine asked for and no longer plays.
+    let release: @Sendable (PlaybackPlan) async -> Void
 }
 
 // MARK: - What this device can show
@@ -89,6 +91,7 @@ final class SubtitleOverlay {
     let layer = CALayer()
     private let text = CATextLayer()
     private var shown: String?
+    private var shownIn: (CGRect, CGRect)?
     /// Read once per title: the look is chosen in the settings, not while a title plays (VLC
     /// takes it at the start of each title as well).
     private let look = SubtitleStyle.look
@@ -104,10 +107,13 @@ final class SubtitleOverlay {
 
     /// `picture` is where the video really is inside the layer (`AVPlayerLayer.videoRect`).
     func show(_ line: String?, in bounds: CGRect, picture: CGRect) {
+        // Called ten times a second: the same line in the same place costs nothing.
+        if shown == line, let shownIn, shownIn.0 == bounds, shownIn.1 == picture { return }
         layer.frame = bounds
         guard let line, !line.isEmpty else {
             text.isHidden = true
             shown = nil
+            shownIn = nil
             return
         }
         let visible = (picture.isEmpty ? bounds : picture.intersection(bounds))
@@ -144,6 +150,7 @@ final class SubtitleOverlay {
         text.isHidden = false
         CATransaction.commit()
         shown = line
+        shownIn = (bounds, picture)
     }
 
     private static var scale: CGFloat {
@@ -234,6 +241,8 @@ final class AVPlayerEngine: NSObject {
     private var resumeAfterLoad = true
     private let runtime: Double
     private var attempt = 0
+    /// The plan that plays now; its server job ends when another one replaces it or on `stop`.
+    private var current: PlaybackPlan?
 
     /// Subtitle shift against the picture, from the delay row.
     var subtitleDelay = Delay.null { didSet { refreshSubtitle() } }
@@ -291,6 +300,8 @@ final class AVPlayerEngine: NSObject {
         guard !stopped else { return }
         attempt += 1
         removeItemWatch()
+        release(current, unless: plan)
+        current = plan
         planIsFile = plan.url.pathExtension.lowercased() != "m3u8" && !plan.url.path.lowercased().contains(".m3u8")
         let piece = AVPlayerItem(asset: AVURLAsset(url: plan.url))
         piece.preferredForwardBufferDuration = 0
@@ -356,6 +367,12 @@ final class AVPlayerEngine: NSObject {
             AppLog.writeOut("[AVPlayer] Tonspur \(index) bei \(Int(spot)) s")
             self.load(plan, start: spot)
         }
+    }
+
+    private func release(_ old: PlaybackPlan?, unless new: PlaybackPlan?) {
+        guard let old, old.playSessionID != new?.playSessionID else { return }
+        let ask = request.release
+        Task.detached { await ask(old) }
     }
 
     private func removeItemWatch() {
@@ -653,6 +670,8 @@ final class AVPlayerEngine: NSObject {
         player.pause()
         player.replaceCurrentItem(with: nil)
         item = nil
+        release(current, unless: nil)
+        current = nil
         #if os(iOS)
         pipWatch = nil
         pip?.delegate = nil

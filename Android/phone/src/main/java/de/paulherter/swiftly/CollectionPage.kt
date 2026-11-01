@@ -260,9 +260,9 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
-                if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }) { TilePlaceholder() }
-                items(state.items, key = { it.id }) { k -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) } }
-                if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }) { TilePlaceholder() }
+                if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }, contentType = { "platzhalter" }) { TilePlaceholder() }
+                items(state.items, key = { it.id }, contentType = { "kachel" }) { k -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) } }
+                if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }, contentType = { "platzhalter" }) { TilePlaceholder() }
             }
             if (shownLetters.isNotEmpty()) {
                 val current by remember(state) {

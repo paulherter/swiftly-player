@@ -662,18 +662,22 @@ enum Theme {
             border: 1.5px solid \(accentAlpha(0.55));
         }
         .swiftly-kontoname { font-size: \(rail)px; font-weight: 600; letter-spacing: -0.24px; }
-        /* Ein gestrichelter Kreis — ein Platz, der noch frei ist. */
         /* Ein Feld, kein gestrichelter Kreis (Mac 62b5d194). */
-        .swiftly-kontoplus {
+        /* `button.` und `background-image: none`: ohne beides malt das Grundblatt des
+           Zeichensatzes einen hellen Verlauf ueber `area` (gemessen auf Windows: weisses Feld). */
+        button.swiftly-kontoplus {
             background-color: \(area);
+            background-image: none;
             border: none;
+            box-shadow: none;
             border-radius: \(corner)px;
             color: \(fontQuiet);
             padding: 0;
             min-width: 40px;
             min-height: 40px;
         }
-        .swiftly-kontoplus:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-kontoplus image { color: \(fontQuiet); -gtk-icon-size: 20px; }
+        button.swiftly-kontoplus:hover { background-color: #303030; }
         /* **Ein Genre-Chip ueber der Startseite.** Eckig, nicht rund: Ecke
            wie ein Knopf, denn rund ist, was ein Bild ist (E26). 34 hoch, 14
            seitlich — die Masse des Macs (`HomeView.swift:274`). */
@@ -1153,7 +1157,7 @@ enum Theme {
         /* **14 + Inhalt + 14** (Mac 8eb1ca13): einzeilig rund 48, mit
            Unterzeile rund 65 — als Innenabstand, damit beide atmen. */
         .swiftly-zeilenrumpf, button.swiftly-einstellzeile {
-            min-height: 46px;
+            min-height: 0;
             padding: 14px 12px;
             border-radius: 0;
             background-color: transparent;
@@ -1928,6 +1932,19 @@ enum Theme {
            Kein Schatten (BRAND 4); die Abdunklung hinter dem Blatt ist der
            einzige Hinweis, dass es obenauf liegt. */
         .swiftly-stuetzgrund { background-color: rgba(0,0,0,0.62); }
+        /* Die Flaeche hinter dem Blatt, die beim Klick schliesst. Sie war eine
+           `swiftly-handlung` und bekam damit das weisse Schweben (6 %) unter dem Zeiger, auf
+           dem ganzen Fenster: der Grund wurde hell, sobald der Zeiger darueber stand. */
+        button.swiftly-aussenflaeche, button.swiftly-aussenflaeche:hover,
+        button.swiftly-aussenflaeche:active, button.swiftly-aussenflaeche:backdrop {
+            background: none; border: none; box-shadow: none; outline: none;
+            padding: 0; min-width: 0; min-height: 0;
+        }
+        /* Kein heller Streifen am Anfang und Ende einer Scrollflaeche (GTKs
+           Ueberscroll-Hinweis, auf Windows weiss). */
+        scrolledwindow > overshoot, scrolledwindow > undershoot {
+            background: none; background-image: none; border: none; box-shadow: none;
+        }
         .swiftly-stuetzblatt {
             background-color: \(area);
             border: 1px solid \(margin);

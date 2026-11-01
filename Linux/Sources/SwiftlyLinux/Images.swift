@@ -51,23 +51,37 @@ actor ImageStorage {
     /// not twelve: then there would be no difference again.
     private static let concurrent = 4
     private var inRun = 0
-    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var waiting: [(epoch: Int, slot: CheckedContinuation<Void, Never>)] = []
 
-    /// First come, first served. Tiles ask from top to bottom, so loading goes top to bottom too.
+    /// **Which burst of requests a request belongs to.** A page asks for all its images within a
+    /// few milliseconds; a pause of 150 ms starts a new burst, i.e. in practice a new page.
+    private var epoch = 0
+    private var lastRequest = Date.distantPast
+
+    /// **Newest burst first, then first come, first served.** A grid asks for every tile at once
+    /// (a large library means hundreds of requests); someone who opens a series right after
+    /// used to stand behind all of them, and the episode images arrived only after the grid
+    /// had finished. Requests of an older page still run, but only while no request of the
+    /// current page is waiting; they land in the cache for the way back.
     private func admission() async {
+        if Date().timeIntervalSince(lastRequest) > 0.15 { epoch += 1 }
+        lastRequest = Date()
         if inRun < Self.concurrent {
             inRun += 1
             return
         }
+        let mine = epoch
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            waiting.append(continuation)
+            waiting.append((mine, continuation))
         }
         // The slot was rebooked to us on release; `inRun` stays.
     }
 
     private func inLetBack() {
-        if waiting.isEmpty { inRun -= 1 }
-        else { waiting.removeFirst().resume() }
+        if waiting.isEmpty { inRun -= 1; return }
+        let now = epoch
+        let next = waiting.firstIndex { $0.epoch == now } ?? 0
+        waiting.remove(at: next).slot.resume()
     }
 
     func load(_ url: URL, key: String) async -> Data? {

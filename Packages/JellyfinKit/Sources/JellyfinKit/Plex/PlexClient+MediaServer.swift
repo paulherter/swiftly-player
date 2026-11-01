@@ -480,8 +480,15 @@ extension PlexClient {
         let known = try await sections()
         let section = known.first { $0.key == id }
         if let section, recursive { return .section(section) }
-        let found = try? await listing("/library/metadata/\(id)").metadata.first
-        switch found?.type {
+        var kind = parentKinds[id]
+        if kind == nil {
+            // A failed look-up is not remembered; an answer is.
+            if let found = try? await listing("/library/metadata/\(id)").metadata.first {
+                kind = found.type ?? ""
+                parentKinds[id] = kind
+            }
+        }
+        switch kind {
         case "collection": return .collection(id)
         case "show", "season": return .children(id)
         default:
@@ -585,13 +592,24 @@ extension PlexClient {
             guard let shows else { return ["movie", "show"].contains($0.type) }
             return $0.type == (shows ? "show" : "movie")
         }
-        var rows: [[PlexMetadata]] = []
-        for section in chosen {
-            guard let answer = try? await listing("/library/sections/\(section.key)/all",
-                                                  [("sort", "addedAt:desc")], start: 0, size: size)
-            else { return nil }
-            rows.append(answer.metadata)
+        // All libraries at once; `rows` keeps the library order, so the result does not
+        // depend on which answer comes first.
+        let rows: [[PlexMetadata]]? = await withTaskGroup(of: (Int, [PlexMetadata]?).self) { group in
+            for (spot, section) in chosen.enumerated() {
+                group.addTask {
+                    let answer = try? await self.listing("/library/sections/\(section.key)/all",
+                                                         [("sort", "addedAt:desc")], start: 0, size: size)
+                    return (spot, answer?.metadata)
+                }
+            }
+            var result = [[PlexMetadata]](repeating: [], count: chosen.count)
+            var failed = false
+            for await (spot, run) in group {
+                if let run { result[spot] = run } else { failed = true }
+            }
+            return failed ? nil : result
         }
+        guard let rows else { return nil }
         return PlexMerge.newest(rows, limit: size).map(mapper.item)
     }
 

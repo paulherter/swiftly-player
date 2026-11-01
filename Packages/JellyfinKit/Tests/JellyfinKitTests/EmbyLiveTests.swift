@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Testing
 @testable import JellyfinKit
 
@@ -7,8 +10,7 @@ import Testing
 /// normal run stays offline. The account is a throwaway one of the local test server
 /// (`SWIFTLY_EMBY_USER` / `SWIFTLY_EMBY_PASSWORD`, default `tester` / `swiftlytest`) with the
 /// libraries "Filme" (one title, two versions merged into one entry) and "Serien" (three
-/// episodes), a playlist "Testliste" and a collection "Testsammlung". `Notizen/Mehrserver/EMBY.md`
-/// describes how that server is set up.
+/// episodes), a playlist "Testliste" and a collection "Testsammlung".
 enum EmbyLive {
     static let address = URL(string: ProcessInfo.processInfo.environment["SWIFTLY_EMBY"]
                              ?? "http://localhost:8096")!

@@ -162,7 +162,7 @@ struct SettingsView: View {
     /// iPhone): Seerr signs in with the media server's own user name and password, which
     /// not every kind has. Without any row the group is not drawn at all.
     @ViewBuilder private var integration: some View {
-        if model.can(.seerr) || model.trakt.available || !inSandbox {
+        if model.can(.seerr) || !inSandbox {
             integrationGroup
         }
     }
@@ -174,15 +174,6 @@ struct SettingsView: View {
                            under: Text("Anfragen, was noch nicht da ist"),
                            value: model.seerr.connected ? String(localized: "Verbunden") : nil,
                            action: { navigator.openIt(.seerr, in: section) })
-            }
-            // **Next to Seerr, and only with credentials in the build** (`TraktAccess`);
-            // without them there would be a button that is guaranteed to fail.
-            if model.trakt.available {
-                if model.can(.seerr) { SheetLine().padding(.leading, Theme.separatorInsetCard) }
-                ValuesRow(symbol: "checkmark.circle", title: Text(verbatim: "Trakt"),
-                           under: Text("Trägt ein, was du schaust"),
-                           value: model.trakt.connected ? String(localized: "Verbunden") : nil,
-                           action: { navigator.openIt(.trakt, in: section) })
             }
             // **Here and not under "Playback".** The rows there say *how* something runs.
             // This is the only one in the app that gives something **to the outside**: setting
@@ -205,7 +196,7 @@ struct SettingsView: View {
             // once. It is reversible: a build without the sandbox brings the row back with it,
             // without anyone having to remember.
             if !inSandbox {
-                if model.can(.seerr) || model.trakt.available {
+                if model.can(.seerr) {
                     SheetLine().padding(.leading, Theme.separatorInsetCard)
                 }
                 ToggleRow(symbol: "bubble.left.and.text.bubble.right",

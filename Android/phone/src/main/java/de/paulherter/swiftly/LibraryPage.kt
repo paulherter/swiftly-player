@@ -326,23 +326,23 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
         ) {
             if (state.playlistsSelected) {
                 // Playlists in the same grid with the same tile; under the name the number of entries in this scope.
-                items(state.playlistList, key = { "liste" + it.id }) { s ->
+                items(state.playlistList, key = { "liste" + it.id }, contentType = { "liste" }) { s ->
                     PlaylistTileView(s) { open(playlistTarget(s.id, s.name, art)) }
                 }
             } else if (collections) {
                 // Collections in the same grid with the same tile. Under the name, instead of the year, shows
                                 // how many movies or series it holds.
-                items(state.collectionList, key = { "sammlung" + it.id }) { s ->
+                items(state.collectionList, key = { "sammlung" + it.id }, contentType = { "sammlung" }) { s ->
                     CollectionTileView(app, s, art) { open(collectionTarget(s.id, s.name, art)) }
                 }
             } else {
                 // Placeholder instead of a spinner: the grid already has its shape.
-                if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }) {
+                if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }, contentType = { "platzhalter" }) {
                     Box(Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Motion.reveal())) { TilePlaceholder() }
                 }
-                items(state.items, key = { it.id }) { GridTileView(it) { open(Destination(it.id, it.title, it.type)) } }
+                items(state.items, key = { it.id }, contentType = { "kachel" }) { GridTileView(it) { open(Destination(it.id, it.title, it.type)) } }
                 // No spinner when loading more, a row of placeholders instead.
-                if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }) { TilePlaceholder() }
+                if (state.items.isNotEmpty() && state.stillMorePresent) items(count, key = { "nachschub$it" }, contentType = { "platzhalter" }) { TilePlaceholder() }
             }
         }
 

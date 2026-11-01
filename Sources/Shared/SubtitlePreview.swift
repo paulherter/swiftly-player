@@ -222,7 +222,9 @@ private struct PreviewLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
         let text = subviews[1].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
-        subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.maxY - text.height),
+        // **Centred on its own width.** The text block is narrower than the picture; placed at
+        // `minX` with the default top-leading anchor it sat at the left edge.
+        subviews[1].place(at: CGPoint(x: bounds.midX, y: bounds.maxY - text.height), anchor: .top,
                           proposal: ProposedViewSize(width: bounds.width, height: text.height))
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -263,6 +264,43 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     }
     fun toggle(source: String) = runSet(if (mediaWork.inGroup) !mediaWork.running else !wanted[0], source)
 
+    // **Holding left/right** (mirrors tvOS `holdBegins`): the key repeat starts after about half a second;
+    // from then on the film pauses and the marker runs, 10, then 30, then 90 s per second (a step faster
+    // every two seconds). Releasing jumps there and plays on. Before, every repeat added a full step
+    // (a constant, far too fast run of 200 s per second and more).
+    val holding = remember { booleanArrayOf(false) }
+    val holdRan = remember { booleanArrayOf(false) }
+    val holdTimes = remember { longArrayOf(0L, 0L) }
+    fun holdStep(direction: Int) {
+        if (mediaWork.duration <= 0) return
+        val now = SystemClock.elapsedRealtime()
+        if (!holding[0]) {
+            val base = seekTarget ?: mediaWork.position
+            holding[0] = true
+            holdTimes[0] = now; holdTimes[1] = now
+            collector?.cancel()
+            holdRan[0] = !mediaWork.inGroup && wanted[0]
+            if (holdRan[0]) runSet(false, "Halten")
+            seekTarget = base
+            AppLog.writeOut("[Spulen] Halten ${if (direction < 0) "links" else "rechts"}")
+        }
+        val held = (now - holdTimes[0]) / 1000.0
+        val pace = if (held < 2) 10.0 else if (held < 4) 30.0 else 90.0
+        val next = (seekTarget ?: mediaWork.position) + direction * pace * (now - holdTimes[1]) / 1000.0
+        holdTimes[1] = now
+        seekTarget = next.coerceIn(0.0, mediaWork.duration)
+        showItem()
+    }
+    fun holdEnd(jump: Boolean) {
+        if (!holding[0]) return
+        holding[0] = false
+        val target = seekTarget
+        markDiscard()
+        if (jump && target != null) mediaWork.vault(target)
+        if (holdRan[0]) { holdRan[0] = false; wanted[0] = true; lastCommanded[0] = SystemClock.elapsedRealtime(); if (jump) mediaWork.playOn() else mediaWork.resume() }
+        showItem()
+    }
+
     val remoteHandset = remember { FocusRequester() }
     val buttonTracks = remember { FocusRequester() }
     val buttonEpisodes = remember { FocusRequester() }
@@ -373,6 +411,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
             openLayer != null -> { if (seekTarget != null) markDiscard(); layerClose() }
             // One press clears marker and bar together, otherwise Back seems dead until the bar times out.
             seekTarget != null -> {
+                holdEnd(jump = false)
                 markDiscard()
                 runCatching { remoteHandset.requestFocus() }
                 visible = false
@@ -400,8 +439,8 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                 val target = seekTarget
                 if (target != null) { showItem(); markDiscard(); mediaWork.vault(target) } else toggle("Klick")
             }
-            Key.DirectionLeft -> scrub(-mediaWork.backS)
-            Key.DirectionRight -> scrub(mediaWork.preS)
+            Key.DirectionLeft -> if (e.nativeKeyEvent.repeatCount > 0) holdStep(-1) else scrub(-mediaWork.backS)
+            Key.DirectionRight -> if (e.nativeKeyEvent.repeatCount > 0) holdStep(1) else scrub(mediaWork.preS)
             Key.MediaRewind -> scrub(-mediaWork.backS)
             Key.MediaFastForward -> scrub(mediaWork.preS)
             Key.MediaNext -> if (mediaWork.hasNext) run.launch { mediaWork.nextEpisode() }
@@ -421,6 +460,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     // layer. Held keys do not repeat.
     fun playbackKey(e: KeyEvent): Boolean {
         val k = e.key
+        if (holding[0] && e.type == KeyEventType.KeyUp && (k == Key.DirectionLeft || k == Key.DirectionRight)) { holdEnd(jump = true); return true }
         if (k != Key.MediaPlayPause && k != Key.MediaPlay && k != Key.MediaPause) return false
         if (e.type != KeyEventType.KeyDown || e.nativeKeyEvent.repeatCount > 0) return true
         when (k) {
@@ -861,8 +901,12 @@ private fun LayersRow(text: String, selected: Boolean, modifier: Modifier = Modi
                 if (selected) Symbol(Glyph.Checkmark, 15.dp, color = color, strength = Strength.Semibold)
             }
             // Track names come from the file, verbatim.
+            // A name that does not fit runs through while focused (tvOS `Marquee`), otherwise it truncates.
+            @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
             Text(text, style = if (selected) TvTheme.button else TvTheme.body,
-                 color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                 color = color, maxLines = 1, softWrap = false,
+                 overflow = if (focus && !motionReduced()) TextOverflow.Clip else TextOverflow.Ellipsis,
+                 modifier = if (focus && !motionReduced()) Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1200, repeatDelayMillis = 1500, velocity = 55.dp) else Modifier)
         }
     }
 }

@@ -254,6 +254,7 @@ extension App {
                                        GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(scroller), 1)
         gtk_scrolled_window_set_max_content_height(OpaquePointer(scroller), 360)
+        softScroll(scroller)
         let cards = stack(GTK_ORIENTATION_VERTICAL, spacing: 12)
         gtk_widget_set_margin_start(cards, 16)
         gtk_widget_set_margin_end(cards, 16)

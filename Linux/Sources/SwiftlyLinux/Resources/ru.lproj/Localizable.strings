@@ -378,20 +378,6 @@
 "alles da" = "всё есть";
 "wird gelesen …" = "чтение…";
 
-/* Trakt */
-"Trägt ein, was du schaust" = "Отмечает, что вы смотрите";
-"Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen." = "Swiftly сообщает Trakt, что вы смотрите. После 80 % тайтл там отмечается как просмотренный.";
-"Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt." = "Если на сервере есть плагин Trakt, это не нужно — иначе в Trakt всё попадёт дважды.";
-"Mit Trakt verbinden" = "Подключить Trakt";
-"Hole Code…" = "Получение кода…";
-"Geh auf %@ und gib diesen Code ein." = "Откройте %@ и введите этот код.";
-"Trakt öffnen" = "Открыть Trakt";
-"Neuer Code" = "Новый код";
-"Der Code ist abgelaufen. Hol dir einen neuen." = "Срок действия кода истёк. Получите новый.";
-"Trakt hat die Verbindung nicht freigegeben." = "Trakt не разрешил подключение.";
-"Trakt bremst gerade. Versuch es in ein paar Minuten noch mal." = "Trakt сейчас ограничивает запросы. Попробуйте через несколько минут.";
-"Trakt ist gerade nicht erreichbar." = "Trakt сейчас недоступен.";
-
 /* Eigene Header (Issue #4) */
 "Erweitert" = "Дополнительно";
 "Header-Name" = "Имя заголовка";

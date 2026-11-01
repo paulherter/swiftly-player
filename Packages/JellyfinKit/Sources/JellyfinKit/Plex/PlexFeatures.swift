@@ -5,8 +5,7 @@ import Foundation
 /// Left out on purpose: SyncPlay, Quick Connect, remote control, "play on another device"
 /// and settings sync have no counterpart in the Plex client API we use (Plex Companion is
 /// a different protocol and not planned), and there is no list of public users to pick
-/// from. Trakt is in: it needs only the external ids, which come from `Guid` (see
-/// ``PlexMapper/item(_:)``). Seerr is out: its sign-in is the media server's user name and
+/// from. Seerr is out: its sign-in is the media server's user name and
 /// password (`/api/v1/auth/jellyfin`), and a Plex account has no such pair.
 ///
 /// Some entries depend on the server, not on us: intro and credits markers exist only when

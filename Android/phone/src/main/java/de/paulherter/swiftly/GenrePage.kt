@@ -41,7 +41,7 @@ import org.json.JSONArray
 fun GenreChips(genres: List<String>, select: (String) -> Unit) {
     val form = RoundedCornerShape(Theme.corner)
     LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(genres) { g ->
+        items(genres, key = { it }) { g ->
             // No border: the surface already says "tappable". And 14 is on no size ladder; a chip uses 13
             // medium, like the value pill and choice chip.
             Box(Modifier.tapOn { select(g) }.heightIn(min = 34.dp).clip(form).background(Theme.area)

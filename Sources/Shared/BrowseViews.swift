@@ -735,7 +735,9 @@ struct ItemDetailView: View {
     /// The title's versions are known (or a copy on the device decides): Play may
     /// ask or start. See ``MediaVersions/start(_:downloaded:)``.
     private var versionsKnown: Bool {
-        versionsFailed
+        // The full title came and names no sources (a Plex title without media, a server that
+        // leaves them out): nothing to choose between. ``launch(since:)`` fetches and decides.
+        versionsFailed || freshValue != nil
             || MediaVersions.start(current.mediaSources,
                                    downloaded: model.downloads.file(for: current.id) != nil) != .wait
     }

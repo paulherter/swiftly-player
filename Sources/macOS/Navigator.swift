@@ -154,8 +154,6 @@ enum PagesTarget: Hashable, Identifiable {
     case watchlist
     /// Connect Seerr: an extra, hence behind the settings.
     case seerr
-    /// Connect Trakt: behind the settings like Seerr.
-    case trakt
     /// A title the own server does not have, coming from search.
     case seerrTitle(SeerrHit)
     /// A person from the cast: what exists of them.
@@ -194,7 +192,6 @@ enum PagesTarget: Hashable, Identifiable {
         case let .downloadSeries(id, _): "downloadserie-\(id)"
         case .watchlist:        "merkliste"
         case .seerr:            "seerr"
-        case .trakt:            "trakt"
         case let .seerrTitle(t): "seerr-\(t.art)-\(t.id)"
         case let .person(p, _): "person-\(p.id)"
         case let .genre(name): "gattung-\(name)"
@@ -222,7 +219,7 @@ enum PagesTarget: Hashable, Identifiable {
     /// a click on a section removes it again.
     var inAccountBranch: Bool {
         switch self {
-        case .profile, .settings, .playback, .subtitleLook, .seerr, .trakt, .presentation,
+        case .profile, .settings, .playback, .subtitleLook, .seerr, .presentation,
              .licenses, .license, .licenseOffering, .genreSelection, .librarySelection, .quickConnect, .accountAdd, .serverAdd: true
         // **The person page belongs to the section, not the account.** It is reached from a
         // title and the user wants to continue from there to the next one, so it lies in

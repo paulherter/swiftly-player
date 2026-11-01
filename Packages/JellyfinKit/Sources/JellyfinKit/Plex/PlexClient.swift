@@ -111,6 +111,9 @@ public actor PlexClient {
     private var unauthorizedTold = false
     /// The last preview file, so scrubbing does not fetch it for every picture.
     var previewCache: (key: String, bif: PlexBIF?)?
+    /// The kind (`collection`, `show`, …) the server named for an id, so paging through a
+    /// collection or a series does not look it up again for every page.
+    var parentKinds: [String: String] = [:]
 
     /// A client for an address and a token, without an account to fall back on.
     public init(baseURL: URL, token: String, identity: PlexIdentity,
@@ -227,6 +230,7 @@ public actor PlexClient {
         routeConfirmed = true
         details = details?.moved(to: resolved.connection)
         previewCache = nil
+        parentKinds = [:]
         if let stored = currentSession() { routeObserver?(stored) }
     }
 

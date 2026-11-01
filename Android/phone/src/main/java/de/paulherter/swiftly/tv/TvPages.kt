@@ -271,12 +271,12 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                     // The list is already in memory: "Sammlungen" only appears in the panel if there are any.
                 } else if (de.paulherter.swiftly.AccountSwitchTransition.waits) {
                     // No error or empty state while switching accounts.
-                } else if (state.disrupted) TvDisruption(app, retry = { run.launch { state.load(app.kern) } })
+                } else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
                 else if (!state.loads && state.items.isEmpty()) {
                     if (state.filter == "alle") TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } })
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
                     else TvEmpty(translated("Nichts gefunden"), translated("Unter diesem Filter liegt gerade nichts."),
-                        symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filterSet("alle") })
+                        symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filterSet("alle") }, buttonModifier = Modifier.focusRequester(focus))
                 }
             }
         }, more = {
@@ -414,7 +414,7 @@ fun TvWatchlist(app: SwiftlyApplication, open: (Destination) -> Unit) {
             // No way-out button here, unlike in Library: tvOS' `WatchlistView.empty` has none either. There is
             // nothing to refresh or reset, only the hint where to add titles.
             if (de.paulherter.swiftly.AccountSwitchTransition.waits) { /* No error or empty state while switching accounts. */ }
-            else if (state.disrupted) TvDisruption(app, retry = { run.launch { state.load(app.kern) } })
+            else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
             else if (!state.loads && state.items.isEmpty()) {
                 TvEmpty(translated("Noch nichts gemerkt"),
                     translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."),

@@ -158,12 +158,6 @@ import Testing
         #expect(imprint.language == "ger" && imprint.forced && imprint.channels == 6)
     }
 
-    @Test("A Trakt token keeps `zugriff`, `erneuerung`, `ablauf`, `benutzer`")
-    func traktToken() throws {
-        let token = try roundTrip(TraktToken.self, #"{"zugriff":"a","erneuerung":"r","ablauf":700000000,"benutzer":"u"}"#)
-        #expect(token.access == "a" && token.user == "u")
-    }
-
     @Test("Own headers and the Seerr access keep their keys")
     func seerrAccess() throws {
         let access = try roundTrip(SeerrAccess.self, #"""

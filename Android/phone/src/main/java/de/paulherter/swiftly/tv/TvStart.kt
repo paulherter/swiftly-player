@@ -494,7 +494,6 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         val target = snapshotFlow { entryTarget() }.first { it != null }
         runCatching { target?.requestFocus() }
     }
-    val chipOffset = if (e.genreChips && e.startGenres.isNotEmpty()) 1 else 0
     // Reasoning for both values at the row change right below.
     val railsSwitchDuration = 500
     val railsSwitchCurve = remember { CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f) }

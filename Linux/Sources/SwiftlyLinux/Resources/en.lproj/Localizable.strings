@@ -378,20 +378,6 @@
 "alles da" = "all here";
 "wird gelesen …" = "reading …";
 
-/* Trakt */
-"Trägt ein, was du schaust" = "Logs what you watch";
-"Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen." = "Swiftly tells Trakt what you watch. From 80 percent on, the title shows up there as watched.";
-"Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt." = "If your server has the Trakt plugin, you don't need this. Otherwise everything lands on Trakt twice.";
-"Mit Trakt verbinden" = "Connect Trakt";
-"Hole Code…" = "Getting code…";
-"Geh auf %@ und gib diesen Code ein." = "Go to %@ and enter this code.";
-"Trakt öffnen" = "Open Trakt";
-"Neuer Code" = "New code";
-"Der Code ist abgelaufen. Hol dir einen neuen." = "The code has expired. Get a new one.";
-"Trakt hat die Verbindung nicht freigegeben." = "Trakt didn't approve the connection.";
-"Trakt bremst gerade. Versuch es in ein paar Minuten noch mal." = "Trakt is holding back right now. Try again in a few minutes.";
-"Trakt ist gerade nicht erreichbar." = "Can't reach Trakt right now.";
-
 /* Eigene Header (Issue #4) */
 "Erweitert" = "Advanced";
 "Header-Name" = "Header name";

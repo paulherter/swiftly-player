@@ -128,6 +128,12 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
         if (focusReset) { delay(1); runCatching { resetRow.requestFocus() }; focusReset = false }
     }
 
+    // The swatches do not depend on the look: computed once, not through the core on every recomposition
+    // (each focus move or trial step recomposes this page).
+    val colourSwatches = remember {
+        SubtitleSteps.colours.associateWith { word -> SubtitleFacts.of(Kern.subtitleLookChange("", "colour", word), true).color }
+    }
+    val colourSteps = SubtitleSteps.colours.map { word -> Step(word, subtitleColourName(word), colourSwatches[word], word == facts.colour) }
     val shown = trial ?: look
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
         Row(Modifier.fillMaxSize().padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop),
@@ -154,9 +160,7 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
                              trialLost = { owner -> if (trialOwner == owner) { trialOwner = null; trial = null } })
                 Hairline()
                 UnfoldingRow("colour", translated("Farbe"), subtitleColourName(facts.colour), opened, { opened = it }, headers.getValue("colour"),
-                             SubtitleSteps.colours.map { word ->
-                                 Step(word, subtitleColourName(word), SubtitleFacts.of(Kern.subtitleLookChange("", "colour", word), true).color, word == facts.colour)
-                             }, Modifier, look, "colour", set = ::set,
+                             colourSteps, Modifier, look, "colour", set = ::set,
                              trialSet = { owner, value -> trialOwner = owner; trial = value },
                              trialLost = { owner -> if (trialOwner == owner) { trialOwner = null; trial = null } })
                 Hairline()

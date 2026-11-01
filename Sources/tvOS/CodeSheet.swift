@@ -83,7 +83,7 @@ struct CodeSheet: View {
         .onExitCommand(perform: close)
     }
 
-    /// The QR code as an image, one pixel per module; scaling up without smoothing, or the edges blur. Also used for the Trakt code (`TraktConnectView`).
+    /// The QR code as an image, one pixel per module; scaling up without smoothing, or the edges blur.
     static func code(_ address: URL) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(address.absoluteString.utf8)

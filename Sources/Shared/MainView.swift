@@ -557,9 +557,6 @@ extension View {
             .navigationDestination(for: SeerrRoute.self) { _ in
                 SeerrSettingsView(model: model, seerr: model.seerr)
             }
-            .navigationDestination(for: TraktRoute.self) { _ in
-                TraktSettingsView(trakt: model.trakt)
-            }
             .navigationDestination(for: PlaybackRoute.self) { _ in
                 PlaybackSettingsView(model: model)
             }

@@ -5,6 +5,11 @@ import Testing
 @Suite("Subtitle cues")
 struct SubtitleCuesTests {
 
+    @Test func aBlankLineWithSpacesStillEndsABlock() {
+        let cues = SubtitleCues.parse("1\n00:00:01,000 --> 00:00:02,000\nOne\n \t\n2\n00:00:03,000 --> 00:00:04,000\nTwo\n")
+        #expect(cues.cues.map(\.text) == ["One", "Two"])
+    }
+
     @Test func readsSRT() {
         let file = "\u{FEFF}1\r\n00:00:01,000 --> 00:00:03,500\r\nHello <i>there</i>\r\n\r\n2\r\n00:01:00,000 --> 00:01:02,000\r\n{\\an8}Top\r\nline two\r\n"
         let cues = SubtitleCues.parse(file)
@@ -29,6 +34,15 @@ struct SubtitleCuesTests {
         #expect(cues.cues.count == 1)
         #expect(cues.cues[0].start == 5 && cues.cues[0].end == 7.25)
         #expect(cues.cues[0].text == "Fish & chips")
+    }
+
+    @Test func findsALongCueBehindManyShortOnes() {
+        var list = [SubtitleCue(start: 0, end: 1000, text: "long")]
+        for i in 1...30 { list.append(SubtitleCue(start: Double(i), end: Double(i) + 0.5, text: "s\(i)")) }
+        let cues = SubtitleCues(cues: list)
+        #expect(cues.text(at: 20.2) == "long\ns20")
+        #expect(cues.text(at: 25.7) == "long")
+        #expect(cues.text(at: 1001) == nil)
     }
 
     @Test func findsTheCueAtATime() {

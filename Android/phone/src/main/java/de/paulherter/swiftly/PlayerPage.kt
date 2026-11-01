@@ -378,6 +378,9 @@ class PlayItem(
     /** Stop from outside (TV: Home, sleep timer) without waiting for a running stop. */
     fun halt() = vlcNowOrAfter("Pause") { player.pause() }
 
+    /** Play on exactly here (no step back), e.g. after a held-key seek has jumped. */
+    fun playOn() = vlcNowOrAfter("Weiter") { player.play() }
+
     var plan by mutableStateOf<PlayPlan?>(null); private set
     var running by mutableStateOf(false); private set
     var position by mutableDoubleStateOf(0.0); private set
@@ -440,6 +443,8 @@ class PlayItem(
     var switches by mutableStateOf(false); private set
     var tempo by mutableFloatStateOf(1f); private set
     var sleepTime by mutableIntStateOf(0); private set
+    /** Counts expired sleep timers; the page shows its controls then, like `controlsVisible = true` on iOS. */
+    var sleepFired by mutableIntStateOf(0); private set
     /**
      * While the slider is dragged, the tick does not overwrite the position; only the phone has this.
      * **Observable**: icons and the center control move out of the way while seeking. As a plain field
@@ -515,7 +520,7 @@ class PlayItem(
 
     // MARK: Trickplay: seek preview, mirrors `TrickplayImages` in the package.
     var trickplayDetail by mutableStateOf<TrickplayDetail?>(null); private set
-    /** Decoded tile sheets, at most six; as on iOS only a handful is kept. */
+    /** Decoded tile sheets, at most three, like `TrickplayImages` on iOS (a full sheet is large). */
     private val trickplaySheets = LinkedHashMap<Int, android.graphics.Bitmap>()
     private val trickplayUnderRoute = mutableSetOf<Int>()
     /** Counts incoming sheets so the preview redraws. */
@@ -554,7 +559,7 @@ class PlayItem(
             if (image == null) AppLog.writeOut("[Trickplay] Blatt $number kam nicht (Adresse ${address.isNotEmpty()})")
             if (image != null) {
                 trickplaySheets[number] = image
-                if (trickplaySheets.size > 6) trickplaySheets.remove(trickplaySheets.keys.first())
+                if (trickplaySheets.size > 3) trickplaySheets.remove(trickplaySheets.keys.first())
                 trickplayState++
             }
         }
@@ -1554,6 +1559,7 @@ class PlayItem(
             delay(minutes * 60_000L)
             halt()
             sleepTime = 0
+            sleepFired++
             hint = translated("Schlafzeit abgelaufen.")
         }
     }
@@ -1984,8 +1990,14 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     // open it is already "on", and its first hide does not dismiss "skip recap".
     LaunchedEffect(visible) { mediaWork.controlsChanged(visible) }
     // Take nothing away while paused, not while seeking, and not while a layer is open (iOS `!layerOpen`).
+    // TalkBack: the controls stay (iOS `!voiceOverAn`).
+    val assistive = remember(context) {
+        (context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager)
+            ?.isTouchExplorationEnabled == true
+    }
+    LaunchedEffect(mediaWork.sleepFired) { if (mediaWork.sleepFired > 0) visible = true }
     LaunchedEffect(visible, mediaWork.running, mediaWork.atPush, sheetOpen, touched, openLayer) {
-        if (visible && mediaWork.running && !mediaWork.atPush && !sheetOpen && openLayer == null) { delay(4000); visible = false }
+        if (!assistive && visible && mediaWork.running && !mediaWork.atPush && !sheetOpen && openLayer == null) { delay(4000); visible = false }
     }
     LaunchedEffect(mediaWork.hint) { if (mediaWork.hint != null) { delay(5000); mediaWork.hint = null } }
     LaunchedEffect(leap) { if (leap != null) { delay(700); leap = null } }
@@ -2058,18 +2070,24 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             .pointerInput(Unit) {
                 var lastOne = 0L
                 var lastPage = 0
+                // A running seek chain waits longer for the next tap (iOS `chainTap` 0.5 s, `doubleTap` 0.26 s).
+                var inChain = false
                 // A tap is over within a third of a second; if the finger moves more than 14 dp it is a swipe.
                 val pressDuration = 300L
                 val distanceLimit = 14f * density
                 fun wasTapped(spot: Offset) {
                     val page = if (spot.x < size.width / 2) -1 else 1
                     val now = SystemClock.elapsedRealtime()
-                    if (now - lastOne < 260 && page == lastPage) {
-                        lastOne = 0L
+                    if (lastOne > 0L && now - lastOne < (if (inChain) 500 else 260) && page == lastPage) {
+                        // A chain, not a pair: every further quick tap seeks again.
+                        lastOne = now
+                        inChain = true
+                        if (visible) touched++
                         scrub(page)
                     } else {
                         lastOne = now
                         lastPage = page
+                        inChain = false
                         visible = !visible
                         touched++
                     }

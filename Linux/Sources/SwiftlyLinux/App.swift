@@ -416,6 +416,11 @@ final class App: @unchecked Sendable {
             serverStateShow(memo.serverName.map { String(format: translated("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(asWindow(window))
+        #if os(Windows)
+        // The native window exists only once it is shown; ask again after the first frames.
+        postDeadline(0.3) { WindowFrame.makeTransparent() }
+        #endif
+        postDeadline(6) { [weak self] in self?.supportSheetWarmUp() }
         characterItemReport()
         StartLevel.report("bereit")
         // **Create the player now, not on the first tap.**

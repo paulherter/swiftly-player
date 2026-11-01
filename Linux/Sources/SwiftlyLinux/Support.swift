@@ -313,7 +313,7 @@ extension App {
         // A click outside closes. A button, not a gesture, so the keyboard and screen
         // readers get it too.
         let outside: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(outside, "swiftly-handlung")
+        gtk_widget_add_css_class(outside, "swiftly-aussenflaeche")
         gtk_widget_set_hexpand(outside, 1)
         gtk_widget_set_vexpand(outside, 1)
         gtk_widget_set_can_focus(outside, 0)
@@ -342,12 +342,39 @@ extension App {
         crossfade(root, on: 1, duration: Theme.timeFadeFromIn)
     }
 
-    func supportSheetClose() {
+    /// **Closes with a fade** (as long as the fade-in), then takes the layer away. The slot is
+    /// free at once, so a new sheet can open while the old one is still fading.
+    func supportSheetClose(fading: Bool = true) {
         guard let layer = supportSheet, let cover = windowCover else { return }
         supportSheet = nil
         supportKeyField = nil
-        gtk_overlay_remove_overlay(OpaquePointer(cover), layer)
         lookSheetClosed()
+        guard fading else {
+            gtk_overlay_remove_overlay(OpaquePointer(cover), layer)
+            return
+        }
+        // Not clickable any more while it fades: a second click on "outside" or on the cross
+        // would otherwise act on a sheet that is already closing.
+        gtk_widget_set_can_target(layer, 0)
+        crossfade(layer, on: 0, duration: Theme.timeFadeFromIn, curve: .easeIn) {
+            gtk_overlay_remove_overlay(OpaquePointer(cover), layer)
+        }
+    }
+
+    /// **The first opening used to cost a few dropped frames** (measured: 34 ms for the purchase
+    /// sheet where a frame is 16): the gradients and rounded clips are drawn for the first time
+    /// and GTK compiles their shaders then. So the sheet is drawn once, almost invisible and not
+    /// clickable, a few seconds after start, when nothing else is going on.
+    func supportSheetWarmUp() {
+        guard supportSheet == nil, windowCover != nil, client != nil else { return }
+        supportSheetShow()
+        guard let layer = supportSheet else { return }
+        gtk_widget_set_can_target(layer, 0)
+        crossfade(layer, on: 0.01, duration: 0)
+        postDeadline(0.3) { [weak self] in
+            guard let self, self.supportSheet == layer else { return }
+            self.supportSheetClose(fading: false)
+        }
     }
 
     /// **The purchase page** (`SupportGrowSheet`): the offer as on the Mac, then the key.

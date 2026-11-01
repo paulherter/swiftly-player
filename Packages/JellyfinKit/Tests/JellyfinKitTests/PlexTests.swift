@@ -363,6 +363,21 @@ struct PlexAccountTests {
         #expect(PlexStub.requests(host).first?.url?.path == "/api/v2/pins/4711")
     }
 
+    @Test("Warten: ein Serverfehler zwischendurch bricht die Anmeldung nicht ab")
+    func waitSurvivesOneHiccup() async throws {
+        let calls = PlexCounter()
+        let (host, session) = PlexStub.register { _ in
+            switch calls.next() {
+            case 1: (503, "")
+            case 2: (200, PlexFixtures.pinFresh)
+            default: (200, PlexFixtures.pinDone)
+            }
+        }
+        let token = try await service(host, session).awaitToken(
+            PlexPin(id: 4711, code: "ABCD1234"), pause: .milliseconds(5), limit: .seconds(5))
+        #expect(token == "ACCOUNTTOKEN")
+    }
+
     @Test("Abgelaufene PIN meldet sich als abgelaufen")
     func expired() async throws {
         let (host, session) = PlexStub.register { _ in (404, "") }

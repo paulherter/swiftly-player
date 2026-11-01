@@ -14,6 +14,7 @@ enum TVSpec {
     static let cornerBar: CGFloat = 5
     static let rowInset: CGFloat = 26
     static let listCardInset: CGFloat = 10
+    static let groupGap: CGFloat = 36
     static let sectionColumnWidth: CGFloat = 460
     static let columnGap: CGFloat = 72
     static let headerProfileImage: CGFloat = 60

@@ -12,6 +12,7 @@
     "cornerBar": 5,
     "rowInset": 26,
     "listCardInset": 10,
+    "groupGap": 36,
     "sectionColumnWidth": 460,
     "columnGap": 72,
     "headerProfileImage": 60,

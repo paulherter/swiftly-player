@@ -69,6 +69,7 @@ extension App {
         gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(scroller), 1)
         gtk_scrolled_window_set_max_content_height(OpaquePointer(scroller), height)
         gtk_scrolled_window_set_child(OpaquePointer(scroller), content)
+        softScroll(scroller)
         gtk_overlay_set_child(OpaquePointer(frame), scroller)
         if let close { gtk_overlay_add_overlay(OpaquePointer(frame), close) }
         return frame

@@ -567,7 +567,6 @@ struct MainView: View {
         case let .downloadSeries(id, title):
             DownloadSeriesOverviewPage(model: model, seriesIdentifier: id, title: title) { close(target) }
         case .seerr:            SeerrSettingsView(model: model, seerr: model.seerr) { close(target) }
-        case .trakt:            TraktSettingsView(trakt: model.trakt) { close(target) }
         case let .seerrTitle(t): SeerrDetailView(model: model, hit: t) { close(target) }
         // No longer reachable: a library is a root. The case stays so a restored old stack
         // does not break.

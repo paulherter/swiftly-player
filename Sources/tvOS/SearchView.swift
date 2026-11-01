@@ -46,11 +46,6 @@ struct SearchView: View {
     @State private var lastKey = "A"
     @State private var lastHit: String?
 
-    /// The system keyboard for the mic key. A real field, because only that one gets the remote's
-    /// microphone. It sits invisibly in the keyboard card and is only reachable while speaking.
-    @FocusState private var atSystem: Bool
-    @State private var speaking = false
-
     private let top = "top"
 
     private var screen: SearchScreen {
@@ -63,8 +58,7 @@ struct SearchView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: TVSpec.columnGap) {
-            TVSearchKeyboard(term: $term, focus: $focused, speaking: speaking, speak: startSpeaking)
-                .background { systemField }
+            TVSearchKeyboard(term: $term, focus: $focused)
                 .focusSection()
                 .defaultFocus($focused, .key(lastKey), priority: .userInitiated)
                 .padding(.top, Theme.contentTop - Theme.edgeTop)
@@ -150,12 +144,6 @@ struct SearchView: View {
             searchRun?.cancel()
             searchRun = Task { await searching() }
         }
-        // The system keyboard went away (Done or Menu): back to the mic key.
-        .onChange(of: atSystem) { _, now in
-            guard !now, speaking else { return }
-            speaking = false
-            focused = .key("speak")
-        }
         .onAppear { historyLoad() }
         .ignoresSafeArea(edges: .horizontal)
     }
@@ -163,32 +151,6 @@ struct SearchView: View {
     private func isKey(_ target: SearchTarget?) -> Bool {
         if case .key = target { return true }
         return false
-    }
-
-    // MARK: Speaking
-
-    /// The invisible field behind the keyboard card. It must not go fully to zero opacity or SwiftUI
-    /// drops it from the focus chain, and it is disabled except while speaking so the focus engine
-    /// never lands on it by accident.
-    private var systemField: some View {
-        TextField("Titel, Serie, Person", text: $term)
-            .focused($atSystem)
-            .autocorrectionDisabled()
-            .foregroundStyle(.clear)
-            .tint(.clear)
-            .opacity(TVSpec.hiddenFieldOpacity)
-            .frame(width: Theme.buttonHeight, height: Theme.buttonHeight)
-            .disabled(!speaking)
-            .accessibilityHidden(true)
-    }
-
-    private func startSpeaking() {
-        speaking = true
-        Task {
-            // The field is disabled until `speaking` has reached the view.
-            try? await Task.sleep(for: .milliseconds(60))
-            atSystem = true
-        }
     }
 
     // MARK: Results

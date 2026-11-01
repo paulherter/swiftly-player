@@ -74,8 +74,6 @@ struct SubtitleLookRoute: Hashable {}
 /// a second place, because a built-in link belongs to the row it sits in.
 struct SeerrRoute: Hashable {}
 
-/// Connect Trakt, next to Seerr under Integration.
-struct TraktRoute: Hashable {}
 
 /// A person's page. `origin` is the title you came through, where it
 /// says "Patrick Jane in The Mentalist".

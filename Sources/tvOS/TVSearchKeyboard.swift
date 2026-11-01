@@ -41,9 +41,6 @@ enum SearchLayout {
 struct TVSearchKeyboard: View {
     @Binding var term: String
     var focus: FocusState<SearchTarget?>.Binding
-    /// The system's speech input is open (the mic key shows its filled symbol).
-    var speaking: Bool
-    var speak: () -> Void
 
     /// A long press on "delete" has already emptied the field; the release must not delete once more.
     @State private var clearedByHold = false
@@ -180,15 +177,43 @@ struct TVSearchKeyboard: View {
             .accessibilityHint(Text("Halten löscht alles"))
 
         case .speak:
-            Button(action: speak) {
-                Image(systemName: speaking ? "mic.fill" : "mic")
-                    .font(.system(size: TVSpec.valueIcon, weight: .medium))
-            }
-            .buttonStyle(SearchKeyStyle())
-            .frame(width: width(key.span), height: TVSpec.searchKey)
-            .focused(focus, equals: .key(key.id))
-            .accessibilityLabel(Text("Sprechen"))
+            SpeakKey(term: $term, focus: focus, id: key.id)
+                .frame(width: width(key.span), height: TVSpec.searchKey)
         }
+    }
+}
+
+/// **The mic key is a real text field.** Only a field that the remote has focused and clicked opens the
+/// system keyboard, and only that keyboard lets the Siri button dictate. A button that tried to open a
+/// hidden field did nothing on the TV. So the field *is* the key: it looks like the other keys, a click
+/// opens the system input, the Siri button dictates into it, and what is said lands in the search term.
+private struct SpeakKey: View {
+    @Binding var term: String
+    var focus: FocusState<SearchTarget?>.Binding
+    let id: String
+
+    private var focused: Bool { focus.wrappedValue == .key(id) }
+
+    var body: some View {
+        TextField("Titel, Serie, Person", text: $term)
+            .textFieldStyle(.plain)
+            .autocorrectionDisabled()
+            .foregroundStyle(.clear)
+            .tint(.clear)
+            .focused(focus, equals: .key(id))
+            .opacity(TVSpec.hiddenFieldOpacity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                Image(systemName: "mic")
+                    .font(.system(size: TVSpec.valueIcon, weight: .medium))
+                    .foregroundStyle(focused ? Theme.reason : Theme.fontQuiet)
+                    .allowsHitTesting(false)
+            }
+            .background(focused ? Color.white : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+            .scaleEffect(focused ? Theme.focusMagnifierSmall : 1)
+            .animation(Theme.focusAnimation, value: focused)
+            .accessibilityLabel(Text("Sprechen"))
     }
 }
 

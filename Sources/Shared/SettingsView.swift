@@ -164,9 +164,9 @@ struct SettingsView: View {
     /// nothing of it except this one row.
     @ViewBuilder private var integration: some View {
         // Seerr signs in with the media server's user name and password; not every kind
-        // has that (`ServerCapability.seerr`). Without Seerr and without Trakt the group
+        // has that (`ServerCapability.seerr`). Without Seerr the group
         // would be empty.
-        if model.can(.seerr) || model.trakt.available {
+        if model.can(.seerr) {
             SettingGroup(title: "Integration") {
                 if model.can(.seerr) {
                     NavigationLink(value: SeerrRoute()) {
@@ -177,18 +177,6 @@ struct SettingsView: View {
                     // **`PressRow`, not `PressButton`.** The row is edge to edge and as wide as
                     // the card; shrinking it by 0.97 visibly detaches it from the rows above. A
                     // row acknowledges with area, a compact control with scale.
-                    .buttonStyle(Theme.PressRow())
-                }
-                // **Only if the build has the Trakt application's credentials**
-                // (`TraktAccess`). Without them there would be a button that is guaranteed to
-                // fail.
-                if model.trakt.available {
-                    if model.can(.seerr) { SheetLine() }
-                    NavigationLink(value: TraktRoute()) {
-                        ValueRow(symbol: "checkmark.circle", title: Text(verbatim: "Trakt"),
-                                  under: Text("Trägt ein, was du schaust"),
-                                  value: model.trakt.connected ? String(localized: "Verbunden") : nil)
-                    }
                     .buttonStyle(Theme.PressRow())
                 }
             }

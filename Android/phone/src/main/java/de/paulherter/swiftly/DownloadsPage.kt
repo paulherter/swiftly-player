@@ -390,7 +390,7 @@ fun DownloadsPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 item(key = "kopf-laufend") {
                     GroupsTitle(translated(if (network) "Lädt gerade" else "Wartet auf Netz"), Modifier.padding(top = 4.dp))
                 }
-                items(ongoing, key = { "l-" + it.id }) { p ->
+                items(ongoing, key = { "l-" + it.id }, contentType = { "zeile" }) { p ->
                     DownloadRow(app, p, v.imageFile(p.id), p.art == "folge", edit, p.id in selected,
                         perform = if (edit) { { toggle(listOf(p.id)) } } else null,
                         modifier = Modifier.animateItem())
@@ -400,15 +400,19 @@ fun DownloadsPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 // No heading above the downloaded items. It used to say "On the device", but on the downloads
                 // page everything is on the device, so it said nothing. The gap to "Downloading" above stays.
                 item(key = "abstand-geraet") { Spacer(Modifier.height(if (ongoing.isEmpty()) 4.dp else 26.dp)) }
-                items(groups, key = { "g-" + it.id }) { g ->
+                items(groups, key = { "g-" + it.id }, contentType = { "zeile" }) { g ->
                     val sid = g.seriesIdentifier
                     val first = all.firstOrNull { it.id == g.episodes.firstOrNull() }
+                    // The JNI call and the JSON run per membership change, not per progress tick.
+                    val shared = remember(g.episodes, all.size) {
+                        Kern.downloadShared(DownloadItem.list(all.filter { it.id in g.episodes }))
+                    }
                     if (sid != null && first != null) {
                         // One row in both positions, no swap, so it slides with the others.
                         DownloadRow(app, first, v.imageFile(sid), false, edit, g.episodes.all { it in selected },
                             perform = { if (edit) toggle(g.episodes) else open(Destination(sid, g.title, "Downloadserie")) },
                             group = g.title to (translated("%lld Folgen", g.episodes.size) + " · " + size(g.bytes)
-                                + Kern.downloadShared(DownloadItem.list(all.filter { it.id in g.episodes })).let { if (it.isEmpty()) "" else " · $it" }),
+                                + shared.let { if (it.isEmpty()) "" else " · $it" }),
                             modifier = Modifier.animateItem())
                     } else if (first != null) {
                         DownloadRow(app, first, v.imageFile(first.id), first.art == "folge", edit, first.id in selected,

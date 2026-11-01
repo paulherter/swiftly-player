@@ -17,6 +17,7 @@ object TvSpec {
     val cornerBar = 2.5.dp
     val rowInset = 13.dp
     val listCardInset = 5.dp
+    val groupGap = 18.dp
     val sectionColumnWidth = 230.dp
     val columnGap = 36.dp
     val headerProfileImage = 30.dp

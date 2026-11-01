@@ -180,10 +180,18 @@ class DownloadManager(private val app: SwiftlyApplication) {
         // Whoever was loading when the app quit now waits; what is loaded is what is on disk.
         .map { if (it.state == "laedt") it.copy(state = "wartet", loaded = part(it).length()) else it }
 
+    /** One writer thread keeps the writes in order; the list is serialised here, so the file work stays off the main thread. */
+    private val writer = Dispatchers.IO.limitedParallelism(1)
+
     private fun persist() {
-        val new = File(folder, "liste.json.neu")
-        new.writeText(DownloadItem.list(all))
-        new.renameTo(listFile)
+        val text = DownloadItem.list(all)
+        run.launch(writer) {
+            runCatching {
+                val new = File(folder, "liste.json.neu")
+                new.writeText(text)
+                new.renameTo(listFile)
+            }
+        }
     }
 
     private fun showItem(toCore: Boolean = true) {

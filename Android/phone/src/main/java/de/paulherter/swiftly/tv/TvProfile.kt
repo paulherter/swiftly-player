@@ -64,7 +64,7 @@ import org.json.JSONObject
 /** Mirrors `SectionSelection` (tvOS): the name only, no icon. The headings on the right
  *  ("PLAYBACK" etc.) are the same wording, not a second label. */
 private enum class Compartment(val title: String) {
-    Playback("Wiedergabe"), Languages("Sprachen"), Presentation("Darstellung"),
+    Playback("Wiedergabe"), Presentation("Darstellung"),
     Integration("Integration"), Server("Server"), Account("Konto"), Swiftly("Swiftly"),
 }
 
@@ -72,6 +72,15 @@ private enum class Compartment(val title: String) {
 private fun GroupsHeader(text: String) {
     Text(text, style = TvTheme.rail,
          color = Theme.fontQuiet, modifier = Modifier.padding(start = TvSpec.rowInset, bottom = TvSpec.groupsTitleBottom))
+}
+
+/** One box with its title above on the bare background (`TVGroup` on tvOS, the groups on iPhone). */
+@Composable
+private fun TvGroup(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column {
+        GroupsHeader(title)
+        Column(Modifier.padding(TvSpec.listCardInset).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area), content = content)
+    }
 }
 
 /**
@@ -214,8 +223,13 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                     .onGloballyPositioned { viewportTop = it.positionInRoot().y }
                     .verticalScroll(rightScroll).padding(vertical = TvTheme.edgeTop).focusGroup()) {
                 val first = Modifier.focusRequester(right)
-                GroupsHeader(translated(compartment.title))
-                Column(Modifier.padding(TvSpec.listCardInset).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area)) {
+                // Playback and Presentation compose their own boxes (`hasGroups` on tvOS); the others get one box titled
+                // with the area name.
+                val grouped = compartment == Compartment.Playback || compartment == Compartment.Presentation
+                if (!grouped) GroupsHeader(translated(compartment.title))
+                Column(if (grouped) Modifier.fillMaxWidth()
+                       else Modifier.padding(TvSpec.listCardInset).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area),
+                       verticalArrangement = Arrangement.spacedBy(TvSpec.groupGap)) {
                     // One reporter for the value rows below: where each one stands, for the scroll above.
                     val reportRow: (String, Float) -> Unit = { k, y -> rowTops[k] = y }
                     val setOpened: (String?) -> Unit = { opened = it }
@@ -225,62 +239,67 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // bitrate is locked, as on the other versions.
                             val free = e.convertAllowed
                             val directPlay = e.alwaysDirectPlay || !free
-                            // **The anchor hangs on the topmost row that is actually available** (tvOS: `free ? .top : .proceed`):
-                            // focus on a disabled row goes nowhere.
-                            TvToggleRow(translated("Immer Direct Play"), directPlay, enabled = free, modifier = if (free) first else Modifier) {
-                                e.alwaysDirectPlay = !e.alwaysDirectPlay; app.qualityReport()
+                            // Same three boxes as on iPhone: quality, language, behaviour.
+                            TvGroup(translated("Qualität")) {
+                                // **The anchor hangs on the topmost row that is actually available** (tvOS: `free ? .top : .proceed`):
+                                // focus on a disabled row goes nowhere.
+                                TvToggleRow(translated("Immer Direct Play"), directPlay, enabled = free, modifier = if (free) first else Modifier) {
+                                    e.alwaysDirectPlay = !e.alwaysDirectPlay; app.qualityReport()
+                                }
+                                SeparatorLine()
+                                // Disabled while Direct Play is forced, since it would have no effect.
+                                TvValueRow(translated("Höchste Bitrate"), bitrates.firstOrNull { it.value == e.bitratesLimit.toString() }?.text,
+                                           opened, setOpened, reportRow, bitrates, e.bitratesLimit.toString(), enabled = !directPlay) {
+                                    e.bitratesLimit = it.toInt(); app.qualityReport()
+                                }
+                                SeparatorLine()
+                                // Same storage key as in the player (`TvPlayer`/`TvImageTick`, default on). Not in `Settings`,
+                                // because frame rate matching exists only on tvOS/Android TV (`ProfileView.swift` also keeps it via
+                                // `@AppStorage`, not in `AppModel`).
+                                TvToggleRow(translated("Bildrate an den Film anpassen"), frameRateAdapt) {
+                                    frameRateAdapt = !frameRateAdapt
+                                    app.store.remember("bildrateAnpassen", if (frameRateAdapt) "1" else "0")
+                                }
                             }
-                            SeparatorLine()
-                            // Disabled while Direct Play is forced, since it would have no effect.
-                            TvValueRow(translated("Höchste Bitrate"), bitrates.firstOrNull { it.value == e.bitratesLimit.toString() }?.text,
-                                       opened, setOpened, reportRow, bitrates, e.bitratesLimit.toString(), enabled = !directPlay) {
-                                e.bitratesLimit = it.toInt(); app.qualityReport()
+                            TvGroup(translated("Sprache")) {
+                                TvValueRow(translated("Ton"), audioChoice.firstOrNull { it.value == e.audioLanguage }?.text,
+                                           opened, setOpened, reportRow, audioChoice, e.audioLanguage, modifier = if (free) Modifier else first) { e.audioLanguage = it }
+                                SeparatorLine()
+                                TvToggleRow(translated("Mehrkanal-Ton (5.1)"), e.multiChannelAudio) { e.multiChannelAudio = !e.multiChannelAudio }
+                                SeparatorLine()
+                                TvValueRow(translated("Untertitel"), subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text,
+                                           opened, setOpened, reportRow, subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
+                                SeparatorLine()
+                                TvToggleRow(translated("Untertitel automatisch"), e.subtitleAutomatic) { e.subtitleAutomatic = !e.subtitleAutomatic }
+                                SeparatorLine()
+                                // Own page with the live picture (Apple TV: `TVSubtitleLookEntryRow`).
+                                TvAction(translated("Aussehen der Untertitel"),
+                                         value = with(de.paulherter.swiftly.SubtitleFacts.of(e.subtitleLook, true)) { entryValue() }) {
+                                    open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
+                                }
                             }
-                            SeparatorLine()
-                            TvValueRow(translated("Puffer"), buffer.firstOrNull { it.value == e.bufferLevel }?.text,
-                                       opened, setOpened, reportRow, buffer, e.bufferLevel, modifier = if (free) Modifier else first) { e.bufferLevel = it }
-                            SeparatorLine()
-                            TvValueRow(translated("Player"), engines.firstOrNull { it.value == e.playerEngine }?.text,
-                                       opened, setOpened, reportRow, engines, e.playerEngine) { e.playerEngine = it }
-                            SeparatorLine()
-                            TvToggleRow(translated("Mehrkanal-Ton (5.1)"), e.multiChannelAudio) { e.multiChannelAudio = !e.multiChannelAudio }
-                            SeparatorLine()
-                            TvToggleRow(translated("Untertitel automatisch"), e.subtitleAutomatic) { e.subtitleAutomatic = !e.subtitleAutomatic }
-                            SeparatorLine()
-                            // Same storage key as in the player (`TvPlayer`/`TvImageTick`, default on). Not in `Settings`,
-                            // because frame rate matching exists only on tvOS/Android TV (`ProfileView.swift` also keeps it via
-                            // `@AppStorage`, not in `AppModel`).
-                            TvToggleRow(translated("Bildrate an den Film anpassen"), frameRateAdapt) {
-                                frameRateAdapt = !frameRateAdapt
-                                app.store.remember("bildrateAnpassen", if (frameRateAdapt) "1" else "0")
-                            }
-                            SeparatorLine()
-                            TvToggleRow(translated("Nächste Folge automatisch"), e.nextAutomatic) { e.nextAutomatic = !e.nextAutomatic }
-                            SeparatorLine()
-                            TvToggleRow(translated("Intro und Abspann automatisch überspringen"), e.introOutroAutomatic) { e.introOutroAutomatic = !e.introOutroAutomatic }
-                            SeparatorLine()
-                            TvValueRow(translated("Zurückspulen"), translated("%lld s", e.backSeconds),
-                                       opened, setOpened, reportRow, secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
-                            SeparatorLine()
-                            TvValueRow(translated("Vorspulen"), translated("%lld s", e.forwardSeconds),
-                                       opened, setOpened, reportRow, secondsSelection(), e.forwardSeconds.toString()) { e.forwardSeconds = it.toInt() }
-                        }
-                        Compartment.Languages -> {
-                            TvValueRow(translated("Ton"), audioChoice.firstOrNull { it.value == e.audioLanguage }?.text,
-                                       opened, setOpened, reportRow, audioChoice, e.audioLanguage, modifier = first) { e.audioLanguage = it }
-                            SeparatorLine()
-                            TvValueRow(translated("Untertitel"), subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text,
-                                       opened, setOpened, reportRow, subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
-                            SeparatorLine()
-                            // Own page with the live picture (Apple TV: `TVSubtitleLookEntryRow`).
-                            TvAction(translated("Aussehen der Untertitel"),
-                                     value = with(de.paulherter.swiftly.SubtitleFacts.of(e.subtitleLook, true)) { entryValue() }) {
-                                open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
+                            TvGroup(translated("Verhalten")) {
+                                TvToggleRow(translated("Nächste Folge automatisch"), e.nextAutomatic) { e.nextAutomatic = !e.nextAutomatic }
+                                SeparatorLine()
+                                TvToggleRow(translated("Intro und Abspann automatisch überspringen"), e.introOutroAutomatic) { e.introOutroAutomatic = !e.introOutroAutomatic }
+                                SeparatorLine()
+                                TvValueRow(translated("Zurückspulen"), translated("%lld s", e.backSeconds),
+                                           opened, setOpened, reportRow, secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
+                                SeparatorLine()
+                                TvValueRow(translated("Vorspulen"), translated("%lld s", e.forwardSeconds),
+                                           opened, setOpened, reportRow, secondsSelection(), e.forwardSeconds.toString()) { e.forwardSeconds = it.toInt() }
+                                SeparatorLine()
+                                TvValueRow(translated("Puffer"), buffer.firstOrNull { it.value == e.bufferLevel }?.text,
+                                           opened, setOpened, reportRow, buffer, e.bufferLevel) { e.bufferLevel = it }
+                                SeparatorLine()
+                                TvValueRow(translated("Player"), engines.firstOrNull { it.value == e.playerEngine }?.text,
+                                           opened, setOpened, reportRow, engines, e.playerEngine) { e.playerEngine = it }
                             }
                         }
                         Compartment.Presentation -> {
                             // The look first, as on Apple TV (`TVLookEntryRow`): tile, name and "Ändern"; opens "Wähl deinen Look".
                             val looksShown = tvLookRowShown(app)
+                            TvGroup(translated("Darstellung")) {
                             if (looksShown) {
                                 TvLookRow(app, first)
                                 SeparatorLine()
@@ -291,8 +310,8 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             TvToggleRow(translated("Alphabetische Suche in Listen"), e.alphabet) { e.alphabet = !e.alphabet }
                             SeparatorLine()
                             TvToggleRow(translated("Titel als Logo"), e.titleAsLogo) { e.titleAsLogo = !e.titleAsLogo }
-                            SeparatorLine()
-                            GroupsHeader(translated("Startseite"))
+                            }
+                            TvGroup(translated("Startseite")) {
                             val rails = remember(e.startRails, e.newAccessDisconnected) { selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)) }
                             fun move(r: Choice, step: Int) {
                                 e.startRails = JSONArray(Kern.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
@@ -306,8 +325,8 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 SeparatorLine()
                             }
                             TvToggleRow(translated("Neuzugänge getrennt"), e.newAccessDisconnected) { e.newAccessDisconnected = !e.newAccessDisconnected }
-                            SeparatorLine()
-                            GroupsHeader(translated("Bibliotheken und Sammlungen"))
+                            }
+                            TvGroup(translated("Bibliotheken und Sammlungen")) {
                             // Own rows from the server, after the fixed ones (as in `ProfileView` on tvOS).
                             val libraries = e.startLibraries
                             libraries.forEachIndexed { index, b ->
@@ -325,8 +344,8 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                        opened, setOpened, reportRow, freeLibraries.map { Choice(it.id, it.name) }, "") { id ->
                                 freeLibraries.firstOrNull { it.id == id }?.let { e.startLibraries = e.startLibraries + it }
                             }
-                            SeparatorLine()
-                            GroupsHeader(translated("Genres"))
+                            }
+                            TvGroup(translated("Genres")) {
                             // **One list, two forms**: the same value row as "Puffer" etc., not two rows with check marks,
                             // matching `ProfileView.swift`.
                             TvValueRow(translated("Form"), if (e.genreChips) translated("Als Chips") else translated("Als Reihen"),
@@ -343,6 +362,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                        if (genresDisturbed && allGenres.isEmpty()) translated("Server ist abgetaucht")
                                        else if (freeGenres.isEmpty()) translated("Keins offen") else "",
                                        opened, setOpened, reportRow, freeGenres.map { Choice(it, it) }, "") { g -> e.startGenres = e.startGenres + g }
+                            }
                         }
                         Compartment.Integration -> {
                             // **A second service, not a second server**, so a status line says whether it is connected, with

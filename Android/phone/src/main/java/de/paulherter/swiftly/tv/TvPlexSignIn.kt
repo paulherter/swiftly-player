@@ -256,6 +256,15 @@ private fun PinEntry(model: PlexSignInModel, profile: PlexProfile) {
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(2 * TvTheme.focusDeadline); runCatching { focus.requestFocus() }; keyboard?.show() }
     // A wrong PIN is wiped so the next try starts empty.
     LaunchedEffect(model.pinWrong) { if (model.pinWrong) pin = "" }
+    // The field is disabled while the PIN is checked, which takes its focus (and the keyboard) with it;
+    // after a wrong PIN nothing gave it back, so the next try needed a click first.
+    LaunchedEffect(model.pinWrong, model.pinChecking) {
+        if (model.pinWrong && !model.pinChecking) {
+            kotlinx.coroutines.delay(TvTheme.focusDeadline)
+            runCatching { focus.requestFocus() }
+            keyboard?.show()
+        }
+    }
     Column(Modifier.padding(top = TvSpec.onboardingBlockTop)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.pickerCardGap)) {
             Box(Modifier.size(TvSpec.plexPinAvatar).clip(androidx.compose.foundation.shape.CircleShape)) { AccountCircle(profile.name, profile.image, TvSpec.plexPinAvatar) }
