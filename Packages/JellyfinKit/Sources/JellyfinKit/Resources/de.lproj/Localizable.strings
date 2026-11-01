@@ -163,3 +163,14 @@
 "Immer AVPlayer" = "Immer AVPlayer";
 
 "Immer VLC" = "Immer VLC";
+
+/* Present in the en and ru tables, missing here */
+"Die Anmeldung bei Plex ist abgelaufen. Bitte noch einmal starten." = "Die Anmeldung bei Plex ist abgelaufen. Bitte noch einmal starten.";
+"Die PIN des Profils stimmt nicht." = "Die PIN des Profils stimmt nicht.";
+"Zu diesem Plex-Konto gehört kein Server." = "Zu diesem Plex-Konto gehört kein Server.";
+"Der Plex-Server antwortet unter keiner seiner Adressen." = "Der Plex-Server antwortet unter keiner seiner Adressen.";
+"Unter dieser Adresse meldet sich ein anderer Server." = "Unter dieser Adresse meldet sich ein anderer Server.";
+"Dieser Server erlaubt das Abspielen von unterwegs nicht. Der Besitzer braucht dafür Plex Pass oder den Remote Watch Pass." = "Dieser Server erlaubt das Abspielen von unterwegs nicht. Der Besitzer braucht dafür Plex Pass oder den Remote Watch Pass.";
+"Zu diesem Titel gibt es keine Datei." = "Zu diesem Titel gibt es keine Datei.";
+"Das kann ein Plex-Server nicht." = "Das kann ein Plex-Server nicht.";
+"Kapitel %lld" = "Kapitel %lld";

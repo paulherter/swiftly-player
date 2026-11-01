@@ -4542,7 +4542,7 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
+            "state": "translated",
             "value": "Die Anmeldung von %1$@ gilt nicht mehr. Jetzt angemeldet als %2$@."
           }
         },
@@ -5475,6 +5475,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Цвет"
+          }
+        }
+      }
+    },
+    "Geh auf %@ und gib diesen Code ein.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geh auf %@ und gib diesen Code ein."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to %@ and enter this code."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте %@ и введите этот код."
           }
         }
       }
@@ -10244,7 +10267,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Языки, пропуск и главная страница хранятся на твоём сервере"
+            "value": "Языки, пропуск и главная страница хранятся на вашем сервере"
           }
         }
       }
@@ -20753,7 +20776,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Не удалось загрузить версии. Попробуй ещё раз чуть позже."
+            "value": "Не удалось загрузить версии. Попробуйте ещё раз чуть позже."
           }
         }
       }
@@ -20845,7 +20868,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Что у тебя стоит?"
+            "value": "Какой у вас сервер?"
           }
         }
       }
@@ -20891,7 +20914,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ты остаёшься в каждом из них и переключаешься между ними на странице профиля."
+            "value": "Вы остаётесь в каждом из них и переключаетесь между ними на странице профиля."
           }
         }
       }
@@ -21006,7 +21029,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Адрес твоего сервера, потом имя и пароль."
+            "value": "Адрес вашего сервера, потом имя и пароль."
           }
         }
       }
@@ -21029,7 +21052,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вход идёт на странице Plex. Swiftly Player твой пароль никогда не видит."
+            "value": "Вход идёт на странице Plex. Swiftly Player никогда не видит ваш пароль."
           }
         }
       }
@@ -21121,7 +21144,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Войди на странице Plex. Потом здесь всё продолжится само."
+            "value": "Войдите на странице Plex. Потом здесь всё продолжится само."
           }
         }
       }
@@ -21213,7 +21236,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Твои серверы"
+            "value": "Ваши серверы"
           }
         }
       }
@@ -21282,7 +21305,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "У этого профиля есть PIN-код. Введи его здесь."
+            "value": "У этого профиля есть PIN-код. Введите его здесь."
           }
         }
       }
@@ -21351,7 +21374,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "PIN-код не подходит. Попробуй ещё раз."
+            "value": "PIN-код не подходит. Попробуйте ещё раз."
           }
         }
       }
@@ -21397,7 +21420,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сейчас не отвечает. Нажми, чтобы попробовать снова."
+            "value": "Сейчас не отвечает. Нажмите, чтобы попробовать снова."
           }
         }
       }
@@ -21443,7 +21466,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Твой сервер"
+            "value": "Ваш сервер"
           }
         }
       }
@@ -21558,7 +21581,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Установи Plex Media Server или попроси открыть тебе доступ к серверу. Потом поищи здесь ещё раз."
+            "value": "Установите Plex Media Server или попросите открыть вам доступ к серверу. Потом поищите здесь ещё раз."
           }
         }
       }
@@ -21696,7 +21719,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Код был открыт слишком долго. Просто возьми новый."
+            "value": "Код был открыт слишком долго. Просто получите новый."
           }
         }
       }
@@ -21788,7 +21811,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Где стоит твой сервер Emby?"
+            "value": "Где находится ваш сервер Emby?"
           }
         }
       }

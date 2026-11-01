@@ -691,3 +691,7 @@
 "Ausprobieren" = "Ausprobieren";
 "Verstanden" = "Verstanden";
 "Geschenk, bleibt für immer in deiner Sammlung" = "Geschenk, bleibt für immer in deiner Sammlung";
+
+/* Versions and Plex sign-in, used here but missing from these tables */
+"Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal." = "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.";
+"Geh auf %@ und gib diesen Code ein." = "Geh auf %@ und gib diesen Code ein.";

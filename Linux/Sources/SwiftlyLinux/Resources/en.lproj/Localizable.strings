@@ -688,3 +688,7 @@
 "Ausprobieren" = "Try it";
 "Verstanden" = "Got it";
 "Geschenk, bleibt für immer in deiner Sammlung" = "A gift, it stays in your collection for good";
+
+/* Versions and Plex sign-in, used here but missing from these tables */
+"Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal." = "The versions could not be loaded. Try again in a moment.";
+"Geh auf %@ und gib diesen Code ein." = "Go to %@ and enter this code.";

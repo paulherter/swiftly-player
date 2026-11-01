@@ -594,7 +594,7 @@
 "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt." = "Сервер создаёт файл только с одной звуковой дорожкой. Размер приблизительный.";
 "Konto" = "Учётная запись";
 "Einstellungen auf allen Geräten gleich halten" = "Одинаковые настройки на всех устройствах";
-"Sprachen, Überspringen und Startseite liegen auf deinem Server" = "Языки, пропуск и главная страница хранятся на твоём сервере";
+"Sprachen, Überspringen und Startseite liegen auf deinem Server" = "Языки, пропуск и главная страница хранятся на вашем сервере";
 
 /* Subtitle appearance */
 "Auch ASS und SSA sehen dann aus wie oben. Schilder rutschen als Zeile nach unten." = "ASS и SSA тогда выглядят так же, как выше. Надписи переходят в строку внизу.";
@@ -640,19 +640,19 @@
 
 /* Server kinds: Plex, Emby */
 "Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort." = "Вводишь адрес и входишь, или через Quick Connect вообще без пароля.";
-"Adresse von deinem Server rein, dann Name und Passwort." = "Адрес твоего сервера, потом имя и пароль.";
+"Adresse von deinem Server rein, dann Name und Passwort." = "Адрес вашего сервера, потом имя и пароль.";
 "Als %@" = "Как %@";
 "Anderes Plex-Konto" = "Другой аккаунт Plex";
 "Anmeldung hat nicht geklappt" = "Войти не получилось";
-"Antwortet gerade nicht. Klick für einen neuen Versuch." = "Сейчас не отвечает. Нажми, чтобы попробовать ещё раз.";
-"Dein Server" = "Твой сервер";
-"Deine Server" = "Твои серверы";
-"Der Code war zu lange offen. Hol dir einfach einen neuen." = "Код был открыт слишком долго. Просто возьми новый.";
+"Antwortet gerade nicht. Klick für einen neuen Versuch." = "Сейчас не отвечает. Нажмите, чтобы попробовать ещё раз.";
+"Dein Server" = "Ваш сервер";
+"Deine Server" = "Ваши серверы";
+"Der Code war zu lange offen. Hol dir einfach einen neuen." = "Код был открыт слишком долго. Просто получите новый.";
 "Die Anmeldung ist abgelaufen" = "Время входа истекло";
-"Die Anmeldung läuft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen." = "Вход идёт на странице Plex. Swiftly Player твой пароль никогда не видит.";
-"Die PIN passt nicht. Versuchs noch mal." = "PIN-код не подходит. Попробуй ещё раз.";
-"Dieses Profil hat eine PIN. Gib sie hier ein." = "У этого профиля есть PIN-код. Введи его здесь.";
-"Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen." = "Ты остаёшься в каждом из них и переключаешься между ними на странице профиля.";
+"Die Anmeldung läuft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen." = "Вход идёт на странице Plex. Swiftly Player никогда не видит ваш пароль.";
+"Die PIN passt nicht. Versuchs noch mal." = "PIN-код не подходит. Попробуйте ещё раз.";
+"Dieses Profil hat eine PIN. Gib sie hier ein." = "У этого профиля есть PIN-код. Введите его здесь.";
+"Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen." = "Вы остаётесь в каждом из них и переключаетесь между ними на странице профиля.";
 "Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ещё один сервер %@ со своими аккаунтами. Оба остаются в системе; переключаться между ними можно на странице профиля.";
 "Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus." = "Один раз входишь в Plex, а серверы приложение найдёт само.";
 "Gleich bekommst du einen Code. Den gibst du am Handy oder Computer auf plex.tv/link ein." = "Сейчас вы получите код. Введите его на телефоне или компьютере на plex.tv/link.";
@@ -666,17 +666,17 @@
 "Noch mal suchen" = "Поискать ещё раз";
 "Ohne plex.tv klappt die Anmeldung nicht. Hängt vielleicht das WLAN?" = "Без plex.tv войти не получится. Может, завис Wi-Fi?";
 "PIN" = "PIN-код";
-"Richte Plex Media Server ein oder lass dir einen freigeben. Danach hier noch mal suchen." = "Установи Plex Media Server или попроси открыть тебе доступ к серверу. Потом поищи здесь ещё раз.";
+"Richte Plex Media Server ein oder lass dir einen freigeben. Danach hier noch mal suchen." = "Установите Plex Media Server или попросите открыть вам доступ к серверу. Потом поищите здесь ещё раз.";
 "Seite noch mal öffnen" = "Открыть страницу ещё раз";
 "Unter der Adresse läuft %@, kein Emby." = "По этому адресу работает %@, а не Emby.";
 "Verbinden …" = "Подключение …";
 "Von %@ freigegeben" = "Открыт пользователем %@";
 "Warte auf Plex · noch %@" = "Ждём Plex · осталось %@";
-"Was läuft bei dir?" = "Что у тебя стоит?";
+"Was läuft bei dir?" = "Какой у вас сервер?";
 "Weitere Server kannst du später dazunehmen, auch gemischt." = "Другие серверы можно добавить позже, хоть разных видов.";
 "Wer schaut?" = "Кто смотрит?";
 "Wird geöffnet …" = "Открывается …";
-"Wo steht dein Emby-Server?" = "Где стоит твой сервер Emby?";
+"Wo steht dein Emby-Server?" = "Где находится ваш сервер Emby?";
 "Zurück zu den Profilen" = "Назад к профилям";
 "einem anderen Konto" = "другого аккаунта";
 "emby.beispiel.de" = "emby.example.com";
@@ -689,3 +689,7 @@
 "Ausprobieren" = "Попробовать";
 "Verstanden" = "Понятно";
 "Geschenk, bleibt für immer in deiner Sammlung" = "Подарок, останется в вашей коллекции навсегда";
+
+/* Versions and Plex sign-in, used here but missing from these tables */
+"Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal." = "Не удалось загрузить версии. Попробуйте ещё раз чуть позже.";
+"Geh auf %@ und gib diesen Code ein." = "Откройте %@ и введите этот код.";
