@@ -45,7 +45,7 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
                         prepares = true
                         run.launch {
                             val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
-                            if (first.isNotEmpty()) app.play.value = PlayRequest(first, null)
+                            if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, null)
                             prepares = false
                         }
                     }

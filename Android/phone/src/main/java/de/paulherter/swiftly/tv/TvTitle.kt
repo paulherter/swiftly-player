@@ -242,8 +242,8 @@ fun TvCast(p: WithAct, perform: () -> Unit) {
  * focus is on the main button.
  *
  * The trailer is first in the extras, not a sixth pill: five labelled buttons were too many for
- * one row. `Kern.localTrailer` returns it separately from `titleField` because not every
- * title has one.
+ * one row. `Kern.trailers` returns it separately from `titleField` because not every
+ * title has one; `trailerShelf` puts the files in front of the extras.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -275,18 +275,16 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
             val b = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.titleField(target.id).await() }) }
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
-            // The trailer lives in the extras, not as a sixth pill; see the doc comment above.
-            val c = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.localTrailer(target.id).await() }) }
-                            catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
             val d = async { collectionRailsLoad(app.kern, target.id) }
-            val new = a.await(); val surroundings = b.await(); val tr = c.await(); val rails = d.await()
-            val preview = tr?.takeIf { it.has("id") }?.let { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) }
+            val new = a.await(); val surroundings = b.await(); val rails = d.await()
+            // The trailer lives in the extras, not as a sixth pill; see the doc comment above.
+            val newExtras = surroundings?.let { trailerShelf(app, target.id, it.fieldList("extras") { x -> Extra(x.getString("id"), x.getString("name"), x.fieldText("bild"), x.fieldText("laufzeit")) }) }
             // No suspension point from here on: everything lands in the same frame.
             new?.let { t = it; app.titleCache[target.id] = it }
             disrupted = new == null && t == null
             surroundings?.let { o ->
                 similar = o.fieldList("aehnliche") { gridTileRead(it) }
-                extras = listOfNotNull(preview) + o.fieldList("extras") { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) }
+                newExtras?.let { extras = it }
             }
             collections = rails
             bottomPresent = true
@@ -349,7 +347,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
                     }
                     if (title?.resumeFrom != null) TvButton(null, Glyph.Rewind, description = translated("Von vorn abspielen")) {
-                        if (title.planPresent) app.play.value = PlayRequest(target.id, null)
+                        if (title.planPresent) de.paulherter.swiftly.playAsking(app, target.id, null, title)
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
                     }
                     if (app.settings.watchlist) {
@@ -395,7 +393,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, !watchedNow).await() }
                                         if (reason.isNotEmpty()) { t = tt.copy(watched = watchedNow); message = errorString(reason) }
                                     }
-                                    "vonvorn" -> app.play.value = PlayRequest(target.id, null)
+                                    "vonvorn" -> de.paulherter.swiftly.playAsking(app, target.id, null, title)
                                     "zuruecksetzen" -> {
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)

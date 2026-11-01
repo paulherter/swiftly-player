@@ -103,7 +103,7 @@ final class TakeoverModel {
         guard !PlayState.playerRuns else { return }
         // `model.session` instead of `client.currentSession()`: the client is an actor,
         // and the session already lives on the main actor here.
-        guard let client = model.client,
+        guard let client = model.remoteServer,
               let user = model.session?.userID else { offerings = []; return }
         let sessions: [RemoteSession]
         do {
@@ -176,7 +176,7 @@ final class TakeoverModel {
     func adopt(_ session: RemoteSession,
                      model: AppModel) async -> (item: Item, since: Double, plan: PlaybackPlan)? {
         guard let title = session.running,
-              let client = model.client, !takesOver else { return nil }
+              let client = model.remoteServer, !takesOver else { return nil }
         takesOver = true
         defer { takesOver = false }
         // **Each step with its time since the tap.** The card floats until the first
@@ -327,7 +327,7 @@ final class PlayOutputs {
 
     /// One question outside the poll, for the player, which stops the poll.
     func refresh(_ model: AppModel) async {
-        guard let client = model.client, let user = model.session?.userID,
+        guard let client = model.remoteServer, let user = model.session?.userID,
               let sessions = try? await client.remoteSession() else { return }
         take(sessions, user: user)
     }
@@ -339,7 +339,7 @@ final class PlayOutputs {
     /// here instead: a film starting on the phone while the viewer looks at the TV
     /// is not what was asked for.
     private func current(_ output: PlayOutput, model: AppModel) async -> RemoteSession? {
-        guard let client = model.client, let user = model.session?.userID else { return nil }
+        guard let client = model.remoteServer, let user = model.session?.userID else { return nil }
         let sessions: [RemoteSession]
         do {
             sessions = try await client.remoteSession()
@@ -379,7 +379,7 @@ final class PlayOutputs {
 
     /// The one path to the TV for both ways: fresh session, order, log, message.
     private func send(_ order: PlayOrder, to output: PlayOutput, model: AppModel) async -> Bool {
-        guard let client = model.client,
+        guard let client = model.remoteServer,
               let session = await current(output, model: model) else { return false }
         let name = PlayTargets.name(of: session)
         do {

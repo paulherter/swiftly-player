@@ -75,12 +75,15 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
         }
         AccountCards(app, server, open)
         Spacer(Modifier.height(18.dp))
-        CardView {
-            ProfileRow(Glyph.TextSearch, translated("Quick Connect"), translated("Code vom Fernseher eingeben"), characterAccent = true) {
-                open(Destination("quickconnect", "Quick Connect", "QuickConnect"))
+        // Quick Connect is Jellyfin's; the other kinds have no counterpart.
+        if (app.can("quickConnect")) {
+            CardView {
+                ProfileRow(Glyph.TextSearch, translated("Quick Connect"), translated("Code vom Fernseher eingeben"), characterAccent = true) {
+                    open(Destination("quickconnect", "Quick Connect", "QuickConnect"))
+                }
             }
+            Spacer(Modifier.height(18.dp))
         }
-        Spacer(Modifier.height(18.dp))
         CardView {
             ProfileRow(Glyph.Play, translated("Wiedergabe"), translated("Sprache, Untertitel, Tempo")) {
                 open(Destination("wiedergabe", translated("Wiedergabe"), "Wiedergabeeinstellungen"))
@@ -103,12 +106,17 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
         }
         Spacer(Modifier.height(18.dp))
         CardView {
-            ProfileRow(Glyph.Server, translated("Server hinzufügen"), translated("Ein zweiter Jellyfin, eigene Konten")) {
+            ProfileRow(Glyph.Server, translated("Server hinzufügen"), translated("Jellyfin, Emby oder Plex, auch gemischt")) {
                 open(Destination("serveraufnahme", translated("Server hinzufügen"), "ServerAufnahme"))
             }
             SeparatorLine()
             // Affects only the current account; if others remain, the next one becomes current.
-            ProfileRow(Glyph.SignOut, translated("Abmelden")) { app.signOff() }
+            ProfileRow(Glyph.SignOut, translated("Abmelden")) {
+                // Asks first, as the iPhone's action sheet does ("Abmelden von <Name>").
+                app.sheet.value = SheetRequest(translated("Abmelden von %@", app.username().takeIf { it != "?" }.orEmpty()),
+                    listOf(Choice("aus", translated("Abmelden"))), null, mapOf("aus" to Glyph.SignOut),
+                    cautionary = setOf("aus")) { app.signOff() }
+            }
         }
         Spacer(Modifier.height(18.dp))
         // Rate, Discord, report a bug: at the very bottom (they were in settings and hardly seen). The
@@ -191,7 +199,7 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
 
 /** Mirrors `PlaybackSettingsView`: quality, language, behavior. */
 @Composable
-fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
+fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Destination) -> Unit = {}) {
     val e = app.settings
     val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
     // The same three values as `Settings.playerEngine`.
@@ -236,6 +244,10 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
             SeparatorLine()
             ChoiceRow(Glyph.TextBlock, translated("Untertitel automatisch"), translated("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       e.subtitleAutomatic) { e.subtitleAutomatic = it }
+            SeparatorLine()
+            ValueRow(Glyph.Palette, translated("Aussehen der Untertitel"), value = SubtitleFacts.of(e.subtitleLook, app.isTv).entryValue()) {
+                open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
+            }
         }
 
         SettingGroup(translated("Verhalten")) {
@@ -395,7 +407,7 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
         // No downloads on TV: there is no storage to fill (tvOS).
         if (!app.isTv) OfflineGroup(app)
         // Integration before server: a second service, not a second server.
-        SettingGroup(translated("Integration")) {
+        if (app.can("seerr")) SettingGroup(translated("Integration")) {
             ValueRow(Glyph.SparkleSearch, "Seerr", translated("Anfragen, was noch nicht da ist"),
                       value = if (app.seerrConnected.value) translated("Verbunden") else null) {
                 open(Destination("seerr", "Seerr", "Seerr"))
@@ -427,7 +439,7 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
             }
         }
         // Settings follow the account to every device (`SettingsSyncRun`). On by default.
-        SettingGroup(translated("Konto")) {
+        if (app.can("settingsSync")) SettingGroup(translated("Konto")) {
             ChoiceRow(Glyph.Rotate, translated("Einstellungen auf allen Geräten gleich halten"),
                       translated("Sprachen, Überspringen und Startseite liegen auf deinem Server"), app.settingsSync.on.value) {
                 app.settingsSync.onSet(it)

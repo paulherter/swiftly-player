@@ -27,6 +27,8 @@ struct HomeView: View {
     @State private var play: PlayRequest?
     @State private var prepares = false
     @State private var message: String?
+    /// A title with several versions waiting for the pick.
+    @State private var versionChoice: VersionChoice?
     /// Switching server signs out: ask for confirmation first.
     @State private var signOutSheet = false
     /// None of the requests succeeded.
@@ -170,6 +172,9 @@ struct HomeView: View {
         .playerCover(item: $play) { wish in
             PlayerScreen(model: model, item: wish.item,
                          plan: wish.plan, startAt: wish.startAt)
+        }
+        .versionChoice($versionChoice) { choice, version in
+            launch(choice, picking: version)
         }
     }
 
@@ -356,28 +361,25 @@ struct HomeView: View {
     /// From the continue rows straight into the episode, without an intermediate
     /// page.
     private func launch(_ item: Item) {
-        guard !prepares else { return }
-        prepares = true
         // On press, not after the answer (see `Theme.jerk`).
         Theme.jerk(.medium)
         // **No spinner on the tile.** Dimmed with a spinner the start looked jerky; the
         // player should simply open.
-        Task {
-            defer { prepares = false }
-            // Fetch fresh: the position in the list entry is often stale.
-            // The plan does not depend on the fresh entry: fetch both side by side, not one
-            // after the other.
-            async let freshValue = model.item(id: item.id)
-            async let planFetch = model.plan(for: item.id)
-            let current = await freshValue ?? item
-            guard let plan = await planFetch else {
-                // Instead of silence: say that it failed.
-                message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
-                return
-            }
-            play = PlayRequest(item: current, plan: plan,
-                                      startAt: current.resumeFrom ?? 0)
-        }
+        // Fetched fresh: the position in the list entry is often stale. The same fetch
+        // brings the versions, so a title with several asks which one.
+        PlayRequest.start(item, freshValue: true,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares,
+                          // Instead of silence: say that it failed.
+                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                          play: { play = $0 })
+    }
+
+    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
+        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
+                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                          play: { play = $0 })
     }
 
     /// One fixed row: the same layout as before, but fetchable individually so the

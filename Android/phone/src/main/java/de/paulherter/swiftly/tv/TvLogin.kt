@@ -54,8 +54,9 @@ import org.json.JSONObject
  * Android does not force a white capsule on a `BasicTextField`, so the detour is unnecessary there.
  */
 @Composable
-fun TvServerPage(app: SwiftlyApplication, connected: (String, String) -> Unit) {
-    var address by remember { mutableStateOf(app.store.lastServer ?: "") }
+fun TvServerPage(app: SwiftlyApplication, presetAddress: String? = null, back: (() -> Unit)? = null,
+                 connected: (String, String) -> Unit) {
+    var address by remember { mutableStateOf(presetAddress ?: app.store.lastServer ?: "") }
     var running by remember { mutableStateOf(false) }
     /** The running check: only it may take effect; a changed address cancels it. */
     var verification by remember { mutableStateOf<Job?>(null) }
@@ -96,24 +97,28 @@ fun TvServerPage(app: SwiftlyApplication, connected: (String, String) -> Unit) {
         address = new
     }
 
+    // With a picker in front, the Back key is one step back to it (`TVServerView` on tvOS).
+    if (back != null) androidx.activity.compose.BackHandler { back() }
     Box(Modifier.fillMaxSize().background(Theme.reason), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 480.dp)) {
-            Wordmark(height = 36.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(TvSpec.messageWidth)) {
+            Wordmark(height = TvSpec.serverWordmark)
             Text(translated("Wo steht dein Jellyfin-Server?"), style = TvTheme.body, color = Theme.fontQuiet,
-                 modifier = Modifier.padding(top = 28.dp))
+                 modifier = Modifier.padding(top = TvSpec.serverQuestionTop))
             TvField(address, { addressChange(it) }, "tv.beispiel.de",
-                   Modifier.padding(top = 16.dp).fillMaxWidth().focusRequester(focus),
+                   Modifier.padding(top = TvSpec.serverFieldTop).width(TvSpec.formWidth).focusRequester(focus),
                    imeAction = ImeAction.Go, keyboardAction = { linkUp() })
             Text(translated("https:// kannst du weglassen."), style = TvTheme.small, color = Theme.fontVeryQuiet,
-                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            TvAdvanced(headers, modifier = Modifier.padding(top = 14.dp))
-            TvButton(translated(if (running) "Verbinden…" else "Verbinden"), released = address.isNotBlank() && !running,
-                    modifier = Modifier.padding(top = 22.dp)) { linkUp() }
+                 modifier = Modifier.width(TvSpec.formWidth).padding(top = TvSpec.serverHintTop))
+            TvAdvanced(headers, modifier = Modifier.width(TvSpec.formWidth).padding(top = TvSpec.serverAdvancedTop))
+            Row(Modifier.padding(top = TvSpec.serverButtonTop), horizontalArrangement = Arrangement.spacedBy(TvSpec.onboardingButtonSpacing)) {
+                TvButton(translated(if (running) "Verbinden…" else "Verbinden"), released = address.isNotBlank() && !running) { linkUp() }
+                if (back != null) TvButton(translated("Zurück")) { back() }
+            }
             // **No ring replacing the button**, as on tvOS: the button keeps its place and its label says
             // "Connecting…" instead of hiding.
             error?.let {
-                Text(it, style = TvTheme.body, color = Theme.warning, textAlign = TextAlign.Center,
-                     modifier = Modifier.widthIn(max = 560.dp).padding(top = 18.dp))
+                Text(it, style = TvTheme.body, color = Theme.error, textAlign = TextAlign.Center,
+                     modifier = Modifier.width(TvSpec.messageWidth).padding(top = TvSpec.serverErrorTop))
             }
         }
     }
@@ -153,28 +158,29 @@ fun TvLoginPage(app: SwiftlyApplication, serverName: String, version: String,
     }
 
     Box(Modifier.fillMaxSize().background(Theme.reason), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 480.dp)) {
-            Wordmark(height = 30.dp)
-            Text(serverName, style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(top = 22.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(TvSpec.messageWidth)) {
+            Wordmark(height = TvSpec.loginWordmark)
+            Text(serverName, style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(top = TvSpec.loginServerNameTop))
             if (version.isNotEmpty()) {
                 Text(translated("Jellyfin %@", version), style = TvTheme.small, color = Theme.fontVeryQuiet,
-                     modifier = Modifier.padding(top = 3.dp))
+                     modifier = Modifier.padding(top = TvSpec.loginVersionTop))
             }
-            Column(Modifier.padding(top = 22.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.padding(top = TvSpec.loginFieldsTop).width(TvSpec.formWidth), verticalArrangement = Arrangement.spacedBy(TvSpec.loginFieldSpacing)) {
                 TvField(user, { user = it }, translated("Benutzername"), Modifier.fillMaxWidth().focusRequester(focus))
                 TvField(passphrase, { passphrase = it }, translated("Kennwort"), Modifier.fillMaxWidth(),
                        secret = true, imeAction = ImeAction.Done, keyboardAction = { signIn() })
             }
             TvButton(translated(if (running) "Anmelden…" else "Anmelden"), released = user.isNotBlank() && !running,
-                    modifier = Modifier.padding(top = 20.dp)) { signIn() }
+                    modifier = Modifier.padding(top = TvSpec.loginButtonTop)) { signIn() }
             error?.let {
-                Text(it, style = TvTheme.body, color = Theme.warning, textAlign = TextAlign.Center,
-                     modifier = Modifier.widthIn(max = 560.dp).padding(top = 16.dp))
+                Text(it, style = TvTheme.body, color = Theme.error, textAlign = TextAlign.Center,
+                     modifier = Modifier.width(TvSpec.messageWidth).padding(top = TvSpec.loginErrorTop))
             }
             // Equal, side by side, no submenu: on TV the better way than the password field above it, see
             // `SignInView`.
-            Row(Modifier.padding(top = 30.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TvButton(translated("Quick Connect")) { quickConnect = true }
+            Row(Modifier.padding(top = TvSpec.loginSwitchTop), horizontalArrangement = Arrangement.spacedBy(TvSpec.loginSwitchSpacing)) {
+                // Only where the server has it (tvOS: `model.can(.quickConnect)`).
+                if (app.can("quickConnect")) TvButton(translated("Quick Connect")) { quickConnect = true }
                 TvButton(translated(if (moreAccount) "Abbrechen" else "Anderer Server"), perform = otherServer)
             }
         }

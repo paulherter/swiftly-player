@@ -226,6 +226,20 @@ struct LibraryView: View {
                 } action: { gridTop = $0 }
                 .padding(.top, 22)
 
+                // **A failed "load more" is not an end** (as on iPhone): without this the
+                // list simply stopped, as if the library had no more titles.
+                if shelf.stillMorePresent, !showsCollections, shelf.loadMoreFailed, let source {
+                    Button("Erneut versuchen") {
+                        Task { await shelf.loadMore(model, from: source) }
+                    }
+                    .buttonStyle(Theme.PressButton())
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .padding(.top, 12)
+                }
+
                 // The page had neither an empty nor an error state. If nothing loaded, nothing
                 // was shown: no hint whether the library is empty, the filter too narrow or the
                 // server unreachable. Every view that loads needs all of them. Wording and way

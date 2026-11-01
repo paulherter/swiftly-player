@@ -35,7 +35,7 @@ final class SettingsSyncRun {
     }
 
     @ObservationIgnored private weak var model: AppModel?
-    @ObservationIgnored private var client: JellyfinClient?
+    @ObservationIgnored private var client: (any DisplayPreferencesServer)?
     @ObservationIgnored private var session: Session?
     @ObservationIgnored private var lastSnapshot: [String: String] = [:]
     @ObservationIgnored private var applying = false
@@ -73,7 +73,7 @@ final class SettingsSyncRun {
     }
 
     /// From `AppModel.client`'s `didSet`: every sign-in, switch, restore and sign-out.
-    func bind(client: JellyfinClient?, session: Session?) {
+    func bind(client: (any MediaServer)?, session: Session?) {
         // A change that is still waiting belongs to the account that is leaving; it goes
         // out now instead of being lost or sent under the new name.
         if waiting != nil, on, let old = self.client, let oldSession = self.session {
@@ -84,7 +84,7 @@ final class SettingsSyncRun {
             let pending = Pending(values: values(for: oldSession), changed: localChanged)
             Task { await self.runOnce(client: old, session: oldSession, leaving: pending) }
         }
-        self.client = session == nil ? nil : client
+        self.client = session == nil || client?.capabilities.contains(.settingsSync) != true ? nil : client as? any DisplayPreferencesServer
         self.session = session
         // The per-server entry has another device key now; that is no change by the user.
         lastSnapshot = snapshot()
@@ -110,7 +110,7 @@ final class SettingsSyncRun {
 
     /// When the Seerr connection last changed here, per server; see `SettingsSync.seerrStep`.
     private func seerrTimeKey(_ session: Session) -> String {
-        "seerrSyncZeit|" + SeerrModel.serverForm(session.serverURL)
+        "seerrSyncZeit|" + session.serverIdentity
     }
 
     private func seerrChanged() {
@@ -126,7 +126,7 @@ final class SettingsSyncRun {
     /// The fields to write for Seerr, or nothing; takes the server's connection over when
     /// it is newer. Only while the Seerr model is on this session's server.
     private func seerrRun(_ prefs: [String: String], session: Session, leaving: Bool) -> [String: String] {
-        guard let seerr = model?.seerr, seerr.server == SeerrModel.serverForm(session.serverURL) else { return [:] }
+        guard let seerr = model?.seerr, seerr.server == session.serverIdentity else { return [:] }
         let store = UserDefaults.standard
         let key = seerrTimeKey(session)
         let mine = (store.object(forKey: key) as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
@@ -150,7 +150,7 @@ final class SettingsSyncRun {
 
     private func values(for session: Session?) -> [String: SettingsSync.Value] {
         let store = UserDefaults.standard
-        let suffix = session.map { "|" + $0.serverURL.absoluteString } ?? ""
+        let suffix = session?.serverSuffix ?? ""
         return SettingsSync.collect(serverSuffix: suffix) { key, kind in
             switch kind {
             case .bool: return (store.object(forKey: key) as? Bool).map { .bool($0) }
@@ -201,7 +201,7 @@ final class SettingsSyncRun {
 
     /// `pending`: the account is already being left; then only its pending change goes out,
     /// nothing is taken in and no local stamp is touched (they belong to the new account).
-    private func runOnce(client: JellyfinClient, session: Session, leaving pending: Pending? = nil) async {
+    private func runOnce(client: any DisplayPreferencesServer, session: Session, leaving pending: Pending? = nil) async {
         let leaving = pending != nil
         let localChanged = pending.map(\.changed) ?? self.localChanged
         lastRun = Date()
@@ -293,6 +293,7 @@ extension AppModel {
             case ("tonSprache", .text(let s)): audioLanguage = s
             case ("utSprache", .text(let s)): subtitleLanguage = s
             case ("utAuto", .bool(let b)): subtitleAutomatic = b
+            case ("utAussehen", .json(let d)): subtitleLook = SubtitleLook.read(d)
             case ("naechsteAuto", .bool(let b)): nextAutomatic = b
             case ("vorSek", .int(let i)): forwardSeconds = i
             case ("zurueckSek", .int(let i)): backSeconds = i

@@ -92,55 +92,77 @@ extension App {
                    sourceID: sourceID)
     }
 
-    /// The versions to choose from; empty when there is no choice to make or the title
-    /// is on this computer (the downloaded file is the one that plays). A download still
-    /// running does not count: playback then streams from the server (iOS `versions`).
-    private func versions(of title: Item) -> [MediaSource] {
-        guard title.type != "Series", downloads.file(for: title.id) == nil else { return [] }
-        return MediaVersions.choices(title.mediaSources)
-    }
-
     /// "Name · 1080p · HEVC · 18,6 GB" (iOS `versionLabel`).
     private func versionLabel(_ version: MediaSource) -> String {
         let detail = version.versionDetail
         return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
     }
 
-    /// **The main button: one version starts at once, several ask first.** The thin list
-    /// entry carries no `MediaSources`; the full record is then fetched before deciding,
-    /// otherwise a press in the first moments would silently take the default version.
-    private func startOrChoose(_ title: Item, since: Double, at button: Widget!) {
-        if title.type != "Series", title.mediaSources == nil, let client,
-           downloads.file(for: title.id) == nil {
-            let box = held(button)
+    /// **The one path from click to player where a title with several versions asks which
+    /// one** (iOS `PlayRequest.start(ask:)`, issue 33). The rule is the package's
+    /// ``MediaVersions/start(_:downloaded:)``: a copy on this computer plays at once, one
+    /// version plays, several ask. The thin list entry carries no `MediaSources` (`nil`
+    /// means "not loaded", never "one version"): the full record is fetched first, and if
+    /// that fails the click says so and starts nothing.
+    ///
+    /// - anchor: the button the choice hangs from; without one it opens in the middle.
+    func launchAsking(_ title: Item, since: Double? = nil, at anchor: Widget? = nil) {
+        guard title.type != "Series" else { launch(title, since: since); return }
+        let downloaded = downloads.file(for: title.id) != nil
+        switch MediaVersions.start(title.mediaSources, downloaded: downloaded) {
+        case .play:
+            launch(title, since: since)
+        case .choose(let versions):
+            chooseVersion(title, versions, since: since, at: anchor)
+        case .wait:
+            guard let client, !versionsLoading else { return }
+            versionsLoading = true
+            let box = anchor.map { held($0) }
             Task.detached { [self] in
                 let full = try? await client.item(id: title.id)
                 onMainThread {
-                    defer { letGo(box) }
-                    guard gtk_widget_get_root(box.widget) != nil else { return }
-                    self.chooseVersion(full ?? title, since: since, at: box.widget)
+                    self.versionsLoading = false
+                    defer { if let box { letGo(box) } }
+                    guard let full else {
+                        self.report(translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."))
+                        return
+                    }
+                    // Loaded, and the server names no sources: nothing to choose between.
+                    if full.mediaSources == nil { self.launch(full, since: since); return }
+                    let still = box.flatMap { gtk_widget_get_root($0.widget) != nil ? $0.widget : nil }
+                    self.launchAsking(full, since: since, at: still)
                 }
             }
-            return
         }
-        chooseVersion(title, since: since, at: button)
     }
 
-    private func chooseVersion(_ title: Item, since: Double, at button: Widget!) {
-        let choices = versions(of: title)
-        if choices.isEmpty { launch(title, since: since); return }
+    private func chooseVersion(_ title: Item, _ choices: [MediaSource], since: Double?, at anchor: Widget?) {
         let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        let heading = translated("Fassung wählen")
+        guard let anchor else {
+            // No button to hang from (tile menu, playlist, Weiterschauen): in the middle.
+            for version in choices {
+                append(list, divider())
+                append(list, actionRow("media-playback-start-symbolic", versionLabel(version)) {
+                    [weak self] in
+                    self?.panelWindowClose()
+                    self?.launch(title, since: since, sourceID: version.id)
+                })
+            }
+            panelWindowOpen(heading, content: list)
+            return
+        }
         gtk_widget_set_size_request(list, 320, -1)
-        let panel = panelOpen(an: button)
+        let panel = panelOpen(an: anchor)
         gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
         // The title of the choice, as `titleVisibility: .visible` on the iPhone.
-        let heading = label(translated("Fassung wählen"), style: "swiftly-zweitzeile")
-        gtk_label_set_xalign(OpaquePointer(heading), 0)
-        gtk_widget_set_margin_start(heading, 14)
-        gtk_widget_set_margin_end(heading, 14)
-        gtk_widget_set_margin_top(heading, 10)
-        gtk_widget_set_margin_bottom(heading, 6)
-        append(list, heading)
+        let head = label(heading, style: "swiftly-zweitzeile")
+        gtk_label_set_xalign(OpaquePointer(head), 0)
+        gtk_widget_set_margin_start(head, 14)
+        gtk_widget_set_margin_end(head, 14)
+        gtk_widget_set_margin_top(head, 10)
+        gtk_widget_set_margin_bottom(head, 6)
+        append(list, head)
         for version in choices {
             append(list, actionRow("media-playback-start-symbolic", versionLabel(version)) {
                 [weak self] in
@@ -382,7 +404,7 @@ extension App {
     /// The directory comes via ``offeringLoad(dann:)``, which calls back on the main
     /// thread; this request waits for it while the others run alongside.
     private func collectionRailsFetch(_ title: Item, art genre: String?,
-                                      client: JellyfinClient) async -> [(ItemCollection, [Item])] {
+                                      client: any MediaServer) async -> [(ItemCollection, [Item])] {
         guard let genre else { return [] }
         let collections: [ItemCollection] = await withCheckedContinuation { done in
             onMainThread {
@@ -843,7 +865,7 @@ extension App {
     }
 
     /// For a series, the plan of the episode that would play next.
-    private func fetchPlan(_ title: Item, client: JellyfinClient, limit: Int) async -> PlaybackPlan? {
+    private func fetchPlan(_ title: Item, client: any MediaServer, limit: Int) async -> PlaybackPlan? {
         let target: Item?
         if title.type == "Series" {
             target = try? await client.nextEpisodeSeries(seriesID: title.id)
@@ -897,7 +919,7 @@ extension App {
                                     Int32(Theme.primaryButtonHeight))
         signal(main, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
-            self.startOrChoose(was, since: was.resumeFrom ?? 0, at: main)
+            self.launchAsking(was, since: was.resumeFrom ?? 0, at: main)
         }
         // While the target is not settled, there is nothing to start.
         gtk_widget_set_sensitive(main, target.title == nil ? 0 : 1)
@@ -917,7 +939,7 @@ extension App {
         signal(front, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
             // Asks for the version as well, like the Mac (`DetailHero.start(0)`).
-            self.startOrChoose(was, since: 0, at: front)
+            self.launchAsking(was, since: 0, at: front)
         }
         append(rail, front)
 
@@ -1093,7 +1115,7 @@ extension App {
                                                 translated("Folge von vorn abspielen")) {
                     [weak self] in
                     gtk_popover_popdown(asPanel(panel))
-                    self?.launch(state, since: 0)
+                    self?.launchAsking(state, since: 0)
                 })
                 // **"Nächste Folge" yields to "Gemeinsam schauen"** (as `TitleActions.forSeries`
                 // on iOS): the list should not grow longer, and the next episode is reachable via the
@@ -1125,7 +1147,7 @@ extension App {
                             onMainThread { self.report(translated("Danach kommt nichts mehr.")) }
                             return
                         }
-                        onMainThread { self.launch(next, since: 0) }
+                        onMainThread { self.launchAsking(next, since: 0) }
                     }
                 })
                 }
@@ -1145,7 +1167,7 @@ extension App {
                         }
                         let run = ShuffleRun.mixed(all)
                         self.shuffleRun = run
-                        if let first = run.episodes.first { self.launch(first, since: 0) }
+                        if let first = run.episodes.first { self.launchAsking(first, since: 0) }
                     }
                 }
             })
@@ -1170,7 +1192,7 @@ extension App {
                                             translated("Von vorn abspielen")) {
                 [weak self] in
                 gtk_popover_popdown(asPanel(panel))
-                self?.launch(title, since: 0)
+                self?.launchAsking(title, since: 0)
             })
             append(list, actionRow("view-refresh-symbolic",
                                             translated("Fortschritt zurücksetzen")) {
@@ -1220,27 +1242,38 @@ extension App {
         return button
     }
 
+    /// Server trailers first, then the linked one (`TrailerChoice` in the package decides the
+    /// order, as on every other platform). A file plays in our own player; a link opens in the
+    /// browser. **Every candidate is tried in order**: a file the server cannot describe (no
+    /// playback plan) is skipped for the next one, as on iPhone and Apple TV. The plan found
+    /// here goes to the player (`prePlanned`) so it is not asked twice; the last file is handed
+    /// over as it is and shows the player's own error if it fails.
     private func trailerStart(_ title: Item) {
         guard let client else { return }
+        let limit = selection.profileBitrate
         Task.detached { [self] in
-            let movies = (try? await client.trailer(toward: title.id)) ?? []
-            onMainThread {
-                // **Silence is not an answer.** Without this line, pressing "Trailer" simply did
-                // nothing and one could not tell whether the button was broken or the server had none.
-                if let film = movies.first {
-                    self.launch(film, since: 0)
+            let candidates = await client.trailerCandidates(for: title, canOpenWeb: true)
+            let lastIndex = candidates.indices.last
+            for (index, candidate) in candidates.enumerated() {
+                switch candidate {
+                case .file(let film):
+                    if index == lastIndex {
+                        onMainThread { self.launch(film, since: 0) }
+                        return
+                    }
+                    if let plan = try? await client.playbackPlan(for: film.id,
+                                                                profile: .vlc(maxBitrate: limit)) {
+                        onMainThread { self.playerOpen(film, since: 0, prePlanned: plan) }
+                        return
+                    }
+                case .web(let target):
+                    onMainThread { browser(target) }
                     return
                 }
-                // **The server has none, the web may.** The Mac falls back to `remoteTrailers` and
-                // opens the URL in the browser (`DetailView.swift:618-621`); here there was only the
-                // refusal. `remoteTrailers` was never read in the whole file.
-                if let address = title.remoteTrailers?.compactMap(\.url).first,
-                   let target = URL(string: address) {
-                    browser(target)
-                    return
-                }
-                self.report(translated("Für diesen Titel liegt kein Trailer vor."))
             }
+            // **Silence is not an answer.** Without this line, pressing "Trailer" simply did
+            // nothing and one could not tell whether the button was broken or the server had none.
+            onMainThread { self.report(translated("Für diesen Titel liegt kein Trailer vor.")) }
         }
     }
 }
@@ -1325,14 +1358,16 @@ extension App {
             return
         }
 
-        loadPanelNew(title, list: list, panel: panel, choice: .original, opened: false)
+        loadPanelNew(title, list: list, panel: panel, choice: .original, opened: false,
+                     audioChosen: nil, audioOpen: false)
         gtk_popover_popup(asPanel(panel))
     }
 
     /// The content of the confirmation for a new download, **redrawn when another quality
     /// is chosen**, so size and "Danach frei" follow along.
     private func loadPanelNew(_ title: Item, list: Widget!, panel: Widget!,
-                              choice: DownloadQuality, opened: Bool) {
+                              choice: DownloadQuality, opened: Bool,
+                              audioChosen: DownloadAudioChoice?, audioOpen: Bool) {
         wipe(list)
         // **The size comes from the source the player would use.** If there is none, it still
         // downloads, just without a bar, only the growing number. `DownloadItem.share`
@@ -1343,14 +1378,38 @@ extension App {
         let source = title.mediaSources?.first
         let original = source?.size ?? 0
         let bytes = choice.estimatedBytes(original: original, runtimeTicks: title.runTimeTicks)
-        let converted = !choice.isOriginal
+        // **The audio choice** (Mac `LoadPanel.audioSelect`): only where the server may build a
+        // file, and only when the film holds more than one track.
+        let streams = source?.mediaStreams ?? []
+        let audioSelect = downloadQualitySelectable && DownloadAudio.offered(streams: streams)
+        let audioOptions = DownloadAudio.trackOptions(streams: streams)
+        let audio = audioChosen ?? DownloadAudio.preselected(
+            options: audioOptions, streams: streams, preferredLanguage: selection.audioLanguage)
+        let cutDown = audioSelect && DownloadAudio.index(for: audio, streams: streams) != nil
+        let recomputed = !choice.isOriginal
+        let converted = recomputed || cutDown
         let inquiry = downloads.inquiry(for: bytes)
         let offered = DownloadQuality.offered(
             selectable: downloadQualitySelectable,
             sourceBitrateOf: DownloadQuality.bitrate(bytes: original, runtimeTicks: title.runTimeTicks))
         let selectionShow = downloadQualitySelectable && offered.count > 1
         let new: (DownloadQuality, Bool) -> Void = { [weak self] q, on in
-            self?.loadPanelNew(title, list: list, panel: panel, choice: q, opened: on)
+            self?.loadPanelNew(title, list: list, panel: panel, choice: q, opened: on,
+                               audioChosen: audio, audioOpen: audioOpen)
+        }
+        let newAudio: (DownloadAudioChoice, Bool) -> Void = { [weak self] a, on in
+            self?.loadPanelNew(title, list: list, panel: panel, choice: choice, opened: opened,
+                               audioChosen: a, audioOpen: on)
+        }
+        let audioRow: () -> Void = { [weak self] in
+            guard let self else { return }
+            let inputField = self.audioSelectionBuild(
+                choice: audio, options: audioOptions, opened: audioOpen,
+                toggle: { newAudio(audio, !audioOpen) }, select: { newAudio($0, false) })
+            gtk_widget_set_margin_start(inputField, 14)
+            gtk_widget_set_margin_end(inputField, 14)
+            gtk_widget_set_margin_bottom(inputField, 6)
+            append(list, inputField)
         }
         let qualityRow: () -> Void = { [weak self] in
             guard let self else { return }
@@ -1375,13 +1434,24 @@ extension App {
                                         cautionary: true))
             // The obvious way out is a smaller version.
             if selectionShow { qualityRow() }
+            // **A way out instead of an error message.** The app knows what has been watched
+            // and is therefore expendable, and calculates that it is enough. It still deletes
+            // nothing on its own: the button asks for it.
             if inquiry.sufficesToCleanUp, !inquiry.dispensable.isEmpty {
-                let text = String(format: translated("%d gesehene Titel könnten weichen (%@)."),
-                                  inquiry.dispensable.count,
-                                  DownloadRules.size(inquiry.dispensableBytes))
-                append(list, loadHint(text))
+                append(list, loadDetail(translated("Gesehene Titel"),
+                                            DownloadRules.size(inquiry.dispensableBytes)))
+                let ids = inquiry.dispensable.map(\.id)
+                append(list, actionRow("user-trash-symbolic",
+                                                translated("Gesehene entfernen und laden")) { [weak self] in
+                    gtk_popover_popdown(asPanel(panel))
+                    guard let self else { return }
+                    self.downloads.remove(ids)
+                    self.loadTrigger(title, source: source, bytes: original, quality: choice,
+                                     audio: audioSelect ? audio : .all)
+                })
+                return
             } else {
-                append(list, loadHint(translated("Nicht genug Platz")))
+                append(list, loadHint(translated("Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.")))
                 return
             }
         }
@@ -1396,7 +1466,8 @@ extension App {
             append(list, actionRow("folder-download-symbolic",
                                             translated("In die Warteschlange")) { [weak self] in
                 gtk_popover_popdown(asPanel(panel))
-                self?.loadTrigger(title, source: source, bytes: original, quality: choice)
+                self?.loadTrigger(title, source: source, bytes: original, quality: choice,
+                                  audio: audioSelect ? audio : .all)
             })
             return
         }
@@ -1411,6 +1482,7 @@ extension App {
             } else if let c = source?.container, !c.isEmpty {
                 append(list, loadDetail(translated("Qualität"), c.uppercased()))
             }
+            if audioSelect { audioRow() }
             append(list, loadDetail(translated("Danach frei"),
                                         DownloadRules.size(inquiry.freeAfter)))
         }
@@ -1418,11 +1490,14 @@ extension App {
         append(list, actionRow("folder-download-symbolic",
                                         translated("Laden")) { [weak self] in
             gtk_popover_popdown(asPanel(panel))
-            self?.loadTrigger(title, source: source, bytes: original, quality: choice)
+            self?.loadTrigger(title, source: source, bytes: original, quality: choice,
+                              audio: audioSelect ? audio : .all)
         })
         if inquiry.suffices {
-            append(list, loadHint(converted
+            append(list, loadHint(recomputed
                 ? translated("Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt.")
+                : converted
+                ? translated("Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt.")
                 : translated("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")))
         }
     }
@@ -1455,7 +1530,7 @@ extension App {
     /// The entry becomes an item. What goes in must suffice to show and play the title
     /// **without a server**, hence runtime, container and the series details.
     func loadTrigger(_ title: Item, source: MediaSource?, bytes: Int64,
-                        quality: DownloadQuality = .original) {
+                        quality: DownloadQuality = .original, audio: DownloadAudioChoice = .all) {
         // No account, no item. Empty here means "not signed in", and a download without an
         // account would run under the same file as a second user's.
         guard !userIdentifier.isEmpty else { return }
@@ -1476,6 +1551,7 @@ extension App {
             // position the server knew.
             watchState: title.userData,
             videoCodec: source?.videoCodec).inQuality(quality)
+            .withAudio(audio, streams: source?.mediaStreams ?? [])
 
         var images: [String: URL] = [:]
         if let addresses {
@@ -1495,12 +1571,13 @@ extension App {
     ///
     /// **What is already there is not queued again**, and the order is set by
     /// `DownloadRules.nextOne`; here things are only enqueued.
-    func seasonLoad(_ episodes: [Item], quality: DownloadQuality = .original) {
+    func seasonLoad(_ episodes: [Item], quality: DownloadQuality = .original,
+                    audio: DownloadAudioChoice = .all) {
         let openOnes = episodes.filter { downloads.entries(for: $0.id) == nil }
         guard !openOnes.isEmpty else { return }
         for episode in openOnes {
             loadTrigger(episode, source: episode.mediaSources?.first,
-                           bytes: episode.mediaSources?.first?.size ?? 0, quality: quality)
+                           bytes: episode.mediaSources?.first?.size ?? 0, quality: quality, audio: audio)
         }
         report(numberWord(openOnes.count, one: translated("1 Folge wird geladen."),
                         many: translated("%d Folgen werden geladen.")))

@@ -49,8 +49,8 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 37
-        versionName = "1.0.9"
+        versionCode = 38
+        versionName = "1.1.0"
         // **Switch-to-Play-Store build for the current beta testers** (`-PbetaRedirect=true`, never set
         // permanently): the app shows only a notice page (`BetaRedirectPage`). Off by default.
         buildConfigField("boolean", "BETA_REDIRECT", (findProperty("betaRedirect") == "true").toString())
@@ -97,8 +97,10 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.lottie.compose)
+    implementation(libs.zxing.core)
     implementation(libs.play.review.ktx)
     implementation(libs.androidx.tvprovider)
+    implementation(libs.androidx.browser)
     // Only the play flavor: the direct build must not even declare the BILLING permission
     // (the library's manifest adds it).
     "playImplementation"(libs.billing)

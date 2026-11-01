@@ -12,7 +12,7 @@ import Foundation
 /// `Linux/Install/PKGBUILD` (`pkgver`), which the build touches anyway.
 /// Whoever changes one changes the other.
 enum Version {
-    static let number = "1.0.9"
+    static let number = "1.1.0"
     /// **The build number counts when the same version is released again.**
     /// Without it, a bug report just says "1.0.4" and nobody knows whether the
     /// fix was included.

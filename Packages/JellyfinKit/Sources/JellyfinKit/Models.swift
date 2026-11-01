@@ -6,11 +6,30 @@ public struct PublicSystemInfo: Codable, Sendable, Equatable {
     public let serverName: String?
     public let version: String?
     public let id: String?
+    /// "Jellyfin Server" on Jellyfin; Emby does not send it (measured on Emby 4.10).
+    public let productName: String?
+
+    public init(serverName: String?, version: String?, id: String?, productName: String? = nil) {
+        self.serverName = serverName
+        self.version = version
+        self.id = id
+        self.productName = productName
+    }
 
     enum CodingKeys: String, CodingKey {
         case serverName = "ServerName"
         case version = "Version"
         case id = "Id"
+        case productName = "ProductName"
+    }
+
+    /// **Is this answer a Jellyfin's?** Emby and Jellyfin share this route and look alike
+    /// from outside. Jellyfin names itself; where it does not (older ones), its version
+    /// starts at 10, while Emby's is 4.x.
+    public var looksLikeJellyfin: Bool {
+        if let productName { return productName.localizedCaseInsensitiveContains("jellyfin") }
+        guard let major = version?.split(separator: ".").first.flatMap({ Int($0) }) else { return false }
+        return major >= 10
     }
 }
 

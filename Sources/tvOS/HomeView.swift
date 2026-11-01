@@ -621,7 +621,11 @@ struct HomeView: View {
 
     private func launch(_ item: Item) {
         // Fetch fresh: the entry in the list item is often stale.
-        PlayRequest.start(item, freshValue: true, model: model, prepares: $prepares,
+        PlayRequest.start(item, freshValue: true,
+                              ask: VersionAsk(choose: { TileRequest.shared.choice = $0 },
+                                              failed: { TileRequest.shared.message = $0 }),
+                              model: model, prepares: $prepares,
+                              missing: { TileRequest.shared.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { play.wrappedValue = $0 })
     }
 

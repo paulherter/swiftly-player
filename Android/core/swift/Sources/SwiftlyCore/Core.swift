@@ -13,14 +13,14 @@ import JellyfinKit
 /// **A class with a lock, not an actor:** jextract wraps classes, and calls arrive from
 /// coroutines on arbitrary threads.
 public final class Kern: @unchecked Sendable {
-    private let devicesIdentifier: String
-    private let program: String
-    private let devicesName: String
-    private let version: String
-    private let barrier = NSLock()
-    private var _client: JellyfinClient?
-    private var _addresses: ImageAddress?
-    private var _session: Session?
+    let devicesIdentifier: String
+    let program: String
+    let devicesName: String
+    let version: String
+    let barrier = NSLock()
+    var _client: (any MediaServer)?
+    var _addresses: ImageAddress?
+    var _session: Session?
     private var _playback: Playback?
     /// "Next episode automatically" as Kotlin last reported it (``nextAutomaticSet(_:)``). Off: no
     /// card, so nothing advances by itself; the button in the controls stays.
@@ -34,7 +34,13 @@ public final class Kern: @unchecked Sendable {
     private var _reportedPaused = false
     /// The client of a server being added (`AppModel.onboarding`). The running session stays
     /// untouched; if adding fails, nothing has changed.
-    private var _onboarding: JellyfinClient?
+    /// The Plex sign-in in progress (``plexStart()``), if any.
+    var _plexHeld: PlexHeld?
+    /// A Plex server moved to another address: the session to store (``sessionEvents()``).
+    var _plexMoved: Session?
+    /// A Plex server answered `401` in the middle of the session.
+    var _plexRejected = false
+    var _onboarding: (any MediaServer)?
     /// Which address check currently applies (see ``Pruefstand`` in the package). A new check
     /// invalidates the previous one; its late answer no longer sets a client.
     private var _checkState = CheckState()
@@ -78,6 +84,8 @@ public final class Kern: @unchecked Sendable {
     private var _withoutNext = false
     private var _alwaysDirectPlay = true
     private var _megabit = 0
+    /// The subtitle look's "keep the file's style" switch, reported by Kotlin (``subtitleLookReport``).
+    var _subtitleKeepFileStyle = true
     /// **The current account's downloads as Kotlin holds them.** Used for "Next episode", the
     /// sections and the watch state without a server. Kotlin passes them in after every change
     /// (`downloadsKnown`); the list itself stays in Kotlin.
@@ -171,29 +179,54 @@ public final class Kern: @unchecked Sendable {
         TrackSupport.write = { row in rows.write(row); LogRing.shared.append(row) }
     }
 
-    private var client: JellyfinClient? {
+    var client: (any MediaServer)? {
         get { barrier.lock(); defer { barrier.unlock() }; return _client }
     }
+    /// Where images come from. **A Plex client moves between addresses** (home network, relay)
+    /// while the stored session keeps the one it started with, so those come from the client
+    /// (`AppModel.liveAddress`); for the others it is what was set.
     private var addresses: ImageAddress? {
-        get { barrier.lock(); defer { barrier.unlock() }; return _addresses }
+        get {
+            barrier.lock(); defer { barrier.unlock() }
+            if let plex = _client as? PlexClient, !plex.accessToken.isEmpty {
+                return ImageAddress(base: plex.baseURL, token: plex.accessToken, kind: .plex)
+            }
+            return _addresses
+        }
     }
-    private func checkBegin(_ address: String) -> CheckMark {
+
+    /// The address set for a session: kind-aware (Plex names images by path, Emby wants `api_key`).
+    private static func imageAddress(_ s: Session) -> ImageAddress {
+        ImageAddress(base: s.serverURL, token: s.accessToken, kind: s.kind)
+    }
+
+    /// Builds a client through the package's factory, so no server class is named here.
+    func newClient(_ url: URL, _ session: Session? = nil, kind: ServerKind? = nil) -> any MediaServer {
+        let k = session?.kind ?? kind ?? .jellyfin
+        guard let c = MediaServerFactory.make(kind: k, baseURL: url, deviceID: devicesIdentifier,
+                                              deviceName: devicesName, clientVersion: version,
+                                              program: program, session: session) else {
+            preconditionFailure("no backend for \(k)")
+        }
+        return c
+    }
+    func checkBegin(_ address: String) -> CheckMark {
         barrier.lock(); defer { barrier.unlock() }
         return _checkState.begin(address)
     }
 
-    private func checkApplies(_ mark: CheckMark) -> Bool {
+    func checkApplies(_ mark: CheckMark) -> Bool {
         barrier.lock(); defer { barrier.unlock() }
         return _checkState.applies(mark)
     }
 
     @discardableResult
-    private func checkComplete(_ mark: CheckMark) -> Bool {
+    func checkComplete(_ mark: CheckMark) -> Bool {
         barrier.lock(); defer { barrier.unlock() }
         return _checkState.complete(mark)
     }
 
-    private func setDown(_ c: JellyfinClient?, _ a: ImageAddress?, _ s: Session? = nil) {
+    func setDown(_ c: (any MediaServer)?, _ a: ImageAddress?, _ s: Session? = nil) {
         barrier.lock(); defer { barrier.unlock() }
         let alt = _client
         _client = c; _addresses = a; _session = s
@@ -203,11 +236,12 @@ public final class Kern: @unchecked Sendable {
         // (`signOff`, then `sessionSet` for the next account). If the first `finish` ran after
         // the second `rightFetch`, the next account would lose its SyncPlay right; the other way
         // round, the `Leave` would go out in the next account's name.
+        if let plex = c as? PlexClient, alt !== c { plexWatch(plex) }
         if let gemeinsam = _shared, alt !== c {
             let before = _sharedChain
             _sharedChain = Task {
                 await before?.value
-                await gemeinsam.finish(oldClient: alt)
+                await gemeinsam.finish(oldClient: alt as? JellyfinClient)
                 if c != nil { await gemeinsam.rightFetch() }
             }
         }
@@ -217,14 +251,19 @@ public final class Kern: @unchecked Sendable {
     /// on Apple. `nil` without a session.
     public func userImage(border: Int) -> String? {
         barrier.lock(); defer { barrier.unlock() }
-        guard let s = _session, let a = _addresses else { return nil }
-        return a.user(s.userID, border: border)?.absoluteString
+        guard let s = _session else { return nil }
+        return Self.userImage(of: s, border: border)
     }
 
-    private func newClient(_ url: URL, _ session: Session? = nil) -> JellyfinClient {
-        JellyfinClient(baseURL: url, deviceID: devicesIdentifier, deviceName: devicesName,
-                       clientVersion: version, program: program, session: session)
+    /// `AppModel.userImageURL(for:)`: Plex keeps the picture's address from plex.tv in the session.
+    static func userImage(of s: Session, border: Int) -> String? {
+        if s.kind == .plex { return s.plex?.userImage?.absoluteString }
+        return imageAddress(s).user(s.userID, border: border)?.absoluteString
     }
+
+    /// A folder the app may write temporary files into (set by Kotlin at start).
+    nonisolated(unsafe) private static var cacheFolder: String?
+    public static func cacheFolderSet(path: String) { cacheFolder = path }
 
     // MARK: Custom headers (issue #4)
 
@@ -274,7 +313,7 @@ public final class Kern: @unchecked Sendable {
         return OwnHeaders.names(OwnHeaders.registered(for: url))
     }
 
-    private static func headersRead(_ json: String) -> [OwnHeader] {
+    static func headersRead(_ json: String) -> [OwnHeader] {
         (try? JSONDecoder().decode([OwnHeader].self, from: Data(json.utf8))) ?? []
     }
 
@@ -282,7 +321,7 @@ public final class Kern: @unchecked Sendable {
     /// the server does not answer, the previous state comes back, so nothing is left behind for
     /// an address where nothing answers. Storing happens only after the answer (Kotlin,
     /// ``ownHeadersStore()``).
-    private static func withHeaders<T>(_ headers: [OwnHeader], for url: URL,
+    static func withHeaders<T>(_ headers: [OwnHeader], for url: URL,
                                       _ perform: () async throws -> T) async throws -> T {
         let new = OwnHeaders.cleaned(headers)
         guard !new.isEmpty else { return try await perform() }
@@ -347,7 +386,7 @@ public final class Kern: @unchecked Sendable {
             guard let c = client else { throw CoreError.notConnected }
             let s = try await c.authenticate(username: user, password: password)
             let new = newClient(s.serverURL, s)
-            setDown(new, ImageAddress(base: s.serverURL, token: s.accessToken), s)
+            setDown(new, Self.imageAddress(s), s)
             return try json(s)
         }
     }
@@ -361,14 +400,50 @@ public final class Kern: @unchecked Sendable {
 
     public func sessionSet(json text: String) throws {
         let s = try JSONDecoder().decode(Session.self, from: Data(text.utf8))
-        setDown(newClient(s.serverURL, s), ImageAddress(base: s.serverURL, token: s.accessToken), s)
+        setDown(newClient(s.serverURL, s), Self.imageAddress(s), s)
     }
 
     // MARK: Quick Connect and additional servers
 
-    private func loginClient(_ newServer: Bool) -> JellyfinClient? {
+    private func loginClient(_ newServer: Bool) -> (any MediaServer)? {
         barrier.lock(); defer { barrier.unlock() }
         return newServer ? _onboarding : _client
+    }
+
+    // MARK: What only some kinds can do
+    //
+    // Quick Connect, remote control and display preferences are Jellyfin's. The package keeps
+    // them in helper protocols; they are reached only after the capability says yes
+    // (`AppModel.remoteServer`: Emby's client is a `JellyfinClient` too, so the type alone
+    // does not say).
+
+    private func quickClient(_ newServer: Bool) -> (any QuickSignIn)? {
+        guard let c = loginClient(newServer), c.capabilities.contains(.quickConnect) else { return nil }
+        return c as? any QuickSignIn
+    }
+
+    private var remoteServer: (any RemoteSessionServer)? {
+        guard let c = client, c.capabilities.contains(.remoteControl) else { return nil }
+        return c as? any RemoteSessionServer
+    }
+
+    private var displayServer: (any DisplayPreferencesServer)? {
+        guard let c = client, c.capabilities.contains(.settingsSync) else { return nil }
+        return c as? any DisplayPreferencesServer
+    }
+
+    /// What the connected server can do. Without a client the kind of the stored session answers
+    /// (`AppModel.can`), so a page does not flicker while connecting; without a session, Jellyfin's set.
+    public func can(capability: String) -> Bool {
+        barrier.lock(); defer { barrier.unlock() }
+        guard let wanted = ServerCapability(rawValue: capability) else { return false }
+        return (_client?.capabilities ?? (_session?.kind ?? .jellyfin).capabilities).contains(wanted)
+    }
+
+    /// The kind of the connected server (`jellyfin`, `emby`, `plex`); `jellyfin` without a session.
+    public func kind() -> String {
+        barrier.lock(); defer { barrier.unlock() }
+        return (_client?.kind ?? _session?.kind ?? .jellyfin).rawValue
     }
 
     /// Checks another server without touching the running session. Answer as ``verbinden(address:)``.
@@ -413,7 +488,7 @@ public final class Kern: @unchecked Sendable {
     /// Fetches a code, at the connected or the added server. Answer: the code.
     public func quickConnectStart(newServer: Bool) async throws -> String {
         return try await throwReadable { () async throws -> String in
-            guard let c = loginClient(newServer) else { throw CoreError.notConnected }
+            guard let c = quickClient(newServer) else { throw CoreError.notConnected }
             do {
                 let preGait = try await c.quickConnectStart()
                 barrier.lock(); _quickConnect = preGait; barrier.unlock()
@@ -436,7 +511,7 @@ public final class Kern: @unchecked Sendable {
     /// otherwise the sentence for the user (`QuickConnectDeadline.endText`).
     public func quickConnectWait(newServer: Bool) async -> String {
         barrier.lock(); let preGait = _quickConnect; barrier.unlock()
-        guard let c = loginClient(newServer), let preGait else {
+        guard let c = loginClient(newServer) as? JellyfinClient, c.kind == .jellyfin, let preGait else {
             return QuickConnectDeadline.endText(last: .expired)
         }
         let task = Task { [self] () -> String in
@@ -480,11 +555,11 @@ public final class Kern: @unchecked Sendable {
     public func quickConnectSignIn(newServer: Bool) async throws -> String {
         return try await throwReadable { () async throws -> String in
             barrier.lock(); let preGait = _quickConnect; barrier.unlock()
-            guard let c = loginClient(newServer), let preGait else { throw CoreError.notConnected }
+            guard let c = quickClient(newServer), let preGait else { throw CoreError.notConnected }
             let s: Session
             do { s = try await c.signInWithQuickConnect(preGait) } catch { throw CoreText(coreErrorText(error)) }
             barrier.lock(); _quickConnect = nil; barrier.unlock()
-            if !newServer { setDown(newClient(s.serverURL, s), ImageAddress(base: s.serverURL, token: s.accessToken), s) }
+            if !newServer { setDown(newClient(s.serverURL, s), Self.imageAddress(s), s) }
             return try json(s)
         }
     }
@@ -496,59 +571,113 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Accounts (the rules live in `AccountBundle`)
 
-    private static func readBundle(_ raw: String) -> AccountBundle? {
-        try? JSONDecoder().decode(AccountBundle.self, from: Data(raw.utf8))
+    // The stored value is the set of all kinds, as one JSON object of text values: one entry per
+    // ``ServerKind/bundleStorageKey`` (`konten` stays the Jellyfin bundle, byte for byte, so an
+    // older version reads it) plus the pointer (``ServerBundles/pointerKey``). Kotlin splits it
+    // into one vault entry per key and joins it again; it never looks inside.
+
+    private static func readBundles(_ raw: String) -> ServerBundles {
+        guard let data = raw.data(using: .utf8), !raw.isEmpty else { return ServerBundles() }
+        if let parts = try? JSONDecoder().decode([String: String].self, from: data) {
+            return ServerBundles.load { parts[$0]?.data(using: .utf8) }
+        }
+        // The Jellyfin bundle as it was stored before kinds existed.
+        if let old = try? JSONDecoder().decode(AccountBundle.self, from: data) {
+            return ServerBundles(bundles: [.jellyfin: old])
+        }
+        return ServerBundles()
     }
+
+    private static func writeBundles(_ b: ServerBundles) -> String {
+        guard !b.kinds.isEmpty else { return "" }
+        var parts: [String: String] = [:]
+        try? b.save { key, data in
+            if let data { parts[key] = String(decoding: data, as: UTF8.self) }
+        }
+        return encoded(parts)
+    }
+
     private static func sessionRead(_ raw: String) -> Session? {
         try? JSONDecoder().decode(Session.self, from: Data(raw.utf8))
     }
 
-    /// Adds a session to the bundle: the same account is replaced, a new one is added and becomes active.
+    /// Adds a session to the bundle of its kind: the same account is replaced, a new one is added
+    /// and becomes active, and its kind becomes the current one.
     public static func bundleRecord(session: String, bundle: String) -> String {
         guard let s = sessionRead(session) else { return bundle }
-        return encoded(AccountBundle.record(s, in: readBundle(bundle)).bundle)
+        var all = readBundles(bundle)
+        all.set(AccountBundle.record(s, in: all.bundle(for: s.kind)).bundle, for: s.kind)
+        all.switchTo(s.kind)
+        return writeBundles(all)
     }
 
     public static func bundleSwitch(bundle: String, identifier: String) -> String {
-        guard var b = readBundle(bundle) else { return bundle }
-        b.switchTo(toward: identifier)
-        return encoded(b)
+        var all = readBundles(bundle)
+        guard let kind = all.kinds.first(where: { all.bundle(for: $0)?.account(identifier) != nil }),
+              var one = all.bundle(for: kind) else { return bundle }
+        one.switchTo(toward: identifier)
+        all.set(one, for: kind)
+        all.switchTo(kind)
+        return writeBundles(all)
     }
 
-    /// Without the account; empty if it was the last one.
+    /// Without the account; empty if it was the last one of all kinds.
     public static func bundleRemoved(bundle: String, identifier: String) -> String {
-        guard let new = readBundle(bundle)?.removed(identifier) else { return "" }
-        return encoded(new)
+        var all = readBundles(bundle)
+        guard let kind = all.kinds.first(where: { all.bundle(for: $0)?.account(identifier) != nil }),
+              let one = all.bundle(for: kind) else { return writeBundles(all) }
+        all.set(one.removed(identifier), for: kind)
+        return writeBundles(all)
     }
 
     /// The current session as JSON; empty if the bundle is not readable.
     public static func bundleActive(bundle: String) -> String {
-        readBundle(bundle).map { encoded($0.activeOne) } ?? ""
+        readBundles(bundle).active.map { encoded($0.activeOne) } ?? ""
     }
 
     public static func bundleActiveId(bundle: String) -> String {
-        readBundle(bundle)?.activeOne.accountKey ?? ""
+        readBundles(bundle).active?.activeOne.accountKey ?? ""
     }
 
     /// Migration: the old single session as a bundle.
     public static func bundleFromSession(session: String) -> String {
-        sessionRead(session).map { encoded(AccountBundle($0)) } ?? ""
+        guard let s = sessionRead(session) else { return "" }
+        return writeBundles(ServerBundles(bundles: [s.kind: AccountBundle(s)], activeKind: s.kind))
     }
 
-    /// For the account cards: per server its accounts, the active one marked, with picture.
+    /// For the account cards: per server its accounts, the active one marked, with picture. All
+    /// kinds, in the fixed order of ``ServerKind``.
     public static func bundleOverview(bundle: String) -> String {
-        guard let b = readBundle(bundle) else { return "[]" }
-        let active = b.activeOne.accountKey
-        return encoded(b.server.map { url in
-            let accounts = b.accounts(on: url)
-            return ServerCardsResponse(
-                address: url.absoluteString, host: url.host() ?? url.absoluteString,
-                active: accounts.contains { $0.accountKey == active },
-                accounts: accounts.map { s in
-                    AccountResponse(identifier: s.accountKey, name: s.userName, active: s.accountKey == active,
-                                 image: ImageAddress(base: s.serverURL, token: s.accessToken).user(s.userID, border: 120)?.absoluteString)
-                })
-        })
+        let all = readBundles(bundle)
+        guard let activeOne = all.active?.activeOne else { return "[]" }
+        let active = activeOne.accountKey
+        var cards: [ServerCardsResponse] = []
+        for kind in all.kinds {
+            guard let b = all.bundle(for: kind) else { continue }
+            for url in b.server {
+                let accounts = b.accounts(on: url)
+                // A Plex server is its machine and its name, not an address that changes with the network.
+                let host = accounts.first?.plex?.serverName ?? url.host() ?? url.absoluteString
+                cards.append(ServerCardsResponse(
+                    address: url.absoluteString, host: host, kind: kind.rawValue,
+                    active: accounts.contains { $0.accountKey == active },
+                    accounts: accounts.map { s in
+                        AccountResponse(identifier: s.accountKey, name: s.userName, active: s.accountKey == active,
+                                        image: Self.userImage(of: s, border: 120))
+                    }))
+            }
+        }
+        return encoded(cards)
+    }
+
+    /// The kinds that have accounts, e.g. to know whether the first sign-in is still ahead.
+    public static func bundleKinds(bundle: String) -> String {
+        encoded(readBundles(bundle).kinds.map(\.rawValue))
+    }
+
+    /// The kind of the current session; empty without one.
+    public static func bundleActiveKind(bundle: String) -> String {
+        readBundles(bundle).active?.activeOne.kind.rawValue ?? ""
     }
 
     // MARK: Home
@@ -725,7 +854,7 @@ public final class Kern: @unchecked Sendable {
                     PersonResponse(id: $0.id, name: $0.name, role: $0.role, image: peopleImage($0))
                 },
                 remembered: i.userData?.isFavorite ?? false, watched: i.userData?.played ?? false,
-                trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, file: file,
+                file: file,
                 backdrop: Kern.backdrop(i, episode: nil, addresses: a),
                 versions: MediaVersions.choices(i.mediaSources).compactMap { v in
                     // Same label as `ItemDetailView.versionLabel` on iOS.
@@ -786,7 +915,6 @@ public final class Kern: @unchecked Sendable {
                 logo: ImageSelection.logo(series, addresses: a)?.absoluteString,
                 rating: series.communityRating, sharing: series.ageRating, description: series.description,
                 remembered: series.userData?.isFavorite ?? false, watched: series.userData?.played ?? false,
-                trailer: series.remoteTrailers?.first?.url.map { "\($0)" },
                 planPresent: false, lossless: false, method: nil,
                 state: state.map { f in
                     StateResponse(id: f.id, resume: (f.userData?.playbackPositionTicks ?? 0) > 0,
@@ -879,8 +1007,17 @@ public final class Kern: @unchecked Sendable {
     /// The URL of a tile sheet; empty without running playback.
     public func trickplayAddress(width: Int, sheet: Int) async -> String {
         guard let c = client, let w = lockRead({ _playback }) else { return "" }
-        return await c.trickplayURL(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID,
-                                    width: width, sheet: sheet)?.absoluteString ?? ""
+        if let j = c as? JellyfinClient {
+            return await j.trickplayURL(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID,
+                                  width: width, sheet: sheet)?.absoluteString ?? ""
+        }
+        // Plex hands the sheet over as data (its preview file), not as an address: written to the
+        // cache folder Kotlin set, so the image loader reads it like any other address.
+        guard let folder = Self.cacheFolder,
+              let data = await c.trickplaySheet(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID,
+                                                width: width, sheet: sheet) else { return "" }
+        let file = URL(fileURLWithPath: folder).appendingPathComponent("trickplay-\(w.item.id)-\(width)-\(sheet).jpg")
+        return (try? data.write(to: file)) == nil ? "" : file.absoluteString
     }
 
     /// **Chapters of the current version**, mirrors `AppModel.chapter(fuer:source:)`. Fetches
@@ -953,7 +1090,8 @@ public final class Kern: @unchecked Sendable {
     /// it is empty; then people type.
     public func publicUser(newServer: Bool) async -> String {
         barrier.lock(); let c = newServer ? _onboarding : _client; barrier.unlock()
-        guard let c, let list = try? await c.publicUser() else { return "[]" }
+        guard let c = c as? any QuickSignIn, c.capabilities.contains(.publicUsers),
+              let list = try? await c.publicUser() else { return "[]" }
         var answer: [AccountResponse] = []
         for b in list {
             let image = await c.userImage(b, border: 180)
@@ -963,7 +1101,10 @@ public final class Kern: @unchecked Sendable {
     }
 
     public func quickConnectShare(code: String) async -> String {
-        await handleRequest { try await $0.quickConnectShare(code: code) }
+        await handleRequest { c in
+            guard let q = c as? any QuickSignIn, c.capabilities.contains(.quickConnect) else { throw CoreError.notConnected }
+            try await q.quickConnectShare(code: code)
+        }
     }
 
     /// The server's genres, for "Add genre".
@@ -1005,7 +1146,7 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// With sorted keys, so the same bundle is always the same string.
-    private static func encoded<T: Encodable>(_ value: T) -> String {
+    static func encoded<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
@@ -1094,6 +1235,30 @@ public final class Kern: @unchecked Sendable {
         (try? JSONEncoder().encode(SearchHistory.list(raw))).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
     }
 
+    // MARK: TV search keyboard
+
+    /// The keys of the TV keyboard as rows: `[[{kind, character, span}]]` (`SearchKeys.rows`).
+    public static func searchKeyRows(speech: Bool) -> String {
+        encoded(SearchKeys.rows(speech: speech).map { row in
+            row.map { SearchKeyResponse(kind: $0.kind.rawValue, character: $0.character, span: $0.span) }
+        })
+    }
+    public static func searchKeyTyped(character: String, term: String) -> String { SearchKeys.typed(character, into: term) }
+    public static func searchKeySpace(term: String) -> String { SearchKeys.withSpace(term) }
+    public static func searchKeySpaceFits(term: String) -> Bool { SearchKeys.spaceFits(term) }
+    public static func searchKeyDelete(term: String) -> String { SearchKeys.withoutLast(term) }
+    public static func searchKeyHardware(text: String, term: String) -> String { SearchKeys.hardware(text, into: term) }
+    /// Block titles only stand when more than one block is there.
+    public static func searchTitlesShown(series: Int, films: Int, requests: Int) -> Bool {
+        SearchGroups.showsTitles(series: series, films: films, requests: requests)
+    }
+    /// `history`, `start`, `loading`, `blank`, `hits`, `nothing` or `disrupted` (`SearchScreen.state`).
+    public static func searchScreen(term: String, historyCount: Int, hasHits: Bool, answered: Bool,
+                                    disrupted: Bool, waited: Bool) -> String {
+        SearchScreen.state(term: term, historyCount: historyCount, hasHits: hasHits, answered: answered,
+                           disrupted: disrupted, waited: waited).rawValue
+    }
+
     // MARK: Playback
 
     /// Opens a title for playback: `AppModel.plan(for:)`, the sections and the next episode in
@@ -1131,9 +1296,9 @@ public final class Kern: @unchecked Sendable {
         var w = Playback(item: item, plan: plan, sections: await parts,
                            next: lockRead({ _withoutNext }) ? nil : next)
         // External subtitles (`AppModel.subtitleFiles`). None for local files.
+        // With "keep the file's style" off, ASS and SSA come as the server's SRT (`subtitleFilesFor`).
         if let s = lockRead({ _session }), !plan.url.isFileURL {
-            w.files = SubtitleFile.from(streams: plan.source?.mediaStreams ?? [], server: s.serverURL,
-                                            key: s.accessToken)
+            w.files = subtitleFilesFor(plan: plan, session: s)
         }
         return w
     }
@@ -1224,7 +1389,7 @@ public final class Kern: @unchecked Sendable {
 
     /// **"Next episode": online as before, offline the next downloaded one**
     /// (`DownloadRules.episodePost`, like `AppModel.episodePost`).
-    private func nextEpisode(to item: Item, _ c: JellyfinClient?) async -> Item? {
+    private func nextEpisode(to item: Item, _ c: (any MediaServer)?) async -> Item? {
         // **A shuffled run or playlist goes along its order**, to its end (`AppModel.episodePost`).
         let run: ShuffleRun? = lockRead {
             guard let run = _shuffleRun else { return nil }
@@ -1243,7 +1408,7 @@ public final class Kern: @unchecked Sendable {
 
     /// The sections, with those stored at download time first (`DownloadRules.sections`, like
     /// `AppModel.sections(fuer:)`).
-    private func sections(for id: String, _ c: JellyfinClient?) async -> [Segment] {
+    private func sections(for id: String, _ c: (any MediaServer)?) async -> [Segment] {
         let stored = lockRead { _downloads.first { $0.id == id }?.sections }
         return await DownloadRules.sections(stored: stored) { await c?.sections(for: id) ?? [] }
     }
@@ -1697,7 +1862,7 @@ public final class Kern: @unchecked Sendable {
     /// What a report needs. The client is captured when queued: if the account changes
     /// afterwards, the report still belongs to whoever watched.
     private struct ReportContent: Sendable {
-        let client: JellyfinClient?
+        let client: (any MediaServer)?
         let item: Item
         let plan: PlaybackPlan
         let seconds: Double
@@ -1742,7 +1907,7 @@ public final class Kern: @unchecked Sendable {
                 // **Capabilities before every start**, in the same report and deadline: after a server
                 // restart the handover otherwise broke silently. If it fails, the start goes out anyway,
                 // unless the deadline cancelled it.
-                do { try await client.reportCapabilities() } catch {
+                do { try await (client as? any RemoteSessionServer)?.reportCapabilities() } catch {
                     try Task.checkCancellation()
                     rows.write("Faehigkeiten nicht gemeldet")
                 }
@@ -1774,7 +1939,7 @@ public final class Kern: @unchecked Sendable {
         "\(s.audio.map(String.init) ?? "—")/\(s.subtitle.map(String.init) ?? "—")"
     }
 
-    private func lockRead<T>(_ read: () -> T) -> T {
+    func lockRead<T>(_ read: () -> T) -> T {
         barrier.lock(); defer { barrier.unlock() }
         return read()
     }
@@ -1847,7 +2012,7 @@ public final class Kern: @unchecked Sendable {
     }
     private let logRows = LogRows()
 
-    private func log(_ row: String) {
+    func log(_ row: String) {
         logRows.write(row)
         LogRing.shared.append(row)
     }
@@ -2212,7 +2377,12 @@ public final class Kern: @unchecked Sendable {
                             forced: feed.isForced == true, file: feed.isExternal == true,
                             hearingImpaired: feed.isHearingImpaired == true)
         }
-        return Self.encoded(TrackNamesResponse(audio: audioNames, subtitle: subNames))
+        // Without the embedded ASS tracks that a server SRT replaces (look with "keep the file's style"
+        // off), so one subtitle is not listed twice (`VLCPlayerView.subtitleTracks` on Apple).
+        let hidden = TrackMapping.replacedPositions(subtitle: subTracks.map(\.track), streams: streams,
+                                                    files: w?.files ?? [])
+        let shown = hidden.isEmpty ? subNames : subNames.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
+        return Self.encoded(TrackNamesResponse(audio: audioNames, subtitle: shown))
     }
 
     private static func tracks(_ json: String) -> [TrackInput] {
@@ -2490,8 +2660,8 @@ public final class Kern: @unchecked Sendable {
     /// arrive. Without both, `Sessions?controllableByUserId` does not return this session, and no
     /// other device offers "Continue here".
     public func remoteControlStart() async {
-        barrier.lock(); let c = _client; let already = _remote != nil; barrier.unlock()
-        guard let c, !already else { return }
+        barrier.lock(); let already = _remote != nil; barrier.unlock()
+        guard let c = remoteServer, !already else { return }
         try? await c.reportCapabilities()
         guard let controls = try? await c.remoteControl() else { return }
         barrier.lock()
@@ -2560,7 +2730,11 @@ public final class Kern: @unchecked Sendable {
         barrier.lock(); defer { barrier.unlock() }
         if let s = _shared { return s }
         let s = SyncPlaySession(
-            client: { [weak self] in self?.client },
+            // SyncPlay is Jellyfin's (`ServerCapability.syncPlay`); Emby's client is a `JellyfinClient` too.
+            client: { [weak self] in
+                guard let c = self?.client, c.capabilities.contains(.syncPlay) else { return nil }
+                return c as? JellyfinClient
+            },
             ich: { [weak self] in self?.lockRead { self?._session?.userName } },
             titleLoad: { [weak self] title, since in await self?.sharedTitleLoad(title, since: since) ?? false })
         _shared = s
@@ -2721,8 +2895,8 @@ public final class Kern: @unchecked Sendable {
     /// (`Takeover.offerings`: not us, same account, accepts commands, moved in the last 90 s)
     /// lives in the package. **An error is not an error here:** there is simply no offer.
     public func takeoverOfferings() async -> String {
-        barrier.lock(); let c = _client; let s = _session; let a = _addresses; barrier.unlock()
-        guard let c, let s, let all = try? await c.remoteSession() else { return "[]" }
+        barrier.lock(); let s = _session; let a = _addresses; barrier.unlock()
+        guard let c = remoteServer, let s, let all = try? await c.remoteSession() else { return "[]" }
         // After a server restart nobody could reach this session (see `PlayTargets.mustReport`).
         if PlayTargets.mustReport(all, ownDevicesIdentifier: devicesIdentifier) { try? await c.reportCapabilities() }
         let offerings = Takeover.offerings(from: all, ownDevicesIdentifier: devicesIdentifier, ownUserIdentifier: s.userID)
@@ -2753,10 +2927,23 @@ public final class Kern: @unchecked Sendable {
     /// then picks the direction of flight (`HandoffCard.departurePostTop`).
     /// Answer `{"grund": "", "ab": seconds}`; a non-empty reason means: do not start here.
     public func handedOver(session: String, itemID: String, spot: Double, ownName: String) async -> String {
-        guard let c = client else { return Self.encoded(HandoffResponse(reason: "nichtVerbunden", since: spot)) }
+        guard let c = remoteServer else { return Self.encoded(HandoffResponse(reason: "nichtVerbunden", since: spot)) }
         let clock = Date()
         func time(_ was: String) { log("[Uebergabe] +\(Int(Date().timeIntervalSince(clock) * 1000)) ms \(was)") }
         time("Tipp")
+        // **First check that something starts here, then end it over there**
+        // (`TakeoverModel.adopt`): the other way round the giver stopped, and if the plan then
+        // failed, nothing played anywhere, with no message. "keinPlan" is turned into the sentence
+        // with the server's name by Kotlin.
+        let limit = profileBitrate
+        do {
+            guard try await c.playbackPlan(for: itemID, profile: .vlc(maxBitrate: limit)) != nil else {
+                return Self.encoded(HandoffResponse(reason: "keinPlan", since: spot))
+            }
+        } catch {
+            return Self.encoded(HandoffResponse(reason: coreErrorText(error), since: spot))
+        }
+        time("Plan da")
         async let savedFetch = try? c.item(id: itemID)
         async let sessionsFetch = try? c.remoteSession()
         let before = await savedFetch?.userData?.playbackPositionTicks
@@ -2808,7 +2995,7 @@ public final class Kern: @unchecked Sendable {
             return Self.encoded(PlayOnResponse(reason: "nichtVerbunden", name: name))
         }
         let (session, reason) = await playTarget(output)
-        guard let c = client, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
+        guard let c = remoteServer, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
         let order = PlayOrder(itemID: w.item.id, start: position, mediaSourceID: w.plan.mediaSourceID,
                               tracks: w.tracks)
         let sent = await playDeliver(order, to: session, client: c)
@@ -2821,7 +3008,7 @@ public final class Kern: @unchecked Sendable {
     public func playOn(itemID: String, deviceID: String, name: String, position: Double) async -> String {
         let output = PlayOutput(deviceID: deviceID, name: name)
         let (session, reason) = await playTarget(output)
-        guard let c = client, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
+        guard let c = remoteServer, let session else { return Self.encoded(PlayOnResponse(reason: reason, name: name)) }
         // Negative: from where the server last saw the viewer (a tile menu has no fresh position).
         let start = position >= 0 ? position : ((try? await c.item(id: itemID))?.resumeFrom ?? 0)
         let order = PlayOrder(itemIDs: [itemID], start: start)
@@ -2831,7 +3018,7 @@ public final class Kern: @unchecked Sendable {
     /// The current session of the chosen device from a fresh list; the one from the last tick may be
     /// five seconds old and the TV may have restarted since. Reason `weg` if it is gone.
     private func playTarget(_ output: PlayOutput) async -> (RemoteSession?, String) {
-        guard let c = client, let s = lockRead({ _session }) else { return (nil, "nichtVerbunden") }
+        guard let c = remoteServer, let s = lockRead({ _session }) else { return (nil, "nichtVerbunden") }
         let all: [RemoteSession]
         do { all = try await c.remoteSession() }
         catch { return (nil, coreErrorText(error)) }
@@ -2844,7 +3031,7 @@ public final class Kern: @unchecked Sendable {
         return (session, "")
     }
 
-    private func playDeliver(_ order: PlayOrder, to session: RemoteSession, client c: JellyfinClient) async -> PlayOnResponse {
+    private func playDeliver(_ order: PlayOrder, to session: RemoteSession, client c: any RemoteSessionServer) async -> PlayOnResponse {
         let name = PlayTargets.name(of: session)
         do { try await c.playOn(session: session.id, order: order) }
         catch {
@@ -2879,7 +3066,7 @@ public final class Kern: @unchecked Sendable {
     /// Stop the device. **Empty means: stopped**; only then does Android start here. If it keeps
     /// playing there, two audio tracks would be in the room.
     public func adopt(session: String) async -> String {
-        guard let c = client else { return "nichtVerbunden" }
+        guard let c = remoteServer else { return "nichtVerbunden" }
         do { try await c.foreignCommand(.finish, an: session); return "" }
         catch { return coreErrorText(error) }
     }
@@ -3047,7 +3234,7 @@ public final class Kern: @unchecked Sendable {
     /// here (ms, 0 = never); it travels like on iOS (`SettingsSyncRun.seerrRun`), in the same write.
     public func settingsSyncRun(local: String, localChanged: Double, remoteSeen: Double, otherAccount: Bool,
                                 seerr: String, seerrChanged: Double) async -> String {
-        barrier.lock(); let c = _client; barrier.unlock()
+        let c = displayServer
         var seerrPart = (step: "nothing", access: "", stamp: 0.0)
         var seerrFields: [String: String] = [:]
         func answer(_ d: String, _ r: Double = 0, _ s: Double = 0, _ v: [String: String] = [:]) -> String {
@@ -3055,7 +3242,8 @@ public final class Kern: @unchecked Sendable {
             (a.seerr, a.seerrAccess, a.seerrStamp) = seerrPart
             return Self.encoded(a)
         }
-        guard let c else { return answer("error") }
+        // Display preferences are Jellyfin's (`ServerCapability.settingsSync`): nothing to compare elsewhere.
+        guard let c else { return answer("nothing") }
         do {
             let copy = try await c.displayPreferences()
             let mineSeerr: Date? = seerrChanged > 0 ? Date(timeIntervalSince1970: seerrChanged / 1000) : nil
@@ -3485,16 +3673,32 @@ public final class Kern: @unchecked Sendable {
         }
     }
 
-    /// The first trailer that exists as its own file on the server. On tvOS it is first among the
-    /// movie page's extras (`DetailView.task`: `model.trailer(toward:)`, `extras.insert(vorschau, at: 0)`).
-    /// An empty JSON object if there is none or not connected; Kotlin then skips it.
-    public func localTrailer(id: String) async -> String {
-        guard let c = client, let a = addresses else { return "{}" }
-        guard let t = (try? await c.trailer(toward: id))?.first else { return "{}" }
-        return Self.encoded(ExtraResponse(
-            id: t.id, name: t.name, image: ImageSelection.landscape(t, addresses: a)?.url.absoluteString,
-            runtime: DisplayRules.runtimeShow(seconds: t.runtimeSeconds)
-                ? t.runtimeSeconds.map { runtime($0) } : nil))
+    /// Everything that can play as this title's trailer, in the order to try it
+    /// (`TrailerChoice`, the same rule as on every other platform). `[]` when there is none or
+    /// not connected. `canOpenWeb`: the phone opens a link in the browser, the TV has none and
+    /// gets files only. A link needs the fresh title (list answers leave `RemoteTrailers` out).
+    public func trailers(id: String, canOpenWeb: Bool) async -> String {
+        guard let c = client, let a = addresses else { return "[]" }
+        let found: [TrailerCandidate]
+        if canOpenWeb, let item = try? await c.item(id: id) {
+            found = await c.trailerCandidates(for: item, canOpenWeb: true)
+        } else {
+            let files = (try? await c.trailer(toward: id)) ?? []
+            found = TrailerChoice.candidates(local: files, remote: nil, canOpenWeb: false)
+        }
+        return Self.encoded(found.map { candidate -> TrailerResponse in
+            switch candidate {
+            case .file(let t):
+                return TrailerResponse(kind: "datei", id: t.id, name: t.name,
+                    image: ImageSelection.landscape(t, addresses: a)?.url.absoluteString,
+                    runtime: DisplayRules.runtimeShow(seconds: t.runtimeSeconds)
+                        ? t.runtimeSeconds.map { runtime($0) } : nil,
+                    address: nil)
+            case .web(let url):
+                return TrailerResponse(kind: "web", id: nil, name: nil, image: nil, runtime: nil,
+                                       address: url.absoluteString)
+            }
+        })
     }
 
     /// The episode after `episode` in the same series, for "Play next episode" in the More sheet
@@ -3535,7 +3739,7 @@ public final class Kern: @unchecked Sendable {
         await handleRequest { try await $0.metadataRefresh(id) }
     }
 
-    private func handleRequest(_ perform: (JellyfinClient) async throws -> Void) async -> String {
+    private func handleRequest(_ perform: (any MediaServer) async throws -> Void) async -> String {
         guard let c = client else { return "nichtAngemeldet" }
         do { try await perform(c); return "" } catch { return coreErrorText(error) }
     }
@@ -3569,7 +3773,7 @@ public final class Kern: @unchecked Sendable {
             letter: AlphabetIndex.letter(name: i.name, sortName: i.sortName))
     }
 
-    private func json<T: Encodable>(_ value: T) throws -> String {
+    func json<T: Encodable>(_ value: T) throws -> String {
         String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
     }
 
@@ -3722,7 +3926,7 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// The naturally sorted list for a grid: fresh with the first page, kept for the next.
-    private func naturalList(_ c: JellyfinClient, key: String, since: Int,
+    private func naturalList(_ c: any MediaServer, key: String, since: Int,
                              fetch: () async throws -> [Item]) async throws -> [Item] {
         if since > 0, let kept = locked({ _natural }), kept.key == key { return kept.list }
         let list = try await fetch()
@@ -3774,7 +3978,7 @@ public final class Kern: @unchecked Sendable {
         return perform()
     }
 
-    private func viewList(_ c: JellyfinClient) async throws -> [Item] {
+    private func viewList(_ c: any MediaServer) async throws -> [Item] {
         let of = ObjectIdentifier(c)
         if let present = locked({ _views?.for == of ? _views?.list : nil }) { return present }
         let list = try await c.userViews()
@@ -3783,7 +3987,7 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// `AppModel.sectionOffering(art:)`: what belongs to another account does not count.
-    private func offering(art: String, _ c: JellyfinClient, views: [Item]) -> SectionOffering {
+    private func offering(art: String, _ c: any MediaServer, views: [Item]) -> SectionOffering {
         let of = ObjectIdentifier(c)
         let state = locked { _offering?.for == of ? _offering : nil }
         return SectionOffering.compose(art: art, views: views, shares: state?.shares ?? [:],
@@ -3791,7 +3995,7 @@ public final class Kern: @unchecked Sendable {
                                       playlists: locked { _playlists?.for == of ? _playlists?.directory : nil })
     }
 
-    private func directory(_ c: JellyfinClient) -> CollectionDirectory? {
+    private func directory(_ c: any MediaServer) -> CollectionDirectory? {
         let of = ObjectIdentifier(c)
         return locked { _offering?.for == of ? _offering?.directory : nil }
     }
@@ -4017,7 +4221,7 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// The titles of a collection in their order (`AppModel.collectionTitle(_:art:)`).
-    private func collectionTitle(_ c: JellyfinClient, id: String, art: String?) async throws -> [Item] {
+    private func collectionTitle(_ c: any MediaServer, id: String, art: String?) async throws -> [Item] {
         let source = ShelfSource(parent: id, art: art, collection: true)
         return try await c.items(parentID: source.parent, limit: 100,
                                  sortBy: Sorting.erscheinung.inputField,
@@ -4193,7 +4397,6 @@ struct TitleResponse: Encodable {
         case actors = "darsteller"
         case remembered = "gemerkt"
         case watched = "gesehen"
-        case trailer
         case file = "datei"
         case backdrop = "kulisse"
         case versions = "fassungen"
@@ -4217,7 +4420,6 @@ struct TitleResponse: Encodable {
     let direction: [String]
     let actors: [PersonResponse]
     let remembered, watched: Bool
-    let trailer: String?
     let file: FileResponse?
     /// See `Kern.backdrop`: the same URL as `TileResponse.backdrop`.
     let backdrop: String?
@@ -4243,7 +4445,6 @@ struct SeriesResponse: Encodable {
         case description = "beschreibung"
         case remembered = "gemerkt"
         case watched = "gesehen"
-        case trailer
         case planPresent = "planDa"
         case lossless
         case method = "methode"
@@ -4263,7 +4464,6 @@ struct SeriesResponse: Encodable {
     let rating: Double?
     let sharing, description: String?
     let remembered, watched: Bool
-    let trailer: String?
     let planPresent, lossless: Bool
     let method: String?
     let state: StateResponse?
@@ -4321,10 +4521,11 @@ struct ServerCardsResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case address = "adresse"
         case host
+        case kind = "art"
         case active = "aktiv"
         case accounts = "konten"
     }
- let address, host: String; let active: Bool; let accounts: [AccountResponse] }
+ let address, host, kind: String; let active: Bool; let accounts: [AccountResponse] }
 struct AccountResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case identifier = "kennung"
@@ -4363,6 +4564,12 @@ struct TechResponse: Encodable {
     let should, run, decoded, reserveSeconds: Double?
     let reserveKiB, discarded, audioLost, beschaedigt, jumps: UInt64
 }
+struct SearchKeyResponse: Encodable {
+    let kind: String
+    let character: String
+    let span: Int
+}
+
 struct SelectionResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case value = "wert"
@@ -4636,6 +4843,19 @@ struct ExtraResponse: Encodable {
         case runtime = "laufzeit"
     }
  let id, name: String; let image, runtime: String? }
+/// One entry of `Kern.trailers`: a file (`datei`: id, name, image, runtime) or a link (`web`: address).
+struct TrailerResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case kind = "art"
+        case id
+        case name
+        case image = "bild"
+        case runtime = "laufzeit"
+        case address = "adresse"
+    }
+    let kind: String
+    let id, name, image, runtime, address: String?
+}
 struct LabelResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case sorting = "sortierung"
@@ -4824,7 +5044,7 @@ struct SharedRequest: Encodable {
 /// Receives commands from the socket until the player picks them up. Own lock, since the
 /// socket calls from its own thread.
 final class CommandStore: @unchecked Sendable {
-    private let barrier = NSLock()
+    let barrier = NSLock()
     private var commands: [RemoteCommandResponse] = []
 
     func stash(_ command: RemoteCommand) {

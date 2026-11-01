@@ -186,9 +186,9 @@ class DownloadManager(private val app: SwiftlyApplication) {
         new.renameTo(listFile)
     }
 
-    private fun showItem() {
+    private fun showItem(toCore: Boolean = true) {
         entries.value = all.filter { it.account == account }
-        coreReport()
+        if (toCore) coreReport()
     }
 
     /** The core needs the list for "Next episode", chapters and watch state without a server. */
@@ -217,9 +217,9 @@ class DownloadManager(private val app: SwiftlyApplication) {
 
     fun file(id: String): File? = entries(id)?.takeIf { it.state == "fertig" }?.let { File(folder, it.fileName) }?.takeIf { it.exists() }
 
-    private fun change(id: String, write: Boolean = true, new: (DownloadItem) -> DownloadItem) {
+    private fun change(id: String, write: Boolean = true, toCore: Boolean = true, new: (DownloadItem) -> DownloadItem) {
         all = all.map { if (it.id == id && it.account == account) new(it) else it }
-        showItem()
+        showItem(toCore)
         if (write) persist()
     }
 
@@ -404,7 +404,9 @@ class DownloadManager(private val app: SwiftlyApplication) {
     private fun progress(p: DownloadItem, loaded: Long, total: Long) {
         if (ongoing != p.id) return
         Kern.downloadEstimatorReport(p.id, loaded, if (total > 0) total else p.bytes)
-        change(p.id, write = false) { it.copy(loaded = loaded) }
+        // Once a second: the core reads only finished entries (`DownloadRules.episodePost`), so the byte count
+        // is not worth serializing the whole list across JNI on the main thread.
+        change(p.id, write = false, toCore = false) { it.copy(loaded = loaded) }
         val now = SystemClock.elapsedRealtime()
         if (now - reportedAround > 1500) { reportedAround = now; DownloadService.report(app, p.title, entries(p.id)?.share) }
     }

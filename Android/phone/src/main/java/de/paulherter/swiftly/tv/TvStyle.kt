@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -83,9 +84,9 @@ object TvTheme {
      * call sites wait the same.
      */
     const val focusDeadline = 30L
-    val edgePage = 40.dp
-    val edgeTop = 30.dp
-    val stripHeight = 34.dp
+    val edgePage = TvSpec.edgePage
+    val edgeTop = TvSpec.edgeTop
+    val stripHeight = TvSpec.stripHeight
     val tileSpacing = 20.dp
     val posterWidth = 104.dp
     val posterHeight = 156.dp
@@ -98,7 +99,7 @@ object TvTheme {
     val titleSpacing = 18.dp
     val buttonHeight = 38.dp
     val chipHeight = 24.dp
-    val rowsHeight = 42.dp
+    val rowsHeight = TvSpec.rowsHeight
     /**
      * **The corner scale: the same rounding as on the phone, not the same number.**
      *
@@ -112,14 +113,14 @@ object TvTheme {
      *     cornerTile  18 -> 9      poster, tile
      *     eckeFlaeche 24 -> 12     panel, sheet
      */
-    val corner = 8.dp
-    val cornerTile = 9.dp
+    val corner = TvSpec.corner
+    val cornerTile = TvSpec.cornerTile
     /** Badges and tags on a tile. */
-    val cornerSmall = 7.dp
+    val cornerSmall = TvSpec.cornerSmall
     /** A free-standing surface or panel: action panel, sheet. */
-    val cornerArea = 12.dp
+    val cornerArea = TvSpec.cornerArea
     /** Not a scale step but a placeholder bar (`Ladefeld`). */
-    val cornerBar = 2.5.dp
+    val cornerBar = TvSpec.cornerBar
     const val gridColumns = 7
     val gridColumn = 25.dp
     val latticeRow = 36.dp
@@ -138,13 +139,13 @@ object TvTheme {
      * Small items grow more, large ones less. No shadow, no parallax, no flash: Apple's version jumps
      * further and visually pushes the neighbors away in a dense row.
      */
-    const val focusMagnifierSmall = 1.10f
-    const val focusMagnifier = 1.06f
-    const val focusMagnifierWide = 1.03f
-    val focusArea = Color.White.copy(alpha = 0.12f)
+    const val focusMagnifierSmall = TvSpec.focusMagnifierSmall
+    const val focusMagnifier = TvSpec.focusMagnifier
+    const val focusMagnifierWide = TvSpec.focusMagnifierWide
+    val focusArea = Color.White.copy(alpha = TvSpec.focusAreaOpacity)
     /** `.easeOut(duration: 0.14)`. */
-    val focusCurve = CubicBezierEasing(0f, 0f, 0.58f, 1f)
-    const val focusDuration = 140
+    val focusCurve = TvSpec.focusCurve
+    const val focusDuration = TvSpec.focusMs
     /** Page scroll when switching sections (`TvSections`): calmer than the magnification, same curve. */
     const val sectionDuration = 300
 
@@ -197,7 +198,7 @@ object TvTheme {
 
     /** Mirrors `MainView.barPresent` on tvOS, `.easeInOut(duration: 0.26)`. The top bar gives way when a
      *  subpage opens and returns on back, see `TvMain`. */
-    val barCurve = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+    val barCurve = TvSpec.easeInOutCurve
     const val barDuration = 260
 }
 
@@ -230,6 +231,21 @@ fun rememberTvFadeIn(key: Any?, ready: Boolean = true): androidx.compose.runtime
 /** Alpha from a fade-in, read only while drawing; see `rememberTvFadeIn`. */
 fun Modifier.tvInFade(opacity: () -> Float): Modifier = this.graphicsLayer { alpha = opacity() }
 
+/** A spec animation: the given time and curve, or the short linear one under "Reduce motion"
+ *  (tvOS: `Theme.motion(_:)`). */
+@Composable
+fun <T> tvTween(ms: Int, easing: androidx.compose.animation.core.Easing = TvSpec.focusCurve):
+        androidx.compose.animation.core.FiniteAnimationSpec<T> =
+    if (motionReduced()) tween(TvSpec.reducedMs, easing = androidx.compose.animation.core.LinearEasing)
+    else tween(ms, easing = easing)
+
+/** The calm surface of a focused row, eased in and out with the focus curve (tvOS: `.animation(Theme.focusAnimation, value: focus)`). */
+@Composable
+fun tvFocusSurface(focus: Boolean): Color =
+    androidx.compose.animation.animateColorAsState(
+        if (focus) TvTheme.focusArea else TvTheme.focusArea.copy(alpha = 0f),
+        tvTween(TvSpec.focusMs), label = "focusSurface").value
+
 /**
  * A focusable surface with magnification; `TileStyle`, `ThemedButtonStyle` and `TabStyle` share it.
  * **No shadow, no glow, no ring:** two attempts looked clean on a single tile and muddy in a row
@@ -253,9 +269,11 @@ fun FocusArea(modifier: Modifier = Modifier, magnifier: Float = TvTheme.focusMag
         if (calm) Motion.fadeReduced() else tween(TvTheme.focusDuration, easing = TvTheme.focusCurve), label = "lupe")
     val ownFocus = remember { FocusRequester() }
     val withinPanel = LocalWithinPanel.current
+    val locked = LocalFocusLocked.current
     /** The held OK has already opened the menu — repeats and the release no longer belong to the click. */
     val longPressed = remember { booleanArrayOf(false) }
     Box(modifier
+            .focusProperties { if (locked) canFocus = false }
             .focusRequester(ownFocus)
             .onFocusChanged { if (focus != it.isFocused) { focus = it.isFocused; focusChanged(it.isFocused) } }
             .graphicsLayer { scaleX = mass; scaleY = mass }
@@ -371,6 +389,13 @@ object FocusRemember {
 val LocalWithinPanel = compositionLocalOf { false }
 
 /**
+ * The page behind the profile picker. A `focusProperties { canFocus = false }` on a parent does not
+ * reach the `focusGroup()`s inside the page (the walk up stops at the first focus target), so every
+ * `FocusArea` takes the lock itself.
+ */
+val LocalFocusLocked = compositionLocalOf { false }
+
+/**
  * Mirrors `ThemedButtonStyle`: the focused version is the iPhone primary button character for character,
  * white with dark text. 10 % white when unfocused.
  *
@@ -443,7 +468,9 @@ fun Modifier.remoteBarField(): Modifier {
 @Composable
 fun TvField(value: String, change: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier,
           secret: Boolean = false, imeAction: ImeAction = ImeAction.Next,
-          keyboardType: KeyboardType = KeyboardType.Text, keyboardAction: () -> Unit = {}) {
+          keyboardType: KeyboardType = KeyboardType.Text, keyboardAction: () -> Unit = {},
+          /** Off while the page works on what was typed (`.disabled(...)` on tvOS). */
+          enabled: Boolean = true) {
     var focus by remember { mutableStateOf(false) }
     val focusSteerer = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -454,7 +481,7 @@ fun TvField(value: String, change: (String) -> Unit, placeholder: String, modifi
     val complete = { keyboard?.hide(); keyboardAction() }
     if (secret) VisibilityProtection()
     val color = if (focus) Theme.reason else Theme.font
-    BasicTextField(value, change, singleLine = true,
+    BasicTextField(value, change, singleLine = true, enabled = enabled,
         textStyle = TvTheme.body.copy(color = color),
         cursorBrush = SolidColor(color),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
@@ -605,7 +632,7 @@ fun TvTile(image: String?, title: String, subline: String?, landscape: Boolean =
                                 modifier = Modifier.fillMaxSize().alpha(opacity))
                 // Mirrors `ProgressBar` in `Sources/tvOS/Style.swift`: **flush with the bottom edge, full
                 // width, square**; the rounding comes only from the tile's clipping.
-                progress?.takeIf { it > 0 }?.let { a ->
+                progress?.takeIf { it > 0 && de.paulherter.swiftly.LocalProgressShow.current }?.let { a ->
                     // 4 high (tvOS 8, halved), track **white 30 %** like everywhere else.
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp)
                             .background(Color.White.copy(alpha = 0.30f))) {

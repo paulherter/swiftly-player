@@ -43,29 +43,65 @@ import VLCKit
 /// region. Patch 0039 in `Werkzeuge/vlckit-patches` fixes the cause; this
 /// stays until a VLCKit build with that patch ships.
 ///
-/// ASS with its own style is drawn by libass, and picture subtitles (PGS,
-/// VobSub, DVB) are finished images; both stay as they are.
+/// ASS with its own style is drawn by libass (unless the look turns "keep the
+/// file's style" off, then the server's SRT is loaded, see `TrackSupport`), and
+/// picture subtitles (PGS, VobSub, DVB) are finished images; those stay as they are.
+///
+/// **The values above are the defaults of `SubtitleLook`** (the settings page
+/// "Untertitel"). The mapping from look to VLC options lives in the package
+/// (`SubtitleLook.vlcOptions`), tested and shared with the other platforms; this
+/// enum adds what is Apple specific: the font, the base scale per device and the
+/// output height.
+///
+/// **Background opacity and the crash:** `SubtitleLook.vlcOptions` keeps
+/// `--freetype-background-opacity` at 1 minimum on Apple, also with the
+/// background switched off. `--freetype-shadow-opacity=0` is not what crashed
+/// (the build that shipped it with background opacity 1 ran fine), so the shadow
+/// switch is safe as long as the padding stays.
 enum SubtitleStyle {
     static let fontName = "Inter18pt-SemiBold"
 
-    static let vlcOptions = [
-        "--freetype-font=\(fontName)",
-        "--freetype-color=16777215",
-        "--freetype-outline-thickness=3",
-        "--freetype-outline-opacity=230",
-        "--freetype-shadow-opacity=0",
-        "--freetype-background-opacity=1",
-        "--sub-margin=16",
-    ]
+    /// The saved look. Read from the defaults, not from `AppModel`, because the
+    /// library is created far from any model.
+    static var look: SubtitleLook {
+        SubtitleLook.read(UserDefaults.standard.data(forKey: "utAussehen"))
+    }
 
-    /// Factor on VLC's default (1 = 6.25 % of the picture height).
-    @MainActor static var size: Float {
+    /// Library options for a look: the font plus the package's mapping.
+    @MainActor static func vlcOptions(for look: SubtitleLook) -> [String] {
+        ["--freetype-font=\(fontName)"]
+            + SubtitleLook.vlcOptions(look: look, baseScale: Double(baseScale),
+                                      outputHeight: outputHeight, engine: .vlc4Apple)
+    }
+
+    /// Base scale on VLC's default (1 = 6.25 % of the picture height).
+    @MainActor static var baseScale: Float {
         #if os(tvOS)
         0.88
         #elseif os(iOS)
         UIDevice.current.userInterfaceIdiom == .phone ? 0.82 : 0.78
         #else
         0.78
+        #endif
+    }
+
+    /// VLC's text scale for the look, as `currentSubTitleFontScale` wants it.
+    @MainActor static func size(for look: SubtitleLook) -> Float {
+        Float(SubtitleLook.textScalePercent(look: look, baseScale: Double(baseScale))) / 100
+    }
+
+    /// Height of the screen in pixels in the way the picture is shown (landscape on
+    /// the phone). **Not measured against VLC's `sub-margin` yet** (spec section 11,
+    /// point 3); it only sets how far "Higher" lifts the text.
+    @MainActor static var outputHeight: Int {
+        #if canImport(UIKit)
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let screen = scenes.first?.screen else { return 1080 }
+        let pixels = screen.nativeBounds.size
+        return Int(min(pixels.width, pixels.height))
+        #else
+        guard let screen = NSScreen.main else { return 1080 }
+        return Int(screen.frame.height * screen.backingScaleFactor)
         #endif
     }
 
@@ -309,13 +345,31 @@ final class VLCPlayerView: BaseView {
     /// VideoToolbox material this hardly occurs.
     /// Sources: code.videolan.org/videolan/vlc/-/merge_requests/3436
     /// (samplebufferdisplay), VLC source in the build tree.
-    static let library: VLCLibrary = {
+    ///
+    /// **Rebuilt when the subtitle look changed and no player is open.** VLC reads
+    /// the freetype options when the library is created; a media option does not
+    /// reach the text renderer (it hangs off the video output under the player).
+    /// So the library stays while a player is open and the next one picks the new
+    /// look up.
+    static var library: VLCLibrary {
+        let options = ["--no-drop-late-frames", "--deinterlace-mode=bob"]
+            + SubtitleStyle.vlcOptions(for: SubtitleStyle.look)
+        if let cache = libraryCache, cache.options == options || playersOpen {
+            return cache.library
+        }
         SubtitleStyle.fontSignIn()
         // `--deinterlace-mode=bob` here and not on the media for the same reason;
         // see `open`, section "Entflechten".
-        return VLCLibrary(options: ["--no-drop-late-frames", "--deinterlace-mode=bob"]
-                          + SubtitleStyle.vlcOptions)
-    }()
+        let created = VLCLibrary(options: options)
+        libraryCache = (options, created)
+        return created
+    }
+
+    private static var libraryCache: (options: [String], library: VLCLibrary)?
+    private static let liveViews = NSHashTable<VLCPlayerView>.weakObjects()
+    /// Whether a player that has not been stopped for good exists (also in Picture in
+    /// Picture); the subtitle look then applies from the next video.
+    static var playersOpen: Bool { liveViews.allObjects.contains { !$0.finallyStopped } }
 
     let player = VLCMediaPlayer(library: VLCPlayerView.library)
 
@@ -345,8 +399,9 @@ final class VLCPlayerView: BaseView {
         // written and still unreachable. Same mistake as the own log writing to
         // `Documents`, where tvOS permits no writes: a tool that silently runs into
         // nothing looks like one with nothing to report.
+        Self.liveViews.add(self)
         VLCPlayerView.library.loggers = [FileLog()]
-        player.currentSubTitleFontScale = SubtitleStyle.size
+        player.currentSubTitleFontScale = SubtitleStyle.size(for: SubtitleStyle.look)
 
         // Must be the view itself: VLC checks the drawable for
         // VLCPictureInPictureDrawable, and the interface lives here. Placed on an
@@ -381,10 +436,10 @@ final class VLCPlayerView: BaseView {
 
     private let networkGuard = NWPathMonitor()
     private var lastLeg: String?
-    private var lastAddress: URL?
-    private var lastContainer: String?
+    var lastAddress: URL?
+    var lastContainer: String?
     private var lastNewLayout = Date.distantPast
-    private var watchdog: Timer?
+    var watchdog: Timer?
     private var lastKnownTime: Int32 = -1
 
     /// Last state of the two VLC counters, for ``bildfluss(now:)``.
@@ -398,12 +453,12 @@ final class VLCPlayerView: BaseView {
     private var settleSince: Date?
     /// Ended by the user. Without it, closing the player would itself count as
     /// a drop and reopen the stream.
-    private var intentionalEnded = false
+    var intentionalEnded = false
     /// `stop()` is final: the surface is torn down afterwards. Separate from
     /// `intentionalEnded` because `play` resets that one. Otherwise a later
     /// episode change would keep playing on the torn-down surface: audio without
     /// picture.
-    private var finallyStopped = false
+    var finallyStopped = false
     /// While set, the freshly built stream has not reached its position yet.
     /// Until then its time must not overwrite the good position, or the watchdog
     /// remembers the seconds the new stream plays from the start, and the next
@@ -427,17 +482,18 @@ final class VLCPlayerView: BaseView {
 
     /// The volume set by the viewer (0 to 100), `nil` = never set.
     /// Applied when the hold is released, otherwise immediately.
-    private var requestVolume: Int32?
+    var requestVolume: Int32?
 
     func volumeSet(_ percent: Int) {
         let value = Int32(min(max(percent, 0), 100))
         requestVolume = value
+        if let avEngine { avEngine.volume(percent); return }
         // While audio is held back, the hold owns the volume.
         guard volumePrior == nil, let audio = player.audio else { return }
         audio.volume = value
     }
 
-    private func holdBackAudio(_ back: Bool) {
+    func holdBackAudio(_ back: Bool) {
         // **The silent exit.** If the audio output does not exist yet at opening,
         // the hold silently fails here, and the viewer hears exactly the second from
         // the start that they should not hear. Reported again although the hold is
@@ -513,6 +569,7 @@ final class VLCPlayerView: BaseView {
     /// 0.6 s for it. `width` in pixels, aspect ratio preserved. `nil` if
     /// nothing arrived.
     func stillImage(width: Int) async -> CGImage? {
+        if avEngine != nil { return nil }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("uebergabe-\(UUID().uuidString).png")
         player.saveVideoSnapshot(at: url.path, withWidth: Int32(width), andHeight: 0)
@@ -571,20 +628,23 @@ final class VLCPlayerView: BaseView {
 
     /// The position the UI should show during the rebuild, instead of the movie
     /// end VLC jumped to.
-    var goodPoint: Double { lastGoodPosition }
+    var goodPoint: Double { avEngine?.lastGood ?? lastGoodPosition }
 
     /// The stream is still seeking its start position.
     ///
     /// While that runs, VLC reports the time of the not-yet-seeked stream, i.e.
     /// nearly zero. Showing it makes the slider sit at the start first and then
     /// visibly jump forward.
-    var seeksToStart: Bool { startPosition != nil || firstPoint != nil }
+    var seeksToStart: Bool {
+        if let avEngine { return !avEngine.startSettled }
+        return startPosition != nil || firstPoint != nil
+    }
 
     /// **Is the start fully complete?** Including the paused start
     /// (`startJump`), which resumes by itself at the target. Pausing earlier
     /// (watch together: reporting "ready") would let the movie start running again
     /// unnoticed.
-    var startReady: Bool { startJump == nil && !seeksToStart }
+    var startReady: Bool { avEngine?.startSettled ?? (startJump == nil && !seeksToStart) }
 
     /// Whether `mkv_trusted` was set for this stream; see `open`.
     private(set) var matroskaTrusted = false
@@ -633,6 +693,7 @@ final class VLCPlayerView: BaseView {
     /// until then the video output and clock still belong to the old episode
     /// (`TimeAssumption.imageBelongsMedium`).
     var showsImage: Bool {
+        if let avEngine { return avEngine.pictureShown }
         let images = mediumSwitched ? (player.media?.statistics.displayedPictures ?? 0) : 0
         let applies = TimeAssumption.imageBelongsMedium(videoOutput: player.hasVideoOut,
                                                     shownImages: images,
@@ -641,7 +702,7 @@ final class VLCPlayerView: BaseView {
         return applies
     }
     /// `play` on a surface that already had media.
-    private var mediumSwitched = false
+    var mediumSwitched = false
 
     /// The last position at which playback demonstrably ran.
     ///
@@ -650,7 +711,7 @@ final class VLCPlayerView: BaseView {
     /// position only then returns the movie end, and rebuilding there gives a
     /// black picture in the last second. So the position is recorded continuously
     /// while the picture really moves forward.
-    private var lastGoodPosition: Double = 0
+    var lastGoodPosition: Double = 0
 
     private var lengthSeconds: Double { durationSeconds }
 
@@ -661,7 +722,7 @@ final class VLCPlayerView: BaseView {
     /// the cooldown and block the real attempt when the network returns. Instead
     /// it is noted that something is still pending.
     private func legSwitched(_ leg: String, reachable: Bool) {
-        guard !finallyStopped else { return }
+        guard !finallyStopped, avEngine == nil else { return }
         let before = lastLeg
         lastLeg = leg
         networkReachable = reachable
@@ -843,6 +904,7 @@ final class VLCPlayerView: BaseView {
     /// screensaver.
     private func holdIdleLock() {
         #if canImport(UIKit)
+        guard avEngine == nil else { return }
         let should = !intentionalEnded && !finallyStopped && player.media != nil && player.isPlaying
         if UIApplication.shared.isIdleTimerDisabled != should {
             UIApplication.shared.isIdleTimerDisabled = should
@@ -1243,10 +1305,11 @@ final class VLCPlayerView: BaseView {
 
     private func areasCatchUp() {
         for sub in subviews { sub.frame = bounds }
+        avEngine?.place(in: bounds)
     }
 
     #if os(iOS)
-    var isPiPPossible: Bool { pipWindow != nil }
+    var isPiPPossible: Bool { avEngine?.pipPossible ?? (pipWindow != nil) }
 
     /// Why PiP does not work right now, for the UI.
     var pipUnavailableReason: String? {
@@ -1255,11 +1318,12 @@ final class VLCPlayerView: BaseView {
             // isPictureInPictureSupported = NO there. Only real devices support PiP.
             return String(localized: "Dieses Gerät kann kein Bild-im-Bild. Im Simulator geht es nie, auf dem iPhone schon.")
         }
+        if avEngine != nil { return avEngine?.pipPossible == true ? nil : String(localized: "Bild-im-Bild wird vorbereitet…") }
         if pipWindow == nil { return String(localized: "Bild-im-Bild wird vorbereitet…") }
         return nil
     }
-    func startPiP() { pipWindow?.startPictureInPicture() }
-    func stopPiP()  { pipWindow?.stopPictureInPicture() }
+    func startPiP() { if let avEngine { avEngine.startPiP() } else { pipWindow?.startPictureInPicture() } }
+    func stopPiP()  { if let avEngine { avEngine.stopPiP() } else { pipWindow?.stopPictureInPicture() } }
     #endif
 
     /// Needed after every state change, otherwise the PiP window and player
@@ -1270,6 +1334,7 @@ final class VLCPlayerView: BaseView {
     func refreshPiPState() {
         #if os(iOS)
         guard !Self.pipDisabled else { return }
+        avEngine?.refreshPiP()
         pipWindow?.invalidatePlaybackState()
         #endif
     }
@@ -1303,12 +1368,39 @@ final class VLCPlayerView: BaseView {
         /// Sent by another device with the title (``PlayOrder``). Belongs to this
         /// request only: the next episode gets a new one without it.
         var ordered: TrackIndices? = nil
+        /// What the AVPlayer engine needs; `nil` plays with VLC (downloads, other callers).
+        var engine: EngineRequest? = nil
     }
+
+    /// The second engine while it plays this title, see `VLCPlayerView+Engine.swift`. `nil`
+    /// means VLC plays; every facade member below asks first.
+    var avEngine: AVPlayerEngine?
+    /// Fill, tempo: asked for before the engine exists (the screen sets them right after `play`),
+    /// so they are kept and handed to it.
+    var fillWish = false
+    var tempoWish: Float = 1
+    /// Counts starts and hand-overs so a late answer for an old start is dropped.
+    var avCall = 0
+    /// What VLC needs to take over where AVPlayer stops: the unchanged address and its options.
+    var avOriginal: AVOriginal?
 
     /// - Parameter softwareDekoder: open with the software decoder right away:
     /// ``PlaybackPlan/softwareDekoder`` (MPEG-4 Part 2).
     func play(url: URL, offSeconds: Double = 0, container: String? = nil,
               subtitle: [SubtitleFile] = [], softwareDecoder initialSoftware: Bool = false) {
+        guard !finallyStopped else {
+            AppLog.writeOut("[Player] play nach stop verworfen")
+            return
+        }
+        // Which engine plays is decided in `VLCPlayerView+Engine.swift`; VLC comes back here.
+        startEngine(url: url, offSeconds: offSeconds, container: container, subtitle: subtitle,
+                    softwareDecoder: initialSoftware)
+    }
+
+    /// VLC's start: the way every title opened before the second engine, and the way back
+    /// when AVPlayer cannot play one.
+    func playVLC(url: URL, offSeconds: Double = 0, container: String? = nil,
+                 subtitle: [SubtitleFile] = [], softwareDecoder initialSoftware: Bool = false) {
         guard !finallyStopped else {
             AppLog.writeOut("[Player] play nach stop verworfen")
             return
@@ -1699,7 +1791,8 @@ final class VLCPlayerView: BaseView {
                                         automatic: w.automatic, audioIndex: audioIndex,
                                         tonwunsch: w.audio, preferredLanguage: w.subtitle,
                                         ordered: w.ordered?.subtitle)
-        let status = TrackMapping.startPositions(streams: streams, audio: audioIndex, subtitle: choice)
+        let status = TrackMapping.startPositions(streams: streams, audio: audioIndex, subtitle: choice,
+                                                  files: subtitleFiles)
         var options: [String] = []
         if let audio = status.audio { options.append(":audio-track=\(audio)") }
         if let subtitle = status.subtitle {
@@ -1715,10 +1808,10 @@ final class VLCPlayerView: BaseView {
     // MARK: - Paused start
 
     /// The target position while the paused start is still running.
-    private var startJump: Double?
+    var startJump: Double?
     private var startJumpSince: Date?
     private var lastStartJumpCommand = Date.distantPast
-    private var startGuards: Timer?
+    var startGuards: Timer?
 
     /// A start must not stay paused longer than this. After that it resumes
     /// wherever the stream is; a stopped player is worse than a wrong entry
@@ -1906,6 +1999,7 @@ final class VLCPlayerView: BaseView {
 
     func pause() {
         if pausedSince == nil { pausedSince = Date() }
+        if let avEngine { avEngine.pause(); return }
         player.pause()
         refreshPiPState()
     }
@@ -1913,7 +2007,7 @@ final class VLCPlayerView: BaseView {
     /// **Since when it has been paused**, for ``Pausenruecksprung``. Set on
     /// pausing, also when VLC pauses by itself (picture-in-picture, a call);
     /// cleared as soon as it runs again.
-    private var pausedSince: Date?
+    var pausedSince: Date?
 
     /// **How the picture is placed in the surface: whole or fill.**
     ///
@@ -1924,12 +2018,14 @@ final class VLCPlayerView: BaseView {
     /// Not via `videoAspectRatio`: that sets an aspect ratio and pulls the picture
     /// to it instead of cropping. Faces get wide, which nobody wants.
     func fillFrame(_ an: Bool) {
+        fillWish = an
+        avEngine?.fill(an)
         player.videoFitMode = an ? .larger : .smaller
     }
 
     /// The stream's picture size in pixels, `zero` before the first picture.
     /// Needed to compute how far apart "fit" and "fill" are.
-    var videoSize: CGSize { player.videoSize }
+    var videoSize: CGSize { avEngine?.videoSize ?? player.videoSize }
     /// **Activate the audio session before continuing playback.**
     ///
     /// After an interruption (alarm, stopwatch, call) it is inactive. The
@@ -1966,7 +2062,7 @@ final class VLCPlayerView: BaseView {
                 + error.localizedDescription)
         }
         #endif
-        player.play()
+        if let avEngine { avEngine.resume() } else { player.play() }
         refreshPiPState()
         return target
     }
@@ -1978,6 +2074,9 @@ final class VLCPlayerView: BaseView {
     func stop() {
         intentionalEnded = true
         finallyStopped = true
+        avCall += 1
+        avEngine?.stop()
+        avEngine = nil
         holdBackAudio(false)
         holdIdleLock()
         watchdog?.invalidate()
@@ -2028,11 +2127,36 @@ final class VLCPlayerView: BaseView {
 
     /// Available audio tracks. With direct play these are the file's real tracks,
     /// including DTS and TrueHD, which an AVPlayer would never see.
-    var audioTracks: [VLCMediaPlayer.Track] { player.audioTracks }
-    var subtitleTracks: [VLCMediaPlayer.Track] { player.textTracks }
+    var audioTracks: [SurfaceTrack] {
+        if let avEngine { return avAudioTracks(avEngine) }
+        return player.audioTracks.map(SurfaceTrack.init(vlc:))
+    }
 
-    var selectedAudioTrack: VLCMediaPlayer.Track? { player.audioTracks.first(where: \.isSelected) }
-    var selectedSubtitle: VLCMediaPlayer.Track? { player.textTracks.first(where: \.isSelected) }
+    /// Available text subtitle tracks.
+    ///
+    /// Without the embedded ASS tracks that a server SRT replaces (look with "keep
+    /// the file's style" off), so one subtitle is not listed twice.
+    var subtitleTracks: [SurfaceTrack] {
+        if let avEngine { return avSubtitleTracks(avEngine) }
+        return vlcSubtitleTracks.map(SurfaceTrack.init(vlc:))
+    }
+
+    private var vlcSubtitleTracks: [VLCMediaPlayer.Track] {
+        let tracks = player.textTracks
+        let hidden = TrackMapping.replacedPositions(subtitle: tracks.map(Self.playerTrack),
+                                                    streams: trackSource?.mediaStreams ?? [],
+                                                    files: subtitleFiles)
+        return hidden.isEmpty ? tracks : tracks.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
+    }
+
+    var selectedAudioTrack: SurfaceTrack? {
+        if let avEngine { return avAudioTracks(avEngine).first(where: \.isSelected) }
+        return player.audioTracks.first(where: \.isSelected).map(SurfaceTrack.init(vlc:))
+    }
+    var selectedSubtitle: SurfaceTrack? {
+        if let avEngine { return avSubtitleTracks(avEngine).first(where: \.isSelected) }
+        return player.textTracks.first(where: \.isSelected).map(SurfaceTrack.init(vlc:))
+    }
 
     /// VLC's counters: dropped pictures, bitrates, decoder blocks.
     ///
@@ -2089,18 +2213,18 @@ final class VLCPlayerView: BaseView {
     /// Series or movie for which a manual choice is remembered. Set by
     /// ``wendeLanguagesAn(audio:subtitle:automatic:source:title:)`` at every
     /// start and episode change.
-    private var trackTitle: String?
+    var trackTitle: String?
     /// The server's information on the running file: `MediaStream`s and defaults.
-    private var trackSource: MediaSource?
+    var trackSource: MediaSource?
     /// The title's original language (`Item.originalLanguage`), for "(Original)" on audio
     /// tracks. Set together with `trackSource`.
-    private var trackOriginal: String?
+    var trackOriginal: String?
     /// Subtitle files attached to the media. Set before `play(url:)` and
     /// reattached after a rebuild.
-    private var subtitleFiles: [SubtitleFile] = []
+    var subtitleFiles: [SubtitleFile] = []
     /// A chosen subtitle file whose track VLC does not report yet.
     private var currentSubtitle: Int?
-    private var reportedTracks = TrackIndices()
+    var reportedTracks = TrackIndices()
     /// The track selection before a rebuild, until the new stream runs.
     private var tracksPostLayout: TrackIndices?
 
@@ -2152,7 +2276,12 @@ final class VLCPlayerView: BaseView {
     /// **The label of an audio track in the track menus**: "German - AAC - 5.1", and
     /// "(Original)" behind it when the track is the title's original language
     /// (``OriginalAudio``). Without a server source nothing is added.
-    func audioLabel(_ track: VLCMediaPlayer.Track) -> String {
+    func audioLabel(_ surface: SurfaceTrack) -> String {
+        if let stream = surface.stream {
+            return OriginalAudio.label(surface.prettyName, language: stream.language, stream: stream,
+                                       originalLanguage: trackOriginal)
+        }
+        guard let track = surface.vlc else { return surface.prettyName }
         let base = track.prettyName
         guard let streams = trackSource?.mediaStreams, !streams.isEmpty else { return base }
         let tracks = player.audioTracks
@@ -2181,6 +2310,11 @@ final class VLCPlayerView: BaseView {
     /// not remembered at all.
     func wendeLanguagesAn(audio: String, subtitle: String, automatic: Bool,
                          source: MediaSource?, title: String?, originalLanguage: String? = nil) {
+        if let avEngine {
+            avTracksApply(avEngine, audio: audio, subtitle: subtitle, automatic: automatic,
+                          source: source, title: title, originalLanguage: originalLanguage)
+            return
+        }
         trackTitle = title
         trackSource = source
         trackOriginal = originalLanguage
@@ -2297,14 +2431,16 @@ final class VLCPlayerView: BaseView {
         trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: index))
     }
 
-    private func trackIndicesReport(_ new: TrackIndices) {
+    func trackIndicesReport(_ new: TrackIndices) {
         guard new != reportedTracks else { return }
         reportedTracks = new
         tracksReported?(new)
     }
 
     /// Chosen by hand: applies immediately and to the whole series.
-    func selectAudioTrack(_ track: VLCMediaPlayer.Track) {
+    func selectAudioTrack(_ surface: SurfaceTrack) {
+        if let avEngine { avAudioChosen(avEngine, surface); return }
+        guard let track = surface.vlc else { return }
         track.isSelectedExclusively = true
         let tracks = player.audioTracks
         let z = mapping(audio: tracks, subtitle: [])
@@ -2325,9 +2461,10 @@ final class VLCPlayerView: BaseView {
     ///
     /// Here, and only here, the choice is remembered for the series: the panel
     /// is the only way a person touches the subtitle track.
-    func selectSubtitle(_ track: VLCMediaPlayer.Track?) {
+    func selectSubtitle(_ surface: SurfaceTrack?) {
         currentSubtitle = nil
-        guard let track else {
+        if let avEngine { avSubtitleChosen(avEngine, surface); return }
+        guard let track = surface?.vlc else {
             if let trackTitle { TrackMemory().rememberSubtitle(.off, for: trackTitle) }
             player.deselectAllTextTracks()
             AppLog.writeOut("[Spuren] Untertitel von Hand: aus")
@@ -2356,6 +2493,7 @@ final class VLCPlayerView: BaseView {
     /// knows forced, SDH and side-loaded files; then what VLC knows itself. VLC's raw
     /// name ("Forced - [Russian]", "Track 1") only where neither knows a language.
     func subtitleNames() -> [String: String] {
+        if let avEngine { return avSubtitleNames(avEngine) }
         let tracks = player.textTracks
         let z = mapping(audio: [], subtitle: tracks)
         let streams = trackSource?.mediaStreams ?? []
@@ -2374,8 +2512,12 @@ final class VLCPlayerView: BaseView {
 
     /// 1.0 is normal. VLC accepts values between 0.25 and 4.
     var tempo: Float {
-        get { player.rate }
-        set { player.rate = newValue; refreshPiPState() }
+        get { avEngine?.tempo ?? player.rate }
+        set {
+            tempoWish = newValue
+            if let avEngine { avEngine.tempo = newValue } else { player.rate = newValue }
+            refreshPiPState()
+        }
     }
 
     // MARK: - Delay
@@ -2384,7 +2526,10 @@ final class VLCPlayerView: BaseView {
     /// SyncPlay sees none of it: the group compares movie time, and that does
     /// not change.
     var subtitleDelay = Delay.null {
-        didSet { if subtitleDelay != oldValue { delayCatchUp() } }
+        didSet {
+            if subtitleDelay != oldValue { delayCatchUp() }
+            avEngine?.subtitleDelay = subtitleDelay
+        }
     }
     var audioDelay = Delay.null {
         didSet { if audioDelay != oldValue { delayCatchUp() } }
@@ -2427,7 +2572,10 @@ final class VLCPlayerView: BaseView {
     // MARK: - Position
 
     /// Current position in seconds.
-    var positionSeconds: Double { Double(player.time.intValue) / 1000 }
+    var positionSeconds: Double {
+        if let avEngine { return avEngine.position }
+        return Double(player.time.intValue) / 1000
+    }
 
     /// Total length in seconds. 0 while VLC is still reading the file.
     ///
@@ -2436,6 +2584,7 @@ final class VLCPlayerView: BaseView {
     /// it there was no bar and no progress report. The source exists only with
     /// the tracks; until then it stays 0 as before.
     var durationSeconds: Double {
+        if let avEngine { return avEngine.durationSeconds }
         guard let ms = player.media?.length.intValue, ms > 0 else {
             return trackSource?.runtimeSeconds ?? 0
         }
@@ -2444,7 +2593,7 @@ final class VLCPlayerView: BaseView {
         return Double(ms) / 1000
     }
 
-    var isPlaying: Bool { player.isPlaying }
+    var isPlaying: Bool { avEngine?.isPlaying ?? player.isPlaying }
 
     /// Seeks to an absolute position.
     ///
@@ -2471,6 +2620,11 @@ final class VLCPlayerView: BaseView {
         // conversion does not check.
         guard let seconds = JumpTarget.seconds(seconds) else {
             AppLog.writeOut("[VLC] Sprungziel ohne Zahl verworfen")
+            return
+        }
+        if let avEngine {
+            avEngine.move(to: seconds)
+            jumpReported?(seconds)
             return
         }
         reporter.jumpNow()
@@ -2511,6 +2665,12 @@ final class VLCPlayerView: BaseView {
     /// pending one is absolute from the pending target, and the new target is
     /// verified.
     func jump(seconds: Int32) {
+        if let avEngine {
+            let target = max(avEngine.position + Double(seconds), 0)
+            avEngine.move(to: target)
+            jumpReported?(target)
+            return
+        }
         reporter.jumpNow()
         if let opened = openTarget {
             let target = max(opened + Double(seconds), 0)

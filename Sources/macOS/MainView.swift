@@ -305,6 +305,10 @@ struct MainView: View {
         // `Theme.einblenden` instead of a custom curve: same duration, and with reduced motion
         // the fade becomes a short switch.
         .animation(Theme.reveal, value: controls.wish?.id)
+        // A title with several versions asks which one before it starts.
+        .versionChoice($controls.versionChoice) { open, version in
+            controls.launch(open, picking: version)
+        }
         .focusedSceneValue(\.playerOpen, controls.wish != nil)
         .focusedSceneValue(\.downloadsAn, model.downloadsAn)
         .focusedSceneValue(\.watchlistShown, model.watchlistShown)
@@ -574,6 +578,7 @@ struct MainView: View {
         case .watchlist:        Color.clear.onAppear { close(target) }
         case .settings:    SettingsView(model: model) { close(target) }
         case .playback:       PlaybackSettingsView(model: model) { close(target) }
+        case .subtitleLook:   SubtitleLookView(model: model) { close(target) }
         case .presentation:      PresentationView(model: model) { close(target) }
         case .licenses:         LicensesView { close(target) }
         case let .license(id):
@@ -587,8 +592,8 @@ struct MainView: View {
         case .librarySelection:  LibrarySelectionView(model: model) { close(target) }
         case .quickConnect:     QuickConnectView(model: model) { close(target) }
         case .accountAdd: AccountAddView(model: model) { close(target) }
-        case let .serverAdd(url):
-            ServerOnboardingView(model: model, preset: url) { close(target) }
+        case let .serverAdd(route):
+            MacAddServerFlow(model: model, route: route) { close(target) }
         case let .person(person, origin):
             PersonView(model: model, person: person, origin: origin) { close(target) }
         case let .genre(name):
@@ -884,7 +889,7 @@ struct ProfileRow: View {
     /// click away.
     @ViewBuilder
     private var symbolText: some View {
-        let more = model.accounts.first { $0.userID != model.session?.userID }
+        let more = model.accounts.first { $0.accountKey != model.session?.accountKey }
         HStack(spacing: -9) {
             let image = model.userImageURL()
             ProfileCharacter(name: model.session?.userName ?? "?",

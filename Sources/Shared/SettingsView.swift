@@ -162,28 +162,35 @@ struct SettingsView: View {
     /// **Sits between Offline and Server, on purpose.** It is a second service,
     /// not a second server, and it is an extra: whoever connects nothing sees
     /// nothing of it except this one row.
-    private var integration: some View {
-        SettingGroup(title: "Integration") {
-            NavigationLink(value: SeerrRoute()) {
-                ValueRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
-                          under: Text("Anfragen, was noch nicht da ist"),
-                          value: model.seerr.connected ? String(localized: "Verbunden") : nil)
-            }
-            // **`PressRow`, not `PressButton`.** The row is edge to edge and as wide as
-            // the card; shrinking it by 0.97 visibly detaches it from the rows above. A row
-            // acknowledges with area, a compact control with scale.
-            .buttonStyle(Theme.PressRow())
-            // **Only if the build has the Trakt application's credentials**
-            // (`TraktAccess`). Without them there would be a button that is guaranteed to
-            // fail.
-            if model.trakt.available {
-                SheetLine()
-                NavigationLink(value: TraktRoute()) {
-                    ValueRow(symbol: "checkmark.circle", title: Text(verbatim: "Trakt"),
-                              under: Text("Trägt ein, was du schaust"),
-                              value: model.trakt.connected ? String(localized: "Verbunden") : nil)
+    @ViewBuilder private var integration: some View {
+        // Seerr signs in with the media server's user name and password; not every kind
+        // has that (`ServerCapability.seerr`). Without Seerr and without Trakt the group
+        // would be empty.
+        if model.can(.seerr) || model.trakt.available {
+            SettingGroup(title: "Integration") {
+                if model.can(.seerr) {
+                    NavigationLink(value: SeerrRoute()) {
+                        ValueRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
+                                  under: Text("Anfragen, was noch nicht da ist"),
+                                  value: model.seerr.connected ? String(localized: "Verbunden") : nil)
+                    }
+                    // **`PressRow`, not `PressButton`.** The row is edge to edge and as wide as
+                    // the card; shrinking it by 0.97 visibly detaches it from the rows above. A
+                    // row acknowledges with area, a compact control with scale.
+                    .buttonStyle(Theme.PressRow())
                 }
-                .buttonStyle(Theme.PressRow())
+                // **Only if the build has the Trakt application's credentials**
+                // (`TraktAccess`). Without them there would be a button that is guaranteed to
+                // fail.
+                if model.trakt.available {
+                    if model.can(.seerr) { SheetLine() }
+                    NavigationLink(value: TraktRoute()) {
+                        ValueRow(symbol: "checkmark.circle", title: Text(verbatim: "Trakt"),
+                                  under: Text("Trägt ein, was du schaust"),
+                                  value: model.trakt.connected ? String(localized: "Verbunden") : nil)
+                    }
+                    .buttonStyle(Theme.PressRow())
+                }
             }
         }
     }
@@ -216,7 +223,14 @@ struct SettingsView: View {
     }
 
     /// **Settings follow the account to every device** (`SettingsSyncRun`). On by default.
-    private var sync: some View {
+    @ViewBuilder private var sync: some View {
+        // Only servers that keep display preferences (`ServerCapability.settingsSync`).
+        if model.can(.settingsSync) {
+            syncGroup
+        }
+    }
+
+    private var syncGroup: some View {
         SettingGroup(title: "Konto") {
             ChoiceRow(symbol: "arrow.triangle.2.circlepath",
                       title: Text("Einstellungen auf allen Geräten gleich halten"),

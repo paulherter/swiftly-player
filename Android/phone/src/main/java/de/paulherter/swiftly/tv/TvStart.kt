@@ -343,11 +343,15 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     var rails by remember { mutableStateOf(app.startRails) }
     var disrupted by remember { mutableStateOf(false) }
     val run = rememberCoroutineScope()
+    // How many loads are on their way; see `StartPage`: the lifecycle effect fires on the first composition too.
+    var running by remember { mutableIntStateOf(0) }
 
     suspend fun load() {
         // An account switch in progress does the loading; returning to the page does not (it would fetch the old account).
         if (de.paulherter.swiftly.AccountSwitchTransition.waits && !de.paulherter.swiftly.AccountSwitchTransition.switched) return
-        runCatching {
+        running++
+        val key = de.paulherter.swiftly.startKey(e)
+        try { runCatching {
             withContext(Dispatchers.IO) {
                 app.kern.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
@@ -357,16 +361,18 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             val list = railsRead(json).also { app.startRails = it }
             rails = list
             disrupted = disturbedRead(json)
-            if (!disrupted) app.startLoaded = System.currentTimeMillis()
+            if (!disrupted) { app.startLoaded = System.currentTimeMillis(); app.startKey = key } else app.startKey = ""
             // Mirrors `shelfWrite()` in `HomeView.swift`: on every home load, write the same categories
             // for the Watch Next shelf. Off the main thread: the system provider needs several accesses
             // (read, write, possibly delete).
             if (!disrupted) withContext(Dispatchers.IO) {
                 runCatching { TvContinueWatchingShelf.updateNow(app, list) }
             }
-        }.onFailure { disrupted = true }
+        }.onFailure { disrupted = true } } finally { running-- }
     }
-    LaunchedEffect(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }) { load() }
+    LaunchedEffect(de.paulherter.swiftly.startKey(e)) {
+        if (!de.paulherter.swiftly.startFresh(app, de.paulherter.swiftly.startKey(e))) load()
+    }
     // The player refreshes without delay; the foreground refreshes with a 30 s grace period.
     // Same flow as `StartPage.kt` on the phone. The player is its own activity on the TV too
     // (picture-in-picture, foreground service), not an overlay as on tvOS, so "comes back" here is
@@ -381,7 +387,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (Kern.refreshDue(app.startLoaded)) load()
+            if (running == 0 && Kern.refreshDue(app.startLoaded)) load()
         }
     }
 
@@ -627,7 +633,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                                              }
                                                          }) {
                                                     // "Continue watching" plays directly, as on tvOS.
-                                                    if (r.landscape) run.launch { continueWatchingRequest(app, k.id)?.let { app.play.value = it } ?: openWithPreOff(k) }
+                                                    if (r.landscape) run.launch { if (!de.paulherter.swiftly.continueWatchingAsking(app, k.id)) openWithPreOff(k) }
                                                     else openWithPreOff(k)
                                                 }
                                             }

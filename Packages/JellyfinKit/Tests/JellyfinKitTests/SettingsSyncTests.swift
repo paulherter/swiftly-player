@@ -27,6 +27,18 @@ struct SettingsSyncTests {
         #expect(SettingsSync.Value.decode("{", as: .json) == nil)
     }
 
+    @Test("Untertitel-Aussehen reist als ein Wert mit")
+    func subtitleLookTravels() {
+        let look = SubtitleLook(size: .large, colour: .yellow, shadow: true)
+        let sent = SettingsSync.fields(for: ["utAussehen": .json(look.encoded())],
+                                       changed: Date(timeIntervalSince1970: 5))
+        let back = SettingsSync.remote(from: sent)
+        guard case .json(let data)? = back.values["utAussehen"] else {
+            Issue.record("utAussehen fehlt"); return
+        }
+        #expect(SubtitleLook.read(data) == look)
+    }
+
     @Test("Fremde Schlüssel bleiben außen vor")
     func ignoresForeign() {
         let r = SettingsSync.remote(from: [

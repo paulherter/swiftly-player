@@ -63,33 +63,42 @@ struct ProfileView: View {
                     }
 
                     AccountCard(model: model,
-                               insertOn: { serverTarget = ServerRoute(preset: $0) }) {
-                        accountRecord = true
+                               insertOn: { serverTarget = ServerRoute(preset: $0, kind: model.accounts(on: $0).first?.kind) }) {
+                        // Another account on the connected server, by its kind: Jellyfin and
+                        // Emby sign in on this page's list of users, Plex through plex.tv.
+                        if model.session?.kind == .plex {
+                            serverTarget = ServerRoute(preset: model.session?.serverURL, kind: .plex)
+                        } else {
+                            accountRecord = true
+                        }
                     }
 
                     // 18 as between all other cards on this page; the only gap here used to be 20.
                     Color.clear.frame(height: 18)
 
-                    group {
-                        // **The symbol carries the accent, the title does not.**
-                        //
-                        // It was once fully accent, then not at all, on the grounds that accent means
-                        // state and not rank. That is right, but the conclusion went too far: a profile
-                        // page without a single colored spot reads lifeless, and Quick Connect is the
-                        // one path on this page that **does** something; everything else leads on or
-                        // displays.
-                        //
-                        // The symbol carries the color, the title stays white: the row stands out
-                        // without claiming a rank among siblings. Feedback: it makes the page look much
-                        // less colorless.
-                        ProfileRow(symbol: "rectangle.and.text.magnifyingglass",
-                                    title: "Quick Connect",
-                                    under: "Code vom Fernseher eingeben",
-                                    characterAccent: true,
-                                    last: true, target: QuickConnectRoute())
-                    }
+                    // Quick Connect is Jellyfin's; the other kinds have no counterpart.
+                    if model.can(.quickConnect) {
+                        group {
+                            // **The symbol carries the accent, the title does not.**
+                            //
+                            // It was once fully accent, then not at all, on the grounds that accent means
+                            // state and not rank. That is right, but the conclusion went too far: a profile
+                            // page without a single colored spot reads lifeless, and Quick Connect is the
+                            // one path on this page that **does** something; everything else leads on or
+                            // displays.
+                            //
+                            // The symbol carries the color, the title stays white: the row stands out
+                            // without claiming a rank among siblings. Feedback: it makes the page look much
+                            // less colorless.
+                            ProfileRow(symbol: "rectangle.and.text.magnifyingglass",
+                                        title: "Quick Connect",
+                                        under: "Code vom Fernseher eingeben",
+                                        characterAccent: true,
+                                        last: true, target: QuickConnectRoute())
+                        }
 
-                    Color.clear.frame(height: 18)
+                        Color.clear.frame(height: 18)
+                    }
 
                     group {
                         ProfileRow(symbol: "play.fill", title: "Wiedergabe",
@@ -122,7 +131,7 @@ struct ProfileView: View {
                         // `ServerRoute`.
                         ProfileRow(symbol: "externaldrive.connected.to.line.below",
                                     title: "Server hinzufügen",
-                                    under: "Ein zweiter Jellyfin, eigene Konten") {
+                                    under: "Jellyfin, Emby oder Plex, auch gemischt") {
                             serverTarget = ServerRoute()
                         }
                         // **Affects only the active account.** If others exist, the app switches to
@@ -249,7 +258,7 @@ struct ProfileView: View {
         }
         // **Pushed, like every other subpage.** The reasoning is at `ServerRoute`.
         .navigationDestination(item: $serverTarget) { target in
-            ServerOnboardingView(model: model, preset: target.preset)
+            AddServerFlow(model: model, route: target)
         }
         // The same sign-in as for the first account, only without the way to another
         // server, and also pushed instead of from below.
@@ -452,15 +461,15 @@ private struct AccountsStrip: View {
         // After a switch the center moves to the new account, otherwise the ring would
         // sit on one and the large tile on another without anyone scrolling.
         .onChange(of: model.accountSwitch) { _, _ in
-            withAnimation(Theme.sectionSwitch) { centeredOn = model.session?.userID }
+            withAnimation(Theme.sectionSwitch) { centeredOn = model.session?.accountKey }
         }
     }
 
     private var strip: some View {
         ScrollView(.horizontal) {
             HStack(spacing: Self.spacing) {
-                ForEach(model.accounts, id: \.userID) { account in
-                    tile(account).id(account.userID)
+                ForEach(model.accounts, id: \.accountKey) { account in
+                    tile(account).id(account.accountKey)
                 }
             }
             .scrollTargetLayout()
@@ -485,18 +494,18 @@ private struct AccountsStrip: View {
             let firstMeasurement = width == 0
             width = new
             if firstMeasurement, new > 0, centeredOn == nil {
-                centeredOn = model.session?.userID
+                centeredOn = model.session?.accountKey
             }
         }
     }
 
     private func tile(_ account: Session) -> some View {
-        let connected = account.userID == model.session?.userID
-        let centered = account.userID == centeredOn
+        let connected = account.accountKey == model.session?.accountKey
+        let centered = account.accountKey == centeredOn
         let mass = centered ? 84 : smallMass
         return Button {
             if !connected { Theme.jerk(.medium) }
-            model.switchAccount(toward: account.userID)
+            model.switchAccount(toward: account.accountKey)
         } label: {
             VStack(spacing: 0) {
                 // Fixed height so the row does not jump while growing.
@@ -530,8 +539,8 @@ private struct AccountsStrip: View {
     /// Name of what is in the center, not of what is connected. Otherwise the line
     /// would contradict what stands large above it.
     private var label: some View {
-        let account = model.accounts.first { $0.userID == centeredOn } ?? model.session
-        let signedIn = account?.userID == model.session?.userID
+        let account = model.accounts.first { $0.accountKey == centeredOn } ?? model.session
+        let signedIn = account?.accountKey == model.session?.accountKey
         return VStack(spacing: 3) {
             Text(account?.userName ?? "")
                 .font(Theme.rail)
@@ -635,7 +644,7 @@ private struct AccountCard: View {
     @ViewBuilder private var content: some View {
         let server = model.server
         if server.count <= 1 {
-            card(model.session?.serverURL)
+            card(model.sessionServer)
         } else {
             VStack(spacing: 10) {
                 TabView(selection: $page) {
@@ -661,8 +670,8 @@ private struct AccountCard: View {
                 .frame(height: heights.values.max() ?? 170)
                 points(server)
             }
-            .onAppear { page = model.session?.serverURL.absoluteString ?? "" }
-            .onChange(of: model.session?.serverURL) { _, new in
+            .onAppear { page = model.sessionServer?.absoluteString ?? "" }
+            .onChange(of: model.sessionServer) { _, new in
                 if let new { withAnimation(Theme.sectionSwitch) { page = new.absoluteString } }
             }
         }
@@ -683,7 +692,7 @@ private struct AccountCard: View {
     }
 
     private func isActive(_ server: URL?) -> Bool {
-        server?.absoluteString.lowercased() == model.session?.serverURL.absoluteString.lowercased()
+        server?.absoluteString.lowercased() == model.sessionServer?.absoluteString.lowercased()
     }
 
     @ViewBuilder
@@ -740,7 +749,7 @@ private struct AccountCard: View {
                 // the line was only drawn then, the text block grew and name and address jumped
                 // up (same bug as on Android).
                 if active {
-                    Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
+                    Text(verbatim: "\(account?.kind.shownName ?? ServerKind.jellyfin.shownName) \(model.serverVersion ?? "")")
                         .growing(12)
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)

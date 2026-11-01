@@ -127,6 +127,8 @@ struct SeriesDetailView: View {
     @State private var moreOpen = false
     @State private var message: String?
     @State private var prepares = false
+    /// An episode with several versions waiting for the pick.
+    @State private var versionChoice: VersionChoice?
     /// From `series.userData` in `init`; see `ItemDetailView`.
     @State private var remembered: Bool
     @State private var watched: Bool
@@ -310,6 +312,9 @@ struct SeriesDetailView: View {
                          plan: wish.plan, startAt: wish.startAt)
         }
         #endif
+        .versionChoice($versionChoice) { choice, version in
+            launch(choice, picking: version)
+        }
         .task { await load() }
         // **Refetch after the player**, and only once the end report has gone through;
         // see `AppModel.playbackEnded`. Otherwise progress and "watched" would stay
@@ -916,7 +921,7 @@ struct SeriesDetailView: View {
     /// A `DownloadItem` from an episode. **The same source the player would use**:
     /// it is the same file.
     private func entries(_ episode: Item) -> DownloadItem? {
-        guard let account = model.session?.userID else { return nil }
+        guard let account = model.session?.storageAccount else { return nil }
         let source = episode.mediaSources?.first
         return DownloadItem(
             id: episode.id, account: account, art: .episode, title: episode.name,
@@ -990,7 +995,16 @@ struct SeriesDetailView: View {
         // On press, not after the fetch: a haptic tick half a second later feels
         // unrelated.
         Theme.jerk(.medium)
-        PlayRequest.start(episode, model: model, prepares: $prepares) { play = $0 }
+        // **An episode with several versions asks, like a movie.** The list entries carry
+        // the versions; the one behind the main button is completed first if it does not.
+        PlayRequest.start(episode,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares) { play = $0 }
+    }
+
+    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
+        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares) { play = $0 }
     }
 }
 
@@ -1180,6 +1194,10 @@ struct SeasonView: View {
     /// Guard against a second tap while the plan is still being fetched.
     /// It was missing here: the series page had it, the season view did not.
     @State private var prepares = false
+    /// An episode with several versions waiting for the pick, and the hint when its
+    /// versions cannot be loaded.
+    @State private var versionChoice: VersionChoice?
+    @State private var message: String?
 
     @Environment(\.wide) private var wide
     @Environment(\.dismiss) private var back
@@ -1249,6 +1267,12 @@ struct SeasonView: View {
                          plan: wish.plan, startAt: wish.startAt)
         }
         #endif
+        .versionChoice($versionChoice) { choice, version in
+            launch(choice, picking: version)
+        }
+        .overlay {
+            if let message { HintStrip(text: message) { self.message = nil } }
+        }
         .task { await episodesLoad() }
         .catchUp(at: model.pagesRefresh) { Task { await episodesLoad() } }
     }
@@ -1266,7 +1290,16 @@ struct SeasonView: View {
         // On press, not after the fetch: a haptic tick half a second later feels
         // unrelated.
         Theme.jerk(.medium)
-        PlayRequest.start(episode, model: model, prepares: $prepares) { play = $0 }
+        // **An episode with several versions asks, like a movie.** The list entries carry
+        // the versions; the one behind the main button is completed first if it does not.
+        PlayRequest.start(episode,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares) { play = $0 }
+    }
+
+    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
+        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares) { play = $0 }
     }
 }
 
@@ -1334,12 +1367,11 @@ extension SeriesDetailView {
     }
 
     private func episodeStart(_ episode: Item, since: Double) {
-        Task {
-            guard let wish = await model.episodesRequest(episode, since: since) else {
-                message = AppModel.episodeNotLoaded
-                return
-            }
-            play = wish
-        }
+        // Through the same path as the main button, so the menu asks for the version too.
+        PlayRequest.start(episode, since: since,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares,
+                          missing: { message = AppModel.episodeNotLoaded }) { play = $0 }
     }
 }

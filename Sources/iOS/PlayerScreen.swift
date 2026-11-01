@@ -1712,7 +1712,7 @@ struct PlayerScreen: View {
                 planOut: {
                     let newPlan: PlaybackPlan?
                     if let prepared { newPlan = prepared }
-                    else { newPlan = await model.plan(for: episode.id) }
+                    else { newPlan = await model.plan(for: episode, keeping: alt.plan.source) }
                     // Swap only when the card covers the picture, otherwise black would show around it.
                     if let swapOff, newPlan != nil {
                         let rest = swapOff.timeIntervalSinceNow
@@ -1838,8 +1838,9 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title),
-                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil)
+                                 title: TrackMemory.title(for: title, account: model.session?.storageAccount),
+                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil,
+                                 engine: model.engineRequest(for: title.id, plan: plan))
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {
@@ -2124,7 +2125,7 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: item),
+                                        title: TrackMemory.title(for: item, account: model.session?.storageAccount),
                                         originalLanguage: item.originalLanguage)
             }
             if job.tracksApply { surface.channelsPostMeasure() }
@@ -2164,7 +2165,7 @@ struct PlayerScreen: View {
                                creditsFrom: sections.first { $0.art == .credits }?.from,
                                networkFavorable: preparation.networkFavorable),
                prebufferAllowed {
-                preparation.prepare(episode) { await model.plan(for: episode.id, still: true) }
+                preparation.prepare(episode) { await model.plan(for: episode, keeping: plan.source, still: true) }
             }
 
             // Advance by itself at the end, only with a card (outro segment from the
@@ -2550,7 +2551,7 @@ private struct OfferingButton: View {
                             // **Continuous instead of on the tick**: updated on the half-second tick it
                             // stuttered at the start and near the end. **Dark on white**, not in accent
                             // color, which in the player belongs to the scrubber handle while seeking.
-                            TimelineView(.animation) { time in
+                            TimelineView(.animation(minimumInterval: 1.0 / 30)) { time in
                                 GeometryReader { g in
                                     Rectangle()
                                         .fill(Self.dark.opacity(0.16))

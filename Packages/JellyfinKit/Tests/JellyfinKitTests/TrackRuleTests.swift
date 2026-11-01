@@ -293,6 +293,30 @@ struct TrackRuleTests {
         #expect(new.audio(for: "film") == nil)
     }
 
+    @Test("Gedächtnis-Schlüssel trägt das Konto, alte Schlüssel bleiben lesbar, Server stoßen sich nicht")
+    func memoryPerAccount() throws {
+        let name = "SpurregelKontoTests"
+        let store = try #require(UserDefaults(suiteName: name))
+        store.removePersistentDomain(forName: name)
+        let imprint = TrackImprint(feed: audio(2, "eng"), in: [audio(1, "ger"), audio(2, "eng")])
+        let episode = Item(id: "e1", name: "E", type: "Episode", seriesId: "42")
+        // Entry written before the account went into the key (Jellyfin).
+        store.set(["42": "English"], forKey: "utJeTitel")
+        let jelly = TrackMemory.title(for: episode, account: "user1")
+        #expect(jelly == "user1|42")
+        #expect(TrackMemory(store: store).subtitle(for: jelly) == .name("English"))
+        // A new choice goes under the new key and wins over the old one.
+        TrackMemory(store: store).rememberSubtitle(.off, for: jelly)
+        #expect(TrackMemory(store: store).subtitle(for: jelly) == .off)
+        // Another account with the same id (Plex ratingKey 42) sees neither.
+        let plex = TrackMemory.title(for: episode, account: "plex-M-7")
+        #expect(TrackMemory(store: store).subtitle(for: plex) == nil)
+        TrackMemory(store: store).rememberAudio(imprint, for: plex)
+        #expect(TrackMemory(store: store).audio(for: plex) == imprint)
+        #expect(TrackMemory(store: store).audio(for: jelly) == nil)
+        #expect(TrackMemory.title(for: episode) == "42")
+    }
+
     @Test("Meldung trägt die Spurindizes, ohne Angabe fehlen sie")
     func message() throws {
         let plan = PlaybackPlan.fromSlab(try #require(URL(string: "https://s/a")), container: nil)

@@ -38,3 +38,22 @@ public enum SearchHistory {
         return new.prefix(atMost).joined(separator: "\n")
     }
 }
+
+/// **Where the history lives on Apple devices:** one `UserDefaults` string per account.
+///
+/// The iPhone and the TV both had this as private helpers of their search view. An account that has
+/// no history of its own yet starts from the shared one from before the history belonged to the
+/// account. Android keeps the same string in its own store and only uses the rules above.
+public enum SearchHistoryStore {
+    public static func load(account: String?, store: UserDefaults = .standard) -> String {
+        let key = SearchHistory.key(account: account)
+        if key != SearchHistory.key, store.object(forKey: key) == nil {
+            store.set(store.string(forKey: SearchHistory.key) ?? "", forKey: key)
+        }
+        return store.string(forKey: key) ?? ""
+    }
+
+    public static func save(_ raw: String, account: String?, store: UserDefaults = .standard) {
+        store.set(raw, forKey: SearchHistory.key(account: account))
+    }
+}

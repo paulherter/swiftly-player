@@ -55,6 +55,9 @@ final class TileRequest {
     }
 
     var play: PlayRequest?
+    /// A title with several versions waiting for the pick. Shown on iPhone and
+    /// iPad (`MainView`); tvOS and macOS still start the default version.
+    var choice: VersionChoice?
     var load: LoadJob?
     var loadSheetOpen = false
     var message: String?
@@ -217,7 +220,10 @@ struct TileMenu: ViewModifier {
                     return
                 }
             }
-            PlayRequest.start(target, freshValue: true, model: model, prepares: .constant(false),
+            let ask: VersionAsk? = VersionAsk(choose: { TileRequest.shared.choice = $0 },
+                                              failed: { TileRequest.shared.message = $0 })
+            PlayRequest.start(target, freshValue: true, ask: ask,
+                                  model: model, prepares: .constant(false),
                                   missing: {
                                       // Instead of silence when the server has no file.
                                       TileRequest.shared.message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
@@ -254,7 +260,7 @@ struct TileMenu: ViewModifier {
     private func load() {
         let model = model, item = item
         Task {
-            guard let account = model.session?.userID else { return }
+            guard let account = model.session?.storageAccount else { return }
             let title = await model.item(id: item.id) ?? item
             let source = title.mediaSources?.first
             let episode = title.type == "Episode"

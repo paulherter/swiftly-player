@@ -311,16 +311,20 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Person" -> PersonPage(app, target, open, back)
         "Profil" -> ProfilePage(app, open, back)
         "Merkliste" -> WatchlistPage(app, open, back)
-        "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Theme.reason)) {
+        // Another account on the connected server: a Plex server signs in at plex.tv again, the others by name and password.
+        "WeiteresKonto" -> if (app.kind() == ServerKind.Plex.raw) PlexSignInPage(app, finished = {}, back = back)
+        else Box(Modifier.fillMaxSize().background(Theme.reason)) {
             LoginPage(app, app.serverName.value.orEmpty(), "", otherServer = back, moreAccount = true) { back() }
         }
-        "ServerAufnahme" -> ServerOnboardingPage(app, target.id.takeIf { it != "serveraufnahme" }, back)
+        // `role` carries the kind of a known server (the plus on its card); without it the picker comes first.
+        "ServerAufnahme" -> AddServerFlow(app, target.role?.let { ServerKind.from(it) }, target.id.takeIf { it != "serveraufnahme" }, back)
         "Genre" -> GenrePage(app, target, open, back)
         // A collection: with a section from the title menu, without from search or watchlist.
         "BoxSet" -> CollectionPage(app, target, open, back)
         "Playlist" -> PlaylistPage(app, target, open, back)
         "QuickConnect" -> QuickConnectPage(app, back)
-        "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back)
+        "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back, open)
+        "Untertitelaussehen" -> SubtitleLookPage(app, back)
         "Darstellung" -> PresentationPage(app, open, back)
         "Einstellungen" -> SettingsPage(app, open, back)
         "Seerr" -> SeerrSettingsPage(app, back)

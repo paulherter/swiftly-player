@@ -141,7 +141,11 @@ struct PlaylistView: View {
     /// From the first entry on; the rest follows through the player's "next episode".
     private func start() {
         guard let first = model.playlistStart(shown) else { return }
-        PlayRequest.start(first, freshValue: true, model: model, prepares: $prepares,
+        PlayRequest.start(first, freshValue: true,
+                          ask: VersionAsk(choose: { TileRequest.shared.choice = $0 },
+                                          failed: { TileRequest.shared.message = $0 }),
+                          model: model, prepares: $prepares,
+                          missing: { TileRequest.shared.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                           play: { play.wrappedValue = $0 })
     }
 }

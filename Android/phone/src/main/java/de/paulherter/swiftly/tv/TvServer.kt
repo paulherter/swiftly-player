@@ -32,7 +32,7 @@ import org.json.JSONObject
  * account section).
  */
 @Composable
-fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, back: () -> Unit) {
+fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, kindPicked: Boolean = false, back: () -> Unit) {
     var address by remember { mutableStateOf(preset.orEmpty()) }
     var server by remember { mutableStateOf<Pair<String, String>?>(null) }
     var examine by remember { mutableStateOf(false) }
@@ -80,35 +80,40 @@ fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, back: () -> Uni
     BackHandler { cancel() }
     val inputField = firstFocus()
 
+    // Left-aligned column like `ServerOnboardingView`: title, explanation, then address or sign-in, error, "Cancel".
     Box(Modifier.fillMaxSize().background(Theme.reason), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 480.dp)) {
-            Text(translated(if (preset != null) "Konto hinzufügen" else "Server hinzufügen"), style = TvTheme.titleLarge, color = Theme.font)
+        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.width(TvSpec.messageWidth)) {
+            Text(translated(if (kindPicked && preset == null) "Mit Jellyfin anmelden" else "Server hinzufügen"), style = TvTheme.titleLarge, color = Theme.font)
+            Text(translated("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; im Profil wechselst du zwischen ihnen."),
+                 style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.width(TvSpec.messageWidth).padding(top = TvSpec.onboardingSubtitleTop))
             if (s == null) {
-                Text(translated("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; im Profil wechselst du zwischen ihnen."),
-                     style = TvTheme.body, color = Theme.fontQuiet, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-                TvField(address, { address = it }, "tv.example.de", Modifier.padding(top = 22.dp).fillMaxWidth().focusRequester(inputField),
-                       imeAction = ImeAction.Go, keyboardAction = { check() })
-                Text(translated("https:// kannst du weglassen."), style = TvTheme.small, color = Theme.fontVeryQuiet,
-                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                TvAdvanced(headers, modifier = Modifier.padding(top = 14.dp))
-                TvButton(translated(if (examine) "Verbinden…" else "Weiter"), released = address.isNotBlank() && !examine,
-                        modifier = Modifier.padding(top = 20.dp)) { check() }
-            } else {
-                Text(translated("Verbunden · Jellyfin %@", s.second), style = TvTheme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 16.dp))
-                Text(s.first, style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(top = 4.dp))
-                Column(Modifier.padding(top = 22.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TvField(user, { user = it }, translated("Benutzername"), Modifier.fillMaxWidth().focusRequester(inputField))
-                    TvField(password, { password = it }, translated("Passwort"), Modifier.fillMaxWidth(),
-                           secret = true, imeAction = ImeAction.Done, keyboardAction = { signIn() })
+                Column(Modifier.padding(top = TvSpec.onboardingBlockTop), verticalArrangement = Arrangement.spacedBy(TvSpec.onboardingHintSpacing)) {
+                    TvField(address, { address = it }, "tv.beispiel.de", Modifier.width(TvSpec.formWidth).focusRequester(inputField),
+                           imeAction = ImeAction.Go, keyboardAction = { check() })
+                    Text(translated("https:// kannst du weglassen."), style = TvTheme.small, color = Theme.fontVeryQuiet)
+                    TvAdvanced(headers)
+                    TvButton(translated(if (examine) "Moment…" else "Weiter"), released = address.isNotBlank() && !examine) { check() }
                 }
-                TvButton(translated(if (running) "Anmelden…" else "Anmelden"), released = user.isNotBlank() && !running,
-                        modifier = Modifier.padding(top = 20.dp)) { signIn() }
-                TvButton(translated("Lieber Quick Connect"), modifier = Modifier.padding(top = 14.dp)) { perCode = true }
+            } else {
+                Column(Modifier.padding(top = TvSpec.onboardingBlockTop)) {
+                    // No accent: server name and version are information, not a choice.
+                    Text("${s.first} · Jellyfin ${s.second}", style = TvTheme.small, color = Theme.fontQuiet)
+                    Column(Modifier.padding(top = TvSpec.onboardingFormTop).width(TvSpec.formWidth),
+                           verticalArrangement = Arrangement.spacedBy(TvSpec.onboardingHintSpacing)) {
+                        TvField(user, { user = it }, translated("Benutzername"), Modifier.fillMaxWidth().focusRequester(inputField))
+                        TvField(password, { password = it }, translated("Passwort"), Modifier.fillMaxWidth(),
+                               secret = true, imeAction = ImeAction.Done, keyboardAction = { signIn() })
+                        Row(horizontalArrangement = Arrangement.spacedBy(TvSpec.onboardingButtonSpacing)) {
+                            TvButton(translated(if (running) "Moment…" else "Anmelden"), released = user.isNotBlank() && !running) { signIn() }
+                            TvButton(translated("Lieber Quick Connect")) { perCode = true }
+                        }
+                    }
+                }
             }
             error?.let {
-                Text(it, style = TvTheme.body, color = Theme.warning, textAlign = TextAlign.Center,
-                     modifier = Modifier.widthIn(max = 560.dp).padding(top = 16.dp))
+                Text(it, style = TvTheme.small, color = Theme.error, modifier = Modifier.padding(top = TvSpec.onboardingErrorTop))
             }
+            TvButton(translated("Abbrechen"), modifier = Modifier.padding(top = TvSpec.onboardingCancelTop)) { cancel() }
         }
     }
 }

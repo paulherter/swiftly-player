@@ -47,6 +47,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     var startRails: List<Rail>? = null
     /** When the home page was last loaded, for the refresh on return. */
     var startLoaded = 0L
+    /** The settings the rows in `startRails` were built with (`startKey`); other settings mean they are not current. */
+    var startKey = ""
 
     /** One state per kind, like the models in `MainView` that survive section changes. */
     val libraries = mutableMapOf<String, LibraryState>()
@@ -446,7 +448,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         // "Android" in the program name lets other devices recognise a phone (or the TV).
         kern = Kern.init(store.devicesIdentifier(), Build.MODEL ?: "Android", BuildConfigVersion,
                          if (isTv) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
+        // Where the core writes images it makes itself (trickplay sheets of servers that have none to fetch).
+        Kern.cacheFolderSet(cacheDir.absolutePath)
         qualityReport()
+        sessionEventsListen()
         sharedListen(run)
         playOrdersListen(run)
         support = de.paulherter.swiftly.support.Support(this)
@@ -460,8 +465,11 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         run.launch { while (true) { kotlinx.coroutines.delay(60_000); support.watchSave(force = false) } }
     }
 
-    /** Direct Play and bitrate to the facade, at startup and on every change. */
-    fun qualityReport() = kern.playbackSelection(settings.alwaysDirectPlay, settings.bitratesLimit.toLong())
+    /** Direct Play, bitrate and the subtitle look's file switch to the facade, at startup, on every change and before each start. */
+    fun qualityReport() {
+        kern.playbackSelection(settings.alwaysDirectPlay, settings.bitratesLimit.toLong())
+        kern.subtitleLookReport(settings.subtitleLook)
+    }
 
 
     /**
@@ -501,18 +509,57 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.sessionApplies().await() }
             }.getOrDefault(true)
             if (applies) return@launch
-            val name = username()
-            val rest = store.accounts?.let { Kern.bundleRemoved(it, Kern.bundleActiveId(it)) }.orEmpty()
-            val proceed = rest.takeIf { it.isNotEmpty() }?.let { Kern.bundleActive(it) }
-                ?.let { runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull() }
-            val sentence = if (proceed.isNullOrEmpty()) de.paulherter.swiftly.shared.translated("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
-                       else de.paulherter.swiftly.shared.translated("Die Anmeldung von %@ gilt nicht mehr. Jetzt angemeldet als %@.", name, proceed)
-            AppLog.writeOut("Anmeldung widerrufen, abgemeldet (weiteres Konto: ${!proceed.isNullOrEmpty()})")
-            if (proceed.isNullOrEmpty()) loginHint.value = sentence
-            else android.widget.Toast.makeText(this@SwiftlyApplication, sentence, android.widget.Toast.LENGTH_LONG).show()
-            signOutNow()
+            revokedSignOff()
         }
     }
+
+    /** The token no longer opens the server: sign this account out and say why (as after a failed check). */
+    private suspend fun revokedSignOff() {
+        val name = username()
+        val rest = store.accounts?.let { Kern.bundleRemoved(it, Kern.bundleActiveId(it)) }.orEmpty()
+        val proceed = rest.takeIf { it.isNotEmpty() }?.let { Kern.bundleActive(it) }
+            ?.let { runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull() }
+        val sentence = if (proceed.isNullOrEmpty()) de.paulherter.swiftly.shared.translated("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                   else de.paulherter.swiftly.shared.translated("Die Anmeldung von %@ gilt nicht mehr. Jetzt angemeldet als %@.", name, proceed)
+        AppLog.writeOut("Anmeldung widerrufen, abgemeldet (weiteres Konto: ${!proceed.isNullOrEmpty()})")
+        if (proceed.isNullOrEmpty()) loginHint.value = sentence
+        else android.widget.Toast.makeText(this@SwiftlyApplication, sentence, android.widget.Toast.LENGTH_LONG).show()
+        signOutNow()
+    }
+
+    /**
+     * **What happens to a Plex server during the session**: it moves between addresses with the
+     * network, and its token can run out. The core collects both; here they are taken over. A moved
+     * server is stored again (the bundle keeps the newest address), a revoked token signs out like
+     * a rejected device does. Only while a Plex account is current.
+     */
+    private fun sessionEventsListen() {
+        run.launch {
+            while (true) {
+                kotlinx.coroutines.delay(4000)
+                if (kern.kind() != "plex") continue
+                val events = runCatching {
+                    org.json.JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.sessionEvents().await() })
+                }.getOrNull() ?: continue
+                val moved = events.optString("moved")
+                if (moved.isNotEmpty()) store.accounts?.let { bundle ->
+                    // A late event of an account that was left meanwhile only updates its address;
+                    // recording makes the account current, so the one that is current stays so.
+                    val current = Kern.bundleActiveId(bundle)
+                    var next = Kern.bundleRecord(moved, bundle)
+                    if (current.isNotEmpty() && Kern.bundleActiveId(next) != current) next = Kern.bundleSwitch(next, current)
+                    store.accounts = next
+                }
+                if (events.optBoolean("revoked")) revokedSignOff()
+            }
+        }
+    }
+
+    /** Whether the current server can do this (`ServerCapability`, e.g. "quickConnect"); the screens show only what it can. */
+    fun can(capability: String): Boolean = if (::kern.isInitialized) kern.can(capability) else true
+
+    /** The current account's kind: "jellyfin", "emby" or "plex". */
+    fun kind(): String = if (::kern.isInitialized) kern.kind().ifEmpty { "jellyfin" } else "jellyfin"
 
     /**
      * What the current account dictates: `EnableNextEpisodeAutoPlay` and the download right
@@ -594,7 +641,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     /**
-     * **Sign-out affects only the current account**, without confirmation as on iOS. If others
+     * **Sign-out affects only the current account**; the phone asks first (`ProfilePage`), the TV does not, as on Apple TV. If others
      * remain, the next becomes current; if it was the last, go back to server selection.
      */
     fun signOff() {

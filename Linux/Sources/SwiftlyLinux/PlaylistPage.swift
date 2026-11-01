@@ -79,7 +79,7 @@ extension App {
         let shown = PlaylistEntries()
         signal(play, "clicked") { [weak self] in
             guard let self, let first = self.playlistStart(shown.items) else { return }
-            self.launch(first)
+            self.launchAsking(first)
         }
         let load: () -> Void = { [weak self] in
             guard let self, let client = self.client else { return }

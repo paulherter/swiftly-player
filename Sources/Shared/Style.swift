@@ -4236,7 +4236,8 @@ extension EmptyState {
 /// second wording for the same situation would be a second answer to the same
 /// question.
 struct DisturbHint: View {
-    let model: AppModel
+    /// `nil` on sign-in pages, where there is no server yet: then `address` says who.
+    var model: AppModel?
     /// Where there is something to repeat, the button is there. Where the section is
     /// reloaded with the whole page, it is missing: a button that loads the page twice
     /// is worse than none.
@@ -4261,7 +4262,7 @@ struct DisturbHint: View {
                 .foregroundStyle(Theme.font)
                 .padding(.bottom, 6)
 
-            Text("\(address ?? model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?")
+            Text("\(address ?? model?.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?")
                 .growing(14)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .lineSpacing(2)

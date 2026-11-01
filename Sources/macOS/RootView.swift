@@ -33,7 +33,7 @@ struct RootView: View {
             Theme.reason.ignoresSafeArea()
             switch model.phase {
             case .disconnected, .connecting:
-                ServerView(model: model)
+                MacFirstStart(model: model)
             case let .needsLogin(serverName, version):
                 SignInView(model: model, serverName: serverName, version: version)
             case .ready:
@@ -145,8 +145,15 @@ struct DiscordHint: View {
 
 /// Where the server is. One sentence, one field, one button, as on iPhone but
 /// centred in the window instead of at the top of the screen.
+///
+/// **Reached through the kind picker** (`back` set): the wordmark gives way to the
+/// subpage header with its arrow, which also answers Escape, and an address Emby
+/// recognised as Jellyfin is already in the field.
 struct ServerView: View {
     let model: AppModel
+    /// The arrow back to the kind picker; `nil` where this is the page itself.
+    var back: (() -> Void)?
+    var presetAddress: String?
     @State private var address = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
@@ -154,12 +161,12 @@ struct ServerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: 44)
+            if back == nil { Wordmark(height: 44) }
 
             Text("Wo steht dein Jellyfin-Server?")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
-                .padding(.top, 40)
+                .padding(.top, back == nil ? 40 : 0)
 
             InputRow(text: $address, symbol: "globe",
                          placeholder: "tv.beispiel.de", completion: linkUp)
@@ -192,7 +199,22 @@ struct ServerView: View {
                 .opacity(address.isEmpty ? 0.4 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { inField = true }
+        .overlay(alignment: .top) {
+            if let back {
+                SubpageHeader(title: "Mit Jellyfin anmelden", back: back)
+                    .frame(width: Theme.formWidth)
+                    .padding(.top, Theme.contentTop)
+                    .background {
+                        Button(action: back) { Color.clear.frame(width: 0, height: 0) }
+                            .keyboardShortcut(.cancelAction)
+                            .accessibilityHidden(true)
+                    }
+            }
+        }
+        .onAppear {
+            if address.isEmpty, let presetAddress { address = presetAddress }
+            inField = true
+        }
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
     }

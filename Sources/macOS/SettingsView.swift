@@ -46,12 +46,15 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         server
                         // Settings follow the account to every device (`SettingsSyncRun`).
-                        SettingGroup(title: "Konto") {
-                            ToggleRow(symbol: "arrow.triangle.2.circlepath",
-                                      title: Text("Einstellungen auf allen Geräten gleich halten"),
-                                      under: Text("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
-                                      an: Binding(get: { model.settingsSync.on },
-                                                  set: { model.settingsSync.on = $0 }))
+                        // Only servers that keep display preferences (`ServerCapability.settingsSync`).
+                        if model.can(.settingsSync) {
+                            SettingGroup(title: "Konto") {
+                                ToggleRow(symbol: "arrow.triangle.2.circlepath",
+                                          title: Text("Einstellungen auf allen Geräten gleich halten"),
+                                          under: Text("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
+                                          an: Binding(get: { model.settingsSync.on },
+                                                      set: { model.settingsSync.on = $0 }))
+                            }
                         }
                         // Custom headers for a service in front of the server (issue #4), collapsed under
                         // the group.
@@ -154,16 +157,28 @@ struct SettingsView: View {
     /// **Between Offline and Server, deliberately.** It is a second service, not a
     /// second server, and an add-on: anyone who connects nothing sees nothing of it
     /// apart from this one row.
-    private var integration: some View {
+    ///
+    /// **Rows the connected kind cannot use are not shown** (`ServerCapability`, as on
+    /// iPhone): Seerr signs in with the media server's own user name and password, which
+    /// not every kind has. Without any row the group is not drawn at all.
+    @ViewBuilder private var integration: some View {
+        if model.can(.seerr) || model.trakt.available || !inSandbox {
+            integrationGroup
+        }
+    }
+
+    private var integrationGroup: some View {
         SettingGroup(title: "Integration") {
-            ValuesRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
-                       under: Text("Anfragen, was noch nicht da ist"),
-                       value: model.seerr.connected ? String(localized: "Verbunden") : nil,
-                       action: { navigator.openIt(.seerr, in: section) })
+            if model.can(.seerr) {
+                ValuesRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
+                           under: Text("Anfragen, was noch nicht da ist"),
+                           value: model.seerr.connected ? String(localized: "Verbunden") : nil,
+                           action: { navigator.openIt(.seerr, in: section) })
+            }
             // **Next to Seerr, and only with credentials in the build** (`TraktAccess`);
             // without them there would be a button that is guaranteed to fail.
             if model.trakt.available {
-                SheetLine().padding(.leading, Theme.separatorInsetCard)
+                if model.can(.seerr) { SheetLine().padding(.leading, Theme.separatorInsetCard) }
                 ValuesRow(symbol: "checkmark.circle", title: Text(verbatim: "Trakt"),
                            under: Text("Trägt ein, was du schaust"),
                            value: model.trakt.connected ? String(localized: "Verbunden") : nil,
@@ -190,7 +205,9 @@ struct SettingsView: View {
             // once. It is reversible: a build without the sandbox brings the row back with it,
             // without anyone having to remember.
             if !inSandbox {
-                SheetLine().padding(.leading, Theme.separatorInsetCard)
+                if model.can(.seerr) || model.trakt.available {
+                    SheetLine().padding(.leading, Theme.separatorInsetCard)
+                }
                 ToggleRow(symbol: "bubble.left.and.text.bubble.right",
                               title: Text(verbatim: "Discord"),
                               under: Text("Zeigt im Profil, was gerade läuft"),

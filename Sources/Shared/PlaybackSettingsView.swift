@@ -25,7 +25,7 @@ struct PlaybackSettingsView: View {
     @State private var shownList: ListKind? = .audio
 
     private enum ListKind: String, Identifiable {
-        case bitrate, audio = "ton", subtitle = "untertitel", back = "zurueck", forward = "vor", buffer = "puffer"
+        case bitrate, audio = "ton", subtitle = "untertitel", back = "zurueck", forward = "vor", buffer = "puffer", engine = "abspieler"
         var id: String { rawValue }
     }
 
@@ -108,6 +108,13 @@ struct PlaybackSettingsView: View {
                       under: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       an: Binding(get: { model.subtitleAutomatic },
                                   set: { model.subtitleAutomatic = $0 }))
+            SheetLine()
+            // The page for size, colour, outline and so on (spec: subtitle look, section 1).
+            NavigationLink(value: SubtitleLookRoute()) {
+                ValueRow(symbol: "textformat.size", title: Text("Aussehen der Untertitel"),
+                         value: model.subtitleLook.entryValue, chevron: true)
+            }
+            .buttonStyle(Theme.PressRow())
         }
     }
 
@@ -146,6 +153,11 @@ struct PlaybackSettingsView: View {
             ValueRow(symbol: "wifi.exclamationmark", title: Text("Puffer"),
                       value: model.bufferLevel.name,
                       action: { openIt(.buffer) })
+            SheetLine()
+            // Same place and words as "Player" on Android. Applies from the next title.
+            ValueRow(symbol: "play.rectangle", title: Text("Player"),
+                      value: model.playerEngine.name,
+                      action: { openIt(.engine) })
         }
     }
 
@@ -213,6 +225,7 @@ struct PlaybackSettingsView: View {
         case .back:    "Zurückspulen"
         case .forward:        "Vorspulen"
         case .buffer:     "Puffer"
+        case .engine:     "Player"
         case nil:         ""
         }
     }
@@ -231,6 +244,13 @@ struct PlaybackSettingsView: View {
                 SelectionEntry(id: rung.rawValue, text: rung.name,
                                selected: rung == model.bufferLevel) {
                     model.bufferLevel = rung
+                }
+            }
+        case .engine:
+            PlayerEngineSetting.allCases.map { choice in
+                SelectionEntry(id: choice.rawValue, text: choice.name,
+                               selected: choice == model.playerEngine) {
+                    model.playerEngine = choice
                 }
             }
         case .audio:
@@ -334,6 +354,8 @@ struct ValueRow: View {
     var value: String?
     var dimmedDown = false
     var action: (() -> Void)?
+    /// The arrow for a row that is the label of a `NavigationLink` (no action of its own).
+    var chevron = false
 
     var body: some View {
         let shell = RowsLayout(symbol: symbol, title: title, under: under,
@@ -346,7 +368,7 @@ struct ValueRow: View {
                         .growing(15)
                         .foregroundStyle(Theme.fontQuiet)
                 }
-                if action != nil {
+                if action != nil || chevron {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
                         // See RootView: 28 percent is 2.50:1.

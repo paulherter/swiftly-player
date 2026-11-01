@@ -59,6 +59,7 @@ public enum SettingsSync {
         .init(name: "tonSprache", kind: .text, perServer: false),
         .init(name: "utSprache", kind: .text, perServer: false),
         .init(name: "utAuto", kind: .bool, perServer: false),
+        .init(name: "utAussehen", kind: .json, perServer: false),
         .init(name: "naechsteAuto", kind: .bool, perServer: false),
         .init(name: "introAbspannAuto", kind: .bool, perServer: false),
         .init(name: "restzeitAlsEnde", kind: .bool, perServer: false),

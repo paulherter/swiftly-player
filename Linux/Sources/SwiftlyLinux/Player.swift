@@ -30,13 +30,19 @@ final class Player: @unchecked Sendable {
     /// Holds the picture field and the GL field; the player page attaches this.
     private var wrapper: Widget!
     private var hdr: OpaquePointer?
-    /// `HDRBILD_PQ`/`HDRBILD_HLG` for the current title, 0 on the RGB path.
+    /// `HDRBILD_PQ`/`HDRBILD_HLG` for the current title, 0 for SDR.
     private var hdrIdLine: Int32 = 0
+    /// The picture is drawn by the shader, for SDR or HDR.
+    private var glInUse = false
     private var filling = false
     /// Size of the GL framebuffer in device points, from the `resize` signal.
     fileprivate var glWidth: Int32 = 0
     fileprivate var glHeight: Int32 = 0
     private var hdrErrorReported = false
+    /// SDR shader path failed at runtime for this player: later titles use RGB.
+    private var sdrShaderFailed = false
+    /// Arguments of the last ``open`` so a failed SDR shader can restart the title on RGB.
+    private var lastOpen: (url: URL, buffer: BufferLevel, softwareDecoder: Bool)?
     private var tick: guint = 0
 
     /// **Number of frames the bridge has delivered since opening.**
@@ -82,7 +88,19 @@ final class Player: @unchecked Sendable {
         UInt(bitPattern: player.map { UnsafeMutableRawPointer($0) }) == source
     }
 
-    init() {
+    /// **The look the next title opens with** (profile setting, page "Untertitel").
+    /// The libVLC core takes the subtitle options once, at creation, so a changed look
+    /// needs a new core; ``open(_:since:buffer:paused:softwareDecoder:curve:)`` does that
+    /// when nothing is playing (a player already open keeps the old look, the page says so).
+    var look: SubtitleLook
+    /// The look the running core was created with.
+    private var coreLook: SubtitleLook
+    /// The core's arguments without the subtitle ones, to build a new core from.
+    private var baseWords: [String] = []
+
+    init(look: SubtitleLook = .standard) {
+        self.look = look
+        self.coreLook = look
         // No VLC user interface and no windows of its own; the picture is rendered here.
         // `--no-video-title-show` suppresses the title overlay VLC otherwise draws.
         var words = ["--no-video-title-show", "--quiet"]
@@ -90,17 +108,11 @@ final class Player: @unchecked Sendable {
         // runs the shipped build. With `--quiet` VLC also stays silent about
         // "no suitable decoder module", which is exactly the line missing from a
         // user's log.
-        if ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1" {
-            words = ["--no-video-title-show", "--verbose=1"]
+        // `=2` also logs which decoder module is chosen (hardware or software).
+        if let level = ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"],
+           level == "1" || level == "2" {
+            words = ["--no-video-title-show", "--verbose=\(level)"]
         }
-        #if DEBUG
-        // **For checking whether modules are missing.** With `--quiet` VLC stays silent
-        // about "no suitable decoder module"; in debug builds `SWIFTLY_VLC_MELDUNGEN=1`
-        // sends errors and warnings to stderr.
-        if ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1" {
-            words = ["--no-video-title-show", "--verbose=1"]
-        }
-        #endif
         // **Do not drop frames early** (Apple `VLCPlayer.library`).
         // Old DVD rips stuttered: the vout drops a frame as soon as it would be late
         // by an estimate based on the maximum of filter and render time, so a single
@@ -113,7 +125,7 @@ final class Player: @unchecked Sendable {
         // 3.0.23 still logged "using x deinterlace method" for 1080i50, and "using bob"
         // with `--deinterlace-mode=bob`. Only applies where VLC detects interlaced fields.
         words.append("--deinterlace-mode=bob")
-        words += SubtitleStyle.vlcOptions()
+        // The subtitle options follow below, once the arguments of the platform are complete.
 
         #if os(Linux)
         // Tells VLC not to touch Xlib, since rendering happens here.
@@ -148,37 +160,8 @@ final class Player: @unchecked Sendable {
         //
         // The core is therefore created concurrently. Anyone who wants to open earlier
         // stores a request, which runs as soon as the core exists.
-        let values = words
-        Task.detached { [self] in
-            #if DEBUG
-            // **Makes the waiting case actually happen.** On a fast machine the core is ready
-            // after 0.1 s and the "title waits" branch would never run, so it would be untested.
-            if let slow = ProcessInfo.processInfo.environment["SWIFTLY_VLC_LANGSAM"],
-               let s = UInt64(slow) { try? await Task.sleep(nanoseconds: s * 1_000_000_000) }
-            #endif
-            var arguments: [UnsafePointer<CChar>?] = []
-            for word in values { arguments.append(strdup(word)) }
-            let done = libvlc_new(Int32(arguments.count), &arguments)
-            for pointer in arguments { free(UnsafeMutableRawPointer(mutating: pointer)) }
-            let address = UInt(bitPattern: done.map { UnsafeMutableRawPointer($0) })
-            onMainThread {
-                self.kern = address == 0 ? nil : OpaquePointer(UnsafeMutableRawPointer(bitPattern: address)!)
-                if self.kern == nil {
-                    // **Without a core, a title waited forever.** `open` stored it as a pending
-                    // request, the request called `open`, which stored it again; the user saw the
-                    // loading veil and the log said nothing.
-                    self.broken = true
-                    AppLog.writeOut("[Player] FEHLER: libVLC liess sich nicht starten"
-                        + " (VLC_PLUGIN_PATH, fehlende Module?)")
-                } else {
-                    self.vlcMessagesConnect()
-                    AppLog.writeOut("[Player] VLC bereit")
-                }
-                let waits = self.waitingJob
-                self.waitingJob = nil
-                waits?()
-            }
-        }
+        baseWords = words
+        coreStart(words + SubtitleStyle.vlcOptions(look: look, outputHeight: SubtitleStyle.outputHeight()))
         bridge = image_bridge_new()
         imageField = gtk_picture_new()
         glField = gtk_gl_area_new()
@@ -209,6 +192,42 @@ final class Player: @unchecked Sendable {
         signal(wrapper, "map") { [weak self] in
             guard let self, self.player != nil else { return }
             self.imageTickStart()
+        }
+    }
+
+    /// Creates the libVLC core in the background (see the note in ``init(look:)``) and
+    /// runs the waiting request once it exists. Also used for a new core when the subtitle
+    /// look changed.
+    private func coreStart(_ values: [String]) {
+        Task.detached { [self] in
+            #if DEBUG
+            // **Makes the waiting case actually happen.** On a fast machine the core is ready
+            // after 0.1 s and the "title waits" branch would never run, so it would be untested.
+            if let slow = ProcessInfo.processInfo.environment["SWIFTLY_VLC_LANGSAM"],
+               let s = UInt64(slow) { try? await Task.sleep(nanoseconds: s * 1_000_000_000) }
+            #endif
+            var arguments: [UnsafePointer<CChar>?] = []
+            for word in values { arguments.append(strdup(word)) }
+            let done = libvlc_new(Int32(arguments.count), &arguments)
+            for pointer in arguments { free(UnsafeMutableRawPointer(mutating: pointer)) }
+            let address = UInt(bitPattern: done.map { UnsafeMutableRawPointer($0) })
+            onMainThread {
+                self.kern = address == 0 ? nil : OpaquePointer(UnsafeMutableRawPointer(bitPattern: address)!)
+                if self.kern == nil {
+                    // **Without a core, a title waited forever.** `open` stored it as a pending
+                    // request, the request called `open`, which stored it again; the user saw the
+                    // loading veil and the log said nothing.
+                    self.broken = true
+                    AppLog.writeOut("[Player] FEHLER: libVLC liess sich nicht starten"
+                        + " (VLC_PLUGIN_PATH, fehlende Module?)")
+                } else {
+                    self.vlcMessagesConnect()
+                    AppLog.writeOut("[Player] VLC bereit")
+                }
+                let waits = self.waitingJob
+                self.waitingJob = nil
+                waits?()
+            }
         }
     }
 
@@ -245,6 +264,19 @@ final class Player: @unchecked Sendable {
             onMainThread { [weak self] in self?.tornDown?(true) }
             return
         }
+        // **A changed subtitle look needs a new core.** libVLC takes the freetype options
+        // once, when the core is created. Opening a title is the one moment nothing is
+        // playing on the old core, so it is swapped here; the title waits for the new one
+        // like for the first core (`waitingJob` below).
+        if look != coreLook, kern != nil {
+            finish(onlyMedium: true)
+            if let old = kern { libvlc_release(old) }
+            kern = nil
+            coreLook = look
+            AppLog.writeOut("[Player] Untertitelaussehen geändert, neuer VLC-Kern")
+            coreStart(baseWords + SubtitleStyle.vlcOptions(look: look,
+                                                           outputHeight: SubtitleStyle.outputHeight()))
+        }
         pausedSince = nil
         guard kern != nil else {
             AppLog.writeOut("[Player] VLC noch nicht bereit, Titel wartet")
@@ -264,6 +296,7 @@ final class Player: @unchecked Sendable {
             AppLog.writeOut(String(format: "[Player] wartete %.1f s auf VLC",
                                      Date().timeIntervalSince(since)))
         }
+        lastOpen = (url, buffer, softwareDecoder)
         finish(onlyMedium: true)
         fetchedImages = 0
         beats = 0
@@ -372,12 +405,24 @@ final class Player: @unchecked Sendable {
         g_object_unref(glField)
     }
 
+    /// The renderer of the window, or of the app's first window while the player
+    /// field is not in one yet.
+    private func rendererName() -> String? {
+        var window = wrapper.flatMap { gtk_widget_get_native($0) }
+        if window == nil, let list = gtk_window_list_toplevels() {
+            if let first = list.pointee.data {
+                window = gtk_widget_get_native(first.assumingMemoryBound(to: GtkWidget.self))
+            }
+            g_list_free(list)
+        }
+        guard let window, let drawer = gtk_native_get_renderer(window),
+              let name = g_type_name_from_instance(
+                unsafeBitCast(drawer, to: UnsafeMutablePointer<GTypeInstance>.self)) else { return nil }
+        return String(cString: name)
+    }
+
     private func rendererReport() {
-        guard let wrapper, let window = gtk_widget_get_native(wrapper),
-              let drawer = gtk_native_get_renderer(window) else { return }
-        let name = g_type_name_from_instance(
-            unsafeBitCast(drawer, to: UnsafeMutablePointer<GTypeInstance>.self))
-        let clear = name.map { String(cString: $0) } ?? "unbekannt"
+        guard let clear = rendererName() else { return }
         AppLog.writeOut("[Player] Zeichenwerk \(clear)")
         // **The fallback to Cairo is announced, not just recorded.**
         // If the GL/EGL context is invalid (old driver, VM, remote session), GTK draws
@@ -398,7 +443,7 @@ final class Player: @unchecked Sendable {
     /// the full playback URL, which carries the Jellyfin access key. Every line is
     /// sanitized first, so a forwarded log does not leak the key.
     private func vlcMessagesConnect() {
-        guard ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1",
+        guard ["1", "2"].contains(ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] ?? ""),
               let kern else { return }
         vlc_track_on(kern, vlcLogCall)
         AppLog.writeOut("[Player] VLC-Meldungen an")
@@ -755,9 +800,14 @@ final class Player: @unchecked Sendable {
     /// libVLC 3 can tone-map only in its own OpenGL output, not in the raw-frame
     /// callbacks used here, so the shader in `hdrimage.c` maps HDR itself.
     ///
-    /// SDR stays on the RGB path, unchanged. Without usable GL (VM, remote session)
-    /// HDR does too: flat, but with a picture. `SWIFTLY_HDR=aus` forces the old path
-    /// for comparison.
+    /// Without usable GL (VM, remote session) HDR stays on the RGB path: flat, but with
+    /// a picture. `SWIFTLY_HDR=aus` forces the old path for comparison.
+    ///
+    /// **SDR takes the shader too, where that is cheaper.** On the RGB path every frame
+    /// is converted on the CPU, copied once more on the main thread and uploaded as a
+    /// new texture. Only with a GL renderer: Cairo and Vulkan may read the GL area back
+    /// on the CPU, which would cost more than it saves. `SWIFTLY_SDR_GL=aus` forces the
+    /// RGB path for comparison.
     private func imageDistanceSelect(_ curve: ColorRange.IdLine?) {
         guard let bridge, let imageField, let glField else { return }
         var distance: Int32 = 0
@@ -772,9 +822,18 @@ final class Player: @unchecked Sendable {
             }
         }
         hdrIdLine = distance
+        let renderer = rendererName() ?? "unbekannt"
+        let sdrShader = curve == nil
+            && ProcessInfo.processInfo.environment["SWIFTLY_SDR_GL"] != "aus"
+            && !sdrShaderFailed
+            && (renderer.contains("GL") || renderer.contains("Ngl"))
+            && Player.glSuitable()
+        glInUse = distance != 0 || sdrShader
+        AppLog.writeOut("[Player] Bildweg \(glInUse ? "Grafikkarte" : "RGB") (\(renderer))")
         image_bridge_hdr(bridge, distance != 0)
-        gtk_widget_set_visible(glField, distance != 0 ? 1 : 0)
-        gtk_widget_set_visible(imageField, distance != 0 ? 0 : 1)
+        image_bridge_sdr_yuv(bridge, sdrShader)
+        gtk_widget_set_visible(glField, glInUse ? 1 : 0)
+        gtk_widget_set_visible(imageField, glInUse ? 0 : 1)
     }
 
     /// **Can this machine run the shader at all?** Checked once per run in a separate
@@ -832,21 +891,43 @@ final class Player: @unchecked Sendable {
                               GConnectFlags(rawValue: 0))
     }
 
-    /// Pushes an HDR frame into the textures. Runs on the frame clock like the RGB
+    /// Pushes a YUV frame into the textures. Runs on the frame clock like the RGB
     /// path; without a context (field not yet in the window) the frame is skipped.
     private func hdrImageLoad(_ state: inout ImageState) {
-        guard let glField, let hdr, hdrIdLine != 0,
+        guard let glField, let hdr, glInUse,
               gtk_widget_get_realized(glField) != 0 else { return }
         let inputField = asGL(glField)
         gtk_gl_area_make_current(inputField)
         guard gtk_gl_area_get_error(inputField) == nil,
-              let context = gtk_gl_area_get_context(inputField) else { return }
-        if !hdr_image_upload(hdr, &state, gdk_gl_context_get_use_es(context) != 0),
-           !hdrErrorReported {
-            hdrErrorReported = true
-            AppLog.writeOut("[Player] HDR-Bild nicht geladen: \(String(cString: hdr_image_error(hdr)))")
+              let context = gtk_gl_area_get_context(inputField) else {
+            sdrFallBackToRGB("GL-Fehler")
+            return
+        }
+        if !hdr_image_upload(hdr, &state, gdk_gl_context_get_use_es(context) != 0) {
+            if !hdrErrorReported {
+                hdrErrorReported = true
+                AppLog.writeOut("[Player] HDR-Bild nicht geladen: \(String(cString: hdr_image_error(hdr)))")
+            }
+            sdrFallBackToRGB("Hochladen gescheitert")
+            return
         }
         gtk_gl_area_queue_render(inputField)
+    }
+
+    /// **SDR only:** if the shader path fails while a title runs, restart that title at
+    /// the current position on the RGB path. HDR (`hdrIdLine != 0`) is left alone.
+    private func sdrFallBackToRGB(_ reason: String) {
+        guard hdrIdLine == 0, glInUse, !sdrShaderFailed, let last = lastOpen else { return }
+        sdrShaderFailed = true
+        let at = position
+        let wasPaused = !running
+        let current = player.map { UInt(bitPattern: $0) }
+        AppLog.writeOut("[Player] SDR-Grafikkarte fehlgeschlagen (\(reason)), weiter über RGB")
+        onMainThread { [self] in
+            guard player.map({ UInt(bitPattern: $0) }) == current else { return }   // another title started meanwhile
+            open(last.url, since: at, buffer: last.buffer, paused: wasPaused,
+                 softwareDecoder: last.softwareDecoder, curve: nil)
+        }
     }
 
     fileprivate func glDraw(_ context: OpaquePointer?) {
@@ -1010,9 +1091,13 @@ nonisolated(unsafe) private let imageTick: @convention(c) (
 }
 
 /// **How text subtitles look**, same values as on Apple (`SubtitleStyle` in
-/// `Sources/Shared/VLCPlayer.swift`, with the rationale): Inter SemiBold, white,
-/// thin outline, light shadow, 78% of VLC's default size. libVLC 3 runs here;
-/// `sub-margin` is omitted because VLC 3 already places text higher than VLC 4.
+/// `Sources/Shared/VLCPlayer.swift`, with the rationale): Inter SemiBold at 78% of
+/// VLC's default size as the base scale. Colour, size step, outline, shadow, background
+/// and position come from the profile's ``SubtitleLook`` (page "Untertitel"), turned into
+/// libVLC 3 options by the package (`SubtitleLook.vlcOptions`, engine `.vlc3`), so the
+/// table is the same on every platform. The default look gives the old values: white,
+/// outline 3 %, no shadow. `sub-margin` is only set for "Höher"; VLC 3 already places
+/// text higher than VLC 4.
 ///
 /// **VLC must find the font itself.** libVLC 3 queries fontconfig with its own
 /// configuration (`FcInitLoadConfigAndFonts`), which `fonts_load` from
@@ -1024,21 +1109,48 @@ nonisolated(unsafe) private let imageTick: @convention(c) (
 /// bundled file is unreachable. Segoe UI Semibold ships with every Windows and is
 /// the closest relative.
 enum SubtitleStyle {
-    static func vlcOptions() -> [String] {
+    /// VLC's default text size times this is "Normal" (the size steps multiply it).
+    static let baseScale = 0.78
+
+    /// The libVLC options for a look. The font is the platform's own and does not depend
+    /// on the look. `outputHeight` is the picture height in pixels for "Höher"
+    /// (7 % of it), see ``outputHeight()``.
+    static func vlcOptions(look: SubtitleLook, outputHeight: Int) -> [String] {
+        return ["--freetype-font=\(fontFamily)"]
+            + SubtitleLook.vlcOptions(look: look, baseScale: baseScale,
+                                      outputHeight: outputHeight, engine: .vlc3)
+    }
+
+    /// **The height of the first screen in pixels, 1080 if unknown.** libVLC 3 reads
+    /// `sub-margin` in pixels of the video it draws, which is not known when the core is
+    /// created; the screen is the best stand-in (a title is rarely sharper than the
+    /// screen it plays on).
+    static func outputHeight() -> Int {
+        guard let display = gdk_display_get_default(),
+              let list = gdk_display_get_monitors(display),
+              g_list_model_get_n_items(list) > 0,
+              let raw = g_list_model_get_item(list, 0) else { return 1080 }
+        var area = GdkRectangle()
+        gdk_monitor_get_geometry(OpaquePointer(raw), &area)
+        let scale = Int(max(gdk_monitor_get_scale_factor(OpaquePointer(raw)), 1))
+        g_object_unref(raw)
+        let height = Int(area.height) * scale
+        return height >= 480 ? height : 1080
+    }
+
+    #if !os(Windows)
+    /// **Asked once.** ``fontVLC()`` sets `FONTCONFIG_FILE`, and a second call finds it set and
+    /// answers no; a new core (changed look) would then fall back to "Sans".
+    private static let interAvailable = fontVLC()
+    #endif
+
+    /// The face VLC is given, and the page's preview draws with the same one.
+    static var fontFamily: String {
         #if os(Windows)
-        let font = "Segoe UI Semibold"
+        return "Segoe UI Semibold"
         #else
-        let font = fontVLC() ? "Inter 18pt SemiBold" : "Sans"
+        return interAvailable ? "Inter 18pt SemiBold" : "Sans"
         #endif
-        return [
-            "--freetype-font=\(font)",
-            "--freetype-color=16777215",
-            "--freetype-outline-thickness=3",
-            "--freetype-outline-opacity=230",
-            // No shadow: VLC draws a hard copy offset at an angle, which read as a slanted outline.
-            "--freetype-shadow-opacity=0",
-            "--sub-text-scale=78",
-        ]
     }
 
     #if !os(Windows)

@@ -35,12 +35,13 @@ public struct AccountBundle: Codable, Sendable, Equatable {
     /// and signing in to another one started over.
     public var server: [URL] {
         var watched = Set<String>()
-        return accounts.map(\.serverURL).filter { watched.insert(Self.identifier($0)).inserted }
+        return accounts.filter { watched.insert($0.serverIdentity).inserted }.map(\.serverURL)
     }
 
     /// The accounts of one server, in their order.
     public func accounts(on server: URL) -> [Session] {
-        accounts.filter { Self.identifier($0.serverURL) == Self.identifier(server) }
+        accounts.filter { $0.serverIdentity == Session.serverIdentity(of: server)
+            || Self.identifier($0.serverURL) == Self.identifier(server) }
     }
 
     /// An account by its key (`Session.accountKey`) or, for remembered bundles
@@ -194,7 +195,7 @@ public struct AccountBundle: Codable, Sendable, Equatable {
     /// and both spellings occur, one from user input, the other from our
     /// normalization.
     public func fitsServer(_ s: Session) -> Bool {
-        Self.identifier(s.serverURL) == Self.identifier(serverURL)
+        s.serverIdentity == activeOne.serverIdentity
     }
 
     static func identifier(_ url: URL) -> String {
@@ -207,5 +208,9 @@ public struct AccountBundle: Codable, Sendable, Equatable {
 extension Session {
     /// **Server and user together.** An account is only unique through its server:
     /// the same user ID on two servers, e.g. a moved server, makes two accounts.
-    public var accountKey: String { AccountBundle.identifier(serverURL) + "|" + userID }
+    public var accountKey: String {
+        // Plex: the machine, not the address (which changes with the network).
+        if kind == .plex, let plex { return kind.accountKeyPrefix + plex.machineIdentifier + "|" + userID }
+        return kind.accountKeyPrefix + AccountBundle.identifier(serverURL) + "|" + userID
+    }
 }

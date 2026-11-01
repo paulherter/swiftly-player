@@ -15,6 +15,8 @@ import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -106,7 +108,7 @@ fun TvBackdropReport(image: String?, ready: Boolean = true) {
 /** Subpages that do not use the shared backdrop (counterpart of `TvSubpage`). Person and
  *  Seerr title draw their own (rotating banner, foreign URLs) on an opaque background. */
 private val withoutSharedBackdrop = setOf("Person", "Genre", "BoxSet", "Playlist", "Profil", "WeiteresKonto", "ServerAufnahme",
-    "Wiedergabeeinstellungen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
+    "Wiedergabeeinstellungen", "Untertitelaussehen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
 
 private fun pagesKey(b: TvSection, depth: Int, id: String?) = "${b.name}/$depth/${id.orEmpty()}"
 
@@ -196,7 +198,7 @@ fun TvMain(app: SwiftlyApplication) {
 
     // Watch Next (`TvContinueWatchingShelf`) returns here via "swiftly://titel/<id>", the same address
     // as tvOS Top Shelf, but through the intent instead of `onOpenURL`. Same rule as
-    // `continueWatchingRequest` for "Continue watching" on Start (`StartPage.kt`): with a resume point,
+    // `continueWatchingAsking` for "Continue watching" on Start (`StartPage.kt`): with a resume point,
     // play directly, otherwise open the title page. Name and type are not known here yet, hence one
     // dedicated request instead of the helper function.
     LaunchedEffect(app.deepLink.value) {
@@ -207,7 +209,7 @@ fun TvMain(app: SwiftlyApplication) {
         val id = address.lastPathSegment?.takeIf { Regex("[A-Za-z0-9-]{1,64}").matches(it) } ?: return@LaunchedEffect
         section = TvSection.Start
         runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()?.let { t ->
-            if (t.planPresent) app.play.value = PlayRequest(id, t.resumeFrom) else open(Destination(id, t.name, t.type))
+            if (t.planPresent) de.paulherter.swiftly.playOrChoose(app, t, id, t.resumeFrom) else open(Destination(id, t.name, t.type))
         }
     }
 
@@ -247,6 +249,7 @@ fun TvMain(app: SwiftlyApplication) {
                 val report = remember(key) { { url: String? -> backdrops[key] = url } }
                 // Menu key or long OK on a tile: the tile menu as a panel (`tileMenuPanel`).
                 CompositionLocalProvider(LocalBackdropReport provides report,
+                    de.paulherter.swiftly.LocalProgressShow provides app.settings.progress,
                     de.paulherter.swiftly.LocalTileMenu provides { w -> de.paulherter.swiftly.tileMenuPanel(app, w, open) }) {
                 stateHolder.SaveableStateProvider(key) {
                     if (target == null) {
@@ -310,6 +313,8 @@ fun TvMain(app: SwiftlyApplication) {
         if (play == null) TvPanel(app)
         // "Wähl deinen Look": a full page; the buy page opens from it, so it lies below.
         if (play == null) TvLooksLayer(app)
+        // "What's new" once after an update: a page of its own, above the looks it may open.
+        if (play == null) TvWhatsNewLayer(app)
         // "Support Swiftly": the ask and the thanks as full panels.
         if (play == null) TvSupportLayer(app)
         // "Where to continue?" grows out of the badge.
@@ -459,11 +464,20 @@ private fun TvSubpage(app: SwiftlyApplication, target: Destination, open: (Desti
         "BoxSet" -> TvCollection(app, target, open)
         "Playlist" -> TvPlaylist(app, target, open)
         "Profil" -> TvProfile(app, open)
-        "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Theme.reason)) {
-            TvLoginPage(app, app.serverName.value.orEmpty(), "", moreAccount = true, otherServer = back) { back() }
+        // Another account on the connected server, by its kind (as `ProfileView` on tvOS): Plex and Emby on their
+        // own sign-in pages, Jellyfin through name and password / Quick Connect.
+        "WeiteresKonto" -> when (app.kind()) {
+            ServerKind.Plex.raw -> TvPlexSignInPage(app, finished = back, back = back)
+            ServerKind.Emby.raw -> TvEmbySignInPage(app, address = app.activeServer(), finished = back, back = back)
+            else -> Box(Modifier.fillMaxSize().background(Theme.reason)) {
+                TvLoginPage(app, app.serverName.value.orEmpty(), "", moreAccount = true, otherServer = back) { back() }
+            }
         }
-        "ServerAufnahme" -> TvServerOnboarding(app, target.id.takeIf { it != "serveraufnahme" }, back)
-        "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back)
+        // `role` carries the kind of a known server; without it the picker comes first.
+        "ServerAufnahme" -> TvAddServerFlow(app, target.role?.let { ServerKind.from(it) },
+            target.id.takeIf { it != "serveraufnahme" }, back)
+        "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back, open)
+        "Untertitelaussehen" -> TvSubtitleLook(app, back)
         "Darstellung" -> PresentationPage(app, open, back)
         "Einstellungen" -> SettingsPage(app, open, back)
         "Seerr" -> TvSeerrPage(app, back)
@@ -506,14 +520,20 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
         // "Support Swiftly", left of the profile, as on the phone's home page.
         TvSupportHeart(app)
         Spacer(Modifier.width(9.dp))
-        // A 32 dp profile circle, the small step of the focus ladder. The ring is white: an image cannot
-        // get brighter like a tile, and the accent carries state, not "the remote is here"
-        // (`ProfileStyle` on tvOS). The account switch flies here; while the new image is on its way,
-        // none is shown.
+        // A 30 dp profile circle (tvOS 60 pt), the small step of the focus ladder. The ring is the accent,
+        // drawn outside the image (`ProfileStyle` on tvOS: 4 pt, 8 pt out). The account switch flies here;
+        // while the new image is on its way, none is shown.
         val transition = de.paulherter.swiftly.AccountSwitchTransition.transition
+        val density = LocalDensity.current.density
         FocusArea(magnifier = TvTheme.focusMagnifierSmall, perform = profile) { focus ->
-            Box(Modifier.size(32.dp).border(2.dp, if (focus) Theme.font else Color.Transparent, CircleShape).padding(3.dp)
-                    .onGloballyPositioned { de.paulherter.swiftly.AccountSwitchTransition.targetReport(it.boundsInRoot(), it.findRootCoordinates().size.width.toFloat()) }
+            Box(Modifier.size(TvSpec.headerProfileImage)
+                    .drawBehind {
+                        if (focus) drawCircle(Theme.accent, radius = size.minDimension / 2 + (TvSpec.headerProfileRingGap + TvSpec.headerProfileRingWidth / 2).toPx(), style = Stroke(TvSpec.headerProfileRingWidth.toPx()))
+                    }
+                    .onGloballyPositioned {
+                        de.paulherter.swiftly.AccountSwitchTransition.targetReport(it.boundsInRoot(),
+                            it.findRootCoordinates().size.width.toFloat(), margin = TvSpec.accountSwitchTargetMargin * density)
+                    }
                     .graphicsLayer { alpha = if (transition != null && !transition.replaced) 0f else 1f }) {
                 SubcomposeAsyncImage(model = app.kern.userImage(160).orElse(null), contentDescription = translated("Profil"),
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape).background(Theme.raised),

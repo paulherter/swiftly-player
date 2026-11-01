@@ -140,7 +140,7 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
 
 /** Mirrors `TilePlaceholder` on tvOS: poster size, below it two breathing lines. */
 @Composable
-private fun TvTilePlaceholder() {
+internal fun TvTilePlaceholder() {
     Column(Modifier.width(TvTheme.posterWidth)) {
         LoadField(Modifier.size(TvTheme.posterWidth, TvTheme.posterHeight), TvTheme.cornerTile)
         LoadField(Modifier.fillMaxWidth().height(11.dp).padding(top = 9.dp), 3.dp)
@@ -156,8 +156,10 @@ private fun TvTilePlaceholder() {
 @Composable
 fun TvEmpty(headerLine: String, text: String, symbol: Glyph? = null, button: Pair<String, () -> Unit>? = null,
            /** For the initial focus when the button is the only target on the page. */
-           buttonModifier: Modifier = Modifier) {
-    Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+           buttonModifier: Modifier = Modifier,
+           /** The distance above the symbol; the search page sits higher than a full page. */
+           top: androidx.compose.ui.unit.Dp = 80.dp) {
+    Column(Modifier.fillMaxWidth().padding(top = top), horizontalAlignment = Alignment.CenterHorizontally) {
         symbol?.let {
             // **44, not 38**: tvOS uses 88, here half. It was the only number in the file next to the scale.
             // No circle around it: the phone's empty state has one, tvOS omits it, and that stays.
@@ -188,11 +190,11 @@ fun TvEmpty(headerLine: String, text: String, symbol: Glyph? = null, button: Pai
  * external-drive symbol.
  */
 @Composable
-fun TvDisruption(app: SwiftlyApplication, address: String? = null, buttonModifier: Modifier = Modifier, retry: (() -> Unit)? = null) {
+fun TvDisruption(app: SwiftlyApplication, address: String? = null, buttonModifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 80.dp, retry: (() -> Unit)? = null) {
     TvEmpty(translated("Server ist abgetaucht"),
            translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", address ?: app.serverAddress()),
            symbol = Glyph.ServerRoute,
-           button = retry?.let { translated("Erneut versuchen") to it }, buttonModifier = buttonModifier)
+           button = retry?.let { translated("Erneut versuchen") to it }, buttonModifier = buttonModifier, top = top)
 }
 
 /**
@@ -421,82 +423,3 @@ fun TvWatchlist(app: SwiftlyApplication, open: (Destination) -> Unit) {
         }
     })
 }
-
-/**
- * Mirrors `SearchView` on tvOS: **no system search field**, but a field of its own in the header;
- * it searches while typing from two characters. With a remote every typed word is expensive, so
- * the history comes first. Hits from the own server, below them what Seerr knows.
- */
-@Composable
-fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
-    val st = app.search
-    var historyRaw by remember { mutableStateOf(de.paulherter.swiftly.SearchState.historyRead(app)) }
-    val history = remember(historyRaw) { runCatching { JSONArray(Kern.searchHistoryList(historyRaw)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList()) }
-    LaunchedEffect(st.term) { st.searching(app, st.term.trim()) }
-    de.paulherter.swiftly.WatchStateChange(app) { if (Kern.searchTermFits(st.term.trim())) st.searching(app, st.term.trim()) }
-    val inputField = firstFocus()
-    fun remember() { historyRaw = Kern.searchHistoryRemember(st.term, historyRaw); de.paulherter.swiftly.SearchState.historyWrite(app, historyRaw) }
-
-    TvGrid(st.hit, open = open, loads = st.hunts && st.hit.isEmpty(), placeholderRails = 1, header = {
-        Column(Modifier.padding(top = headerBottom + 14.dp, bottom = 10.dp)) {
-            var inField by remember { mutableStateOf(false) }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BasicTextField(st.term, { st.term = it }, singleLine = true,
-                    textStyle = TvTheme.body.copy(color = Theme.font), cursorBrush = SolidColor(Theme.accent),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { remember() }),
-                    // **Up and Down leave the field, OK brings up the keyboard** (`remoteBarField`): otherwise
-                    // one could not get from Search to the tab bar, history or hits.
-                    modifier = Modifier.width(460.dp).focusRequester(inputField).onFocusChanged { inField = it.isFocused }
-                        .remoteBarField(),
-                    decorationBox = { inner ->
-                        // **No border, not even when focused**: a search field is a filled capsule, not a drawn outline,
-                        // and the light surface is already its focus indicator. `area` instead of `erhoeht`.
-                        Row(Modifier.height(44.dp).clip(RoundedCornerShape(TvTheme.corner))
-                                .background(if (inField) TvTheme.focusArea else Theme.area)
-                                .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Symbol(Glyph.Magnifier, 15.dp, color = Theme.fontQuiet, strength = Strength.Medium)
-                            Spacer(Modifier.width(10.dp))
-                            Box(Modifier.weight(1f)) {
-                                if (st.term.isEmpty()) Text(translated("Titel, Serie, Person"), style = TvTheme.body, color = Theme.fontVeryQuiet)
-                                inner()
-                            }
-                        }
-                    })
-                if (st.searched.isNotEmpty() && st.hit.isNotEmpty()) Text(translated("%lld Treffer", st.hit.size), style = TvTheme.small, color = Theme.fontQuiet)
-            }
-            when {
-                st.term.isBlank() && history.isNotEmpty() -> Column(Modifier.padding(top = 20.dp).width(460.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area).padding(6.dp)) {
-                    Text(translated("Zuletzt gesucht"), style = TvTheme.rail,
-                         color = Theme.fontQuiet, modifier = Modifier.padding(12.dp))
-                    history.forEach { w -> TvRow(w, Glyph.History) { st.term = w } }
-                    // As the last row in the card, not as a button beside it, which would be a focus trap.
-                    TvRow(translated("Verlauf löschen"), Glyph.Papierkorb) { historyRaw = ""; de.paulherter.swiftly.SearchState.historyWrite(app, "") }
-                }
-                !Kern.searchTermFits(st.term.trim()) -> Text(translated("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."),
-                                                               style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 20.dp))
-                // **Failed is not empty**: otherwise Search says "Nichts gefunden" when in truth nobody
-                // answered.
-                st.disrupted && !de.paulherter.swiftly.AccountSwitchTransition.waits -> TvDisruption(app, retry = { st.term = st.term + " "; st.term = st.term.trim() })
-                !st.hunts && st.searched.isNotEmpty() && st.hit.isEmpty() && st.seerr.isEmpty() ->
-                    TvEmpty(translated("Nichts gefunden"), translated("Versuch es mit einem anderen Wort."), symbol = Glyph.Magnifier)
-            }
-        }
-    }, more = {
-        if (st.seerr.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(translated("Kann angefragt werden"), style = TvTheme.rail, color = Theme.font)
-                    // Like `Zaehlmarke` on tvOS: a bare number, not a badge.
-                    Text("${st.seerr.size}", style = TvTheme.small, color = Theme.fontVeryQuiet)
-                }
-            }
-            items(st.seerr, key = { "seerr-" + it.key }) { t ->
-                TvTile(t.poster, t.title, SeerrMark.shortWord(t.state) ?: t.year?.toString(), opacity = 0.45f) {
-                    app.seerrHit[t.key] = t
-                    open(Destination(t.key, t.title, "Seerrtitel"))
-                }
-            }
-        }
-    })
-}
-

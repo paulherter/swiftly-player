@@ -18,12 +18,13 @@ final class TrickplayImages {
     private var title: String?
     private var source: String?
 
-    /// Decoded sheets, by number. A sheet of 10x10 tiles at 320x180 is about 9 MB;
-    /// we keep no more than a handful.
+    /// Decoded sheets, by number. A sheet of 10x10 tiles at 320x180 is 3200x1800 pixels,
+    /// 3200 * 1800 * 4 = about 23 MB once decoded (the file is far smaller); six of them
+    /// were 138 MB for the length of a film. Someone scrubbing stays on one or two.
     @ObservationIgnored private var leaves: [Int: CGImage] = [:]
     @ObservationIgnored private var railsEpisode: [Int] = []
     @ObservationIgnored private var onTheGo: Set<Int> = []
-    private static let atMost = 6
+    private static let atMost = 3
     /// Counts arriving sheets so the view redraws.
     private(set) var state = 0
 

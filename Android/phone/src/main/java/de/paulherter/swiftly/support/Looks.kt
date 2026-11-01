@@ -67,6 +67,8 @@ class Looks(private val app: SwiftlyApplication) {
     val effectsOn = mutableStateOf(true)
     /** TV: the full-screen looks page is open. */
     val tvPage = mutableStateOf(false)
+    /** TV: the "What's new" page is open with this entry (`GiftFlow.Stage.whatsNew`); `null`: closed. */
+    val tvWhatsNew = mutableStateOf<JSONObject?>(null)
     /** TV: the buy page was opened from the looks page, so closing it without a purchase ends the preview. */
     var tvFromLooks = false
 

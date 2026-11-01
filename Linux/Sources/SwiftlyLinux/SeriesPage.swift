@@ -734,7 +734,7 @@ extension App {
         // **An episode from the list starts at its own position**, or, in the player's
         // episode layer, the running player switches to it.
         onClick(row, keyboard: true) { [weak self] in
-            if let action { action(current) } else { self?.launch(current) }
+            if let action { action(current) } else { self?.launchAsking(current) }
         }
         // **The tile menu on every episode** (Apple `.tileMenu(episode, …)` in
         // `SeriesView` and in the player's episode list): right click, long press or menu

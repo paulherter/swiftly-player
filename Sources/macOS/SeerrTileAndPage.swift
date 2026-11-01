@@ -199,7 +199,11 @@ struct SeerrDetailView: View {
     private func detailLoad() async {
         let fetched = await model.seerr.detail(hit)
         detailDisturbed = fetched == nil
-        if let fetched { detail = fetched }
+        if let fetched {
+            detail = fetched
+            // The server knows better than the search hit from before.
+            if let new = fetched.state { state = new }
+        }
     }
 
     /// **The layout of `DetailHero` in `DetailView`, exactly.**
@@ -506,8 +510,11 @@ struct SeerrDetailView: View {
                 seasons = nil
             }
             try await model.seerr.askFor(hit, seasons: seasons)
-            requested = true
-            state = .waitsSharing
+            // **Read the state, do not assume.** If Seerr approves the request immediately, the title is "loading" or there, not "waiting".
+            selected = []
+            await detailLoad()
+            if state.requestable { state = .waitsSharing }
+            requested = state == .waitsSharing
         } catch {
             self.error = readableError(error)
         }

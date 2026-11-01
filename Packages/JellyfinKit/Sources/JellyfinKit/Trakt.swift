@@ -323,7 +323,7 @@ public extension TraktTarget {
     ///
     /// Two requests to the own server when playback starts, no more. If one fails,
     /// there is simply no Trakt report; playback notices nothing.
-    static func resolve(_ title: Item, client: JellyfinClient) async -> TraktTarget? {
+    static func resolve(_ title: Item, client: any MediaServer) async -> TraktTarget? {
         let freshValue = (title.providerIds == nil ? try? await client.item(id: title.id) : nil) ?? title
         var series: Item?
         if freshValue.type == "Episode", let id = freshValue.seriesId {

@@ -49,6 +49,12 @@ final class App: @unchecked Sendable {
     private var loginState: Widget!
     private var reportCurrent = false
     private var backButton: Widget!
+    /// The kind being signed in to at the first start: Jellyfin or Emby. Plex has a page of its own.
+    private var loginKind: ServerKind = .jellyfin
+    private var serverQuestion: Widget!
+    /// "Mit Jellyfin weiter": shown when an Emby address turns out to be a Jellyfin.
+    private var jellyfinSwitch: Widget!
+    private var loginPlex: PlexSignInPage?
 
     // MARK: Add another account: page state
 
@@ -67,6 +73,8 @@ final class App: @unchecked Sendable {
     var accountButton: Widget!
     var accountStateField: Widget!
     var accountCodeField: Widget!
+    /// The Quick Connect code shown on the sign-in page; a click on the status line copies it.
+    var loginCodeCopy = ""
 
     // Home
     var section: Region = .start
@@ -102,7 +110,13 @@ final class App: @unchecked Sendable {
     var streamStandsSince: Date?
     var streamLastPoint: Double = -1
     var streamRead: UInt64 = 0
+    /// A click is already fetching the versions: a second one waits (`prepares` on Apple).
+    var versionsLoading = false
     var streamBufferGrew = Date()
+    /// Pictures shown at the last look and since when none came while the clock ran
+    /// (the second sensor of ``streamCheck()``; see `StreamWatch.imagesState`).
+    var streamLastImages: UInt64?
+    var streamImagesStateSince: Date?
     /// When the last seek happened; the watchdog pauses after it.
     var lastJump = Date.distantPast
     // MARK: Audio watchdog and idle inhibit (see `Spieler.audioCheck`)
@@ -124,7 +138,7 @@ final class App: @unchecked Sendable {
     /// overlap and GTK has no negative margins.
     var profileCircle: Widget!
 
-    var client: JellyfinClient?
+    var client: (any MediaServer)?
     var addresses: ImageAddress?
     /// Runs only at startup, then fades out.
     var startAnimation: StartAnimation?
@@ -387,6 +401,7 @@ final class App: @unchecked Sendable {
         onProperty(UnsafeMutableRawPointer(window), "notify::is-active") { [weak self] in
             guard let self, self.client != nil,
                   gtk_window_is_active(asWindow(self.window)) != 0 else { return }
+            self.settingsSync.front()
             if Refresh.dueReturn(recent: self.lastLoaded,
                                                 now: Date()) {
                 self.homeLoad()
@@ -423,8 +438,10 @@ final class App: @unchecked Sendable {
         // remain in the strip after a restart.
         if let store = stored {
             StartLevel.report("server")
-            bundle = store.bundle
-            sessionInSet(store.bundle.activeOne, serverName: store.serverName)
+            bundles = store.bundles
+            if let active = bundles.active {
+                sessionInSet(active.activeOne, serverName: store.serverName)
+            }
         }
     }
 
@@ -471,9 +488,51 @@ final class App: @unchecked Sendable {
         loginStep = gtk_stack_new()
         gtk_stack_set_transition_type(OpaquePointer(loginStep),
                                       GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT)
+        // **The kind comes first**, as on every other platform; the first child is what shows.
+        gtk_stack_add_named(OpaquePointer(loginStep), kindPickerBuild(firstStart: true) { [weak self] kind in
+            self?.loginKindChosen(kind)
+        }, "art")
         gtk_stack_add_named(OpaquePointer(loginStep), serverStepBuild(), "server")
         gtk_stack_add_named(OpaquePointer(loginStep), accountStepBuild(), "konto")
         return loginStep
+    }
+
+    /// A card on the first-start picker was chosen.
+    private func loginKindChosen(_ kind: ServerKind) {
+        loginKind = kind
+        if kind == .plex {
+            loginPlex?.stop()
+            let page = PlexSignInPage(header: nil, back: { [weak self] in
+                guard let self else { return }
+                self.loginPlex?.stop()
+                gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "art")
+            }, finished: { [weak self] session in
+                self?.sessionRecord(session, serverName: session.plex?.serverName)
+            })
+            if let old = gtk_stack_get_child_by_name(OpaquePointer(loginStep), "plex") {
+                gtk_stack_remove(OpaquePointer(loginStep), old)
+            }
+            loginPlex = page
+            gtk_widget_set_halign(page.display, GTK_ALIGN_CENTER)
+            gtk_widget_set_valign(page.display, GTK_ALIGN_CENTER)
+            gtk_stack_add_named(OpaquePointer(loginStep), page.display, "plex")
+            gtk_stack_set_visible_child_name(OpaquePointer(loginStep), "plex")
+            return
+        }
+        loginKindApply()
+        gtk_stack_set_visible_child_name(OpaquePointer(loginStep), "server")
+        gtk_widget_grab_focus(serverField)
+    }
+
+    /// The words and fields of the address step follow the kind.
+    private func loginKindApply() {
+        gtk_label_set_text(OpaquePointer(serverQuestion), loginKind == .emby
+                           ? translated("Wo steht dein Emby-Server?")
+                           : translated("Wo steht dein Jellyfin-Server?"))
+        gtk_entry_set_placeholder_text(asField(serverField), loginKind == .emby
+                                       ? translated("emby.beispiel.de") : "tv.beispiel.de")
+        gtk_widget_set_visible(jellyfinSwitch, 0)
+        serverStateShow("")
     }
 
     /// Step one: where is the server?
@@ -494,6 +553,7 @@ final class App: @unchecked Sendable {
                                  style: "swiftly-koerper")
         gtk_widget_add_css_class(question, "dim-label")
         gtk_widget_set_margin_top(question, 40)
+        serverQuestion = question
         append(center, question)
 
         // The globe in the field; on the Mac that is `Image("globe")`.
@@ -510,10 +570,35 @@ final class App: @unchecked Sendable {
         serverState = reportRow()
         append(center, serverState)
 
+        // Shown only when the address of an Emby turns out to be a Jellyfin.
+        jellyfinSwitch = gtk_button_new_with_label(translated("Mit Jellyfin weiter"))
+        gtk_widget_add_css_class(jellyfinSwitch, "swiftly-umriss")
+        gtk_widget_set_margin_top(jellyfinSwitch, 12)
+        gtk_widget_set_halign(jellyfinSwitch, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(jellyfinSwitch, 0)
+        append(center, jellyfinSwitch)
+        signal(jellyfinSwitch, "clicked") { [weak self] in
+            guard let self else { return }
+            self.loginKind = .jellyfin
+            self.loginKindApply()
+            self.linkUp()
+        }
+
         connectButton = primaryButton(translated("Verbinden"))
         gtk_widget_set_margin_top(connectButton, 24)
         gtk_widget_set_sensitive(connectButton, 0)
         append(center, connectButton)
+
+        // The way back to the kind. On the first start the picker is the page before this one.
+        let toKind = gtk_button_new_with_label(translated("Zurück"))
+        gtk_widget_add_css_class(toKind, "swiftly-flach")
+        gtk_widget_set_margin_top(toKind, 14)
+        gtk_widget_set_halign(toKind, GTK_ALIGN_CENTER)
+        append(center, toKind)
+        signal(toKind, "clicked") { [weak self] in
+            guard let self else { return }
+            gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "art")
+        }
 
         signal(connectButton, "clicked") { [weak self] in self?.linkUp() }
         signal(serverField, "activate") { [weak self] in self?.linkUp() }
@@ -550,7 +635,7 @@ final class App: @unchecked Sendable {
             }
             let images = collected
             onMainThread {
-                gtk_widget_set_visible(self.fastButton, possible ? 1 : 0)
+                gtk_widget_set_visible(self.fastButton, possible && self.loginKind == .jellyfin ? 1 : 0)
                 wipe(self.accountsRail)
                 gtk_widget_set_visible(self.accountsRail, list.isEmpty ? 0 : 1)
                 for (user, image) in images {
@@ -614,6 +699,8 @@ final class App: @unchecked Sendable {
             if Task.isCancelled { return }
             onMainThread {
                 self.loginStateShow(String(format: translated("Code %@ — auf einem angemeldeten Gerät freigeben"), preGait.code))
+                self.loginCodeCopy = preGait.code
+                gtk_widget_set_tooltip_text(self.loginState, translated("Code kopieren"))
             }
             // Deadline, interval and handling of network errors: ``Quickconnectwarten``
             // in the package, as on Apple and Android.
@@ -684,6 +771,12 @@ final class App: @unchecked Sendable {
         append(center, passwordField)
 
         loginState = reportRow()
+        // **A click copies the Quick Connect code** (`.copyable` on Apple): it is entered on another device right after.
+        onClick(loginState) { [weak self] in
+            guard let self, !self.loginCodeCopy.isEmpty else { return }
+            inClipboard(self.loginCodeCopy, an: self.loginState)
+            self.report(translated("Code kopiert."))
+        }
         append(center, loginState)
 
         loginButton = primaryButton(translated("Anmelden"))
@@ -757,7 +850,11 @@ final class App: @unchecked Sendable {
 
     private func serverStateShow(_ s: String) { message(serverState, s) }
 
-    private func loginStateShow(_ s: String) { message(loginState, s) }
+    private func loginStateShow(_ s: String) {
+        loginCodeCopy = ""
+        gtk_widget_set_tooltip_text(loginState, nil)
+        message(loginState, s)
+    }
 
     // MARK: Step one: connect
 
@@ -782,47 +879,82 @@ final class App: @unchecked Sendable {
         let before = OwnHeaders.registered(for: url)
         if !headers.isEmpty { OwnHeaders.setDown(headers, for: url) }
 
+        let kind = loginKind
+        // Without a scheme typed, a failed https is tried once more as http (home network).
+        var candidates = [url]
+        if !typedInput.contains("://"), let different = AppModelURLNormalizer.reversed(url) {
+            candidates.append(different)
+        }
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name,
-                                   clientVersion: Device.version)
-            do {
-                // Short deadline as on Apple; see `AddressCheck`.
-                let info = try await c.checkReachability()
-                // Store only now: an address that does not answer leaves nothing behind.
-                if !headers.isEmpty { Cache.headersSafe(headers, for: url) }
-                let name = info.serverName ?? url.host() ?? translated("Server")
-                let version = info.version ?? "?"
-                onMainThread {
-                    self.connectReady()
-                    // **The response belongs to the address that was asked.** If a different
-                    // one is in the field by now, it is dropped, otherwise the flow would go on
-                    // with the old server.
-                    guard self.text(self.serverField)
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
-                    self.serverURL = url
-                    // **It was fetched and thrown away.** `serverVersion` was used in the
-                    // settings and the profile but was always empty because nothing ever set it.
-                    self.serverVersion = version
-                    Cache.serverRemember(.init(serverURL: url, serverName: name,
-                                                version: version))
-                    gtk_label_set_text(OpaquePointer(self.serverRow), name)
-                    gtk_label_set_text(OpaquePointer(self.versionRow), "Jellyfin \(version)")
-                    self.serverStateShow("")
-                    gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "konto")
-                    gtk_widget_grab_focus(self.userField)
-                    self.accountsFetch(c)
-                }
-            } catch {
-                if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
-                onMainThread {
-                    self.connectReady()
-                    guard self.text(self.serverField)
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
-                    self.serverStateShow(readableError(error))
+            var lastError: (any Error)?
+            for address in candidates {
+                let c = clientMake(url: address, kind: kind)
+                let before2 = OwnHeaders.registered(for: address)
+                if address != url, !headers.isEmpty { OwnHeaders.setDown(headers, for: address) }
+                do {
+                    // Short deadline as on Apple; see `AddressCheck`.
+                    let info = try await c.checkReachability()
+                    // Emby and Jellyfin answer the same route and look alike from outside.
+                    if kind == .emby, info.looksLikeJellyfin {
+                        if address != url, !headers.isEmpty { OwnHeaders.setDown(before2, for: address) }
+                        if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
+                        onMainThread {
+                            self.connectReady()
+                            guard self.text(self.serverField)
+                                .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
+                            self.serverStateShow(String(format: translated("Unter der Adresse läuft %@, kein Emby."),
+                                                        ServerKind.jellyfin.displayName))
+                            gtk_widget_set_visible(self.jellyfinSwitch, 1)
+                        }
+                        return
+                    }
+                    // Store only now: an address that does not answer leaves nothing behind.
+                    if !headers.isEmpty { Cache.headersSafe(headers, for: address) }
+                    let name = info.serverName ?? address.host() ?? translated("Server")
+                    let version = info.version ?? "?"
+                    onMainThread {
+                        self.connectReady()
+                        // **The response belongs to the address that was asked.** If a different
+                        // one is in the field by now, it is dropped, otherwise the flow would go on
+                        // with the old server.
+                        guard self.text(self.serverField)
+                            .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
+                        self.serverURL = address
+                        // **It was fetched and thrown away.** `serverVersion` was used in the
+                        // settings and the profile but was always empty because nothing ever set it.
+                        self.serverVersion = version
+                        Cache.serverRemember(.init(serverURL: address, serverName: name,
+                                                    version: version))
+                        gtk_label_set_text(OpaquePointer(self.serverRow), name)
+                        gtk_label_set_text(OpaquePointer(self.versionRow), "\(kind.shownName) \(version)")
+                        self.serverStateShow("")
+                        gtk_widget_set_visible(self.jellyfinSwitch, 0)
+                        gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "konto")
+                        gtk_widget_grab_focus(self.userField)
+                        self.accountsFetch(c)
+                    }
+                    return
+                } catch {
+                    lastError = error
+                    if address != url, !headers.isEmpty { OwnHeaders.setDown(before2, for: address) }
+                    if !AddressCheck.fallbackPaysOff(to: error) { break }
                 }
             }
+            if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
+            let error = lastError ?? JellyfinError.transport("")
+            onMainThread {
+                self.connectReady()
+                guard self.text(self.serverField)
+                    .trimmingCharacters(in: .whitespacesAndNewlines) == typedInput else { return }
+                self.serverStateShow(readableError(error))
+            }
         }
+    }
+
+    /// A client for an address that is not signed in yet; Emby is a Jellyfin client with its own paths.
+    func clientMake(url: URL, kind: ServerKind) -> JellyfinClient {
+        JellyfinClient(baseURL: url, deviceID: Device.identifier, deviceName: Device.name,
+                       clientVersion: Device.version, kind: kind)
     }
 
     private func connectReady() {
@@ -847,9 +979,7 @@ final class App: @unchecked Sendable {
         let serverName = gtk_label_get_text(OpaquePointer(serverRow)).map { String(cString: $0) }
 
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name,
-                                   clientVersion: Device.version)
+            let c = clientMake(url: url, kind: loginKind)
             do {
                 let session = try await c.authenticate(username: user, password: password)
                 onMainThread {
@@ -882,7 +1012,34 @@ final class App: @unchecked Sendable {
     /// account twice, which one applies after removal, an old single session) are
     /// in ``Kontenbund`` in the package, covered by 14 tests. Only what Linux
     /// exposes of it is here.
-    var bundle: AccountBundle?
+    ///
+    /// **One bundle per server kind.** ``bundles`` holds all of them and knows which kind is
+    /// active; ``bundle`` is the active kind's bundle, so everything that only cares about
+    /// "this server" keeps reading it as before.
+    var bundles = ServerBundles()
+
+    var bundle: AccountBundle? {
+        get { bundles.active }
+        set { bundles.set(newValue, for: bundles.activeKind) }
+    }
+
+    /// Every account of every kind, the active one first.
+    var allAccounts: [Session] {
+        guard let active = bundle?.activeOne else { return [] }
+        let rest = bundles.kinds.flatMap { bundles.bundle(for: $0)?.accounts ?? [] }
+            .filter { $0.accountKey != active.accountKey }
+        return [active] + rest
+    }
+
+    /// Records a session into the bundle of its own kind and makes that kind the active one.
+    /// Returns whether someone was signed in before (an account switch).
+    func bundleRecord(_ session: Session) -> Bool {
+        let wasSignedIn = !bundles.kinds.isEmpty
+        let (newer, _) = AccountBundle.record(session, in: bundles.bundle(for: session.kind))
+        bundles.set(newer, for: session.kind)
+        bundles.switchTo(session.kind)
+        return wasSignedIn
+    }
 
     /// Increments on every switch. Code that has to check on redraw whether its
     /// data still belongs to the signed-in account compares this value.
@@ -909,13 +1066,18 @@ final class App: @unchecked Sendable {
         // Signed in is signed in: a still-waiting code must not sign in a second time.
         fastRun?.cancel()
         fastRun = nil
-        let (newer, wasSignedIn) = AccountBundle.record(session, in: bundle)
+        let wasSignedIn = !bundles.kinds.isEmpty
         if wasSignedIn { playerPreSwitch() }
-        bundle = newer
+        _ = bundleRecord(session)
         saveBundle(serverName: serverName)
         if wasSignedIn { cleanUpPostSwitch() }
         sessionInSet(session, serverName: serverName)
         return wasSignedIn
+    }
+
+    /// A further account from a sign-in page in the settings (Plex, Emby, Jellyfin).
+    func accountAdd(_ session: Session) {
+        sessionRecord(session, serverName: session.plex?.serverName)
     }
 
     /// Switch to another account on the same server.
@@ -928,11 +1090,13 @@ final class App: @unchecked Sendable {
     /// the full key first and falls back to the user ID only as a safety net, so
     /// older callers stay readable.
     func switchAccount(toward identifier: String, inProfileRemain: Bool = true) {
-        guard var new = bundle, new.activeId != identifier,
-              new.account(identifier) != nil else { return }
+        guard let kind = bundles.kinds.first(where: { bundles.bundle(for: $0)?.account(identifier) != nil }),
+              var new = bundles.bundle(for: kind),
+              !(kind == bundles.activeKind && new.activeId == identifier) else { return }
         playerPreSwitch()
         new.switchTo(toward: identifier)
-        bundle = new
+        bundles.set(new, for: kind)
+        bundles.switchTo(kind)
         let name = serverName.isEmpty ? nil : serverName
         // **Whoever switches in the profile stays in the profile**, as on the Mac.
         // Ring and dot visibly move to the other circle, and that is the feedback the
@@ -1061,19 +1225,32 @@ final class App: @unchecked Sendable {
         primaryButtonLabel(serverOnboardingButton, translated("Prüfe …"))
         let headers = serverOnboardingHeaders
         serverOnboardingHeaders = []
+        let kind = serverOnboardingKind
         let before = OwnHeaders.registered(for: url)
         if !headers.isEmpty { OwnHeaders.setDown(headers, for: url) }
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name, clientVersion: Device.version)
+            let c = clientMake(url: url, kind: serverOnboardingKind)
             do {
                 let inquiry = try await c.checkReachability()
+                // Emby and Jellyfin answer the same route and look alike from outside.
+                if kind == .emby, inquiry.looksLikeJellyfin {
+                    if !headers.isEmpty { OwnHeaders.setDown(before, for: url) }
+                    onMainThread {
+                        gtk_widget_set_sensitive(self.serverOnboardingButton, 1)
+                        primaryButtonLabel(self.serverOnboardingButton, translated("Weiter"))
+                        self.serverOnboardingErrorShow(String(format: translated("Unter der Adresse läuft %@, kein Emby."),
+                                                              ServerKind.jellyfin.displayName))
+                        self.serverOnboardingNotEmby = true
+                        self.serverOnboardingNotEmbyShow()
+                    }
+                    return
+                }
                 if !headers.isEmpty { Cache.headersSafe(headers, for: url) }
                 onMainThread {
                     self.serverOnboardingURL = url
                     var pieces: [String] = []
                     if let n = inquiry.serverName, !n.isEmpty { pieces.append(n) }
-                    if let v = inquiry.version, !v.isEmpty { pieces.append("Jellyfin \(v)") }
+                    if let v = inquiry.version, !v.isEmpty { pieces.append("\(kind.shownName) \(v)") }
                     if pieces.isEmpty { pieces.append(url.host() ?? url.absoluteString) }
                     self.serverOnboardingChecked = pieces.joined(separator: " · ")
                     self.serverOnboardingError = ""
@@ -1109,8 +1286,7 @@ final class App: @unchecked Sendable {
         primaryButtonLabel(serverOnboardingButton, translated("Melde an …"))
         serverOnboardingErrorShow("")
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name, clientVersion: Device.version)
+            let c = clientMake(url: url, kind: serverOnboardingKind)
             do {
                 let session = try await c.authenticate(username: name, password: password)
                 let inquiry = try? await c.publicSystemInfo()
@@ -1139,9 +1315,7 @@ final class App: @unchecked Sendable {
 
         let serverName = self.serverName.isEmpty ? nil : self.serverName
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name,
-                                   clientVersion: Device.version)
+            let c = clientMake(url: url, kind: bundles.activeKind)
             do {
                 let session = try await c.authenticate(username: name, password: password)
                 onMainThread {
@@ -1167,9 +1341,7 @@ final class App: @unchecked Sendable {
         guard let url = bundle?.serverURL else { return }
         let serverName = self.serverName.isEmpty ? nil : self.serverName
         accountCodeRun = Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Device.identifier,
-                                   deviceName: Device.name,
-                                   clientVersion: Device.version)
+            let c = clientMake(url: url, kind: bundles.activeKind)
             let preGait: LoginCode
             do { preGait = try await c.quickConnectStart() } catch {
                 if Task.isCancelled { return }
@@ -1246,27 +1418,29 @@ final class App: @unchecked Sendable {
     }
 
     private func saveBundle(serverName: String?) {
-        guard let bundle else { return }
-        Cache.writeBundle(.init(bundle: bundle, serverName: serverName))
+        guard bundle != nil else { return }
+        Cache.writeBundle(.init(bundles: bundles, serverName: serverName))
     }
 
     /// Puts a session into service: client, image addresses, display, loading.
-    private func sessionInSet(_ session: Session, serverName: String?) {
+    private func sessionInSet(_ session: Session, serverName given: String?) {
+        // A Plex account knows its server's name; the old one belongs to the other kind.
+        let serverName = session.plex?.serverName ?? (session.kind == bundles.activeKind ? given : nil)
         let serverURL = session.serverURL
-        let token = session.accessToken
         let userIdentifier = session.userID
         let username = session.userName
         // **With version.** Without `clientVersion` the default
         // `Fassungsnummer.outBundle` applies; there is no bundle here, and the
         // Jellyfin dashboard showed "Swiftly Player unbekannt". This is the path on
         // every start with a stored session.
-        let c = JellyfinClient(baseURL: serverURL,
-                               deviceID: Device.identifier,
-                               deviceName: Device.name,
-                               clientVersion: Device.version)
+        // **The factory picks the client by the session's kind** (Jellyfin, Emby, Plex); the
+        // session is handed in, so there is no separate `setSession` step.
+        guard let c = MediaServerFactory.make(session: session, deviceID: Device.identifier,
+                                              deviceName: Device.name,
+                                              clientVersion: Device.version) else { return }
         AppLog.writeOut("[Sitzung] Client-Fassung \(Device.version)")
         fflush(nil)
-        addresses = ImageAddress(base: serverURL, token: token)
+        addresses = ImageAddress(base: serverURL, token: session.accessToken, kind: session.kind)
         self.userIdentifier = userIdentifier
         // **Direct Play and the bitrate limit belong to the server** (like
         // `AppModel.serverKey` on Apple): one server may transcode, another
@@ -1287,13 +1461,21 @@ final class App: @unchecked Sendable {
         sessionShow(username: username, serverName: serverName)
         switchStack(pages, toward: "start")
 
-        // **`JellyfinClient` is an actor.** Setting the session therefore needs
-        // `await`; only afterwards may loading start.
+        // **The clients are actors.** Installing the Plex hooks needs `await`; only afterwards
+        // may loading start.
         Task.detached { [self] in
-            await c.setSession(session)
+            if let plex = c as? PlexClient {
+                await plex.onSessionChange { moved in
+                    onMainThread { self.plexRouteMoved(moved, from: plex) }
+                }
+                await plex.onUnauthorized {
+                    Task.detached { [self] in await self.plexTokenRejected(plex) }
+                }
+            }
             onMainThread {
                 self.client = c
                 self.downloads.signIn(client: c, account: userIdentifier)
+                self.settingsSync.bind(client: c, account: userIdentifier)
                 self.accountPreGiftFetch(c)
                 // **What the server says by now.** On Apple the same reconciliation runs
                 // every time the main view appears.
@@ -1517,6 +1699,15 @@ final class App: @unchecked Sendable {
     /// for two strings.
     /// Server onboarding state: address, checked name, error.
     var serverOnboardingAddress = ""
+    /// The kind the second-server page signs in to: Jellyfin or Emby.
+    var serverOnboardingKind: ServerKind = .jellyfin
+    /// The address turned out to be a Jellyfin although Emby was chosen: offers "Mit Jellyfin weiter".
+    var serverOnboardingNotEmby = false
+    var serverOnboardingNotEmbyButton: Widget?
+    /// The add page was reached from the kind picker, so its arrow goes back there.
+    var serverOnboardingFromPicker = false
+    /// The Plex sign-in of the settings; kept so leaving the page can stop its polling.
+    var plexSubpage: PlexSignInPage?
     var serverOnboardingChecked: String?
     var serverOnboardingError = ""
     var serverOnboardingPreGiven = false
@@ -1571,6 +1762,12 @@ final class App: @unchecked Sendable {
     var supportKeyField: Widget?
     /// The thank-you wanted to appear during playback and waits for the player to close.
     var supportThanksDue = false
+    /// A big ask showed this session (the support sheet or "Was ist neu"): the next waits for
+    /// the next session.
+    var bigAskShown = false
+    /// "Was ist neu" was decided for this launch (``whatsNewSoon``), or a look is scheduled.
+    var whatsNewDone = false
+    var whatsNewScheduled = false
     /// The running account switch with flight (``Kontoflug``), otherwise `nil`.
     var accountTransition: AccountTransition?
     /// The running "Hier weiterschauen" handover as a card (``Uebergabelauf``),
@@ -1600,6 +1797,8 @@ final class App: @unchecked Sendable {
     var openSubpage: Subpage? { didSet { sectionRowsDraw() } }
     var openList: ValuesSelection?
     var selection = Choices.read()
+    /// Keeps the synced settings equal across devices (see ``SettingsSyncRun``).
+    lazy var settingsSync = SettingsSyncRun(app: self)
 
     /// Shorthand for `selection.downloadsAn`; the bar and the detail page ask for it
     /// often.
@@ -1777,7 +1976,7 @@ final class App: @unchecked Sendable {
             // server restart the device was otherwise not controllable until the app was
             // restarted. If it fails, the start proceeds anyway, unless the deadline
             // cancelled it.
-            do { try await client.reportCapabilities() } catch {
+            do { try await (client as? any RemoteSessionServer)?.reportCapabilities() } catch {
                 try Task.checkCancellation()
                 AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet")
             }
@@ -1800,7 +1999,7 @@ final class App: @unchecked Sendable {
     /// What the server currently knows as playing; set at start, cleared at stop.
     /// Pause, resume and seek report from it without asking the player; before
     /// start and after stop there is nothing.
-    var reportTitle: (client: JellyfinClient, title: Item, plan: PlaybackPlan)?
+    var reportTitle: (client: any MediaServer, title: Item, plan: PlaybackPlan)?
     /// The last playback state reported; libVLC's event reports a change only
     /// once.
     var reportedPaused = false
@@ -1906,7 +2105,9 @@ final class App: @unchecked Sendable {
     /// initializes GTK. A widget before `gtk_init` crashes inside libgtk, with no
     /// line of our own code in the backtrace.
     lazy var mediaPlayer: Player = {
-        let new = Player()
+        // The subtitle look goes into the core when it is created; a later change reaches it
+        // through `Player.look` (a new core on the next title).
+        let new = Player(look: self.selection.subtitleLook)
         // Pause and resume reach the server via VLC's event.
         new.runState = { [weak self] running in
             guard let self else { return }
@@ -2442,12 +2643,17 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_bottom(mark, 18)
         append(bar, mark)
 
+        // **The middle part scrolls** (`ScrollView` on the Mac): in a short window, with many
+        // lists under "Meins", the account row at the bottom would otherwise be pushed out of
+        // the window. Logo and account row stay put.
+        let middle = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+
         // The four sections, 2 spacing, 12 on the sides.
         let areas = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
         gtk_widget_set_margin_start(areas, 12)
         gtk_widget_set_margin_end(areas, 12)
         for fall in Region.topGroup { append(areas, sectionRow(fall)) }
-        append(bar, areas)
+        append(middle, areas)
 
         // **Below that, what belongs to the user.** The reasoning is at
         // `Region.mineGroup`; the measurements are those of the library group,
@@ -2457,19 +2663,26 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_bottom(mineCategory, 8)
         gtk_widget_set_margin_start(mineCategory, 12)
         gtk_widget_set_margin_end(mineCategory, 12)
-        append(bar, mineCategory)
+        append(middle, mineCategory)
 
         myList = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
         gtk_widget_set_margin_start(myList, 12)
         gtk_widget_set_margin_end(myList, 12)
-        append(bar, myList)
+        append(middle, myList)
         mineFill()
+
+        let scroller = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), middle)
+        gtk_widget_set_vexpand(scroller, 1)
+        gtk_widget_set_hexpand(scroller, 0)
+        softScroll(scroller)
+        append(bar, scroller)
 
         // **No "Bibliotheken" group any more** (Mac). The other libraries used to
         // open here as their own root; now they are in the title menu of Movies and
         // Series: one path instead of two, and one that does not leave the section.
 
-        append(bar, padding())
         // **What is playing on another device sits next to the account.**
         //
         // Exactly where the user already looks, the same place as the badge on iPhone
@@ -2610,7 +2823,7 @@ final class App: @unchecked Sendable {
         // **Quiet outside, loud in the log.** Polling is periodic, so a message on the home page would be noise. But the difference between "nothing is playing" and "the query failed" must be visible somewhere: `remoteSession()` used to return every failure as an empty list, which made the handover hard to debug.
         let sessions: [RemoteSession]
         do {
-            sessions = try await client.remoteSession()
+            sessions = try await (client as? any RemoteSessionServer)?.remoteSession() ?? []
         } catch {
             TrackSupport.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
             return
@@ -2618,7 +2831,7 @@ final class App: @unchecked Sendable {
         // After a server restart nobody could reach this session (see `PlayTargets.mustReport`).
         if PlayTargets.mustReport(sessions, ownDevicesIdentifier: Device.identifier) {
             AppLog.writeOut("[Abspielen auf] eigene Sitzung fehlt, Fähigkeiten neu gemeldet")
-            try? await client.reportCapabilities()
+            try? await (client as? any RemoteSessionServer)?.reportCapabilities()
         }
         let offerings = Takeover.offerings(from: sessions,
                                            ownDevicesIdentifier: Device.identifier,
@@ -2742,15 +2955,42 @@ final class App: @unchecked Sendable {
         guard let client, let title = session.running else { return }
         handoffStart(title: title)
         gtk_widget_set_visible(takeoverRow, 0)
+        let limit = selection.profileBitrate
         Task.detached { [self] in
+            // **First check that something starts here, then end it over there** (Apple `TakeoverModel.adopt`): the other way round the other device stopped, and if the plan then failed, nothing played anywhere, with no message.
+            let plan: PlaybackPlan?
+            var rejection: String?
+            do {
+                plan = try await client.playbackPlan(for: title.id, profile: .vlc(maxBitrate: limit), mediaSourceID: nil)
+            } catch let error as JellyfinError {
+                plan = nil
+                if case .playbackRejected = error { rejection = readableError(error) }
+            } catch {
+                plan = nil
+            }
+            guard let plan else {
+                let rejected = rejection
+                AppLog.writeOut("[Uebernahme] Kein Plan fuer \(title.id), nichts beendet")
+                fflush(nil)
+                onMainThread {
+                    self.handoffCancel("Kein Abspielplan")
+                    self.takeoverOfferings = []
+                    self.takeoverErrorUntil = Date().addingTimeInterval(6)
+                    let wo = self.serverName.isEmpty ? translated("dem Server") : self.serverName
+                    gtk_label_set_text(OpaquePointer(self.takeoverTitle), rejected ?? String(
+                        format: translated("Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen."), wo))
+                    gtk_widget_set_visible(self.takeoverRow, 1)
+                }
+                return
+            }
             let before = (try? await client.item(id: title.id))?.userData?.playbackPositionTicks
-            let freshValue = (try? await client.remoteSession())?.first { $0.id == session.id }?.state?.spot
+            let freshValue = (try? await (client as? any RemoteSessionServer)?.remoteSession())?.first { $0.id == session.id }?.state?.spot
             let sessionPoint = freshValue ?? session.state?.spot ?? 0
             if Takeover.takesHint(session) {
-                do { try await client.handoffHint(an: session.id, device: App.handoffName) }
+                do { try await (client as? any RemoteSessionServer)?.handoffHint(an: session.id, device: App.handoffName) }
                 catch { AppLog.writeOut("[Uebergabe] Hinweis nicht gesendet: \(error)") }
             }
-            do { try await client.foreignCommand(.finish, an: session.id) }
+            do { try await (client as? any RemoteSessionServer)?.foreignCommand(.finish, an: session.id) }
             catch {
                 let text = readableError(error)
                 AppLog.writeOut("[Uebernahme] Beenden auf \(session.deviceName ?? session.id) gescheitert: \(text)")
@@ -2779,7 +3019,7 @@ final class App: @unchecked Sendable {
             onMainThread {
                 self.takeoverOfferings = []
                 self.handoffPlayerComes(title.id)
-                self.launch(title, since: since)
+                self.playerOpen(title, since: since, prePlanned: plan)
             }
         }
     }
@@ -3980,8 +4220,8 @@ final class App: @unchecked Sendable {
         guard let client else { return }
         let session = sharedSession
         Task.detached {
-            try? await client.reportCapabilities()
-            guard let far = try? await client.remoteControl() else { return }
+            try? await (client as? any RemoteSessionServer)?.reportCapabilities()
+            guard let far = try? await (client as? any RemoteSessionServer)?.remoteControl() else { return }
             onMainThread { self.remoteControl = far }
             // **Watching together arrives over the same channel.** Straight into the session, not via the GTK thread: `accept` is built for that, and the session itself keeps the order of messages.
             await far.syncPlayHear { session.accept($0) }
@@ -4158,13 +4398,48 @@ final class App: @unchecked Sendable {
         loginStateShow(translated("Die Anmeldung gilt nicht mehr. Bitte neu anmelden."))
     }
 
+    /// The picture of an account, asked from **its own** server with its own access. Plex keeps
+    /// the address from plex.tv in the session.
+    func userImageURL(for account: Session, border: Int) -> URL? {
+        if account.kind == .plex { return account.plex?.userImage }
+        return ImageAddress(base: account.serverURL, token: account.accessToken, kind: account.kind)
+            .user(account.userID, border: border)
+    }
+
+    /// A Plex server moved to another address: keep the one that worked for the next start.
+    func plexRouteMoved(_ moved: Session, from plex: PlexClient) {
+        guard client === plex, bundle?.activeOne.accountKey == moved.accountKey,
+              var current = bundles.bundle(for: .plex) else { return }
+        current.record(moved)
+        bundles.set(current, for: .plex)
+        saveBundle(serverName: serverName.isEmpty ? nil : serverName)
+    }
+
+    /// A Plex server answered 401 in the middle of the session. Ask once whether the token is
+    /// really gone (a single title can say 401 too); if so, sign in again.
+    func plexTokenRejected(_ plex: PlexClient) async {
+        guard client === plex else { return }
+        if await plex.sessionAppliesStill() {
+            await plex.unauthorizedHandled()
+            return
+        }
+        onMainThread {
+            guard self.client === plex else { return }
+            self.sessionCheck(JellyfinError.http(status: 401, body: nil))
+        }
+    }
+
     /// Signs out the **active** account.
     ///
     /// **If one remains, the app switches to it** instead of falling back to the server login; removing all accounts at once would be a second meaning for the same button. Which one applies afterwards is decided by `AccountBundle/entfernt(_:)` in the package.
     func signOff() {
         playerPreSwitch()
-        if let older = bundle, let rest = older.removed(older.activeId) {
-            bundle = rest
+        // **Another kind's account takes over** when the last one of this kind goes
+        // (`ServerBundles` moves the active kind on by itself).
+        if let older = bundle {
+            bundle = older.removed(older.activeId)
+        }
+        if let rest = bundles.active {
             let name = serverName.isEmpty ? nil : serverName
             let wasProfile = openSubpage == .profile
             saveBundle(serverName: name)
@@ -4174,7 +4449,6 @@ final class App: @unchecked Sendable {
             if wasProfile { subpageOpen(.profile, push: .without) }
             return
         }
-        bundle = nil
         Task.detached { [remoteControl] in await remoteControl?.finish() }
         remoteControl = nil
         takeoverRun?.cancel()
@@ -4184,6 +4458,7 @@ final class App: @unchecked Sendable {
         sharedEnd()
         Cache.erase()
         client = nil
+        settingsSync.bind(client: nil, account: nil)
         addresses = nil
         loaded.removeAll()
         pagesStack.removeAll()
@@ -4195,7 +4470,10 @@ final class App: @unchecked Sendable {
         loginStateShow("")
         serverStateShow("")
         headerRowShow(false)
-        gtk_stack_set_visible_child_name(OpaquePointer(loginStep), "server")
+        loginPlex?.stop()
+        loginKind = .jellyfin
+        loginKindApply()
+        gtk_stack_set_visible_child_name(OpaquePointer(loginStep), "art")
         switchStack(pages, toward: "anmeldung")
     }
 
@@ -4236,12 +4514,7 @@ final class App: @unchecked Sendable {
         // **The ring needs its own space.** It is a shadow *outside* the circle; without an allowance the zone clipped it at the bottom. Two points all around, the stronger of the two ring widths (1.5 active, 2 beside), rounded up.
         let ring = 2
         // The active one in front, then the others in their order.
-        var railsEpisode: [Session] = []
-        if let bundle {
-            railsEpisode = [bundle.activeOne] + bundle.accounts.filter { $0.accountKey != bundle.activeOne.accountKey }
-        } else if !userIdentifier.isEmpty {
-            railsEpisode = []
-        }
+        let railsEpisode = allAccounts
         let visible = Array(railsEpisode.prefix(atMost))
         let width = (visible.isEmpty ? border : border + offset * (visible.count - 1))
         gtk_widget_set_size_request(profileCircle,
@@ -4256,7 +4529,7 @@ final class App: @unchecked Sendable {
             gtk_fixed_put(asFixed(profileCircle), parts.wrapper, Double(ring), Double(ring))
             profileImageLoad(parts,
                             url: userIdentifier.isEmpty ? nil
-                                                    : addresses?.user(userIdentifier, border: 60),
+                                                    : bundle.flatMap { userImageURL(for: $0.activeOne, border: 60) },
                             key: "leiste-\(userIdentifier)")
             return
         }
@@ -4271,7 +4544,7 @@ final class App: @unchecked Sendable {
             if i == 0 { profileImage = parts.image } else { gtk_widget_set_opacity(parts.wrapper, 0.55) }
             gtk_fixed_put(asFixed(profileCircle), parts.wrapper,
                           Double(ring + i * offset), Double(ring))
-            profileImageLoad(parts, url: addresses?.user(account.userID, border: 60),
+            profileImageLoad(parts, url: userImageURL(for: account, border: 60),
                             key: "leiste-\(account.userID)")
         }
     }
@@ -4871,7 +5144,7 @@ final class App: @unchecked Sendable {
     /// First the IDs of the chosen libraries, with the same filters (`TitleFilter`), which also fixes the count. Then pages without `ParentId` until something remains: a page can consist almost entirely of duplicates, and then no new tile would appear that the next reload could hang on.
     private func filteredLoad(_ was: Region, source: ShelfSource, since: Int, reach: Int? = nil, job: Int,
                               filter f: LibraryFilter, sorting sort: Sorting,
-                              state: Int, client: JellyfinClient) {
+                              state: Int, client: any MediaServer) {
         let pagesSize = 60
         let oldFilter = since == 0 ? nil : gridFilter[was]
         let start = since == 0 ? 0 : (gridRaw[was]?.offset ?? 0)
@@ -5135,6 +5408,7 @@ final class App: @unchecked Sendable {
         let staggered = staggered || accountTransitionSeasonPostGl
         accountTransitionSeasonPostGl = false
         lastStartRail = rails.first?.2 ?? []
+        whatsNewSoon()
         wipe(railsStack)
         // **The chips come along** as the first in the sequence, as on macOS (`genreChips.railEntrance(0, …)`). Before, after an account switch they appeared abruptly while the rows below flew in.
         var tick = 0
@@ -5372,7 +5646,7 @@ final class App: @unchecked Sendable {
                             }) {
             [weak self] in
             guard let self else { return }
-            if landscape { self.launch(item) } else { self.openIt(item) }
+            if landscape { self.launchAsking(item) } else { self.openIt(item) }
         }
     }
 

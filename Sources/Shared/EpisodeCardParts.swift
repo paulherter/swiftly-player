@@ -69,10 +69,21 @@ struct CountdownRing: View {
     let fillContent: FillClock
     let throughMeasure: CGFloat
 
+    /// iPhone: 30 per second suffice for a ring that fills over seconds, and an uncapped
+    /// clock holds a 120 Hz display at 120 for the whole countdown. The TV and the Mac keep
+    /// the display's own rate.
+    private static var interval: Double? {
+        #if os(iOS)
+        1.0 / 30
+        #else
+        nil
+        #endif
+    }
+
     var body: some View {
         let d = throughMeasure
         let stroke = d * 3 / 56
-        TimelineView(.animation) { time in
+        TimelineView(.animation(minimumInterval: Self.interval)) { time in
             let share = fillContent.share(now: time.date)
             ZStack {
                 Circle().fill(.black.opacity(0.5))

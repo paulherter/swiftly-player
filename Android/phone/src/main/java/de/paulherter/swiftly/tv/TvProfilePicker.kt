@@ -9,6 +9,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.layout.offset
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -100,8 +103,8 @@ object ProfilePickerRule {
     fun answered() { decided = false }
 
     /** 2 to 5 profiles: 140 and a gap of 40 (tvOS 280/80, halved); from 6: 110 and 32. */
-    fun size(count: Int): Dp = if (count <= 5) 140.dp else 110.dp
-    fun gap(count: Int): Dp = if (count <= 5) 40.dp else 32.dp
+    fun size(count: Int): Dp = if (count <= 5) TvSpec.pickerSizeFew else TvSpec.pickerSizeMany
+    fun gap(count: Int): Dp = if (count <= 5) TvSpec.pickerGapFew else TvSpec.pickerGapMany
 }
 
 /** The way back from "off": the same setting as the picker's switch, in Profile > Konto. */
@@ -115,9 +118,10 @@ internal fun AskAtLaunchRow(app: SwiftlyApplication) {
 
 /**
  * **"Wer schaut?"** at cold start. Mirrors `ProfilePicker` (tvOS). Sits above the blurred home page of
- * the last profile; a press starts the ordinary account switch. Focus from the switch upwards goes
+ * the last profile (opaque surface below API 31, which has no blur); a press starts the ordinary account switch. Focus from the switch upwards goes
  * back to the avatar that was focused last.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit, notice: (String) -> Unit) {
     val accounts = remember { ProfilePickerRule.accounts(app) }
@@ -158,7 +162,12 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
                         val frameRect = remember { arrayOf(Rect.Zero) }
                         Column(Modifier.width(size).then(entrance(index + 1)), horizontalAlignment = Alignment.CenterHorizontally,
                                verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                            Box(Modifier.focusRequester(requesters.getValue(a.id))) {
+                            // Focus never leaves the picker: nothing above the avatars, nothing beyond the ends.
+                            Box(Modifier.focusRequester(requesters.getValue(a.id)).focusProperties {
+                                up = FocusRequester.Cancel
+                                if (index == 0) left = FocusRequester.Cancel
+                                if (index == count - 1) right = FocusRequester.Cancel
+                            }) {
                                 FocusArea(magnifier = TvTheme.focusMagnifier,
                                     focusChanged = { f -> focused = f; if (f) lastAvatar = a.id },
                                     perform = {
@@ -170,14 +179,27 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
                                         }
                                         AccountSwitchTransition.start(app, a.id, a.name, a.image, frameRect[0], Theme.reason, density, calm)
                                     }) { focus ->
+                                    // Dim and ring answer with the focus curve, like `ProfilePickerStyle` on tvOS; the ring
+                                    // stands outside the image (gap, then the stroke) and is not clipped with it.
+                                    val dimAlpha by animateFloatAsState(
+                                        if (waits) TvSpec.pickerDimWaitingOpacity else if (focus) 0f else TvSpec.pickerDimIdleOpacity,
+                                        tvTween(TvSpec.focusMs), label = "abdunkeln")
+                                    val ringAlpha by animateFloatAsState(if (focus && !waits) 1f else 0f,
+                                        tvTween(TvSpec.focusMs), label = "ring")
                                     Box(Modifier.size(size).onGloballyPositioned { frameRect[0] = it.boundsInRoot() }
+                                            .drawWithContent {
+                                                drawContent()
+                                                if (ringAlpha > 0f) drawCircle(Color.White, alpha = ringAlpha,
+                                                    radius = this.size.minDimension / 2 + (TvSpec.pickerRingGap + TvSpec.pickerRingWidth / 2).toPx(),
+                                                    style = Stroke(TvSpec.pickerRingWidth.toPx()))
+                                            }
                                             .semantics {
                                                 contentDescription = "${a.name}, ${a.server}. " + translated("Mit diesem Profil weiter")
-                                            }.clip(CircleShape)
-                                            .then(if (focus) Modifier.border(3.dp, Color.White, CircleShape) else Modifier)) {
-                                        AccountCircle(a.name, a.image, size)
-                                        Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha =
-                                            if (waits) 0.6f else if (focus) 0f else 0.35f)))
+                                            }) {
+                                        Box(Modifier.fillMaxSize().clip(CircleShape)) {
+                                            AccountCircle(a.name, a.image, size)
+                                            Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = dimAlpha)))
+                                        }
                                     }
                                 }
                             }
@@ -187,9 +209,12 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
                                      maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                                      modifier = Modifier.width(size + 20.dp).height(20.dp))
                                 // Space is always reserved, only the opacity changes, so nothing jumps.
+                                val shownServer = focused && !waits
+                                val serverStep by animateFloatAsState(if (shownServer) 1f else 0f,
+                                    tvTween(if (focused) TvSpec.revealMs else TvSpec.focusMs), label = "server")
                                 Text(a.server, style = TvTheme.small, color = Theme.fontQuiet, maxLines = 1,
                                      overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                                     modifier = Modifier.width(size + 20.dp).height(15.dp).alpha(if (focused && !waits) 1f else 0f))
+                                     modifier = Modifier.width(size + 20.dp).height(15.dp).offset(y = TvSpec.pickerServerOffset * (1f - serverStep)).alpha(serverStep))
                             }
                         }
                     }
@@ -204,7 +229,10 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
         Row(Modifier.align(Alignment.BottomStart).padding(start = TvTheme.edgePage, bottom = TvTheme.edgeTop).then(entrance(count + 1)),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // Up from the switch: back to the avatar we left, not to whichever lies geometrically above.
-            Box(Modifier.focusProperties { up = requesters[lastAvatar] ?: FocusRequester.Default }) {
+            Box(Modifier.focusProperties {
+                up = requesters[lastAvatar] ?: FocusRequester.Default
+                down = FocusRequester.Cancel; left = FocusRequester.Cancel; right = FocusRequester.Cancel
+            }) {
                 FocusArea(magnifier = 1f, perform = { if (!waits) { asks = !asks; ProfilePickerRule.set(app, asks) } }) { focus ->
                     Row(Modifier.height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
                             .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),

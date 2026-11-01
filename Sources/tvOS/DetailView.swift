@@ -210,8 +210,8 @@ struct DetailView: View {
     @State private var lastFocus: FocusTarget = .primaryButton
 
     @State private var prepares = false
-    /// The start position waiting for the version choice; `nil` while no dialog is open.
-    @State private var versionSince: Double?
+    /// The title waiting for the version choice; `nil` while no dialog is open.
+    @State private var versionChoice: VersionChoice?
     @State private var similar: [Item] = []
     @State private var extras: [Item] = []
     @State private var moreOpen = false
@@ -313,14 +313,10 @@ struct DetailView: View {
         .disabled(moreOpen)
         // The remote's select opens the choice; the dialog takes the focus and gives
         // it back to the button on close.
-        .confirmationDialog("Fassung wählen", isPresented: Binding(
-            get: { versionSince != nil }, set: { if !$0 { versionSince = nil } }),
-                            titleVisibility: .visible) {
-            ForEach(versions, id: \.id) { version in
-                Button(versionLabel(version)) {
-                    launch(since: versionSince ?? 0, sourceID: version.id)
-                }
-            }
+        .versionChoice($versionChoice) { choice, version in
+            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              play: { play.wrappedValue = $0 })
         }
         // Under the More button, at its edge; see `PanelAnchor`. The button sits at
         // the far right and the panel is wider, so `Handlungstafel.left` clamps it
@@ -346,7 +342,7 @@ struct DetailView: View {
             async let planning = model.plan(for: item.id)
             async let alike = model.similar(item)
             async let extra = model.extras(item)
-            async let preview = model.trailer(toward: item)
+            async let preview = model.trailerCandidates(for: item, canOpenWeb: false)
             async let collection = model.collectionRails(toward: item)
             // **Fade in once, not three times.**
             // `.transition` alone does not work: it acts only when the change happens in
@@ -375,8 +371,8 @@ struct DetailView: View {
             // The trailer leads the extras: it was once its own pill, and the layout's
             // button row has no room for it. Dropping it would be wrong; a trailer is
             // something to play, and the shelf is the place for it.
-            var shelf = (await extra) ?? []
-            if let preview = await preview { shelf.insert(preview, at: 0) }
+            let shelf = TrailerChoice.shelf(trailers: TrailerChoice.files(in: await preview),
+                                            extras: (await extra) ?? [])
             let newCollections = await collection
 
             withAnimation(Theme.motion(.easeOut(duration: 0.32))) {
@@ -453,7 +449,7 @@ struct DetailView: View {
         [TitleAction.watchState(current, model: model, watched: $watched,
                                  report: { message = $0 })]
         + TitleActions.forMovie(current, plan: plan, model: model,
-                                   start: { launch(since: $0) },
+                                   start: { launch(since: $0, asking: true) },
                                    report: { message = $0 },
                                    gemeinsam: SharedModel.shared.mayCreate
                                        ? { [current] in SharedModel.shared.createFor = current } : nil)
@@ -475,34 +471,23 @@ struct DetailView: View {
         watched = current.isWatched
     }
 
-    /// The versions to choose from; empty when there is no choice to make or the
-    /// title is on the device (the downloaded file is the one that plays). A
-    /// download still running does not count: playback then streams from the server.
-    private var versions: [MediaSource] {
-        model.downloads.file(for: current.id) == nil ? MediaVersions.choices(current.mediaSources) : []
-    }
-
-    private func versionLabel(_ version: MediaSource) -> String {
-        let detail = version.versionDetail
-        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
-    }
-
     /// **A title with several versions asks which one on press**, as on iPhone. One
     /// version, or a copy on the device, starts at once. The preloaded `plan` is only
     /// the proof row's; playback always fetches its own through `PlayRequest.start`,
     /// so a picked version never plays the cheapest one's plan.
     private func start(since: Double) {
-        if versions.isEmpty { launch(since: since) } else { versionSince = since }
+        launch(since: since, asking: true)
     }
 
     /// Freshly fetched: the position in the list entry is often stale.
-    private func launch(since: Double, sourceID: String? = nil) {
-        launch(current, since: since, freshValue: true, sourceID: sourceID)
+    private func launch(since: Double, asking: Bool = false) {
+        launch(current, since: since, freshValue: true, asking: asking)
     }
 
     /// Start a title, the same one or an extra.
-    private func launch(_ title: Item, since: Double, freshValue: Bool = false, sourceID: String? = nil) {
-        PlayRequest.start(title, since: since, freshValue: freshValue, sourceID: sourceID,
+    private func launch(_ title: Item, since: Double, freshValue: Bool = false, asking: Bool = false) {
+        PlayRequest.start(title, since: since, freshValue: freshValue,
+                              ask: asking ? VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }) : nil,
                               model: model, prepares: $prepares,
                               missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { play.wrappedValue = $0 })

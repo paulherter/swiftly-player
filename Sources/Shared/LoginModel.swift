@@ -75,7 +75,7 @@ extension AppModel {
 
     /// Empty does not mean "error" here but "the server does not give the list"; then you just type the name.
     func publicUser() async -> [PublicUser] {
-        guard let client else { return [] }
+        guard let client = client as? any QuickSignIn else { return [] }
         return (try? await client.publicUser()) ?? []
     }
 
@@ -83,7 +83,7 @@ extension AppModel {
     /// asynchronous, and the result is taken along when the list loads instead of being
     /// asked again on every draw.
     func imageAddresses(_ folks: [PublicUser]) async -> [String: URL] {
-        guard let client else { return [:] }
+        guard let client = client as? any QuickSignIn else { return [:] }
         var card: [String: URL] = [:]
         for person in folks {
             if let u = await client.userImage(person) { card[person.id] = u }
@@ -94,19 +94,19 @@ extension AppModel {
     // MARK: - Quick Connect as a sign-in path
 
     func quickConnectStart() async throws -> LoginCode {
-        guard let client else { throw JellyfinError.notAuthenticated }
+        guard let client = client as? any QuickSignIn else { throw JellyfinError.notAuthenticated }
         return try await client.quickConnectStart()
     }
 
     /// A poll that never throws; see `QuickConnectWait` in the package.
     func quickConnectAskAgain(_ preGait: LoginCode) async -> QuickConnectState {
-        guard let client else { return .failed }
+        guard let client = client as? any QuickSignIn else { return .failed }
         return await client.quickConnectAskAgain(preGait)
     }
 
     func signInWithQuickConnect(_ preGait: LoginCode) async {
         // For "Add another account" on a fresh client; see `loginClient()`.
-        guard let signInClient = loginClient() else { return }
+        guard let signInClient = loginClient() as? any QuickSignIn else { return }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
@@ -115,7 +115,9 @@ extension AppModel {
             // **Do not load additionally if it was a switch.** Then `sessionAdopt`
             // already cleans up and triggers the reload; a second run alongside races the
             // first, and whoever loses writes something half-finished.
-            if !sessionAdopt(s, signedInWith: signInClient) { await loadViews() }
+            signInTransition(s) { [self] in
+                if !sessionAdopt(s, signedInWith: signInClient) { Task { await loadViews() } }
+            }
         } catch {
             errorMessage = readable(error)
         }

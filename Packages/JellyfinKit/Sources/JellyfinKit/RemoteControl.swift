@@ -121,6 +121,11 @@ public actor RemoteControl {
     public func start(at nextGift: @escaping @Sendable (RemoteCommand) -> Void) {
         self.nextGift = nextGift
         guard task == nil else { return }
+        // Diagnosis only: `SWIFTLY_WS=aus` leaves the channel closed, to measure what it costs idle.
+        if ProcessInfo.processInfo.environment["SWIFTLY_WS"] == "aus" {
+            TrackSupport.sag("[Fernsteuerung] aus (SWIFTLY_WS=aus)")
+            return
+        }
 
         var parts = URLComponents(url: base.appendingPathComponent("socket"),
                                   resolvingAgainstBaseURL: false)
@@ -172,6 +177,13 @@ public actor RemoteControl {
     /// Whoever passes in their own `URLSession` (tests) keeps it;
     /// `SWIFTLY_WS=urlsession` forces the old path.
     private func lineBuild(_ petition: URLRequest) -> any RemoteLink {
+        #if os(Windows)
+        if !onlyURLSession, session === RemoteControl.durationSession,
+           ProcessInfo.processInfo.environment["SWIFTLY_WS"] != "urlsession",
+           let line = WinHttpLine(petition: petition) {
+            return line
+        }
+        #endif
         #if os(Linux) || os(Windows) || os(Android)
         if !onlyURLSession, session === RemoteControl.durationSession,
            ProcessInfo.processInfo.environment["SWIFTLY_WS"] != "urlsession",

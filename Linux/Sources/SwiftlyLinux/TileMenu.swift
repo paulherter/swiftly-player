@@ -159,7 +159,7 @@ extension App {
     /// Play: for a show, where the server left off (`stateInSeries`, like the main
     /// button of the show page).
     private func tilePlay(_ item: Item) {
-        guard item.type == "Series" else { launch(item); return }
+        guard item.type == "Series" else { launchAsking(item); return }
         guard let client else { return }
         Task.detached { [self] in
             let episode = await client.stateInSeries(item.id)
@@ -168,7 +168,7 @@ extension App {
                     self.tileMessage(translated("Danach kommt nichts mehr."))
                     return
                 }
-                self.launch(episode)
+                self.launchAsking(episode)
             }
         }
     }

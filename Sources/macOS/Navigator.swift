@@ -165,6 +165,8 @@ enum PagesTarget: Hashable, Identifiable {
     case profile
     case settings
     case playback
+    /// The look of text subtitles, under Playback.
+    case subtitleLook
     /// How the app looks and what the home page shows.
     case presentation
     /// Open-source licenses: the list, one component (by id), and source code with offer.
@@ -177,9 +179,11 @@ enum PagesTarget: Hashable, Identifiable {
     case librarySelection
     case quickConnect
     case accountAdd
-    /// **A second Jellyfin.** With an address when the account is created on a server
-    /// that already exists in the bundle; the address is then fixed and only displayed.
-    case serverAdd(URL?)
+    /// **Another server, or another account on one.** With `preset` when the account is
+    /// created on a server that already exists in the bundle (the address is then fixed
+    /// and only displayed), with `kind` when that server's kind is known, so the page goes
+    /// straight to its sign-in instead of the picker.
+    case serverAdd(ServerRoute)
 
     var id: String {
         switch self {
@@ -197,6 +201,7 @@ enum PagesTarget: Hashable, Identifiable {
         case .profile:           "profil"
         case .settings:    "einstellungen"
         case .playback:       "wiedergabe"
+        case .subtitleLook:   "untertitel"
         case .presentation:      "darstellung"
         case .licenses:         "lizenzen"
         case let .license(id):   "lizenz-\(id)"
@@ -205,7 +210,7 @@ enum PagesTarget: Hashable, Identifiable {
         case .librarySelection:  "bibliothekswahl"
         case .quickConnect:     "quickconnect"
         case .accountAdd: "kontohinzufuegen"
-        case let .serverAdd(url): "serverneu-\(url?.absoluteString ?? "")"
+        case let .serverAdd(route): "serverneu-\(route.kind?.rawValue ?? "")-\(route.preset?.absoluteString ?? "")"
         }
     }
 
@@ -217,7 +222,7 @@ enum PagesTarget: Hashable, Identifiable {
     /// a click on a section removes it again.
     var inAccountBranch: Bool {
         switch self {
-        case .profile, .settings, .playback, .seerr, .trakt, .presentation,
+        case .profile, .settings, .playback, .subtitleLook, .seerr, .trakt, .presentation,
              .licenses, .license, .licenseOffering, .genreSelection, .librarySelection, .quickConnect, .accountAdd, .serverAdd: true
         // **The person page belongs to the section, not the account.** It is reached from a
         // title and the user wants to continue from there to the next one, so it lies in

@@ -18,6 +18,9 @@ public struct PlaybackPlan: Sendable, Equatable {
     /// Video codec of a file on the device, as remembered at download time
     /// (``Downloadposten/bildcodec``); there is no ``source`` for it.
     var plattenImageCodec: String? = nil
+    /// The item the plan is for; needed for the address of a subtitle the server
+    /// converts (``SubtitleFile/asPlainText``). `nil` for files on the device.
+    public var itemID: String? = nil
 
     public var isLossless: Bool { method.isLossless }
 
@@ -164,7 +167,8 @@ public extension PlaybackPlan {
             container: source.container,
             reasons: method == .transcode ? diagnose(source: source, profile: profile) : [],
 
-            source: source
+            source: source,
+            itemID: itemID
         )
     }
 

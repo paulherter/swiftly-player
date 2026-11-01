@@ -46,7 +46,7 @@ struct RootView: View {
             Theme.reason.ignoresSafeArea()
             switch model.phase {
             case .disconnected, .connecting:
-                ConnectView(model: model)
+                FirstStartView(model: model)
             case let .needsLogin(serverName, version):
                 LoginView(model: model, serverName: serverName, version: version)
             case .ready:
@@ -148,6 +148,12 @@ struct RootView: View {
 /// enough.
 struct ConnectView: View {
     let model: AppModel
+    /// Reached through the kind picker: then a subpage with its arrow back to the
+    /// picker and "Mit Jellyfin anmelden" on top, and the wordmark stays on the picker,
+    /// where it already stood. `nil` = the page as it always was.
+    var back: (() -> Void)? = nil
+    /// An address another page already knows (Emby found a Jellyfin there).
+    var presetAddress: String? = nil
     @State private var address = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
@@ -155,13 +161,15 @@ struct ConnectView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                Wordmark(height: 40)
-                    .padding(.top, 172)
+                if back == nil {
+                    Wordmark(height: 40)
+                        .padding(.top, 172)
+                }
 
                 Text("Wo steht dein Jellyfin-Server?")
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
-                    .padding(.top, 44)
+                    .padding(.top, back == nil ? 44 : 24)
 
                 InputField(text: $address, symbol: "globe",
                             placeholder: "tv.beispiel.de", keyboard: .address,
@@ -213,7 +221,12 @@ struct ConnectView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        .onAppear { if address.isEmpty { address = model.lastServer?.address ?? "" } }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let back {
+                SubpageHeader(title: String(localized: "Mit Jellyfin anmelden"), back: back)
+            }
+        }
+        .onAppear { if address.isEmpty { address = presetAddress ?? model.lastServer?.address ?? "" } }
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
     }
@@ -298,7 +311,7 @@ struct LoginView: View {
                 header
                 if !knownOnes.isEmpty { choice }
                 fields
-                quickConnectDistance
+                if model.can(.quickConnect) { quickConnectDistance }
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 40)
@@ -360,11 +373,17 @@ struct LoginView: View {
         }
     }
 
+    /// "Another account" on a connected Emby is this page too; the first sign-in on
+    /// this page is always Jellyfin.
+    private var kindName: String {
+        (moreAccount ? model.session?.kind : nil)?.displayName ?? ServerKind.jellyfin.displayName
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Circle().fill(Theme.accent).frame(width: 7, height: 7)
-                Text("Verbunden · Jellyfin \(version)")
+                Text("Verbunden · \(kindName) \(version)")
                     // The scale's info grade, 12 Regular. Before it was a literal.
                     .font(Theme.small)
                     .foregroundStyle(Theme.fontVeryQuiet)
@@ -455,49 +474,6 @@ struct LoginView: View {
     private func signIn() {
         guard !user.isEmpty else { return }
         Task { await model.login(username: user, password: password) }
-    }
-}
-
-/// Round symbol for an account on the sign-in page.
-struct AccountCharacter: View {
-    let name: String
-    let image: URL?
-    let selected: Bool
-
-    var body: some View {
-        VStack(spacing: 8) {
-            // **The building block, not a copy of it.**
-            //
-            // The symbol was built a second time by hand here: `erhoeht` as the
-            // background instead of the gradient, a white 2 pt ring instead of
-            // `highlighted`, 20 semibold as the letter instead of `size * 0.38`,
-            // and the image via `Picture` instead of the image store, i.e. without the
-            // synchronous lookup that prevents the letter from flashing. The same
-            // thing in two builds means two profile rings in one app. That the ring
-            // is white here and not accent is correct and is now `selected` in the
-            // block.
-            ProfileCharacter(name: name, image: image, size: 60, selected: selected)
-            Text(name)
-                // Title under a symbol: 13 from the scale, before a literal. One weight,
-                // not two: `semibold` is wider than `medium`, and with two lines and
-                // `minimumScaleFactor` the width decides the line break, so the name
-                // wrapped differently when selected. Tone and ring express the choice.
-                .font(Theme.tile)
-                .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
-                // Two lines and a bit more width: an eleven-character name was truncated
-                // to ten characters at 66 pt and one line, and a truncated name on a
-                // sign-in screen looks like an error.
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.85)
-        }
-        .frame(width: 84)
-        // **The choice is not expressed only through tone and ring.** Both are
-        // color, and color alone reaches nobody who has the page read aloud:
-        // VoiceOver said the same for every account. `.isSelected` is the trait
-        // the system knows for this.
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

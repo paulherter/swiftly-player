@@ -1638,8 +1638,9 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title),
-                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil)
+                                 title: TrackMemory.title(for: title, account: model.session?.storageAccount),
+                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil,
+                                 engine: model.engineRequest(for: title.id, plan: plan))
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {
@@ -1887,7 +1888,7 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: item),
+                                        title: TrackMemory.title(for: item, account: model.session?.storageAccount),
                                         originalLanguage: item.originalLanguage)
             }
             // Stay silent during the switch, as on iOS: otherwise progress for the old episode goes out after the stop.

@@ -22,6 +22,9 @@ enum AccountSwitchStage {
     /// Window width, for ``Kontowechselflug/targetReport(_:)``.
     static var windowWidthValue: CGFloat? { NSApp.keyWindow?.contentView?.bounds.width }
 
+    /// Size of the window; `nil` without one.
+    static var windowSize: CGSize? { NSApp.keyWindow?.contentView?.bounds.size }
+
     /// What is on the stage, so an early finish can clear it.
     @MainActor
     final class Parts {

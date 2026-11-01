@@ -120,7 +120,7 @@ extension App {
     var sharedSession: SyncPlaySession {
         if let s = gemeinsam.session { return s }
         let s = SyncPlaySession(
-            client: { [self] in await fetchOnMainThread { self.client } },
+            client: { [self] in await fetchOnMainThread { self.client as? JellyfinClient } },
             ich: { [self] in
                 await fetchOnMainThread { self.username.isEmpty ? nil : self.username }
             },
@@ -171,7 +171,7 @@ extension App {
         gemeinsam.expects = nil
         // Leave with the old account's client; the caller sets the new one right
         // afterwards, and the `Leave` would go out in its name.
-        let alt = client
+        let alt = client as? JellyfinClient
         sharedChain { await $0.finish(oldClient: alt) }
     }
 

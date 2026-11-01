@@ -56,25 +56,39 @@ struct ProfileView: View {
 
                 AccountCard(model: model,
                            insertOn: { server in
-                               navigator.openIt(.serverAdd(server), in: section)
+                               // By the known kind of that server: its sign-in without the picker.
+                               navigator.openIt(.serverAdd(ServerRoute(
+                                   preset: server, kind: model.accounts(on: server).first?.kind)),
+                                                in: section)
                            },
                            insert: {
-                               navigator.openIt(.accountAdd, in: section)
+                               // Another account on the connected server, by its kind: Jellyfin
+                               // and Emby sign in on the page with the user list, Plex through
+                               // plex.tv.
+                               if model.session?.kind == .plex {
+                                   navigator.openIt(.serverAdd(ServerRoute(
+                                       preset: model.session?.serverURL, kind: .plex)), in: section)
+                               } else {
+                                   navigator.openIt(.accountAdd, in: section)
+                               }
                            })
 
                 Color.clear.frame(height: 20)
 
-                RowsGroup {
-                    Button { navigator.openIt(.quickConnect, in: section) } label: {
-                        ValuesRow(symbol: "rectangle.and.text.magnifyingglass",
-                                   title: Text("Quick Connect"),
-                                   under: Text("Code vom Fernseher eingeben"),
-                                   accent: true, arrow: true, hoverable: true)
+                // Quick Connect is Jellyfin's; the other kinds have no counterpart.
+                if model.can(.quickConnect) {
+                    RowsGroup {
+                        Button { navigator.openIt(.quickConnect, in: section) } label: {
+                            ValuesRow(symbol: "rectangle.and.text.magnifyingglass",
+                                       title: Text("Quick Connect"),
+                                       under: Text("Code vom Fernseher eingeben"),
+                                       accent: true, arrow: true, hoverable: true)
+                        }
+                        .buttonStyle(Theme.PressRow())
                     }
-                    .buttonStyle(Theme.PressRow())
-                }
 
-                Color.clear.frame(height: 18)
+                    Color.clear.frame(height: 18)
+                }
 
                 // **The categories live here, as on iPhone and iPad.**
                 //
@@ -127,10 +141,10 @@ struct ProfileView: View {
                     //
                     // "Weiteres Konto hinzufuegen" is gone: the plus in the account card does
                     // the same, and does it where the accounts are.
-                    Button { navigator.openIt(.serverAdd(nil), in: section) } label: {
+                    Button { navigator.openIt(.serverAdd(ServerRoute()), in: section) } label: {
                         ValuesRow(symbol: "externaldrive.connected.to.line.below",
                                    title: Text("Server hinzufügen"),
-                                   under: Text("Ein zweiter Jellyfin, eigene Konten"),
+                                   under: Text("Jellyfin, Emby oder Plex, auch gemischt"),
                                    arrow: true, hoverable: true)
                     }
                     .buttonStyle(Theme.PressRow())
@@ -360,7 +374,7 @@ struct AccountAddView: View {
         VStack(alignment: .leading, spacing: 0) {
             SubpageHeader(title: "Weiteres Konto", back: back)
 
-            Text("Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen.")
+            Text(explanation)
                 .font(Theme.body)
                 .lineSpacing(3)
                 .foregroundStyle(Theme.fontQuiet)
@@ -404,6 +418,12 @@ struct AccountAddView: View {
         .foregroundStyle(Theme.fontVeryQuiet)
     }
 
+    private var explanation: LocalizedStringKey {
+        (model.session?.kind ?? ServerKind.jellyfin) == .jellyfin
+        ? "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen."
+        : "Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."
+    }
+
     private var serverDescription: String {
         [model.serverName, model.serverAddress]
             .compactMap { $0 }
@@ -432,11 +452,14 @@ struct AccountAddView: View {
             .disabled(user.isEmpty || model.isWorking)
             .opacity(user.isEmpty ? 0.4 : 1)
 
-        separatorWithOr.padding(.top, 18)
+        // Emby has no Quick Connect: the form alone.
+        if model.can(.quickConnect) {
+            separatorWithOr.padding(.top, 18)
 
-        OutlineButton(label: "Mit Quick Connect anmelden",
-                   symbol: "rectangle.and.text.magnifyingglass") { perCode = true }
-            .padding(.top, 18)
+            OutlineButton(label: "Mit Quick Connect anmelden",
+                       symbol: "rectangle.and.text.magnifyingglass") { perCode = true }
+                .padding(.top, 18)
+        }
     }
 
     // MARK: Quick Connect
@@ -699,7 +722,7 @@ private struct AccountCard: View {
                 // switch. If the line were drawn only then, the text block would grow and
                 // name and address would jump up (same bug as on Android).
                 if active {
-                    Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
+                    Text(verbatim: "\(account?.kind.shownName ?? ServerKind.jellyfin.shownName) \(model.serverVersion ?? "")")
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)

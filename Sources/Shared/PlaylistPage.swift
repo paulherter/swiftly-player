@@ -23,6 +23,8 @@ struct PlaylistView: View {
     @State private var offset: CGFloat = 0
     @State private var prepares = false
     @State private var play: PlayRequest?
+    /// The first entry has several versions and waits for the pick.
+    @State private var versionChoice: VersionChoice?
     @State private var message: String?
 
     /// What this section shows: movies in "Movies", episodes in "Series"; without a
@@ -55,6 +57,11 @@ struct PlaylistView: View {
         .playerCover(item: $play) { wish in
             PlayerScreen(model: model, item: wish.item,
                          plan: wish.plan, startAt: wish.startAt)
+        }
+        .versionChoice($versionChoice) { choice, version in
+            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                              play: { play = $0 })
         }
         .catchUp(at: model.listenRefresh) { Task { await load() } }
         .task(id: "\(playlist.id)|\(model.accountSwitch)") { await load() }
@@ -102,7 +109,10 @@ struct PlaylistView: View {
     private func start() {
         guard let first = model.playlistStart(shown) else { return }
         Theme.jerk(.medium)
-        PlayRequest.start(first, freshValue: true, model: model, prepares: $prepares,
+        PlayRequest.start(first, freshValue: true,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares,
                           missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                           play: { play = $0 })
     }

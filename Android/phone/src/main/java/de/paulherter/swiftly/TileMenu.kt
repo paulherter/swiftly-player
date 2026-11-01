@@ -254,10 +254,9 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
                 if (w.type == "Series") {
                     val state = runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.series(w.id).await() }).optJSONObject("stand") }.getOrNull()
                     if (state == null) { app.message.value = translated("Danach kommt nichts mehr."); return@launch }
-                    app.play.value = PlayRequest(state.getString("id"), if (state.isNull("ab")) null else state.getDouble("ab"))
+                    playAsking(app, state.getString("id"), if (state.isNull("ab")) null else state.getDouble("ab"))
                 } else {
-                    val freshValue = continueWatchingRequest(app, w.id)
-                    if (freshValue != null) app.play.value = freshValue else open(Destination(w.id, w.name, w.type))
+                    if (!continueWatchingAsking(app, w.id)) open(Destination(w.id, w.name, w.type))
                 }
             }
             "uebersicht" -> open(Destination(w.id, w.name, w.type))

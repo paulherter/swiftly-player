@@ -284,12 +284,17 @@ public extension DeviceProfile {
     ///   before switching and by `SubtitleStreamIndex: -1` when asking, so no
     ///   subtitle is burned in. If it happens anyway, the player falls back to the
     ///   phone after twelve seconds.
-    static func airplay(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
+    ///
+    /// - Parameter av1: also copy AV1 (fragmented MP4 carries it). Only for the AVPlayer
+    ///   engine on a chip with a hardware AV1 decoder; AirPlay itself never gets it,
+    ///   the receiver's decoder is not known.
+    static func airplay(maxBitrate: Int = 1_000_000_000, av1: Bool = false) -> DeviceProfile {
+        let videoCodecs = av1 ? "h264,hevc,av1" : "h264,hevc"
         // If the file already fits, the server does nothing. The case is rarer than
         // it sounds, but allowing it costs nothing.
         let direct = ["mp4", "m4v", "mov"].map { container in
             DirectPlayProfile(container: container, type: "Video",
-                              videoCodec: "h264,hevc",
+                              videoCodec: videoCodecs,
                               audioCodec: "aac,ac3,eac3,alac,flac,mp3")
         }
 
@@ -298,7 +303,7 @@ public extension DeviceProfile {
         // HEVC movie is re-encoded.
         let transcoding = [
             TranscodingProfile(container: "mp4", type: "Video",
-                               videoCodec: "h264,hevc",
+                               videoCodec: videoCodecs,
                                audioCodec: "aac,ac3,eac3",
                                context: "Streaming", protocolName: "hls")
         ]

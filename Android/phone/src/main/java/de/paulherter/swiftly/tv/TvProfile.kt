@@ -7,6 +7,8 @@ import de.paulherter.swiftly.shared.Strength
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +36,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,7 +71,7 @@ private enum class Compartment(val title: String) {
 @Composable
 private fun GroupsHeader(text: String) {
     Text(text, style = TvTheme.rail,
-         color = Theme.fontVeryQuiet, modifier = Modifier.padding(start = 13.dp, top = 18.dp, bottom = 6.dp))
+         color = Theme.fontQuiet, modifier = Modifier.padding(start = TvSpec.rowInset, bottom = TvSpec.groupsTitleBottom))
 }
 
 /**
@@ -87,8 +92,31 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val e = app.settings
     var compartment by rememberSaveable { mutableStateOf(Compartment.Playback) }
     var leftFocus by remember { mutableStateOf(true) }
+    var rightHasFocus by remember { mutableStateOf(false) }
     val left = firstFocus()
     val right = remember { FocusRequester() }
+    // The value row that is open (its title is the key), at most one; closed when the section changes (tvOS: `opened`).
+    var opened by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(compartment) { opened = null }
+    val rightScroll = rememberScrollState()
+    var viewportTop by remember { mutableFloatStateOf(0f) }
+    val rowTops = remember { mutableMapOf<String, Float>() }
+    val edgeTopPx = with(androidx.compose.ui.platform.LocalDensity.current) { TvTheme.edgeTop.toPx() }
+    // **The expanded row scrolls to the top with the same curve and time as the expansion** (tvOS: `reader.scrollTo(new,
+    // anchor: .top)` inside the same `withAnimation`). The target is read again each frame, because the list grows while it
+    // moves and its end moves with it.
+    val calmScroll = de.paulherter.swiftly.shared.motionReduced()
+    LaunchedEffect(opened) {
+        val key = opened ?: return@LaunchedEffect
+        val rowTop = rowTops[key] ?: return@LaunchedEffect
+        val start = rightScroll.value.toFloat()
+        val contentY = rowTop - viewportTop + start - edgeTopPx
+        androidx.compose.animation.core.Animatable(0f).animateTo(1f,
+            if (calmScroll) tween(TvSpec.reducedMs) else tween(TvSpec.valueExpandMs, easing = TvSpec.easeInOutCurve)) {
+            val goal = start + (contentY.coerceIn(0f, rightScroll.maxValue.toFloat()) - start) * value
+            rightScroll.dispatchRawDelta(goal - rightScroll.value)
+        }
+    }
     val run = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     BackHandler(enabled = !leftFocus) { runCatching { left.requestFocus() } }
@@ -104,9 +132,6 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
     val audioChoice = remember { selectionRead(Kern.languages("")) }
     val subtitleSelection = remember { selectionRead(Kern.languages(translated("Aus"))) }
-    fun sheet(title: String, entries: List<Choice>, selected: String, select: (String) -> Unit) {
-        app.sheet.value = SheetRequest(title, entries, selected, select = select)
-    }
     fun secondsSelection() = seconds.map { Choice(it.toString(), translated("%lld s", it)) }
 
     var server by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -118,10 +143,11 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     }
     // For "Genre hinzufuegen" at the bottom: the same list as `GenreSelectionPage` on the phone.
     var allGenres by remember { mutableStateOf<List<String>>(emptyList()) }
+    var genresDisturbed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         allGenres = try {
             JSONArray(withContext(Dispatchers.IO) { app.kern.genres().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
-        } catch (x: CancellationException) { throw x } catch (_: Exception) { emptyList() }
+        } catch (x: CancellationException) { throw x } catch (_: Exception) { genresDisturbed = true; emptyList() }
     }
     // For "Bibliothek hinzufuegen": libraries and collections not yet chosen (`LibrarySelectionPage`).
     var freeLibraries by remember { mutableStateOf<List<de.paulherter.swiftly.StartLibraryItem>>(emptyList()) }
@@ -133,14 +159,17 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     }
     val host = cards.firstOrNull { it.optBoolean("aktiv") }?.optString("host").orEmpty()
     val serverRow = listOfNotNull(server?.first?.ifEmpty { null } ?: app.serverName.value,
-                                     server?.second?.let { "Jellyfin $it" }).joinToString(" · ")
+                                     server?.second?.let { "${ServerKind.from(app.kind()).shownName} $it" }).joinToString(" · ")
 
     // The look's glow stands still here (`lookGlow(fixed:)` on tvOS): the two columns scroll on their own.
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
     TvGlow(app)
     Column(Modifier.fillMaxSize()
-            .padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop)) {
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+            // Side margin only: the top and bottom margin sits inside the two scrolling columns, so the lists scroll
+            // out to the window edge (tvOS: `scrollClipDisabled()`). Measured before: the viewports ended 30 dp
+            // inside the screen, and rows were cut mid-picture.
+            .padding(horizontal = TvTheme.edgePage)) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(TvSpec.columnGap)) {
             // **Back to the left means onto the selected section** (tvOS: `.focusSection()` with
             // `.defaultFocus($left, section)`, Back sets `left = section`). Before, the geometric search from
             // the right found the account strip at the top, and Back always jumped to the first row, so
@@ -149,49 +178,70 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
             // **Scrollable**, like the right column: the account card and seven sections are taller than a
             // 1080 frame. Without scrolling, "Swiftly" got height 0 and focus landed on an invisible row below
             // the screen edge.
-            Column(Modifier.width(230.dp).focusProperties { enter = { left } }
-                    .verticalScroll(rememberScrollState()).focusGroup()) {
-                AccountCard(app, serverRow, cards,
+            Column(Modifier.width(TvSpec.sectionColumnWidth).focusProperties { enter = { left } }
+                    .verticalScroll(rememberScrollState()).padding(vertical = TvTheme.edgeTop).focusGroup()) {
+                AccountBlock(app, serverRow, cards,
                            record = { open(Destination("weiteresKonto", translated("Konto hinzufügen"), "WeiteresKonto")) },
                            switchTo = { k -> app.switchAccount(k) })
-                Spacer(Modifier.height(20.dp))
+                // A line instead of a second box (tvOS: `SheetLine`): it says where "who" ends and "where" begins.
+                Box(Modifier.fillMaxWidth().padding(start = TvSpec.rowInset, top = TvSpec.accountSeparatorVertical, bottom = TvSpec.accountSeparatorVertical)
+                        .height(TvSpec.hairline).background(Theme.line))
                 GroupsHeader(translated("Bereiche"))
-                Compartment.entries.forEach { a ->
-                    SectionRow(translated(a.title), selected = a == compartment,
+                Compartment.entries.filter { it != Compartment.Integration || app.can("seerr") }.forEach { a ->
+                    SectionRow(translated(a.title), selected = a == compartment, rests = !leftFocus,
                                  modifier = if (a == compartment) Modifier.focusRequester(left) else Modifier,
                                  focusChanged = { if (it) { compartment = a; leftFocus = true } },
-                                 perform = { runCatching { right.requestFocus() } })
+                                 perform = {
+                                     // **One frame later**, as tvOS does (`toInGo`): the column only takes focus once it is
+                                     // no longer the dimmed, closed one.
+                                     leftFocus = false
+                                     run.launch {
+                                         withFrameNanos { }
+                                         runCatching { right.requestFocus() }
+                                         kotlinx.coroutines.delay(150)
+                                         if (!rightHasFocus) leftFocus = true
+                                     }
+                                 })
                 }
             }
-            Column(Modifier.weight(1f).alpha(if (leftFocus) 0.5f else 1f)
-                    .onFocusChanged { if (it.hasFocus) leftFocus = false }
-                    .verticalScroll(rememberScrollState()).focusGroup()) {
+            // Dimmed means visible but not active yet: no step to the right leads in, only OK does (tvOS: `.disabled(!inside)`
+            // with `.opacity(inside ? 1 : 0.5)` eased over 0.2 s).
+            val dim by animateFloatAsState(if (leftFocus) TvSpec.valueDimmedAlpha else 1f,
+                                          tvTween(TvSpec.valueDimMs, TvSpec.easeInOutCurve), label = "rightDim")
+            Column(Modifier.weight(1f).graphicsLayer { alpha = dim }
+                    .focusProperties { enter = { if (leftFocus) FocusRequester.Cancel else FocusRequester.Default } }
+                    .onFocusChanged { rightHasFocus = it.hasFocus; if (it.hasFocus) leftFocus = false }
+                    .onGloballyPositioned { viewportTop = it.positionInRoot().y }
+                    .verticalScroll(rightScroll).padding(vertical = TvTheme.edgeTop).focusGroup()) {
                 val first = Modifier.focusRequester(right)
                 GroupsHeader(translated(compartment.title))
-                Column(Modifier.padding(5.dp).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area)) {
+                Column(Modifier.padding(TvSpec.listCardInset).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area)) {
+                    // One reporter for the value rows below: where each one stands, for the scroll above.
+                    val reportRow: (String, Float) -> Unit = { k, y -> rowTops[k] = y }
+                    val setOpened: (String?) -> Unit = { opened = it }
                     when (compartment) {
                         Compartment.Playback -> {
                             // If the server does not transcode there is nothing to choose: Direct Play is fixed on and the
                             // bitrate is locked, as on the other versions.
                             val free = e.convertAllowed
                             val directPlay = e.alwaysDirectPlay || !free
-                            TvToggleRow(translated("Immer Direct Play"), directPlay, modifier = first) {
-                                if (free) { e.alwaysDirectPlay = !e.alwaysDirectPlay; app.qualityReport() }
+                            // **The anchor hangs on the topmost row that is actually available** (tvOS: `free ? .top : .proceed`):
+                            // focus on a disabled row goes nowhere.
+                            TvToggleRow(translated("Immer Direct Play"), directPlay, enabled = free, modifier = if (free) first else Modifier) {
+                                e.alwaysDirectPlay = !e.alwaysDirectPlay; app.qualityReport()
                             }
                             SeparatorLine()
-                            // Dimmed while Direct Play is forced, since it would have no effect.
-                            TvAction(translated("Höchste Bitrate"), value = bitrates.firstOrNull { it.value == e.bitratesLimit.toString() }?.text,
-                                       modifier = Modifier.alpha(if (directPlay) 0.4f else 1f)) {
-                                if (!directPlay) sheet(translated("Höchste Bitrate"), bitrates, e.bitratesLimit.toString()) { e.bitratesLimit = it.toInt(); app.qualityReport() }
+                            // Disabled while Direct Play is forced, since it would have no effect.
+                            TvValueRow(translated("Höchste Bitrate"), bitrates.firstOrNull { it.value == e.bitratesLimit.toString() }?.text,
+                                       opened, setOpened, reportRow, bitrates, e.bitratesLimit.toString(), enabled = !directPlay) {
+                                e.bitratesLimit = it.toInt(); app.qualityReport()
                             }
                             SeparatorLine()
-                            TvAction(translated("Puffer"), value = buffer.firstOrNull { it.value == e.bufferLevel }?.text) {
-                                sheet(translated("Puffer"), buffer, e.bufferLevel) { e.bufferLevel = it }
-                            }
+                            TvValueRow(translated("Puffer"), buffer.firstOrNull { it.value == e.bufferLevel }?.text,
+                                       opened, setOpened, reportRow, buffer, e.bufferLevel, modifier = if (free) Modifier else first) { e.bufferLevel = it }
                             SeparatorLine()
-                            TvAction(translated("Player"), value = engines.firstOrNull { it.value == e.playerEngine }?.text) {
-                                sheet(translated("Player"), engines, e.playerEngine) { e.playerEngine = it }
-                            }
+                            TvValueRow(translated("Player"), engines.firstOrNull { it.value == e.playerEngine }?.text,
+                                       opened, setOpened, reportRow, engines, e.playerEngine) { e.playerEngine = it }
                             SeparatorLine()
                             TvToggleRow(translated("Mehrkanal-Ton (5.1)"), e.multiChannelAudio) { e.multiChannelAudio = !e.multiChannelAudio }
                             SeparatorLine()
@@ -209,21 +259,23 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             SeparatorLine()
                             TvToggleRow(translated("Intro und Abspann automatisch überspringen"), e.introOutroAutomatic) { e.introOutroAutomatic = !e.introOutroAutomatic }
                             SeparatorLine()
-                            TvAction(translated("Zurückspulen"), value = translated("%lld s", e.backSeconds)) {
-                                sheet(translated("Zurückspulen"), secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
-                            }
+                            TvValueRow(translated("Zurückspulen"), translated("%lld s", e.backSeconds),
+                                       opened, setOpened, reportRow, secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
                             SeparatorLine()
-                            TvAction(translated("Vorspulen"), value = translated("%lld s", e.forwardSeconds)) {
-                                sheet(translated("Vorspulen"), secondsSelection(), e.forwardSeconds.toString()) { e.forwardSeconds = it.toInt() }
-                            }
+                            TvValueRow(translated("Vorspulen"), translated("%lld s", e.forwardSeconds),
+                                       opened, setOpened, reportRow, secondsSelection(), e.forwardSeconds.toString()) { e.forwardSeconds = it.toInt() }
                         }
                         Compartment.Languages -> {
-                            TvAction(translated("Ton"), value = audioChoice.firstOrNull { it.value == e.audioLanguage }?.text, modifier = first) {
-                                sheet(translated("Ton"), audioChoice, e.audioLanguage) { e.audioLanguage = it }
-                            }
+                            TvValueRow(translated("Ton"), audioChoice.firstOrNull { it.value == e.audioLanguage }?.text,
+                                       opened, setOpened, reportRow, audioChoice, e.audioLanguage, modifier = first) { e.audioLanguage = it }
                             SeparatorLine()
-                            TvAction(translated("Untertitel"), value = subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text) {
-                                sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
+                            TvValueRow(translated("Untertitel"), subtitleSelection.firstOrNull { it.value == e.subtitleLanguage }?.text,
+                                       opened, setOpened, reportRow, subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
+                            SeparatorLine()
+                            // Own page with the live picture (Apple TV: `TVSubtitleLookEntryRow`).
+                            TvAction(translated("Aussehen der Untertitel"),
+                                     value = with(de.paulherter.swiftly.SubtitleFacts.of(e.subtitleLook, true)) { entryValue() }) {
+                                open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
                             }
                         }
                         Compartment.Presentation -> {
@@ -269,29 +321,28 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                     })
                                 SeparatorLine()
                             }
-                            TvAction(translated("Bibliothek hinzufügen"), value = if (freeLibraries.isEmpty()) translated("Keins offen") else "") {
-                                if (freeLibraries.isNotEmpty()) sheet(translated("Bibliothek hinzufügen"), freeLibraries.map { Choice(it.id, it.name) }, "") { id ->
-                                    freeLibraries.firstOrNull { it.id == id }?.let { e.startLibraries = e.startLibraries + it }
-                                }
+                            TvValueRow(translated("Bibliothek hinzufügen"), if (freeLibraries.isEmpty()) translated("Keins offen") else "",
+                                       opened, setOpened, reportRow, freeLibraries.map { Choice(it.id, it.name) }, "") { id ->
+                                freeLibraries.firstOrNull { it.id == id }?.let { e.startLibraries = e.startLibraries + it }
                             }
                             SeparatorLine()
                             GroupsHeader(translated("Genres"))
                             // **One list, two forms**: the same value row as "Puffer" etc., not two rows with check marks,
                             // matching `ProfileView.swift`.
-                            TvAction(translated("Form"), value = if (e.genreChips) translated("Als Chips") else translated("Als Reihen")) {
-                                sheet(translated("Form"),
-                                      listOf(Choice("reihen", translated("Als eigene Reihen")), Choice("chips", translated("Als Chips über den Reihen"))),
-                                      if (e.genreChips) "chips" else "reihen") { e.genreChips = it == "chips" }
-                            }
+                            TvValueRow(translated("Form"), if (e.genreChips) translated("Als Chips") else translated("Als Reihen"),
+                                       opened, setOpened, reportRow,
+                                       listOf(Choice("reihen", translated("Als eigene Reihen")), Choice("chips", translated("Als Chips über den Reihen"))),
+                                       if (e.genreChips) "chips" else "reihen") { e.genreChips = it == "chips" }
                             e.startGenres.forEach { g ->
                                 SeparatorLine()
                                 TvAction(name = g, value = translated("Entfernen")) { e.startGenres = e.startGenres - g }
                             }
                             SeparatorLine()
                             val freeGenres = allGenres.filter { it !in e.startGenres }
-                            TvAction(translated("Genre hinzufügen"), value = if (freeGenres.isEmpty()) translated("Keins offen") else "") {
-                                if (freeGenres.isNotEmpty()) sheet(translated("Genre hinzufügen"), freeGenres.map { Choice(it, it) }, "") { g -> e.startGenres = e.startGenres + g }
-                            }
+                            TvValueRow(translated("Genre hinzufügen"),
+                                       if (genresDisturbed && allGenres.isEmpty()) translated("Server ist abgetaucht")
+                                       else if (freeGenres.isEmpty()) translated("Keins offen") else "",
+                                       opened, setOpened, reportRow, freeGenres.map { Choice(it, it) }, "") { g -> e.startGenres = e.startGenres + g }
                         }
                         Compartment.Integration -> {
                             // **A second service, not a second server**, so a status line says whether it is connected, with
@@ -307,7 +358,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // host is only the fallback when there is no name.
                             TvDisplay(translated("Adresse"), server?.first?.ifEmpty { null } ?: app.serverName.value ?: host.ifEmpty { "—" })
                             SeparatorLine()
-                            TvDisplay(translated("Fassung"), server?.second?.let { "Jellyfin $it" } ?: "—")
+                            TvDisplay(translated("Fassung"), server?.second?.let { "${ServerKind.from(app.kind()).shownName} $it" } ?: "—")
                             TvVersionDisplay(app, SwiftlyApplication.VersionRow.removePrefix("Swiftly Player "))
                             SeparatorLine()
                             // Multiple servers; formerly the bundle held exactly one.
@@ -333,11 +384,15 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             // tvOS. In its place here the second server: the same action as "Server hinzufuegen" in the server
                             // section, the same catalog key and the same target (`ServerAufnahme` -> `TvServerOnboarding`).
                             // Settings follow the account to every device (`SettingsSyncRun`).
-                            TvToggleRow(translated("Einstellungen auf allen Geräten gleich halten"), app.settingsSync.on.value, modifier = first) {
-                                app.settingsSync.onSet(!app.settingsSync.on.value)
+                            // Only servers that keep display preferences (`ServerCapability.settingsSync`).
+                            val syncs = app.can("settingsSync")
+                            if (syncs) {
+                                TvToggleRow(translated("Einstellungen auf allen Geräten gleich halten"), app.settingsSync.on.value, modifier = first) {
+                                    app.settingsSync.onSet(!app.settingsSync.on.value)
+                                }
+                                SeparatorLine()
                             }
-                            SeparatorLine()
-                            TvAction(translated("Server hinzufügen")) {
+                            TvAction(translated("Server hinzufügen"), modifier = if (syncs) Modifier else first) {
                                 open(Destination("serveraufnahme", translated("Server hinzufügen"), "ServerAufnahme"))
                             }
                             SeparatorLine()
@@ -379,23 +434,29 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
 // MARK: - Rows
 
 /** A section in the left column. Mirrors `SectionStyle`: four states, no icon; selected carries
- *  accent surface and accent text, focused the calm surface. */
+ *  accent surface and accent text, focused the calm surface. `rests`: selected but handed off to
+ *  the right column, so grey type on the calm surface instead of accent. */
 @Composable
-private fun SectionRow(title: String, selected: Boolean, modifier: Modifier = Modifier,
+private fun SectionRow(title: String, selected: Boolean, rests: Boolean, modifier: Modifier = Modifier,
                           focusChanged: (Boolean) -> Unit = {}, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, focusChanged = focusChanged, perform = perform) { focus ->
-        val reason = when {
-            selected && focus -> Theme.accent.copy(alpha = 0.26f)
-            selected          -> Theme.accent.copy(alpha = 0.15f)
-            focus                -> TvTheme.focusArea
-            else                 -> Color.Transparent
+        val target = when {
+            selected && focus -> Theme.accent.copy(alpha = TvSpec.sectionSelectedFocusedOpacity)
+            selected && rests -> Theme.area
+            selected          -> Theme.accent.copy(alpha = TvSpec.sectionSelectedOpacity)
+            focus             -> TvTheme.focusArea
+            else              -> TvTheme.focusArea.copy(alpha = 0f)
         }
+        val reason by animateColorAsState(target, tvTween(TvSpec.focusMs), label = "sectionSurface")
+        val ink by animateColorAsState(if (selected) (if (rests) Theme.fontQuiet else Theme.accent) else Theme.font,
+                                       tvTween(TvSpec.focusMs), label = "sectionInk")
         Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(reason).padding(horizontal = 13.dp),
+                .background(reason).padding(horizontal = TvSpec.rowInset),
             verticalAlignment = Alignment.CenterVertically) {
+            // The weight stays when it rests: you should find where you were when going back.
             Text(title, style = TvTheme.body.copy(
-                     fontWeight = if (selected || focus) FontWeight.SemiBold else FontWeight.Normal),
-                 color = if (selected) Theme.accent else Theme.font, maxLines = 1)
+                     fontWeight = if (selected || focus) FontWeight.SemiBold else FontWeight.Medium),
+                 color = ink, maxLines = 1)
         }
     }
 }
@@ -403,13 +464,13 @@ private fun SectionRow(title: String, selected: Boolean, modifier: Modifier = Mo
 /** The version row; supporters see the heart and "Supporter" next to the number. */
 @Composable
 private fun TvVersionDisplay(app: SwiftlyApplication, version: String) {
-    Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).padding(horizontal = 13.dp),
+    Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).padding(horizontal = TvSpec.rowInset),
         verticalAlignment = Alignment.CenterVertically) {
         Text("Swiftly", style = TvTheme.body, color = Theme.font, maxLines = 1, modifier = Modifier.weight(1f))
         if (app.support.isSupporter) {
             Symbol(Glyph.HeartFilled, 11.dp, color = Theme.accent)
             Text(translated("Unterstützer"), style = TvTheme.tile, color = Theme.accent, maxLines = 1,
-                 modifier = Modifier.padding(start = 6.dp, end = 14.dp))
+                 modifier = Modifier.padding(start = TvSpec.supporterGapStart, end = TvSpec.supporterGapEnd))
         }
         Text(version, style = TvTheme.tile, color = Theme.fontQuiet, maxLines = 1)
     }
@@ -419,46 +480,95 @@ private fun TvVersionDisplay(app: SwiftlyApplication, version: String) {
  *  button: a status without effect that still accepts focus is a trap on a TV. */
 @Composable
 private fun TvDisplay(title: String, value: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(TvTheme.rowsHeight).padding(horizontal = 13.dp),
+    Row(modifier.fillMaxWidth().height(TvTheme.rowsHeight).padding(horizontal = TvSpec.rowInset),
         verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = TvTheme.body, color = Theme.font,
              maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(TvSpec.rowSpacerMin))
         Text(value, style = TvTheme.tile, color = Theme.fontQuiet, maxLines = 1)
     }
 }
 
-/** Row that triggers something, with or without value and trailing arrow. Mirrors `Handlungszeile`.
- *  `name` is the server's wording (genre) and does not go through the catalog. */
+/** Row that triggers something, with or without value and trailing arrow. Mirrors `ActionRow` with
+ *  `RowsStyle`. `name` is the server's wording (genre) and does not go through the catalog. `expanded`
+ *  (a value row) turns the arrow up. `enabled = false` is dimmed on title, value and arrow and takes
+ *  no focus. */
 @Composable
-private fun TvAction(title: String = "", name: String? = null, value: String? = null,
-                        arrow: Boolean = value != null, modifier: Modifier = Modifier, perform: () -> Unit) {
-    FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
+internal fun TvAction(title: String = "", name: String? = null, value: String? = null,
+                        arrow: Boolean = value != null, expanded: Boolean = false, enabled: Boolean = true,
+                        modifier: Modifier = Modifier, perform: () -> Unit) {
+    FocusArea(modifier.fillMaxWidth().focusProperties { canFocus = enabled }, magnifier = 1f, perform = { if (enabled) perform() }) { focus ->
         Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(name ?: title, style = TvTheme.body,
-                 color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
+            Text(name ?: title, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),
+                 color = if (enabled) Theme.font else Theme.fontVeryQuiet,
+                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (value != null) {
-                Text(value, style = TvTheme.tile, color = Theme.fontQuiet, maxLines = 1)
-                if (arrow) Symbol(Glyph.AngleDown, 13.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+                Text(value, style = TvTheme.tile, color = if (enabled) Theme.fontQuiet else Theme.fontVeryQuiet, maxLines = 1)
+                if (arrow) Symbol(if (expanded) Glyph.AngleUp else Glyph.AngleDown, TvSpec.valueIcon,
+                                  color = Theme.fontVeryQuiet.copy(alpha = if (enabled) 1f else 0.5f), strength = Strength.Semibold)
+            }
+        }
+    }
+}
+
+/** A row with a value that opens its choice **below it** instead of a sheet (tvOS: `valueRow`). One open at a
+ *  time; the choice is the same row shape, indented, with a check on the current one. A choice closes the row and
+ *  hands focus back to it. */
+@Composable
+private fun TvValueRow(title: String, value: String?, opened: String?, setOpened: (String?) -> Unit,
+                          report: (String, Float) -> Unit, entries: List<Choice>, selected: String,
+                          enabled: Boolean = true, modifier: Modifier = Modifier, select: (String) -> Unit) {
+    val open = opened == title
+    val header = remember { FocusRequester() }
+    Column(Modifier.fillMaxWidth().onGloballyPositioned { report(title, it.positionInRoot().y) }) {
+        TvAction(title, value = value ?: "", expanded = open, enabled = enabled,
+                 modifier = modifier.focusRequester(header)) { setOpened(if (open) null else title) }
+        androidx.compose.animation.AnimatedVisibility(open,
+            enter = androidx.compose.animation.expandVertically(tvTween(TvSpec.valueExpandMs, TvSpec.easeInOutCurve)) +
+                    androidx.compose.animation.fadeIn(tvTween(TvSpec.valueExpandMs, TvSpec.easeInOutCurve)),
+            exit = androidx.compose.animation.shrinkVertically(tvTween(TvSpec.valueExpandMs, TvSpec.easeInOutCurve)) +
+                    androidx.compose.animation.fadeOut(tvTween(TvSpec.valueExpandMs, TvSpec.easeInOutCurve))) {
+            Column(Modifier.fillMaxWidth().padding(start = TvSpec.rowInset).focusGroup()) {
+                entries.forEach { c ->
+                    val isSelected = c.value == selected
+                    FocusArea(Modifier.fillMaxWidth().semantics { this.selected = isSelected }, magnifier = 1f, perform = {
+                        select(c.value); setOpened(null); runCatching { header.requestFocus() }
+                    }) { focus ->
+                        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+                                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
+                            Box(Modifier.width(TvSpec.choiceCheckWidth), contentAlignment = Alignment.Center) {
+                                if (isSelected) Symbol(Glyph.Checkmark, TvSpec.valueIcon, color = Theme.accent, strength = Strength.Semibold)
+                            }
+                            Text(c.text, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),
+                                 color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 /** The drawn switch. Mirrors `Schalter` (tvOS). Not a Material `Switch`: own size, own radius, own
- *  motion. Focus sits on the row, not on the switch. */
+ *  motion. Focus sits on the row, not on the switch. Disabled keeps its position, dimmed. */
 @Composable
-internal fun TvToggle(an: Boolean) {
-    val width = 42.dp; val height = 25.dp; val circle = 20.dp; val inset = 2.5.dp
-    val offset by animateDpAsState(if (an) width - circle - inset else inset,
-                                     tween(150), label = "schalterVersatz")
-    // Off: surface `rand` (white 12 %), on: `accent`, knob `reason`.
-    val capsule by animateColorAsState(if (an) Theme.accent else Theme.margin,
-                                       tween(150), label = "schalterKapsel")
-    val button by animateColorAsState(if (an) Theme.reason else Color.White,
-                                      tween(150), label = "schalterKnopf")
+internal fun TvToggle(an: Boolean, enabled: Boolean = true) {
+    val width = TvSpec.toggleWidth; val height = TvSpec.toggleHeight; val circle = TvSpec.toggleKnob; val inset = TvSpec.toggleInset
+    val animation = if (enabled) tvTween<Dp>(TvSpec.toggleMs, TvSpec.easeInOutCurve) else snap<Dp>()
+    val offset by animateDpAsState(if (an) width - circle - inset else inset, animation, label = "schalterVersatz")
+    val track = when {
+        !enabled -> if (an) Theme.accent.copy(alpha = TvSpec.toggleTrackOnDisabledOpacity) else Color.White.copy(alpha = TvSpec.toggleTrackOffDisabledOpacity)
+        else     -> if (an) Theme.accent else Color.White.copy(alpha = TvSpec.toggleTrackOffOpacity)
+    }
+    val knob = when {
+        !enabled -> Color.White.copy(alpha = TvSpec.toggleKnobDisabledOpacity)
+        else     -> if (an) Theme.reason else Color.White
+    }
+    val capsule by animateColorAsState(track, if (enabled) tvTween(TvSpec.toggleMs, TvSpec.easeInOutCurve) else snap(), label = "schalterKapsel")
+    val button by animateColorAsState(knob, if (enabled) tvTween(TvSpec.toggleMs, TvSpec.easeInOutCurve) else snap(), label = "schalterKnopf")
     Box(Modifier.width(width).height(height).clip(CircleShape).background(capsule)) {
         Box(Modifier.offset(x = offset, y = inset).size(circle).clip(CircleShape).background(button))
     }
@@ -466,14 +576,15 @@ internal fun TvToggle(an: Boolean) {
 
 /** Row with a switch on the right. Mirrors `ToggleRow`. The whole row is pressed. */
 @Composable
-internal fun TvToggleRow(title: String, an: Boolean, modifier: Modifier = Modifier, perform: () -> Unit) {
-    FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
+internal fun TvToggleRow(title: String, an: Boolean, enabled: Boolean = true, modifier: Modifier = Modifier, perform: () -> Unit) {
+    FocusArea(modifier.fillMaxWidth().focusProperties { canFocus = enabled }, magnifier = 1f, perform = { if (enabled) perform() }) { focus ->
         Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = TvTheme.body, color = Theme.font, maxLines = 1,
+                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
+            Text(title, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),
+                 color = if (enabled) Theme.font else Theme.fontVeryQuiet, maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            TvToggle(an)
+            TvToggle(an, enabled)
         }
     }
 }
@@ -483,11 +594,11 @@ internal fun TvToggleRow(title: String, an: Boolean, modifier: Modifier = Modifi
 @Composable
 private fun TvRailsRow(name: String, an: Boolean, canHigh: Boolean, canGoDown: Boolean,
                            toggle: () -> Unit, shove: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().padding(end = TvSpec.rowInset), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
         TvToggleRow(name, an, modifier = Modifier.weight(1f), perform = toggle)
-        TvButton(null, Glyph.AngleUp, height = 28.dp, released = canHigh, description = translated("Nach oben")) { shove(-1) }
-        TvButton(null, Glyph.AngleDown, height = 28.dp, released = canGoDown, description = translated("Nach unten")) { shove(1) }
+        TvButton(null, Glyph.AngleUp, height = TvSpec.iconButtonHeight, released = canHigh, description = translated("Nach oben")) { shove(-1) }
+        TvButton(null, Glyph.AngleDown, height = TvSpec.iconButtonHeight, released = canGoDown, description = translated("Nach unten")) { shove(1) }
     }
 }
 
@@ -495,42 +606,39 @@ private fun TvRailsRow(name: String, an: Boolean, canHigh: Boolean, canGoDown: B
 @Composable
 private fun TvLibraryRow(name: String, canHigh: Boolean, canGoDown: Boolean,
                                remove: () -> Unit, shove: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().padding(end = TvSpec.rowInset), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
         TvAction(name = name, value = translated("Entfernen"), arrow = false, modifier = Modifier.weight(1f), perform = remove)
-        TvButton(null, Glyph.AngleUp, height = 28.dp, released = canHigh, description = translated("Nach oben")) { shove(-1) }
-        TvButton(null, Glyph.AngleDown, height = 28.dp, released = canGoDown, description = translated("Nach unten")) { shove(1) }
+        TvButton(null, Glyph.AngleUp, height = TvSpec.iconButtonHeight, released = canHigh, description = translated("Nach oben")) { shove(-1) }
+        TvButton(null, Glyph.AngleDown, height = TvSpec.iconButtonHeight, released = canGoDown, description = translated("Nach unten")) { shove(1) }
     }
 }
 
 /** Hairline between rows. Mirrors `SeparatorLine`. */
 @Composable
 private fun SeparatorLine() {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 13.dp).height(1.dp).background(Theme.line))
+    Box(Modifier.fillMaxWidth().padding(horizontal = TvSpec.rowInset).height(TvSpec.hairline).background(Theme.line))
 }
 
 // MARK: - Account
 
-/** Who is signed in, as a card above the sections. Mirrors `accountCard`: image, name, server,
- *  divider, below it the other accounts and the plus. */
+/** Who is signed in, on the page itself without a card. Mirrors `accountBlock`: image, name, server, below it the
+ *  other accounts and the plus. */
 @Composable
-private fun AccountCard(app: SwiftlyApplication, serverRow: String, cards: List<JSONObject>,
+private fun AccountBlock(app: SwiftlyApplication, serverRow: String, cards: List<JSONObject>,
                         record: () -> Unit, switchTo: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area).padding(16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = TvSpec.rowInset)) {
         Box {
-            ProfileImage(app, 42.dp)
-            SupporterAvatarHeart(app, 42.dp)
+            ProfileImage(app, TvSpec.accountAvatar)
+            SupporterAvatarHeart(app, TvSpec.accountAvatar)
         }
         Text(app.username(), style = TvTheme.rail,
              color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.padding(top = 9.dp))
+             modifier = Modifier.padding(top = TvSpec.accountNameTop))
         // Server data, not catalog text.
         Text(serverRow, style = TvTheme.small, color = Theme.fontQuiet, maxLines = 1,
-             modifier = Modifier.padding(top = 2.dp))
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
-        Spacer(Modifier.height(12.dp))
-        AccountsStrip(cards, record, switchTo)
+             modifier = Modifier.padding(top = TvSpec.accountServerTop))
+        Box(Modifier.padding(top = TvSpec.accountStripTop)) { AccountsStrip(cards, record, switchTo) }
     }
 }
 
@@ -540,7 +648,7 @@ private fun AccountCard(app: SwiftlyApplication, serverRow: String, cards: List<
  *  `model.accounts` on tvOS (`AccountBundle.accounts` across all servers). */
 @Composable
 private fun AccountsStrip(cards: List<JSONObject>, record: () -> Unit, switchTo: (String) -> Unit) {
-    val size = 30.dp
+    val size = TvSpec.accountStripCircle
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as SwiftlyApplication
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val calm = de.paulherter.swiftly.shared.motionReduced()
@@ -549,7 +657,7 @@ private fun AccountsStrip(cards: List<JSONObject>, record: () -> Unit, switchTo:
         (0 until accounts.length()).map { accounts.getJSONObject(it) }
     }.filter { !it.optBoolean("aktiv") }
 
-    Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(TvSpec.accountStripSpacing)) {
         other.forEach { account ->
             // **Switching, with motion** (`AccountSwitchTransition`): the image lifts off from here.
             val frameRect = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }

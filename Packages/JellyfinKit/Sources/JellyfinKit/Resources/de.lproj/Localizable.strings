@@ -26,6 +26,7 @@
 "Stereo" = "Stereo";
 "Mono" = "Mono";
 "Staffel %lld" = "Staffel %lld";
+"Teil %lld" = "Teil %lld";
 "Folge %lld" = "Folge %lld";
 "Nicht angemeldet." = "Nicht angemeldet.";
 "Das andere Gerät hat nicht reagiert." = "Das andere Gerät hat nicht reagiert.";
@@ -156,3 +157,9 @@
 "Tonspur" = "Tonspur";
 
 "(Original)" = "(Original)";
+
+"VLC, Dolby Vision und HDR mit AVPlayer" = "VLC, Dolby Vision und HDR mit AVPlayer";
+
+"Immer AVPlayer" = "Immer AVPlayer";
+
+"Immer VLC" = "Immer VLC";

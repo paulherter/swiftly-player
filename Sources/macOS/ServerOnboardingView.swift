@@ -19,6 +19,9 @@ struct ServerOnboardingView: View {
     /// A server already in the bundle: then this is about another account there, and
     /// the address is already filled in.
     var preset: URL?
+    /// Reached through the kind picker: the title then says which kind this page is for,
+    /// since "Server hinzufügen" was the picker's own title one step before.
+    var kindPicked = false
     let back: () -> Void
 
     @State private var address = ""
@@ -44,8 +47,7 @@ struct ServerOnboardingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SubpageHeader(title: preset == nil ? "Server hinzufügen" : "Weiteres Konto",
-                            back: cancel)
+            SubpageHeader(title: title, back: cancel)
 
             Text(explanation)
                 .font(Theme.body)
@@ -90,6 +92,11 @@ struct ServerOnboardingView: View {
             guard let new else { return }
             Task { _ = await model.signInWithQuickConnectAtNewServer(new) }
         }
+    }
+
+    private var title: LocalizedStringKey {
+        if kindPicked, preset == nil { return "Mit Jellyfin anmelden" }
+        return preset == nil ? "Server hinzufügen" : "Weiteres Konto"
     }
 
     private var explanation: LocalizedStringKey {

@@ -73,8 +73,8 @@ extension Theme {
     ///
     /// Less than 80 would be a risk, not polish: below that TVs crop, and the
     /// simulator never shows it.
-    static let edgePage: CGFloat = 80
-    static let edgeTop: CGFloat = 60
+    static let edgePage: CGFloat = TVSpec.edgePage
+    static let edgeTop: CGFloat = TVSpec.edgeTop
 
     // MARK: Header bar
 
@@ -88,7 +88,7 @@ extension Theme {
     /// So the safe area: 60 on top, 80 on the sides. That is the ratio the margin is
     /// meant for on tvOS anyway, with more at the sides because of overscan.
     static let barTop: CGFloat = edgeTop
-    static let stripHeight: CGFloat = 68
+    static let stripHeight: CGFloat = TVSpec.stripHeight
     /// Bottom edge. The header gradient hangs on it, so it follows if the bar ever
     /// moves.
     static var barBottom: CGFloat { barTop + stripHeight }
@@ -123,15 +123,15 @@ extension Theme {
     /// Only `cornerSmall` stands out: it **drops** from 16 to 14 while everything else
     /// grows. Same math: small badges grow less from phone to TV than the rest (24 →
     /// 41…47).
-    static let corner: CGFloat = 16
+    static let corner: CGFloat = TVSpec.corner
     /// Posters and tiles. On the iPhone the same number as the button (both 10); here
     /// two more than the button because the poster grew more than it did. Two points
     /// are no rank at three meters, just honest rounding: to merge them, use 18 for
     /// both.
-    static let cornerTile: CGFloat = 18
+    static let cornerTile: CGFloat = TVSpec.cornerTile
     /// **The small corner, for badges and pills.** Used by the `ProofRow` badge,
     /// `Badge.far` and the badge on top of a tile, all between 36 and 47 pt high.
-    static let cornerSmall: CGFloat = 14
+    static let cornerSmall: CGFloat = TVSpec.cornerSmall
     /// **A surface or board of its own:** the `Handlungstafel` and the season sheet
     /// of the Seerr page, both 620 pt wide with rows of `rowsHeight`.
     ///
@@ -139,13 +139,13 @@ extension Theme {
     /// 342 on the iPhone, but content width is 1760 against 354. By width the corner
     /// would come out at 80, clearly no longer a board. The row is the thing the
     /// roundness is read from.
-    static let cornerArea: CGFloat = 24
+    static let cornerArea: CGFloat = TVSpec.cornerArea
 
     /// **Not a ladder level, but a placeholder bar.** A `Ladefeld` standing for a
     /// line of text is 16 to 30 pt high; the same 0.23 as for the small field gives 4
     /// to 7 there. One number for all three, because a point of difference on a bar
     /// that only says "text goes here" tells nothing.
-    static let cornerBar: CGFloat = 5
+    static let cornerBar: CGFloat = TVSpec.cornerBar
 
     /// Posters stay 2:3 as on the iPhone, just larger.
     static let posterWidth: CGFloat = 208
@@ -362,7 +362,7 @@ extension Theme {
 
     static let buttonHeight: CGFloat = 76
     static let chipHeight: CGFloat = 48
-    static let rowsHeight: CGFloat = 84
+    static let rowsHeight: CGFloat = TVSpec.rowsHeight
 
     // MARK: Focus
 
@@ -398,18 +398,18 @@ extension Theme {
     ///
     /// No shadow, no parallax, no flash: Apple's card jumps much further and visually
     /// pushes the neighbors away in a dense row.
-    static let focusMagnifierSmall: CGFloat = 1.10
+    static let focusMagnifierSmall: CGFloat = TVSpec.focusMagnifierSmall
     /// The base value: tiles, posters, buttons, chips, tabs, everything between 120
     /// and 500 pt longest side. On a tile it is the only thing that marks focus: no
     /// ring, no surface, no shadow.
-    static let focusMagnifier: CGFloat = 1.06
+    static let focusMagnifier: CGFloat = TVSpec.focusMagnifier
     /// Rows and boards from 500 pt wide. Three percent is already twenty points
     /// there, the same visible movement as ten percent on a profile circle.
-    static let focusMagnifierWide: CGFloat = 1.03
+    static let focusMagnifierWide: CGFloat = TVSpec.focusMagnifierWide
     /// The calm surface that means focus wherever there is no button: list rows,
     /// chips, episode rows. White is reserved for action buttons, where it is the
     /// iPhone's primary button.
-    static let focusArea = Color.white.opacity(0.12)
+    static let focusArea = Color.white.opacity(TVSpec.focusAreaOpacity)
 
     /// Focus changes should take effect immediately; the remote is slow enough
     /// already.
@@ -417,7 +417,7 @@ extension Theme {
     /// **"Reduce Motion" applies here too.** Focus itself stays visible; only the
     /// curve becomes short and linear, as on the iPhone.
     static var focusAnimation: Animation {
-        motionReduced ? .linear(duration: 0.1) : .easeOut(duration: 0.14)
+        motionReduced ? .linear(duration: TVSpec.reducedDuration) : .easeOut(duration: TVSpec.focusDuration)
     }
 
     /// How content appears once it has arrived, the same curve as on the iPhone.
@@ -426,7 +426,7 @@ extension Theme {
     /// **A spring, not a fixed curve:** a fixed duration cannot be interrupted, and
     /// `.smooth` does not overshoot and keeps the characteristic.
     static var reveal: Animation {
-        motionReduced ? .linear(duration: 0.14) : .smooth(duration: 0.28)
+        motionReduced ? .linear(duration: TVSpec.focusDuration) : .smooth(duration: TVSpec.revealDuration)
     }
 
     /// **A fixed curve that respects Reduce Motion.** On the iPhone `Theme` reads the
@@ -454,7 +454,7 @@ extension Theme {
     static let pulsate = Animation.easeInOut(duration: 0.9).repeatForever(autoreverses: true)
 
     static var pagesSwitch: Animation {
-        motionReduced ? .linear(duration: 0.14) : .easeInOut(duration: 0.25)
+        motionReduced ? .linear(duration: TVSpec.focusDuration) : .easeInOut(duration: TVSpec.pagesSwitchDuration)
     }
 
     // MARK: - Type — Apple TV

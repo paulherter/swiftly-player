@@ -57,28 +57,43 @@ struct TitleAction: Identifiable {
 @MainActor
 enum TrailerStart {
 
-    /// Server trailer first, then the linked one.
+    /// Server trailers first, then the linked one (``TrailerChoice`` decides the order).
     ///
-    /// If it is a file, it plays in the app's own player - with Direct Play like
-    /// everything else. Otherwise only the linked URL remains, which on Jellyfin
-    /// almost always leads to YouTube; only the browser can open that.
+    /// A file plays in the app's own player - with Direct Play like everything else. If
+    /// its plan fails, the next candidate is tried before giving up; the link, which on
+    /// Jellyfin almost always leads to YouTube, only the browser can open.
     static func start(_ title: Item, model: AppModel,
                         play: @escaping (PlayRequest) -> Void,
                         report: @escaping (String) -> Void) {
         Task {
-            if let film = await model.trailer(toward: title),
-               let plan = await model.plan(for: film.id) {
-                play(PlayRequest(item: film, plan: plan, startAt: 0))
-                return
-            }
             #if os(iOS)
-            if let address = title.remoteTrailers?.compactMap(\.url).first,
-               let target = URL(string: address) {
-                await UIApplication.shared.open(target)
-                return
-            }
+            let web = true
+            #else
+            let web = false
             #endif
-            report(String(localized: "Für diesen Titel liegt kein Trailer vor."))
+            let candidates = await model.trailerCandidates(for: title, canOpenWeb: web)
+            // Only when nothing else is left to try does a failed plan say so (the model's
+            // message); earlier failures stay in the log while the next candidate runs.
+            let lastIndex = candidates.indices.last
+            var tried = false
+            for (index, candidate) in candidates.enumerated() {
+                switch candidate {
+                case .file(let film):
+                    tried = true
+                    if let plan = await model.plan(for: film.id, still: index != lastIndex) {
+                        play(PlayRequest(item: film, plan: plan, startAt: 0))
+                        return
+                    }
+                case .web(let target):
+                    #if os(iOS)
+                    await UIApplication.shared.open(target)
+                    return
+                    #else
+                    _ = target
+                    #endif
+                }
+            }
+            if !tried { report(String(localized: "Für diesen Titel liegt kein Trailer vor.")) }
         }
     }
 }
@@ -106,7 +121,7 @@ enum TitleActions {
     /// title there without opening the player here. No entries while the poll knows
     /// no targets.
     static func playOn(_ title: Item?, model: AppModel) -> [TitleAction] {
-        guard let title else { return [] }
+        guard let title, model.can(.playOnOtherDevice) else { return [] }
         return PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:)).map { target in
             TitleAction(symbol: "tv", wording: String(localized: "Abspielen auf „\(target.name)“")) {
                 Task { await PlayOutputs.shared.play(title, to: target, model: model) }

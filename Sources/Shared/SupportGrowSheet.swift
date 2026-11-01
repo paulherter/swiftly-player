@@ -718,7 +718,9 @@ private struct RisingHearts: View {
         if !Theme.motionReduced {
             GeometryReader { geometry in
                 let scale = geometry.size.width / 390
-                TimelineView(.animation) { context in
+                // 60 per second at most: the hearts rise for 4.6 s each, and an uncapped clock
+                // holds a 120 Hz display at 120 for as long as the sheet is open.
+                TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
                     let elapsed = context.date.timeIntervalSince(start)
                     ZStack(alignment: .topLeading) {
                         ForEach(Self.hearts.indices, id: \.self) { index in

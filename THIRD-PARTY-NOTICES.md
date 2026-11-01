@@ -67,6 +67,7 @@ Notes:
 | Inter (typeface) | Inter-SemiBold.ttf (18pt SemiBold); on Linux and Windows also InterVariable.ttf | OFL-1.1 | The Inter Project Authors | https://github.com/rsms/inter | Apple (iPhone, iPad, Mac, Apple TV), Linux, Windows |
 | Figtree (typeface of the website) | Webfont, see Website/schrift/ | OFL-1.1 | The Figtree Project Authors | https://github.com/erikdkennedy/figtree | Website |
 | Coil | 3.0.4 | Apache-2.0 | Coil Contributors | https://github.com/coil-kt/coil | Android, Android TV |
+| ZXing core | 3.5.3 | Apache-2.0 | ZXing authors | https://github.com/zxing/zxing | Android TV |
 | OkHttp and Okio (via coil-network-okhttp) | as resolved by Gradle | Apache-2.0 | Square, Inc. | https://square.github.io/okhttp/ | Android, Android TV |
 | Lottie for Android | 6.5.2 | Apache-2.0 | Airbnb, Inc. | https://github.com/airbnb/lottie-android | Android, Android TV |
 | Kotlin standard library and kotlinx.coroutines | Kotlin 2.0.21; coroutines 1.10.2 | Apache-2.0 | JetBrains s.r.o. and Kotlin Programming Language contributors | https://kotlinlang.org | Android, Android TV |

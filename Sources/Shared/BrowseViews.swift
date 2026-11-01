@@ -160,7 +160,11 @@ struct ItemDetailView: View {
     @State private var distance = ScrollDistance()
 
     @State private var plan: PlaybackPlan?
-    @State private var pickVersion = false
+    /// A title with several versions waiting for the pick ("Fassung wählen").
+    @State private var versionChoice: VersionChoice?
+    /// Loading the full title (with its versions) failed; Play is enabled again so
+    /// that a press tries once more and says so if it fails.
+    @State private var versionsFailed = false
     /// The plan has been answered, with or without a result. See `proofRow`.
     @State private var planPresent = false
     @State private var loadSheet = false
@@ -202,7 +206,7 @@ struct ItemDetailView: View {
     /// The entry a download would get. The size comes from the same source
     /// the player would use: it is the same file.
     private var asEntry: DownloadItem? {
-        guard let account = model.session?.userID else { return nil }
+        guard let account = model.session?.storageAccount else { return nil }
         let source = plan?.source ?? current.mediaSources?.first
         return DownloadItem(
             id: current.id, account: account, art: .film, title: current.name,
@@ -382,6 +386,7 @@ struct ItemDetailView: View {
             let newTitle = await freshTitle
             let newPlan = await planning
             freshValue = newTitle
+            versionsFailed = newTitle == nil
             plan = newPlan
             remembered = current.userData?.isFavorite ?? false
             watched = current.userData?.played ?? false
@@ -423,7 +428,9 @@ struct ItemDetailView: View {
     private func refresh() async {
         async let freshTitle = model.item(id: item.id)
         async let planning = model.plan(for: item.id, still: true)
-        freshValue = await freshTitle
+        // A failed refresh keeps the title shown so far; replacing it with the list
+        // entry would drop its `MediaSources` and gray Play out again.
+        if let newTitle = await freshTitle { freshValue = newTitle }
         plan = await planning
         remembered = current.userData?.isFavorite ?? false
         watched = current.userData?.played ?? false
@@ -503,7 +510,7 @@ struct ItemDetailView: View {
         // `SeriesView.primaryButton`.
         VStack(alignment: .leading, spacing: 9) {
             Button {
-                if versions.isEmpty { launch(since: resumeFrom ?? 0) } else { pickVersion = true }
+                launch(since: resumeFrom ?? 0)
             } label: {
                 if let since = resumeFrom {
                     Label("Fortsetzen ab \(timeText(since))", systemImage: "play.fill")
@@ -517,18 +524,17 @@ struct ItemDetailView: View {
             // **A title with several versions asks which one on press.** 4K next to
             // 1080p, theatrical next to extended cut; the server lists them as
             // sources of one item. One version, or a copy on the device, starts at once.
-            .confirmationDialog("Fassung wählen", isPresented: $pickVersion,
-                                titleVisibility: .visible) {
-                ForEach(versions, id: \.id) { version in
-                    Button(versionLabel(version)) {
-                        launch(since: resumeFrom ?? 0, sourceID: version.id)
-                    }
-                }
+            .versionChoice($versionChoice) { choice, version in
+                launch(choice, picking: version)
             }
-            // Only while the plan is on its way on press. Before, the button hung on
-            // the preloaded plan: if that single request failed, it stayed gray
-            // forever without a word.
-            .disabled(prepares)
+            // **Gray until the versions are known**, and while a plan is on its way on
+            // press. The page opens with the list entry, which has no `MediaSources`;
+            // an early press used to take that for "one version" and start the default.
+            // If loading the full title fails, the button is enabled again: a press
+            // tries once more and says so if it fails too. (Before, the button hung on
+            // the preloaded plan, and when that single request failed it stayed gray
+            // forever without a word.)
+            .disabled(prepares || !versionsKnown)
 
             if let rest = current.remainingTimeText {
                 // Remaining time is one piece of info: 12.
@@ -726,32 +732,53 @@ struct ItemDetailView: View {
         }
     }
 
-    /// The versions to choose from; empty when there is no choice to make or the
-    /// title is on the device (the downloaded file is the one that plays). A
-    /// download still running does not count: playback then streams from the server.
-    private var versions: [MediaSource] {
-        model.downloads.file(for: current.id) == nil ? MediaVersions.choices(current.mediaSources) : []
+    /// The title's versions are known (or a copy on the device decides): Play may
+    /// ask or start. See ``MediaVersions/start(_:downloaded:)``.
+    private var versionsKnown: Bool {
+        versionsFailed
+            || MediaVersions.start(current.mediaSources,
+                                   downloaded: model.downloads.file(for: current.id) != nil) != .wait
     }
 
-    private func versionLabel(_ version: MediaSource) -> String {
-        let detail = version.versionDetail
-        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
-    }
-
-    private func launch(since: Double, sourceID: String? = nil) {
+    private func launch(since: Double) {
         Theme.jerk(.medium)
-        if sourceID == nil, let plan {
-            play = PlayRequest(item: current, plan: plan, startAt: since)
+        // The versions are here: ask on the spot, or start with the plan already
+        // fetched. Otherwise (failed load) ``PlayRequest/start`` fetches the full
+        // title and decides; it reports a failure instead of taking the default.
+        switch MediaVersions.start(current.mediaSources,
+                                   downloaded: model.downloads.file(for: current.id) != nil) {
+        case .choose(let versions):
+            versionChoice = VersionChoice(item: current, versions: versions, since: since)
             return
+        case .play:
+            if let plan {
+                play = PlayRequest(item: current, plan: plan, startAt: since)
+                return
+            }
+        case .wait:
+            break
         }
-        // **No preloaded plan**: still on its way or failed. Then fetch on
-        // press, as on the series page, and say so if that fails too.
-        PlayRequest.start(current, since: since, sourceID: sourceID, model: model, prepares: $prepares,
-                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                              play: { wish in
-                                  plan = wish.plan
-                                  play = wish
-                              })
+        // **No preloaded plan** (still on its way or failed), or the versions are not
+        // known: fetch on press, as on the series page, and say so if that fails too.
+        PlayRequest.start(current, since: since,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares,
+                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                          play: { wish in
+                              plan = wish.plan
+                              play = wish
+                          })
+    }
+
+    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
+        Theme.jerk(.medium)
+        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
+                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                          play: { wish in
+                              plan = wish.plan
+                              play = wish
+                          })
     }
 
     /// Retry only that one row; reloading the whole page would be too much

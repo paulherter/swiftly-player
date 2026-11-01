@@ -302,19 +302,26 @@ class PlayItem(
     // play it silent instead of downmixing. The option only affects linear PCM in libVLC
     // (`aout_OutputNew`); AC3/E-AC3/DTS/TrueHD still pass through raw (`digitalAudioApply`).
     //
-    // **Subtitles like on Apple** (`SubtitleStyle` in `Sources/Shared/VLCPlayer.swift`): white, thin
-    // outline (3 % of text height instead of VLC's 4), no shadow (VLC draws a hard, offset copy that looked like a slanted outline behind straight text), smaller than VLC's default of 6.25 %
-    // of the video height, slightly larger on TV. The font stays Roboto: libVLC 3 on Android only reads
+    // **Subtitles from the stored look** (`SubtitleLook` in the package, "Aussehen der Untertitel"): size,
+    // colour, outline, shadow, background and position come from `Kern.subtitleLookVlcOptions`, the same table
+    // the Apple apps use (`SubtitleLook.vlcOptions`, engine VLC 3). Base scale 0.82 on the phone, 0.88 on TV;
+    // "Higher" lifts by 7 % of the picture height, which here is the short side of the screen in pixels.
+    // libVLC reads the freetype options when it is created, which is per player page, so a changed look
+    // applies from the next video. The font stays Roboto: libVLC 3 on Android only reads
     // `/system/etc/fonts.xml`, which lists only weights 400 and 700, so a bundled font or Roboto Medium
-    // is not picked up. ASS with its own style and bitmap subtitles are left alone.
-    val vlc = LibVLC(context, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") +
-        listOf("--freetype-color=16777215", "--freetype-outline-thickness=3",
-            "--freetype-outline-opacity=230", "--freetype-shadow-opacity=0",
-            "--sub-text-scale=" + (if (app.isTv) 88 else 82)) +
+    // is not picked up. ASS with its own style and bitmap subtitles are left alone (unless the look asks for
+    // "keep the file's style" off, then the server's SRT is loaded instead, see `Kern.subtitleFilesFor`).
+    val look = app.settings.subtitleLook
+    val subtitleOptions = runCatching {
+        val dm = context.resources.displayMetrics
+        JSONArray(Kern.subtitleLookVlcOptions(look, SubtitleBase.of(app.isTv), minOf(dm.widthPixels, dm.heightPixels).toLong()))
+            .let { j -> (0 until j.length()).map { j.getString(it) } }
+    }.getOrDefault(emptyList())
+    val vlc = LibVLC(context, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") + subtitleOptions +
         listOfNotNull("--stereo-mode=1".takeUnless { app.settings.multiChannelAudio }) +
         listOfNotNull(Certificates.folder?.let { "--gnutls-dir-trust=$it" })))
     /** VLC for everything, Media3 for Dolby Vision (`PlayerEngine`). */
-    val player = PlayerEngine(context, vlc, app.isTv)
+    val player = PlayerEngine(context, vlc, app.isTv, look)
     val session = MediaSession(context, "Swiftly")
 
     // MARK: VLC thread: `stop`, `setMedia`, `play` and `release` do not run on the main thread.
@@ -667,15 +674,20 @@ class PlayItem(
         session.release()
     }
 
-    private var screenAwake = false
+    /** The phone's activity sets the flag at launch (no dimming while the film loads); TV starts without it. */
+    private var screenAwake = !app.isTv
+    private var hasPlayed = false
 
     /**
-     * **On TV the screen follows the play state.** `PlayerActivity` sets `FLAG_KEEP_SCREEN_ON` only on
-     * the phone; on TV, Google TV showed the screensaver over the running picture after 10 to 15 minutes.
-     * The flag is set while VLC plays and cleared on pause and end, so the screensaver may run again.
+     * **The screen follows the play state, on TV and on the phone.** On TV, Google TV showed the screensaver
+     * over the running picture after 10 to 15 minutes. On the phone, a film left paused kept the display lit
+     * at full brightness for as long as the player stayed open. The flag is set while the film plays and
+     * cleared on pause and end, so the system timeout (or screensaver) may run again.
      */
     private fun keepScreenAwake(an: Boolean) {
-        if (!app.isTv || an == screenAwake) return
+        // The phone keeps the screen on through opening: only a film that has played can be "paused".
+        if (an) hasPlayed = true else if (!hasPlayed && !app.isTv) return
+        if (an == screenAwake) return
         val window = context.activity()?.window ?: return
         screenAwake = an
         if (an) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1754,7 +1766,11 @@ class PlayItem(
             val answer = if (slab != null && entries != null) {
                 val image = app.downloads.imageFile(entries.id).takeIf { it.exists() }?.let { "file://" + it.absolutePath }.orEmpty()
                 app.kern.playbackFromTheSlab(entries.json().toString(), slab.absolutePath, image)
-            } else withContext(Dispatchers.IO) { app.kern.playbackOpen(wish.id, wish.sourceID).await() }
+            } else {
+                // The subtitle look's file switch decides which subtitle files the plan carries.
+                app.qualityReport()
+                withContext(Dispatchers.IO) { app.kern.playbackOpen(wish.id, wish.sourceID).await() }
+            }
             launch(playPlanRead(answer), wish.since)
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             hint = translated("Die Folge konnte nicht geladen werden.")
@@ -2083,7 +2099,10 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
                     }
                 }
             }
-            .pointerInput(Unit) {
+            // Pinch switches Original/Fill (iOS `MagnifyGesture`): two fingers only, latched once per gesture,
+            // and not in the small window or while a layer is open.
+            .pointerInput(layerOpen, smallWindow) {
+                if (layerOpen || smallWindow) return@pointerInput
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     var mass = 1f

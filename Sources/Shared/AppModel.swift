@@ -65,6 +65,11 @@ final class AppModel {
     }
     /// Only enable subtitles if the audio is not in the preferred language.
     var subtitleAutomatic: Bool { didSet { remember(subtitleAutomatic, "utAuto") } }
+    /// **How text subtitles look** (size, colour, outline, shadow, background,
+    /// position, keep the file's own style). One value, stored as JSON and synced
+    /// with the profile settings. Applies from the next video: VLC reads the
+    /// options when its library is created (``VLCPlayerView``).
+    var subtitleLook: SubtitleLook { didSet { remember(subtitleLook.encoded(), "utAussehen") } }
     /// Whether playback continues on its own at the end. Rule in `Weiterschalten`:
     /// own choice before account setting before "on".
     var nextAutomatic: Bool {
@@ -145,6 +150,11 @@ final class AppModel {
     }
     /// How much buffer the player holds. See ``BufferLevel`` in the package.
     var bufferLevel: BufferLevel { didSet { remember(bufferLevel.rawValue, "pufferstufe") } }
+    /// Which engine plays: VLC, or AVPlayer for Dolby Vision, HDR and AV1. Read by the player at
+    /// the start of each title (``PlayerEngineChoice``), so a change applies from the next one.
+    var playerEngine: PlayerEngineSetting = .standard {
+        didSet { remember(playerEngine.rawValue, PlayerEngineSetting.storageKey) }
+    }
     /// **Shows on Discord what is playing, and is off until enabled.**
     ///
     /// It is the only setting of this app that sends something **outside**: enabling
@@ -214,10 +224,11 @@ final class AppModel {
     }
 
 
-    /// Suffix for settings that apply per server. Empty without a session, in which
-    /// case the old device-wide value applies.
+    /// Suffix for settings that apply per server (`Session.serverSuffix`: the address for
+    /// Jellyfin, the machine for Plex). Empty without a session, in which case the old
+    /// device-wide value applies.
     private var serverKey: String {
-        session.map { "|" + $0.serverURL.absoluteString } ?? ""
+        session?.serverSuffix ?? ""
     }
 
     /// Direct Play and bitrate limit of the current server. If it has none of its
@@ -263,6 +274,16 @@ final class AppModel {
             return hit
         }
         return available.first
+    }
+
+    /// **The library a start-page row asks.** With several libraries of one type and no
+    /// remembered choice, `selectedLibrary` is only "the first", so "Recently added series"
+    /// showed that one library (Kids on top, the rest missing). Nothing was ever chosen, so
+    /// the row asks all of them, like the "All" list on the tab.
+    func startLibrary(art: String) -> Item? {
+        let remembered = UserDefaults.standard.string(forKey: Self.libraryName(art))
+        if remembered == nil, libraries(art: art).count > 1 { return nil }
+        return selectedLibrary(art: art)
     }
 
     func librarySelect(_ library: Item, art: String) {
@@ -467,16 +488,42 @@ final class AppModel {
     /// five places are four chances to forget one; that is exactly how the remote
     /// control got stuck on account switch. `session` is already right here: `bundle`
     /// is set before `client` on each of the five paths.
-    private(set) var client: JellyfinClient? {
+    private(set) var client: (any MediaServer)? {
         didSet {
-            downloads.signIn(client: client, account: session?.userID)
+            downloads.signIn(client: client, account: session?.storageAccount)
             // The group belongs to the account: on switch and sign-out it is left with
             // the old client (`SharedModel.accountSwitched`).
             if client !== oldValue { SharedModel.shared.accountSwitched(alt: oldValue) }
+            // A Plex server moves between addresses with the network; the next launch should
+            // start from the one that worked last, not from a stale one.
+            if let plex = client as? PlexClient, client !== oldValue {
+                Task { [weak self] in
+                    await plex.onSessionChange { moved in
+                        Task { @MainActor in self?.plexRouteMoved(moved, from: plex) }
+                    }
+                    // The token can run out in the middle of a session.
+                    await plex.onUnauthorized {
+                        Task { @MainActor in await self?.plexTokenRejected(plex) }
+                    }
+                }
+            }
             // Settings follow the account (`SettingsSyncRun`); runs aside, never in the way.
             settingsSync.bind(client: client, session: session)
         }
     }
+    /// **What the connected server can do.** Screens ask this where a feature exists only on
+    /// some kinds of server. Without a client (offline, before the first connection) the
+    /// kind of the stored session answers, so a screen does not flicker while connecting;
+    /// without any session, Jellyfin's set applies.
+    func can(_ capability: ServerCapability) -> Bool {
+        (client?.capabilities ?? (session?.kind ?? .jellyfin).capabilities).contains(capability)
+    }
+    /// The client as the Jellyfin-only parts see it, `nil` if the server cannot do them.
+    var remoteServer: (any RemoteSessionServer)? {
+        // Emby's client is a `JellyfinClient` too, so the type alone does not say.
+        can(.remoteControl) ? client as? any RemoteSessionServer : nil
+    }
+
     /// Keeps the settings equal across devices through the account's display preferences.
     let settingsSync = SettingsSyncRun()
     private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { playbackLoad() } } }
@@ -540,17 +587,36 @@ final class AppModel {
     /// `session` stays alongside because half the app reads it; it is updated from
     /// here and set nowhere else. Two places allowed to claim the same thing drift
     /// apart, which is exactly what happened with `hitInfo`.
-    private var bundle: AccountBundle? {
+    private var bundles = ServerBundles() {
         didSet {
-            accounts = bundle?.accounts ?? []
-            session = bundle?.activeOne
+            accounts = bundles.kinds.flatMap { bundles.bundle(for: $0)?.accounts ?? [] }
+            session = bundles.active?.activeOne
             // Seerr is tied to a server: on switching to another, its access applies.
             // Within one server nothing changes.
-            seerr.serverSwitched(bundle?.activeOne.serverURL)
+            seerr.serverSwitched(session?.serverIdentity)
             // Trakt is tied to the account, not the server (`TraktAccount`).
-            trakt.accountSwitched(bundle?.activeOne.accountKey)
+            trakt.accountSwitched(session?.accountKey)
             profileImagePrefetch()
         }
+    }
+
+    /// The bundle of the current kind of server. Writing it keeps the kind, so
+    /// switching or removing an account inside one kind stays a one-line change; a
+    /// new account of another kind goes through ``bundleRecord(_:)``.
+    private var bundle: AccountBundle? {
+        get { bundles.active }
+        set { bundles.set(newValue, for: bundles.activeKind) }
+    }
+
+    /// Records an account in the bundle of **its own kind** and makes that kind current.
+    /// Returns whether the app was signed in before, which makes it an account switch.
+    private func bundleRecord(_ s: Session) -> Bool {
+        let kind = s.kind
+        let (new, _) = AccountBundle.record(s, in: bundles.bundle(for: kind))
+        let wasSignedIn = !bundles.kinds.isEmpty
+        bundles.set(new, for: kind)
+        bundles.switchTo(kind)
+        return wasSignedIn
     }
 
     /// **The images of the other accounts, before anyone asks.**
@@ -575,13 +641,26 @@ final class AppModel {
     }
 
     /// The servers in the bundle, in the order of their first account.
-    var server: [URL] { bundle?.server ?? [] }
-    func accounts(on server: URL) -> [Session] { bundle?.accounts(on: server) ?? [] }
+    var server: [URL] {
+        var seen = Set<String>()
+        return accounts.filter { seen.insert($0.kind.rawValue + "|" + $0.serverIdentity).inserted }.map(\.serverURL)
+    }
+    /// The accounts on the server of that address. A Plex server is its machine, so a
+    /// profile that connected through another route (home network, relay) still sits on
+    /// the same card.
+    /// The entry of ``server`` that the signed-in account sits on.
+    var sessionServer: URL? {
+        guard let s = session else { return nil }
+        return server.first { accounts(on: $0).contains { $0.accountKey == s.accountKey } } ?? s.serverURL
+    }
+    func accounts(on server: URL) -> [Session] {
+        let wanted = Session.serverIdentity(of: server)
+        guard let first = accounts.first(where: { Session.serverIdentity(of: $0.serverURL) == wanted })
+        else { return [] }
+        return accounts.filter { $0.kind == first.kind && $0.serverIdentity == first.serverIdentity }
+    }
 
     nonisolated private static let sessionKey = "session"
-    /// The key for the whole bundle. The old one above stays: starting an older
-    /// version again finds its session there.
-    private static let accountsKey = "konten"
     nonisolated static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
     /// Stable device ID. Jellyfin lists the session with it in the dashboard.
@@ -596,7 +675,7 @@ final class AppModel {
         return fresh
     }()
 
-    private static var deviceName: String {
+    static var deviceName: String {
         #if canImport(UIKit)
         UIDevice.current.name
         #else
@@ -627,6 +706,7 @@ final class AppModel {
             }
         }
         subtitleAutomatic = automaticStored
+        subtitleLook = SubtitleLook.read(store.data(forKey: "utAussehen"))
         // **Never set does not mean "on".** Then the Jellyfin account's setting
         // applies; whoever flipped the switch keeps it.
         nextAutomaticSelected = store.object(forKey: "naechsteAuto") as? Bool
@@ -652,6 +732,7 @@ final class AppModel {
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken"))
         bufferLevel = (store.string(forKey: "pufferstufe")
                        .flatMap(BufferLevel.init(rawValue:))) ?? .normal
+        playerEngine = PlayerEngineSetting(stored: store.string(forKey: PlayerEngineSetting.storageKey))
         discordShow = store.object(forKey: "discordAnzeigen") as? Bool ?? false
         backSeconds = store.object(forKey: "zurueckSek") as? Int ?? 10
         forwardSeconds = store.object(forKey: "vorSek") as? Int ?? 30
@@ -708,13 +789,13 @@ final class AppModel {
         // `-testsitzung2`: a second account on the same test server, for the account
         // switch self-test (`AccountSwitchRun`). Added first so the first account
         // remains the signed-in one.
-        var before = loadBundle()
+        bundles = loadBundles()
         if arguments.contains("-testsitzung2") {
             let second = Session(accessToken: "testmerkmal2", userID: "testnutzer2",
                                   userName: "Test 2", serverURL: address)
-            before = AccountBundle.record(second, in: before).bundle
+            _ = bundleRecord(second)
         }
-        bundle = AccountBundle.record(s, in: before).bundle
+        _ = bundleRecord(s)
         saveBundle()
         AppLog.writeOut("[Selbsttest] Testsitzung an \(address.absoluteString)")
     }
@@ -734,7 +815,7 @@ final class AppModel {
             // proven that the server answers, and the check runs after every connect,
             // sign-in and account switch anyway. A second timer alongside would guess.
             await pendingSubmit()
-            return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
+            return String(localized: "Erreichbar — \((session?.kind ?? .jellyfin).displayName) \(info.version ?? "?")")
         } catch {
             return readable(error)
         }
@@ -875,10 +956,20 @@ final class AppModel {
     /// deciding whether the fallback attempt is worthwhile.
     @ObservationIgnored private var lastConnectionError: (any Error)?
 
+    /// **Every client is built here**, through the package's factory, so the app never names
+    /// a server class. `nil` for a kind without a backend (none of them reaches this yet).
+    static func makeServer(kind: ServerKind = .jellyfin, baseURL: URL) -> (any MediaServer)? {
+        MediaServerFactory.make(kind: kind, baseURL: baseURL, deviceID: deviceID, deviceName: deviceName)
+    }
+
+    static func makeServer(session: Session) -> (any MediaServer)? {
+        MediaServerFactory.make(session: session, deviceID: deviceID, deviceName: deviceName)
+    }
+
     /// - Returns: `true` if the server answered. `false` with a superseded token,
     /// without touching anything.
     private func connectWith(_ url: URL, headers: [OwnHeader] = [], mark: CheckMark) async -> Bool {
-        let c = JellyfinClient(baseURL: url, deviceID: Self.deviceID, deviceName: Self.deviceName)
+        guard let c = Self.makeServer(baseURL: url) else { return false }
         let before = OwnHeaders.registered(for: url)
         let new = OwnHeaders.cleaned(headers)
         if !new.isEmpty { OwnHeaders.setDown(new, for: url) }
@@ -948,12 +1039,11 @@ final class AppModel {
     /// `client.didSet` reaches downloads with the right account, and the group is
     /// still left with the previous account's identity.
     @discardableResult
-    func sessionAdopt(_ s: Session, signedInWith newer: JellyfinClient? = nil) -> Bool {
+    func sessionAdopt(_ s: Session, signedInWith newer: (any MediaServer)? = nil) -> Bool {
         // **The rule lives in the package**, not here: the same server means add and
         // switch, another one means start from scratch. Both versions (this one and
         // GTK) had derived it themselves, and all cleanup hangs on this answer.
-        let (newBundle, wasSignedIn) = AccountBundle.record(s, in: bundle)
-        bundle = newBundle
+        let wasSignedIn = bundleRecord(s)
         saveBundle()
         if let newer, newer !== client { client = newer }
         phase = .ready
@@ -1013,7 +1103,7 @@ final class AppModel {
     /// previous account (on first sign-in with no account). 
     /// ``sessionAdopt(_:signedInWith:)`` adopts it only once the sign-in
     /// worked.
-    func loginClient() -> JellyfinClient? { client?.withoutAccount() }
+    func loginClient() -> (any MediaServer)? { client?.signedOutCopy() }
 
     func login(username: String, password: String) async {
         guard let signInClient = loginClient() else { return }
@@ -1031,7 +1121,9 @@ final class AppModel {
             // password are the path on iPhone, iPad and desktop, i.e. exactly where four
             // platforms would have hit it. Found when reading through the code, not through
             // a failure.
-            if !sessionAdopt(s, signedInWith: signInClient) { await loadViews() }
+            signInTransition(s) { [self] in
+                if !sessionAdopt(s, signedInWith: signInClient) { Task { await loadViews() } }
+            }
         } catch {
             errorMessage = readable(error)
         }
@@ -1045,7 +1137,7 @@ final class AppModel {
     /// second server in the middle should not land there and have to find their way
     /// back after cancelling. Only when sign-in works does the server join the
     /// bundle.
-    @ObservationIgnored private var onboarding: JellyfinClient?
+    @ObservationIgnored private var onboarding: (any MediaServer)?
     @ObservationIgnored private var onboardingName: String?
 
     /// Checks an address and keeps the server ready: name and version, or `nil`
@@ -1063,7 +1155,7 @@ final class AppModel {
         let new = OwnHeaders.cleaned(headers)
         var lastOne: (any Error)?
         for address in candidates {
-            let c = JellyfinClient(baseURL: address, deviceID: Self.deviceID, deviceName: Self.deviceName)
+            guard let c = Self.makeServer(baseURL: address) else { continue }
             let before = OwnHeaders.registered(for: address)
             if !new.isEmpty { OwnHeaders.setDown(new, for: address) }
             let info: PublicSystemInfo
@@ -1115,17 +1207,17 @@ final class AppModel {
     // currently connected to.
 
     func quickConnectStartAtNewServer() async throws -> LoginCode {
-        guard let onboarding else { throw JellyfinError.notAuthenticated }
+        guard let onboarding = onboarding as? any QuickSignIn else { throw JellyfinError.notAuthenticated }
         return try await onboarding.quickConnectStart()
     }
 
     func quickConnectAskAgainAtNewServer(_ preGait: LoginCode) async -> QuickConnectState {
-        guard let onboarding else { return .failed }
+        guard let onboarding = onboarding as? any QuickSignIn else { return .failed }
         return await onboarding.quickConnectAskAgain(preGait)
     }
 
     func signInWithQuickConnectAtNewServer(_ preGait: LoginCode) async -> Bool {
-        guard let onboarding else { return false }
+        guard let onboarding = onboarding as? any QuickSignIn else { return false }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
@@ -1139,8 +1231,8 @@ final class AppModel {
     }
 
     /// The one completion for both paths: into the bundle, secure, switch.
-    private func serverRecord(_ s: Session) {
-        bundle = AccountBundle.record(s, in: bundle).bundle
+    func serverRecord(_ s: Session) {
+        _ = bundleRecord(s)
         saveBundle()
         onboarding = nil
         newConnect()
@@ -1154,7 +1246,7 @@ final class AppModel {
     }
 
     func quickConnectShare(code: String) async throws {
-        guard let client else { throw JellyfinError.notAuthenticated }
+        guard let client = client as? any QuickSignIn else { throw JellyfinError.notAuthenticated }
         try await client.quickConnectShare(code: code)
     }
 
@@ -1240,7 +1332,7 @@ final class AppModel {
     }
 
     private func remoteStart() async {
-        guard let client, far == nil else { return }
+        guard let client = remoteServer, far == nil else { return }
         do {
             try await client.reportCapabilities()
         } catch {
@@ -1339,10 +1431,11 @@ final class AppModel {
         return try? await client.item(id: id)
     }
 
-    /// The first trailer that exists as a file on the server.
-    func trailer(toward item: Item) async -> Item? {
-        guard let client else { return nil }
-        return (try? await client.trailer(toward: item.id))?.first
+    /// Everything that can play as this title's trailer, in the order to try it
+    /// (``TrailerChoice``). `canOpenWeb: false` on screens without a browser.
+    func trailerCandidates(for item: Item, canOpenWeb: Bool) async -> [TrailerCandidate] {
+        guard let client else { return [] }
+        return await client.trailerCandidates(for: item, canOpenWeb: canOpenWeb)
     }
 
     /// Triggers the metadata refresh. The server continues in the background
@@ -1536,14 +1629,42 @@ final class AppModel {
             return DownloadManager.subtitle(to: plan.url, attribute: VLCPlayerView.subtitleRememberTimes)
         }
         guard let session else { return [] }
+        let (server, key) = liveAddress(session)
+        // **"Keep the file's style" off:** ASS and SSA come as the server's SRT so the
+        // look applies (spec: subtitle look, section 3). Plex cannot do that for
+        // embedded tracks, there the file's style always stays
+        // (``fileStyleAdjustable``).
+        if fileStyleAdjustable, !subtitleLook.keepFileStyle, let itemID = plan.itemID {
+            return SubtitleFile.asPlainText(streams: plan.source?.mediaStreams ?? [],
+                                            itemID: itemID, source: plan.mediaSourceID,
+                                            server: server, key: key,
+                                            keyName: EmbyPaths.tokenName(for: session.kind),
+                                            attribute: VLCPlayerView.subtitleRememberTimes)
+        }
         return SubtitleFile.from(streams: plan.source?.mediaStreams ?? [],
-                                   server: session.serverURL, key: session.accessToken,
+                                   server: server, key: key,
+                                   keyName: EmbyPaths.tokenName(for: session.kind),
                                    attribute: VLCPlayerView.subtitleRememberTimes)
     }
 
+    /// Whether the signed-in server can hand out ASS as SRT (Jellyfin, Emby). Plex
+    /// cannot for tracks inside the file, so the switch is locked there.
+    var fileStyleAdjustable: Bool { session?.kind != .plex }
+
     private var images: ImageAddress? {
         guard let session else { return nil }
-        return ImageAddress(base: session.serverURL, token: session.accessToken)
+        let (server, key) = liveAddress(session)
+        return ImageAddress(base: server, token: key, kind: session.kind)
+    }
+
+    /// The address and token to build image and file URLs from. **A Plex client moves
+    /// between addresses** (home network, relay) while the stored session keeps the one
+    /// it started with, so those come from the client; for the others it is the session.
+    func liveAddress(_ session: Session) -> (server: URL, token: String) {
+        if let plex = client as? PlexClient, session.kind == .plex, !plex.accessToken.isEmpty {
+            return (plex.baseURL, plex.accessToken)
+        }
+        return (session.serverURL, session.accessToken)
     }
 
     /// A title's poster. **Without token**, since the caller does not always have
@@ -1685,6 +1806,8 @@ final class AppModel {
 
     func userImageURL() -> URL? {
         guard let session else { return nil }
+        // Plex keeps the picture's address from plex.tv in the session.
+        if session.kind == .plex { return session.plex?.userImage }
         return images?.user(session.userID, border: Self.userImageEdge)
     }
 
@@ -1694,7 +1817,8 @@ final class AppModel {
     /// Since multiple servers exist, the app asked the wrong server for the others'
     /// images, and they vanished until you switched to them.
     func userImageURL(for account: Session) -> URL? {
-        ImageAddress(base: account.serverURL, token: account.accessToken)
+        if account.kind == .plex { return account.plex?.userImage }
+        return ImageAddress(base: account.serverURL, token: account.accessToken, kind: account.kind)
             .user(account.userID, border: Self.userImageEdge)
     }
 
@@ -1962,6 +2086,23 @@ final class AppModel {
 
 
 
+    /// **The plan for the next episode, keeping the version the viewer is watching.**
+    ///
+    /// If the next episode has a version with the same name as the one playing (else the
+    /// same resolution), that one is used. Otherwise, or on any failure to find out,
+    /// the server's automatic pick applies, as before. A copy on the device always wins.
+    func plan(for episode: Item, keeping playing: MediaSource?, still: Bool = false) async -> PlaybackPlan? {
+        var sourceID: String?
+        if let playing, downloads.file(for: episode.id) == nil {
+            // The list entry has no `MediaSources`; fetch them only when there is
+            // something to keep.
+            let sources: [MediaSource]?
+            if let known = episode.mediaSources { sources = known } else { sources = await item(id: episode.id)?.mediaSources }
+            sourceID = MediaVersions.matching(previous: playing, in: sources)?.id
+        }
+        return await plan(for: episode.id, still: still, sourceID: sourceID)
+    }
+
     /// Asks the server how it would deliver this title.
     ///
     /// `still`: an error lands only in the log, not as a message; for the background
@@ -2053,7 +2194,7 @@ final class AppModel {
     /// the account switches afterwards, the report still belongs to whoever
     /// watched.
     struct ReportContent: Sendable {
-        let client: JellyfinClient?
+        let client: (any MediaServer)?
         let item: Item
         let plan: PlaybackPlan
         let seconds: Double
@@ -2120,7 +2261,7 @@ final class AppModel {
         trakt.start(item: item, client: client, seconds: seconds)
     }
 
-    private nonisolated static func startSend(client: JellyfinClient, item: Item,
+    private nonisolated static func startSend(client: any MediaServer, item: Item,
                                                 plan: PlaybackPlan, ticks: Int64,
                                                 tracks: TrackIndices) async throws {
         // **Report capabilities again before every playback.**
@@ -2143,11 +2284,13 @@ final class AppModel {
         //
         // If it fails, the start still goes ahead, unless the deadline cancelled; then
         // the start is not due anymore either.
-        do {
-            try await client.reportCapabilities()
-        } catch {
-            try Task.checkCancellation()
-            AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+        if let remote = client as? any RemoteSessionServer {
+            do {
+                try await remote.reportCapabilities()
+            } catch {
+                try Task.checkCancellation()
+                AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+            }
         }
         try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, tracks: tracks)
     }
@@ -2263,7 +2406,7 @@ final class AppModel {
         let ticks = JellyfinClient.ticks(fromSeconds: seconds)
         // The current account, not the one after waiting: if it switches in between,
         // the position still belongs to whoever watched.
-        let account = session?.userID
+        let account = session?.storageAccount
         // The remembered series state is stale from now on; see
         // `SeriesCache.stateForget`.
         if let series = item.seriesId { SeriesCache.shared.stateForget(series) }
@@ -2334,7 +2477,7 @@ final class AppModel {
     var pendingReportsRun: [PendingReport] { pending }
     /// Slip in a report from earlier; checks "the newer state wins".
     func pendingReportUnderPush(_ itemID: String, ticks: Int64, moment: Date) {
-        guard let account = session?.userID else { return }
+        guard let account = session?.storageAccount else { return }
         pending = PostReportRules.record(
             PendingReport(itemID: itemID, account: account, ticks: ticks, moment: moment), in: pending)
     }
@@ -2357,7 +2500,7 @@ final class AppModel {
     /// **Never twice at once:** the check runs after connect, sign-in and account
     /// switch, and two passes side by side sent the same position twice.
     func pendingSubmit() async {
-        guard !reportLaterRuns, let client, let account = session?.userID else { return }
+        guard !reportLaterRuns, let client, let account = session?.storageAccount else { return }
         let opened = PostReportRules.due(pending, account: account)
         guard !opened.isEmpty else { return }
         reportLaterRuns = true
@@ -2378,10 +2521,15 @@ final class AppModel {
     func switchAccount(toward identifier: String) {
         // By account key: the same user ID can exist on two servers. A bare ID from
         // before still works.
-        guard var new = bundle, let target = new.account(identifier),
-              target.accountKey != new.activeOne.accountKey else { return }
+        // The account may sit in another kind's bundle (a Jellyfin and a Plex account in
+        // one strip), so look in all of them.
+        guard let current = session,
+              let kind = bundles.kinds.first(where: { bundles.bundle(for: $0)?.account(identifier) != nil }),
+              var new = bundles.bundle(for: kind), let target = new.account(identifier),
+              target.accountKey != current.accountKey else { return }
         new.switchTo(toward: identifier)
-        bundle = new
+        bundles.set(new, for: kind)
+        bundles.switchTo(kind)
         saveBundle()
         newConnect()
     }
@@ -2406,8 +2554,7 @@ final class AppModel {
         // switching, since the account being left would then be unusable and the way
         // back ends in "Sign-in rejected". The old client is simply dropped; the token
         // stays valid and sits in the keychain.
-        let newer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
-                                   deviceName: Self.deviceName, session: s)
+        guard let newer = Self.makeServer(session: s) else { return }
         client = newer
         phase = .ready
         afterSwitch()
@@ -2432,15 +2579,14 @@ final class AppModel {
         // wants to leave the server entirely signs out each account individually. One
         // button, one meaning.
         if let account = session?.accountKey { HomeModel.storeDelete(account) }
-        if let rest = bundle?.removed(bundle?.activeId ?? "") {
-            bundle = rest
-            saveBundle()
+        bundle = bundle?.removed(bundle?.activeId ?? "")
+        saveBundle()
+        // Another account is left, of the same kind or another one: switch to it.
+        if session != nil {
             newConnect()
             return
         }
 
-        Keychain.delete(key: Self.accountsKey)
-        Keychain.delete(key: Self.sessionKey)
         // Otherwise the Top Shelf keeps showing the previous account's titles.
         //
         // **Only on TV, hence wrapped in a condition.** A Top Shelf exists nowhere else:
@@ -2451,7 +2597,6 @@ final class AppModel {
         #if os(tvOS)
         Shelf.wipe()
         #endif
-        bundle = nil
         client = nil
         views = []
         errorMessage = nil
@@ -2460,13 +2605,29 @@ final class AppModel {
 
     // MARK: - Saving the session
 
+    /// Keeps the address a Plex client moved to. Only for the account that is signed in
+    /// with that client; anything else is a late call of a client that is gone.
+    private func plexRouteMoved(_ moved: Session, from plex: PlexClient) {
+        guard client === plex, session?.accountKey == moved.accountKey,
+              let current = bundles.bundle(for: .plex) else { return }
+        var new = current
+        new.record(moved)
+        bundles.set(new, for: .plex)
+        saveBundle()
+    }
+
     func saveBundle() {
-        guard let bundle else { return }
+        guard !bundles.kinds.isEmpty else { wipeStored(); return }
         do {
-            try Keychain.save(JSONEncoder().encode(bundle), key: Self.accountsKey)
+            try bundles.save { key, data in
+                if let data { try Keychain.save(data, key: key) } else { Keychain.delete(key: key) }
+            }
+            // The single session of the time before multiple accounts is gone for good once
+            // the Jellyfin bundle is: otherwise `loadBundles` would adopt it again.
+            if bundles.bundle(for: .jellyfin) == nil { Keychain.delete(key: Self.sessionKey) }
             // Read back immediately: a write error that only shows at the next launch
             // needlessly costs a sign-in.
-            guard Keychain.load(key: Self.accountsKey) != nil else {
+            guard Keychain.load(key: bundles.activeKind.bundleStorageKey) != nil else {
                 Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
                 errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.")
                 return
@@ -2477,25 +2638,38 @@ final class AppModel {
         }
     }
 
-    /// Reads the bundle and adopts a single session from the time before.
+    /// Nobody is signed in any more: every stored trace goes.
+    private func wipeStored() {
+        for kind in ServerKind.allCases { Keychain.delete(key: kind.bundleStorageKey) }
+        Keychain.delete(key: ServerBundles.pointerKey)
+        Keychain.delete(key: Self.sessionKey)
+    }
+
+    /// Reads the bundles of all kinds and adopts a single session from the time before.
     ///
     /// **The adoption lives here and not in the package**, because only the state
     /// holder knows where something is stored. The old entry is not deleted: whoever
     /// starts an older version again should not suddenly be signed out.
-    private func loadBundle() -> AccountBundle? {
+    private func loadBundles() -> ServerBundles {
         // **Only the state holder knows where the data lives; what it means is
-        // defined in the package.** This separation was missing: the adoption of the
-        // single session existed here and again in the GTK version, in two spellings.
-        AccountBundle.outStore(bundle: Keychain.load(key: Self.accountsKey),
-                             individual: Keychain.load(key: Self.sessionKey))
+        // defined in the package.** The Jellyfin bundle is still `konten`, byte for
+        // byte, and the single session from before is adopted only into it.
+        var loaded = ServerBundles.load { Keychain.load(key: $0) }
+        if loaded.bundle(for: .jellyfin) == nil,
+           let old = AccountBundle.outStore(bundle: nil, individual: Keychain.load(key: Self.sessionKey)) {
+            let active = loaded.activeKind
+            loaded.set(old, for: .jellyfin)
+            // A kind that was current stays so; otherwise the adopted one is.
+            if loaded.bundle(for: active) != nil { loaded.switchTo(active) }
+        }
+        return loaded
     }
 
     private func restoreSession() {
-        guard let anew = loadBundle() else { return }
-        bundle = anew
-        let s = anew.activeOne
-        let newer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
-                                   deviceName: Self.deviceName, session: s)
+        let anew = loadBundles()
+        guard let s = anew.active?.activeOne else { return }
+        bundles = anew
+        guard let newer = Self.makeServer(session: s) else { return }
         client = newer
         phase = .ready
         Task {
@@ -2515,26 +2689,43 @@ final class AppModel {
             // led not to the sign-in screen but to "No contact with the server", and from
             // there the only way back is the profile menu.
             guard await applies else {
-                // **Only if this account is still the active one.** The check can be slow;
-                // someone who switched to another account in the meantime would otherwise be
-                // signed out by its result: the new account instead of the revoked one.
-                // `client` is created anew on every switch; if it is no longer this one, the
-                // answer applies to nobody.
-                guard client === newer else { return }
-                let name = session?.userName
-                signOut()
-                // **After signing out an account can still be there.** Since there are
-                // several, `signOut` switches to the next instead of falling back to the server
-                // sign-in, and then "please sign in again" would simply be wrong: the user is
-                // signed in, just with another account.
-                if let proceed = session?.userName {
-                    errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(proceed).")
-                } else {
-                    errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
-                }
+                signOutRevoked(of: newer)
                 return
             }
         }
+    }
+
+    /// Signs out the account whose token the server no longer accepts.
+    ///
+    /// **Only if this account is still the active one.** The check can be slow; someone
+    /// who switched to another account in the meantime would otherwise be signed out by
+    /// its result: the new account instead of the revoked one. `client` is created anew
+    /// on every switch; if it is no longer this one, the answer applies to nobody.
+    private func signOutRevoked(of checked: any MediaServer) {
+        guard client === checked else { return }
+        let name = session?.userName
+        signOut()
+        // **After signing out an account can still be there.** Since there are several,
+        // `signOut` switches to the next instead of falling back to the server sign-in,
+        // and then "please sign in again" would simply be wrong: the user is signed in,
+        // just with another account.
+        if let proceed = session?.userName {
+            errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(proceed).")
+        } else {
+            errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+        }
+    }
+
+    /// A Plex server answered `401` in the middle of the session. Ask once whether the
+    /// token is really gone (a single title can say `401` too); if so, sign in again
+    /// instead of showing empty pages.
+    private func plexTokenRejected(_ plex: PlexClient) async {
+        guard client === plex else { return }
+        if await plex.sessionAppliesStill() {
+            await plex.unauthorizedHandled()
+            return
+        }
+        signOutRevoked(of: plex)
     }
 
     /// Lives in JellyfinKit so it is testable without a simulator.

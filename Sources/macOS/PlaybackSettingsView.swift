@@ -13,8 +13,10 @@ struct PlaybackSettingsView: View {
     let back: () -> Void
 
     @State private var openList: ListKind?
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.section) private var section
 
-    enum ListKind { case bitrate, audio, subtitle, back, forward, buffer }
+    enum ListKind { case bitrate, audio, subtitle, back, forward, buffer, engine }
 
     var body: some View {
         ScrollView {
@@ -101,6 +103,11 @@ struct PlaybackSettingsView: View {
                           under: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                           an: Binding(get: { model.subtitleAutomatic },
                                       set: { model.subtitleAutomatic = $0 }))
+            SheetLine().padding(.leading, Theme.separatorInsetCard)
+            // The page for size, colour, outline and so on (spec: subtitle look, section 1).
+            ValuesRow(symbol: "textformat.size", title: Text("Aussehen der Untertitel"),
+                      value: model.subtitleLook.entryValue, arrow: true,
+                      action: { navigator.openIt(.subtitleLook, in: section) })
         }
     }
 
@@ -156,6 +163,17 @@ struct PlaybackSettingsView: View {
                            label: { $0.name },
                            isSelected: { $0 == model.bufferLevel },
                            select: { model.bufferLevel = $0; close() })
+            }
+            SheetLine().padding(.leading, Theme.separatorInsetCard)
+            // Same place and words as on iPhone. Applies from the next title.
+            ValuesRow(symbol: "play.rectangle", title: Text("Player"),
+                       value: model.playerEngine.name, arrow: true,
+                       action: { toggle(.engine) })
+            if openList == .engine {
+                ValuesList(entries: PlayerEngineSetting.allCases,
+                           label: { $0.name },
+                           isSelected: { $0 == model.playerEngine },
+                           select: { model.playerEngine = $0; close() })
             }
         }
     }

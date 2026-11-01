@@ -26,7 +26,12 @@ public enum ImageSelection {
     /// empty after all.
     public static func landscape(_ item: Item, addresses: ImageAddress,
                             width: Int = 600) -> (url: URL, source: String)? {
-        let mass = ImageMetric.atMostWide(width)
+        // **Plex gets a 16:9 box.** Its scaler fits an image into the box and keeps the
+        // aspect ratio, so a poster would come back portrait. With both sides given it
+        // covers the box and cuts the rest (`minSize`), whatever picture is behind the path.
+        let plex = addresses.kind == .plex
+        let mass = plex ? ImageMetric.filling(wide: width, up: width * 9 / 16)
+                        : ImageMetric.atMostWide(width)
 
         func attempt(_ source: String, _ id: String?, _ art: ImageKind,
                      _ mark: String?) -> (URL, String)? {
@@ -56,6 +61,15 @@ public enum ImageSelection {
                 ? attempt("Folgenstandbild", item.id, .poster,
                           item.imageTags?["Primary"])
                 : nil,
+            // Only Plex, whose titles often have no landscape image at all: the poster,
+            // cut to 16:9 by the server (series poster for an episode), and last the
+            // current background the server keeps without naming it.
+            plex ? attempt("Poster zugeschnitten", item.seriesId ?? item.id, .poster,
+                           item.seriesId != nil ? item.seriesPrimaryImageTag
+                                                : item.imageTags?["Primary"]) : nil,
+            plex ? addresses.construct(itemID: item.seriesId ?? item.id, art: .background,
+                                       mark: nil, mass: mass).map { ($0, "Hintergrund ohne Pfad") }
+                 : nil,
         ]
 
         return chain.compactMap { $0 }.first.map { (url: $0.0, source: $0.1) }

@@ -22,6 +22,11 @@ struct ServerOnboardingView: View {
     /// As a pushed page it closes itself; the callback remains for callers that
     /// also clean up something else.
     var done: (() -> Void)? = nil
+    /// Reached through the kind picker: the title then says which kind this page is
+    /// for, since "Server hinzufügen" was the picker's own title one step before.
+    var kindPicked = false
+    /// The arrow, when it leads somewhere other than out (back to the kind picker).
+    var back: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var close
 
@@ -41,6 +46,7 @@ struct ServerOnboardingView: View {
     /// What sits next to the back button - it changes with the state.
     private var pagesTitle: String {
         if let server { return server.name }
+        if kindPicked, preset == nil { return String(localized: "Mit Jellyfin anmelden") }
         return preset == nil ? String(localized: "Server hinzufügen")
                                      : String(localized: "Konto hinzufügen")
     }
@@ -80,7 +86,7 @@ struct ServerOnboardingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 SubpageHeader(title: pagesTitle) {
                     model.serverOnboardingCancel()
-                    finish()
+                    if let back { back() } else { finish() }
                 } right: { EmptyView() }
             }
         }

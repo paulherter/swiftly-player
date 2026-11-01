@@ -29,14 +29,14 @@ settings:
     # Must match the version in App Store Connect, otherwise the build cannot be
     # attached there. Do not attach another build to an already released
     # version; that does not work cleanly.
-    MARKETING_VERSION: "1.0.9"
+    MARKETING_VERSION: "1.1.0"
     # Must be incremented on EVERY upload: Apple does not accept the same build
     # number twice per version (error 90189).
     #
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "38"
+    CURRENT_PROJECT_VERSION: "40"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -217,6 +217,7 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/AppModel+Servers.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
@@ -233,6 +234,10 @@ targets:
       # (`Sources/tvOS/TVLooks.swift`).
       - path: Sources/Shared/LookGiftSheet.swift
       - path: Sources/Shared/Motion.swift
+      # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
+      # the views on top are per platform.
+      - path: Sources/Shared/ServerKindLook.swift
+      - path: Sources/Shared/SignInModels.swift
       - path: Sources/Shared/GridJump.swift
       # The flow around a purchase (looks panel, sheet, thank-you page) and SupportChoice.
       - path: Sources/Shared/SupportFlow.swift
@@ -301,6 +306,11 @@ targets:
       # is also an AppKit arm.
       - path: Sources/Shared/BaseView.swift
       - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/VLCPlayerView+Engine.swift
+      - path: Sources/Shared/AVPlayerEngine.swift
+      - path: Sources/Shared/AppModel+Engine.swift
+      # The subtitle look page: the preview picture and the words every platform shares.
+      - path: Sources/Shared/SubtitlePreview.swift
       - path: Sources/Shared/NetworkProbe.swift
       # Preview images while scrubbing: fetching and caching of the trickplay
       # sheets, shared with iPhone and Mac.
@@ -434,7 +444,7 @@ targets:
           an address like 192.168.1.5.
     settings:
       base:
-        MARKETING_VERSION: "1.0.10"
+        MARKETING_VERSION: "1.1.0"
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS: without the access group the keychain refuses
         # writes (-34018) and the login would be lost on every launch.
@@ -501,7 +511,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
-        MARKETING_VERSION: "1.0.10"
+        MARKETING_VERSION: "1.1.0"
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
   # The Mac version.
@@ -518,6 +528,7 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/AppModel+Servers.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
@@ -565,6 +576,13 @@ targets:
       - path: Sources/Shared/SupportProfileParts.swift
       - path: Sources/Shared/LookAccentDots.swift
       - path: Sources/Shared/Motion.swift
+      # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
+      # the views on top are per platform.
+      - path: Sources/Shared/ServerKindLook.swift
+      - path: Sources/Shared/SignInModels.swift
+      # The breathing mark, code boxes, account circle and sign-in window of the Plex and
+      # Emby pages; the Mac draws them with its own views.
+      - path: Sources/Shared/SignInParts.swift
       - path: Sources/Shared/GridJump.swift
       - path: Sources/Shared/AlphabetRail.swift
       - path: Sources/Shared/SeasonDecor.swift
@@ -599,6 +617,11 @@ targets:
       # trick, the same stall detection. Picture-in-Picture in it is excluded
       # with `#if os(iOS)`; on the Mac it does not work anyway.
       - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/VLCPlayerView+Engine.swift
+      - path: Sources/Shared/AVPlayerEngine.swift
+      - path: Sources/Shared/AppModel+Engine.swift
+      # The subtitle look page: the preview picture and the words every platform shares.
+      - path: Sources/Shared/SubtitlePreview.swift
       - path: Sources/Shared/NetworkProbe.swift
       # "Share log" in the profile - the file; shared via the Mac share menu
       # (ProfilView).

@@ -35,7 +35,7 @@ final class TrickplayImages: @unchecked Sendable {
     deinit { clear() }
 
     /// For a new title, check once whether trickplay exists.
-    func load(client: JellyfinClient, item: Item, plan: PlaybackPlan) {
+    func load(client: any MediaServer, item: Item, plan: PlaybackPlan) {
         guard title != item.id else { return }
         title = item.id
         source = plan.mediaSourceID
@@ -67,7 +67,7 @@ final class TrickplayImages: @unchecked Sendable {
 
     /// The texture for a position, cut from its sheet; `nil` while the sheet is
     /// still on its way (it is requested here right away).
-    func tile(at seconds: Double, client: JellyfinClient?) -> OpaquePointer? {
+    func tile(at seconds: Double, client: (any MediaServer)?) -> OpaquePointer? {
         guard let detail, let title, let client,
               let k = detail.tile(seconds: seconds) else { return nil }
         guard let sheet = leaves[k.sheet] else {
@@ -80,7 +80,7 @@ final class TrickplayImages: @unchecked Sendable {
         return gdk_texture_new_for_pixbuf(crop)
     }
 
-    private func demand(_ number: Int, detail: Trickplay, title: String, client: JellyfinClient) {
+    private func demand(_ number: Int, detail: Trickplay, title: String, client: any MediaServer) {
         guard !onTheGo.contains(number) else { return }
         onTheGo.insert(number)
         let source = source

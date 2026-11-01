@@ -4,6 +4,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -33,10 +34,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** Mirrors `ConnectView` in `Sources/Shared/RootView.swift`. */
+/**
+ * Mirrors `ConnectView` in `Sources/Shared/RootView.swift`.
+ *
+ * `back`: reached through the kind picker. Then a subpage with its arrow back to the picker and
+ * "Mit Jellyfin anmelden" on top, and the wordmark stays on the picker where it already stood.
+ * `presetAddress`: an address another page already knows (Emby found a Jellyfin there).
+ */
 @Composable
-fun ServerPage(app: SwiftlyApplication, connected: (String, String) -> Unit) {
-    var address by remember { mutableStateOf(app.store.lastServer ?: "") }
+fun ServerPage(app: SwiftlyApplication, back: (() -> Unit)? = null, presetAddress: String? = null,
+               connected: (String, String) -> Unit) {
+    var address by remember { mutableStateOf(presetAddress ?: app.store.lastServer ?: "") }
     var running by remember { mutableStateOf(false) }
     /** The running check; only it may take effect. A changed address cancels it. */
     var verification by remember { mutableStateOf<Job?>(null) }
@@ -77,14 +85,16 @@ fun ServerPage(app: SwiftlyApplication, connected: (String, String) -> Unit) {
         address = new
     }
 
+    Column(Modifier.fillMaxSize()) {
+    if (back != null) SubpageHeader(translated("Mit Jellyfin anmelden"), back)
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
+        Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Column(Modifier.widthIn(max = Theme.formWidth), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box172 { Wordmark(height = 40.dp) }
+            if (back == null) Box172 { Wordmark(height = 40.dp) }
             Text(translated("Wo steht dein Jellyfin-Server?"), style = Theme.body, color = Theme.fontQuiet,
-                 modifier = Modifier.padding(top = 44.dp))
+                 modifier = Modifier.padding(top = if (back == null) 44.dp else 24.dp))
             Column(Modifier.padding(top = 18.dp)) {
                 InputField(address, { addressChange(it) }, Glyph.Globe, "tv.beispiel.de", address = true) { linkUp() }
             }
@@ -100,6 +110,7 @@ fun ServerPage(app: SwiftlyApplication, connected: (String, String) -> Unit) {
                      modifier = Modifier.padding(top = 14.dp))
             }
         }
+    }
     }
 }
 

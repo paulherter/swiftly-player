@@ -308,6 +308,13 @@ struct MainView: View {
             tileRequest.play = nil
             takeoverRequest = wish
         }
+        // A tile menu on a title with several versions asks which one.
+        .versionChoice($tileRequest.choice) { choice, version in
+            PlayRequest.start(choice, picking: version, model: model, prepares: .constant(false),
+                              missing: { tileRequest.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                takeoverRequest = $0
+            }
+        }
         // **Sent from another client** (dashboard, web client): the same player again, from
         // every section; a running one is replaced.
         .onChange(of: model.playArrival?.id) { _, new in
@@ -555,6 +562,9 @@ extension View {
             }
             .navigationDestination(for: PlaybackRoute.self) { _ in
                 PlaybackSettingsView(model: model)
+            }
+            .navigationDestination(for: SubtitleLookRoute.self) { _ in
+                SubtitleLookView(model: model)
             }
             .navigationDestination(for: SeasonRoute.self) { route in
                 SeasonView(model: model, series: route.series, season: route.season)

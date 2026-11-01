@@ -330,8 +330,6 @@ struct DetailHero: View {
     @State private var moreOpen = false
     @State private var loadPanelOpen = false
     @State private var message: String?
-    /// The start position waiting for the version choice; `nil` while no dialog is open.
-    @State private var versionSince: Double?
     @Environment(PlayControls.self) private var controls
 
     // MARK: Downloads
@@ -353,7 +351,7 @@ struct DetailHero: View {
     /// The entry a download would get. The size comes from the same source the player
     /// would use, since it is the same file.
     private var asEntry: DownloadItem? {
-        guard let account = model.session?.userID else { return nil }
+        guard let account = model.session?.storageAccount else { return nil }
         let source = plan?.source ?? title.mediaSources?.first
         return DownloadItem(
             id: title.id, account: account, art: .film, title: title.name,
@@ -722,15 +720,6 @@ struct DetailHero: View {
             if let message { HintStrip(text: message) }
             Spacer(minLength: 0)
         }
-        .confirmationDialog("Fassung wählen", isPresented: Binding(
-            get: { versionSince != nil }, set: { if !$0 { versionSince = nil } }),
-                            titleVisibility: .visible) {
-            ForEach(versions, id: \.id) { version in
-                Button(versionLabel(version)) {
-                    controls.launch(title, since: versionSince ?? 0, sourceID: version.id)
-                }
-            }
-        }
     }
 
     /// Year, runtime and genre, from `Item.secondaryLine` in
@@ -742,27 +731,11 @@ struct DetailHero: View {
     /// second copy means it gets missed again next time.
     private var detailsRow: String { title.secondaryLine }
 
-    /// The versions to choose from; empty for a series, when there is no choice to make
-    /// or when the title is on the device (the downloaded file is the one that plays).
-    /// A download still running does not count: playback then streams from the server.
-    private var versions: [MediaSource] {
-        guard title.type != "Series", model.downloads.file(for: title.id) == nil else { return [] }
-        return MediaVersions.choices(title.mediaSources)
-    }
-
-    private func versionLabel(_ version: MediaSource) -> String {
-        let detail = version.versionDetail
-        return detail.isEmpty ? version.versionName : "\(version.versionName) · \(detail)"
-    }
-
-    /// **A title with several versions asks which one on press**, as on iPhone. One
-    /// version, or a copy on the device, starts at once.
+    /// **Play asks which version on press** when a title has several, as on iPhone; the
+    /// decision and the dialog live in ``PlayControls`` so every play button on the Mac
+    /// behaves the same. One version, or a copy on the device, starts at once.
     private func start(_ since: Double) {
-        if versions.isEmpty {
-            controls.launch(playBarTitle ?? title, since: since)
-        } else {
-            versionSince = since
-        }
+        controls.launch(playBarTitle ?? title, since: since)
     }
 
     /// The same actions as on the other platforms, from `TitleActions`, plus
@@ -798,16 +771,15 @@ struct DetailHero: View {
 
     private func trailerStart() {
         Task {
-            if let film = await model.trailer(toward: title) {
-                controls.launch(film, since: 0)
+            // Same order as on every platform (``TrailerChoice``): files the server keeps,
+            // then the linked page in the browser. A file the server cannot describe is
+            // skipped for the next candidate.
+            let candidates = await model.trailerCandidates(for: title, canOpenWeb: true)
+            if candidates.isEmpty {
+                notify(String(localized: "Für diesen Titel liegt kein Trailer vor."))
                 return
             }
-            if let address = title.remoteTrailers?.compactMap(\.url).first,
-               let target = URL(string: address) {
-                NSWorkspace.shared.open(target)
-                return
-            }
-            notify(String(localized: "Für diesen Titel liegt kein Trailer vor."))
+            await controls.launchTrailer(candidates) { NSWorkspace.shared.open($0) }
         }
     }
 

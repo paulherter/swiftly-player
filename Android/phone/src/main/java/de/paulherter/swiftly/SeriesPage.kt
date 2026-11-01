@@ -85,7 +85,7 @@ data class Episode(val id: String, val title: String, val subline: String?, val 
 data class Series(
     val id: String, val name: String, val year: String?, val seasonRow: String?, val seasonCount: Int?,
     val genres: String?, val headerImage: String?, val rating: Double?, val sharing: String?,
-    val description: String?, val remembered: Boolean, val watched: Boolean, val trailer: String?,
+    val description: String?, val remembered: Boolean, val watched: Boolean,
     val planPresent: Boolean, val lossless: Boolean, val method: String?,
     val state: EpisodesState?, val buttonText: String, val seasons: List<Season>, val selected: String?,
     val actors: List<WithAct>,
@@ -107,7 +107,7 @@ internal fun seriesRead(json: String): Series = JSONObject(json).let { o ->
     Series(o.getString("id"), o.getString("name"), o.fieldText("jahr"), o.fieldText("staffelzeile"),
           if (o.isNull("staffelzahl")) null else o.getInt("staffelzahl"),
           o.fieldText("gattungen"), o.fieldText("kopfbild"), o.fieldNumber("bewertung"), o.fieldText("freigabe"),
-          o.fieldText("beschreibung"), o.optBoolean("gemerkt"), o.optBoolean("gesehen"), o.fieldText("trailer"),
+          o.fieldText("beschreibung"), o.optBoolean("gemerkt"), o.optBoolean("gesehen"),
           o.optBoolean("planDa"), o.optBoolean("lossless"), o.fieldText("methode"),
           o.optJSONObject("stand")?.let { s ->
               EpisodesState(s.getString("id"), s.optBoolean("fortsetzen"), s.fieldText("restzeit"), s.fieldNumber("fortschritt"),
@@ -277,11 +277,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     }
 
     fun trailerStart() {
-        val address = s?.trailer
-        val went = address != null && runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)))
-        }.isSuccess
-        if (!went) message = translated("Für diesen Titel liegt kein Trailer vor.")
+        section.launch { trailerStart(app, context, target.id)?.let { message = it } }
     }
 
     // **The header image's colour under the page**, as on the film page (`MoodReason`).
@@ -309,7 +305,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                    m(TileMenuRequest(target.id, name, "Series", s?.headerImage, landscape = true,
                                                         s?.secondaryLine, afterwards = { section.launch { load() } }))
                                } }) {
-                        s?.state?.let { st -> jerk(Jerk.Medium); app.play.value = PlayRequest(st.id, st.since) }
+                        s?.state?.let { st -> jerk(Jerk.Medium); playAsking(app, st.id, st.since) }
                     }
                     s?.state?.remainingTime?.let { Text(it, style = Theme.small, color = Theme.fontQuiet) }
                     s?.state?.progress?.takeIf { it > 0 }?.let { ProgressBar(it, Modifier.clip(RoundedCornerShape(2.dp))) }
@@ -370,17 +366,17 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                             section.launch {
                                 when (choice) {
                                     "trailer" -> trailerStart()
-                                    "vonvorn" -> s?.state?.let { st -> app.play.value = PlayRequest(st.id, null) }
+                                    "vonvorn" -> s?.state?.let { st -> playAsking(app, st.id, null) }
                                     // Without a next episode, report it rather than silently doing nothing.
                                     "naechste" -> s?.state?.let { st ->
                                         val afterThat = withContext(Dispatchers.IO) { app.kern.episodeAfter(st.id, s.id).await() }
-                                        if (afterThat.isNotEmpty()) app.play.value = PlayRequest(afterThat, null)
+                                        if (afterThat.isNotEmpty()) playAsking(app, afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
                                     }
                                     // Mixes all episodes once (`ShuffleRun` in the package); "Next episode" in the player follows it.
                                     "zufaellig" -> {
                                         val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(s?.id ?: return@withContext "").await() }
-                                        if (first.isNotEmpty()) app.play.value = PlayRequest(first, 0.0)
+                                        if (first.isNotEmpty()) playAsking(app, first, 0.0)
                                         else message = translated("Die Folge konnte nicht geladen werden.")
                                     }
                                     "staffel" -> selectedSeason?.let { st ->
@@ -439,7 +435,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                         m(TileMenuRequest(f.id, f.title, "Episode", f.image, landscape = true, f.subline,
                                                              afterwards = { section.launch { load() } }))
                                     } }
-                                    EpisodesRow(f, lengthy = lengthy) { app.play.value = PlayRequest(f.id, f.since) }
+                                    EpisodesRow(f, lengthy = lengthy) { playAsking(app, f.id, f.since) }
                                 }
                             }
                         } }

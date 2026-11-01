@@ -56,24 +56,14 @@ struct SearchView: View {
 
     private var last: [String] { SearchHistory.list(lastRaw) }
 
-    /// The rule itself is in `SearchHistory` - TV shows the same list, and a second
-    /// version would be a copied function.
-    private var historyKey: String {
-        SearchHistory.key(account: model.session?.accountKey)
-    }
-
+    /// The rules are in `SearchHistory`, the storage in `SearchHistoryStore` - the TV shows the same list.
     private func historyLoad() {
-        let store = UserDefaults.standard
-        let key = historyKey
-        if key != SearchHistory.key, store.object(forKey: key) == nil {
-            store.set(store.string(forKey: SearchHistory.key) ?? "", forKey: key)
-        }
-        lastRaw = store.string(forKey: key) ?? ""
+        lastRaw = SearchHistoryStore.load(account: model.session?.accountKey)
     }
 
     private func historySet(_ new: String) {
         lastRaw = new
-        UserDefaults.standard.set(new, forKey: historyKey)
+        SearchHistoryStore.save(new, account: model.session?.accountKey)
     }
 
     private func remember(_ word: String) {

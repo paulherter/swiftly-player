@@ -297,6 +297,13 @@ struct MainView: View {
             tileRequest.play = nil
             play = wish
         }
+        // A tile menu on a title with several versions asks which one.
+        .versionChoice($tileRequest.choice) { choice, version in
+            PlayRequest.start(choice, picking: version, model: model, prepares: .constant(false),
+                              missing: { tileRequest.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                play = $0
+            }
+        }
         .onChange(of: gemeinsam.wish?.id) { _, new in
             guard new != nil, let wish = gemeinsam.wish else { return }
             gemeinsam.wish = nil

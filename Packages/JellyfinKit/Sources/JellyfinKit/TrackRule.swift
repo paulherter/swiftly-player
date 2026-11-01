@@ -183,7 +183,16 @@ public struct TrackMemory {
 
     public init(store: UserDefaults = .standard) { self.store = store }
 
-    public static func title(for item: Item) -> String { item.seriesId ?? item.id }
+    /// The key of the series or movie. **With the account in front** (`storageAccount`):
+    /// item ids are only unique per server, so two servers (Plex `ratingKey`, Emby ids)
+    /// would share one choice without it. Without an account the old bare key.
+    public static func title(for item: Item, account: String? = nil) -> String {
+        let base = item.seriesId ?? item.id
+        guard let account, !account.isEmpty else { return base }
+        return account + separator + base
+    }
+
+    private static let separator = "|"
 
     public func subtitle(for title: String) -> Choice? { read(Self.subtitleKey, title) }
 
@@ -200,8 +209,18 @@ public struct TrackMemory {
         write(Self.audioKey, title, .track(imprint))
     }
 
+    /// The bare key an entry had before the account went in front. Jellyfin and Emby
+    /// only (Plex never wrote one that is safe to take over), so nothing a user
+    /// chose is lost.
+    private static func legacy(_ title: String) -> String? {
+        guard let cut = title.range(of: separator), !title.hasPrefix("plex-") else { return nil }
+        let bare = String(title[cut.upperBound...])
+        return bare.isEmpty ? nil : bare
+    }
+
     private func read(_ key: String, _ title: String) -> Choice? {
-        guard let raw = (store.dictionary(forKey: key) as? [String: String])?[title] else { return nil }
+        let all = store.dictionary(forKey: key) as? [String: String]
+        guard let raw = all?[title] ?? Self.legacy(title).flatMap({ all?[$0] }) else { return nil }
         if raw.isEmpty { return .off }
         if raw.hasPrefix("{"),
            let imprint = try? JSONDecoder().decode(TrackImprint.self, from: Data(raw.utf8)) {

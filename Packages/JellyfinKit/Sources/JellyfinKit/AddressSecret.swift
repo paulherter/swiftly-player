@@ -15,7 +15,7 @@ public extension URL {
         guard var parts = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
             return absoluteString
         }
-        let secret: Set<String> = ["api_key", "ApiKey", "X-Emby-Token", "token",
+        let secret: Set<String> = ["api_key", "ApiKey", "X-Emby-Token", "X-Plex-Token", "token",
                                    "secret", "Secret", "pw", "Pw", "password"]
         parts.queryItems = parts.queryItems?.map { value in
             secret.contains(value.name)
@@ -50,6 +50,6 @@ public enum ImageKey {
     }
 
     private static func attribute(_ name: String) -> Bool {
-        name == "ApiKey" || name == "api_key"
+        name == "ApiKey" || name == "api_key" || name == "X-Plex-Token"
     }
 }

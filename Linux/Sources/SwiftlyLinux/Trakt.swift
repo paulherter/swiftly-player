@@ -88,7 +88,7 @@ extension App {
     /// The token is passed through the queue before every start, so after an
     /// account switch the right one applies immediately, with no special hook in
     /// the switch.
-    func traktStart(_ client: JellyfinClient, title: Item, ticks: Int64) {
+    func traktStart(_ client: any MediaServer, title: Item, ticks: Int64) {
         guard let reporter = traktStatus.reporter else { return }
         let token = traktToken
         reporter.tokenSet(token, identifier: traktAccount)

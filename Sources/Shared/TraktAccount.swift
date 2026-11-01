@@ -154,7 +154,7 @@ final class TraktAccount {
 
     // MARK: Playback - called from `AppModel`, next to the Jellyfin reports
 
-    func start(item: Item, client: JellyfinClient?, seconds: Double) {
+    func start(item: Item, client: (any MediaServer)?, seconds: Double) {
         guard let reporter, token != nil, let client else { return }
         reporter.report(.start(titleID: item.id,
                              target: { await TraktTarget.resolve(item, client: client) },

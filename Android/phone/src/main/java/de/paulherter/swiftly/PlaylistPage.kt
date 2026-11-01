@@ -111,7 +111,7 @@ fun PlaylistPage(app: SwiftlyApplication, target: Destination, open: (Destinatio
                         prepares = true
                         section.launch {
                             val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
-                            if (first.isNotEmpty()) app.play.value = PlayRequest(first, null)
+                            if (first.isNotEmpty()) playAsking(app, first, null)
                             else message = translated("Die Folge konnte nicht geladen werden.")
                             prepares = false
                         }

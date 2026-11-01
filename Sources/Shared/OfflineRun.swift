@@ -56,7 +56,7 @@ enum OfflineRun {
             log("umgeschaltet auf \(model.session?.userName ?? "?")")
         }
         guard model.session?.userName == allowed, let client = model.client,
-              let account = model.session?.userID
+              let account = model.session?.storageAccount
         else { log("Profil \(allowed) nicht aktiv — Lauf endet"); return nil }
         let hit = await model.search("Mentalist")
         guard let series = hit?.first(where: { $0.type == "Series" && $0.name == "The Mentalist" })
@@ -182,7 +182,7 @@ enum OfflineRun {
         }
     }
 
-    private static func serverState(_ client: JellyfinClient, _ episodes: [Item]) async {
+    private static func serverState(_ client: any MediaServer, _ episodes: [Item]) async {
         for f in episodes {
             let afterwards = (try? await client.userDataRaw(itemID: f.id)) ?? Data()
             log("Stand am Server \(f.id) \(String(decoding: afterwards, as: UTF8.self))")

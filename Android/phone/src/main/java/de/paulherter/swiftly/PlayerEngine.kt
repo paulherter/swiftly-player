@@ -37,6 +37,7 @@ import androidx.media3.ui.SubtitleView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import java.util.concurrent.atomic.AtomicLong
+import de.paulherter.swiftly.core.Kern
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -64,7 +65,7 @@ import org.videolan.libvlc.util.VLCVideoLayout
  * device cannot decode or pass through (often DTS and TrueHD) stays with libVLC, see `EngineChoice`.
  * */
 @OptIn(UnstableApi::class)
-class PlayerEngine(private val context: Context, val vlc: LibVLC, private val isTv: Boolean) {
+class PlayerEngine(private val context: Context, val vlc: LibVLC, private val isTv: Boolean, private val look: String = "") {
     val vlcPlayer = MediaPlayer(vlc)
     private var exo: ExoPlayer? = null
     /** Is Media3 playing instead of VLC? Readable from any thread. */
@@ -148,14 +149,7 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         val r = frame ?: AspectRatioFrameLayout(context).also { neu ->
             neu.addView(SurfaceView(context), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             // Above the picture, inside the video frame, as `PlayerView` does it.
-            val sv = SubtitleView(context).apply {
-                setStyle(CaptionStyleCompat(android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT,
-                    android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, android.graphics.Color.BLACK, null))
-                // VLC's default is 6.25 % of the picture height, made smaller here as there (`--sub-text-scale`).
-                setFractionalTextSize(0.0625f * (if (isTv) 0.88f else 0.82f))
-                setApplyEmbeddedStyles(true)
-                setApplyEmbeddedFontSizes(false)
-            }
+            val sv = SubtitleView(context).apply { subtitleStyleApply(this) }
             neu.addView(sv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             subtitleView = sv
             frame = neu
@@ -164,6 +158,36 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         if (r.parent == null) l.addView(r, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER))
         r.visibility = View.VISIBLE
         e.setVideoSurfaceView(r.getChildAt(0) as SurfaceView)
+    }
+
+    /**
+     * **Media3 captions from the stored look** (spec section 9). The numbers come from the package
+     * (`Kern.subtitleLookFacts`): size = 6.25 % x base x step, one edge only (the outline wins over the
+     * shadow), `#A0000000` as the background, bottom padding 0.08 or 0.15 for "Higher". Embedded styles
+     * stay on only with "keep the file's style"; the file's own sizes never apply.
+     */
+    private fun subtitleStyleApply(view: SubtitleView) {
+        val f = runCatching { org.json.JSONObject(Kern.subtitleLookFacts(look, SubtitleBase.of(isTv))) }.getOrNull()
+        if (f == null) {
+            view.setStyle(CaptionStyleCompat(android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, android.graphics.Color.BLACK, null))
+            view.setFractionalTextSize(0.0625f * SubtitleBase.of(isTv).toFloat())
+            view.setApplyEmbeddedStyles(true)
+            view.setApplyEmbeddedFontSizes(false)
+            return
+        }
+        val edge = when (f.getString("edge")) {
+            "outline" -> CaptionStyleCompat.EDGE_TYPE_OUTLINE
+            "shadow" -> CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+            else -> CaptionStyleCompat.EDGE_TYPE_NONE
+        }
+        view.setStyle(CaptionStyleCompat(0xFF000000.toInt() or f.getInt("rgb"),
+            if (f.getBoolean("background")) 0xA0000000.toInt() else android.graphics.Color.TRANSPARENT,
+            android.graphics.Color.TRANSPARENT, edge, android.graphics.Color.BLACK, null))
+        view.setFractionalTextSize(f.getDouble("fraction").toFloat())
+        view.setBottomPaddingFraction(f.getDouble("bottomPadding").toFloat())
+        view.setApplyEmbeddedStyles(f.getBoolean("keepFileStyle"))
+        view.setApplyEmbeddedFontSizes(false)
     }
 
     private fun removeFrame() {
@@ -446,7 +470,12 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
     /** The layers already given a vote, by identity: a SurfaceView gets a new `SurfaceControl` after it was rebuilt. */
     private val voted = java.util.IdentityHashMap<android.view.SurfaceControl, Float>()
 
-    private fun displayRateReset() { filmRate = null; rateTries = 0; voted.clear() }
+    /** The vote for the display mode `rateModeId` (-1: not computed). */
+    private var rateModeId = -1
+    private var rateTarget = 0f
+    private var rateRates: List<Float> = emptyList()
+
+    private fun displayRateReset() { filmRate = null; rateTries = 0; voted.clear(); rateModeId = -1 }
 
     /**
      * **Phone: ask for a display rate that fits the film, at most 60 Hz** (main thread, from the player tick).
@@ -464,10 +493,17 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         }
         @Suppress("DEPRECATION")
         val current = display.mode
-        val rates = display.supportedModes
-            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            .flatMap { listOf(it.refreshRate) + it.alternativeRefreshRates.toList() }
-        val target = PhoneFrameRate.target(fps, rates)
+        // `supportedModes` copies its array on every call; the answer only changes with the display mode.
+        if (current.modeId != rateModeId) {
+            val rates = display.supportedModes
+                .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+                .flatMap { listOf(it.refreshRate) + it.alternativeRefreshRates.toList() }
+            rateTarget = PhoneFrameRate.target(fps, rates)
+            rateRates = rates
+            rateModeId = current.modeId
+        }
+        val target = rateTarget
+        val rates = rateRates
         for (sv in videoSurfaces()) {
             val sc = sv.surfaceControl?.takeIf { it.isValid } ?: continue
             if (voted[sc] == target) continue

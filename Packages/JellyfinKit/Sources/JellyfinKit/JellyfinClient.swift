@@ -86,12 +86,52 @@ public struct Session: Codable, Sendable, Equatable {
     public let userID: String
     public let userName: String
     public let serverURL: URL
+    /// Which kind of server the account belongs to. Missing in everything stored before
+    /// the second kind existed, which means Jellyfin. Written only for the other kinds, so
+    /// a Jellyfin session stays byte-identical to the one older versions wrote.
+    public let kind: ServerKind
+    /// What a Plex account needs beyond the other kinds: which server (a Plex address
+    /// changes with the network, the machine does not), and the token for plex.tv. `nil`
+    /// for everything else, and not written then.
+    public let plex: PlexSessionDetails?
 
-    public init(accessToken: String, userID: String, userName: String, serverURL: URL) {
+    public init(accessToken: String, userID: String, userName: String, serverURL: URL,
+                kind: ServerKind = .jellyfin, plex: PlexSessionDetails? = nil) {
         self.accessToken = accessToken
         self.userID = userID
         self.userName = userName
         self.serverURL = serverURL
+        self.kind = kind
+        self.plex = plex
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken
+        case userID
+        case userName
+        case serverURL
+        case kind
+        case plex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accessToken = try c.decode(String.self, forKey: .accessToken)
+        userID = try c.decode(String.self, forKey: .userID)
+        userName = try c.decode(String.self, forKey: .userName)
+        serverURL = try c.decode(URL.self, forKey: .serverURL)
+        kind = try c.decodeIfPresent(ServerKind.self, forKey: .kind) ?? .jellyfin
+        plex = try c.decodeIfPresent(PlexSessionDetails.self, forKey: .plex)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(accessToken, forKey: .accessToken)
+        try c.encode(userID, forKey: .userID)
+        try c.encode(userName, forKey: .userName)
+        try c.encode(serverURL, forKey: .serverURL)
+        if kind != .jellyfin { try c.encode(kind, forKey: .kind) }
+        try c.encodeIfPresent(plex, forKey: .plex)
     }
 }
 
@@ -107,6 +147,9 @@ public actor JellyfinClient {
     /// otherwise another device cannot tell it is a phone (`RemoteSession.devicesKind`).
     private let program: String
     private var session: Session?
+    /// Jellyfin, or Emby, which this client also speaks with a few different paths and
+    /// spellings (``EmbyPaths``). Plex has its own client; a `.plex` here counts as Jellyfin.
+    public nonisolated let serverKind: ServerKind
     /// What the server says about downloading: ``DownloadPermission``. Stays `.unbekannt` until
     /// ``accountDefaults()`` has succeeded once, and `.unbekannt` blocks nothing.
     private var downloadRightState: DownloadPermission = .unknown
@@ -125,8 +168,10 @@ public actor JellyfinClient {
         clientVersion: String = VersionNumber.outBundle,
         program: String = "Swiftly Player",
         session: Session? = nil,
-        urlSession: URLSession = .localNetworkCapable
+        urlSession: URLSession = .localNetworkCapable,
+        kind: ServerKind = .jellyfin
     ) {
+        self.serverKind = kind == .emby ? .emby : .jellyfin
         self.baseURL = baseURL
         self.deviceID = deviceID
         self.deviceName = deviceName
@@ -155,7 +200,8 @@ public actor JellyfinClient {
     /// app adopts the new one.
     public nonisolated func withoutAccount() -> JellyfinClient {
         JellyfinClient(baseURL: baseURL, deviceID: deviceID, deviceName: deviceName,
-                       clientVersion: clientVersion, program: program, urlSession: urlSession)
+                       clientVersion: clientVersion, program: program, urlSession: urlSession,
+                       kind: serverKind)
     }
 
     /// The last known state of the `EnableContentDownloading` permission, for UIs that do
@@ -197,6 +243,9 @@ public actor JellyfinClient {
         }))
     }
 
+    /// How the token is spelled in an address that carries it as a query value.
+    private nonisolated var tokenName: String { EmbyPaths.tokenName(for: serverKind) }
+
     /// The same credentials for the control channel.
     ///
     /// **Not imitated, the same.** A channel that names itself differently from the other
@@ -210,6 +259,8 @@ public actor JellyfinClient {
         query: [URLQueryItem] = [],
         body: (any Encodable)? = nil
     ) throws -> URLRequest {
+        // Emby: user-bound paths (``EmbyPaths``). Jellyfin keeps the path as it is.
+        let path = serverKind == .emby ? EmbyPaths.rewrite(path, userID: session?.userID) : path
         guard var comps = URLComponents(url: baseURL.appendingPathComponent(path),
                                         resolvingAgainstBaseURL: false) else {
             throw JellyfinError.invalidServerURL
@@ -307,7 +358,8 @@ public actor JellyfinClient {
         let new = Session(accessToken: result.accessToken,
                           userID: result.user.id,
                           userName: result.user.name,
-                          serverURL: baseURL)
+                          serverURL: baseURL,
+                          kind: serverKind)
         session = new
         return new
     }
@@ -348,7 +400,8 @@ public actor JellyfinClient {
         let newSession = Session(accessToken: result.accessToken,
                                  userID: result.user.id,
                                  userName: result.user.name,
-                                 serverURL: baseURL)
+                                 serverURL: baseURL,
+                                 kind: serverKind)
         session = newSession
         return newSession
     }
@@ -732,6 +785,14 @@ public actor JellyfinClient {
     /// late report (``nachmelden(_:)``).
     public func userRecord(itemID: String) async throws -> UserItemData {
         let s = try requireSession()
+        // Emby has no read-only user-data path (404 on GET); the title carries the same
+        // record.
+        if serverKind == .emby {
+            guard let record = try await item(id: itemID).userData else {
+                throw JellyfinError.decoding("UserData fehlt")
+            }
+            return record
+        }
         let req = try request("UserItems/\(itemID)/UserData",
                               query: [.init(name: "userId", value: s.userID)])
         return try await send(req, as: UserItemData.self)
@@ -877,7 +938,18 @@ public actor JellyfinClient {
             .init(name: "Limit", value: "1"),
             .init(name: "Fields", value: "Overview"),
         ])
-        return try await send(req, as: ItemsResponse.self).items.first
+        if let found = try await send(req, as: ItemsResponse.self).items.first { return found }
+        // Emby's NextUp answers nothing for a series nobody has started (Jellyfin offers
+        // the first episode then): fall back to the first unwatched one.
+        guard serverKind == .emby else { return nil }
+        let first = try request("Shows/\(seriesID)/Episodes", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "isMissing", value: "false"),
+            .init(name: "Filters", value: "IsUnplayed"),
+            .init(name: "Limit", value: "1"),
+            .init(name: "Fields", value: "Overview"),
+        ])
+        return try await send(first, as: ItemsResponse.self).items.first
     }
 
     /// The episode after this one. `nil` for movies or at the end of a season.
@@ -1012,7 +1084,9 @@ public actor JellyfinClient {
             streamURL: { [self] id, sourceID, sessionID in
                 try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
             },
-            serverBase: baseURL
+            serverBase: baseURL,
+            // The picked version holds even if the server answers with several.
+            preferredSourceID: mediaSourceID
         )
     }
 
@@ -1109,6 +1183,8 @@ public actor JellyfinClient {
     /// contact. An error response from the server (old version without the endpoint) counts
     /// as "none".
     public func segmentsToStore(for itemID: String) async -> [Segment]? {
+        // Emby has no `MediaSegments` (404); an empty answer is the true one.
+        if serverKind == .emby { return [] }
         do {
             let req = try request("MediaSegments/\(itemID)")
             return try await send(req, as: SectionResponse.self).items
@@ -1122,6 +1198,9 @@ public actor JellyfinClient {
     /// Trickplay information for the current source; `nil` if the server has none (before
     /// 10.9, or not generated). See ``Trickplay``.
     public func trickplay(itemID: String, mediaSourceID: String?, target: Int = 320) async -> Trickplay? {
+        // Emby makes `index.bif` instead of sheets; there is no reader for it here yet
+        // (``ServerCapability/trickplay`` stays off for Emby).
+        if serverKind == .emby { return nil }
         do {
             let s = try requireSession()
             let req = try request("Items/\(itemID)", query: [
@@ -1176,7 +1255,7 @@ public actor JellyfinClient {
         )
         var query: [URLQueryItem] = []
         if let mediaSourceID { query.append(.init(name: "MediaSourceId", value: mediaSourceID)) }
-        query.append(.init(name: "ApiKey", value: token))
+        query.append(.init(name: tokenName, value: token))
         comps?.queryItems = query
         return comps?.url
     }
@@ -1250,6 +1329,39 @@ public actor JellyfinClient {
         return .goes(plan)
     }
 
+    /// **The address for the AVPlayer engine**: the same remux as for AirPlay (HLS with
+    /// fragmented MP4, picture and sound copied, nothing re-encoded), but for the title the
+    /// player already chose and without the receiver's limits.
+    ///
+    /// The engine choice (``PlayerEngineChoice``) has already checked codecs, so this asks
+    /// the server directly, for exactly `source` and the given audio track. `nil` means the
+    /// server would not only repackage: a re-encode reason in the address
+    /// (``PlayerEngineChoice/isCopyOnly(transcodingURL:)``) or no address for a container
+    /// AVPlayer cannot open. The caller then stays with VLC.
+    ///
+    /// `SubtitleStreamIndex: -1` for the same reason as in ``airplayPlan(for:source:)``;
+    /// text subtitles are drawn by the app from the server's file.
+    public func avPlayerPlan(for itemID: String, source: MediaSource, audioIndex: Int?,
+                             av1: Bool) async throws -> PlaybackPlan? {
+        let profile = DeviceProfile.airplay(av1: av1)
+        let info = try await playbackInfo(itemID: itemID, profile: profile,
+                                          audioStreamIndex: audioIndex, subtitleStreamIndex: -1,
+                                          mediaSourceID: source.id)
+        guard let answer = info.mediaSources.first(where: { $0.id == source.id })
+                ?? PlaybackPlan.bestSource(info.mediaSources) else { return nil }
+        if answer.deliveryMethod != .directPlay {
+            guard let path = answer.transcodingUrl,
+                  let address = AppModelURLNormalizer.serverRelative(path, base: baseURL),
+                  PlayerEngineChoice.isCopyOnly(transcodingURL: address) else { return nil }
+        }
+        return try PlaybackPlan.make(
+            from: info, itemID: itemID, profile: profile,
+            streamURL: { [self] id, sourceID, sessionID in
+                try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
+            },
+            serverBase: baseURL, preferredSourceID: answer.id)
+    }
+
     // MARK: - URLs for the player
 
     /// The address VLC gets. For Direct Play this is the unchanged file on the server's
@@ -1264,7 +1376,7 @@ public actor JellyfinClient {
 
         var query: [URLQueryItem] = [
             .init(name: "static", value: "true"),
-            .init(name: "ApiKey", value: s.accessToken),
+            .init(name: tokenName, value: s.accessToken),
         ]
         if let mediaSourceID { query.append(.init(name: "mediaSourceId", value: mediaSourceID)) }
         if let playSessionID { query.append(.init(name: "playSessionId", value: playSessionID)) }
@@ -1379,7 +1491,7 @@ public actor JellyfinClient {
             // The device ID keeps the conversion job apart on the server; two downloads of
             // the same title from two devices would otherwise share one job.
             .init(name: "deviceId", value: deviceID),
-            .init(name: "ApiKey", value: s.accessToken),
+            .init(name: tokenName, value: s.accessToken),
         ]
         if let mediaSourceID { query.append(.init(name: "mediaSourceId", value: mediaSourceID)) }
         comps.queryItems = query
@@ -1398,7 +1510,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxWidth", value: String(maxWidth)),
             .init(name: "quality", value: "85"),
-            .init(name: "ApiKey", value: token),
+            .init(name: tokenName, value: token),
         ]
         return comps?.url
     }
@@ -1414,7 +1526,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxHeight", value: String(maxHeight)),
             .init(name: "quality", value: "90"),
-            .init(name: "ApiKey", value: token),
+            .init(name: tokenName, value: token),
         ]
         return comps?.url
     }

@@ -283,7 +283,7 @@ fun whatsNewShow(app: SwiftlyApplication, entry: JSONObject) {
         content = { close -> WhatsNewBody(app, entry, close) }) { }
 }
 
-private fun JSONObject.localized(key: String): String {
+internal fun JSONObject.localized(key: String): String {
     val o = optJSONObject(key) ?: return ""
     val language = de.paulherter.swiftly.shared.Texts.language
     return o.optString(language, o.optString("en"))
@@ -346,7 +346,7 @@ private fun WhatsNewBody(app: SwiftlyApplication, entry: JSONObject, close: () -
 }
 
 /** The shipped entries name SF Symbols; the closest glyphs here. */
-private fun whatsNewGlyph(symbol: String): Glyph = when {
+internal fun whatsNewGlyph(symbol: String): Glyph = when {
     symbol.startsWith("app") -> Glyph.AppIcon
     symbol.startsWith("heart") -> Glyph.Heart
     symbol.startsWith("paintpalette") -> Glyph.Palette

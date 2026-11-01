@@ -21,10 +21,11 @@ struct Hdrbild {
     unsigned tex_width, tex_height;
     unsigned width, height;       /* the most recently loaded image */
     bool   has_image;
+    bool   full;                  /* full-range frame */
     bool   setUp;
     bool   normalized;              /* GL_R16 with filtering instead of integers */
     GLint  place_y, place_u, place_v, place_kind, place_curve, place_eetf,
-           place_gy, place_gc;
+           place_gy, place_gc, place_matrix, place_full;
     char   error[512];
 };
 
@@ -58,8 +59,11 @@ static const char *area_source =
     "uniform highp usampler2D ebeneU;\n"
     "uniform highp usampler2D ebeneV;\n"
     "#endif\n"
-    "uniform int art;\n"          /* 1 = I0AL, 2 = P010 */
-    "uniform int kennlinie;\n"    /* 1 = PQ, 2 = HLG */
+    "uniform int art;\n"          /* 1 = I0AL, 2 = P010, 3 = I420, 4 = NV12 */
+    "uniform int kennlinie;\n"    /* 0 = SDR, 1 = PQ, 2 = HLG */
+    /* YUV to RGB: Cr to R, Cb to G, Cr to G, Cb to B. */
+    "uniform vec4 wandler;\n"
+    "uniform int voll;\n"         /* full range instead of limited */
     /* EETF: PQ of the brightest spot, target (relative) and knee; constant
      * per image, so computed on the CPU. x = 0: clip only. */
     "uniform vec3 eetfWerte;\n"
@@ -78,16 +82,17 @@ static const char *area_source =
     "\n"
     "#ifdef NORMIERT\n"
     /* I0AL: ten bits in the low bits, so * 65535; P010: in the high bits,
-     * where 65535 / 64 is the right step. */
-    "float stufe() { return art == 2 ? 65535.0 / 64.0 : 65535.0; }\n"
+     * where 65535 / 64 is the right step. 8 bit is brought to the same scale
+     * (* 255, then * 4), so the limits below hold for all four. */
+    "float stufe() { return art >= 3 ? 1020.0 : (art == 2 ? 65535.0 / 64.0 : 65535.0); }\n"
     "float luma(vec2 q) { return texture(ebeneY, q / groesseY).r * stufe(); }\n"
     "vec2 chroma(vec2 q) {\n"
     "    vec2 t = (q + 0.5) / groesseC;\n"
-    "    if (art == 2) return texture(ebeneU, t).rg * stufe();\n"
+    "    if (art == 2 || art == 4) return texture(ebeneU, t).rg * stufe();\n"
     "    return vec2(texture(ebeneU, t).r, texture(ebeneV, t).r) * stufe();\n"
     "}\n"
     "#else\n"
-    "float zehnBit(uint v) { return float(art == 2 ? (v >> 6u) : (v & 1023u)); }\n"
+    "float zehnBit(uint v) { return float(art >= 3 ? v * 4u : (art == 2 ? (v >> 6u) : (v & 1023u))); }\n"
     "\n"
     "float lumaPunkt(ivec2 p) {\n"
     "    p = clamp(p, ivec2(0), ivec2(groesseY) - 1);\n"
@@ -95,7 +100,7 @@ static const char *area_source =
     "}\n"
     "vec2 chromaPunkt(ivec2 p) {\n"
     "    p = clamp(p, ivec2(0), ivec2(groesseC) - 1);\n"
-    "    if (art == 2) {\n"
+    "    if (art == 2 || art == 4) {\n"
     "        uvec2 v = texelFetch(ebeneU, p, 0).rg;\n"
     "        return vec2(zehnBit(v.r), zehnBit(v.g));\n"
     "    }\n"
@@ -151,12 +156,12 @@ static const char *area_source =
     /* 4:2:0 as usual in HEVC: horizontally on the left column, vertically
      * between two rows. */
     "    vec2 qc = vec2((q.x - 0.5) * 0.5, q.y * 0.5 - 0.5);\n"
-    "    float y = (luma(q) - 64.0) / 876.0;\n"
-    "    vec2 c = (chroma(qc) - 512.0) / 896.0;\n"
-    /* BT.2020, non-constant luminance (Kr 0.2627, Kb 0.0593). */
-    "    vec3 rgb = clamp(vec3(y + 1.4746 * c.y,\n"
-    "                          y - 0.16455 * c.x - 0.57135 * c.y,\n"
-    "                          y + 1.8814 * c.x), 0.0, 1.0);\n"
+    "    float y = voll == 1 ? luma(q) / 1020.0 : (luma(q) - 64.0) / 876.0;\n"
+    "    vec2 c = (chroma(qc) - 512.0) / (voll == 1 ? 1020.0 : 896.0);\n"
+    "    vec3 rgb = clamp(vec3(y + wandler.x * c.y,\n"
+    "                          y - wandler.y * c.x - wandler.z * c.y,\n"
+    "                          y + wandler.w * c.x), 0.0, 1.0);\n"
+    "    if (kennlinie == 0) { farbe = vec4(rgb, 1.0); return; }\n"
     "    vec3 nits;\n"
     "    if (kennlinie == 2) {\n"
     /* HLG is scene-referred; the BT.2100 OOTF for a 1000-nit display (system
@@ -233,6 +238,8 @@ bool hdr_image_set_up(Hdrbild *h, bool es) {
     h->place_eetf = glGetUniformLocation(p, "eetfWerte");
     h->place_gy = glGetUniformLocation(p, "groesseY");
     h->place_gc = glGetUniformLocation(p, "groesseC");
+    h->place_matrix = glGetUniformLocation(p, "wandler");
+    h->place_full = glGetUniformLocation(p, "voll");
 
     static const GLfloat corners[] = { -1, -1,  1, -1,  -1, 1,  1, 1 };
     glGenVertexArrays(1, &h->vao);
@@ -247,7 +254,8 @@ bool hdr_image_set_up(Hdrbild *h, bool es) {
     return true;
 }
 
-static void texture_create(GLuint t, GLenum intern, GLenum form, unsigned w, unsigned h) {
+static void texture_create(GLuint t, GLenum intern, GLenum form, GLenum type,
+                           unsigned w, unsigned h) {
     GLint filter = (form == GL_RED || form == GL_RG) ? GL_LINEAR : GL_NEAREST;
     glBindTexture(GL_TEXTURE_2D, t);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
@@ -255,54 +263,60 @@ static void texture_create(GLuint t, GLenum intern, GLenum form, unsigned w, uns
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, (GLint)intern, (GLsizei)w, (GLsizei)h, 0,
-                 form, GL_UNSIGNED_SHORT, NULL);
+                 form, type, NULL);
 }
 
-static void layer_load(GLuint t, GLenum form, unsigned texelbytes,
+static void layer_load(GLuint t, GLenum form, GLenum type, unsigned texelbytes,
                         const uint8_t *data, unsigned tick, unsigned w, unsigned h) {
     glBindTexture(GL_TEXTURE_2D, t);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, type == GL_UNSIGNED_BYTE ? 1 : 2);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(tick / texelbytes));
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)w, (GLsizei)h, form,
-                    GL_UNSIGNED_SHORT, data);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)w, (GLsizei)h, form, type, data);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 }
 
 bool hdr_image_upload(Hdrbild *h, const ImageState *s, bool es) {
     if (!hdr_image_set_up(h, es)) return false;
-    if (s->art != PIXEL_FORMAT_I0AL && s->art != PIXEL_FORMAT_P010) return false;
+    if (s->art != PIXEL_FORMAT_I0AL && s->art != PIXEL_FORMAT_P010
+        && s->art != PIXEL_FORMAT_I420 && s->art != PIXEL_FORMAT_NV12) return false;
     unsigned w = s->width, hh = s->height;
     unsigned cw = (w + 1) / 2, ch = (hh + 1) / 2;
 
     /* GL_R16_EXT and GL_RG16_EXT have the same values as GL_R16/GL_RG16. */
-    GLenum r = h->normalized ? GL_R16 : GL_R16UI, rg = h->normalized ? GL_RG16 : GL_RG16UI;
+    bool eight = s->art == PIXEL_FORMAT_I420 || s->art == PIXEL_FORMAT_NV12;
+    bool two_planes = s->art == PIXEL_FORMAT_P010 || s->art == PIXEL_FORMAT_NV12;
+    GLenum type = eight ? GL_UNSIGNED_BYTE : GL_UNSIGNED_SHORT;
+    unsigned sample = eight ? 1 : 2;
+    GLenum r = h->normalized ? (eight ? GL_R8 : GL_R16) : (eight ? GL_R8UI : GL_R16UI);
+    GLenum rg = h->normalized ? (eight ? GL_RG8 : GL_RG16) : (eight ? GL_RG8UI : GL_RG16UI);
     GLenum rf = h->normalized ? GL_RED : GL_RED_INTEGER, rgf = h->normalized ? GL_RG : GL_RG_INTEGER;
     if (h->tex_art != s->art || h->tex_width != w || h->tex_height != hh) {
         if (h->tex[0]) glDeleteTextures(3, h->tex);
         glGenTextures(3, h->tex);
-        texture_create(h->tex[0], r, rf, w, hh);
-        if (s->art == PIXEL_FORMAT_P010) {
-            texture_create(h->tex[1], rg, rgf, cw, ch);
-            texture_create(h->tex[2], r, rf, 1, 1);   /* unused */
+        texture_create(h->tex[0], r, rf, type, w, hh);
+        if (two_planes) {
+            texture_create(h->tex[1], rg, rgf, type, cw, ch);
+            texture_create(h->tex[2], r, rf, type, 1, 1);   /* unused */
         } else {
-            texture_create(h->tex[1], r, rf, cw, ch);
-            texture_create(h->tex[2], r, rf, cw, ch);
+            texture_create(h->tex[1], r, rf, type, cw, ch);
+            texture_create(h->tex[2], r, rf, type, cw, ch);
         }
         h->tex_art = s->art;
         h->tex_width = w;
         h->tex_height = hh;
     }
-    layer_load(h->tex[0], rf, 2, s->layer[0], s->tick[0], w, hh);
-    if (s->art == PIXEL_FORMAT_P010) {
-        layer_load(h->tex[1], rgf, 4, s->layer[1], s->tick[1], cw, ch);
+    layer_load(h->tex[0], rf, type, sample, s->layer[0], s->tick[0], w, hh);
+    if (two_planes) {
+        layer_load(h->tex[1], rgf, type, sample * 2, s->layer[1], s->tick[1], cw, ch);
     } else {
-        layer_load(h->tex[1], rf, 2, s->layer[1], s->tick[1], cw, ch);
-        layer_load(h->tex[2], rf, 2, s->layer[2], s->tick[2], cw, ch);
+        layer_load(h->tex[1], rf, type, sample, s->layer[1], s->tick[1], cw, ch);
+        layer_load(h->tex[2], rf, type, sample, s->layer[2], s->tick[2], cw, ch);
     }
     glBindTexture(GL_TEXTURE_2D, 0);
     h->width = w;
     h->height = hh;
+    h->full = s->full;
     h->has_image = true;
     return true;
 }
@@ -350,6 +364,15 @@ bool hdr_image_draw(Hdrbild *h, int width, int height, bool fill,
     glUniform1i(h->place_kind, h->tex_art);
     glUniform1i(h->place_curve, curve);
     glUniform3fv(h->place_eetf, 1, eetf_values(tip > 0 ? tip : 1000.0f).w);
+    glUniform1i(h->place_full, h->full ? 1 : 0);
+    /* SDR files rarely state their matrix; this is the rule players go by: HD
+     * and up is BT.709, smaller is BT.601. A cropped 1280x536 counts as HD. */
+    if (curve != HDRBILD_SDR)
+        glUniform4f(h->place_matrix, 1.4746f, 0.16455f, 0.57135f, 1.8814f);   /* BT.2020 */
+    else if (h->width >= 1280 || h->height > 576)
+        glUniform4f(h->place_matrix, 1.5748f, 0.1873f, 0.4681f, 1.8556f);     /* BT.709 */
+    else
+        glUniform4f(h->place_matrix, 1.402f, 0.344136f, 0.714136f, 1.772f);   /* BT.601 */
     glUniform2f(h->place_gy, (float)h->width, (float)h->height);
     glUniform2f(h->place_gc, (float)((h->width + 1) / 2), (float)((h->height + 1) / 2));
     glBindVertexArray(h->vao);

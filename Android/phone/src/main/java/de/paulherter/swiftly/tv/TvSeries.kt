@@ -109,12 +109,15 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 try { episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(new.id, w).await() }) }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { null }
             }
+            // Trailer files lead the extras (same shelf as the title page); fetched before the landing frame.
+            val newExtras = surroundings?.let { u -> runCatching { JSONObject(u).fieldList("extras") { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) } }.getOrNull() }
+                ?.let { trailerShelf(app, target.id, it) }
             val newSimilar = surroundings?.let { runCatching { JSONObject(it).fieldList("aehnliche") { k -> gridTileRead(k) } }.getOrNull() }
             // From here without interruption: everything lands in the same frame.
             s = new
             app.seriesCache[target.id] = new
             newSimilar?.let { similar = it }
-            surroundings?.let { u -> runCatching { JSONObject(u).fieldList("extras") { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) } }.getOrNull() }?.let { extras = it }
+            newExtras?.let { extras = it }
             // If the user has chosen a season in the meantime, the list belongs to that choice.
             if (!selfSelected || season == null || season == choice) {
                 season = choice
@@ -176,11 +179,11 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                             } }) {
                         if (series == null && disrupted) { disrupted = false; run.launch { load() }; return@TvButton }
                         val st = series?.state
-                        if (st != null && series?.planPresent == true) app.play.value = PlayRequest(st.id, st.since)
+                        if (st != null && series?.planPresent == true) de.paulherter.swiftly.playAsking(app, st.id, st.since)
                         else if (st != null) message = translated("Der Server hat keine Datei zu dieser Folge.")
                     }
                     series?.state?.takeIf { it.resume }?.let { st -> TvButton(null, Glyph.Rewind, description = translated("Von vorn abspielen")) {
-                        if (series?.planPresent == true) app.play.value = PlayRequest(st.id, null)
+                        if (series?.planPresent == true) de.paulherter.swiftly.playAsking(app, st.id, null)
                         else message = translated("Der Server hat keine Datei zu dieser Folge.")
                     } }
                     if (app.settings.watchlist) {
@@ -210,12 +213,13 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                 if (app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                                 else add(Choice("naechste", translated("Nächste Folge abspielen")))
                             }
+                            add(Choice("zufaellig", translated("Zufällig abspielen")))
                             selectedSeason?.let { add(Choice("staffel", translated("%@ als gesehen", it.name))) }
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         TvMoreButton(entries,
                             mapOf("gesehen" to Glyph.CheckmarkCircleFilled, "vonvorn" to Glyph.Rewind,
-                                  "naechste" to Glyph.Skip, "staffel" to Glyph.CheckmarkCircle,
+                                  "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle, "staffel" to Glyph.CheckmarkCircle,
                                   "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload)) { choice ->
                             if (choice == "gemeinsam") {
                                 alt.state?.let { st -> tvCreateOpen(app, st.id,
@@ -232,14 +236,20 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                         if (reason.isNotEmpty()) { s = alt.copy(watched = alt.watched); message = errorString(reason) }
                                     }
                                     "vonvorn" -> alt.state?.let { st ->
-                                        if (series?.planPresent == true) app.play.value = PlayRequest(st.id, null)
+                                        if (series?.planPresent == true) de.paulherter.swiftly.playAsking(app, st.id, null)
                                         else message = translated("Der Server hat keine Datei zu dieser Folge.")
                                     }
                                     // Mirrors `TitleActions.forSeries`: without a next episode it reports.
                                     "naechste" -> alt.state?.let { st ->
                                         val afterThat = withContext(Dispatchers.IO) { app.kern.episodeAfter(st.id, alt.id).await() }
-                                        if (afterThat.isNotEmpty()) app.play.value = PlayRequest(afterThat, null)
+                                        if (afterThat.isNotEmpty()) de.paulherter.swiftly.playAsking(app, afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
+                                    }
+                                    // Same as the phone: mixes all episodes once (`ShuffleRun` in the package).
+                                    "zufaellig" -> {
+                                        val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(alt.id).await() }
+                                        if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, 0.0)
+                                        else message = translated("Die Folge konnte nicht geladen werden.")
                                     }
                                     "staffel" -> selectedSeason?.let { st ->
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(st.id, true).await() }
@@ -297,7 +307,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                             f.image, true, f.subline,
                                             afterwards = { series?.id?.let { sid -> season?.let { st -> run.launch { episodesLoad(sid, st) } } } }))
                                     } }
-                                    TvEpisodesTile(f, lengthy = lengthy) { app.play.value = PlayRequest(f.id, f.since) }
+                                    TvEpisodesTile(f, lengthy = lengthy) { de.paulherter.swiftly.playAsking(app, f.id, f.since) }
                                 }
                             }
                         }

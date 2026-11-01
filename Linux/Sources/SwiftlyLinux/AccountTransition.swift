@@ -76,7 +76,7 @@ extension App {
         if let curve, let cover = windowCover {
             let parts = profileCharacter(name: account.userName, border: Int(curve.size),
                                       style: "swiftly-kontoflug", fontStyle: "swiftly-zeichen26")
-            profileImageLoad(parts, url: addresses?.user(account.userID, border: 200),
+            profileImageLoad(parts, url: userImageURL(for: account, border: 200),
                             key: "konto-\(account.userID)")
             gtk_widget_set_halign(parts.wrapper, GTK_ALIGN_START)
             gtk_widget_set_valign(parts.wrapper, GTK_ALIGN_START)

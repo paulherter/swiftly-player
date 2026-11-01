@@ -29,6 +29,7 @@ Every key is `swiftly.` plus the name below. Values are text.
 | `tonSprache` | text | preferred audio language, empty = server decides |
 | `utSprache` | text | preferred subtitle language |
 | `utAuto` | `true`/`false` | subtitles automatically |
+| `utAussehen` | JSON object | subtitle look: `{"size": "small\|normal\|large\|huge", "colour": "white\|yellow\|grey", "outline": "off\|thin\|normal", "shadow": false, "background": false, "position": "bottom\|raised", "keepFileStyle": true}`; a missing or unknown field reads as its default (`SubtitleLook`) |
 | `naechsteAuto` | `true`/`false` | next episode automatically (only present once chosen in the app) |
 | `introAbspannAuto` | `true`/`false` | skip intro and credits automatically |
 | `restzeitAlsEnde` | `true`/`false` | show the end time instead of the time left |

@@ -4,7 +4,10 @@
 #include <stdbool.h>
 #include "imagebridge.h"
 
-/* **HDR on an SDR display, computed on the GPU.**
+/* **SDR and HDR frames, converted on the GPU.** SDR only needs the YUV matrix;
+ * HDR goes through the whole chain below.
+ *
+ * **HDR on an SDR display, computed on the GPU.**
  *
  * libVLC 3 only tone-maps HDR to SDR in its own OpenGL output
  * (`--tone-mapping`, via libplacebo). This player draws itself through the
@@ -31,7 +34,7 @@
 typedef struct Hdrbild Hdrbild;
 
 /* Transfer curves; same cases as `ColorRange.Kennlinie` in the package. */
-enum { HDRBILD_PQ = 1, HDRBILD_HLG = 2 };
+enum { HDRBILD_SDR = 0, HDRBILD_PQ = 1, HDRBILD_HLG = 2 };
 
 Hdrbild *hdr_image_new(void);
 void hdr_image_free(Hdrbild *h);
@@ -41,12 +44,13 @@ void hdr_image_free(Hdrbild *h);
 bool hdr_image_set_up(Hdrbild *h, bool es);
 const char *hdr_image_error(const Hdrbild *h);
 
-/* Uploads an I0AL or P010 frame into the textures. */
+/* Uploads an I0AL, P010, I420 or NV12 frame into the textures. */
 bool hdr_image_upload(Hdrbild *h, const ImageState *state, bool es);
 
 /* Draws into the bound framebuffer of size breite × hoehe (device pixels).
  * `fill`: fill instead of fit. `tip`: the material's brightest spot in
- * nits (1000 if not given). */
+ * nits (1000 if not given). `curve` 0 is SDR: only YUV to RGB, in BT.709 or
+ * BT.601 by picture size. */
 bool hdr_image_draw(Hdrbild *h, int width, int height, bool fill,
                       int curve, float tip, bool es);
 

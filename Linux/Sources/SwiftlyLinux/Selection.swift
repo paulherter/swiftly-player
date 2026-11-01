@@ -58,6 +58,10 @@ struct Choices: Codable {
     var audioLanguage = ""
     var subtitleLanguage = ""
     var subtitleAutomatic = false
+    /// **How text subtitles look** (page "Untertitel"); the same value that syncs as `utAussehen`.
+    /// Decoding is tolerant (`SubtitleLook.init(from:)`), so an older file or an unknown word
+    /// reads as the default.
+    var subtitleLook = SubtitleLook.standard
     /// **New movies and new series in separate rows** instead of one.
     /// `HomeModel` evaluates it; the row was missing on Linux entirely.
     var newArrivalsDisconnected = true
@@ -119,6 +123,20 @@ struct Choices: Codable {
     /// **Downloads wait on mobile data**. Also selectable on a desktop: a laptop can
     /// well be on a metered connection.
     var onlyOverWLAN = true
+    /// **Load the next episode** of a downloaded series when one was watched, and remove the
+    /// watched one (Apple: `DownloadManager.nextAuto`, default off).
+    var nextLoad = false
+
+    // MARK: Keeping settings equal across devices (``SettingsSyncRun``)
+
+    /// The switch. On by default, as on Apple.
+    var syncOn = true
+    /// When a synced setting last changed here (ms since 1970).
+    var syncTime: Double?
+    /// The server copy's time we saw last (ms since 1970).
+    var syncRemote: Double?
+    /// The account the last run was for; another one means a first run.
+    var syncAccount: String?
 
     /// **How much buffer the player keeps**, the level from the package.
     ///
@@ -240,6 +258,7 @@ struct Choices: Codable {
         audioLanguage             = w(.audioLanguage, "")
         subtitleLanguage      = w(.subtitleLanguage, "")
         subtitleAutomatic  = w(.subtitleAutomatic, false)
+        subtitleLook       = w(.subtitleLook, SubtitleLook.standard)
         // `true`, as on the Mac (`Sources/Shared/AppModel.swift`). It stayed `false` here, so a
         // fresh install looked different from there.
         newArrivalsDisconnected    = w(.newArrivalsDisconnected, true)
@@ -261,6 +280,11 @@ struct Choices: Codable {
         skipAutomatic      = w(.skipAutomatic, false)
         downloadsAn            = w(.downloadsAn, false)
         onlyOverWLAN           = w(.onlyOverWLAN, true)
+        nextLoad               = w(.nextLoad, false)
+        syncOn                 = w(.syncOn, true)
+        syncTime               = w(.syncTime, Double?.none)
+        syncRemote             = w(.syncRemote, Double?.none)
+        syncAccount            = w(.syncAccount, String?.none)
         bufferLevel            = w(.bufferLevel, BufferLevel.normal.rawValue)
         discordShow        = w(.discordShow, false)
         searchHistory            = w(.searchHistory, "")
@@ -295,11 +319,12 @@ struct Choices: Codable {
         case alwaysDirectPlayDevice = "immerDirectPlay"
         case bitratesLimitDevice = "bitratenGrenze"
         case playbackPerServer = "wiedergabeJeServer"
-        case audioLanguage = "tonSprache", subtitleLanguage = "untertitelSprache", subtitleAutomatic = "untertitelAutomatisch", newArrivalsDisconnected = "neuzugaengeGetrennt",
+        case audioLanguage = "tonSprache", subtitleLanguage = "untertitelSprache", subtitleAutomatic = "untertitelAutomatisch", subtitleLook = "utAussehen", newArrivalsDisconnected = "neuzugaengeGetrennt",
              nextAutomaticSelected = "naechsteAutomatischGewaehlt", backSeconds = "zurueckSekunden",
              forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", watchlistShown = "merklisteAn", alphabetShown = "alphabetAn", titleAsLogo = "titelAlsLogo",
              fillFrame = "bildfuellend", remainingTimeAsEnd = "restzeitAlsEnde", volume = "lautstaerke",
-             volumePrior = "lautstaerkeDavor", techBadge = "technikschild", skipAutomatic = "introAbspannAuto", downloadsAn, onlyOverWLAN = "nurUeberWLAN",
+             volumePrior = "lautstaerkeDavor", techBadge = "technikschild", skipAutomatic = "introAbspannAuto", downloadsAn, onlyOverWLAN = "nurUeberWLAN", nextLoad = "naechsteFolgeLaden",
+             syncOn = "einstellungenSync", syncTime = "einstellungenSyncZeit", syncRemote = "einstellungenSyncServer", syncAccount = "einstellungenSyncKonto",
              bufferLevel = "pufferstufe", discordShow = "discordAnzeigen", searchHistory = "suchverlauf",
              searchHistoryPerAccount = "suchverlaufJeKonto", doneWatch = "fertigGeschaut",
              discordHintShown = "discordHinweisGezeigt", savedGenre = "merkgattung", startRails = "startReihen",
@@ -317,6 +342,7 @@ struct Choices: Codable {
         try c.encode(audioLanguage, forKey: .audioLanguage)
         try c.encode(subtitleLanguage, forKey: .subtitleLanguage)
         try c.encode(subtitleAutomatic, forKey: .subtitleAutomatic)
+        try c.encode(subtitleLook, forKey: .subtitleLook)
         try c.encode(newArrivalsDisconnected, forKey: .newArrivalsDisconnected)
         try c.encode(nextAutomaticSelected, forKey: .nextAutomaticSelected)
         try c.encode(backSeconds, forKey: .backSeconds)
@@ -333,6 +359,11 @@ struct Choices: Codable {
         try c.encode(skipAutomatic, forKey: .skipAutomatic)
         try c.encode(downloadsAn, forKey: .downloadsAn)
         try c.encode(onlyOverWLAN, forKey: .onlyOverWLAN)
+        try c.encode(nextLoad, forKey: .nextLoad)
+        try c.encode(syncOn, forKey: .syncOn)
+        try c.encodeIfPresent(syncTime, forKey: .syncTime)
+        try c.encodeIfPresent(syncRemote, forKey: .syncRemote)
+        try c.encodeIfPresent(syncAccount, forKey: .syncAccount)
         try c.encode(bufferLevel, forKey: .bufferLevel)
         try c.encode(discordShow, forKey: .discordShow)
         try c.encode(searchHistory, forKey: .searchHistory)
@@ -378,7 +409,11 @@ struct Choices: Codable {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(self) else { return }
         try? data.write(to: Self.file, options: .atomic)
+        Self.saved?()
     }
+
+    /// Set by ``SettingsSyncRun``: told after every save, to notice a changed synced setting.
+    nonisolated(unsafe) static var saved: (() -> Void)?
 }
 
 /// Which value list is currently expanded.

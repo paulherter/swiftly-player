@@ -309,7 +309,7 @@ private func imageShow(_ imageField: Widget!) {
     // While a page is moving, every fade costs a frame of the movement.
     guard !PushLock.drives else { return }
     gtk_widget_set_opacity(imageField, 0)
-    runningCount(on: imageField, duration: motionReduced() ? Theme.timeReduced : 0.22) { e in
+    runningCount(on: imageField, duration: motionReduced() ? Theme.timeReduced : 0.28) { e in
         gtk_widget_set_opacity(imageField, e)
     } done: {
         gtk_widget_set_opacity(imageField, 1)

@@ -146,8 +146,8 @@ final class HomeModel {
         // except after an account switch.
         let state = await HomeLoader.load(from: client, .init(
             disconnected: disconnected,
-            filmLibrary: model.selectedLibrary(art: "movies")?.id,
-            seriesLibrary: model.selectedLibrary(art: "tvshows")?.id,
+            filmLibrary: model.startLibrary(art: "movies")?.id,
+            seriesLibrary: model.startLibrary(art: "tvshows")?.id,
             genres: nil,
             untilFromContinueWatching: continueWatching))
         guard applies() else { return }

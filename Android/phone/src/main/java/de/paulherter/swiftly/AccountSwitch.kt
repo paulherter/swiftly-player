@@ -116,9 +116,10 @@ object AccountSwitchTransition {
     private var runCount = 0
 
     /** Only if it really stands at the top right: in the middle of pushing a page it stands further left (measured: 846 instead of 949 px). */
-    fun targetReport(frameRect: Rect, width: Float) {
+    fun targetReport(frameRect: Rect, width: Float, margin: Float = 30 * (frameRect.width / 34f)) {
         // At rest the edge is 16 dp from the screen edge; 30 dp allows the spring to settle, but not a push.
-        if (frameRect.width > 0 && frameRect.right > width - 30 * (frameRect.width / 34f)) target = frameRect
+        // The TV passes its own margin (200 pt on tvOS = 100 dp): its edge is 40 dp and nothing slides in.
+        if (frameRect.width > 0 && frameRect.right > width - margin) target = frameRect
     }
 
     private fun note(text: String) = AppLog.writeOut("[Kontowechsel] $text")
@@ -267,10 +268,12 @@ fun AccountSwitchLayer() {
         }
         // 3. The ring, only hinted at: from landing on, at most 55 %.
         val target = k.status(k.swap)
-        Canvas(Modifier.size(52.dp).graphicsLayer {
+        // Ring box: 52 dp for the phone's 34 dp picture; the TV's 30 dp picture gets the 38 dp of its focus ring.
+        val ringSize = if (k.status(k.swap).third < 32f) 38f else 52f
+        Canvas(Modifier.size(ringSize.dp).graphicsLayer {
             val (m, d) = k.ring(time - k.landing)
-            translationX = target.first * density - 26 * density
-            translationY = target.second * density - 26 * density
+            translationX = target.first * density - ringSize / 2 * density
+            translationY = target.second * density - ringSize / 2 * density
             scaleX = m; scaleY = m; alpha = d
         }) { drawCircle(Theme.accent, radius = size.minDimension / 2 - 1.dp.toPx(), style = Stroke(2.dp.toPx())) }
     }

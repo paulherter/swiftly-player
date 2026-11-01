@@ -14,7 +14,7 @@ import JellyfinKit
 /// the Mac.
 extension App {
 
-    enum Subpage: Hashable { case profile, quickConnect, playback, seerr, trakt, settings, accountAdd, serverOnboarding, presentation, genreSelection, librarySelection, licenses, licenseText(String) }
+    enum Subpage: Hashable { case subtitleLook, profile, quickConnect, playback, seerr, trakt, settings, accountAdd, serverOnboarding, kindPicker, plexSignIn, presentation, genreSelection, librarySelection, licenses, licenseText(String) }
 
     /// **Settings cross-fade, they do not slide.**
     ///
@@ -42,6 +42,14 @@ extension App {
         if anPlace { wipe(disc) }
         openSubpage = was
 
+        // **The subtitle page builds its own scroller**: the picture stands beside the
+        // rows and does not scroll with them (see `SubtitlePage.swift`).
+        if was == .subtitleLook {
+            subtitleBuild(into: disc)
+            if !anPlace { shove(toward: disc, bearing: push) }
+            return
+        }
+
         let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         // **Subpages are not all the same width.** Settings have two columns side by side,
         // the rest reads like text. One shared 560 made a 1400 pt window look like a phone
@@ -64,7 +72,7 @@ extension App {
         let twoColumned: Set<Subpage> = [.settings, .playback, .presentation]
         // **Profile and Seerr belong here too.** `readWidth` is the width for running
         // text.
-        let formSheet: Set<Subpage> = [.serverOnboarding, .accountAdd, .quickConnect,
+        let formSheet: Set<Subpage> = [.serverOnboarding, .kindPicker, .plexSignIn, .accountAdd, .quickConnect,
                                           .profile, .seerr, .trakt]
         if twoColumned.contains(was) {
             gtk_widget_set_halign(block, GTK_ALIGN_FILL)
@@ -97,9 +105,12 @@ extension App {
         case .settings:  settingsBuild(block)
         case .accountAdd: accountAddBuild(block)
         case .serverOnboarding:   serverOnboardingBuild(block)
+        case .kindPicker:         kindPickerSubpageBuild(block)
+        case .plexSignIn:         plexSignInBuild(block)
         case .presentation:      presentationBuild(block)
         case .genreSelection:        genreSelectionBuild(block)
         case .librarySelection:  librarySelectionBuild(block)
+        case .subtitleLook:     break
         case .licenses:         licensesBuild(block)
         case .licenseText(let id): licenseTextBuild(block, id: id)
         }
@@ -147,6 +158,13 @@ extension App {
             sectionShow(section.identifier, push: .back)
         } else if case .licenseText = openSubpage {
             subpageOpen(.licenses, push: .back)
+        } else if openSubpage == .subtitleLook {
+            subpageOpen(.playback, push: .back)
+        } else if openSubpage == .plexSignIn {
+            plexSubpage?.stop()
+            subpageOpen(.kindPicker, push: .back)
+        } else if openSubpage == .serverOnboarding, serverOnboardingFromPicker {
+            subpageOpen(.kindPicker, push: .back)
         } else {
             subpageOpen(.profile, push: .back)
         }
@@ -216,9 +234,9 @@ extension App {
         // accounts, not a second account on the same one.
         append(g3.space, valuesRow(symbol: "network-server-symbolic",
                                       title: translated("Server hinzufügen"),
-                                      under: translated("Ein zweiter Jellyfin, eigene Konten"),
+                                      under: translated("Jellyfin, Plex oder Emby, eigene Konten"),
                                       arrow: true) { [weak self] in
-            self?.serverOnboardingOpen(nil)
+            self?.subpageOpen(.kindPicker)
         })
         append(g3.space, rowsLine())
         append(g3.space, valuesRow(symbol: "application-exit-symbolic",
@@ -335,8 +353,10 @@ extension App {
                 // `good` is created **before** the jump to the main thread and only read there;
                 // passing a mutable variable across that boundary is not possible.
                 let good: Bool
-                do { try await client.quickConnectShare(code: code); good = true }
-                catch { good = false }
+                if let quick = client as? any QuickSignIn {
+                    do { try await quick.quickConnectShare(code: code); good = true }
+                    catch { good = false }
+                } else { good = false }
                 onMainThread {
                     defer { letGo(buttonBox) }
                     gtk_label_set_text(OpaquePointer(stateBox.widget),
@@ -434,6 +454,8 @@ extension App {
             self?.selection.subtitleAutomatic = an
             self?.selection.secure()
         })
+        append(sp.space, rowsLine())
+        append(sp.space, subtitleEntryRow())
         append(left, sp.outer)
 
         // MARK: Behavior
@@ -573,6 +595,14 @@ extension App {
                 self?.selection.secure()
             })
             append(o.space, rowsLine())
+            append(o.space, toggleRow(symbol: "media-skip-forward-symbolic",
+                                            title: translated("Nächste Folge laden"),
+                                            under: translated("Lädt die nächste, löscht die gesehene"),
+                                            an: selection.nextLoad) { [weak self] an in
+                self?.selection.nextLoad = an
+                self?.selection.secure()
+            })
+            append(o.space, rowsLine())
             append(o.space, valuesRow(symbol: "drive-harddisk-symbolic",
                                          title: translated("Speicher"),
                                          under: numberWord(downloads.entries.count,
@@ -585,6 +615,16 @@ extension App {
         // **Sits between offline and server, on purpose.** It is a second service, not a
         // second server, and an extra: whoever connects nothing sees nothing of it besides
         // this one row. Same reasoning as on the Mac (`SettingsView.integration`).
+        // **Same place and words as on Apple ("Konto" group).** On by default.
+        let acc = settingGroup(translated("Konto"))
+        append(acc.space, toggleRow(symbol: "view-refresh-symbolic",
+                                          title: translated("Einstellungen auf allen Geräten gleich halten"),
+                                          under: translated("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
+                                          an: settingsSync.on) { [weak self] an in
+            self?.settingsSync.on = an
+        })
+        append(left, acc.outer)
+
         let i = settingGroup(translated("Integration"))
         append(i.space, valuesRow(symbol: "edit-find-symbolic",
                                      title: translated("Seerr"),
@@ -738,63 +778,86 @@ extension App {
     private func accountsCards() -> Widget! {
         let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 14)
         gtk_widget_set_halign(column, GTK_ALIGN_FILL)
-        guard let bundle else { return column }
-        let server = bundle.server.sorted { a, _ in isActiveServer(a) }
-        if server.isEmpty {
-            append(column, accountCard(nil, bundle: bundle))
+        let groups = serverGroups()
+        if groups.isEmpty {
+            append(column, accountCard(nil, count: 0))
         } else {
-            for url in server { append(column, accountCard(url, bundle: bundle)) }
+            for group in groups { append(column, accountCard(group, count: groups.count)) }
         }
         return column
     }
 
-    private func isActiveServer(_ url: URL?) -> Bool {
-        guard let url else { return false }
-        return url.absoluteString.lowercased()
-            == bundle?.activeOne.serverURL.absoluteString.lowercased()
+    /// One server of one kind with the accounts on it. A Plex server is its machine, never
+    /// its address: a profile that came in over another route still sits on the same card.
+    struct ServerGroup {
+        let kind: ServerKind
+        let id: String
+        let address: URL
+        var accounts: [Session]
     }
 
-    private func accountCard(_ server: URL?, bundle: AccountBundle) -> Widget! {
-        let all = server.map { bundle.accounts(on: $0) } ?? bundle.accounts
-        let active = isActiveServer(server)
+    /// All servers of all kinds, the connected one first, then in the order of their first account.
+    private func serverGroups() -> [ServerGroup] {
+        var groups: [ServerGroup] = []
+        for session in allAccounts {
+            var place = session.serverURL.absoluteString.lowercased()
+            while place.hasSuffix("/") { place.removeLast() }
+            let id = session.kind.rawValue + "|" + (session.plex.map { "plex:" + $0.machineIdentifier } ?? place)
+            if let index = groups.firstIndex(where: { $0.id == id }) {
+                groups[index].accounts.append(session)
+            } else {
+                groups.append(ServerGroup(kind: session.kind, id: id, address: session.serverURL,
+                                          accounts: [session]))
+            }
+        }
+        return groups
+    }
+
+    private func isActiveServer(_ group: ServerGroup?) -> Bool {
+        guard let group, let key = bundle?.activeOne.accountKey else { return false }
+        return group.accounts.contains { $0.accountKey == key }
+    }
+
+    private func accountCard(_ group: ServerGroup?, count: Int) -> Widget! {
+        let all = group?.accounts ?? []
+        let active = isActiveServer(group)
         // On the connected server the signed-in account comes first; on another server the
         // first account there, and a click switches to it.
-        let front: Session? = active ? bundle.activeOne : all.first
+        let front: Session? = active ? bundle?.activeOne : all.first
         let other = all.filter { $0.accountKey != front?.accountKey }
 
         let card = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         gtk_widget_add_css_class(card, "swiftly-kontokarte")
         // **Accent border only when there is something to distinguish.** With a single
         // server it would be a highlight without a counterpart.
-        if active, bundle.server.count > 1 {
+        if active, count > 1 {
             gtk_widget_add_css_class(card, "swiftly-aktiv")
         }
-        append(card, cardsHeader(front, active: active, server: server))
+        append(card, cardsHeader(front, active: active, group: group, count: count))
         let stroke: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
         gtk_widget_add_css_class(stroke, "swiftly-trennlinie")
         gtk_widget_set_size_request(stroke, -1, 1)
         append(card, stroke)
-        append(card, cardsRail(other, active: active, server: server))
+        append(card, cardsRail(other, active: active, group: group))
         return card
     }
 
     /// Avatar 56, next to it name, server and version. On another server the whole row
     /// is a button, on the connected one plain text.
-    private func cardsHeader(_ account: Session?, active: Bool, server: URL?) -> Widget! {
+    private func cardsHeader(_ account: Session?, active: Bool, group: ServerGroup?, count: Int) -> Widget! {
         let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
         gtk_widget_set_margin_start(row, 16)
         gtk_widget_set_margin_end(row, 16)
         gtk_widget_set_margin_top(row, 16)
         gtk_widget_set_margin_bottom(row, 16)
 
-        let moreCompartment = (bundle?.server.count ?? 0) > 1
         let parts = profileCharacter(name: account?.userName ?? "?", border: 56,
-                                  style: active && moreCompartment ? "swiftly-kontoaktiv"
+                                  style: active && count > 1 ? "swiftly-kontoaktiv"
                                                           : "swiftly-profilgross",
                                   fontStyle: "swiftly-zeichen72")
         append(row, parts.wrapper)
         if let account {
-            profileImageLoad(parts, url: addresses?.user(account.userID, border: 200),
+            profileImageLoad(parts, url: userImageURL(for: account, border: 200),
                             key: "konto-\(account.userID)")
         }
 
@@ -807,21 +870,28 @@ extension App {
         append(texts, name)
 
         // **Name and version are only known from the server we are connected to**; for the
-        // others the address is shown.
-        let second = active ? (serverName.isEmpty ? (server?.host() ?? "") : serverName)
-                           : (server?.host() ?? "")
+        // others the address is shown. A Plex server has its name in the session.
+        let host = group?.address.host() ?? ""
+        let second: String
+        if let plexName = (account ?? group?.accounts.first)?.plex?.serverName {
+            second = plexName
+        } else {
+            second = active ? (serverName.isEmpty ? host : serverName) : host
+        }
         let z = label(second, style: "swiftly-zweitzeile")
         gtk_widget_add_css_class(z, "swiftly-leise")
         gtk_label_set_xalign(OpaquePointer(z), 0)
         gtk_label_set_ellipsize(OpaquePointer(z), PANGO_ELLIPSIZE_END)
         append(texts, z)
 
-        if active, !serverVersion.isEmpty {
-            let f = label("Jellyfin \(serverVersion)", style: "swiftly-zweitzeile")
+        if active {
+            let kind = group?.kind ?? .jellyfin
+            let f = label(serverVersion.isEmpty ? kind.shownName : "\(kind.shownName) \(serverVersion)",
+                          style: "swiftly-zweitzeile")
             gtk_widget_add_css_class(f, "swiftly-leise")
             gtk_label_set_xalign(OpaquePointer(f), 0)
             append(texts, f)
-        } else if !active {
+        } else {
             // **"Click", not "tap"**: mouse and keyboard.
             let f = label(translated("Klicken zum Wechseln"), style: "swiftly-zweitzeile")
             gtk_widget_add_css_class(f, "swiftly-leise")
@@ -843,7 +913,7 @@ extension App {
     }
 
     /// The other accounts of this server, then the plus.
-    private func cardsRail(_ other: [Session], active: Bool, server: URL?) -> Widget! {
+    private func cardsRail(_ other: [Session], active: Bool, group: ServerGroup?) -> Widget! {
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
         gtk_widget_set_margin_start(rail, 16)
         gtk_widget_set_margin_end(rail, 16)
@@ -859,7 +929,7 @@ extension App {
             gtk_button_set_child(asButton(button), parts.wrapper)
             gtk_widget_set_tooltip_text(button, account.userName)
             caption(button, String(format: translated("Zu %@ wechseln"), account.userName))
-            profileImageLoad(parts, url: addresses?.user(account.userID, border: 200),
+            profileImageLoad(parts, url: userImageURL(for: account, border: 200),
                             key: "konto-\(account.userID)")
             let key = account.accountKey
             let image = parts.wrapper
@@ -869,9 +939,10 @@ extension App {
             append(rail, button)
         }
 
-        // **The plus is on every card** and adds an account on *this* server. On the
-        // connected one it is the usual sign-in; on another one it is the same as when
-        // adding a server, with the address already filled in.
+        // **The plus is on every card** and adds an account on *this* server. A Plex card
+        // opens the Plex sign-in (a further profile signs in over the same code page); on
+        // the connected Jellyfin or Emby it is the usual sign-in; on another one it is the
+        // same as when adding a server, with the address already filled in.
         let plus: Widget! = gtk_button_new()
         gtk_widget_add_css_class(plus, "swiftly-kontoplus")
         gtk_widget_set_size_request(plus, 40, 40)
@@ -880,8 +951,15 @@ extension App {
         caption(plus, translated("Weiteres Konto hinzufügen"))
         signal(plus, "clicked") { [weak self] in
             guard let self else { return }
-            if active { self.subpageOpen(.accountAdd) }
-            else if let server { self.serverOnboardingOpen(server) }
+            self.serverOnboardingFromPicker = false
+            if group?.kind == .plex {
+                self.subpageOpen(.plexSignIn)
+            } else if active, group?.kind != .emby {
+                self.subpageOpen(.accountAdd)
+            } else if let group {
+                self.serverOnboardingKind = group.kind
+                self.serverOnboardingOpen(group.address)
+            }
         }
         append(rail, plus)
 
@@ -1261,11 +1339,25 @@ extension App {
         let space = group.space
         let already = Set(selection.startGenres)
         guard let client else { return }
+        genreSelectionLoad(client: client, space: space, already: already)
+    }
+
+    /// **`nil` means disturbed, `[]` means: the server knows no genres** (`AppModel.genres()`
+    /// on Apple). A failed fetch shows the server hint with "Erneut versuchen" instead of
+    /// claiming the server has no genres.
+    private func genreSelectionLoad(client: any MediaServer, space: Widget!, already: Set<String>) {
         let container = held(space)
         Task.detached { [self] in
-            let all = (try? await client.genres()) ?? []
+            let fetched = try? await client.genres()
             onMainThread {
                 defer { letGo(container) }
+                wipe(container.widget)
+                guard let all = fetched else {
+                    append(container.widget, self.disturbHint(top: 12) { [weak self] in
+                        self?.genreSelectionLoad(client: client, space: container.widget, already: already)
+                    })
+                    return
+                }
                 let free = all.filter { !already.contains($0) }
                 guard !free.isEmpty else {
                     let text = all.isEmpty
@@ -1302,8 +1394,34 @@ extension App {
         serverOnboardingChecked = nil
         serverOnboardingError = ""
         serverOnboardingPreGiven = preset != nil
+        serverOnboardingNotEmby = false
         accountPerCode = false
         subpageOpen(.serverOnboarding)
+    }
+
+    /// Shows "Mit Jellyfin weiter" under the error when an Emby address turned out to be a Jellyfin.
+    func serverOnboardingNotEmbyShow() {
+        guard let button = serverOnboardingNotEmbyButton else { return }
+        gtk_widget_set_visible(button, serverOnboardingNotEmby ? 1 : 0)
+    }
+
+    /// The Plex sign-in as a subpage: header with arrow, then the code page.
+    private func plexSignInBuild(_ block: Widget!) {
+        plexSubpage?.stop()
+        let page = PlexSignInPage(
+            header: subpageHeader(ServerKind.plex.shownName),
+            back: { [weak self] in self?.subpageBack() },
+            finished: { [weak self] session in
+                guard let self else { return }
+                self.plexSubpage?.stop()
+                self.accountAdd(session)
+                self.subpageOpen(.profile, push: .without)
+            })
+        plexSubpage = page
+        signal(page.display, "destroy") { [weak self] in
+            if self?.plexSubpage === page { self?.plexSubpage = nil }
+        }
+        append(block, page.display)
     }
 
     /// **Check the address, then sign in: in the window, not as a sheet.**
@@ -1316,8 +1434,10 @@ extension App {
         append(block, subpageHeader(newServer ? translated("Server hinzufügen")
                                                      : translated("Weiteres Konto")))
 
+        let kind = serverOnboardingKind
         let sentence = label(newServer
-            ? translated("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.")
+            ? String(format: translated("Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."),
+                     kind.displayName)
             : translated("Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."),
             style: "swiftly-koerper", wrap: true)
         gtk_widget_add_css_class(sentence, "dim-label")
@@ -1343,7 +1463,9 @@ extension App {
         }
 
         let inputField = inputRow(symbol: "network-server-symbolic",
-                                placeholder: translated("jellyfin.beispiel.de"), stretches: true)
+                                placeholder: kind == .emby ? translated("emby.beispiel.de")
+                                                          : translated("jellyfin.beispiel.de"),
+                                stretches: true)
         gtk_widget_set_margin_top(inputField, 26)
         gtk_editable_set_text(OpaquePointer(inputField), serverOnboardingAddress)
         append(block, inputField)
@@ -1360,11 +1482,28 @@ extension App {
         gtk_widget_set_margin_top(serverOnboardingState, 12)
         append(block, serverOnboardingState)
 
+        // Emby chosen but a Jellyfin answered: one click carries on as Jellyfin.
+        let asJellyfin: Widget! = gtk_button_new_with_label(translated("Mit Jellyfin weiter"))
+        gtk_widget_add_css_class(asJellyfin, "swiftly-umriss")
+        gtk_widget_set_margin_top(asJellyfin, 12)
+        gtk_widget_set_visible(asJellyfin, serverOnboardingNotEmby ? 1 : 0)
+        serverOnboardingNotEmbyButton = asJellyfin
+        signal(asJellyfin, "destroy") { [weak self] in self?.serverOnboardingNotEmbyButton = nil }
+        append(block, asJellyfin)
+
         serverOnboardingButton = primaryButton(translated("Weiter"))
         let button: Widget! = serverOnboardingButton
         gtk_widget_set_margin_top(button, 22)
         gtk_widget_set_sensitive(button, serverOnboardingAddress.isEmpty ? 0 : 1)
         append(block, button)
+        signal(asJellyfin, "clicked") { [weak self] in
+            guard let self else { return }
+            self.serverOnboardingKind = .jellyfin
+            self.serverOnboardingNotEmby = false
+            self.serverOnboardingErrorShow("")
+            self.serverOnboardingNotEmbyShow()
+            self.serverCheck(self.text(inputField))
+        }
 
         let perform: () -> Void = { [weak self] in
             guard let self else { return }
@@ -1423,6 +1562,8 @@ extension App {
             gtk_widget_set_sensitive(button, self.text(name).isEmpty ? 0 : 1)
         }
 
+        // Quick Connect exists on Jellyfin only.
+        guard serverOnboardingKind == .jellyfin else { return }
         append(block, separatorWithOr())
 
         let toggle: Widget! = gtk_button_new_with_label(translated("Mit Quick Connect anmelden"))

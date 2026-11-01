@@ -5,6 +5,12 @@ import SwiftUI
 struct ServerOnboardingView: View {
     let model: AppModel
     let close: () -> Void
+    /// A server the page already knows (a second account on it): checked on appear.
+    var preset: URL? = nil
+    /// The kind was chosen on the picker before: the title says what is being signed in.
+    var kindPicked = false
+    /// One step back to the picker. Without it the page closes.
+    var back: (() -> Void)? = nil
 
     @State private var address = ""
     @State private var server: (name: String, version: String)?
@@ -22,15 +28,16 @@ struct ServerOnboardingView: View {
             Theme.reason.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Server hinzufügen")
+                Text(kindPicked && preset == nil ? LocalizedStringKey("Mit Jellyfin anmelden")
+                     : LocalizedStringKey("Server hinzufügen"))
                     .font(Theme.titleLarge)
                     .foregroundStyle(Theme.font)
 
                 Text("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; im Profil wechselst du zwischen ihnen.")
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
-                    .frame(width: 900, alignment: .leading)
-                    .padding(.top, 16)
+                    .frame(width: TVSpec.messageWidth, alignment: .leading)
+                    .padding(.top, TVSpec.onboardingSubtitleTop)
 
                 if let server { login(server) } else { addressPart }
 
@@ -38,23 +45,25 @@ struct ServerOnboardingView: View {
                     Text(verbatim: error)
                         .font(Theme.small)
                         .foregroundStyle(Theme.error)
-                        .padding(.top, 24)
+                        .padding(.top, TVSpec.onboardingErrorTop)
                 }
 
-                Button("Abbrechen") {
-                    state.halt()
-                    model.serverOnboardingCancel()
-                    close()
-                }
+                Button(back == nil ? LocalizedStringKey("Abbrechen") : LocalizedStringKey("Zurück"),
+                       action: leave)
                 .buttonStyle(ThemedButtonStyle())
-                .padding(.top, 44)
+                .padding(.top, TVSpec.onboardingCancelTop)
             }
-            .frame(width: 900, alignment: .leading)
+            .frame(width: TVSpec.messageWidth, alignment: .leading)
         }
+        .onExitCommand(perform: leave)
         .onAppear {
             // Clean up first: an aborted attempt otherwise leaves its server and error message behind.
             model.serverOnboardingCancel()
             state.newServer = true
+            if let preset, address.isEmpty {
+                address = preset.absoluteString
+                check()
+            }
         }
         .onDisappear { state.halt() }
         // The code is fetched once a server is set, and only then.
@@ -72,10 +81,10 @@ struct ServerOnboardingView: View {
     // MARK: Address
 
     private var addressPart: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: TVSpec.onboardingHintSpacing) {
             InputField(placeholder: "tv.beispiel.de", text: $address,
                         content: .URL, completion: check)
-                .frame(width: 760)
+                .frame(width: TVSpec.formWidth)
 
             Text("https:// kannst du weglassen.")
                 .font(Theme.small)
@@ -87,7 +96,7 @@ struct ServerOnboardingView: View {
                 .buttonStyle(ThemedButtonStyle())
                 .disabled(address.isEmpty || examine)
         }
-        .padding(.top, 44)
+        .padding(.top, TVSpec.onboardingBlockTop)
     }
 
     // MARK: Sign-in
@@ -102,7 +111,7 @@ struct ServerOnboardingView: View {
 
             if perCode { codePart } else { formSheet }
         }
-        .padding(.top, 44)
+        .padding(.top, TVSpec.onboardingBlockTop)
     }
 
     @ViewBuilder
@@ -110,8 +119,8 @@ struct ServerOnboardingView: View {
         Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du an diesem Server schon angemeldet bist.")
             .font(Theme.body)
             .foregroundStyle(Theme.fontQuiet)
-            .frame(width: 900, alignment: .leading)
-            .padding(.top, 24)
+            .frame(width: TVSpec.messageWidth, alignment: .leading)
+            .padding(.top, TVSpec.onboardingCodeTop)
 
         if let preGait = state.preGait {
             // Same fields as on the Quick Connect page; see `CodeFields`. The code used to be one line at 80 pt.
@@ -133,17 +142,17 @@ struct ServerOnboardingView: View {
             perCode = false
         }
         .buttonStyle(ThemedButtonStyle())
-        .padding(.top, 32)
+        .padding(.top, TVSpec.onboardingAlternativeTop)
     }
 
     @ViewBuilder
     private var formSheet: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: TVSpec.onboardingHintSpacing) {
             InputField(placeholder: "Benutzername", text: $user, content: .username)
             InputField(placeholder: "Passwort", text: $password,
                         safe: true, content: .password, completion: signIn)
 
-            HStack(spacing: 24) {
+            HStack(spacing: TVSpec.onboardingButtonSpacing) {
                 Button(model.isWorking ? "Moment…" : "Anmelden", action: signIn)
                     .buttonStyle(ThemedButtonStyle())
                     .disabled(user.isEmpty || model.isWorking)
@@ -151,11 +160,18 @@ struct ServerOnboardingView: View {
                     .buttonStyle(ThemedButtonStyle())
             }
         }
-        .frame(width: 760, alignment: .leading)
-        .padding(.top, 24)
+        .frame(width: TVSpec.formWidth, alignment: .leading)
+        .padding(.top, TVSpec.onboardingFormTop)
     }
 
     // MARK: Flow
+
+    /// The button and the Menu button: one step back, or out when the page has no picker before it.
+    private func leave() {
+        state.halt()
+        model.serverOnboardingCancel()
+        (back ?? close)()
+    }
 
     private func check() {
         guard !address.isEmpty, !examine else { return }

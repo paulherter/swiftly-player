@@ -20,8 +20,9 @@ final class SeerrModel {
     /// not take the Seerr login along; they are two services.
     private static let key = "seerr"
 
-    /// **Seerr is tied to the server.** The Jellyfin server the currently loaded
-    /// account belongs to; each has its own keychain entry.
+    /// **Seerr is tied to the server.** The identity (`Session.serverIdentity`: address of a
+    /// Jellyfin server, machine of a Plex one) of the server the currently loaded account
+    /// belongs to; each has its own keychain entry.
     private(set) var server: String?
     private var key: String {
         server.map { Self.key + "|" + $0 } ?? Self.key
@@ -48,13 +49,6 @@ final class SeerrModel {
 
     init() { access = loaded() }
 
-    /// The server's form of an address, as `server` holds it.
-    static func serverForm(_ url: URL) -> String {
-        var form = url.absoluteString.lowercased()
-        while form.hasSuffix("/") { form.removeLast() }
-        return form
-    }
-
     /// **From another device, through the settings sync.** `nil` is a disconnect made
     /// there. Not reported back as a change of this device's.
     func adopt(_ new: SeerrAccess?) {
@@ -72,9 +66,8 @@ final class SeerrModel {
     ///
     /// On first call, credentials from before the second server was added move
     /// over to the server that is then active, which is the one they belonged to.
-    func serverSwitched(_ url: URL?) {
-        var new = url?.absoluteString.lowercased()
-        while new?.hasSuffix("/") == true { new?.removeLast() }
+    func serverSwitched(_ identity: String?) {
+        let new = identity
         guard new != server else { return }
         server = new
         if let new, Keychain.load(key: Self.key + "|" + new) == nil,

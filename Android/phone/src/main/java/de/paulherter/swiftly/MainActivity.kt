@@ -138,7 +138,8 @@ class MainActivity : ComponentActivity() {
                     drawLayer(screen)
                 }) {
                 when (val p = phase) {
-                    Phase.Server -> ServerPage(app) { name, version -> phase = Phase.Login(name, version) }
+                    Phase.Server -> FirstStartFlow(app, connected = { name, version -> phase = Phase.Login(name, version) },
+                        finished = { phase = Phase.Start })
                     is Phase.Login -> LoginPage(app, p.serverName, p.version,
                         otherServer = { phase = Phase.Server }) { phase = Phase.Start }
                     // Fresh after an account switch: stack, sections and pages belong to the previous account.

@@ -36,15 +36,18 @@ void vlc_track_on(libvlc_instance_t *kern, TrackRow target);
 
 void image_bridge_append(ImageBridge *b, libvlc_media_player_t *mp);
 
-/* **The shape of a frame.** RGB is the SDR path: VLC converts to RGB itself
- * and GTK shows it as a memory texture. For HDR the frame stays as the
- * decoder delivers it (10-bit YUV) and the shader in `hdrimage.c` converts
- * it. VLC's own RGB conversion knows neither PQ nor HLG, which produced a
+/* **The shape of a frame.** RGB is the fallback: VLC converts to RGB itself
+ * and GTK shows it as a memory texture, which costs CPU on every frame. With
+ * a GL renderer SDR stays 8-bit YUV and HDR 10-bit YUV, as the decoder
+ * delivers them, and the shader in `hdrimage.c` converts on the GPU. VLC's
+ * own RGB conversion also knows neither PQ nor HLG, which produced a
  * washed-out picture. */
 enum {
     PIXEL_FORMAT_RGB24 = 0,   /* RV24, one plane */
     PIXEL_FORMAT_I0AL  = 1,   /* YUV 4:2:0, 10 bit in 16, low bits, three planes */
-    PIXEL_FORMAT_P010  = 2    /* YUV 4:2:0, 10 bit in 16, high bits, Y + interleaved UV */
+    PIXEL_FORMAT_P010  = 2,   /* YUV 4:2:0, 10 bit in 16, high bits, Y + interleaved UV */
+    PIXEL_FORMAT_I420  = 3,   /* YUV 4:2:0, 8 bit, three planes */
+    PIXEL_FORMAT_NV12  = 4    /* YUV 4:2:0, 8 bit, Y + interleaved UV */
 };
 
 typedef struct {
@@ -52,10 +55,15 @@ typedef struct {
     unsigned tick[3];          /* bytes per row */
     unsigned width, height;    /* visible size of the frame */
     int art;                   /* BILDART_* */
+    bool full;                 /* full range (J420) instead of limited */
 } ImageState;
 
 /* Before start: should VLC deliver 10-bit YUV (HDR) or RGB (SDR)? */
 void image_bridge_hdr(ImageBridge *b, bool hdr);
+
+/* Before start, for SDR: 8-bit YUV for the shader instead of RGB. Only with a
+ * renderer that shows a GL area without reading it back. */
+void image_bridge_sdr_yuv(ImageBridge *b, bool yuv);
 
 /* Fetches the newest frame. Returns false if none has arrived since the
  * last call; then there is nothing to do.

@@ -158,7 +158,7 @@ suspend fun hereContinueWatching(app: SwiftlyApplication, context: android.conte
         app.play.value = PlayRequest(a.itemID, answer?.optDouble("ab", a.spot) ?: a.spot)
     } else {
         Handoff.cancel(app, "Stopp abgelehnt")
-        Toast.makeText(context, errorString(reason), Toast.LENGTH_LONG).show()
+        Toast.makeText(context, errorString(reason, app.serverName.value), Toast.LENGTH_LONG).show()
     }
 }
 

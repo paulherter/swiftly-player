@@ -86,6 +86,12 @@ class Settings(store: Store) {
     /** Empty means: off. */
     var subtitleLanguage by RememberValue(a, "utSprache", a.rememberValue("utSprache").orEmpty()) { it }
     var subtitleAutomatic by RememberValue(a, "utAuto", bool("utAuto", false), yesNo)
+    /**
+     * **How text subtitles look**, as the package's JSON (`SubtitleLook`, sync key `utAussehen`): seven
+     * steps and switches. Empty is the default. Every rule, table and default is in the package
+     * (`Kern.subtitleLook…`); this holds the text only. Applies from the next video.
+     */
+    var subtitleLook by RememberValue(a, "utAussehen", a.rememberValue("utAussehen").orEmpty()) { it }
     /** `"1"`/`"0"`, empty: never toggled, so the account applies (`nextAutomaticAccount`). */
     private var nextAutomaticSelection by RememberValue(a, "naechsteAuto", a.rememberValue("naechsteAuto").orEmpty()) { it }
     /**
@@ -188,6 +194,7 @@ class Settings(store: Store) {
         values["tonSprache"]?.let { audioLanguage = it }
         values["utSprache"]?.let { subtitleLanguage = it }
         bool("utAuto")?.let { subtitleAutomatic = it }
+        values["utAussehen"]?.let { subtitleLook = Kern.subtitleLookNormalise(it) }
         bool("naechsteAuto")?.let { nextAutomatic = it }
         bool("introAbspannAuto")?.let { introOutroAutomatic = it }
         bool("restzeitAlsEnde")?.let { a.remember("restzeitAlsEnde", if (it) "1" else "0") }

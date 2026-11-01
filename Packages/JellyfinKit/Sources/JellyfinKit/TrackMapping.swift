@@ -54,6 +54,7 @@ public struct SubtitleFile: Sendable, Equatable {
     /// `DeliveryUrl` is server-relative and carries no key; it is appended as for
     /// the playback address (`ApiKey`).
     public static func from(streams: [MediaStream], server: URL, key: String?,
+                           keyName: String = "ApiKey",
                            attribute: (URL) -> String? = { _ in nil }) -> [SubtitleFile] {
         streams.compactMap { feed in
             guard feed.type == "Subtitle", feed.isExternal == true,
@@ -62,8 +63,8 @@ public struct SubtitleFile: Sendable, Equatable {
                   var parts = URLComponents(url: whole, resolvingAgainstBaseURL: false)
             else { return nil }
             let available = parts.queryItems ?? []
-            if let key, !available.contains(where: { ["apikey", "api_key"].contains($0.name.lowercased()) }) {
-                parts.queryItems = available + [URLQueryItem(name: "ApiKey", value: key)]
+            if let key, !available.contains(where: { ["apikey", "api_key", "x-plex-token"].contains($0.name.lowercased()) }) {
+                parts.queryItems = available + [URLQueryItem(name: keyName, value: key)]
             }
             guard let address = parts.url else { return nil }
             return SubtitleFile(index: index, address: address, attribute: attribute(address))
@@ -80,8 +81,9 @@ public struct SubtitleFile: Sendable, Equatable {
     /// would mean always showing them.
     public static func withLoad(streams: [MediaStream], itemID: String, source: String?,
                                 server: URL, key: String?,
+                                keyName: String = "ApiKey",
                                 converted: Bool) -> [SubtitleFile] {
-        var files = from(streams: streams, server: server, key: key)
+        var files = from(streams: streams, server: server, key: key, keyName: keyName)
         guard converted, let source, !source.isEmpty else { return files }
         let already = Set(files.map(\.index))
         for feed in streams where feed.type == "Subtitle" && feed.isExternal != true {
@@ -90,19 +92,82 @@ public struct SubtitleFile: Sendable, Equatable {
             var parts = URLComponents(
                 url: server.appendingPathComponent("Videos/\(itemID)/\(source)/Subtitles/\(index)/0/Stream.\(suffix)"),
                 resolvingAgainstBaseURL: false)
-            if let key { parts?.queryItems = [URLQueryItem(name: "ApiKey", value: key)] }
+            if let key { parts?.queryItems = [URLQueryItem(name: keyName, value: key)] }
             guard let address = parts?.url else { continue }
             files.append(SubtitleFile(index: index, address: address, attribute: nil))
         }
         return files.sorted { $0.index < $1.index }
     }
 
+    /// **The subtitle files when the look decides, not the file** ("keep the file's
+    /// style" off).
+    ///
+    /// Every ASS and SSA track, embedded or external, is replaced by the server's SRT
+    /// version (`/Videos/{id}/{source}/Subtitles/{index}/0/Stream.srt`) under the
+    /// **same index** as the original; the player loads it as a side file and hides
+    /// the original (see ``TrackMapping/replacedPositions(subtitle:streams:files:)``).
+    /// It is text only: nothing is transcoded. Other external files stay as they
+    /// are. Without a source ID nothing can be built and the files stay as ``from``.
+    public static func asPlainText(streams: [MediaStream], itemID: String, source: String?,
+                                   server: URL, key: String?, keyName: String = "ApiKey",
+                                   attribute: (URL) -> String? = { _ in nil }) -> [SubtitleFile] {
+        let base = from(streams: streams, server: server, key: key, keyName: keyName,
+                        attribute: attribute)
+        guard let source, !source.isEmpty else { return base }
+        let styled = streams.compactMap { feed -> Int? in
+            guard feed.type == "Subtitle", let index = feed.index,
+                  textSuffix(feed.codec) == "ass" else { return nil }
+            return index
+        }
+        guard !styled.isEmpty else { return base }
+        var files = base.filter { !styled.contains($0.index) }
+        for index in styled {
+            var parts = URLComponents(
+                url: server.appendingPathComponent("Videos/\(itemID)/\(source)/Subtitles/\(index)/0/Stream.srt"),
+                resolvingAgainstBaseURL: false)
+            if let key { parts?.queryItems = [URLQueryItem(name: keyName, value: key)] }
+            guard let address = parts?.url else { continue }
+            files.append(SubtitleFile(index: index, address: address, attribute: attribute(address)))
+        }
+        return files.sorted { $0.index < $1.index }
+    }
+
+    /// **The text subtitles AVPlayer's own overlay can draw**, one file per text track.
+    ///
+    /// AVPlayer gets the picture and sound only (`SubtitleStreamIndex: -1`); the app draws the
+    /// text. With `serverExtracts` (Jellyfin, Emby) every text track, embedded or external, is
+    /// the server's SRT under its own index (`.../Subtitles/{index}/0/Stream.srt`), ASS and
+    /// SSA included. Without (Plex) only external files with a delivery address are offered,
+    /// and not ASS. Image tracks (PGS, VobSub, DVB) are never in the list.
+    public static func forAVPlayer(streams: [MediaStream], itemID: String, source: String?,
+                                   server: URL, key: String?, keyName: String = "ApiKey",
+                                   serverExtracts: Bool) -> [SubtitleFile] {
+        let external = from(streams: streams, server: server, key: key, keyName: keyName)
+        var files: [SubtitleFile] = []
+        for feed in streams where feed.type == "Subtitle" {
+            guard let index = feed.index, textSuffix(feed.codec) != nil else { continue }
+            if serverExtracts, let source, !source.isEmpty {
+                var parts = URLComponents(
+                    url: server.appendingPathComponent("Videos/\(itemID)/\(source)/Subtitles/\(index)/0/Stream.srt"),
+                    resolvingAgainstBaseURL: false)
+                if let key { parts?.queryItems = [URLQueryItem(name: keyName, value: key)] }
+                if let address = parts?.url { files.append(SubtitleFile(index: index, address: address, attribute: nil)) }
+            } else if let file = external.first(where: { $0.index == index }),
+                      !["ass", "ssa"].contains(file.address.pathExtension.lowercased()),
+                      !["ass", "ssa"].contains(feed.codec?.lowercased() ?? "") {
+                files.append(file)
+            }
+        }
+        return files.sorted { $0.index < $1.index }
+    }
+
     /// The file extension in which the server outputs an embedded text subtitle,
     /// `nil` for image subtitles. ASS stays ASS so font and position are kept;
-    /// everything else becomes SRT.
-    static func textSuffix(_ codec: String?) -> String? {
+    /// everything else becomes SRT. With `keepFileStyle` off (own subtitle look)
+    /// ASS and SSA come as SRT too, so the look applies.
+    static func textSuffix(_ codec: String?, keepFileStyle: Bool = true) -> String? {
         switch codec?.lowercased() {
-        case "ass", "ssa": "ass"
+        case "ass", "ssa": keepFileStyle ? "ass" : "srt"
         case "subrip", "srt", "webvtt", "vtt", "mov_text", "text", "tx3g", "microdvd", "sami", "smi":
             "srt"
         default: nil
@@ -162,8 +227,35 @@ public struct TrackMapping: Sendable, Equatable {
         let utStreams = streams.filter { $0.type == "Subtitle" && $0.isExternal != true }
         let embedded = arrange(embeddedPositions.map { subtitle[$0] }, utStreams)
         for (i, position) in embeddedPositions.enumerated() { utIndices[position] = embedded[i] }
+        // A side file with the index of an embedded track replaces it (ASS as SRT):
+        // the embedded one then maps to nothing, so the index finds the file.
+        for position in replacedPositions(subtitle: subtitle, streams: streams, files: files) {
+            utIndices[position] = nil
+        }
 
         return TrackMapping(audio: audioIndices, subtitle: utIndices)
+    }
+
+    /// Positions of embedded tracks that a side file replaces: its index is the
+    /// same as that of an embedded stream (``SubtitleFile/asPlainText``). Real
+    /// external files have indices of their own, so they never hit this.
+    public static func replacedPositions(subtitle: [PlayerTrack], streams: [MediaStream],
+                                         files: [SubtitleFile]) -> Set<Int> {
+        let taken = Set(files.map(\.index))
+        let embeddedIndices = Set(streams.compactMap { feed -> Int? in
+            feed.type == "Subtitle" && feed.isExternal != true ? feed.index : nil
+        }).intersection(taken)
+        guard !embeddedIndices.isEmpty else { return [] }
+        let embeddedPositions = subtitle.indices.filter {
+            subtitle[$0].additionId == nil && !subtitle[$0].isSubtitleOutImage
+        }
+        let utStreams = streams.filter { $0.type == "Subtitle" && $0.isExternal != true }
+        let order = arrange(embeddedPositions.map { subtitle[$0] }, utStreams)
+        var result = Set<Int>()
+        for (i, position) in embeddedPositions.enumerated() {
+            if let index = order[i], embeddedIndices.contains(index) { result.insert(position) }
+        }
+        return result
     }
 
     /// **The wanted tracks as a position per type, before opening.**
@@ -179,12 +271,15 @@ public struct TrackMapping: Sendable, Equatable {
     /// later by ``bilden(audio:subtitle:stroeme:dateien:)``; only what differs is
     /// then set.
     public static func startPositions(streams: [MediaStream], audio: Int?,
-                                       subtitle: TrackRule.Subtitle) -> (audio: Int?, subtitle: Int?) {
+                                       subtitle: TrackRule.Subtitle,
+                                       files: [SubtitleFile] = []) -> (audio: Int?, subtitle: Int?) {
         let audioStreams = streams.filter { $0.type == "Audio" && $0.isExternal != true }
         let utStreams = streams.filter { $0.type == "Subtitle" && $0.isExternal != true }
         let audioPosition = audio.flatMap { index in audioStreams.firstIndex { $0.index == index } }
         var utPosition: Int?
-        if case .feed(let index) = subtitle {
+        // A track replaced by a side file (ASS as SRT) is not set at open; the file
+        // is chosen as soon as it is read.
+        if case .feed(let index) = subtitle, !files.contains(where: { $0.index == index }) {
             utPosition = utStreams.firstIndex { $0.index == index }
         }
         return (audioPosition, utPosition)

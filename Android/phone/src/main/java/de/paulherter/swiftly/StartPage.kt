@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -121,13 +122,31 @@ internal fun railsRead(json: String): List<Rail> {
     }
 }
 
+/** What the home rows depend on in the settings; the same key on the phone and the TV. */
+internal fun startKey(e: Settings): String =
+    listOf(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }).joinToString("|")
+
+/**
+ * **Coming back to the home page** (section change, a page closing): fetch only when what is on hand is
+ * older than the grace period or was built with other settings, as `needsRefresh` does on Apple.
+ * Compose tears the page down on every section change, and the effect below used to fetch each time.
+ */
+internal fun startFresh(app: SwiftlyApplication, key: String): Boolean =
+    app.startRails != null && app.startKey == key && !Kern.refreshDue(app.startLoaded)
+
 /**
  * **From Continue Watching straight into playback** (`starte` in `HomeView`): fetch the position
- * fresh, the one from the list is often stale. Without a plan the tap goes to the detail page.
+ * fresh, the one from the list is often stale; a title with several versions asks which one (issue 33).
+ * Without a plan the tap goes to the detail page. True = handled.
  */
-internal suspend fun continueWatchingRequest(app: SwiftlyApplication, id: String): PlayRequest? = runCatching {
-    titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }).takeIf { it.planPresent }?.let { PlayRequest(id, it.resumeFrom) }
-}.getOrNull()
+internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String): Boolean {
+    val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
+    if (loaded == null) { app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."); return true }
+    if (!loaded.planPresent) return false
+    // The full title is in hand, so its versions are known: several of them ask, one plays (issue 33).
+    playOrChoose(app, loaded, id, loaded.resumeFrom)
+    return true
+}
 
 /** Mirrors `HomeView` in `Sources/Shared/HomeView.swift` (header, rows, tiles). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -140,16 +159,21 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         if (starts) return
         starts = true
         run.launch {
-            val wish = continueWatchingRequest(app, k.id)
-            if (wish != null) app.play.value = wish else open(Destination(k.id, k.name, k.type))
+            if (!continueWatchingAsking(app, k.id)) open(Destination(k.id, k.name, k.type))
             starts = false
         }
     }
     var error by remember { mutableStateOf<String?>(null) }
     val e = app.settings
+    // How many loads are on their way. The lifecycle effect below fires on the very first composition as
+    // well, next to the effect for the settings; without this a cold start fetched every row twice
+    // (`HomeModel.runningRuns` on Apple).
+    var running by remember { mutableIntStateOf(0) }
     suspend fun load() {
         // During an account switch, that reloads, not the return to the page that coincides with it.
         if (AccountSwitchTransition.waits && !AccountSwitchTransition.switched) return
+        running++
+        val key = startKey(e)
         try {
             val json = withContext(Dispatchers.IO) {
                 app.kern.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
@@ -158,13 +182,16 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             }
             rails = railsRead(json).also { app.startRails = it }
             app.startLoaded = System.currentTimeMillis()
+            app.startKey = key
             error = null
         } catch (e: Throwable) {
             error = errorString(app, e)
+        } finally {
+            running--
         }
     }
-    // Reload as soon as order, hidden rows or genres change.
-    LaunchedEffect(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }) { load() }
+    // Reload as soon as order, hidden rows or genres change; on entering the page only when it is due.
+    LaunchedEffect(startKey(e)) { if (!startFresh(app, startKey(e))) load() }
     // **Refetch after watching, with no grace period**: Continue Watching is certainly stale then.
     val playsNow = app.play.value != null
     var hasPlay by remember { mutableStateOf(false) }
@@ -179,7 +206,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            if (Kern.refreshDue(app.startLoaded)) load()
+            if (running == 0 && Kern.refreshDue(app.startLoaded)) load()
         }
     }
     var pulls by remember { mutableStateOf(false) }

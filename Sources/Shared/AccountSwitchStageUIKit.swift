@@ -16,6 +16,9 @@ enum AccountSwitchStage {
     /// Width of the window, for ``Kontowechselflug/targetReport(_:)``.
     static var windowWidthValue: CGFloat? { window?.bounds.width }
 
+    /// Size of the window; `nil` without one.
+    static var windowSize: CGSize? { window?.bounds.size }
+
     private static var window: UIWindow? {
         UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
     }

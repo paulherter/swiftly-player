@@ -43,4 +43,57 @@ struct MediaVersionsTests {
             serverBase: URL(string: "https://x")!, preferredSourceID: "b")
         #expect(plan?.mediaSourceID == "b")
     }
+
+    private func video(_ id: String, name: String?, height: Int?) -> MediaSource {
+        MediaSource(id: id, name: name, container: "mkv", size: nil,
+                    supportsDirectPlay: true, supportsDirectStream: true,
+                    supportsTranscoding: true, transcodingUrl: nil,
+                    mediaStreams: [MediaStream(codec: "hevc", type: "Video", language: nil, displayTitle: nil,
+                                                  channels: nil, isDefault: nil, index: 0, height: height, width: nil)])
+    }
+
+    @Test("Sources not loaded yet mean wait, not play")
+    func notLoaded() {
+        #expect(MediaVersions.start(nil, downloaded: false) == .wait)
+    }
+
+    @Test("One version, none listed or a copy on the device play at once")
+    func playsDirectly() {
+        #expect(MediaVersions.start([source("a")], downloaded: false) == .play)
+        #expect(MediaVersions.start([], downloaded: false) == .play)
+        #expect(MediaVersions.start(nil, downloaded: true) == .play)
+        #expect(MediaVersions.start([source("a"), source("b")], downloaded: true) == .play)
+    }
+
+    @Test("Several versions are offered")
+    func choosesWhenSeveral() {
+        let two = [source("a"), source("b")]
+        #expect(MediaVersions.start(two, downloaded: false) == .choose(two))
+    }
+
+    @Test("The next episode keeps the version with the same name")
+    func matchesByName() {
+        let previous = video("a", name: "Film - 4K", height: 2160)
+        let next = [video("x", name: "Film - 1080p", height: 1080),
+                    video("y", name: " film - 4k ", height: 2160)]
+        #expect(MediaVersions.matching(previous: previous, in: next)?.id == "y")
+    }
+
+    @Test("Without a matching name the same resolution counts")
+    func matchesByHeight() {
+        let previous = video("a", name: "Episode 1 4K", height: 2160)
+        let next = [video("x", name: "Episode 2 HD", height: 1080),
+                    video("y", name: "Episode 2 UHD", height: 2160)]
+        #expect(MediaVersions.matching(previous: previous, in: next)?.id == "y")
+    }
+
+    @Test("No match, or no choice in the next episode, means automatic")
+    func noMatch() {
+        let previous = video("a", name: "A", height: 2160)
+        #expect(MediaVersions.matching(previous: previous,
+                                       in: [video("x", name: "B", height: 720),
+                                            video("y", name: "C", height: 1080)]) == nil)
+        #expect(MediaVersions.matching(previous: previous, in: [video("x", name: "A", height: 2160)]) == nil)
+        #expect(MediaVersions.matching(previous: previous, in: nil) == nil)
+    }
 }

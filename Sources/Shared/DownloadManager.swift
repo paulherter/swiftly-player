@@ -46,7 +46,7 @@ final class DownloadManager {
     // build fails with "init accessors can refer only to stored properties".
     // Nothing here needs observing anyway: no view reads the session, the delegate
     // or the running tasks.
-    @ObservationIgnored private var client: JellyfinClient?
+    @ObservationIgnored private var client: (any MediaServer)?
     @ObservationIgnored private var account: String?
     /// Item id to running task.
     @ObservationIgnored private var tasks: [String: URLSessionDownloadTask] = [:]
@@ -191,6 +191,7 @@ final class DownloadManager {
                                                    itemID: p.id, source: p.source ?? plan.source?.id,
                                                    server: session.serverURL,
                                                    key: session.accessToken,
+                                                   keyName: EmbyPaths.tokenName(for: session.kind),
                                                    converted: p.streamed)
             guard !files.isEmpty else { return }
             let target = Self.subtitleFolder(to: file)
@@ -312,7 +313,7 @@ final class DownloadManager {
     /// kept running and its callbacks landed in the new account's list, even on
     /// the same title when two users of one server shared ids. The old account's
     /// titles stay on disk and wait until it signs in again.
-    func signIn(client: JellyfinClient?, account: String?) {
+    func signIn(client: (any MediaServer)?, account: String?) {
         self.client = client
         // What is queued goes out **now**, still under the old account; right after,
         // `load` re-reads the list, and by then items and account no longer matched.

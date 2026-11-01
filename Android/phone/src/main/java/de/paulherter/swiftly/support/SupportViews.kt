@@ -116,6 +116,8 @@ fun SupportPromptWatcher(app: SwiftlyApplication, ask: () -> Unit, thanks: () ->
         delay(62_000)
         if (app.play.value != null || app.sheet.value != null) return@LaunchedEffect
         if (!app.isTv && app.looks.askedThisSession) return@LaunchedEffect
+        // On TV "What's new" is the one big ask; the support ask waits for the next time.
+        if (app.isTv && app.looks.tvWhatsNew.value != null) return@LaunchedEffect
         if (support.decide().showsSheet) {
             support.answer("sheetShown")
             if (!app.isTv) app.looks.askedThisSession = true

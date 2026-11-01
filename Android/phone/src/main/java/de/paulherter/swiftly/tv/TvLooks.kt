@@ -151,7 +151,7 @@ fun TvLookRow(app: SwiftlyApplication, modifier: Modifier = Modifier) {
     FocusArea(modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button },
               magnifier = 1f, perform = { tvLooksOpen(app) }) { focus ->
         Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp, vertical = 5.dp),
+                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LookTileView(looks.tileIcon(saved), 26.dp)
             when (entry) {

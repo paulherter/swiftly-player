@@ -1195,6 +1195,21 @@
    "gruppe": "app"
   },
   {
+   "id": "zxing",
+   "name": "ZXing core",
+   "version": "3.5.3",
+   "spdx": "Apache-2.0",
+   "urheber": "ZXing authors",
+   "quelle": "https://github.com/zxing/zxing",
+   "plattformen": [
+    "androidtv"
+   ],
+   "texte": [
+    "Apache-2.0.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
    "id": "okhttp",
    "name": "OkHttp and Okio (via coil-network-okhttp)",
    "version": "as resolved by Gradle",

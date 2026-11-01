@@ -143,18 +143,29 @@ enum Cache {
 
     static func erase() {
         try? FileManager.default.removeItem(at: file)
-        try? FileManager.default.removeItem(at: accountsFile)
+        for kind in ServerKind.allCases {
+            try? FileManager.default.removeItem(at: accountFile(kind.bundleStorageKey))
+        }
+        try? FileManager.default.removeItem(at: accountFile(ServerBundles.pointerKey))
     }
 
     // MARK: Multiple accounts
 
-    /// The account bundle as stored on disk.
+    /// The account bundles as stored on disk: one per kind of server, and which kind is
+    /// current.
     ///
     /// **Why the server name is included.** ``Kontenbund`` holds sessions, and a
     /// ``Session`` only knows the address. The server name is shown at the
     /// bottom of the bar and in the profile before ``serverStateFetch()`` has
-    /// fetched it; without it a lone "·" would flash at startup.
-    struct AccountsStore: Codable {
+    /// fetched it; without it a lone "·" would flash at startup. (Plex carries its
+    /// server's name in the session itself.)
+    struct AccountsStore {
+        var bundles: ServerBundles
+        var serverName: String?
+    }
+
+    /// The very old wrapper: one bundle and the server name together.
+    private struct LegacyStore: Codable {
         enum CodingKeys: String, CodingKey {
             case bundle = "bund"
             case serverName = "servername"
@@ -210,73 +221,98 @@ enum Cache {
         }
     }
 
-    private static var accountsFile: URL { folder.appendingPathComponent("konten.json") }
+    /// One file per kind: `konten.json` stays the Jellyfin bundle, byte for byte;
+    /// Emby and Plex get `konten.emby.json` and `konten.plex.json`, so an older version
+    /// that only knows `konten.json` never meets an account of another kind.
+    private static func accountFile(_ key: String) -> URL {
+        folder.appendingPathComponent(key == ServerBundles.pointerKey ? key : key + ".json")
+    }
 
-    /// Reads the bundle and migrates a single session from before bundles.
+    private static var accountsFile: URL { accountFile(ServerKind.jellyfin.bundleStorageKey) }
+
+    /// Reads the bundles and migrates a single session from before bundles.
     ///
     /// **The migration lives here and not in the package** because only this
     /// side knows where things are stored; Apple does the same in
-    /// `AppModel.loadBundle()`. The old `sitzung.json` is **not deleted**: starting
-    /// an older version again should not log the user out.
-    /// What the bundle means is defined in the package:
-    /// ``Kontenbund/ausAblage(bund:einzelne:)`` knows the migration from before
-    /// multiple accounts and the fallback when the bundle is unreadable. Here
-    /// only **where** the data lives.
+    /// `AppModel.loadBundles()`. The old `sitzung.json` is **not deleted**: starting
+    /// an older version again should not log the user out. What the bundle means is
+    /// defined in the package; here only **where** the data lives.
     ///
     /// The middle tier is a leftover: an early version stored bundle and server
     /// name together in one wrapper. It stays so nobody has to sign in again; it
     /// is gone after the next write.
     static func readBundle() -> AccountsStore? {
-        let accountsData = try? Data(contentsOf: accountsFile)
-        if let b = AccountBundle.outStore(bundle: accountsData, individual: nil) {
-            return AccountsStore(bundle: b, serverName: rememberedServer()?.serverName)
+        var loaded = ServerBundles.load { try? Data(contentsOf: accountFile($0)) }
+        var name = loaded.bundle(for: .jellyfin) != nil ? rememberedServer()?.serverName : nil
+        if loaded.bundle(for: .jellyfin) == nil {
+            let old: AccountBundle?
+            if let d = try? Data(contentsOf: accountsFile),
+               let wrapper = try? JSONDecoder().decode(LegacyStore.self, from: d) {
+                old = wrapper.bundle
+                name = wrapper.serverName
+            } else if let alt = read() {
+                // **The old file has German keys, `Session` English ones.**
+                //
+                // `AccountBundle.outStore(bundle:individual:)` decodes the single entry as a
+                // `Session`, which expects `accessToken`, `userID`, `userName`.
+                // `sitzung.json` has `token`, `userIdentifier`, `username`; three of four
+                // keys do not match, decoding fails silently and the migration returned
+                // `nil`. Effect: **every user with a remembered login landed on the sign-in
+                // screen after updating.** So the keys are mapped here instead of passed
+                // through raw: `Stored` is this side's format.
+                old = AccountBundle(Session(accessToken: alt.token, userID: alt.userIdentifier,
+                                            userName: alt.username, serverURL: alt.serverURL))
+                name = alt.serverName
+            } else {
+                old = nil
+            }
+            if let old {
+                let active = loaded.activeKind
+                loaded.set(old, for: .jellyfin)
+                // A kind that was current stays so; otherwise the adopted one is.
+                if loaded.bundle(for: active) != nil { loaded.switchTo(active) }
+            }
         }
-        if let d = accountsData,
-           let wrapper = try? JSONDecoder().decode(AccountsStore.self, from: d) {
-            return wrapper
-        }
-        // **The old file has German keys, `Session` English ones.**
-        //
-        // `AccountBundle.ausAblage(bundle:individual:)` decodes the single entry as a
-        // `Session`, which expects `accessToken`, `userID`, `userName`.
-        // `sitzung.json` has `token`, `userIdentifier`, `username`; three of four
-        // keys do not match, decoding fails silently and the migration returned
-        // `nil`. Effect: **every user with a remembered login landed on the sign-in
-        // screen after updating.**
-        //
-        // So the keys are mapped here instead of passed through raw: `Stored` is
-        // this side's format, and only this side knows it.
-        guard let alt = read() else { return nil }
-        let session = Session(accessToken: alt.token, userID: alt.userIdentifier,
-                              userName: alt.username, serverURL: alt.serverURL)
-        return AccountsStore(bundle: AccountBundle(session), serverName: alt.serverName)
+        guard !loaded.kinds.isEmpty else { return nil }
+        return AccountsStore(bundles: loaded, serverName: name)
     }
 
-    /// Writes the bundle **and keeps writing the single session next to it.**
+    /// Writes the bundles **and keeps writing the single session of the Jellyfin account
+    /// next to them.**
     ///
-    /// The old file stays at the state of the active account so an older version
+    /// The old file stays at the state of the active Jellyfin account so an older version
     /// of the app does not face an empty sign-in screen after a downgrade. It
     /// costs a few hundred bytes and saves a sign-in.
     static func writeBundle(_ store: AccountsStore) {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
                                                     attributes: onlyIch)
-            // **The plain bundle, no wrapper.** This is what
-            // ``Kontenbund/ausAblage(bund:einzelne:)`` reads directly; the server name
-            // is in the notes anyway.
-            try JSONEncoder().encode(store.bundle).write(to: accountsFile, options: [.atomic])
-            #if !os(Windows)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                  ofItemAtPath: accountsFile.path)
-            #endif
+            try store.bundles.save { key, data in
+                let target = accountFile(key)
+                guard let data else {
+                    try? FileManager.default.removeItem(at: target)
+                    return
+                }
+                try data.write(to: target, options: [.atomic])
+                #if !os(Windows)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                      ofItemAtPath: target.path)
+                #endif
+            }
         } catch {
             FileHandle.standardError.write(
                 Data("Konten liessen sich nicht sichern: \(error.localizedDescription)\n".utf8))
         }
-        let active = store.bundle.activeOne
+        guard let jellyfin = store.bundles.bundle(for: .jellyfin) else {
+            // No Jellyfin account any more: the old file must not bring one back.
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        let active = jellyfin.activeOne
+        let name = store.bundles.activeKind == .jellyfin ? store.serverName : read()?.serverName
         write(.init(serverURL: active.serverURL, token: active.accessToken,
                         userIdentifier: active.userID, username: active.userName,
-                        serverName: store.serverName))
+                        serverName: name))
     }
 
     // MARK: Last connected
@@ -366,7 +402,7 @@ enum PostReportSlip {
     /// rest stays. **Never twice at once**: it is called when the home page
     /// loads and before downloads catch up, and two passes side by side sent the
     /// same position twice. Same as `AppModel.pendingSubmit()`.
-    static func submit(_ client: JellyfinClient, account: String) async {
+    static func submit(_ client: any MediaServer, account: String) async {
         guard !account.isEmpty else { return }
         let opened = PostReportRules.due(Cache.pendingReportsRead(), account: account)
         guard !opened.isEmpty, barrier.grab() else { return }

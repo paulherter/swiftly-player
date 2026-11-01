@@ -84,11 +84,15 @@ class SearchState {
     /** A second tap on the tab opens the keyboard (`tabStillTimes`). */
     var anotherTime by mutableIntStateOf(0)
     internal var searched = ""
+    /** The TV search keyboard's last key and the results' last tile, so focus returns there (`lastKey`/`lastHit` on tvOS). */
+    internal var lastKey = "A"
+    internal var lastHit: String? = null
 
     /** Term, results and failure belong to the account that was switched (`SearchView`, `onChange(of: accountSwitch)`). */
     fun forget() {
         term = ""; hit = emptyList(); seerr = emptyList()
         hunts = false; disrupted = false; searchMode = false; searched = ""
+        lastHit = null
     }
 
     companion object {
@@ -107,12 +111,15 @@ class SearchState {
         fun historyWrite(app: SwiftlyApplication, raw: String) = app.store.remember(historyKey(app), raw)
     }
 
-    /** Search like `SearchView.searching`; phone and TV both call this. */
-    suspend fun searching(app: SwiftlyApplication, clean: String) {
+    /**
+     * Search like `SearchView.searching`; phone and TV both call this. `pause` is the wait before the request
+     * goes out (phone 300 ms; the TV debounces on its own and passes 0).
+     */
+    suspend fun searching(app: SwiftlyApplication, clean: String, pause: Long = 300) {
             if (!Kern.searchTermFits(clean)) { hit = emptyList(); seerr = emptyList(); disrupted = false; hunts = false; searched = clean; return }
             hunts = true
             disrupted = false
-            delay(300)
+            if (pause > 0) delay(pause)
             try {
                 val json = withContext(Dispatchers.IO) { app.kern.search(clean).await() }
                 hit = JSONArray(json).let { a -> (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } }

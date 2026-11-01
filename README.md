@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: a free, native Jellyfin client" width="100%"></a>
+<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: a free, native client for Jellyfin, Plex and Emby" width="100%"></a>
 
 <p>
 For iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.<br>
@@ -24,23 +24,18 @@ Every file plays as Direct Play or Direct Stream, never transcoded.
 
 <br>
 
-**Swiftly Player is a client for your own Jellyfin server. It is meant to
-be plain, and to just work.**
+**Swiftly Player is a free, native client for your own media server:
+Jellyfin, and in beta also Plex and Emby. It is meant to be plain, and to
+just work.**
 
 It opens, it finds your library, it plays. Most of it is the ordinary things
-done properly, instead of a hundred switches nobody ever touches — and
-underneath, it works hard **never to make your server transcode**, so the
-picture stays untouched and your CPU stays cool.
+done properly, instead of a hundred switches nobody ever touches. Underneath,
+it works to **never make your server transcode**, so the picture stays
+untouched and your server stays cool.
 
-If you came here looking for a **Jellyfin app for iPhone or iPad**, a
-**Jellyfin client for Apple TV**, a **native Jellyfin player for macOS**, a
-**Jellyfin app for Android or Android TV**, or a
-**Jellyfin desktop client for Linux or Windows** — that is all one app, and
-this is it. Picture in Picture, Direct Play without transcoding, several
-accounts on one server, and handing a running film from one device to the
-next.
-
-But three things it does that no other Jellyfin client does at all.
+It is one app for iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and
+Windows: Direct Play, Picture in Picture, several accounts on one server, and
+a running film that follows you from one device to the next.
 
 <br>
 
@@ -67,45 +62,55 @@ But three things it does that no other Jellyfin client does at all.
 
 <br>
 
+## What is new in 1.1.0
+
+- **Plex and Emby (beta).** Sign in to a Plex or Emby server the same way as to
+  Jellyfin, on all eight platforms. Plex uses a short code or a QR code, Emby
+  the usual login.
+- **A second player on Apple devices.** Next to VLC, iPhone, iPad, Apple TV and
+  Mac can play through Apple's own player, which handles Dolby Vision, HDR and
+  AV1 files the way the device was built for.
+- **Pick the version.** If a title exists in several versions, Play asks which
+  one, on every platform. The next episode keeps your choice.
+- **Subtitle look.** One simple page for font, size, colours and background,
+  with a live preview, on every platform.
+- **Android TV matches Apple TV**, screen by screen: row layout, detail pages,
+  search, profile and player.
+- **Search on Apple TV and Android TV.**
+- **Faster Android start.** The home screen loads its rows once at launch and
+  reloads on return only when the data is older than 30 seconds.
+- **Trailers** try every available source in order before giving up.
+- **Continue on this device** checks the playback plan first and only then
+  stops the other device.
+
+<br>
+
 ## Three things you will not find elsewhere
 
 ### Continue on this device
 
-You are watching on the Apple TV. You get up, take your phone — and there is a
+You are watching on the Apple TV. You get up, take your phone, and there is a
 badge next to your profile picture. **Tap it, and the film carries on here,
 from the same second.** The television stops on its own; you do not pause
 anything, you do not scroll to find where you were.
 
-It works in every direction: TV to phone, phone to Mac, Mac to TV — Android
-phones included. If two of
-your devices are playing, Swiftly asks which one you meant. Only your own
-account is offered, and only devices that are actually reachable.
+It works in every direction: TV to phone, phone to Mac, Mac to TV, Android
+included. If two of your devices are playing, Swiftly asks which one you meant.
+Only your own account is offered, and only devices that are reachable.
 
-I have not seen this in another Jellyfin client, and it is the thing people
-notice on day one and then cannot do without.
+### Several accounts on one server
 
-### Several Jellyfin accounts on one server
-
-Your household has one server and several accounts on it — yours, your
-partner's, the children's. Swiftly holds **all of them at once**.
-
-Above "Sign out" there is "Add another account". After that, a strip at the
-top of your profile switches between them: press a picture, and you are in
-that account. **No password, no signing out, no waiting** — both logins stay
-in the keychain, and Continue Watching, Next Up and everything else changes
-with them.
-
-Signing out affects only the account you are on. The others stay.
+Your household has one server and several accounts on it. Swiftly holds **all
+of them at once**. Above "Sign out" there is "Add another account", and a strip
+at the top of your profile switches between them: **no password, no signing
+out, no waiting.** Continue Watching, Next Up and everything else change with
+the account. Signing out affects only the account you are on.
 
 ### Every Apple TV profile keeps its own login
 
-The Apple TV already knows who is watching — it has profiles at the top of the
-screen. Swiftly follows them.
-
-**Switch the tvOS profile, and Swiftly is in that person's Jellyfin account.**
-Their Continue Watching, their watched marks, their Top Shelf on the home
-screen. Nobody has to sign anything in or out; the television already asked
-the question, and the app simply respects the answer.
+Switch the tvOS profile, and Swiftly is in that person's account: their
+Continue Watching, their watched marks, their Top Shelf. Nobody signs anything
+in or out; the television already asked who is watching.
 
 <br>
 
@@ -113,50 +118,38 @@ the question, and the app simply respects the answer.
 
 ### Watching
 
-- **Never transcode.** The device profile declares containers, codecs and
-  *every* subtitle format, so the server has no reason to re-encode.
-  Undeclared subtitles are the most common cause of a needless transcode, and
-  they are all declared here.
-- **Resume** exactly where you stopped, with the next episode following on its
-  own.
-- **Skip intro and recap** where your server knows about them — the button
-  changes what it says, instead of appearing out of nowhere.
+- **Never transcode.** The device profile declares containers, codecs and every
+  subtitle format, so the server has no reason to re-encode. Undeclared
+  subtitles are the most common cause of a needless transcode.
+- **Resume** where you stopped, with the next episode following on its own.
+- **Skip intro and recap** where your server knows about them.
 - **Audio and subtitle tracks** switch while the film keeps running.
-- **Playback speed**, and the position is reported back to the server as you
+- **Playback speed**, with the position reported back to the server as you
   watch.
 
 ### Finding things
 
-- **Several libraries** of the same kind, and the app remembers which one you
-  were in.
+- **Several libraries** of the same kind; the app remembers which one you were in.
 - **Search** across your libraries, with the season and episode you meant.
-- **Collections** sit next to your libraries: the title of Movies and Series
-  switches between everything, your collections and each library.
-- **Request through Seerr** — ask for a movie or show that is missing,
-  without leaving the app.
-- **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon on
-  the Apple TV home screen, before you even open it.
+- **Collections** next to your libraries.
+- **Requests through Seerr** for movies and shows that are missing.
+- **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon.
 
 ### On your devices
 
-- **Picture in Picture**<sup>2</sup> — the one thing that sent me looking for
-  another client in the first place.
-- **Lock screen and Control Centre**<sup>2</sup> show the artwork and the
-  controls.
-- **Media keys**<sup>3</sup> work, and a small window stays on top while you
-  do something else.
-- **Quick Connect**, so you never type a password on a television remote.
+- **Picture in Picture**<sup>2</sup>, **lock screen and Control Centre**<sup>2</sup>
+  with artwork and controls, and **media keys**<sup>3</sup>.
+- **Quick Connect**, so you never type a password with a television remote.
 - **Custom HTTP headers** per server, for Cloudflare Access, Authelia or
-  Pangolin in front of Jellyfin. They go with every request to that server,
-  playback included, and nowhere else.
-- **Downloads**, with the quality you choose, for watching without a
-  connection.
+  Pangolin in front of your server. They go with every request to that server
+  and nowhere else.
+- **Downloads** in the quality you choose, for watching offline.
 
 ### Yours
 
-- **No account, no ads, no tracking.** Nothing leaves your
-  device except the requests to the server you enter yourself.
-- **Free and open source**, MPL-2.0. All the features you need are free, for everyone.
+- **No account with us, no ads, no tracking.** Nothing leaves your device
+  except the requests to the server you enter yourself.
+- **Free and open source**, MPL-2.0. All features are free, for everyone.
 
 <sub>1 Apple TV · 2 iPhone, iPad, Android · 3 Linux, Windows, Mac</sub>
 
@@ -164,84 +157,63 @@ the question, and the app simply respects the answer.
 
 ## Platforms
 
-One app, one design, sized for the screen you are on. The logic — server
-access, device profile, playback timing — is shared; only the views differ,
-and only where distance, input or window size demand it.
+One app, one design, sized for the screen you are on. Server access, device
+profile and playback timing are shared; only the views differ, and only where
+distance, input or window size demand it.
 
-| Platform | State |
+| Platform | Where |
 |---|---|
-| iPhone | **1.0.6** on the App Store · 1.0.7 in review |
-| iPad | **1.0.6** on the App Store · 1.0.7 in review · ships with the iPhone app |
-| Apple TV | **1.0.6** on the App Store · 1.0.7 in review |
-| Mac | **1.0.6** on the App Store · 1.0.7 in review |
-| Android | **1.0.7** · submitted to Google Play, beta and [APK](#android) until it is listed |
-| Android TV | **1.0.7** · same app, [join the beta](#android) or [APK](#android) |
-| Linux | **1.0.6** · [install](#linux) |
-| Windows | **1.0.6** · [download](#windows) |
+| iPhone, iPad, Mac, Apple TV | [App Store](https://apps.apple.com/app/id6806824067), one download for all four; the newest version lands first on [TestFlight](https://testflight.apple.com/join/BKtrBmbz) |
+| Android, Android TV | Google Play beta and APK, see [Android](#android) |
+| Linux | packages for apt, dnf, pacman and zypper, see [Linux](#linux) |
+| Windows | installer, see [Windows](#windows) |
 
-**One download covers iPhone, iPad, Mac and Apple TV:**
-[App Store](https://apps.apple.com/app/id6806824067).
-
-**The beta runs alongside it.** [Join on TestFlight](https://testflight.apple.com/join/BKtrBmbz)
-— the next version lands there first, one link for all four. What each build
-wants tested is written in its release notes, and it is usually five specific
-things rather than "have a look around".
+The TestFlight build's release notes name the handful of things to test. That
+is usually five specific things, not "have a look around".
 
 <br>
 
 ## Android
 
-**The Android app is submitted to Google Play** and waiting for Google's review.
-Until it is listed in the Play Store, the beta below and the APK are the way to
-get it, for phones and Android TV with Android 9 or newer. On the phone it is the same app as on the iPhone: Direct Play through libVLC,
-downloads for offline viewing, continue on this device, several accounts,
-Seerr requests, skip intro, Picture in Picture and Quick Connect.
+For phones and Android TV, Android 9 or newer. Same app as on the iPhone:
+Direct Play through libVLC, downloads, continue on this device, several
+accounts, Seerr, skip intro, Picture in Picture and Quick Connect. Android TV
+follows the Apple TV app screen by screen.
 
-Joining takes about two minutes. **Use the same Google account for every
-step** — the one signed in to the Play Store on your phone.
+Joining the beta takes about two minutes. **Use the same Google account for every
+step**, the one signed in to the Play Store on your device.
 
-1. **Join the tester group** —
+1. **Join the tester group:**
    [groups.google.com/g/swiftly-beta](https://groups.google.com/g/swiftly-beta),
    then *Join group*. You will not receive any emails.
-2. **Become a tester** —
+2. **Become a tester:**
    [play.google.com/apps/testing/de.paulherter.swiftly](https://play.google.com/apps/testing/de.paulherter.swiftly),
    then *Become a tester*.
-3. **Install** — *Download it on Google Play* on that same page, or search for
-   Swiftly Player in the Play Store — on your phone or on your TV.
+3. **Install** from that same page, or search for Swiftly Player in the Play
+   Store, on your phone or on your TV.
 
 <details>
 <summary>The app does not show up</summary>
 
 - It can take up to 15 minutes after step 2 before the Play Store lists it.
-- *Item not found* almost always means a different Google account. Tap your
-  profile picture in the Play Store, check which account it uses, and repeat
-  steps 1 and 2 with that one.
-- Several Google accounts on the phone: open both links in a browser where only
+- *Item not found* almost always means a different Google account. Check which
+  account the Play Store uses and repeat steps 1 and 2 with that one.
+- Several Google accounts on the device: open both links in a browser where only
   that account is signed in.
 
 </details>
 
-**What happens next.** Once Google has reviewed the release, Swiftly Player
-appears in the Play Store for everyone and this beta can be left. Updates arrive
-through the Play Store like for any other app; bugs and feedback go to the
-[Discord](https://discord.gg/MeGwfv3UwN).
+**Rather install it yourself?** Take the APK from the
+[latest release](https://github.com/paulherter/swiftly-player/releases/latest):
+one APK for phones and Android TV. On a TV without a browser, use an app like
+Downloader or `adb install`.
 
-**Rather install it yourself?**
-**[Download Swiftly-1.0.7.apk](https://github.com/paulherter/swiftly-player/releases/download/v1.0.7/Swiftly-1.0.7.apk)** — one APK for phones and Android TV,
-Android 9 or newer. It is the same build as on Google Play, signed with the
-same key, so you can switch to the Play Store later without reinstalling. On a TV without a browser,
-install it with an app like Downloader or over `adb install`.
-
-**Two APKs per release.** `Swiftly-<version>.apk` is the Play-signed build and the one to use with
-[Obtainium](https://obtainium.imranr.dev) (its default filter works as is). If Obtainium or Android shows a Play Store window
-instead of installing, use `Swiftly-<version>-upload-signed.apk` instead (filter regex `^Swiftly-.*-upload-signed\.apk$`).
-The two are signed with different keys and cannot be installed over each other: uninstall one before installing the other.
-
-**Android TV** is part of the same app and was built from the Apple TV app,
-screen by screen: the row layout on the home screen, detail pages, the profile,
-Seerr, Resume on this Device and a player made for the remote. Once you have
-joined, open the Play Store on the TV with the same Google account and install
-it there.
+`Swiftly-<version>.apk` is the Play-signed build and the one to use with
+[Obtainium](https://obtainium.imranr.dev). If Obtainium or Android shows a Play
+Store window instead of installing, use `Swiftly-<version>-upload-signed.apk`
+(filter regex `^Swiftly-.*-upload-signed\.apk$`). The two are signed with
+different keys and cannot be installed over each other: uninstall one before
+installing the other.
 
 <br>
 
@@ -354,85 +326,71 @@ transcodes" rests on.
 
 ## Windows
 
-**[Download Swiftly-1.0.6-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.6/Swiftly-1.0.6-Setup.exe)** — 77 MB, Windows 10 and 11, 64-bit. It installs over an older version, and from 1.0.4 on it updates itself: Settings → Check for updates asks GitHub for a newer version, downloads the installer and runs it.
+**[Download the installer](https://github.com/paulherter/swiftly-player/releases/latest)**
+(`Swiftly-<version>-Setup.exe`), Windows 10 and 11, 64-bit. It installs over an
+older version and updates itself: Settings → Check for updates asks GitHub for a
+newer version, downloads the installer and runs it.
 
-The installer puts Swiftly where it belongs: Program Files (or your own folder
-if you run it without admin rights — you choose in the dialog), a Start menu
-entry, an optional desktop icon, and a proper uninstall. No unpacking a zip and
-wondering where the folder should go.
+The installer puts Swiftly in Program Files (or your own folder if you run it
+without admin rights), adds a Start menu entry and an optional desktop icon,
+and comes with a proper uninstall.
 
 **Windows will warn you the first time.** SmartScreen shows a blue box saying
-the publisher is unknown: click **More info**, then **Run anyway**. That warning
-is not about this app being unsafe — it means the installer carries no paid
-code-signing certificate. Jellyfin's own desktop app is in exactly the same
-position. The checksum below is there so you can verify what you downloaded:
+the publisher is unknown: click **More info**, then **Run anyway**. The
+installer carries no paid code-signing certificate, which is all that warning
+says. Jellyfin's own desktop app is in the same position. The checksum is
+listed with each release so you can verify the download.
 
-```
-SHA256  1747188e850dcb2d7e8a3d061a52816a887ef8010c3b54fd2257f385ad8ee071
-```
-
-**It is the same program as on Linux** — the same interface code, mirrored
-into the Windows build; what differs sits behind twenty `#if` marks in ten of
-those files. GTK 4, libVLC and the Swift runtime all ship inside the
-installer, so there is nothing else to install.
+It is the same program as on Linux: the same interface code, mirrored into the
+Windows build. GTK 4, libVLC and the Swift runtime ship inside the installer.
 
 <br>
 
 ## Documentation
 
-- 🛠️ [Building](Documentation/Building.md) — clone, fetch VLCKit, generate the
-  project, run the tests
-- 🎬 [VLCKit](Documentation/VLCKit.md) — why this app ships a patched build,
-  with the measurements
-- 📐 [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift)
-  — the file that decides whether your server transcodes, with the reasoning
-  in its comments
+- [Building](Documentation/Building.md): clone, fetch VLCKit, generate the project, run the tests
+- [VLCKit](Documentation/VLCKit.md): why this app ships a patched build, with the measurements
+- [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift): the file that decides whether your server transcodes, with the reasoning in its comments
 
 <br>
 
 ## Requirements
 
-- Your own Jellyfin server, **10.8 or newer**. Swiftly Player hosts
-  nothing and has no account of its own — you sign in with the credentials you
-  already have.
-- iOS 18, tvOS 18, macOS 15 or Android 9 — or a Linux desktop with GTK 4 and libVLC,
-  which the installer takes care of.
+- Your own server: Jellyfin **10.8 or newer**, or Plex or Emby (beta). Swiftly
+  Player hosts nothing and has no account of its own.
+- iOS 18, tvOS 18, macOS 15, Android 9, Windows 10, or a Linux desktop with GTK
+  4.14 and libVLC, which the installer takes care of.
 
 <br>
 
 ## Reporting bugs
 
-The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
-channels for bug reports and feature requests, and a beta chat.
+The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN**, with
+channels for bug reports, feature requests and a beta chat.
 
-If you are on a TestFlight or Google Play beta build, the release notes name the handful of
-things that changed since the last one. Reports against those are worth the
-most, because they can be traced to a specific change.
-
-The single most useful report is one where **the server transcoded when it
-should not have.** If your Jellyfin dashboard says *Transcoding* instead of
-*Direct Play* or *Direct Stream*, please include the container, video codec,
-audio codec and subtitle format of that file.
+On a beta build, reports against the changes named in the release notes are
+worth the most, because they trace to a specific change. The single most useful
+report is one where **the server transcoded when it should not have.** If your
+dashboard says *Transcoding* instead of *Direct Play* or *Direct Stream*, include
+the container, video codec, audio codec and subtitle format of that file.
 
 <br>
 
 ## Sister app: Swiftly Music
 
 [Swiftly Music](https://github.com/paulherter/swiftly-music) is the music app
-for Jellyfin and Navidrome, on the iPhone — Direct Play with FLAC, timed
-lyrics, downloads, and Sonos with the iPhone as the remote. Same design, and
-the same Jellyfin code: its `JellyfinKit` is a copy from this repository.
-The beta is open on [TestFlight](https://testflight.apple.com/join/Ws5snXzX).
+for Jellyfin and Navidrome on the iPhone: Direct Play with FLAC, timed lyrics,
+downloads, and Sonos with the iPhone as the remote. Its `JellyfinKit` is a copy
+from this repository. The beta is open on
+[TestFlight](https://testflight.apple.com/join/Ws5snXzX).
 
 <br>
 
 ## Built with Claude
 
-Swiftly Player was written together with Anthropic's Claude, and the
-commit history says so — every commit carries a `Co-Authored-By` line. The
-decisions, the testing and the responsibility are mine; a good deal of the
-typing was not. It seemed more honest to say that here than to let someone
-work it out.
+Swiftly Player was written together with Anthropic's Claude. The decisions, the
+testing and the responsibility are mine; a good deal of the typing was not. It
+seemed more honest to say that here than to let someone work it out.
 
 <br>
 

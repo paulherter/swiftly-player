@@ -15,6 +15,23 @@ import JellyfinKit
 /// only covers appearance and who is asked when.
 extension App {
 
+    /// **The plan for the next episode, keeping the version the viewer is watching**
+    /// (`AppModel.plan(for:keeping:)` on Apple): the version with the same name as the one
+    /// playing (else the same resolution), otherwise the server's pick. The list entry carries
+    /// no `MediaSources`; they are fetched only when there is something to keep.
+    static func planKeeping(_ episode: Item, playing: MediaSource?, client: any MediaServer,
+                            limit: Int) async -> PlaybackPlan? {
+        var sourceID: String?
+        if let playing {
+            let sources: [MediaSource]?
+            if let known = episode.mediaSources { sources = known }
+            else { sources = (try? await client.item(id: episode.id))?.mediaSources }
+            sourceID = MediaVersions.matching(previous: playing, in: sources)?.id
+        }
+        return try? await client.playbackPlan(for: episode.id, profile: .vlc(maxBitrate: limit),
+                                              mediaSourceID: sourceID)
+    }
+
     /// **The window title bar stays visible, also in the player.**
     ///
     /// Hiding it (as the Mac does with its window controls) does not work: under
@@ -1308,8 +1325,9 @@ extension App {
                            creditsFrom: sections.first { $0.art == .credits }?.from,
                            networkFavorable: preparation.networkFavorable) {
             let limit = selection.profileBitrate
+            let playing = runningPlan?.source
             preparation.prepare(episode) {
-                try? await client.playbackPlan(for: episode.id, profile: .vlc(maxBitrate: limit))
+                await Self.planKeeping(episode, playing: playing, client: client, limit: limit)
             }
         }
         // Advance automatically at the end, only with a card (credits section from the
@@ -1347,7 +1365,7 @@ extension App {
 
     // MARK: Reports to the server, the one place
 
-    private func message(_ art: ReportQueue<ReportContent>.Art, _ client: JellyfinClient,
+    private func message(_ art: ReportQueue<ReportContent>.Art, _ client: any MediaServer,
                          title: Item, plan: PlaybackPlan,
                          ticks: Int64) -> ReportQueue<ReportContent>.Message {
         .init(art: art,
@@ -1359,14 +1377,14 @@ extension App {
     /// Start, progress and stop go out here and only here, into the ``messages`` queue,
     /// **dispatched, not awaited**: the tick never waits for the server. Only the end
     /// waits (``reportStop``).
-    func notifyStart(_ client: JellyfinClient, title: Item, plan: PlaybackPlan, ticks: Int64) {
+    func notifyStart(_ client: any MediaServer, title: Item, plan: PlaybackPlan, ticks: Int64) {
         reportTitle = (client, title, plan)
         reportedPaused = false
         messages.report(message(.start, client, title: title, plan: plan, ticks: ticks))
         traktStart(client, title: title, ticks: ticks)
     }
 
-    func notifyProgress(_ client: JellyfinClient, title: Item, plan: PlaybackPlan,
+    func notifyProgress(_ client: any MediaServer, title: Item, plan: PlaybackPlan,
                           ticks: Int64, paused: Bool) {
         guard messages.report(message(.progress(paused: paused), client,
                                        title: title, plan: plan, ticks: ticks)) else {
@@ -1454,7 +1472,8 @@ extension App {
         // at the end it keeps counting although nothing plays anymore, except while dragging the slider.
         return offeringLayer.tick(
             offering: offering,
-            cardDue: SectionLogic.cardDue(position: playState.position,
+            // "Next episode automatically" off: no card, no countdown, no advance.
+            cardDue: nextAutomatic && SectionLogic.cardDue(position: playState.position,
                                                        duration: playState.duration,
                                                        sections: sections,
                                                        hasNextEpisode: prefetchedEpisode != nil,
@@ -1472,7 +1491,7 @@ extension App {
     /// The end, **awaited**, because the pages reload afterwards. The queue sends it
     /// behind a still-running start and never twice. On failure or deadline expiry it goes
     /// to the deferred report.
-    func reportStop(_ client: JellyfinClient, title: Item, plan: PlaybackPlan,
+    func reportStop(_ client: any MediaServer, title: Item, plan: PlaybackPlan,
                     ticks: Int64, account: String) async {
         let entryRecord = message(.stop, client, title: title, plan: plan, ticks: ticks)
         // Trakt has its own queue and does not wait for Jellyfin.
@@ -1561,6 +1580,32 @@ extension App {
         if abs(now - streamLastPoint) > 0.05 {
             streamLastPoint = now
             streamStandsSince = nil
+            // **The clock runs, but does a picture come?** A stream whose clock keeps running
+            // counted as healthy forever, while the picture stood (measured on Apple: 76 s
+            // frozen, the clock in step). The same thresholds as below, from the package.
+            let counters = mediaPlayer.countValues
+            let shown = counters?.shown
+            defer { if let shown { streamLastImages = shown } }
+            guard let shown, StreamWatch.imagesState(before: streamLastImages, now: shown) == true else {
+                streamImagesStateSince = nil
+                return
+            }
+            let sinceNoImage = streamImagesStateSince ?? Date()
+            streamImagesStateSince = sinceNoImage
+            let hasRead = counters?.hasRead ?? 0
+            if hasRead > streamRead {
+                streamRead = hasRead
+                streamBufferGrew = Date()
+            }
+            let duration = Date().timeIntervalSince(sinceNoImage)
+            if case .newConnect = StreamWatch.rat(
+                standstillSince: duration,
+                networkChangeForward: nil,
+                jumpOpen: playState.leap != nil,
+                lastJumpForward: Date().timeIntervalSince(lastJump),
+                bufferGrewPre: Date().timeIntervalSince(streamBufferGrew)) {
+                streamNewBuildUp(reason: "kein neues Bild seit \(Int(duration)) s, Uhr laeuft weiter")
+            }
             return
         }
         // If the buffer grows, the stream is alive; then the server is just slow, and
@@ -1593,6 +1638,9 @@ extension App {
         AppLog.writeOut("[Strom] neu aufgebaut (\(reason)) bei \(Int(playState.position)) s"
             + (paused ? ", angehalten" : ""))
         streamStandsSince = nil
+        // The picture count belongs to the media; the new one starts from zero.
+        streamLastImages = nil
+        streamImagesStateSince = nil
         audioLossSince = nil
         audioLostLast = nil
         let spot = playState.position
@@ -1821,8 +1869,7 @@ extension App {
                 },
                 planOut: {
                     if let prepared { return prepared }
-                    return try? await client.playbackPlan(for: episode.id,
-                                                          profile: .vlc(maxBitrate: limit))
+                    return await Self.planKeeping(episode, playing: alt.plan.source, client: client, limit: limit)
                 },
                 apply: { new in
                     // **On GTK's thread, and checked again here.** The flow runs elsewhere; between its
@@ -1912,7 +1959,7 @@ extension App {
     /// **Fetch the chapters of this version.** Per version, not per title: a director's cut
     /// has different chapters. Until they arrive (or without a response) the bar stays one
     /// piece. Adopted only if this title is still playing.
-    func chapterLoad(client: JellyfinClient, item: Item, plan: PlaybackPlan) {
+    func chapterLoad(client: any MediaServer, item: Item, plan: PlaybackPlan) {
         playerChapter = []
         let source = plan.mediaSourceID
         Task.detached { [self] in
@@ -1927,7 +1974,7 @@ extension App {
     /// **Fetch sections and next episode for the running episode**, adopted only if no
     /// switch has begun since, the player is open and still shows this episode
     /// (`EpisodeSwitch.lookUp`).
-    func lookUp(for item: Item, change: EpisodeSwitch, client: JellyfinClient?) {
+    func lookUp(for item: Item, change: EpisodeSwitch, client: (any MediaServer)?) {
         let applies: @Sendable (App) -> Bool = { app in
             app.episodesSwitch === change && change.phase == .rests
                 && app.runningTitle?.id == item.id
@@ -2259,7 +2306,7 @@ private func waitOnMainThread(_ block: @escaping @Sendable () -> Void) {
 /// What a report to the server needs. The client is captured when queued: if the
 /// account changes afterwards, the report still belongs to the one who watched.
 struct ReportContent: Sendable {
-    let client: JellyfinClient
+    let client: any MediaServer
     let title: Item
     let plan: PlaybackPlan
     let ticks: Int64

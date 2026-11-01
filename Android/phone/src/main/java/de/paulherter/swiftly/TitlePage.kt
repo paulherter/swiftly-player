@@ -84,7 +84,7 @@ data class Title(
     val planPresent: Boolean, val lossless: Boolean, val method: String?,
     val resumeFrom: Double?, val resumeText: String?,
     val description: String?, val direction: List<String>, val actors: List<WithAct>,
-    val remembered: Boolean, val watched: Boolean, val trailer: String?, val file: FileInfo?,
+    val remembered: Boolean, val watched: Boolean, val file: FileInfo?,
     /** TV only, see `Tile.backdrop`. */
     val backdrop: String? = null,
     /** "25 min left" under the main button, and the fraction for the bar below it. */
@@ -113,6 +113,32 @@ internal fun playOrChoose(app: SwiftlyApplication, t: Title?, id: String, since:
     }
 }
 
+/** A press is already fetching the versions: a second tap on the same or another entry waits (`prepares` on Apple). */
+@Volatile private var versionsLoading = false
+
+/**
+ * Mirrors `PlayRequest.start(ask:)` (issue 33): **the one path from tap to player where a title with
+ * several versions asks which one.** Every place that starts a title without having its page loaded
+ * (series button, episodes, "from the start", Continue watching, tile menus, playlists) comes through
+ * here, instead of starting the server's default.
+ *
+ * - A copy on the device plays at once (the downloaded file is the one that plays).
+ * - `title`: the page's loaded title; without it the full title is fetched first. "Not loaded" must
+ *   never pass for "one version": if the fetch fails, the tap says so and starts nothing.
+ */
+internal fun playAsking(app: SwiftlyApplication, id: String, since: Double?, title: Title? = null, beforePlay: () -> Unit = {}) {
+    if (title != null || app.downloads.file(id) != null) { playOrChoose(app, title, id, since, beforePlay); return }
+    if (versionsLoading) return
+    versionsLoading = true
+    app.applicationRun.launch {
+        try {
+            val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
+            if (loaded == null) app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
+            else playOrChoose(app, loaded, id, since, beforePlay)
+        } finally { versionsLoading = false }
+    }
+}
+
 internal fun JSONObject.fieldText(inputField: String): String? = if (isNull(inputField)) null else getString(inputField)
 internal fun JSONObject.fieldNumber(inputField: String): Double? = if (isNull(inputField)) null else getDouble(inputField)
 internal fun JSONObject.fieldTexts(inputField: String): List<String> =
@@ -128,7 +154,7 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
           o.fieldNumber("fortsetzenAb"), o.fieldText("fortsetzenText"),
           o.fieldText("beschreibung"), o.fieldTexts("regie"),
           o.fieldList("darsteller") { WithAct(it.getString("id"), it.getString("name"), it.fieldText("rolle"), it.fieldText("bild")) },
-          o.optBoolean("gemerkt"), o.optBoolean("gesehen"), o.fieldText("trailer"),
+          o.optBoolean("gemerkt"), o.optBoolean("gesehen"),
           o.optJSONObject("datei")?.let { d ->
               FileInfo(d.fieldText("container"), d.fieldText("video"), d.fieldTexts("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
           }, if (o.has("kulisse")) o.fieldText("kulisse") else null,
@@ -137,7 +163,12 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
 }
 
 /** The facade reports "not signed in" as an identifier because the wording lives in the app catalog. */
-internal fun errorString(reason: String) = if (reason == "nichtAngemeldet") translated("Nicht angemeldet.") else reason
+internal fun errorString(reason: String, server: String? = null) = when (reason) {
+    "nichtAngemeldet" -> translated("Nicht angemeldet.")
+    "keinPlan" -> translated("Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen.",
+        server ?: translated("dem Server"))
+    else -> reason
+}
 
 /**
  * The sentence for a caught exception; never raw `e.message`.
@@ -291,13 +322,8 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                     }
                     // The fifth field, only when the feature is on; next to the watchlist, as the "for later" pair.
                     if (app.settings.downloadButtonShow && t?.type != "Series") DownloadField(app, target.id, name)
-                    // On iOS the server's trailer plays in the app's own player, which is still to come; until then the external one.
                     ActionButton(Glyph.Film, translated("Trailer"), false) {
-                        val address = t?.trailer
-                        val went = address != null && runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)))
-                        }.isSuccess
-                        if (!went) message = translated("Für diesen Titel liegt kein Trailer vor.")
+                        section.launch { trailerStart(app, context, target.id)?.let { message = it } }
                     }
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched) {
                         toggle(!watched, { watched = it }, { app.kern.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
@@ -324,7 +350,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                             if (choice == "gemeinsam") { section.launch { kotlinx.coroutines.delay(SheetSwitch); sharedCreateOpen(app, target.id, name) }; return@SheetRequest }
                             section.launch {
                                 when (choice) {
-                                    "vonvorn" -> app.play.value = PlayRequest(target.id, null)
+                                    "vonvorn" -> playAsking(app, target.id, null, t)
                                     "zuruecksetzen" -> {
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)

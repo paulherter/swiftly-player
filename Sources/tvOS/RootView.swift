@@ -37,7 +37,7 @@ struct RootView: View {
 
             switch model.phase {
             case .disconnected, .connecting:
-                ServerView(model: model)
+                TVFirstStartView(model: model)
             case let .needsLogin(serverName, version):
                 SignInView(model: model, serverName: serverName, version: version)
             case .ready:
@@ -197,39 +197,49 @@ struct InputField: View {
 /// First step: where the server is. As on iPhone only the wordmark, no emblem beside it (two marks stacked are one too many), and one sentence instead of heading plus label plus placeholder.
 struct ServerView: View {
     let model: AppModel
+    /// An address another page already knows (Emby found a Jellyfin there).
+    var presetAddress: String? = nil
+    /// One step back to the picker; the Menu button does the same.
+    var back: (() -> Void)? = nil
     @State private var address = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: 72)
+            Wordmark(height: TVSpec.serverWordmark)
 
             Text("Wo steht dein Jellyfin-Server?")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
-                .padding(.top, 56)
+                .padding(.top, TVSpec.serverQuestionTop)
 
             InputField(placeholder: "tv.beispiel.de", text: $address,
                         content: .URL, completion: linkUp)
-                .frame(width: 760)
-                .padding(.top, 28)
+                .frame(width: TVSpec.formWidth)
+                .padding(.top, TVSpec.serverFieldTop)
 
             Text("https:// kannst du weglassen.")
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontVeryQuiet)
-                .frame(width: 760, alignment: .leading)
-                .padding(.top, 12)
+                .frame(width: TVSpec.formWidth, alignment: .leading)
+                .padding(.top, TVSpec.serverHintTop)
 
             TVAdvanced(rows: $headers)
-                .frame(width: 760, alignment: .leading)
-                .padding(.top, 24)
+                .frame(width: TVSpec.formWidth, alignment: .leading)
+                .padding(.top, TVSpec.serverAdvancedTop)
 
-            Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
-                   action: linkUp)
-                .buttonStyle(ThemedButtonStyle())
-                .disabled(address.isEmpty || model.phase == .connecting)
-                .padding(.top, 36)
+            HStack(spacing: TVSpec.onboardingButtonSpacing) {
+                Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                       action: linkUp)
+                    .buttonStyle(ThemedButtonStyle())
+                    .disabled(address.isEmpty || model.phase == .connecting)
+                if let back {
+                    Button("Zurück", action: back)
+                        .buttonStyle(ThemedButtonStyle())
+                }
+            }
+            .padding(.top, TVSpec.serverButtonTop)
 
             // No ring replacing the button. It keeps its place and says so in the label; otherwise the page jumps and where you pressed is lost.
             if let error = model.errorMessage, model.phase != .connecting {
@@ -238,13 +248,16 @@ struct ServerView: View {
                     // `error`, not `warning`; see `Colors.swift`.
                     .foregroundStyle(Theme.error)
                     .multilineTextAlignment(.center)
-                    .frame(width: 900)
-                    .padding(.top, 32)
+                    .frame(width: TVSpec.messageWidth)
+                    .padding(.top, TVSpec.serverErrorTop)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
+        .onAppear { if address.isEmpty, let presetAddress { address = presetAddress } }
+        // Menu is one step back when there is a picker before this page, else it leaves the app.
+        .onExitCommand(perform: back)
     }
 
     /// Button and the keyboard's send key meet here; a second send during the check is discarded by the model.
@@ -268,34 +281,34 @@ struct SignInView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: 60)
+            Wordmark(height: TVSpec.loginWordmark)
 
             Text(serverName)
                 .font(Theme.rail)
                 .foregroundStyle(Theme.font)
-                .padding(.top, 44)
+                .padding(.top, TVSpec.loginServerNameTop)
 
             if let version {
                 Text("Jellyfin \(version)")
                     .font(Theme.small)
                     .foregroundStyle(Theme.fontVeryQuiet)
-                    .padding(.top, 6)
+                    .padding(.top, TVSpec.loginVersionTop)
             }
 
-            VStack(spacing: 20) {
+            VStack(spacing: TVSpec.loginFieldSpacing) {
                 InputField(placeholder: "Benutzername", text: $user,
                             content: .username)
                 InputField(placeholder: "Kennwort", text: $passphrase,
                             safe: true, content: .password,
                             completion: signIn)
             }
-            .frame(width: 760)
-            .padding(.top, 44)
+            .frame(width: TVSpec.formWidth)
+            .padding(.top, TVSpec.loginFieldsTop)
 
             Button(model.isWorking ? "Anmelden…" : "Anmelden", action: signIn)
                 .buttonStyle(ThemedButtonStyle())
                 .disabled(user.isEmpty || model.isWorking)
-                .padding(.top, 36)
+                .padding(.top, TVSpec.loginButtonTop)
 
             if let error = model.errorMessage, !model.isWorking {
                 Text(error)
@@ -303,18 +316,20 @@ struct SignInView: View {
                     // `error`, not `warning`; see `Colors.swift`.
                     .foregroundStyle(Theme.error)
                     .multilineTextAlignment(.center)
-                    .frame(width: 900)
-                    .padding(.top, 32)
+                    .frame(width: TVSpec.messageWidth)
+                    .padding(.top, TVSpec.loginErrorTop)
             }
 
-            HStack(spacing: 24) {
+            HStack(spacing: TVSpec.loginSwitchSpacing) {
                 // On TV the better way than the password field above, so it sits beside it as an equal, not in a submenu as on iPhone.
-                Button("Quick Connect") { quickConnect = true }
-                    .buttonStyle(ThemedButtonStyle())
+                if model.can(.quickConnect) {
+                    Button("Quick Connect") { quickConnect = true }
+                        .buttonStyle(ThemedButtonStyle())
+                }
                 Button("Anderer Server") { model.signOut() }
                     .buttonStyle(ThemedButtonStyle())
             }
-            .padding(.top, 52)
+            .padding(.top, TVSpec.loginSwitchTop)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {

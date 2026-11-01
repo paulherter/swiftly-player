@@ -501,6 +501,8 @@ private struct GiftClaiming: View {
     let icon: Namespace.ID
     @State private var ring = false
     @State private var batStart = Date.now
+    /// The bat's 0.85 s flight is over; the clock below then stops instead of redrawing an empty canvas at 30 fps for as long as the sheet stays open.
+    @State private var batDone = false
 
     var body: some View {
         ZStack {
@@ -511,7 +513,7 @@ private struct GiftClaiming: View {
                 .accessibilityHidden(true)
             LookTile(look: look, size: 114)
                 .matchedGeometryEffect(id: "gift", in: icon)
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: batDone)) { timeline in
                 Canvas { context, size in
                     let progress = timeline.date.timeIntervalSince(batStart) / 0.85
                     guard progress >= 0, progress <= 1 else { return }
@@ -535,7 +537,12 @@ private struct GiftClaiming: View {
         }
         .onAppear {
             batStart = .now
+            batDone = false
             withAnimation(Theme.motionReduced ? Theme.fadeReduced : .easeOut(duration: 0.6)) { ring = true }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(1))
+            batDone = true
         }
         .accessibilityElement()
         .accessibilityLabel(Text("\(look.name) gehört dir."))

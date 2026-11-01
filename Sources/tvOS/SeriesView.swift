@@ -87,6 +87,7 @@ struct SeriesView: View {
     /// The player sits in the frame; see `MainView`.
     @Environment(\.playRequest) private var play
     @State private var prepares = false
+    @State private var versionChoice: VersionChoice?
     @State private var nextWith: Item?
     /// Whether `nextWith` is a known state: from the cache, a started start
     /// episode or the server. Until then the button reads "Abspielen".
@@ -228,6 +229,11 @@ struct SeriesView: View {
         }
         .animation(Theme.motion(.easeInOut(duration: 0.18)), value: moreOpen)
         .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)
+        .versionChoice($versionChoice) { choice, version in
+            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu dieser Folge.") },
+                              play: { play.wrappedValue = $0 })
+        }
         .overlay(alignment: .top) {
             if let message {
                 HintStrip(text: message) { self.message = nil }
@@ -465,6 +471,7 @@ struct SeriesView: View {
         async let state = model.stateInSeries(series)
         async let alike = model.similar(series)
         async let extra = model.extras(series)
+        async let preview = model.trailerCandidates(for: series, canOpenWeb: false)
 
         let addedSeries = await freshSeries
         // **`nil` means failed.** Writing an empty list into the `SeriesCache`
@@ -490,7 +497,11 @@ struct SeriesView: View {
         let fetch = choice != nil || (fetchedSeasons?.isEmpty ?? false)
         let fetchedEpisodes = fetch ? await model.episodes(series: series.id, season: choice?.id) : nil
         let newSimilar = await alike
-        let newExtras = await extra
+        // The trailer leads the extras, as on the movie page (``TrailerChoice``).
+        let trailers = TrailerChoice.files(in: await preview)
+        let fetchedExtras = await extra
+        let newExtras = fetchedExtras == nil && trailers.isEmpty
+            ? nil : TrailerChoice.shelf(trailers: trailers, extras: fetchedExtras ?? [])
         // A newer run has started: its state wins.
         guard myOwn == loadRun else { return }
 
@@ -608,13 +619,7 @@ struct SeriesView: View {
     }
 
     private func episodeStart(_ episode: Item, since: Double) {
-        Task {
-            guard let plan = await model.plan(for: episode.id) else {
-                message = String(localized: "Die Folge konnte nicht geladen werden.")
-                return
-            }
-            play.wrappedValue = PlayRequest(item: episode, plan: plan, startAt: since)
-        }
+        launch(episode, since: since)
     }
 
     /// **Reload everything, not just the series.**
@@ -632,7 +637,11 @@ struct SeriesView: View {
     /// Without it the position rule applies: an episode starts at **its own** position.
     private func launch(_ episode: Item?, since: Double? = nil) {
         guard let episode else { return }
-        PlayRequest.start(episode, since: since, freshValue: true, model: model, prepares: $prepares,
+        // **An episode with several versions asks, like a movie** (see iPhone).
+        PlayRequest.start(episode, since: since, freshValue: true,
+                              ask: VersionAsk(choose: { versionChoice = $0 },
+                                              failed: { message = $0 }),
+                              model: model, prepares: $prepares,
                               missing: { message = String(localized: "Der Server hat keine Datei zu dieser Folge.") },
                               play: { play.wrappedValue = $0 })
     }

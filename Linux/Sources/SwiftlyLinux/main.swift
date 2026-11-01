@@ -22,6 +22,11 @@ import WinSDK
 // so an explicit setting by the user is kept.
 #if os(Windows)
 _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
+// GTK on Windows only picks the GL renderer through DirectComposition, which is opt-in; without
+// it GTK silently falls back to the CPU Cairo renderer. Keep an explicit user choice.
+if getenv("GDK_DEBUG") == nil && getenv("GSK_RENDERER") == nil {
+    _ = g_setenv("GDK_DEBUG", "dcomp", 0)
+}
 #endif
 
 // **The first line that counts.** Up to here Windows has loaded all DLLs (and

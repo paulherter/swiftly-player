@@ -21,6 +21,8 @@ final class TrackStatus {
     /// The show or movie for which a manual choice is remembered.
     var title: String?
     var source: MediaSource?
+    /// The title's original language (`Item.originalLanguage`), for "(Original)".
+    var original: String?
     var files: [SubtitleFile] = []
     /// VLC track number → MD5 of the file it came from.
     var fileTracks: [Int32: String] = [:]
@@ -34,8 +36,9 @@ final class TrackStatus {
     var reported = TrackIndices()
 
     /// A new title or episode.
-    func new(title: String?, source: MediaSource?, files: [SubtitleFile]) {
+    func new(title: String?, source: MediaSource?, files: [SubtitleFile], original: String? = nil) {
         self.title = title
+        self.original = original
         self.source = source
         self.files = files
         reported = TrackIndices()
@@ -71,11 +74,26 @@ extension App {
     func trackStatusNew(_ item: Item, plan: PlaybackPlan?) {
         var files: [SubtitleFile] = []
         if let plan, !plan.url.isFileURL, let addresses {
-            files = SubtitleFile.from(streams: plan.source?.mediaStreams ?? [],
-                                          server: addresses.base, key: addresses.token,
-                                          attribute: Self.subtitleRememberTimes)
+            let streams = plan.source?.mediaStreams ?? []
+            // **"Keep the file's style" off:** ASS and SSA come as the server's SRT, under the
+            // same index, so the look applies (spec: subtitle look, section 3). The embedded
+            // original is hidden from the list (``subtitleNames()``) and replaced in the
+            // mapping (``TrackMapping/replacedPositions(subtitle:streams:files:)``).
+            if fileStyleAdjustable, !selection.subtitleLook.keepFileStyle {
+                files = SubtitleFile.asPlainText(streams: streams, itemID: plan.itemID ?? item.id,
+                                                    source: plan.mediaSourceID,
+                                                    server: addresses.base, key: addresses.token,
+                                                    keyName: addresses.tokenName,
+                                                    attribute: Self.subtitleRememberTimes)
+            } else {
+                files = SubtitleFile.from(streams: streams,
+                                              server: addresses.base, key: addresses.token,
+                                              keyName: addresses.tokenName,
+                                              attribute: Self.subtitleRememberTimes)
+            }
         }
-        trackStatus.new(title: TrackMemory.title(for: item), source: plan?.source, files: files)
+        trackStatus.new(title: TrackMemory.title(for: item), source: plan?.source, files: files,
+                         original: item.originalLanguage)
     }
 
     /// MD5 of the URL as libVLC 4 forms it, via GLib, which exists on Linux and
@@ -301,15 +319,22 @@ extension App {
     /// same format as the tech badge (`prettyName`), with the language in the
     /// interface's language (``TrackLabel/language(_:locale:)``).
     func audioTrackNames() -> [(identifier: Int32, name: String)] {
-        let audio = mediaPlayer.audioTracks.filter { $0.identifier >= 0 }
-        let details = mediaPlayer.trackDetails()
-        return audio.map { track in
+        let (audio, _, z, details) = trackState()
+        let streams = trackStatus.source?.mediaStreams ?? []
+        return audio.enumerated().map { position, track in
             let a = details[track.identifier]
-            let name = TechDetails.audioTrackName(
+            let base = TechDetails.audioTrackName(
                 language: a?.language,
                 codec: a.flatMap { TechDetails.codecNameValue(vlcId: $0.codec) },
                 channels: a?.channels) ?? track.name
-            return (track.identifier, name)
+            // "(Original)" only with a server source; without one nothing is added.
+            guard !streams.isEmpty else { return (track.identifier, base) }
+            let stream = z.audio[position].flatMap { index in
+                streams.first { $0.index == index && $0.type == "Audio" }
+            }
+            return (track.identifier,
+                    OriginalAudio.label(base, language: a?.language ?? stream?.language,
+                                        stream: stream, originalLanguage: trackStatus.original))
         }
     }
 
@@ -321,7 +346,11 @@ extension App {
         let (_, ut, z, details) = trackState()
         let streams = trackStatus.source?.mediaStreams ?? []
         let tracks = playerTracks(ut, art: "spu", details: details)
-        let labels = ut.indices.map { position in
+        // The embedded ASS tracks that a server SRT replaces are not listed twice.
+        let hidden = TrackMapping.replacedPositions(subtitle: tracks, streams: streams,
+                                                     files: trackStatus.files)
+        let visible = ut.indices.filter { !hidden.contains($0) }
+        let labels = visible.map { position in
             let feed = z.subtitle[position].flatMap { index in
                 streams.first { $0.type == "Subtitle" && $0.index == index }
             }
@@ -329,8 +358,8 @@ extension App {
                 ?? TrackLabel.subtitle(tracks[position])
                 ?? ut[position].name
         }
-        return zip(ut, TrackLabel.distinct(labels)).map { track, name in
-            (identifier: track.identifier, name: name)
+        return zip(visible, TrackLabel.distinct(labels)).map { position, name in
+            (identifier: ut[position].identifier, name: name)
         }
     }
 }

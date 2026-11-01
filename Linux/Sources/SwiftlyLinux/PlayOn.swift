@@ -58,10 +58,10 @@ extension App {
     ///
     /// Gone means a message and nothing playing here instead: a film starting here
     /// while the viewer looks at the TV is not what was asked for.
-    private func playSession(_ output: PlayOutput, client: JellyfinClient) async -> RemoteSession? {
+    private func playSession(_ output: PlayOutput, client: any MediaServer) async -> RemoteSession? {
         let sessions: [RemoteSession]
         do {
-            sessions = try await client.remoteSession()
+            sessions = try await (client as? any RemoteSessionServer)?.remoteSession() ?? []
         } catch {
             // Not "gone": the server did not answer.
             AppLog.writeOut("[Abspielen auf] Abfrage fehlgeschlagen: \(error)")
@@ -85,10 +85,10 @@ extension App {
     }
 
     private func playDeliver(_ order: PlayOrder, to session: RemoteSession,
-                             client: JellyfinClient) async -> Bool {
+                             client: any MediaServer) async -> Bool {
         let name = PlayTargets.name(of: session)
         do {
-            try await client.playOn(session: session.id, order: order)
+            try await (client as? any RemoteSessionServer)?.playOn(session: session.id, order: order)
         } catch {
             AppLog.writeOut("[Abspielen auf] an \(name) fehlgeschlagen: \(error)")
             let text = readableError(error)

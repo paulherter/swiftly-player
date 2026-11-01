@@ -72,7 +72,7 @@ public enum SeasonSelectionRule {
     }
 }
 
-public extension JellyfinClient {
+public extension MediaServer {
 
     /// **What the head of a page shows when there is no background.**
     ///
@@ -88,8 +88,7 @@ public extension JellyfinClient {
         if item.type == "Series" {
             // Not with `??` in one line: its right side is an autoclosure and must not
             // contain `await`.
-            var episode = try? await nextEpisodeSeries(seriesID: item.id)
-            if episode == nil { episode = try? await firstEpisode(seriesID: item.id) }
+            let episode = await stateInSeries(item.id)
             if let episode, let url = ImageSelection.landscape(episode, addresses: addresses,
                                                   width: width)?.url {
                 return url
@@ -99,7 +98,7 @@ public extension JellyfinClient {
     }
 }
 
-public extension JellyfinClient {
+public extension MediaServer {
 
     /// **The head image in two sizes: large for the backdrop, tiny for the tone.**
     ///
@@ -126,8 +125,7 @@ public extension JellyfinClient {
         // Not with `??` in one line: its right side is an autoclosure and must not
         // contain `await`.
         if item.type == "Series" {
-            var episode = try? await nextEpisodeSeries(seriesID: item.id)
-            if episode == nil { episode = try? await firstEpisode(seriesID: item.id) }
+            let episode = await stateInSeries(item.id)
             if let episode,
                let g = ImageSelection.landscape(episode, addresses: addresses, width: large)?.url,
                let k = ImageSelection.landscape(episode, addresses: addresses, width: small)?.url {

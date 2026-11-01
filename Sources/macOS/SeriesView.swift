@@ -53,7 +53,7 @@ struct SeriesView: View {
     /// A `DownloadItem` for an episode. **The same source the player would use**,
     /// since it is the same file.
     private func entries(_ episode: Item) -> DownloadItem? {
-        guard let account = model.session?.userID else { return nil }
+        guard let account = model.session?.storageAccount else { return nil }
         let source = episode.mediaSources?.first
         return DownloadItem(
             id: episode.id, account: account, art: .episode, title: episode.name,
@@ -427,8 +427,14 @@ struct SeriesView: View {
             }
 
         case .cast:
-            CastRail(model: model, folks: series.actors,
-                            origin: series.name)
+            // The tab is there even when the server holds no cast: say so instead of an empty page.
+            if series.actors.isEmpty {
+                EmptyHint(text: "Keine Besetzung hinterlegt.")
+                    .frame(height: 200)
+            } else {
+                CastRail(model: model, folks: series.actors,
+                                origin: series.name)
+            }
 
         case .extras:
             TitleRail(title: "Extras", entries: extras, model: model, play: true)

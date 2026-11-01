@@ -230,7 +230,7 @@ extension App {
         }
         return downloadReasonRow(
             title: p.title,
-            bottom: p.state == .loads ? downloadLoadText(loaded, from: p.bytes, estimated: p.converted)
+            bottom: p.state == .loads ? downloadLoadText(loaded, from: p.bytes, estimated: p.streamed)
                                      : downloadStateWord(p),
             cautionary: p.state == .error,
             landscape: landscape,
@@ -403,7 +403,7 @@ extension App {
             stripe = b
         }
         if let z = tally {
-            downloadCount(z.0, bytes: z.1, estimated: downloads.entries(for: z.0)?.converted ?? false,
+            downloadCount(z.0, bytes: z.1, estimated: downloads.entries(for: z.0)?.streamed ?? false,
                             row: u, stripe: stripe)
         }
         append(row, text)

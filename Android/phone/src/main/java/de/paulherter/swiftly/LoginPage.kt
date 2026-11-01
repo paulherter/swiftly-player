@@ -117,7 +117,8 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
                     if (version.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(7.dp).background(Theme.accent, CircleShape))
-                            Text(translated("Verbunden · Jellyfin %@", version), style = Theme.small, color = Theme.fontVeryQuiet)
+                            // "Another account" on a connected Emby is this page too; the first sign-in on it is always Jellyfin.
+                            Text(translated("Verbunden · %@ %@", (if (moreAccount) ServerKind.from(app.kind()) else ServerKind.Jellyfin).displayName, version), style = Theme.small, color = Theme.fontVeryQuiet)
                         }
                     }
                     Text(serverName, style = Theme.title, color = Theme.font)
@@ -146,8 +147,11 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
                     }
                     // Always there, as on iOS, which does not ask beforehand whether the server supports it; if it
                     // says no, that shows on the quick-connect page.
-                    Or(Modifier.padding(top = 12.dp))
-                    SecondaryButton(Glyph.Tv, translated("Mit Quick Connect anmelden")) { quick = true }
+                    // Only where the server has it: Emby has no Quick Connect.
+                    if (!moreAccount || app.can("quickConnect")) {
+                        Or(Modifier.padding(top = 12.dp))
+                        SecondaryButton(Glyph.Tv, translated("Mit Quick Connect anmelden")) { quick = true }
+                    }
                 }
             }
         }
@@ -162,7 +166,7 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
 
 /** Mirrors `AccountCharacter`: 60 circle, image or initial, selected with accent border. */
 @Composable
-private fun AccountCharacter(name: String, image: String?, selected: Boolean, perform: () -> Unit) {
+internal fun AccountCharacter(name: String, image: String?, selected: Boolean, perform: () -> Unit) {
     Column(Modifier.width(72.dp).tapOn(perform), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(60.dp).clip(CircleShape).background(Theme.raised)
                 // Ring: selected `font` 2, highlighted `accent` 1.5, otherwise `rand` 1 (`ProfileCharacter`).

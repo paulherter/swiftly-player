@@ -12,6 +12,10 @@
     <!-- Network: cleartext and custom root certificates are governed solely by `network_trust`
              (rationale there). From API 24 this file overrides `usesCleartextTraffic` anyway, so the
              flag is not repeated here. -->
+    <!-- Speech input of the TV search asks whether anything can answer it (package visibility, API 30). -->
+    <queries>
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
+    </queries>
     <application
         android:name=".SwiftlyApplication"
         android:label="Swiftly"

@@ -23,8 +23,9 @@ struct ProfileView: View {
     @State private var verification: String?
     /// Shows Quick Connect to add another account.
     @State private var accountRecord = false
-    /// A second Jellyfin: address, then Quick Connect.
-    @State private var serverRecord = false
+    /// A new server or a second account on a known Plex/Emby server: the kind picker
+    /// (or straight the kind's page), then its sign-in. `ServerRoute` says which.
+    @State private var serverRoute: ServerRoute?
     /// Custom headers of the active server (issue #4).
     @State private var ownHeaders = false
     /// Connect Seerr, as a page of its own above everything: three fields and an
@@ -35,6 +36,8 @@ struct ProfileView: View {
     @State private var communityTarget: CommunityTarget?
     /// Open-source licenses: full page, building blocks on the left, text on the right.
     @State private var licensesOpen = false
+    /// Subtitle look: full page, picture on the left, rows on the right.
+    @State private var subtitleLookOpen = false
     /// Support page and icon picker: a local flag, so the root's `presented` cover
     /// is the only one bound to the model.
     @State private var supportStart: TVSupportView.Start?
@@ -151,17 +154,17 @@ struct ProfileView: View {
             // areas: the left is what you choose (who, and which area), the right is what
             // you set. That way the right column starts at the top and all eight "Playback"
             // rows are visible without scrolling.
-            HStack(alignment: .top, spacing: 72) {
+            HStack(alignment: .top, spacing: TVSpec.columnGap) {
                 VStack(alignment: .leading, spacing: 0) {
                     accountBlock
                     // **A line instead of a second box.** It says where "who" ends and "where"
                     // begins. A box would say the same but look like the list below and the card on
                     // the right.
                     SheetLine()
-                        .padding(.leading, 26)
-                        .padding(.vertical, 32)
+                        .padding(.leading, TVSpec.rowInset)
+                        .padding(.vertical, TVSpec.accountSeparatorVertical)
                     GroupsTitle(text: "Bereiche")
-                    ForEach(SectionSelection.allCases) { b in
+                    ForEach(SectionSelection.allCases.filter { $0 != .integration || showsIntegration }) { b in
                         Button(b.name) {
                             section = b
                             toInGo()
@@ -178,7 +181,7 @@ struct ProfileView: View {
                 //
                 // Nothing changes visibly: the content stays at the top, only the section now
                 // reaches the bottom.
-                .frame(width: 460, alignment: .topLeading)
+                .frame(width: TVSpec.sectionColumnWidth, alignment: .topLeading)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
                 .focusSection()
 
@@ -203,7 +206,7 @@ struct ProfileView: View {
                             // the content opens with the box. It comes before the fill, not after, otherwise
                             // it would cut away the fill too and the card would have no reason left.
                             VStack(alignment: .leading, spacing: 0) { rows }
-                                .padding(10)
+                                .padding(TVSpec.listCardInset)
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
                                 .background(Theme.area,
                                             in: RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
@@ -215,14 +218,14 @@ struct ProfileView: View {
                         guard let new else { return }
                         // Same curve and duration as the expansion, otherwise two motions run against
                         // each other.
-                        withAnimation(Theme.motion(.easeInOut(duration: 0.28))) {
+                        withAnimation(Theme.motion(.easeInOut(duration: TVSpec.valueExpandDuration))) {
                             reader.scrollTo(new, anchor: .top)
                         }
                     }
                 }
                 // Dimmed means: visible but not active yet. Disabled so that a step right does
                 // not already lead in; OK goes in.
-                .opacity(inside ? 1 : 0.5)
+                .opacity(inside ? 1 : TVSpec.valueDimmedAlpha)
                 .disabled(!inside)
                 .focusSection()
                 .onExitCommand {
@@ -237,7 +240,7 @@ struct ProfileView: View {
                 .onChange(of: inside) { _, now in
                     if now, right == nil { right = .top }
                 }
-                .animation(Theme.motion(.easeInOut(duration: 0.2)), value: inside)
+                .animation(Theme.motion(.easeInOut(duration: TVSpec.valueDimDuration)), value: inside)
             }
         }
         .padding(.horizontal, Theme.edgePage)
@@ -263,8 +266,8 @@ struct ProfileView: View {
         .fullScreenCover(isPresented: $ownHeaders) {
             TVOwnHeadersPage(model: model) { ownHeaders = false }
         }
-        .fullScreenCover(isPresented: $serverRecord) {
-            ServerOnboardingView(model: model) { serverRecord = false }
+        .fullScreenCover(item: $serverRoute) { route in
+            TVAddServerFlow(model: model, route: route) { serverRoute = nil }
         }
         .fullScreenCover(isPresented: $seerrOpen) {
             SeerrConnectView(model: model, seerr: model.seerr) { seerrOpen = false }
@@ -274,6 +277,9 @@ struct ProfileView: View {
         }
         .fullScreenCover(item: $communityTarget) { target in
             CodeSheet(target: target) { communityTarget = nil }
+        }
+        .fullScreenCover(isPresented: $subtitleLookOpen) {
+            TVSubtitleLookView(model: model) { subtitleLookOpen = false }
         }
         .fullScreenCover(isPresented: $licensesOpen) {
             TVLicensesView { licensesOpen = false }
@@ -314,34 +320,51 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 0) {
             ProfileCharacter(name: model.session?.userName ?? "?",
                           image: model.userImageURL(),
-                          size: 84)
-                .modifier(TVSupporterAvatarBadge(size: 84))
+                          size: TVSpec.accountAvatar)
+                .modifier(TVSupporterAvatarBadge(size: TVSpec.accountAvatar))
             Text(model.session?.userName ?? "—")
                 // Row heading from the ladder.
                 .font(Theme.rail)
                 .tracking(Theme.lockRail)
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
-                .padding(.top, 18)
+                .padding(.top, TVSpec.accountNameTop)
             // Server data, not catalog text.
             Text(verbatim: serverRow)
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
-                .padding(.top, 4)
+                .padding(.top, TVSpec.accountServerTop)
             // The line that was here separated name from accounts inside the card. Without
             // the card it would be the second in a column that needs one, and the one is
             // further down, before "Areas". The accounts belong to the name above.
-            AccountsStrip(model: model) { accountRecord = true }
-                .padding(.top, 28)
+            AccountsStrip(model: model) {
+                // Another account on the connected server, by its kind: Jellyfin through
+                // Quick Connect, Emby and Plex on their own sign-in pages.
+                switch model.session?.kind {
+                case .plex?, .emby?:
+                    serverRoute = ServerRoute(preset: model.session?.serverURL, kind: model.session?.kind)
+                default:
+                    accountRecord = true
+                }
+            }
+                .padding(.top, TVSpec.accountStripTop)
         }
-        .padding(.leading, 26)
+        .padding(.leading, TVSpec.rowInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var serverRow: String {
-        [model.serverName, model.serverVersion].compactMap { $0 }.joined(separator: " · ")
+        [model.serverName, model.serverVersion.map { "\(kindName) \($0)" }]
+            .compactMap { $0 }.joined(separator: " · ")
     }
+
+    /// The kind of the active server as the user reads it ("Plex (Beta)"), as on the iPhone.
+    private var kindName: String { (model.session?.kind ?? .jellyfin).shownName }
+
+    /// Seerr signs in with the media server's account, which not every kind has; Trakt needs
+    /// the build's credentials. Without both the area would be empty (`SettingsView`).
+    private var showsIntegration: Bool { model.can(.seerr) || model.trakt.available }
 
     // MARK: Rows per area
 
@@ -384,6 +407,12 @@ struct ProfileView: View {
                       an: { $0 == model.bufferLevel },
                       select: { model.bufferLevel = $0 })
             .focused($right, equals: free ? .proceed : .top)
+            SeparatorLine()
+            // Same place and words as on iPhone and Android. Applies from the next title.
+            valueRow("Player", value: model.playerEngine.name,
+                      entries: PlayerEngineSetting.allCases, label: \.name,
+                      an: { $0 == model.playerEngine },
+                      select: { model.playerEngine = $0 })
             SeparatorLine()
             ToggleRow(title: "Untertitel automatisch", an: model.subtitleAutomatic) {
                 model.subtitleAutomatic.toggle()
@@ -437,6 +466,10 @@ struct ProfileView: View {
                       label: \.name,
                       an: { $0.value == model.subtitleLanguage },
                       select: { model.subtitleLanguage = $0.value })
+            SeparatorLine()
+            ActionRow(title: "Aussehen der Untertitel", value: model.subtitleLook.entryValue) {
+                subtitleLookOpen = true
+            }
 
         case .presentation:
             // **"Your look" first**, where the profile has one to show (see `TVLookEntry`).
@@ -466,7 +499,7 @@ struct ProfileView: View {
             // the arrows on the right: dragging a row by a handle is a pointer gesture, and
             // the remote has none. Focus goes right to the arrows and a press moves the row.
             GroupsTitle(text: "Startseite")
-                .padding(.horizontal, 26)
+                .padding(.horizontal, TVSpec.rowInset)
                 .padding(.top, 18)
             ForEach(visibleRails) { rail in
                 RailsRow(name: rail.name,
@@ -488,7 +521,7 @@ struct ProfileView: View {
             // **Own rows from the server**: libraries and collections, in the order of this
             // list, after the fixed rows.
             GroupsTitle(text: "Bibliotheken und Sammlungen")
-                .padding(.horizontal, 26)
+                .padding(.horizontal, TVSpec.rowInset)
                 .padding(.top, 18)
             ForEach(model.startLibraries) { entryRecord in
                 StartLibraryRow(
@@ -514,7 +547,7 @@ struct ProfileView: View {
             // **One list, two forms.** Which genres is set once; whether they show as rows
             // below or as chips on top is only the form.
             GroupsTitle(text: "Genres")
-                .padding(.horizontal, 26)
+                .padding(.horizontal, TVSpec.rowInset)
                 .padding(.top, 18)
             valueRow("Form", value: model.genreChips ? String(localized: "Als Chips")
                                                      : String(localized: "Als Reihen"),
@@ -543,25 +576,28 @@ struct ProfileView: View {
             // **A second service, not a second server**, hence a category of its own and not
             // under "Server". And an extra: whoever connects nothing sees nothing of it
             // except this row.
-            DisplayRow(title: "Seerr",
-                         value: model.seerr.connected ? String(localized: "Verbunden")
-                                                     : String(localized: "Nicht verbunden"))
-            SeparatorLine()
-            ActionRow(title: model.seerr.connected ? "Ändern" : "Anbinden") {
-                seerrOpen = true
+            if model.can(.seerr) {
+                DisplayRow(title: "Seerr",
+                             value: model.seerr.connected ? String(localized: "Verbunden")
+                                                         : String(localized: "Nicht verbunden"))
+                SeparatorLine()
+                ActionRow(title: model.seerr.connected ? "Ändern" : "Anbinden") {
+                    seerrOpen = true
+                }
+                .focused($right, equals: .top)
             }
-            .focused($right, equals: .top)
             // **One row, not two as with Seerr.** Two "Connect" rows stacked would leave
             // open which service is meant; here the name stands first and the state behind
             // it. Only with credentials in the build (`TraktAccess`).
             if model.trakt.available {
-                SeparatorLine()
+                if model.can(.seerr) { SeparatorLine() }
                 ActionRow(name: "Trakt",
                                value: model.trakt.connected
                                    ? (model.trakt.user ?? String(localized: "Verbunden"))
                                    : String(localized: "Nicht verbunden")) {
                     traktOpen = true
                 }
+                .focused($right, equals: model.can(.seerr) ? nil : .top)
             }
 
         case .community:
@@ -594,14 +630,14 @@ struct ProfileView: View {
         case .server:
             DisplayRow(title: "Adresse", value: model.serverName ?? "—")
             SeparatorLine()
-            DisplayRow(title: "Fassung", value: model.serverVersion.map { "Jellyfin \($0)" } ?? "—")
+            DisplayRow(title: "Fassung", value: model.serverVersion.map { "\(kindName) \($0)" } ?? "—")
             // **Without this row nobody can say what they are using.** A bug report hangs on
             // the build number, and the TV showed only the Jellyfin version.
             TVVersionRow()
             SeparatorLine()
             // **Multiple servers.** The bundle holds more than one server; this row is the
             // way to add one.
-            ActionRow(title: "Server hinzufügen") { serverRecord = true }
+            ActionRow(title: "Server hinzufügen") { serverRoute = ServerRoute() }
             SeparatorLine()
             // For servers behind a service like Cloudflare Access (issue #4).
             ActionRow(title: "Eigene Header") { ownHeaders = true }
@@ -613,15 +649,19 @@ struct ProfileView: View {
 
         case .account:
             // Settings follow the account to every device (`SettingsSyncRun`).
-            ToggleRow(title: "Einstellungen auf allen Geräten gleich halten",
-                      an: model.settingsSync.on) {
-                model.settingsSync.on.toggle()
+            // Only servers that keep display preferences (`ServerCapability.settingsSync`).
+            if model.can(.settingsSync) {
+                ToggleRow(title: "Einstellungen auf allen Geräten gleich halten",
+                          an: model.settingsSync.on) {
+                    model.settingsSync.on.toggle()
+                }
+                .focused($right, equals: .top)
+                SeparatorLine()
             }
-            .focused($right, equals: .top)
-            SeparatorLine()
             // **"Add another account" is the plus in the account card**, where the accounts
             // stand. "Add server" in the Server area is the same path.
-            ActionRow(title: "Server hinzufügen") { serverRecord = true }
+            ActionRow(title: "Server hinzufügen") { serverRoute = ServerRoute() }
+                .focused($right, equals: model.can(.settingsSync) ? nil : .top)
             SeparatorLine()
             // The way back from "off" in the cold-start picker.
             AskAtLaunchRow()
@@ -650,7 +690,7 @@ struct ProfileView: View {
                 // below jumped to their new place at once, those further down slid after slowly,
                 // and in between they overlapped. A `withAnimation` on the change itself puts
                 // them all in **one** movement; the list moves as one piece.
-                withAnimation(Theme.motion(.easeInOut(duration: 0.28))) {
+                withAnimation(Theme.motion(.easeInOut(duration: TVSpec.valueExpandDuration))) {
                     opened = opened == key ? nil : key
                 }
             }
@@ -668,9 +708,9 @@ struct ProfileView: View {
                             HStack(spacing: 24) {
                                 Image(systemName: an(entryRecord)
                                       ? "checkmark" : "")
-                                    .font(.system(size: 26, weight: .semibold))
+                                    .font(.system(size: TVSpec.valueIcon, weight: .semibold))
                                     .foregroundStyle(Theme.accent)
-                                    .frame(width: 34)
+                                    .frame(width: TVSpec.choiceCheckWidth)
                                 // Interpolated, not as a key: "30 s" is a value and would otherwise appear as a
                                 // gap in the catalog.
                                 Text("\(label(entryRecord))")
@@ -683,7 +723,7 @@ struct ProfileView: View {
                         .accessibilityAddTraits(an(entryRecord) ? [.isButton, .isSelected] : .isButton)
                     }
                 }
-                .padding(.leading, 26)
+                .padding(.leading, TVSpec.rowInset)
                 .focusSection()
                 .transition(.opacity)
             }
@@ -728,7 +768,7 @@ struct SectionStyle: ButtonStyle {
                 .font(.system(size: 30, weight: an || focus ? .semibold : .medium))
                 .foregroundStyle(fontColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 26)
+                .padding(.horizontal, TVSpec.rowInset)
                 .frame(height: Theme.rowsHeight)
                 .background(reason, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                 .animation(Theme.focusAnimation, value: focus)
@@ -746,10 +786,10 @@ struct SectionStyle: ButtonStyle {
 
         private var reason: Color {
             switch (an, focus) {
-            case (true, true):   Theme.accent.opacity(0.26)
+            case (true, true):   Theme.accent.opacity(TVSpec.sectionSelectedFocusedOpacity)
             // Handed off: the calm surface instead of the tint. The row stays recognizable
             // as a place but stops pushing forward.
-            case (true, false):  rests ? Theme.area : Theme.accent.opacity(0.15)
+            case (true, false):  rests ? Theme.area : Theme.accent.opacity(TVSpec.sectionSelectedOpacity)
             case (false, true):  Theme.focusArea
             case (false, false): .clear
             }
@@ -769,7 +809,7 @@ struct DisplayRow: View {
             Text(value).font(Theme.button).foregroundStyle(Theme.fontQuiet)
         }
         .foregroundStyle(Theme.font)
-        .padding(.horizontal, 26)
+        .padding(.horizontal, TVSpec.rowInset)
         .frame(height: Theme.rowsHeight)
     }
 }
@@ -870,7 +910,7 @@ struct RailsRow: View {
             SlideButton(symbol: "chevron.up", an: canHigh) { shove(-1) }
             SlideButton(symbol: "chevron.down", an: canGoDown) { shove(1) }
         }
-        .padding(.trailing, 26)
+        .padding(.trailing, TVSpec.rowInset)
     }
 }
 
@@ -887,12 +927,12 @@ struct SlideButton: View {
     var body: some View {
         Button(action: perform) {
             Image(systemName: symbol)
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: TVSpec.valueIcon, weight: .semibold))
         }
         // **Not `.buttonStyle(.card)`.** Apple's card brings shadow, parallax and a
         // flash; `tvOS/Style.swift` excludes it in its header. `ThemedButtonStyle` carries the
         // same three states as every other button in the app, the disabled one included.
-        .buttonStyle(ThemedButtonStyle(onlySymbol: true, height: 56))
+        .buttonStyle(ThemedButtonStyle(onlySymbol: true, height: TVSpec.iconButtonHeight))
         .disabled(!an)
         .accessibilityLabel(symbol == "chevron.up" ? Text("Nach oben") : Text("Nach unten"))
     }
@@ -913,7 +953,7 @@ struct StartLibraryRow: View {
             SlideButton(symbol: "chevron.up", an: canHigh) { shove(-1) }
             SlideButton(symbol: "chevron.down", an: canGoDown) { shove(1) }
         }
-        .padding(.trailing, 26)
+        .padding(.trailing, TVSpec.rowInset)
     }
 }
 
@@ -947,26 +987,26 @@ struct ToggleSwitch: View {
         ZStack(alignment: an ? .trailing : .leading) {
             Capsule()
                 .fill(track)
-                .frame(width: 84, height: 50)
+                .frame(width: TVSpec.toggleWidth, height: TVSpec.toggleHeight)
             Circle()
                 .fill(grip)
-                .frame(width: 40, height: 40)
-                .padding(.horizontal, 5)
+                .frame(width: TVSpec.toggleKnob, height: TVSpec.toggleKnob)
+                .padding(.horizontal, TVSpec.toggleInset)
         }
-        .animation(operable ? Theme.motion(.easeInOut(duration: 0.15)) : nil, value: an)
+        .animation(operable ? Theme.motion(.easeInOut(duration: TVSpec.toggleDuration)) : nil, value: an)
     }
 
     /// Dimmed, not translucent: the switch keeps its position, so you still see
     /// whether it is on, just not that you could flip it.
     private var track: Color {
         guard operable else {
-            return an ? Theme.accent.opacity(0.35) : Color.white.opacity(0.08)
+            return an ? Theme.accent.opacity(TVSpec.toggleTrackOnDisabledOpacity) : Color.white.opacity(TVSpec.toggleTrackOffDisabledOpacity)
         }
-        return an ? Theme.accent : Color.white.opacity(0.16)
+        return an ? Theme.accent : Color.white.opacity(TVSpec.toggleTrackOffOpacity)
     }
 
     private var grip: Color {
-        guard operable else { return Color.white.opacity(0.35) }
+        guard operable else { return Color.white.opacity(TVSpec.toggleKnobDisabledOpacity) }
         return an ? Theme.reason : Color.white
     }
 }
@@ -975,8 +1015,8 @@ struct ToggleSwitch: View {
 struct SeparatorLine: View {
     var body: some View {
         Rectangle().fill(Theme.line)
-            .frame(height: 2)
-            .padding(.horizontal, 26)
+            .frame(height: TVSpec.hairline)
+            .padding(.horizontal, TVSpec.rowInset)
     }
 }
 
@@ -990,7 +1030,7 @@ private struct AccountsStrip: View {
     let model: AppModel
     let record: () -> Void
 
-    private let size: CGFloat = 60
+    private let size: CGFloat = TVSpec.accountStripCircle
 
     /// Where the profile pictures are, globally: the account switch lifts the
     /// selected one from there. In a plain class so focus steps do not rebuild at
@@ -1017,7 +1057,7 @@ private struct AccountsStrip: View {
     }
 
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: TVSpec.accountStripSpacing) {
             // **All accounts, not only this server's.** The bundle holds several servers;
             // with two you find both here. They are told apart by `accountKey`, because
             // the same user ID can exist on two servers.

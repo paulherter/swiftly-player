@@ -130,6 +130,13 @@ struct LibraryView: View {
                             lattice
                                 .opacity(switchedOver ? 0.4 : 1)
                                 .animation(Theme.reveal, value: switchedOver)
+                            // **A failed "load more" is not an end** (as on iPhone): without this the
+                            // list simply stopped, as if the library had no more titles.
+                            if state.stillMorePresent, state.loadMoreFailed {
+                                Button("Erneut versuchen") { Task { await loadMore() } }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 12)
+                            }
                         }
                     }
                     // The capsule row starts at `Theme.contentTop`, where the title starts on the home

@@ -719,7 +719,8 @@ struct EmptyHint: View {
 /// the same wording**: two sentences for the same situation would be two answers to
 /// the same question.
 struct DisturbHint: View {
-    let model: AppModel
+    /// `nil` where there is no connected server yet (the sign-in pages): then `address` says who.
+    var model: AppModel?
     var retry: (() -> Void)?
     var spacingTop: CGFloat = 40
     /// Who did not answer. Defaults to the user's own Jellyfin server; on a Seerr page
@@ -740,7 +741,7 @@ struct DisturbHint: View {
                 .foregroundStyle(Theme.font)
                 .padding(.bottom, 6)
 
-            Text("\(address ?? model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?")
+            Text("\(address ?? model?.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .lineSpacing(2)

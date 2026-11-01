@@ -233,7 +233,7 @@ fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> U
  * works.
  */
 @Composable
-fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, back: () -> Unit) {
+fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: Boolean = false, back: () -> Unit) {
     var address by remember { mutableStateOf(preset.orEmpty()) }
     var server by remember { mutableStateOf<Pair<String, String>?>(null) }
     var examine by remember { mutableStateOf(false) }
@@ -282,7 +282,12 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, back: () -> U
 
     val s = server
     // The title is the server name once it is known.
-    val pagesTitle = s?.first ?: translated(if (preset != null) "Konto hinzufügen" else "Server hinzufügen")
+    // Through the kind picker the title says which kind this page is for: "Server hinzufügen" was the picker's own.
+    val pagesTitle = s?.first ?: translated(when {
+        kindPicked && preset == null -> "Mit Jellyfin anmelden"
+        preset != null -> "Konto hinzufügen"
+        else -> "Server hinzufügen"
+    })
     // **Back at the top, nothing at the bottom.** As a pushed page it has the same arrow at the top as
     // every other subpage; a second "Abbrechen" below would be a second way back.
     Column(Modifier.fillMaxSize().background(Theme.reason)) {
@@ -333,7 +338,7 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, back: () -> U
 // MARK: Account cards
 
 private data class AccountEntry(val identifier: String, val name: String, val active: Boolean, val image: String?)
-private data class ServerCard(val address: String, val host: String, val active: Boolean, val accounts: List<AccountEntry>)
+private data class ServerCard(val address: String, val host: String, val active: Boolean, val kind: ServerKind, val accounts: List<AccountEntry>)
 
 /**
  * Mirrors `Kontokarte` in `ProfileView.swift`: one card per server. In front the account that is
@@ -348,7 +353,7 @@ fun AccountCards(app: SwiftlyApplication, server: Pair<String, String>?, open: (
         JSONArray(Kern.bundleOverview(bundle)).let { a ->
             (0 until a.length()).map { i ->
                 a.getJSONObject(i).let { o ->
-                    ServerCard(o.getString("adresse"), o.getString("host"), o.getBoolean("aktiv"),
+                    ServerCard(o.getString("adresse"), o.getString("host"), o.getBoolean("aktiv"), ServerKind.from(o.optString("art")),
                         o.getJSONArray("konten").let { k -> (0 until k.length()).map { j -> k.getJSONObject(j).let { e ->
                             AccountEntry(e.getString("kennung"), e.getString("name"), e.getBoolean("aktiv"), if (e.isNull("bild")) null else e.getString("bild"))
                         } } })
@@ -398,7 +403,7 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
             // and looked "loaded late".
             val (row, subline) = if (card.active)
                 (server?.first?.takeIf { it.isNotEmpty() } ?: app.serverName.value.orEmpty()) to
-                    (server?.second?.takeIf { it.isNotEmpty() }?.let { translated("Jellyfin %@", it) } ?: "")
+                    (server?.second?.takeIf { it.isNotEmpty() }?.let { "${card.kind.shownName} $it" } ?: "")
             else card.host to translated("Antippen zum Wechseln")
             Text(row.ifEmpty { " " }, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1)
             Text(subline.ifEmpty { " " }, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1)
@@ -417,7 +422,7 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
         Box(Modifier.size(40.dp).background(Theme.area, RoundedCornerShape(Theme.corner))
                 .tapOn {
                     if (card.active) open(Destination("weiteresKonto", translated("Konto hinzufügen"), "WeiteresKonto"))
-                    else open(Destination(card.address, translated("Konto hinzufügen"), "ServerAufnahme"))
+                    else open(Destination(card.address, translated("Konto hinzufügen"), "ServerAufnahme", role = card.kind.raw))
                 },
             contentAlignment = Alignment.Center) {
             Symbol(Glyph.Plus, 15.dp, color = Theme.fontQuiet, strength = Strength.Semibold, description = translated("Konto hinzufügen"))

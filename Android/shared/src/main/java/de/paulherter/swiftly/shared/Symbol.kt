@@ -76,6 +76,11 @@ import androidx.compose.ui.unit.dp
  * | `forward.end.fill` | `skip_next` | 1 |  |
  * | `forward.end` | `skip_next` | 0 |  |
  * | `ellipsis` | `more_horiz` | 0 |  |
+ * | `textformat.size` | `format_size` | 0 |  |
+ * | `character.textbox` | `text_fields` | 0 |  |
+ * | `shadow` | `blur_on` | 0 | no stroke-shadow glyph in Material |
+ * | `rectangle.inset.filled` | `format_color_fill` | 0 | a filled box behind text |
+ * | `align.vertical.bottom` | `vertical_align_bottom` | 0 |  |
  * | `captions.bubble` | `subtitles` | 0 | SF is a speech bubble with lines; Material "subtitles" a rectangle with lines |
  * | `rectangle.stack` | `stack` | 0 |  |
  * | `slider.horizontal.3` | `tune` | 0 |  |
@@ -264,6 +269,23 @@ enum class Glyph(val code: Int, val filled: Boolean, val mirrored: Boolean) {
     Palette(0xE40A, false, false),
     /** `cup.and.saucer.fill`: the supporter status after a tip. */
     Cup(0xE541, true, false),
+    /** `textformat.size`: "Size" in the subtitle look. */
+    SizeText(0xE165, false, false),
+    /** `character.textbox`: "Outline" in the subtitle look. */
+    TextOutline(0xE262, false, false),
+    /** `shadow`: "Shadow" in the subtitle look. */
+    Shadow(0xE3A5, false, false),
+    /** `rectangle.inset.filled`: "Dark background" in the subtitle look. */
+    FillBackground(0xE23A, false, false),
+    /** `align.vertical.bottom`: "Position" in the subtitle look. */
+    AlignBottom(0xE258, false, false),
+    /** `mic` / `mic.fill`: the speak key of the TV search. */
+    Mic(0xE029, false, false),
+    MicFilled(0xE029, true, false),
+    /** `delete.left`: the delete key of the TV search. */
+    Backspace(0xE14A, false, false),
+    /** `space`: the space key of the TV search. */
+    SpaceBar(0xE256, false, false),
     ;
 
     val text: String get() = String(Character.toChars(code))

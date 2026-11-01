@@ -428,14 +428,14 @@ struct ProfilePickerStyle: ButtonStyle {
             let on = focus && released
             configuration.label
                 .overlay {
-                    Circle().fill(Theme.reason.opacity(!released ? 0.6 : (focus ? 0 : 0.35)))
+                    Circle().fill(Theme.reason.opacity(!released ? TVSpec.pickerDimWaitingOpacity : (focus ? 0 : TVSpec.pickerDimIdleOpacity)))
                 }
                 .overlay {
-                    Circle().strokeBorder(Theme.font, lineWidth: 6)
-                        .padding(-14)
+                    Circle().strokeBorder(Theme.font, lineWidth: TVSpec.pickerRingWidth)
+                        .padding(-(TVSpec.pickerRingGap + TVSpec.pickerRingWidth))
                         .opacity(on ? 1 : 0)
                 }
-                .scaleEffect(configuration.isPressed && released ? 0.97 : (on ? Theme.focusMagnifier : 1))
+                .scaleEffect(configuration.isPressed && released ? TVSpec.pressScale : (on ? Theme.focusMagnifier : 1))
                 .animation(Theme.focusAnimation, value: focus)
                 .animation(Theme.focusAnimation, value: released)
                 .animation(Theme.pressCurve(configuration.isPressed), value: configuration.isPressed)
@@ -846,8 +846,8 @@ struct ProfileStyle: ButtonStyle {
                 .overlay {
                     if focus {
                         Circle()
-                            .strokeBorder(Theme.accent, lineWidth: 4)
-                            .padding(-8)
+                            .strokeBorder(Theme.accent, lineWidth: TVSpec.headerProfileRingWidth)
+                            .padding(-(TVSpec.headerProfileRingGap + TVSpec.headerProfileRingWidth))
                     }
                 }
                 .scaleEffect(focus ? Theme.focusMagnifierSmall : 1)

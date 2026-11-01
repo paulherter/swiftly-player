@@ -27,6 +27,10 @@ final class LoadSelectionState: @unchecked Sendable {
     var quality: DownloadQuality = .original
     /// Whether the list of levels under the badge is expanded.
     var qualityOpen = false
+    /// `nil` until someone picks: then the audio language from the settings applies.
+    var audioChosen: DownloadAudioChoice?
+    /// Whether the list of audio choices under the badge is expanded.
+    var audioOpen = false
     var loads = true
     var disrupted = false
     var allEpisodes: [Item] { seasons.compactMap { episodes[$0.id] }.flatMap { $0 } }
@@ -83,7 +87,7 @@ extension App {
 
     /// Seasons and all episodes, from memory what is already there.
     private func loadSelectionFetch(_ state: LoadSelectionState, series: Item,
-                                  client: JellyfinClient, done: @escaping @Sendable () -> Void) {
+                                  client: any MediaServer, done: @escaping @Sendable () -> Void) {
         state.loads = true
         state.disrupted = false
         let seasonsPresent = seasonCache[series.id]
@@ -453,6 +457,24 @@ extension App {
         gtk_widget_set_margin_end(choice, 16)
         append(footer, choice)
 
+        // **Audio as languages**, because the same language sits at a different index in
+        // every file. Only offered when the selected files hold more than one.
+        let streamsOf = selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] }
+        let audioOptions = DownloadAudio.languageOptions(streamsOf)
+        let audioOffered = DownloadAudio.offered(selection: streamsOf)
+        let wished = state.audioChosen ?? .language(selection.audioLanguage)
+        let audioNow: DownloadAudioChoice =
+            audioOffered && audioOptions.contains { $0.choice == wished } ? wished : .all
+        if audioOffered {
+            let audioField = audioSelectionBuild(
+                choice: audioNow, options: audioOptions, opened: state.audioOpen,
+                toggle: { state.audioOpen.toggle(); new() },
+                select: { state.audioChosen = $0; state.audioOpen = false; new() })
+            gtk_widget_set_margin_start(audioField, 16)
+            gtk_widget_set_margin_end(audioField, 16)
+            append(footer, audioField)
+        }
+
         let button = primaryButton(state.selected.isEmpty ? translated("Laden")
                                : String(format: translated("%@ laden"),
                                         episodesNumber(state.selected.count)),
@@ -464,7 +486,7 @@ extension App {
             gtk_popover_popdown(asPanel(panelBox.widget))
             letGo(panelBox)
             guard let self else { return }
-            self.seasonLoad(selectedEpisodes, quality: state.quality)
+            self.seasonLoad(selectedEpisodes, quality: state.quality, audio: audioNow)
             // Header image and poster come along with the first download of the series,
             // once; what is already there is not fetched again.
             if self.downloads.headerImage(series: series.id, account: self.userIdentifier) == nil {
@@ -635,6 +657,60 @@ extension App {
             gtk_label_set_justify(OpaquePointer(l), GTK_JUSTIFY_LEFT)
             gtk_widget_add_css_class(l, "swiftly-leise")
             append(inputField, l)
+        }
+        return inputField
+    }
+
+    /// **The audio choice, as a badge like the quality one** (Mac `MacAudioBadge`): the
+    /// current choice, and a list with a checkmark when it is opened. "Alle Tonspuren" first.
+    func audioSelectionBuild(choice: DownloadAudioChoice, options: [DownloadAudioOption],
+                             opened: Bool, toggle: @escaping () -> Void,
+                             select: @escaping (DownloadAudioChoice) -> Void) -> Widget! {
+        let inputField = stack(GTK_ORIENTATION_VERTICAL, spacing: 6)
+        let expandable = options.count > 1
+        let current = options.first { $0.choice == choice }?.label ?? options.first?.label ?? ""
+
+        let proof = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
+        gtk_widget_add_css_class(proof, "swiftly-belegmarke")
+        gtk_widget_add_css_class(proof, "swiftly-beleg")
+        let speaker: Widget! = gtk_image_new_from_icon_name("audio-volume-high-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(speaker), 11)
+        append(proof, speaker)
+        append(proof, label(current, style: "swiftly-zweitzeile"))
+        if expandable {
+            let w: Widget! = gtk_image_new_from_icon_name(opened ? "pan-down-symbolic" : "pan-end-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(w), 11)
+            append(proof, w)
+            let button: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(button, "swiftly-auswahlzeile")
+            gtk_widget_set_halign(button, GTK_ALIGN_START)
+            gtk_button_set_child(asButton(button), proof)
+            caption(button, translated("Ton"))
+            signal(button, "clicked", toggle)
+            append(inputField, button)
+        } else {
+            gtk_widget_set_halign(proof, GTK_ALIGN_START)
+            append(inputField, proof)
+        }
+
+        if expandable, opened {
+            for option in options {
+                let row: Widget! = gtk_button_new()
+                gtk_widget_add_css_class(row, "swiftly-auswahlzeile")
+                let inner = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
+                let t = label(option.label, style: "swiftly-koerper")
+                gtk_label_set_xalign(OpaquePointer(t), 0)
+                gtk_widget_set_hexpand(t, 1)
+                append(inner, t)
+                let h: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+                gtk_image_set_pixel_size(OpaquePointer(h), 13)
+                gtk_widget_set_opacity(h, option.choice == choice ? 1 : 0)
+                append(inner, h)
+                gtk_button_set_child(asButton(row), inner)
+                help(row, selected: option.choice == choice)
+                signal(row, "clicked") { select(option.choice) }
+                append(inputField, row)
+            }
         }
         return inputField
     }

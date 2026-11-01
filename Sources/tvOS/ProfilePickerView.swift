@@ -32,8 +32,8 @@ enum ProfilePickerRule {
 
     /// 2 to 5 profiles: 280 and a gap of 80 (5 x 280 + 4 x 80 = 1720 fits the 1760 usable).
     /// From 6: 220 and 64, six still fit without scrolling.
-    static func size(count: Int) -> CGFloat { count <= 5 ? 280 : 220 }
-    static func gap(count: Int) -> CGFloat { count <= 5 ? 80 : 64 }
+    static func size(count: Int) -> CGFloat { count <= 5 ? TVSpec.pickerSizeFew : TVSpec.pickerSizeMany }
+    static func gap(count: Int) -> CGFloat { count <= 5 ? TVSpec.pickerGapFew : TVSpec.pickerGapMany }
 }
 
 /// A choice made in the picker must not move focus to the header's profile circle
@@ -228,7 +228,7 @@ struct ProfilePicker: View {
                     .truncationMode(.middle)
                     .frame(width: size + 40, height: 30)
                     .opacity(focused && enabled ? 1 : 0)
-                    .offset(y: focused && enabled ? 0 : 4)
+                    .offset(y: focused && enabled ? 0 : TVSpec.pickerServerOffset)
                     .animation(focused ? Theme.reveal : Theme.focusAnimation, value: focused)
             }
             .animation(Theme.focusAnimation, value: focused)

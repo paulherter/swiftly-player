@@ -30,7 +30,7 @@ class SettingsSyncRun(private val app: SwiftlyApplication, private val run: Coro
         val ints = listOf("vorSek", "zurueckSek")
         val texts = listOf("tonSprache", "utSprache")
         val lists = listOf("startReihen", "startAus", "startGenres")
-        val names = texts + bools.take(4) + ints + bools.drop(4) + lists + "startBibliotheken"
+        val names = texts + bools.take(4) + ints + bools.drop(4) + lists + "startBibliotheken" + "utAussehen"
     }
 
     private val store get() = app.store
@@ -91,6 +91,7 @@ class SettingsSyncRun(private val app: SwiftlyApplication, private val run: Coro
         for (n in ints) store.rememberValue(n)?.toIntOrNull()?.takeIf { it in 0..3600 }?.let { out[n] = it.toString() }
         for (n in texts) store.rememberValue(n)?.let { out[n] = it }
         for (n in lists) store.rememberValue(n)?.takeIf { runCatching { JSONArray(it) }.isSuccess }?.let { out[n] = it }
+        store.rememberValue("utAussehen")?.takeIf { runCatching { JSONObject(it) }.isSuccess }?.let { out["utAussehen"] = it }
         store.rememberValue("startBibliotheken|" + app.settings.serverKey())
             ?.takeIf { runCatching { JSONArray(it) }.isSuccess }?.let { out["startBibliotheken"] = it }
         return out

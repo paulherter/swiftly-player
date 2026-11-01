@@ -19,9 +19,13 @@ public protocol HomePageSource: Sendable {
     /// The newest titles of **one** library or collection, `nil` if the fetch failed
     /// (also if it no longer exists there).
     func latestTitle(in library: String, collection: Bool, showItem: Int) async -> [Item]?
+    /// Whether `newArrivals` merges all libraries of a kind by time. Where it does, a row
+    /// with no chosen library asks that instead of stopping at the first library with content.
+    var mergesLibraries: Bool { get }
 }
 
 public extension HomePageSource {
+    var mergesLibraries: Bool { false }
     func latestTitle(in library: String, collection: Bool, showItem: Int) async -> [Item]? { nil }
 }
 
@@ -217,6 +221,13 @@ public enum HomeLoader {
                                   : "gewaehlte Bibliothek ohne Neuzugaenge"
         } else if let all = await source.libraries() {
             let matches = all.filter { $0.collectionType?.lowercased() == art }
+            // **Several libraries of the kind and none chosen: all of them, merged.** The loop
+            // below stops at the first library that has anything, which put one library's
+            // titles (Kids) over the rest.
+            if matches.count > 1, art == "movies", source.mergesLibraries,
+               let every = await source.newArrivals(genre: "Movie", fetch: 200, showItem: 24), !every.isEmpty {
+                return every
+            }
             var empty = 0
             for candidate in matches {
                 if let fetched = await source.lastAdded(in: candidate.id, fetch: 200, showItem: 24) {

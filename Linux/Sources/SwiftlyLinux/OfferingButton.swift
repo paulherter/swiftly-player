@@ -142,7 +142,7 @@ extension App {
     /// without an error message: if nothing arrives it stays at the own choice or
     /// "on", and the permission stays `.unknown`, i.e. allowed. **One request for
     /// both.**
-    func accountPreGiftFetch(_ c: JellyfinClient) {
+    func accountPreGiftFetch(_ c: any MediaServer) {
         Task.detached { [self] in
             let guidelines = await c.accountDefaults()
             let account = guidelines?.nextEpisodeAutomatic

@@ -25,6 +25,7 @@
 "Stereo" = "Стерео";
 "Mono" = "Моно";
 "Staffel %lld" = "Сезон %lld";
+"Teil %lld" = "Часть %lld";
 "Folge %lld" = "Эпизод %lld";
 "Nicht angemeldet." = "Вход не выполнен.";
 "Das andere Gerät hat nicht reagiert." = "Другое устройство не ответило.";
@@ -152,3 +153,19 @@
 "Alle Tonspuren" = "Все звуковые дорожки";
 "Tonspur" = "Дорожка";
 "(Original)" = "(Оригинал)";
+
+"Die Anmeldung bei Plex ist abgelaufen. Bitte noch einmal starten." = "Вход в Plex истёк. Пожалуйста, начните заново.";
+"Die PIN des Profils stimmt nicht." = "PIN-код профиля неверный.";
+"Zu diesem Plex-Konto gehört kein Server." = "У этой учётной записи Plex нет сервера.";
+"Der Plex-Server antwortet unter keiner seiner Adressen." = "Сервер Plex не отвечает ни по одному из своих адресов.";
+"Unter dieser Adresse meldet sich ein anderer Server." = "По этому адресу отвечает другой сервер.";
+"Dieser Server erlaubt das Abspielen von unterwegs nicht. Der Besitzer braucht dafür Plex Pass oder den Remote Watch Pass." = "Этот сервер не разрешает воспроизведение вне дома. Владельцу нужен Plex Pass или Remote Watch Pass.";
+"Zu diesem Titel gibt es keine Datei." = "У этого названия нет файла.";
+"Das kann ein Plex-Server nicht." = "Plex-сервер этого не умеет.";
+"Kapitel %lld" = "Глава %lld";
+
+"VLC, Dolby Vision und HDR mit AVPlayer" = "VLC, Dolby Vision и HDR через AVPlayer";
+
+"Immer AVPlayer" = "Всегда AVPlayer";
+
+"Immer VLC" = "Всегда VLC";

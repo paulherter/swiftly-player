@@ -448,7 +448,7 @@ func rowsLine() -> Widget! {
 /// The body of every row: icon (22 wide), 14 gap, title, subtitle, something on the
 /// right. At least 44 high, 12 side padding.
 func rowBody(symbol: String, title: String, under: String?,
-                         accent: Bool, right: Widget?) -> Widget! {
+                         accent: Bool, right: Widget?, wrapUnder: Bool = false) -> Widget! {
     // **"14 + content + 14" as padding, not a fixed height**: a minimum height does
     // not include the content, and a row with a subtitle would have no room. The
     // measure is in the stylesheet (`padding: 14px 12px`); icon column 20 rather than 22.
@@ -476,6 +476,13 @@ func rowBody(symbol: String, title: String, under: String?,
         // right column outside.
         gtk_label_set_ellipsize(OpaquePointer(u), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(u), 34)
+        if wrapUnder {
+            // A sentence that says what applies now must be read whole: it wraps instead
+            // (the subtitle page, "Gestaltung aus der Datei übernehmen").
+            gtk_label_set_ellipsize(OpaquePointer(u), PANGO_ELLIPSIZE_NONE)
+            gtk_label_set_wrap(OpaquePointer(u), 1)
+            gtk_label_set_max_width_chars(OpaquePointer(u), 40)
+        }
         append(text, u)
     }
     append(rail, text)
@@ -527,7 +534,8 @@ func valuesRow(symbol: String, title: String, under: String? = nil,
 /// A row with a switch. **Not a `GtkSwitch`**, which brings the system's capsule
 /// shape, colour and measurements.
 func toggleRow(symbol: String, title: String, under: String? = nil,
-                   an: Bool, toggled: @escaping (Bool) -> Void) -> Widget! {
+                   an: Bool, wrapUnder: Bool = false, handle: ToggleHandle? = nil,
+                   toggled: @escaping (Bool) -> Void) -> Widget! {
     var condition = an
     let toggle: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(toggle, "swiftly-schalter")
@@ -558,9 +566,9 @@ func toggleRow(symbol: String, title: String, under: String? = nil,
 
     let button: Widget! = gtk_button_new()
     gtk_widget_add_css_class(button, "swiftly-einstellzeile")
-    gtk_button_set_child(asButton(button),
-                         rowBody(symbol: symbol, title: title, under: under,
-                                     accent: false, right: toggle))
+    let body = rowBody(symbol: symbol, title: title, under: under,
+                       accent: false, right: toggle, wrapUnder: wrapUnder)
+    gtk_button_set_child(asButton(button), body)
     // A switch without state is only a button to assistive technology.
     help(button, name: title, checkmark: condition ? .an : .off)
     signal(button, "clicked") {
@@ -569,7 +577,31 @@ func toggleRow(symbol: String, title: String, under: String? = nil,
         help(button, checkmark: condition ? .an : .off)
         toggled(condition)
     }
+    if let handle {
+        // For pages that change the state from outside (reset, undo) or whose subtitle
+        // follows the state: row = icon, text column (title, subtitle), switch.
+        handle.set = { new in
+            guard new != condition else { return }
+            condition = new
+            paint()
+            help(button, checkmark: condition ? .an : .off)
+        }
+        if let icon = gtk_widget_get_first_child(body),
+           let text = gtk_widget_get_next_sibling(icon),
+           let last = gtk_widget_get_last_child(text), under != nil {
+            handle.under = { sentence in gtk_label_set_text(OpaquePointer(last), sentence) }
+        }
+        handle.button = button
+    }
     return button
+}
+
+/// **A way into a switch row from outside**, see ``toggleRow``. `set` moves the switch
+/// without reporting it, `under` replaces the subtitle, `button` is the row itself.
+final class ToggleHandle {
+    var set: ((Bool) -> Void)?
+    var under: ((String) -> Void)?
+    var button: Widget?
 }
 
 /// The value list. On the iPhone it is a sheet from the bottom; here it opens

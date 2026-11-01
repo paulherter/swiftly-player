@@ -71,7 +71,11 @@ extension App {
         case "profil":      subpageOpen(.profile)
         case "einstellungen": subpageOpen(.settings)
         case "wiedergabe":  subpageOpen(.playback)
+        case "untertitel":  subpageOpen(.subtitleLook)
         case "darstellung": subpageOpen(.presentation)
+        case "serverart":   subpageOpen(.kindPicker)
+        case "plex":        subpageOpen(.plexSignIn)
+        case "emby":        serverOnboardingKind = .emby; serverOnboardingFromPicker = true; serverOnboardingOpen(nil)
         case "quickconnect": subpageOpen(.quickConnect)
         case "zurueck":     back()
 

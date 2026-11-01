@@ -43,6 +43,8 @@ struct ImageBridge {
     int      writes;       /* buffer VLC is currently writing to */
     bool     new;            /* added since the last fetch */
     bool     hdr;            /* requested for the next setup */
+    bool     sdr_yuv;        /* requested for the next setup */
+    bool     full;           /* the current buffers are full range */
 };
 
 ImageBridge *image_bridge_new(void) {
@@ -68,16 +70,27 @@ void image_bridge_hdr(ImageBridge *b, bool hdr) {
     LOCK_NOTICE(&b->lock);
 }
 
+void image_bridge_sdr_yuv(ImageBridge *b, bool yuv) {
+    LOCK_TAKE(&b->lock);
+    b->sdr_yuv = yuv;
+    LOCK_NOTICE(&b->lock);
+}
+
 static unsigned on32(unsigned n) { return (n + 31) & ~31u; }
 
 /* VLC asks which format to deliver in, passing the dimensions; `chroma`
  * holds what the decoder itself delivers on entry.
  *
- * **SDR: RV24**, three bytes per pixel, which GdkMemoryTexture accepts without
- * conversion. **HDR: 10-bit YUV.** If the decoder already delivers P010
- * (hardware, copied back) that stays; otherwise I0AL, which the software
- * decoder outputs for HEVC Main 10 anyway. Neither needs a CPU conversion.
- * Row pitch is a multiple of 32 bytes, otherwise VLC copies internally again;
+ * **SDR with a GL renderer: 8-bit YUV.** NV12 if the decoder works in hardware
+ * (the opaque formats are copied back as NV12), J420 for full range, otherwise
+ * I420. Whatever else arrives (10-bit SDR, 4:2:2, 4:4:4) VLC converts to I420,
+ * because VLC's subtitle blender is only certain to handle the 8-bit formats.
+ *
+ * **SDR without one: RV24**, three bytes per pixel, which GdkMemoryTexture
+ * accepts without conversion. **HDR: 10-bit YUV.** If the decoder already
+ * delivers P010 (hardware, copied back) that stays; otherwise I0AL, which the
+ * software decoder outputs for HEVC Main 10 anyway. Neither needs a CPU
+ * conversion. Row pitch is a multiple of 32 bytes, otherwise VLC copies internally again;
  * the row count is rounded up to 16 because VLC's converters write in whole
  * blocks. */
 static unsigned build(void **opaque, char *chroma,
@@ -90,11 +103,29 @@ static unsigned build(void **opaque, char *chroma,
 
     LOCK_TAKE(&b->lock);
     bool hdr = b->hdr;
+    bool sdr_yuv = b->sdr_yuv;
     LOCK_NOTICE(&b->lock);
 
     int art;
     unsigned layers;
-    if (!hdr) {
+    bool full = false;
+    if (!hdr && sdr_yuv) {
+        bool hardware = memcmp(chroma, "NV12", 4) == 0 || memcmp(chroma, "DX11", 4) == 0
+                     || memcmp(chroma, "DXA9", 4) == 0 || memcmp(chroma, "VAOP", 4) == 0;
+        if (hardware) {
+            memcpy(chroma, "NV12", 4);
+            art = PIXEL_FORMAT_NV12; layers = 2;
+            beats[0] = on32(w);      rows[0] = hz;
+            beats[1] = on32(cw * 2); rows[1] = chz;   /* U and V interleaved */
+        } else {
+            full = memcmp(chroma, "J420", 4) == 0;
+            memcpy(chroma, full ? "J420" : "I420", 4);
+            art = PIXEL_FORMAT_I420; layers = 3;
+            beats[0] = on32(w);  rows[0] = hz;
+            beats[1] = on32(cw); rows[1] = chz;
+            beats[2] = on32(cw); rows[2] = chz;
+        }
+    } else if (!hdr) {
         memcpy(chroma, "RV24", 4);
         art = PIXEL_FORMAT_RGB24; layers = 1;
         beats[0] = on32(w * 3); rows[0] = h;
@@ -126,6 +157,7 @@ static unsigned build(void **opaque, char *chroma,
     b->height = h;
     b->art = art;
     b->layers = layers;
+    b->full = full;
     for (unsigned i = 0; i < 3; i++) {
         b->tick[i] = i < layers ? beats[i] : 0;
         b->offset[i] = offset[i];
@@ -214,6 +246,7 @@ bool image_bridge_fetch(ImageBridge *b, ImageState *state) {
         state->width = b->width;
         state->height = b->height;
         state->art = b->art;
+        state->full = b->full;
         b->new = false;
     }
     LOCK_NOTICE(&b->lock);

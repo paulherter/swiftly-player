@@ -28,6 +28,13 @@ report() { printf '%-34s %s\n' "$1" "$2"; }
 if leaked=$(git grep -n -I -E "sk_live|rk_live|whsec_|BEGIN ([A-Z]+ )?PRIVATE KEY|KASSE_SS2_SEED" -- . ':!Werkzeuge/check.sh' 2>/dev/null | head -3) && [ -n "$leaked" ]; then
     report "Geheimnisse im Repo" "${red}GEFUNDEN${reset}"; echo "$leaked" | cut -c1-120 | sed 's/^/      /'; error=1
 fi
+# One source for the TV measures: the generated Swift and Kotlin files must match
+# Werkzeuge/tv-spec.json, and the guarded views may not repeat its numbers.
+if tvspec=$(Werkzeuge/gen-tv-spec.sh --check 2>&1); then
+    report "TV-Maße" "${green}ok${reset}"
+else
+    report "TV-Maße" "${red}weichen ab${reset}"; echo "$tvspec" | head -8 | sed 's/^/      /'; error=1
+fi
 echo "── Pakettests ─────────────────────────────────────────"
 # GitHub builds the package on Linux, where Apple-only modules do not exist.
 # An unguarded import there failed the public check once (StoreKitTest).

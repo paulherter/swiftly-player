@@ -47,8 +47,11 @@ struct QuickConnectRoute: Hashable {}
 ///
 /// `preset` is the address when creating a **second account on a
 /// known server**; empty means "new server".
+///
+/// `kind` is the kind of that known server, so the page needs no picker.
 struct ServerRoute: Hashable {
     var preset: URL?
+    var kind: ServerKind?
 }
 
 /// **Another account on the same server, also as a page.**
@@ -60,6 +63,9 @@ struct AccountRoute: Hashable {}
 struct SettingsRoute: Hashable {}
 
 struct PlaybackRoute: Hashable {}
+
+/// The page for the look of text subtitles, under Playback.
+struct SubtitleLookRoute: Hashable {}
 
 /// **Seerr hung as a built-in link on its row.**
 ///

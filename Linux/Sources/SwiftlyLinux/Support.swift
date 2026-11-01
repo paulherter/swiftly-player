@@ -151,7 +151,8 @@ extension App {
             return
         }
         let decision = supportDecision()
-        if decision.showsSheet {
+        if decision.showsSheet, !bigAskShown {
+            bigAskShown = true
             var history = supportStore.promptHistory
             history.recordSheetShown(at: Date())
             supportStore.promptHistory = history
@@ -174,6 +175,7 @@ extension App {
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             onMainThread { self.supportCheck() }
+            onMainThread { self.whatsNewSoon() }
         }
     }
 }

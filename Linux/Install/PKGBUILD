@@ -8,8 +8,8 @@
 # set SWIFT=/path/to/swift and makepkg uses it.
 
 pkgname=swiftly-jellyfin
-pkgver=1.0.9
-pkgrel=2
+pkgver=1.1.0
+pkgrel=1
 pkgdesc="Jellyfin-Client, der niemals transkodiert"
 arch=('x86_64' 'aarch64')
 # **Why the current name matters.** `swiftly-for-jellyfin` is a separate,

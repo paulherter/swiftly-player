@@ -76,17 +76,23 @@ class TvActivity : ComponentActivity() {
                 when (val p = phase) {
                     // Mirrors `RootView` on tvOS: real TV pages instead of the phone pages that stood here before
                     // (`ServerPage`, `LoginPage`, `QuickConnectLogin`). See `TvLogin.kt`.
-                    Phase.Server -> TvServerPage(app) { name, version -> phase = Phase.Login(name, version) }
+                    Phase.Server -> TvFirstStartFlow(app, connected = { name, version -> phase = Phase.Login(name, version) },
+                        finished = { phase = Phase.Start })
                     is Phase.Login -> TvLoginPage(app, p.serverName, p.version,
                         otherServer = { phase = Phase.Server }) { phase = Phase.Start }
                     // Fresh after an account switch: the stacks belong to the previous account.
                     Phase.Start -> {
                         // **Decided once per process** (`ProfilePickerRule`): a return, a switch or a sign-in never opens it.
-                        // The page below is blurred from the first frame, dimmed, and out of reach of focus.
+                        // The page below is out of reach of focus (`LocalFocusLocked`) and blurred from the first
+                        // frame. Blur needs API 31 (`RenderEffect`); below that an opaque surface covers it, so the
+                        // choice reads without the home page showing through.
+                        val blurs = android.os.Build.VERSION.SDK_INT >= 31
                         Box(Modifier.fillMaxSize()
-                                .then(if (pickerOpen) Modifier.blur(30.dp).focusProperties { canFocus = false } else Modifier)) {
-                            key(app.accountSwitch.intValue) { TvMain(app) }
-                            if (pickerOpen) Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = 0.6f)))
+                                .then(if (pickerOpen && blurs) Modifier.blur(30.dp) else Modifier)) {
+                            CompositionLocalProvider(LocalFocusLocked provides pickerOpen) {
+                                key(app.accountSwitch.intValue) { TvMain(app) }
+                            }
+                            if (pickerOpen) Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = if (blurs) 0.6f else 1f)))
                         }
                         if (pickerOpen) TvProfilePicker(app, entered = started, close = { pickerOpen = false; ProfilePickerRule.answered() }) { pickerNotice = it }
                     }

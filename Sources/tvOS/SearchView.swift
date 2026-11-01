@@ -1,259 +1,436 @@
 import JellyfinKit
 import SwiftUI
 
-/// Search: field on top, hits as a grid below.
+/// **Search: the keyboard on the left, the hits next to it, live.**
 ///
-/// Deliberately not `.searchable`: on tvOS it brings Apple's own bar with keyboard and
-/// placement, which fits neither the top bar nor the flat backdrop.
+/// Whoever types a word sees the hits after every letter and confirms nothing. The remote jumps from
+/// the keyboard straight into the hits.
+///
+/// Deliberately not `.searchable`: on tvOS it brings Apple's own bar with keyboard and placement,
+/// which fits neither the top bar nor the flat backdrop, and Android TV has nothing like it. The
+/// keyboard is `TVSearchKeyboard`, the same grid on both TVs. The system keyboard only opens for the
+/// mic key, because the remote's microphone belongs to it.
+///
+/// The full reasoning, the focus map and the states are in `Notizen/Mehrserver/TV-SUCHE-ENTWURF.md`.
 struct SearchView: View {
     let model: AppModel
-    /// Whether the section is currently open. When it turns true, the keyboard opens by itself.
+    /// Whether the section is currently open. When it turns true, focus goes to the keyboard.
     var active: Bool = false
 
     @State private var term = ""
     @State private var hit: [Item] = []
     /// What Seerr knows and the user's own server doesn't; empty if nothing is connected.
     @State private var seerrHit: [SeerrHit] = []
-    @State private var running = false
-    @State private var searched = false
+    /// An answer has arrived since the page was cleared.
+    @State private var answered = false
+    /// The first answer takes longer than 300 ms. Only then the placeholder shows; before that
+    /// nothing flickers between two letters.
+    @State private var waited = false
     /// The server did not answer, which is different from "nothing found".
     @State private var disrupted = false
     /// The running search. A new term cancels it, otherwise the answer to "Ga" occasionally
     /// arrived after the one to "Game" and overwrote it.
     @State private var searchRun: Task<Void, Never>?
+    @State private var waitRun: Task<Void, Never>?
+    /// The next change of the term is searched at once (a press on an earlier search).
+    @State private var immediate = false
+
     /// What was searched for last: the same list as on the iPhone, the rule is in `SearchHistory`.
     /// With a remote every typed word is expensive; one you don't have to type again is worth more here than on a phone.
-    @AppStorage(SearchHistory.key) private var lastRaw = ""
+    @State private var lastRaw = ""
     private var last: [String] { SearchHistory.list(lastRaw) }
-    @FocusState private var atField: Bool
 
-    private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: Theme.gridColumn),
-              count: Theme.gridColumns)
+    @FocusState private var focused: SearchTarget?
+    /// The key pressed last. Coming back from the hits, from the bar or from the speech input, focus
+    /// lands here and not on whatever key happens to lie beside the tile.
+    @State private var lastKey = "A"
+    @State private var lastHit: String?
+
+    /// The system keyboard for the mic key. A real field, because only that one gets the remote's
+    /// microphone. It sits invisibly in the keyboard card and is only reachable while speaking.
+    @FocusState private var atSystem: Bool
+    @State private var speaking = false
+
+    private let top = "top"
+
+    private var screen: SearchScreen {
+        SearchScreen.state(term: term, historyCount: last.count,
+                           hasHits: !hit.isEmpty || !seerrHit.isEmpty,
+                           answered: answered, disrupted: disrupted, waited: waited)
     }
 
+    private var hitIds: [String] { hit.map { "\($0.id)" } + seerrHit.map { "\($0.id)" } }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 34) {
-                // Field and information in one row, like the chip row of the library: field left, hit count right.
-                HStack(alignment: .center, spacing: 40) {
-                    InputField(placeholder: "Titel, Serie, Person", text: $term,
-                                outer: $atField) {
-                        lastRaw = SearchHistory.remember(term, in: lastRaw)
-                        searchRun?.cancel()
-                        searchRun = Task { await searching() }
-                    }
-                    .frame(width: 1000)
+        HStack(alignment: .top, spacing: TVSpec.columnGap) {
+            TVSearchKeyboard(term: $term, focus: $focused, speaking: speaking, speak: startSpeaking)
+                .background { systemField }
+                .focusSection()
+                .defaultFocus($focused, .key(lastKey), priority: .userInitiated)
+                .padding(.top, Theme.contentTop - Theme.edgeTop)
 
-                    if !hit.isEmpty {
-                        Text("\(hit.count) Treffer")
-                            .font(Theme.small)
-                            .foregroundStyle(Theme.fontVeryQuiet)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Theme.edgePage)
-
-                if running, hit.isEmpty {
-                    // No spinner: the grid keeps its shape. If hits are already there, they stay instead of giving way to a spinner.
-                    GridPlaceholder(rails: 1)
-                        .padding(.horizontal, Theme.edgePage)
-                        .padding(.top, 40)
-                        .transition(.opacity)
-                } else if disrupted, hit.isEmpty, !running {
-                    // Failed is not "nothing found". `search` returns `nil` when the server doesn't answer;
-                    // the `?? []` below turned that into an empty hit list and the page said the title doesn't
-                    // exist. Same text as in the library: one cause, one diagnosis.
-                    EmptyState(
-                        symbol: "externaldrive.badge.xmark",
-                        title: "Server ist abgetaucht",
-                        hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                        button: ("Erneut versuchen", { Task { await searching() } }))
-                        .frame(height: 460)
-                } else if hit.isEmpty && searched, !running {
-                    // A way out, not a dead-end sign; even more unpleasant with a remote than with a finger.
-                    EmptyState(symbol: "magnifyingglass",
-                                title: "Nichts gefunden",
-                                hint: "Versuch es mit einem anderen Wort.",
-                                button: ("Erneut versuchen", { Task { await searching() } }))
-                        .frame(height: 460)
-                } else if !searched {
-                    if last.isEmpty {
-                        // One sentence instead of black silence. Before the first input nothing stood here, a
-                        // black screen with a glowing field. A suggestion shelf would be filler; one sentence says
-                        // what the field accepts and when it starts searching.
-                        Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
-                            .font(Theme.body)
-                            .foregroundStyle(Theme.fontVeryQuiet)
-                            .padding(.horizontal, Theme.edgePage)
-                            .padding(.top, 10)
-                    } else {
-                        recent
-                    }
-                } else if !hit.isEmpty {
-                    LazyVGrid(columns: columns, alignment: .leading,
-                              spacing: Theme.latticeRow) {
-                        ForEach(hit) { item in
-                            NavigationLink(value: item) {
-                                TileContent(image: model.imageURL(for: item,
-                                                                  maxHeight: 600,
-                                                                  portrait: true),
-                                             title: item.name,
-                                             subline: item.hitInfo,
-                                             progress: item.userData?
-                                                 .playedPercentage.map { $0 / 100 },
-                                             mark: DisplayRules.tileMark(
-                                                art: item.type,
-                                                seasons: item.childCount,
-                                                watched: item.userData?.played,
-                                                openEpisodes: item.userData?
-                                                    .unplayedItemCount),
-                                             symbolText: item.tileCharacter)
-                            }
-                            .buttonStyle(TileStyle())
-                            .tileMenu(item, model: model)
-                        }
-                    }
-                    .padding(.horizontal, Theme.edgePage)
-                    .scrollClipDisabled()
-                }
-
-                if !seerrHit.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 20) {
-                        Text("Kann angefragt werden")
-                            .font(Theme.rail)
-                            .foregroundStyle(Theme.font)
-                        CountMark(count: seerrHit.count)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, Theme.edgePage)
-
-                    LazyVGrid(columns: columns, alignment: .leading,
-                              spacing: Theme.latticeRow) {
-                        ForEach(seerrHit) { t in
-                            NavigationLink(value: t) { SeerrTile(hit: t) }
-                                .buttonStyle(TileStyle())
-                        }
-                    }
-                    .padding(.horizontal, Theme.edgePage)
-                    .scrollClipDisabled()
-                }
-            }
-            .padding(.bottom, 60)
+            results
         }
-        .scrollIndicators(.hidden)
-        // The look's glow, the same on every main page; goes up with the content.
-        .lookGlow()
-        // Whoever goes to "Search" wants to type, not first navigate to a field. So focus goes there
-        // at once, and tvOS opens the keyboard by itself.
+        .padding(.leading, Theme.edgePage)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+        .defaultFocus($focused, .key(lastKey), priority: .userInitiated)
+        // Whoever goes to "Search" wants to type, not first navigate to a key. So focus goes to the
+        // last key at once.
         //
         // Focus must be handed on, not only assigned. On a section switch this page already exists:
         // it has been in the stack since the first visit and is only faded in. `defaultFocus` applies
         // on appearing, so it no longer works. And a bare assignment fizzles while focus is still in
         // the bar and tvOS has just set it there.
-        //
-        // This only became visible once the field turned white only in focus: before, it always lit
-        // up and looked as if it had focus. The pill on the "Search" tab was the only place with the truth.
         .task(id: active) {
             guard active else { return }
-            atField = true
+            historyLoad()
+            focused = .key(lastKey)
             // Once more, after tvOS has made its own move.
             try? await Task.sleep(for: .milliseconds(120))
-            guard active, !atField else { return }
-            atField = true
+            guard active, !isKey(focused) else { return }
+            focused = .key(lastKey)
         }
-        // And explicitly as the default. The assignment above alone was not enough: focus stayed
-        // on the "Search" tab in the bar. Only noticed once the field no longer is white all the time.
-        .defaultFocus($atField, true, priority: .userInitiated)
-        // Safe area, not padding and not `contentMargins`. Padding belongs to the content, which tvOS
-        // scrolls away. `contentMargins` only sets the resting position. What decides is how far
-        // tvOS pushes on a focus change, and only the scroll area's safe area counts for that. Without
-        // it the scroll went just far enough for the tile to be visible, and the row title above
-        // vanished under the wordmark.
-        //
-        // 150 is the minimum, not a matter of taste: system safe margin (60) plus 150 is 210, minus
-        // row title (46) and its gap to the tile (36) leaves exactly the 128 of the bar's lower edge.
-        // Less, and the title slips under it again when jumping to a row.
-        //
-        // The field starts at `Theme.contentTop`, like the topmost element of every other main page,
-        // minus the top safe margin where the area begins.
-        //
-        // The earlier minimum of 150 held for rows with a title (46 and gap 36 kept free). The
-        // search grid has no title above, only the field, and that should stay visible when jumping to a tile, no more.
-        .safeAreaInset(edge: .top) {
-            Color.clear.frame(height: Theme.contentTop - Theme.edgeTop)
+        .onChange(of: focused) { old, new in
+            switch new {
+            case .key(let id): lastKey = id
+            case .hit(let id): lastHit = id
+            default: break
+            }
+            // Remembered is whoever leaves the keyboard with hits. Search runs while typing; a submit
+            // like on the iPhone never happens: one types, sees the hits and goes right. That is
+            // the moment something was searched for. "Ga", "Gam" on the way don't count.
+            if isKey(old), case .hit = new, !hit.isEmpty {
+                historySet(SearchHistory.remember(term, in: lastRaw))
+            }
         }
-        // One attempt per keystroke, but only the last counts. The keyboard reports every letter;
+        // One attempt per keystroke, but only the last counts. Every key press changes the term;
         // without a pause and cancellation each one sent a query to server and Seerr and the answers
         // returned in arbitrary order. 250 ms, as on the iPhone. No `.task(id: term)`: it would
         // run again on every return from a detail page and search the same thing once more.
         .onChange(of: term) { _, new in
             searchRun?.cancel()
-            guard !new.isEmpty else {
-                hit = []
-                seerrHit = []
-                searched = false
-                disrupted = false
-                running = false
+            guard DisplayRules.searchTermFits(new) else {
+                // Below two characters nothing is searched, and the hits give way to the history.
+                waitRun?.cancel()
+                withAnimation(Theme.reveal) {
+                    hit = []
+                    seerrHit = []
+                    answered = false
+                    disrupted = false
+                    waited = false
+                }
                 return
             }
+            let now = immediate
+            immediate = false
             searchRun = Task {
-                try? await Task.sleep(for: .milliseconds(250))
+                if !now { try? await Task.sleep(for: .milliseconds(250)) }
                 guard !Task.isCancelled else { return }
                 await searching()
             }
         }
-        .onDisappear { searchRun?.cancel() }
+        .onDisappear { searchRun?.cancel(); waitRun?.cancel() }
         // Hits and term belong to the previous account.
         .onChange(of: model.accountSwitch) { _, _ in
             searchRun?.cancel()
+            waitRun?.cancel()
             term = ""
             hit = []
             seerrHit = []
-            searched = false
+            answered = false
             disrupted = false
-            running = false
+            waited = false
+            lastHit = nil
+            historyLoad()
         }
         // Watched/watchlist state changed elsewhere: the tile shouldn't show the old state. Hits stay until new ones arrive.
         .onChange(of: model.listenRefresh) { _, _ in
-            guard !term.isEmpty else { return }
+            guard DisplayRules.searchTermFits(term) else { return }
             searchRun?.cancel()
             searchRun = Task { await searching() }
         }
-        // Side margin: see `HomeView`. The system margin is dropped so `edgePage` does not double it.
-        // Remembered is whoever leaves the field with hits. Search runs while typing here; a submit
-        // like on the iPhone often never happens: one types, sees the hits and goes down. That is
-        // the moment something was searched for. "Ga", "Gam" on the way don't count.
-        .onChange(of: atField) { _, inField in
-            guard !inField, !hit.isEmpty else { return }
-            lastRaw = SearchHistory.remember(term, in: lastRaw)
+        // The system keyboard went away (Done or Menu): back to the mic key.
+        .onChange(of: atSystem) { _, now in
+            guard !now, speaking else { return }
+            speaking = false
+            focused = .key("speak")
         }
+        .onAppear { historyLoad() }
         .ignoresSafeArea(edges: .horizontal)
     }
 
-    /// What was searched for last: a card below the field, one row per term, like on the iPhone.
+    private func isKey(_ target: SearchTarget?) -> Bool {
+        if case .key = target { return true }
+        return false
+    }
+
+    // MARK: Speaking
+
+    /// The invisible field behind the keyboard card. It must not go fully to zero opacity or SwiftUI
+    /// drops it from the focus chain, and it is disabled except while speaking so the focus engine
+    /// never lands on it by accident.
+    private var systemField: some View {
+        TextField("Titel, Serie, Person", text: $term)
+            .focused($atSystem)
+            .autocorrectionDisabled()
+            .foregroundStyle(.clear)
+            .tint(.clear)
+            .opacity(TVSpec.hiddenFieldOpacity)
+            .frame(width: Theme.buttonHeight, height: Theme.buttonHeight)
+            .disabled(!speaking)
+            .accessibilityHidden(true)
+    }
+
+    private func startSpeaking() {
+        speaking = true
+        Task {
+            // The field is disabled until `speaking` has reached the view.
+            try? await Task.sleep(for: .milliseconds(60))
+            atSystem = true
+        }
+    }
+
+    // MARK: Results
+
+    /// The right column. It scrolls on its own and ends at the lower edge of the bar.
+    private var results: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: 0).id(top)
+                    content
+                }
+                .frame(width: SearchLayout.resultsWidth, alignment: .leading)
+                // The scroll area starts 14 lower than the content should rest (see below).
+                .padding(.top, -(topReserve - (Theme.contentTop - Theme.edgeTop)))
+                .padding(.bottom, Theme.edgeTop)
+                .animation(Theme.reveal, value: screen)
+            }
+            .frame(width: SearchLayout.resultsWidth)
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+            // The look's glow, the same on every main page; goes up with the content.
+            .lookGlow()
+            // Safe area, not padding and not `contentMargins`. Padding belongs to the content, which tvOS
+            // scrolls away. What decides is how far tvOS pushes on a focus change, and only the scroll
+            // area's safe area counts for that. Without it the scroll went just far enough for the tile
+            // to be visible, and the block title above vanished under the wordmark.
+            //
+            // The title is 46 high and 36 above its tiles, and the bar ends at 128: with the system margin
+            // (60) the reserve is 150. Less, and the title slips under the bar again when jumping to a
+            // block. At rest the content sits 14 higher, at `Theme.contentTop`, level with the keyboard.
+            .safeAreaInset(edge: .top) {
+                Color.clear.frame(height: topReserve)
+            }
+            .focusSection()
+            // Menu in the hits goes back to the keyboard, not to "Start": every letter has cost work
+            // with the remote, and a Menu press must not throw them away. In the keyboard itself the
+            // rule of all areas holds (`backStart` in `MainView`), because this handler only runs
+            // while focus stands in this column.
+            .onExitCommand {
+                focused = .key(lastKey)
+                withAnimation(Motion.change) { proxy.scrollTo(top, anchor: .top) }
+            }
+            // A new list while typing starts at the top. Standing in the hits it stays where the
+            // tile is (the list then only changes through `listenRefresh`).
+            .onChange(of: hitIds) { _, _ in
+                guard isKey(focused) else { return }
+                withAnimation(Motion.change) { proxy.scrollTo(top, anchor: .top) }
+            }
+        }
+    }
+
+    /// Block title (46) and its distance to the tiles (36).
+    private var topReserve: CGFloat { Theme.barBottom - Theme.edgeTop + 46 + Theme.titleSpacing }
+
+    @ViewBuilder
+    private var content: some View {
+        switch screen {
+        case .blank:
+            Color.clear.frame(height: 1)
+
+        case .loading:
+            // No spinner: the grid keeps its shape.
+            VStack(alignment: .leading, spacing: Theme.titleSpacing) {
+                LoadField(corner: Theme.cornerBar).frame(width: 300, height: 30)
+                GridPlaceholder(columns: TVSpec.searchColumns, rails: 1)
+            }
+            .transition(.opacity)
+
+        case .history:
+            recent.transition(.opacity)
+
+        case .start:
+            note(symbol: "magnifyingglass",
+                 sentence: "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                .padding(.top, 240)
+                .transition(.opacity)
+
+        case .hits:
+            hits.transition(.opacity)
+
+        case .nothing:
+            VStack(alignment: .leading, spacing: TVSpec.searchGroupGap) {
+                // The way out is the keyboard next to it and the history below. The earlier "try again"
+                // button is gone: the same word searched again finds nothing else.
+                EmptyState(symbol: "magnifyingglass",
+                           title: "Nichts gefunden zu „\(shortened(term))“",
+                           hint: "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: SearchLayout.resultsWidth)
+                    .padding(.top, 70)
+                if !last.isEmpty { recent }
+            }
+            .transition(.opacity)
+
+        case .disrupted:
+            // Failed is not "nothing found". `search` returns `nil` when the server doesn't answer.
+            // Same text as in the library: one cause, one diagnosis. It also replaces old hits, which
+            // belong to another word.
+            EmptyState(
+                symbol: "externaldrive.badge.xmark",
+                title: "Server ist abgetaucht",
+                hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                button: ("Erneut versuchen", { searchRun?.cancel(); searchRun = Task { await searching() } }))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: SearchLayout.resultsWidth)
+                .padding(.top, 70)
+                .transition(.opacity)
+        }
+    }
+
+    /// A centred symbol with one quiet sentence, in the column of the hits.
+    private func note(symbol: String, sentence: LocalizedStringKey) -> some View {
+        VStack(spacing: 20) {
+            Image(systemName: symbol)
+                .font(.system(size: 88))
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .accessibilityHidden(true)
+            Text(sentence)
+                .font(Theme.body)
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .multilineTextAlignment(.center)
+        }
+        .frame(width: SearchLayout.resultsWidth)
+    }
+
+    /// Long words in the middle, so the head of "Nothing found" stays on two lines.
+    private func shortened(_ word: String) -> String {
+        let clean = word.trimmingCharacters(in: .whitespaces)
+        guard clean.count > 32 else { return clean }
+        return String(clean.prefix(14)) + "…" + String(clean.suffix(14))
+    }
+
+    // MARK: Hits
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Theme.gridColumn), count: TVSpec.searchColumns)
+    }
+
+    /// Block titles only when more than one block stands there; the rule is in the package.
+    private var titles: Bool {
+        let split = SearchGroups.split(hit, type: { $0.type })
+        return SearchGroups.showsTitles(series: split.series.count, films: split.films.count,
+                                        requests: seerrHit.count)
+    }
+
+    private var hits: some View {
+        let split = SearchGroups.split(hit, type: { $0.type })
+        // The tile focus lands on when coming from the keyboard: the last one, if the list still has it,
+        // else the first of the first block.
+        let ids = hit.map { "\($0.id)" }
+        let landing = lastHit.flatMap { ids.contains($0) ? $0 : nil } ?? ids.first
+        return VStack(alignment: .leading, spacing: Theme.railsSpacing) {
+            block("Serien", split.series)
+            block("Filme", split.films)
+            if !seerrHit.isEmpty {
+                VStack(alignment: .leading, spacing: Theme.titleSpacing) {
+                    if titles { blockTitle("Kann angefragt werden", seerrHit.count) }
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
+                        ForEach(seerrHit) { t in
+                            NavigationLink(value: t) { SeerrTile(hit: t) }
+                                .buttonStyle(TileStyle())
+                                .focused($focused, equals: .hit("\(t.id)"))
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        // A new list: same id stays and slides to its place, new ones fade in, old ones fade out.
+        .animation(Motion.change, value: hitIds)
+        .defaultFocus($focused, landing.map { .hit($0) }, priority: .userInitiated)
+    }
+
+    @ViewBuilder
+    private func block(_ title: LocalizedStringKey, _ items: [Item]) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.titleSpacing) {
+                if titles { blockTitle(title, items.count) }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
+                    ForEach(items) { item in
+                        NavigationLink(value: item) {
+                            TileContent(image: model.imageURL(for: item,
+                                                              maxHeight: 600,
+                                                              portrait: true),
+                                         title: item.name,
+                                         subline: item.hitInfo,
+                                         progress: item.userData?
+                                             .playedPercentage.map { $0 / 100 },
+                                         mark: DisplayRules.tileMark(
+                                            art: item.type,
+                                            seasons: item.childCount,
+                                            watched: item.userData?.played,
+                                            openEpisodes: item.userData?
+                                                .unplayedItemCount),
+                                         symbolText: item.tileCharacter)
+                        }
+                        .buttonStyle(TileStyle())
+                        .tileMenu(item, model: model)
+                        .focused($focused, equals: .hit("\(item.id)"))
+                    }
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func blockTitle(_ title: LocalizedStringKey, _ count: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 20) {
+            Text(title)
+                .font(Theme.rail)
+                .foregroundStyle(Theme.font)
+            CountMark(count: count)
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: History
+
+    /// What was searched for last: a card, one row per term, like on the iPhone.
     ///
-    /// A press fills the field; search then runs by itself, as when typing.
+    /// A press puts the word into the field and searches at once.
     ///
     /// "Clear history" is the last row, not a button above the card on the right as on the
-    /// iPhone. There it would sit right below the field's right end, and the focus engine
-    /// searches geometrically: a press down landed on "Clear" first instead of the first term,
-    /// and a second press would have emptied the list.
+    /// iPhone: a press down landed on "Clear" first instead of the first term, and a second press
+    /// would have emptied the list.
     private var recent: some View {
         VStack(alignment: .leading, spacing: 0) {
             GroupsTitle(text: "Zuletzt gesucht")
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(last, id: \.self) { word in
                     Button {
-                        lastRaw = SearchHistory.remember(word, in: lastRaw)
+                        historySet(SearchHistory.remember(word, in: lastRaw))
+                        immediate = true
                         term = word
+                        focused = .key(lastKey)
                     } label: {
                         HStack(spacing: 22) {
                             Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: 26, weight: .medium))
+                                .font(.system(size: TVSpec.valueIcon, weight: .medium))
                                 .foregroundStyle(Theme.fontVeryQuiet)
-                                .frame(width: 34)
+                                .frame(width: TVSpec.choiceCheckWidth)
                                 .accessibilityHidden(true)
                             // Typed, so not a catalog text.
                             Text(verbatim: word)
@@ -261,41 +438,59 @@ struct SearchView: View {
                         }
                     }
                     .buttonStyle(RowsStyle())
+                    .focused($focused, equals: .recent(word))
                     SeparatorLine()
                 }
-                Button { lastRaw = "" } label: {
+                Button {
+                    historySet("")
+                    focused = .key(lastKey)
+                } label: {
                     HStack(spacing: 22) {
                         Image(systemName: "trash")
-                            .font(.system(size: 26, weight: .medium))
-                            .frame(width: 34)
+                            .font(.system(size: TVSpec.valueIcon, weight: .medium))
+                            .frame(width: TVSpec.choiceCheckWidth)
                             .accessibilityHidden(true)
                         Text("Verlauf löschen")
                     }
                 }
-                // Quiet through the style, not from inside. The row used `schriftSehrLeise`, also in focus,
-                // which is 3.59:1 on the focus surface. `RowsStyle(quiet:)` keeps it quiet at rest and
+                // Quiet through the style, not from inside: `RowsStyle(quiet:)` keeps it quiet at rest and
                 // raises it as soon as one stands on it.
                 .buttonStyle(RowsStyle(quiet: true))
             }
-            .padding(10)
-            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
+            .padding(TVSpec.listCardInset)
+            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
         }
-        .frame(width: 1000, alignment: .leading)
-        .padding(.horizontal, Theme.edgePage)
-        .focusSection()
+        .frame(width: TVSpec.formWidth, alignment: .leading)
     }
 
+    private func historyLoad() {
+        lastRaw = SearchHistoryStore.load(account: model.session?.accountKey)
+    }
+
+    private func historySet(_ new: String) {
+        lastRaw = new
+        SearchHistoryStore.save(new, account: model.session?.accountKey)
+    }
+
+    // MARK: Searching
+
     // A hit's subline comes from `Item.hitInfo` in the package, the same rule as on
-    // iPhone, iPad, Mac and Android ("Movie · 2008", with season count for series). A narrower
-    // `gattungUndJahr` of its own used to be here, the only platform with a different subline.
+    // iPhone, iPad, Mac and Android ("Movie · 2008", with season count for series).
 
     private func searching() async {
         let word = term.trimmingCharacters(in: .whitespaces)
-        // The same threshold as everywhere. `!wort.isEmpty` used to be here, so one letter fired a
-        // query over half the library while the line above claimed "Search starts at two
-        // characters". The rule is in `DisplayRules`.
+        // The same threshold as everywhere; the rule is in `DisplayRules`.
         guard DisplayRules.searchTermFits(word) else { return }
-        running = hit.isEmpty
+        // The placeholder only after 300 ms, and only while nothing at all is on screen. Old hits stay
+        // untouched until the new ones are in: no dimming, no sign, no flicker per letter.
+        waitRun?.cancel()
+        if hit.isEmpty, seerrHit.isEmpty, !answered {
+            waitRun = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                waited = true
+            }
+        }
         // Side by side, not one after the other. Seerr is an extra; if nothing comes from there or
         // it comes late, what the own server has still shows at once.
         async let ownOnes = model.search(word)
@@ -303,16 +498,16 @@ struct SearchView: View {
         let (a, b) = await (ownOnes, foreignOnes)
         // Overtaken: a newer term is already searching.
         guard !Task.isCancelled else { return }
-        // Remove duplicate ids before they go into a `ForEach`. Reported: a press on a series
-        // opened the one after next. `ForEach` assigns by id and the server occasionally returns
-        // the same title twice. The iPhone version catches this; the guard was missing here.
-        // `nil` means failed, not empty. The `?? []` alone turned a silent server into an empty hit
-        // list, and the page claimed the title doesn't exist. The iPhone version distinguishes the two; here it was missing.
-        disrupted = a == nil
-        hit = ListRules.withoutDouble(a ?? [])
-        // What is already on the server belongs in the upper block, otherwise the same title would appear twice on the page.
-        seerrHit = b.filter { !$0.state.alreadyPresent }
-        searched = true
-        running = false
+        waitRun?.cancel()
+        withAnimation(Motion.change) {
+            // `nil` means failed, not empty.
+            disrupted = a == nil
+            // Without double IDs: a `ForEach` assigns by id, and the server occasionally returns the same title twice.
+            hit = ListRules.withoutDouble(a ?? [])
+            // What is already on the server belongs in the upper block, otherwise the same title would appear twice on the page.
+            seerrHit = b.filter { !$0.state.alreadyPresent }
+            answered = true
+            waited = false
+        }
     }
 }

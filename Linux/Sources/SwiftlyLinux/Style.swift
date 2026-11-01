@@ -99,6 +99,8 @@ enum Theme {
     static let cornerArea = 16
     /// The settings card (`cornerCard` is 14 on the Mac).
     static let cornerCard = 14
+    /// The small corner (`Theme.cornerSmall` on the Mac): the segment track, the undo strip.
+    static let cornerSmall = 8
     /// Release and Seerr badges. **8, not 3**: 3 is only the default of `Badge` on Apple,
     /// which no caller uses; the detail page, hero header and tvOS all set 8 explicitly.
     static let cornerMark = 8
@@ -1195,6 +1197,67 @@ enum Theme {
             background-color: \(reason); margin-left: 16px;
         }
 
+        /* MARK: Untertitel-Seite (`SubtitlePage.swift`)
+
+           Die Segmente: eine Spur auf `raised`, 2 Innenrand, 24 hohe Felder
+           mit Ecke 6 (`MacSegments`). Gewaehlt ist Weiss 29 % (#4A4A4A) mit
+           voller Schrift, nicht mehr Gewicht; unter dem Zeiger Weiss 6 %. */
+        .swiftly-segmente {
+            background-color: \(raised);
+            border-radius: \(cornerSmall)px;
+            padding: 2px;
+        }
+        button.swiftly-segment {
+            background-image: none;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            border-radius: 6px;
+            min-height: 24px;
+            padding: 0;
+        }
+        button.swiftly-segment label {
+            color: \(fontQuiet);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        button.swiftly-segment:hover { background-color: \(hover); }
+        button.swiftly-segment.swiftly-aktiv { background-color: #4A4A4A; }
+        button.swiftly-segment.swiftly-aktiv label { color: \(font); }
+        /* Das "A" waechst mit der Stufe; die Farbe zeigt die Farbe, gewaehlt oder nicht. */
+        button.swiftly-segment label.swiftly-seg-12 { font-size: 12px; }
+        button.swiftly-segment label.swiftly-seg-15 { font-size: 15px; }
+        button.swiftly-segment label.swiftly-seg-17 { font-size: 17px; }
+        button.swiftly-segment label.swiftly-seg-20 { font-size: 20px; }
+        button.swiftly-segment label.swiftly-seg-weiss { color: #FFFFFF; }
+        button.swiftly-segment label.swiftly-seg-gelb { color: #FFE45C; }
+        button.swiftly-segment label.swiftly-seg-grau { color: #CCCCCC; }
+        /* Eine Zeile mit Segmenten: das Feld ist 28 hoch, also 8 Innenabstand statt 14. */
+        .swiftly-segmentzeile { padding: 9px 12px; }
+        /* Gesperrt ist leise, nicht durchscheinend (Zurücksetzen auf Standard). */
+        button.swiftly-einstellzeile.swiftly-ut-gesperrt:disabled { opacity: 1; }
+        button.swiftly-einstellzeile.swiftly-ut-gesperrt label,
+        button.swiftly-einstellzeile.swiftly-ut-gesperrt image { color: \(fontVeryQuiet); }
+        button.swiftly-einstellzeile.swiftly-ut-gesperrt:hover { background-color: transparent; }
+        /* Die Kante unter der festen Vorschau: der Grund laeuft aus, keine Linie. */
+        .swiftly-ut-kante {
+            background-image: linear-gradient(to bottom, \(reason), rgba(16,16,16,0));
+        }
+        /* Der Streifen nach "Zurücksetzen": 360 x 48 auf `area`. */
+        .swiftly-ut-streifen {
+            background-color: \(area);
+            border-radius: \(cornerCard)px;
+            padding: 0 8px 0 16px;
+            min-height: 48px;
+        }
+        button.swiftly-ut-zurueck {
+            background-image: none; background-color: transparent;
+            border: none; box-shadow: none; min-height: 32px; padding: 0 8px;
+            border-radius: \(cornerSmall)px;
+        }
+        button.swiftly-ut-zurueck label { color: \(fontQuiet); font-size: \(body)px; }
+        button.swiftly-ut-zurueck:hover { background-color: \(hover); }
+
         /* `Werteliste` auf dem Mac: 4 oben und unten, 48 eingerueckt, auf
            `area`; Zeilen 32 hoch, 12 seitlich. Gewaehlt heisst Weiss mit
            Haken, nicht Akzent (62b5d194). */
@@ -2066,7 +2129,7 @@ enum Theme {
         // glow of the home page over `reason`.
         let panel = """
         .swiftly-blatt { border-radius: \(cornerArea)px; padding: 0; border: none; }
-        .swiftly-lookblatt {
+        .swiftly-lookblatt, .swiftly-neublatt {
             background-color: \(area);
             background-image:
                 radial-gradient(ellipse 288px 156px at 100% 0%, \(rgba(tint, 0.11)) 0%, \(rgba(tint, 0.05)) 50%, transparent 100%),
@@ -2081,7 +2144,18 @@ enum Theme {
         button.swiftly-blattzu, button.swiftly-pillenknopf, button.swiftly-lookspalte, button.swiftly-akzentpunkt {
             background: none; border: none; box-shadow: none; padding: 0; min-height: 0; min-width: 0;
         }
-        .swiftly-lookblatt button.swiftly-blattzu { margin: 14px 10px 0 0; }
+        .swiftly-lookblatt button.swiftly-blattzu, .swiftly-neublatt button.swiftly-blattzu { margin: 14px 10px 0 0; }
+        .swiftly-neu-version { font-size: 13px; font-weight: 600; color: \(fontVeryQuiet); }
+        .swiftly-neu-geschenk {
+            background-color: alpha(\(raised), 0.6);
+            border-radius: \(cornerCard)px;
+            padding: 14px;
+        }
+        button.swiftly-neu-spaeter {
+            background-image: none; background-color: \(raised); border: none; box-shadow: none;
+            border-radius: \(corner)px; min-height: 50px; font-size: 17px; font-weight: 600; color: \(font);
+        }
+        button.swiftly-neu-spaeter:hover { background-color: #3A3A3A; }
         .swiftly-wachsenblatt button.swiftly-blattzu { margin: 4px 8px 0 0; }
         .swiftly-blattzu-kreis { background-color: \(raised); border-radius: \(cornerCapsule)px; }
         .swiftly-blattzu-dunkel { background-color: rgba(0,0,0,0.4); border-radius: \(cornerCapsule)px; }

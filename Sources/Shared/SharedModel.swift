@@ -119,7 +119,12 @@ final class SharedModel {
     /// that currently applies.
     @ObservationIgnored private lazy var session: SyncPlaySession = {
         let session = SyncPlaySession(
-            client: { @MainActor [weak self] in self?.model?.client },
+            // SyncPlay is a Jellyfin feature (`ServerCapability.syncPlay`).
+            client: { @MainActor [weak self] in
+                // Emby's client is a `JellyfinClient` as well, without SyncPlay.
+                guard let c = self?.model?.client, c.capabilities.contains(.syncPlay) else { return nil }
+                return c as? JellyfinClient
+            },
             ich: { @MainActor [weak self] in self?.ich },
             titleLoad: { @MainActor [weak self] title, since in
                 await self?.titleLoad(title, since: since) ?? false
@@ -169,7 +174,7 @@ final class SharedModel {
     /// its own client, everything else is forgotten, and the new account's
     /// permission is fetched. The query keeps running; it asks for the current
     /// client each time anyway.
-    func accountSwitched(alt: JellyfinClient?) {
+    func accountSwitched(alt: (any MediaServer)?) {
         createFor = nil
         sheet = nil
         error = nil
@@ -177,7 +182,7 @@ final class SharedModel {
         guard model != nil else { return }
         let session = self.session
         Task {
-            await session.finish(oldClient: alt)
+            await session.finish(oldClient: alt as? JellyfinClient)
             await session.rightFetch()
         }
     }
