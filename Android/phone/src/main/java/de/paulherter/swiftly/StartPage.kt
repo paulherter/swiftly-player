@@ -88,7 +88,10 @@ data class Tile(val id: String, val name: String, val type: String, val subline:
  */
 data class Rail(val title: String, val key: String?, val landscape: Boolean, val tiles: List<Tile>,
                  /** Only for a chosen library or collection: its id; the header opens it. */
-                 val library: String? = null)
+                 val library: String? = null,
+                 /** New movies and new series: the area (`movies`, `tvshows`) and the order the header
+                     opens it in (`StartRail.libraryJump`). */
+                 val jumpArt: String? = null, val jumpSorting: String? = null)
 
 /** Reads the answer of `Kern.home`; the rows are already finished there. */
 internal fun railsRead(json: String): List<Rail> {
@@ -99,7 +102,10 @@ internal fun railsRead(json: String): List<Rail> {
         val title = key?.let { translated(it) } ?: r.optString("name")
         val tiles = r.getJSONArray("kacheln")
         val library = r.optString("bibliothek").takeIf { r.has("bibliothek") && !r.isNull("bibliothek") && it.isNotEmpty() }
-        Rail(title, key, r.getBoolean("quer"), library = library, tiles = (0 until tiles.length()).map { k ->
+        val jumpArt = r.optString("sprungArt").takeIf { r.has("sprungArt") && !r.isNull("sprungArt") && it.isNotEmpty() }
+        val jumpSorting = r.optString("sprungSortierung").takeIf { r.has("sprungSortierung") && !r.isNull("sprungSortierung") && it.isNotEmpty() }
+        Rail(title, key, r.getBoolean("quer"), library = library, jumpArt = jumpArt, jumpSorting = jumpSorting,
+             tiles = (0 until tiles.length()).map { k ->
             val o = tiles.getJSONObject(k)
             Tile(o.getString("id"), o.getString("name"), o.getString("typ"),
                    o.optString("unterzeile").takeIf { !o.isNull("unterzeile") },
@@ -151,7 +157,8 @@ internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String)
 /** Mirrors `HomeView` in `Sources/Shared/HomeView.swift` (header, rows, tiles). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
+fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
+              libraryJump: (String, String) -> Unit = { _, _ -> }) {
     var rails by remember { mutableStateOf(app.startRails) }
     val run = rememberCoroutineScope()
     var starts by remember { mutableStateOf(false) }
@@ -273,7 +280,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             }
             val visible = if (switches) emptyList() else rails ?: emptyList()
             itemsIndexed(visible, key = { _, r -> (r.library?.let { "bib$it" } ?: r.title) }) { i, rail ->
-                RailView(rail, open, if (rail.landscape) { k -> continueWatching(k) } else null, afterwards,
+                RailView(rail, open, libraryJump, if (rail.landscape) { k -> continueWatching(k) } else null, afterwards,
                              Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = null).railEntrance(i + 1))
             }
             // "Support Swiftly" at the very end, only when the package says so (`SupportPrompt`).
@@ -302,13 +309,19 @@ private fun StartHeader(app: SwiftlyApplication, open: (Destination) -> Unit, of
 }
 
 @Composable
-private fun RailView(rail: Rail, open: (Destination) -> Unit, direct: ((Tile) -> Unit)?, afterwards: () -> Unit, modifier: Modifier = Modifier) {
+private fun RailView(rail: Rail, open: (Destination) -> Unit, libraryJump: (String, String) -> Unit,
+                     direct: ((Tile) -> Unit)?, afterwards: () -> Unit, modifier: Modifier = Modifier) {
     // 12 between title and row; the title carries its level's tracking (-0.24).
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // A chosen library or collection: the header opens it (mirrors `Rail` with `target` in HomeView).
         val header = Modifier.padding(horizontal = Theme.edgeSpacing)
         Text(rail.title, style = Theme.rail, color = Theme.font,
-             modifier = if (rail.library != null) header.tapOn { open(collectionTarget(rail.library, rail.title, null)) } else header)
+             modifier = when {
+                 rail.library != null -> header.tapOn { open(collectionTarget(rail.library, rail.title, null)) }
+                 // New movies and new series: their library, in the row's order.
+                 rail.jumpArt != null && rail.jumpSorting != null -> header.tapOn { libraryJump(rail.jumpArt, rail.jumpSorting) }
+                 else -> header
+             })
         LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing),
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing)) {
             items(rail.tiles, key = { it.id }) { k -> TileView(k, rail.landscape, continueWatching = rail.landscape, afterwards) { direct?.invoke(k) ?: open(Destination(k.id, k.name, k.type)) } }

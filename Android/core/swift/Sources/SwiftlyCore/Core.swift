@@ -718,7 +718,9 @@ public final class Kern: @unchecked Sendable {
                 .compactMap { r in
                     guard let (landscape, new, mark, items) = content[r], !items.isEmpty else { return nil }
                     return RailsResponse(titleKey: r.railsTitle, name: nil, landscape: landscape,
-                                         tiles: items.map { tile($0, newAccess: new, withMark: mark, a) })
+                                         tiles: items.map { tile($0, newAccess: new, withMark: mark, a) },
+                                         jumpArt: r.libraryJump?.art,
+                                         jumpSorting: r.libraryJump?.sorting.rawValue)
                 }
             // Between the fixed rows and the genre rows, in the order of the choice.
             let je = Dictionary((await libraryState).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -4333,6 +4335,8 @@ struct RailsResponse: Encodable {
         case tiles = "kacheln"
         case library = "bibliothek"
         case collection = "sammlung"
+        case jumpArt = "sprungArt"
+        case jumpSorting = "sprungSortierung"
     }
     /// German wording as key; Kotlin translates with `translated(...)`.
     let titleKey: String?
@@ -4343,6 +4347,10 @@ struct RailsResponse: Encodable {
     /// Only for a chosen library or collection: its ID; the row's header opens it.
     var library: String? = nil
     var collection: Bool = false
+    /// New movies and new series: the area (`movies`, `tvshows`) and the order (`Sorting`
+    /// raw value) the header opens; `StartRail.libraryJump`.
+    var jumpArt: String? = nil
+    var jumpSorting: String? = nil
 }
 struct GridPagesResponse: Encodable {
     enum CodingKeys: String, CodingKey {

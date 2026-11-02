@@ -62,6 +62,36 @@ public enum StartRail: String, CaseIterable, Sendable, Identifiable {
         case .newArrivals:   "Zuletzt hinzugefügt"
         }
     }
+
+    /// **Where the heading of the row leads**: the library of the row's kind, in the order
+    /// the row shows. `nil` for a row with no library of its own.
+    ///
+    /// New movies and new series each belong to one library page. "Neu hinzugefügt" mixes
+    /// movies with episodes, and no library lists both, so its heading stays a heading;
+    /// so do "Weiterschauen" and "Nächste Folge", which are states, not libraries.
+    public var libraryJump: LibraryJump? {
+        switch self {
+        case .newMovies: LibraryJump(art: "movies", sorting: .latest)
+        case .newSeries: LibraryJump(art: "tvshows", sorting: .latest)
+        default:         nil
+        }
+    }
+}
+
+/// **A library page to open, and the order to open it in.**
+///
+/// The order is set on the page, not just shown once: whoever comes from "Recently Added
+/// Movies" finds the movies sorted that way afterwards too, as if they had picked it.
+public struct LibraryJump: Sendable, Equatable {
+    /// `movies` or `tvshows`: the collection type, which is also the name each platform
+    /// stores the page's sort order under.
+    public let art: String
+    public let sorting: Sorting
+
+    public init(art: String, sorting: Sorting) {
+        self.art = art
+        self.sorting = sorting
+    }
 }
 
 /// How the configured order is read and saved.

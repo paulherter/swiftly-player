@@ -1299,6 +1299,24 @@ final class AppModel {
         let order: PlayOrder
     }
 
+    /// **A library page asked for by a row heading on the home page** (``StartRail/libraryJump``).
+    ///
+    /// The main view switches to the area, the open library page takes the order. The order
+    /// is stored right here as well: a page that was never opened reads it when it is built,
+    /// and only an open page needs to hear about it. Wrapped with an id so the same heading
+    /// tapped twice arrives twice.
+    var libraryJump: LibraryJumpRequest?
+
+    struct LibraryJumpRequest: Identifiable, Equatable {
+        let id = UUID()
+        let jump: LibraryJump
+    }
+
+    func openLibrary(_ jump: LibraryJump) {
+        LibraryModel.remember(jump.sorting, for: jump.art)
+        libraryJump = LibraryJumpRequest(jump: jump)
+    }
+
     /// The tracks that are playing, for handing the title over to another device.
     var playingTracks: TrackIndices { runningTracks }
 

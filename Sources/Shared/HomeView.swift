@@ -403,12 +403,12 @@ struct HomeView: View {
         case .newMovies:
             if !state.newMovies.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Filme",
-                      items: state.newMovies, newAccess: true)
+                      items: state.newMovies, jump: rail.libraryJump, newAccess: true)
             }
         case .newSeries:
             if !state.newSeries.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Serien",
-                      items: state.newSeries, newAccess: true)
+                      items: state.newSeries, jump: rail.libraryJump, newAccess: true)
             }
         case .newArrivals:
             if !state.recent.isEmpty {
@@ -490,6 +490,8 @@ private struct Rail: View {
     let items: [Item]
     /// Set means: the heading leads to the page behind it.
     var target: CollectionRoute? = nil
+    /// Set means: the heading opens a library area in this order (``StartRail/libraryJump``).
+    var jump: LibraryJump? = nil
     /// Landscape tiles instead of portrait, only for "Continue Watching".
     var landscape = false
     /// Shows *what* was newly added instead of the episode number.
@@ -532,6 +534,9 @@ private struct Rail: View {
             Group {
                 if let target {
                     NavigationLink(value: target) { RailTitle(text: title, name: name) }
+                        .buttonStyle(Theme.PressButton())
+                } else if let jump {
+                    Button { model.openLibrary(jump) } label: { RailTitle(text: title, name: name) }
                         .buttonStyle(Theme.PressButton())
                 } else {
                     RailTitle(text: title, name: name)

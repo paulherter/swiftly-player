@@ -372,18 +372,20 @@ struct HomeView: View {
         // independently: someone who wants series on top and movies below can have that.
         // Whether they exist is decided by "Neuzugänge getrennt" (new additions split).
         case .newMovies:
-            newAccessRail(title: "Zuletzt hinzugefügte Filme", state.newMovies)
+            newAccessRail(title: "Zuletzt hinzugefügte Filme", state.newMovies, jump: rail.libraryJump)
         case .newSeries:
-            newAccessRail(title: "Zuletzt hinzugefügte Serien", state.newSeries)
+            newAccessRail(title: "Zuletzt hinzugefügte Serien", state.newSeries, jump: rail.libraryJump)
         case .newArrivals:
             newAccessRail(title: "Zuletzt hinzugefügt", new)
         }
     }
 
     @ViewBuilder
-    private func newAccessRail(title: LocalizedStringKey, _ items: [Item]) -> some View {
+    private func newAccessRail(title: LocalizedStringKey, _ items: [Item],
+                               jump: LibraryJump? = nil) -> some View {
         if !items.isEmpty {
-            Rail(title: title) {
+            // The heading of new movies and new series opens their library in this order.
+            Rail(title: title, header: jump.map { jump in { model.openLibrary(jump) } }) {
                 ForEach(items, id: \.id) { entryRecord in
                     Button { navigator.openIt(.title(entryRecord), in: section) } label: {
                         // **The series name, not the episode name**, as in `Tile` on iPhone.

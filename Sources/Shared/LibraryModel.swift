@@ -70,9 +70,14 @@ final class LibraryModel {
 
     private func secure() {
         guard let rememberName else { return }
-        let store = UserDefaults.standard
-        store.set(sorting.rawValue, forKey: "sortierung.\(rememberName)")
-        store.set(filter.rawValue, forKey: "filter.\(rememberName)")
+        Self.remember(sorting, for: rememberName)
+        UserDefaults.standard.set(filter.rawValue, forKey: "filter.\(rememberName)")
+    }
+
+    /// Stores the order of a place without a page in memory (``AppModel/openLibrary(_:)``).
+    /// The key is the one ``init(rememberName:)`` reads.
+    static func remember(_ sorting: Sorting, for rememberName: String) {
+        UserDefaults.standard.set(sorting.rawValue, forKey: "sortierung.\(rememberName)")
     }
 
     /// If either changes, reload.

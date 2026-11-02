@@ -270,6 +270,16 @@ struct MainView: View {
             section = .start
             navigator.back(in: .start, until: 0)
         }
+        // **A row heading on the home page opens its library** (``StartRail/libraryJump``) in
+        // the row's order, at the top of the area. The shelf lives here, so the order is set on
+        // it directly; it stores it itself.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request else { return }
+            let target: Region = request.jump.art == "tvshows" ? .seriesList : .movies
+            (target == .movies ? movieShelf : seriesShelf).sorting = request.jump.sorting
+            navigator.back(in: target, until: 0)
+            section = target
+        }
         // **On the click in the profile page** (design D, as on iPhone) the page itself slides
         // out, profile included, and the picture flies into the sidebar. See
         // ``AccountSwitchStage``.

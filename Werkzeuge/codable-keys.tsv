@@ -103,8 +103,8 @@ Android	PlayPlanResponse.CodingKeys	codingkey	audioCodec,bild,dateizeile,dolbyVi
 Android	PlexProfileResponse	codable	id,image,name,protected
 Android	PlexServerChoiceResponse	codable	id,local,name,online,sharedBy
 Android	PlexStepResponse	codable	account,code,message,profile,profiles,secondsLeft,servers,session,step,url
-Android	RailsResponse	codable	bibliothek,kacheln,name,quer,sammlung,titelSchluessel
-Android	RailsResponse.CodingKeys	codingkey	bibliothek,kacheln,name,quer,sammlung,titelSchluessel
+Android	RailsResponse	codable	bibliothek,kacheln,name,quer,sammlung,sprungArt,sprungSortierung,titelSchluessel
+Android	RailsResponse.CodingKeys	codingkey	bibliothek,kacheln,name,quer,sammlung,sprungArt,sprungSortierung,titelSchluessel
 Android	RemoteCommandResponse	codable	art,wert
 Android	RemoteCommandResponse.CodingKeys	codingkey	art,wert
 Android	SearchKeyResponse	codable	character,kind,span

@@ -1645,6 +1645,22 @@ final class App: @unchecked Sendable {
         return .all
     }
 
+    /// **A row heading on the home page opens its library** (``StartRail/libraryJump``) in the
+    /// row's order, at the top of the area. The order is stored as if picked on the page; an
+    /// area already loaded in another order loads again, as after a tap on the sort button.
+    func libraryJumpOpen(_ jump: LibraryJump) {
+        let was: Region = jump.art == "tvshows" ? .seriesList : .movies
+        // An area opened for the first time loads in `show` with the stored order already.
+        let reload = sortingFrom(was) != jump.sorting && loaded.contains(was)
+        sortingSet(was, jump.sorting)
+        pagesStack[was] = []
+        show(was)
+        if reload {
+            chipsFill(was)
+            gridLoad(was)
+        }
+    }
+
     private func sortingSet(_ was: Region, _ new: Sorting) {
         if was == .collection { collectionSorting = new; return }
         selection.sortingPerPlace[placeKey(was)] = new.rawValue
@@ -4824,12 +4840,12 @@ final class App: @unchecked Sendable {
                 .visible(stored: railsEpisode, from: Set(hidden), disconnected: disconnected)
                 .compactMap { r in
                     guard let (art, items) = content[r], !items.isEmpty else { return nil }
-                    return (translated(r.railsTitle), art, items, nil)
+                    return (translated(r.railsTitle), art, items, r.libraryJump.map(RailHeader.library))
                 }
             // Between the fixed rows and the genres, as on Apple. The header opens the library or collection.
             collected += libraries.map { r in
                 (r.name, .new, r.items,
-                 librarySelection.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name))
+                 .collection(librarySelection.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name)))
             }
             collected += home.genreRails.map { ($0.name, .new, $0.items, nil) }
             let rails = collected
@@ -5439,8 +5455,13 @@ final class App: @unchecked Sendable {
         }
         for (i, (title, art, titleList, header)) in rails.enumerated() {
             let rail = railBuild(title: title, art: art, items: titleList,
-                                   header: header.map { entryRecord in
-                                       { [weak self] in self?.collectionOpen(entryRecord, art: nil) }
+                                   header: header.map { target in
+                                       { [weak self] in
+                                           switch target {
+                                           case let .collection(entryRecord): self?.collectionOpen(entryRecord, art: nil)
+                                           case let .library(jump): self?.libraryJumpOpen(jump)
+                                           }
+                                       }
                                    })
             append(railsStack, rail)
             if staggered { railOccur(rail, number: i + tick) }

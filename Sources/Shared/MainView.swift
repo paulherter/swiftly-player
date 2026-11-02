@@ -276,6 +276,14 @@ struct MainView: View {
             paths[Region.start.rawValue] = NavigationPath()
             section = .start
         }
+        // **A row heading on the home page opens its library** (``StartRail/libraryJump``): the
+        // area comes up at its top, not at a detail page left open in it earlier.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request else { return }
+            let target: Region = request.jump.art == "tvshows" ? .seriesList : .movies
+            paths[target.rawValue] = NavigationPath()
+            section = target
+        }
         #if DEBUG
         .task {
             guard AccountSwitchRun.an else { return }
@@ -747,6 +755,13 @@ struct LibraryView: View {
         // the new one. `load()` explains why a cancellation is not a failure
         // here.
         .task(id: "\(state.identifier)|\(model.accountSwitch)") { await loadAlone() }
+        // **A row heading on the home page asked for this page in an order.** A page that is
+        // already built does not read the store again; changing the order here reloads it
+        // through the identifier above, as a tap on the sort chip would.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request, request.jump.art == art else { return }
+            state.sorting = request.jump.sorting
+        }
         // **Libraries can arrive after the page.**
         //
         // `load()` picks one from `model.views` on the first run; if the list

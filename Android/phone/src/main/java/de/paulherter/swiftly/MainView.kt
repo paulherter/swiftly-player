@@ -234,6 +234,15 @@ fun MainScreen(app: SwiftlyApplication) {
         }
     }
 
+    // **A row heading on the home page opens its library** (`StartRail.libraryJump`) in the row's
+    // order, at the top of the area. The order is set as if picked on the page, so it stays.
+    val libraryJump: (String, String) -> Unit = { art, sorting ->
+        app.libraries.getOrPut(art) { LibraryState(art, app.store) }.sortingSet(sorting)
+        val b = if (art == "tvshows") Region.Series else Region.Movies
+        stack[b] = emptyList()
+        if (b != section) select(b)
+    }
+
     // Disabled while standing in the section: back to Start.
     val downloadsAn = app.settings.downloadsAn
     LaunchedEffect(downloadsAn) { if (!downloadsAn && section == Region.Downloads) select(Region.Start) }
@@ -255,7 +264,7 @@ fun MainScreen(app: SwiftlyApplication) {
                         }
                         .background(Theme.reason)) {
                         stateHolder.SaveableStateProvider("${section.name}/$depth/${target?.id.orEmpty()}") {
-                            if (target == null) InitialPage(app, section, open, select)
+                            if (target == null) InitialPage(app, section, open, select, libraryJump)
                             else Subpage(app, target, open, back)
                         }
                         // The page below darkens while the top one covers it.
@@ -284,11 +293,12 @@ fun MainScreen(app: SwiftlyApplication) {
 }
 
 @Composable
-private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destination) -> Unit, select: (Region) -> Unit) {
+private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destination) -> Unit, select: (Region) -> Unit,
+                        libraryJump: (String, String) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             when (section) {
-                Region.Start -> StartPage(app, open)
+                Region.Start -> StartPage(app, open, libraryJump)
                 Region.Movies -> LibraryPage(app, "movies", translated("Filme"),
                                                  offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
                 // For series "unwatched" helps little; the same list as on iOS.
